@@ -21,6 +21,8 @@ public static class BridgeJson
         // Bridge enums cross as readable strings instead of numeric enum values.
         options.Converters.Add(new JsonStringEnumConverter<ApiDiagnosticSeverity>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<ProjectHealthStateDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<ProjectFileGraphEntryStateDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<ProjectFileLayerDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<ProjectPathRoleDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<ProjectPathStatusDto>(JsonNamingPolicy.CamelCase));
 
