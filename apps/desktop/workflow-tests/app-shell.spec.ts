@@ -21,5 +21,6 @@ test('loads the workbench shell and switches sections', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Encounters and Wild Data' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Raid Rewards' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Placement' })).toBeVisible();
-  await expect(page.getByText('Disabled', { exact: true })).toHaveCount(7);
+  await expect(page.getByRole('heading', { name: 'Flagwork and Save Inspectors' })).toBeVisible();
+  await expect(page.getByText('Disabled', { exact: true })).toHaveCount(8);
 });

@@ -76,6 +76,9 @@ describe('App', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Raid Rewards' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Placement' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Flagwork and Save Inspectors' })
+    ).toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
   });
 
@@ -296,6 +299,13 @@ function createMockProjectBridge(
     id: 'placement',
     label: 'Placement'
   };
+  const flagworkSaveWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Game flags, save blocks, inspector metadata, and source provenance.',
+    diagnostics: [],
+    id: 'flagworkSave',
+    label: 'Flagwork and Save Inspectors'
+  };
 
   return {
     applyChangePlan: (request) =>
@@ -346,7 +356,8 @@ function createMockProjectBridge(
           shopsWorkflowSummary,
           encountersWorkflowSummary,
           raidRewardsWorkflowSummary,
-          placementWorkflowSummary
+          placementWorkflowSummary,
+          flagworkSaveWorkflowSummary
         ]
       }),
     loadEncountersWorkflow: () =>
@@ -360,6 +371,20 @@ function createMockProjectBridge(
           },
           summary: encountersWorkflowSummary,
           tables: []
+        }
+      }),
+    loadFlagworkSaveWorkflow: () =>
+      Promise.resolve({
+        workflow: {
+          diagnostics: [],
+          flags: [],
+          saveBlocks: [],
+          stats: {
+            sourceFileCount: 0,
+            totalFlagCount: 0,
+            totalSaveBlockCount: 0
+          },
+          summary: flagworkSaveWorkflowSummary
         }
       }),
     loadPlacementWorkflow: () =>

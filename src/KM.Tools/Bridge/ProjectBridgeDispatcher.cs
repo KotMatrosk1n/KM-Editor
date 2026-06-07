@@ -3,6 +3,7 @@
 using KM.Api.Bridge;
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.Flagwork;
 using KM.Api.Items;
 using KM.Api.Placement;
 using KM.Api.Projects;
@@ -60,6 +61,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadEncountersWorkflow => DispatchLoadEncountersWorkflow(requestJson),
                 KmCommandNames.LoadRaidRewardsWorkflow => DispatchLoadRaidRewardsWorkflow(requestJson),
                 KmCommandNames.LoadPlacementWorkflow => DispatchLoadPlacementWorkflow(requestJson),
+                KmCommandNames.LoadFlagworkSaveWorkflow => DispatchLoadFlagworkSaveWorkflow(requestJson),
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
@@ -174,6 +176,15 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadPlacementWorkflowRequest>(requestJson);
         var workflow = swShWorkflowService.LoadPlacement(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadFlagworkSaveWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadFlagworkSaveWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadFlagworkSave(ProjectBridgeMapper.ToCore(request.Payload.Paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);

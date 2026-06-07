@@ -165,6 +165,13 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'placement',
                 label: 'Placement'
+              },
+              {
+                availability: 'readOnly',
+                description: 'Game flags, save blocks, inspector metadata, and source provenance.',
+                diagnostics: [],
+                id: 'flagworkSave',
+                label: 'Flagwork and Save Inspectors'
               }
             ]
           }
@@ -448,6 +455,58 @@ describe('projectBridge', () => {
         });
       }
 
+      if (request.command === 'flagworkSave.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              flags: [
+                {
+                  category: 'Story',
+                  defaultValue: 'false',
+                  description: 'First gym badge story flag.',
+                  flagId: 'story.badge_1',
+                  name: 'Badge 1 Obtained',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/kmeditor/flagwork.save.readmodel.json',
+                    sourceLayer: 'base'
+                  },
+                  valueKind: 'boolean'
+                }
+              ],
+              saveBlocks: [
+                {
+                  blockId: 'player.profile',
+                  description: 'Player profile save block.',
+                  length: 64,
+                  name: 'Player Profile',
+                  offset: 128,
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/kmeditor/flagwork.save.readmodel.json',
+                    sourceLayer: 'base'
+                  }
+                }
+              ],
+              stats: {
+                sourceFileCount: 1,
+                totalFlagCount: 1,
+                totalSaveBlockCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description: 'Game flags, save blocks, inspector metadata, and source provenance.',
+                diagnostics: [],
+                id: 'flagworkSave',
+                label: 'Flagwork and Save Inspectors'
+              }
+            }
+          }
+        });
+      }
+
       return JSON.stringify({
         error: null,
         payload: {
@@ -507,6 +566,7 @@ describe('projectBridge', () => {
     const encounters = await bridge.loadEncountersWorkflow({ paths: projectPaths });
     const raidRewards = await bridge.loadRaidRewardsWorkflow({ paths: projectPaths });
     const placement = await bridge.loadPlacementWorkflow({ paths: projectPaths });
+    const flagworkSave = await bridge.loadFlagworkSaveWorkflow({ paths: projectPaths });
 
     expect(workflows.workflows[0]?.id).toBe('items');
     expect(workflows.workflows[1]?.id).toBe('text');
@@ -515,6 +575,7 @@ describe('projectBridge', () => {
     expect(workflows.workflows[4]?.id).toBe('encounters');
     expect(workflows.workflows[5]?.id).toBe('raidRewards');
     expect(workflows.workflows[6]?.id).toBe('placement');
+    expect(workflows.workflows[7]?.id).toBe('flagworkSave');
     expect(items.workflow.editableFields).toHaveLength(2);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(text.workflow.entries[0]?.label).toBe('Greeting');
@@ -523,6 +584,7 @@ describe('projectBridge', () => {
     expect(encounters.workflow.tables[0]?.slots[0]?.species).toBe('Skwovet');
     expect(raidRewards.workflow.tables[0]?.rewards[0]?.itemName).toBe('Exp. Candy L');
     expect(placement.workflow.objects[0]?.label).toBe('Hidden Potion');
+    expect(flagworkSave.workflow.flags[0]?.name).toBe('Badge 1 Obtained');
   });
 
   it('starts, updates, and validates an Items edit session', async () => {

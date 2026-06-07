@@ -115,6 +115,12 @@ const workflowDefinitions: Array<{
     label: 'Placement',
     description: 'Placed objects, map coordinates, script links, and source provenance.',
     icon: MapPin
+  },
+  {
+    id: 'flagworkSave',
+    label: 'Flagwork and Save Inspectors',
+    description: 'Game flags, save blocks, inspector metadata, and source provenance.',
+    icon: Save
   }
 ];
 

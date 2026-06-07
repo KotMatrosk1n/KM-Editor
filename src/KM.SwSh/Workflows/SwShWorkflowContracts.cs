@@ -13,6 +13,7 @@ public static class SwShWorkflowIds
     public const string Encounters = "encounters";
     public const string RaidRewards = "raidRewards";
     public const string Placement = "placement";
+    public const string FlagworkSave = "flagworkSave";
 }
 
 public enum SwShWorkflowAvailability

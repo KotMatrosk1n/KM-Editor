@@ -15,6 +15,7 @@ export const kmCommandNameValues = [
   'encounters.load',
   'raidRewards.load',
   'placement.load',
+  'flagworkSave.load',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -39,6 +40,7 @@ export const kmCommandNames = {
   loadEncountersWorkflow: 'encounters.load',
   loadRaidRewardsWorkflow: 'raidRewards.load',
   loadPlacementWorkflow: 'placement.load',
+  loadFlagworkSaveWorkflow: 'flagworkSave.load',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -111,6 +113,10 @@ export const loadRaidRewardsWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadPlacementWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadFlagworkSaveWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -517,6 +523,49 @@ export const loadPlacementWorkflowResponseSchema = z.strictObject({
   workflow: placementWorkflowSchema
 });
 
+export const flagworkSaveProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const flagRecordSchema = z.strictObject({
+  category: z.string(),
+  defaultValue: z.string(),
+  description: z.string(),
+  flagId: z.string(),
+  name: z.string(),
+  provenance: flagworkSaveProvenanceSchema,
+  valueKind: z.string()
+});
+
+export const saveBlockRecordSchema = z.strictObject({
+  blockId: z.string(),
+  description: z.string(),
+  length: z.number().int().nonnegative(),
+  name: z.string(),
+  offset: z.number().int().nonnegative(),
+  provenance: flagworkSaveProvenanceSchema
+});
+
+export const flagworkSaveWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalFlagCount: z.number().int().nonnegative(),
+  totalSaveBlockCount: z.number().int().nonnegative()
+});
+
+export const flagworkSaveWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  flags: z.array(flagRecordSchema),
+  saveBlocks: z.array(saveBlockRecordSchema),
+  stats: flagworkSaveWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadFlagworkSaveWorkflowResponseSchema = z.strictObject({
+  workflow: flagworkSaveWorkflowSchema
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -620,6 +669,7 @@ export type ShopsWorkflow = z.infer<typeof shopsWorkflowSchema>;
 export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;
 export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
 export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
+export type FlagworkSaveWorkflow = z.infer<typeof flagworkSaveWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
@@ -636,6 +686,8 @@ export type LoadRaidRewardsWorkflowRequest = z.infer<typeof loadRaidRewardsWorkf
 export type LoadRaidRewardsWorkflowResponse = z.infer<typeof loadRaidRewardsWorkflowResponseSchema>;
 export type LoadPlacementWorkflowRequest = z.infer<typeof loadPlacementWorkflowRequestSchema>;
 export type LoadPlacementWorkflowResponse = z.infer<typeof loadPlacementWorkflowResponseSchema>;
+export type LoadFlagworkSaveWorkflowRequest = z.infer<typeof loadFlagworkSaveWorkflowRequestSchema>;
+export type LoadFlagworkSaveWorkflowResponse = z.infer<typeof loadFlagworkSaveWorkflowResponseSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;
