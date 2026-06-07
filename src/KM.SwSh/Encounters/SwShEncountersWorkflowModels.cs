@@ -13,7 +13,9 @@ public sealed record SwShEncounterProvenance(
 
 public sealed record SwShEncounterSlotRecord(
     int Slot,
+    int SpeciesId,
     string Species,
+    int Form,
     int LevelMin,
     int LevelMax,
     int Weight,
@@ -26,8 +28,16 @@ public sealed record SwShEncounterTableRecord(
     string Area,
     string EncounterType,
     string GameVersion,
+    string ArchiveMember,
     IReadOnlyList<SwShEncounterSlotRecord> Slots,
     SwShEncounterProvenance Provenance);
+
+public sealed record SwShEncounterEditableField(
+    string Field,
+    string Label,
+    string ValueKind,
+    int? MinimumValue,
+    int? MaximumValue);
 
 public sealed record SwShEncountersWorkflowStats(
     int TotalTableCount,
@@ -37,5 +47,6 @@ public sealed record SwShEncountersWorkflowStats(
 public sealed record SwShEncountersWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShEncounterTableRecord> Tables,
+    IReadOnlyList<SwShEncounterEditableField> EditableFields,
     SwShEncountersWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);

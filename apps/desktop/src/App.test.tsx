@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import {
+  type EncountersWorkflow,
   type ItemsWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
@@ -28,10 +29,13 @@ describe('App', () => {
       },
       editSession: null,
       editValidationDiagnostics: [],
+      encounterSearchText: '',
+      encountersWorkflow: null,
       itemSearchText: '',
       itemsWorkflow: null,
       openProject: null,
       projectStatus: 'idle',
+      selectedEncounterTableId: null,
       selectedItemId: null,
       selectedShopId: null,
       selectedTextKey: null,
@@ -297,6 +301,59 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Shops change plan to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
+  it('opens Encounters, edits a slot probability, reviews a wild data plan, and applies it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Encounters' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Encounters and Wild Data' })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Zone 0x1122334455667788').length).toBeGreaterThan(0);
+    expect(screen.getByRole('option', { name: 'Slot 1: Bulbasaur' })).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Encounter slot'), '2');
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const probabilityInput = screen.getByLabelText('Probability');
+    await user.clear(probabilityInput);
+    await user.type(probabilityInput, '40');
+    await user.click(screen.getByRole('button', { name: 'Save probability' }));
+
+    expect(await screen.findByDisplayValue('40')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(
+      screen.getByText(
+        'Set Sword Symbol Zone 0x1122334455667788 Normal slot 2 probability to 40.'
+      )
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending encounter change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(
+      screen.getAllByText('romfs/bin/archive/field/resident/data_table.gfpak').length
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Applied Encounters change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
   });
 
@@ -665,6 +722,91 @@ function createMockProjectBridge(
     id: 'encounters',
     label: 'Encounters and Wild Data'
   };
+  const encountersWorkflow: EncountersWorkflow = {
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'speciesId',
+        label: 'Species ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'form',
+        label: 'Form',
+        maximumValue: 255,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'probability',
+        label: 'Probability',
+        maximumValue: 100,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'levelMin',
+        label: 'Min Level',
+        maximumValue: 100,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'levelMax',
+        label: 'Max Level',
+        maximumValue: 100,
+        minimumValue: 0,
+        valueKind: 'integer'
+      }
+    ],
+    stats: {
+      sourceFileCount: 1,
+      totalSlotCount: 2,
+      totalTableCount: 1
+    },
+    summary: encountersWorkflowSummary,
+    tables: [
+      {
+        archiveMember: 'encount_symbol_k.bin',
+        area: 'Symbol',
+        encounterType: 'Normal',
+        gameVersion: 'Sword',
+        location: 'Zone 0x1122334455667788',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+          sourceLayer: 'base'
+        },
+        slots: [
+          {
+            form: 0,
+            levelMax: 8,
+            levelMin: 3,
+            slot: 1,
+            speciesId: 1,
+            species: 'Bulbasaur',
+            timeOfDay: null,
+            weather: 'Normal',
+            weight: 35
+          },
+          {
+            form: 1,
+            levelMax: 8,
+            levelMin: 3,
+            slot: 2,
+            speciesId: 4,
+            species: 'Charmander',
+            timeOfDay: null,
+            weather: 'Normal',
+            weight: 15
+          }
+        ],
+        tableId: 'sword:symbol:0:1122334455667788:0'
+      }
+    ]
+  };
   const raidRewardsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
@@ -776,6 +918,23 @@ function createMockProjectBridge(
                         targetRelativePath: 'romfs/bin/app/shop/shop_data.bin'
                       }
                     ]
+                  : request.session.pendingEdits[0]?.domain === 'workflow.encounters'
+                    ? [
+                        {
+                          reason:
+                            'Apply pending Encounters edit: Set Sword Symbol Zone 0x1122334455667788 Normal slot 2 probability to 40.',
+                          replacesExistingOutput: false,
+                          sources: [
+                            {
+                              layer: 'base',
+                              relativePath:
+                                'romfs/bin/archive/field/resident/data_table.gfpak'
+                            }
+                          ],
+                          targetRelativePath:
+                            'romfs/bin/archive/field/resident/data_table.gfpak'
+                        }
+                      ]
               : [
                   {
                     reason: 'Apply pending Items edit: Set Potion buy price to 450.',
@@ -809,16 +968,7 @@ function createMockProjectBridge(
       }),
     loadEncountersWorkflow: () =>
       Promise.resolve({
-        workflow: {
-          diagnostics: [],
-          stats: {
-            sourceFileCount: 0,
-            totalSlotCount: 0,
-            totalTableCount: 0
-          },
-          summary: encountersWorkflowSummary,
-          tables: []
-        }
+        workflow: encountersWorkflow
       }),
     loadFlagworkSaveWorkflow: () =>
       Promise.resolve({
@@ -1094,6 +1244,44 @@ function createMockProjectBridge(
           )
         }
       }),
+    updateEncounterSlotField: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.encounters',
+              field: request.field,
+              newValue: request.value,
+              recordId: `${request.tableId}#${request.slot}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
+                }
+              ],
+              summary: `Set Sword Symbol Zone 0x1122334455667788 Normal slot ${request.slot} probability to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...encountersWorkflow,
+          tables: encountersWorkflow.tables.map((table) =>
+            table.tableId === request.tableId
+              ? {
+                  ...table,
+                  slots: table.slots.map((slot) =>
+                    slot.slot === request.slot
+                      ? { ...slot, weight: Number.parseInt(request.value, 10) }
+                      : slot
+                  )
+                }
+              : table
+          )
+        }
+      }),
     validateEditSession: (request) =>
       Promise.resolve({
         diagnostics: [
@@ -1124,6 +1312,10 @@ function getApplyMessage(targetRelativePath: string) {
     return 'Applied Shops change plan to the configured LayeredFS output root.';
   }
 
+  if (targetRelativePath.includes('/archive/field/resident/')) {
+    return 'Applied Encounters change plan to the configured LayeredFS output root.';
+  }
+
   return 'Applied Items change plan to the configured LayeredFS output root.';
 }
 
@@ -1135,6 +1327,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending trainer change is valid.';
     case 'workflow.shops':
       return 'Pending shop change is valid.';
+    case 'workflow.encounters':
+      return 'Pending encounter change is valid.';
     default:
       return 'Pending item change is valid.';
   }

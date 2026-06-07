@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
 using KM.SwSh.Encounters;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.Workflows;
@@ -13,72 +14,41 @@ namespace KM.SwSh.Tests.Encounters;
 public sealed class SwShEncountersWorkflowServiceTests
 {
     [Fact]
-    public void LoadReadsEncounterTablesFromSanitizedBaseReadModel()
+    public void LoadReadsEncounterTablesFromRealWildDataPack()
     {
         using var temp = TemporarySwShProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/encounters.wild.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "tables": [
-                {
-                  "tableId": "route_1_grass_sword",
-                  "location": "Route 1",
-                  "area": "Grass",
-                  "encounterType": "Overworld",
-                  "gameVersion": "Sword",
-                  "slots": [
-                    {
-                      "slot": 2,
-                      "species": "Rookidee",
-                      "levelMin": 4,
-                      "levelMax": 6,
-                      "weight": 25,
-                      "timeOfDay": "Day",
-                      "weather": "Any"
-                    },
-                    {
-                      "slot": 1,
-                      "species": "Skwovet",
-                      "levelMin": 3,
-                      "levelMax": 5,
-                      "weight": 35,
-                      "timeOfDay": null,
-                      "weather": "Any"
-                    }
-                  ]
-                }
-              ]
-            }
-            """);
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
 
         var workflow = new SwShEncountersWorkflowService().Load(project);
 
         Assert.Equal(SwShWorkflowAvailability.ReadOnly, workflow.Summary.Availability);
-        var table = Assert.Single(workflow.Tables);
-        Assert.Equal("route_1_grass_sword", table.TableId);
-        Assert.Equal("Route 1", table.Location);
-        Assert.Equal("Grass", table.Area);
-        Assert.Equal("Overworld", table.EncounterType);
+        Assert.Equal(2, workflow.Tables.Count);
+        var table = workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
+        Assert.StartsWith("sword:symbol:0:", table.TableId, StringComparison.Ordinal);
+        Assert.Equal($"Zone 0x{SwShEncounterTestFixtures.ZoneId:X16}", table.Location);
+        Assert.Equal("Symbol", table.Area);
+        Assert.Equal("Normal", table.EncounterType);
         Assert.Equal("Sword", table.GameVersion);
+        Assert.Equal("encount_symbol_k.bin", table.ArchiveMember);
         Assert.Equal(2, table.Slots.Count);
-        Assert.Equal("Skwovet", table.Slots[0].Species);
-        Assert.Null(table.Slots[0].TimeOfDay);
-        Assert.Equal("Rookidee", table.Slots[1].Species);
-        Assert.Equal("Day", table.Slots[1].TimeOfDay);
+        Assert.Equal(1, table.Slots[0].SpeciesId);
+        Assert.Equal("Bulbasaur", table.Slots[0].Species);
+        Assert.Equal(0, table.Slots[0].Form);
+        Assert.Equal(3, table.Slots[0].LevelMin);
+        Assert.Equal(8, table.Slots[0].LevelMax);
+        Assert.Equal(35, table.Slots[0].Weight);
         Assert.Equal(ProjectFileLayer.Base, table.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.BaseOnly, table.Provenance.FileState);
-        Assert.Equal(1, workflow.Stats.TotalTableCount);
-        Assert.Equal(2, workflow.Stats.TotalSlotCount);
+        Assert.Equal(2, workflow.Stats.TotalTableCount);
+        Assert.Equal(4, workflow.Stats.TotalSlotCount);
         Assert.Equal(1, workflow.Stats.SourceFileCount);
-        Assert.Empty(workflow.Diagnostics);
+        Assert.Contains(workflow.EditableFields, field => field.Field == "speciesId");
     }
 
     [Fact]
-    public void LoadReturnsDiagnosticWhenReadModelIsMissing()
+    public void LoadReturnsDiagnosticWhenWildDataPackIsMissing()
     {
         using var temp = TemporarySwShProject.Create();
         temp.WriteBaseRomFsFile("data/encounters.bin", "placeholder");
@@ -92,43 +62,19 @@ public sealed class SwShEncountersWorkflowServiceTests
     }
 
     [Fact]
-    public void LoadWarnsWhenTableIdsAreDuplicated()
+    public void LoadReportsUnsupportedWildDataPack()
     {
         using var temp = TemporarySwShProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/encounters.wild.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "tables": [
-                {
-                  "tableId": "route_1_grass_sword",
-                  "location": "Route 1",
-                  "area": "Grass",
-                  "encounterType": "Overworld",
-                  "gameVersion": "Sword",
-                  "slots": []
-                },
-                {
-                  "tableId": "route_1_grass_sword",
-                  "location": "Route 1",
-                  "area": "Grass",
-                  "encounterType": "Random",
-                  "gameVersion": "Sword",
-                  "slots": []
-                }
-              ]
-            }
-            """);
+        temp.WriteBaseRomFsFile("bin/archive/field/resident/data_table.gfpak", "not-a-pack");
         temp.WriteBaseExeFsFile("main", "base-main");
         var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
 
         var workflow = new SwShEncountersWorkflowService().Load(project);
 
-        Assert.Equal(2, workflow.Tables.Count);
+        Assert.Empty(workflow.Tables);
         Assert.Contains(
             workflow.Diagnostics,
-            diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
                 && diagnostic.Domain == "workflow.encounters");
     }
 }

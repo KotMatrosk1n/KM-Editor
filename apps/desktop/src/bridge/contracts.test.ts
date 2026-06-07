@@ -41,6 +41,8 @@ import {
   startEditSessionResponseSchema,
   updateItemFieldRequestSchema,
   updateItemFieldResponseSchema,
+  updateEncounterSlotFieldRequestSchema,
+  updateEncounterSlotFieldResponseSchema,
   updateShopInventoryItemRequestSchema,
   updateShopInventoryItemResponseSchema,
   updateTextEntryRequestSchema,
@@ -470,6 +472,22 @@ describe('bridge contracts', () => {
     } as const;
     const encountersWorkflow = {
       diagnostics: [],
+      editableFields: [
+        {
+          field: 'speciesId',
+          label: 'Species ID',
+          maximumValue: 65535,
+          minimumValue: 0,
+          valueKind: 'integer'
+        },
+        {
+          field: 'probability',
+          label: 'Probability',
+          maximumValue: 100,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
       stats: {
         sourceFileCount: 1,
         totalSlotCount: 1,
@@ -484,27 +502,30 @@ describe('bridge contracts', () => {
       },
       tables: [
         {
-          area: 'Grass',
-          encounterType: 'Overworld',
+          archiveMember: 'encount_symbol_k.bin',
+          area: 'Symbol',
+          encounterType: 'Normal',
           gameVersion: 'Sword',
-          location: 'Route 1',
+          location: 'Zone 0x1122334455667788',
           provenance: {
             fileState: 'baseOnly',
-            sourceFile: 'romfs/kmeditor/encounters.wild.readmodel.json',
+            sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
             sourceLayer: 'base'
           },
           slots: [
             {
-              levelMax: 5,
+              form: 0,
+              levelMax: 8,
               levelMin: 3,
               slot: 1,
-              species: 'Skwovet',
+              speciesId: 1,
+              species: 'Bulbasaur',
               timeOfDay: null,
-              weather: 'Any',
+              weather: 'Normal',
               weight: 35
             }
           ],
-          tableId: 'route_1_grass_sword'
+          tableId: 'sword:symbol:0:1122334455667788:0'
         }
       ]
     } as const;
@@ -1007,6 +1028,12 @@ describe('bridge contracts', () => {
     const updateShopResponseSchema = createBridgeResponseSchema(
       updateShopInventoryItemResponseSchema
     );
+    const updateEncounterRequestSchema = createBridgeRequestSchema(
+      updateEncounterSlotFieldRequestSchema
+    );
+    const updateEncounterResponseSchema = createBridgeResponseSchema(
+      updateEncounterSlotFieldResponseSchema
+    );
     const validateRequestSchema = createBridgeRequestSchema(validateEditSessionRequestSchema);
     const validateResponseSchema = createBridgeResponseSchema(validateEditSessionResponseSchema);
     const changePlanRequestSchema = createBridgeRequestSchema(createChangePlanRequestSchema);
@@ -1330,6 +1357,78 @@ describe('bridge contracts', () => {
         label: 'Shops'
       }
     } as const;
+    const encounterSession = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.encounters',
+          field: 'probability',
+          newValue: '40',
+          recordId: 'sword:symbol:0:1122334455667788:0#2',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
+            }
+          ],
+          summary:
+            'Set Sword Symbol Zone 0x1122334455667788 Normal slot 2 probability to 40.'
+        }
+      ],
+      sessionId: 'session-1'
+    } as const;
+    const encountersWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'probability',
+          label: 'Probability',
+          maximumValue: 100,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalSlotCount: 1,
+        totalTableCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
+        diagnostics: [],
+        id: 'encounters',
+        label: 'Encounters and Wild Data'
+      },
+      tables: [
+        {
+          archiveMember: 'encount_symbol_k.bin',
+          area: 'Symbol',
+          encounterType: 'Normal',
+          gameVersion: 'Sword',
+          location: 'Zone 0x1122334455667788',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+            sourceLayer: 'base'
+          },
+          slots: [
+            {
+              form: 1,
+              levelMax: 8,
+              levelMin: 3,
+              slot: 2,
+              speciesId: 4,
+              species: 'Charmander',
+              timeOfDay: null,
+              weather: 'Normal',
+              weight: 40
+            }
+          ],
+          tableId: 'sword:symbol:0:1122334455667788:0'
+        }
+      ]
+    } as const;
 
     expect(
       startRequestSchema.safeParse({
@@ -1451,6 +1550,34 @@ describe('bridge contracts', () => {
           diagnostics: [],
           session: shopSession,
           workflow: shopsWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateEncounterRequestSchema.safeParse({
+        command: kmCommandNames.updateEncounterSlotField,
+        payload: {
+          field: 'probability',
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output'
+          },
+          session: editSession,
+          slot: 2,
+          tableId: 'sword:symbol:0:1122334455667788:0',
+          value: '40'
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateEncounterResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: encounterSession,
+          workflow: encountersWorkflow
         }
       }).success
     ).toBe(true);

@@ -6,6 +6,7 @@ import {
   type ApplyResult,
   type ChangePlan,
   type EditSession,
+  type EncountersWorkflow,
   type ItemsWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
@@ -22,6 +23,7 @@ export type WorkbenchSection =
   | 'text'
   | 'trainers'
   | 'shops'
+  | 'encounters'
   | 'changes';
 
 export type ProjectPathDraft = {
@@ -43,11 +45,14 @@ type WorkbenchState = {
   draftPaths: ProjectPathDraft;
   editSession: EditSession | null;
   editValidationDiagnostics: ApiDiagnostic[];
+  encounterSearchText: string;
+  encountersWorkflow: EncountersWorkflow | null;
   itemSearchText: string;
   itemsWorkflow: ItemsWorkflow | null;
   openProject: OpenProjectState | null;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
   selectedItemId: number | null;
+  selectedEncounterTableId: string | null;
   selectedShopId: string | null;
   selectedTextKey: string | null;
   selectedTrainerId: number | null;
@@ -64,12 +69,15 @@ type WorkbenchState = {
   setChangePlan: (changePlan: ChangePlan | null) => void;
   setEditSession: (editSession: EditSession | null) => void;
   setEditValidationDiagnostics: (diagnostics: ApiDiagnostic[]) => void;
+  setEncounterSearchText: (encounterSearchText: string) => void;
+  setEncountersWorkflow: (encountersWorkflow: EncountersWorkflow) => void;
   setItemsWorkflow: (itemsWorkflow: ItemsWorkflow) => void;
   setItemSearchText: (itemSearchText: string) => void;
   setOpenProject: (project: OpenProjectState) => void;
   setProjectHealth: (health: ProjectHealth) => void;
   setProjectStatus: (projectStatus: WorkbenchState['projectStatus']) => void;
   setSelectedItemId: (selectedItemId: number | null) => void;
+  setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
   setSelectedShopId: (selectedShopId: string | null) => void;
   setSelectedTextKey: (selectedTextKey: string | null) => void;
   setSelectedTrainerId: (selectedTrainerId: number | null) => void;
@@ -93,11 +101,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   },
   editSession: null,
   editValidationDiagnostics: [],
+  encounterSearchText: '',
+  encountersWorkflow: null,
   itemSearchText: '',
   itemsWorkflow: null,
   openProject: null,
   projectStatus: 'idle',
   selectedItemId: null,
+  selectedEncounterTableId: null,
   selectedShopId: null,
   selectedTextKey: null,
   selectedTrainerId: null,
@@ -120,6 +131,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     })),
   setEditSession: (editSession) => set({ applyResult: null, changePlan: null, editSession }),
   setEditValidationDiagnostics: (editValidationDiagnostics) => set({ editValidationDiagnostics }),
+  setEncounterSearchText: (encounterSearchText) => set({ encounterSearchText }),
   setItemsWorkflow: (itemsWorkflow) =>
     set((state) => {
       const selectedItemId = itemsWorkflow.items.some(
@@ -149,10 +161,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       changePlan: null,
       editSession: null,
       editValidationDiagnostics: [],
+      encounterSearchText: '',
+      encountersWorkflow: null,
       itemSearchText: '',
       itemsWorkflow: null,
       openProject,
       projectStatus: 'open',
+      selectedEncounterTableId: null,
       selectedItemId: null,
       selectedShopId: null,
       selectedTextKey: null,
@@ -182,6 +197,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       projectStatus: 'idle'
     })),
   setProjectStatus: (projectStatus) => set({ projectStatus }),
+  setSelectedEncounterTableId: (selectedEncounterTableId) => set({ selectedEncounterTableId }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
   setSelectedShopId: (selectedShopId) => set({ selectedShopId }),
   setSelectedTextKey: (selectedTextKey) => set({ selectedTextKey }),
@@ -241,6 +257,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         selectedShopId,
         shopSearchText: '',
         shopsWorkflow
+      };
+    }),
+  setEncountersWorkflow: (encountersWorkflow) =>
+    set((state) => {
+      const selectedEncounterTableId = encountersWorkflow.tables.some(
+        (table) => table.tableId === state.selectedEncounterTableId
+      )
+        ? state.selectedEncounterTableId
+        : (encountersWorkflow.tables[0]?.tableId ?? null);
+
+      return {
+        activeSection: 'encounters',
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        encounterSearchText: '',
+        encountersWorkflow,
+        selectedEncounterTableId
       };
     }),
   setWorkflows: (workflows) => set({ workflows })

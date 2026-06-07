@@ -16,6 +16,7 @@ export const kmCommandNameValues = [
   'shops.load',
   'shops.inventory.update',
   'encounters.load',
+  'encounters.slot.update',
   'raidRewards.load',
   'placement.load',
   'flagworkSave.load',
@@ -47,6 +48,7 @@ export const kmCommandNames = {
   loadShopsWorkflow: 'shops.load',
   updateShopInventoryItem: 'shops.inventory.update',
   loadEncountersWorkflow: 'encounters.load',
+  updateEncounterSlotField: 'encounters.slot.update',
   loadRaidRewardsWorkflow: 'raidRewards.load',
   loadPlacementWorkflow: 'placement.load',
   loadFlagworkSaveWorkflow: 'flagworkSave.load',
@@ -479,9 +481,11 @@ export const encounterProvenanceSchema = z.strictObject({
 });
 
 export const encounterSlotRecordSchema = z.strictObject({
+  form: z.number().int().nonnegative(),
   levelMax: z.number().int().nonnegative(),
   levelMin: z.number().int().nonnegative(),
   slot: z.number().int().nonnegative(),
+  speciesId: z.number().int().nonnegative(),
   species: z.string(),
   timeOfDay: z.string().nullable(),
   weather: z.string(),
@@ -489,6 +493,7 @@ export const encounterSlotRecordSchema = z.strictObject({
 });
 
 export const encounterTableRecordSchema = z.strictObject({
+  archiveMember: z.string(),
   area: z.string(),
   encounterType: z.string(),
   gameVersion: z.string(),
@@ -496,6 +501,14 @@ export const encounterTableRecordSchema = z.strictObject({
   provenance: encounterProvenanceSchema,
   slots: z.array(encounterSlotRecordSchema),
   tableId: z.string()
+});
+
+export const encounterEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  valueKind: z.string()
 });
 
 export const encountersWorkflowStatsSchema = z.strictObject({
@@ -506,6 +519,7 @@ export const encountersWorkflowStatsSchema = z.strictObject({
 
 export const encountersWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(encounterEditableFieldSchema),
   stats: encountersWorkflowStatsSchema,
   summary: workflowSummarySchema,
   tables: z.array(encounterTableRecordSchema)
@@ -804,6 +818,21 @@ export const updateShopInventoryItemResponseSchema = z.strictObject({
   workflow: shopsWorkflowSchema
 });
 
+export const updateEncounterSlotFieldRequestSchema = z.strictObject({
+  field: z.string(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  slot: z.number().int().nonnegative(),
+  tableId: z.string(),
+  value: z.string()
+});
+
+export const updateEncounterSlotFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: encountersWorkflowSchema
+});
+
 export const startEditSessionResponseSchema = z.strictObject({
   session: editSessionSchema
 });
@@ -898,6 +927,9 @@ export type ShopEditableField = z.infer<typeof shopEditableFieldSchema>;
 export type ShopInventoryRecord = z.infer<typeof shopInventoryRecordSchema>;
 export type ShopRecord = z.infer<typeof shopRecordSchema>;
 export type ShopsWorkflow = z.infer<typeof shopsWorkflowSchema>;
+export type EncounterEditableField = z.infer<typeof encounterEditableFieldSchema>;
+export type EncounterSlotRecord = z.infer<typeof encounterSlotRecordSchema>;
+export type EncounterTableRecord = z.infer<typeof encounterTableRecordSchema>;
 export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;
 export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
 export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
@@ -954,6 +986,12 @@ export type UpdateShopInventoryItemRequest = z.infer<
 >;
 export type UpdateShopInventoryItemResponse = z.infer<
   typeof updateShopInventoryItemResponseSchema
+>;
+export type UpdateEncounterSlotFieldRequest = z.infer<
+  typeof updateEncounterSlotFieldRequestSchema
+>;
+export type UpdateEncounterSlotFieldResponse = z.infer<
+  typeof updateEncounterSlotFieldResponseSchema
 >;
 export type ValidateEditSessionRequest = z.infer<typeof validateEditSessionRequestSchema>;
 export type ValidateEditSessionResponse = z.infer<typeof validateEditSessionResponseSchema>;
