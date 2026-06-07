@@ -75,6 +75,10 @@ The desktop shell now lazy-loads workflow payloads when a user navigates directl
 
 The UI uses the existing backend bridge contracts for lazy loads, shows a loading panel for the selected workflow section, and surfaces bridge diagnostics outside the Health page when a workflow request fails. A regression test verifies that direct section navigation triggers one backend Items workflow request, keeps the loading state visible while the request is pending, and does not steal focus if the user navigates away before the response completes.
 
+## Background Bridge Boundary
+
+The Tauri `project_bridge_once` command now runs the blocking `dotnet` bridge process spawn, stdin write, and stdout wait inside Tauri's blocking task pool. The JSON bridge contract is unchanged, but expensive backend workflow loads and previews no longer occupy the synchronous command entrypoint while the backend process is running.
+
 ## Next Optimization Targets
 
 1. Continue shared-source cache work for Items metadata, item-name text, and archive readers where the same file feeds multiple workflows.

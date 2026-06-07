@@ -5,7 +5,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 #[tauri::command(rename_all = "camelCase")]
-fn project_bridge_once(request_json: String) -> Result<String, String> {
+async fn project_bridge_once(request_json: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || run_project_bridge_once(request_json))
+        .await
+        .map_err(|error| format!("Project bridge request task failed: {error}"))?
+}
+
+fn run_project_bridge_once(request_json: String) -> Result<String, String> {
     let repo_root = resolve_repo_root()?;
     let mut child = Command::new("dotnet")
         .args([
