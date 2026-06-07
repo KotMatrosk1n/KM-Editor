@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import {
@@ -154,6 +154,52 @@ describe('App', () => {
     expect(screen.queryByText('Potion')).not.toBeInTheDocument();
     expect(screen.getByText('romfs/bin/pml/item/item.dat')).toBeInTheDocument();
     expect(screen.getByText('Base only')).toBeInTheDocument();
+  });
+
+  it('lazy loads workflow data from direct section navigation without stealing focus', async () => {
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge();
+    let loadItemsCount = 0;
+    let lastRequest: Parameters<ProjectBridge['loadItemsWorkflow']>[0] | null = null;
+    let resolveItemsWorkflow!: (
+      value: Awaited<ReturnType<ProjectBridge['loadItemsWorkflow']>>
+    ) => void;
+    const itemsWorkflowPromise = new Promise<
+      Awaited<ReturnType<ProjectBridge['loadItemsWorkflow']>>
+    >((resolve) => {
+      resolveItemsWorkflow = resolve;
+    });
+    const bridge: ProjectBridge = {
+      ...baseBridge,
+      loadItemsWorkflow: (request) => {
+        loadItemsCount += 1;
+        lastRequest = request;
+        return itemsWorkflowPromise;
+      }
+    };
+    render(
+      <App bridge={bridge} />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+
+    expect(await screen.findByText('Loading backend workflow data.')).toBeInTheDocument();
+    expect(loadItemsCount).toBe(1);
+
+    await user.click(screen.getByRole('button', { name: 'Project Health' }));
+    await act(async () => {
+      resolveItemsWorkflow(await baseBridge.loadItemsWorkflow(lastRequest!));
+    });
+
+    expect(screen.getByRole('heading', { name: 'Project Health' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+
+    expect(screen.getAllByText('Potion').length).toBeGreaterThan(0);
+    expect(loadItemsCount).toBe(1);
   });
 
   it('previews a spreadsheet import into an Items edit session', async () => {
