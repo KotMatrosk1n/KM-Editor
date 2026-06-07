@@ -469,6 +469,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
+  const [lazyLoadedWorkflowSections, setLazyLoadedWorkflowSections] = useState<
+    Set<WorkbenchSection>
+  >(() => new Set());
   const pendingEditCount = editSession?.pendingEdits.length ?? 0;
 
   const handleValidateProject = async () => {
@@ -479,6 +482,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       const paths = toProjectPaths(draftPaths);
       const response = await bridge.validateProject({ paths });
       setProjectHealth(response.health);
+      setLazyLoadedWorkflowSections(new Set());
       await refreshWorkflows(paths, response.health.canOpenReadOnlyWorkflows);
     } catch (error) {
       setProjectStatus('idle');
@@ -498,8 +502,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
         health: response.health,
         projectId: response.projectId
       });
-      await refreshWorkflows(paths, response.health.canOpenReadOnlyWorkflows);
       setActiveSection('health');
+      setLazyLoadedWorkflowSections(new Set());
+      await refreshWorkflows(paths, response.health.canOpenReadOnlyWorkflows);
     } catch (error) {
       setProjectStatus('idle');
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -667,6 +672,122 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setIsSpreadsheetImportLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!health?.canOpenReadOnlyWorkflows || lazyLoadedWorkflowSections.has(activeSection)) {
+      return;
+    }
+
+    const workflowSummary = workflows.find((workflow) => workflow.id === activeSection);
+    if (workflowSummary?.availability === 'disabled') {
+      return;
+    }
+
+    const markLazyLoadStarted = () =>
+      setLazyLoadedWorkflowSections((currentSections) => {
+        const nextSections = new Set(currentSections);
+        nextSections.add(activeSection);
+        return nextSections;
+      });
+
+    switch (activeSection) {
+      case 'items':
+        if (!itemsWorkflow && !isItemsLoading) {
+          markLazyLoadStarted();
+          void handleOpenItemsWorkflow();
+        }
+        break;
+      case 'text':
+        if (!textWorkflow && !isTextLoading) {
+          markLazyLoadStarted();
+          void handleOpenTextWorkflow();
+        }
+        break;
+      case 'trainers':
+        if (!trainersWorkflow && !isTrainersLoading) {
+          markLazyLoadStarted();
+          void handleOpenTrainersWorkflow();
+        }
+        break;
+      case 'shops':
+        if (!shopsWorkflow && !isShopsLoading) {
+          markLazyLoadStarted();
+          void handleOpenShopsWorkflow();
+        }
+        break;
+      case 'encounters':
+        if (!encountersWorkflow && !isEncountersLoading) {
+          markLazyLoadStarted();
+          void handleOpenEncountersWorkflow();
+        }
+        break;
+      case 'raidRewards':
+        if (!raidRewardsWorkflow && !isRaidRewardsLoading) {
+          markLazyLoadStarted();
+          void handleOpenRaidRewardsWorkflow();
+        }
+        break;
+      case 'placement':
+        if (!placementWorkflow && !isPlacementLoading) {
+          markLazyLoadStarted();
+          void handleOpenPlacementWorkflow();
+        }
+        break;
+      case 'flagworkSave':
+        if (!flagworkSaveWorkflow && !isFlagworkSaveLoading) {
+          markLazyLoadStarted();
+          void handleOpenFlagworkSaveWorkflow();
+        }
+        break;
+      case 'exefsPatches':
+        if (!exeFsPatchWorkflow && !isExeFsPatchLoading) {
+          markLazyLoadStarted();
+          void handleOpenExeFsPatchWorkflow();
+        }
+        break;
+      case 'royalCandy':
+        if (!royalCandyWorkflow && !isRoyalCandyLoading) {
+          markLazyLoadStarted();
+          void handleOpenRoyalCandyWorkflow();
+        }
+        break;
+      case 'spreadsheetImport':
+        if (!spreadsheetImportWorkflow && !isSpreadsheetImportLoading) {
+          markLazyLoadStarted();
+          void handleOpenSpreadsheetImportWorkflow();
+        }
+        break;
+      default:
+        break;
+    }
+  }, [
+    activeSection,
+    encountersWorkflow,
+    exeFsPatchWorkflow,
+    flagworkSaveWorkflow,
+    health?.canOpenReadOnlyWorkflows,
+    isEncountersLoading,
+    isExeFsPatchLoading,
+    isFlagworkSaveLoading,
+    isItemsLoading,
+    isPlacementLoading,
+    isRaidRewardsLoading,
+    isRoyalCandyLoading,
+    isShopsLoading,
+    isSpreadsheetImportLoading,
+    isTextLoading,
+    isTrainersLoading,
+    itemsWorkflow,
+    lazyLoadedWorkflowSections,
+    placementWorkflow,
+    raidRewardsWorkflow,
+    royalCandyWorkflow,
+    shopsWorkflow,
+    spreadsheetImportWorkflow,
+    textWorkflow,
+    trainersWorkflow,
+    workflows
+  ]);
 
   const handlePreviewSpreadsheetImport = async (profileId: string, sourcePath: string) => {
     setIsSpreadsheetImportPreviewing(true);
@@ -1082,150 +1203,194 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
             />
           ) : null}
           {activeSection === 'items' ? (
-            <ItemsSection
-              onSearchChange={setItemSearchText}
-              onSelectItem={setSelectedItemId}
-              onStartEditSession={handleStartEditSession}
-              onUpdateItemField={handleUpdateItemField}
-              searchText={itemSearchText}
-              selectedItemId={selectedItemId}
-              editSession={editSession}
-              isEditStarting={isEditStarting}
-              isItemUpdating={isItemUpdating}
-              workflow={itemsWorkflow}
-            />
+            isItemsLoading && !itemsWorkflow ? (
+              <WorkflowLoadingPanel label="Items" />
+            ) : (
+              <ItemsSection
+                onSearchChange={setItemSearchText}
+                onSelectItem={setSelectedItemId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateItemField={handleUpdateItemField}
+                searchText={itemSearchText}
+                selectedItemId={selectedItemId}
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isItemUpdating={isItemUpdating}
+                workflow={itemsWorkflow}
+              />
+            )
           ) : null}
           {activeSection === 'text' ? (
-            <TextSection
-              editSession={editSession}
-              isEditStarting={isEditStarting}
-              isTextUpdating={isTextUpdating}
-              onSearchChange={setTextSearchText}
-              onSelectTextEntry={setSelectedTextKey}
-              onStartEditSession={handleStartEditSession}
-              onUpdateTextEntry={handleUpdateTextEntry}
-              searchText={textSearchText}
-              selectedTextKey={selectedTextKey}
-              workflow={textWorkflow}
-            />
+            isTextLoading && !textWorkflow ? (
+              <WorkflowLoadingPanel label="Text and Dialogue Map" />
+            ) : (
+              <TextSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isTextUpdating={isTextUpdating}
+                onSearchChange={setTextSearchText}
+                onSelectTextEntry={setSelectedTextKey}
+                onStartEditSession={handleStartEditSession}
+                onUpdateTextEntry={handleUpdateTextEntry}
+                searchText={textSearchText}
+                selectedTextKey={selectedTextKey}
+                workflow={textWorkflow}
+              />
+            )
           ) : null}
           {activeSection === 'trainers' ? (
-            <TrainersSection
-              editSession={editSession}
-              isEditStarting={isEditStarting}
-              isTrainerUpdating={isTrainerUpdating}
-              onSearchChange={setTrainerSearchText}
-              onSelectTrainer={setSelectedTrainerId}
-              onStartEditSession={handleStartEditSession}
-              onUpdateTrainerField={handleUpdateTrainerField}
-              searchText={trainerSearchText}
-              selectedTrainerId={selectedTrainerId}
-              workflow={trainersWorkflow}
-            />
+            isTrainersLoading && !trainersWorkflow ? (
+              <WorkflowLoadingPanel label="Trainers" />
+            ) : (
+              <TrainersSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isTrainerUpdating={isTrainerUpdating}
+                onSearchChange={setTrainerSearchText}
+                onSelectTrainer={setSelectedTrainerId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateTrainerField={handleUpdateTrainerField}
+                searchText={trainerSearchText}
+                selectedTrainerId={selectedTrainerId}
+                workflow={trainersWorkflow}
+              />
+            )
           ) : null}
           {activeSection === 'shops' ? (
-            <ShopsSection
-              editSession={editSession}
-              isEditStarting={isEditStarting}
-              isShopUpdating={isShopUpdating}
-              onSearchChange={setShopSearchText}
-              onSelectShop={setSelectedShopId}
-              onStartEditSession={handleStartEditSession}
-              onUpdateShopInventoryItem={handleUpdateShopInventoryItem}
-              searchText={shopSearchText}
-              selectedShopId={selectedShopId}
-              workflow={shopsWorkflow}
-            />
+            isShopsLoading && !shopsWorkflow ? (
+              <WorkflowLoadingPanel label="Shops" />
+            ) : (
+              <ShopsSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isShopUpdating={isShopUpdating}
+                onSearchChange={setShopSearchText}
+                onSelectShop={setSelectedShopId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateShopInventoryItem={handleUpdateShopInventoryItem}
+                searchText={shopSearchText}
+                selectedShopId={selectedShopId}
+                workflow={shopsWorkflow}
+              />
+            )
           ) : null}
           {activeSection === 'encounters' ? (
-            <EncountersSection
-              editSession={editSession}
-              isEditStarting={isEditStarting}
-              isEncounterUpdating={isEncounterUpdating}
-              onSearchChange={setEncounterSearchText}
-              onSelectTable={setSelectedEncounterTableId}
-              onStartEditSession={handleStartEditSession}
-              onUpdateEncounterSlotField={handleUpdateEncounterSlotField}
-              searchText={encounterSearchText}
-              selectedTableId={selectedEncounterTableId}
-              workflow={encountersWorkflow}
-            />
+            isEncountersLoading && !encountersWorkflow ? (
+              <WorkflowLoadingPanel label="Encounters and Wild Data" />
+            ) : (
+              <EncountersSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isEncounterUpdating={isEncounterUpdating}
+                onSearchChange={setEncounterSearchText}
+                onSelectTable={setSelectedEncounterTableId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateEncounterSlotField={handleUpdateEncounterSlotField}
+                searchText={encounterSearchText}
+                selectedTableId={selectedEncounterTableId}
+                workflow={encountersWorkflow}
+              />
+            )
           ) : null}
           {activeSection === 'raidRewards' ? (
-            <RaidRewardsSection
-              editSession={editSession}
-              isEditStarting={isEditStarting}
-              isRaidRewardUpdating={isRaidRewardUpdating}
-              onSearchChange={setRaidRewardSearchText}
-              onSelectTable={setSelectedRaidRewardTableId}
-              onStartEditSession={handleStartEditSession}
-              onUpdateRaidRewardField={handleUpdateRaidRewardField}
-              searchText={raidRewardSearchText}
-              selectedTableId={selectedRaidRewardTableId}
-              workflow={raidRewardsWorkflow}
-            />
+            isRaidRewardsLoading && !raidRewardsWorkflow ? (
+              <WorkflowLoadingPanel label="Raid Rewards" />
+            ) : (
+              <RaidRewardsSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isRaidRewardUpdating={isRaidRewardUpdating}
+                onSearchChange={setRaidRewardSearchText}
+                onSelectTable={setSelectedRaidRewardTableId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateRaidRewardField={handleUpdateRaidRewardField}
+                searchText={raidRewardSearchText}
+                selectedTableId={selectedRaidRewardTableId}
+                workflow={raidRewardsWorkflow}
+              />
+            )
           ) : null}
           {activeSection === 'placement' ? (
-            <PlacementSection
-              editSession={editSession}
-              isEditStarting={isEditStarting}
-              isPlacementUpdating={isPlacementUpdating}
-              onSearchChange={setPlacementSearchText}
-              onSelectObject={setSelectedPlacementObjectId}
-              onStartEditSession={handleStartEditSession}
-              onUpdatePlacementObjectField={handleUpdatePlacementObjectField}
-              searchText={placementSearchText}
-              selectedObjectId={selectedPlacementObjectId}
-              workflow={placementWorkflow}
-            />
+            isPlacementLoading && !placementWorkflow ? (
+              <WorkflowLoadingPanel label="Placement" />
+            ) : (
+              <PlacementSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isPlacementUpdating={isPlacementUpdating}
+                onSearchChange={setPlacementSearchText}
+                onSelectObject={setSelectedPlacementObjectId}
+                onStartEditSession={handleStartEditSession}
+                onUpdatePlacementObjectField={handleUpdatePlacementObjectField}
+                searchText={placementSearchText}
+                selectedObjectId={selectedPlacementObjectId}
+                workflow={placementWorkflow}
+              />
+            )
           ) : null}
           {activeSection === 'flagworkSave' ? (
-            <FlagworkSaveSection
-              onSearchChange={setFlagworkSaveSearchText}
-              onSelectFlag={setSelectedFlagId}
-              onSelectSaveBlock={setSelectedSaveBlockId}
-              searchText={flagworkSaveSearchText}
-              selectedFlagId={selectedFlagId}
-              selectedSaveBlockId={selectedSaveBlockId}
-              workflow={flagworkSaveWorkflow}
-            />
+            isFlagworkSaveLoading && !flagworkSaveWorkflow ? (
+              <WorkflowLoadingPanel label="Flagwork and Save Inspectors" />
+            ) : (
+              <FlagworkSaveSection
+                onSearchChange={setFlagworkSaveSearchText}
+                onSelectFlag={setSelectedFlagId}
+                onSelectSaveBlock={setSelectedSaveBlockId}
+                searchText={flagworkSaveSearchText}
+                selectedFlagId={selectedFlagId}
+                selectedSaveBlockId={selectedSaveBlockId}
+                workflow={flagworkSaveWorkflow}
+              />
+            )
           ) : null}
           {activeSection === 'exefsPatches' ? (
-            <ExeFsPatchSection
-              onSearchChange={setExeFsPatchSearchText}
-              onSelectCheck={setSelectedExeFsCheckId}
-              onSelectPatch={setSelectedExeFsPatchId}
-              searchText={exeFsPatchSearchText}
-              selectedCheckId={selectedExeFsCheckId}
-              selectedPatchId={selectedExeFsPatchId}
-              workflow={exeFsPatchWorkflow}
-            />
+            isExeFsPatchLoading && !exeFsPatchWorkflow ? (
+              <WorkflowLoadingPanel label="ExeFS Patch Manager" />
+            ) : (
+              <ExeFsPatchSection
+                onSearchChange={setExeFsPatchSearchText}
+                onSelectCheck={setSelectedExeFsCheckId}
+                onSelectPatch={setSelectedExeFsPatchId}
+                searchText={exeFsPatchSearchText}
+                selectedCheckId={selectedExeFsCheckId}
+                selectedPatchId={selectedExeFsPatchId}
+                workflow={exeFsPatchWorkflow}
+              />
+            )
           ) : null}
           {activeSection === 'royalCandy' ? (
-            <RoyalCandySection
-              onSearchChange={setRoyalCandySearchText}
-              onSelectCheck={setSelectedRoyalCandyCheckId}
-              onSelectWorkflow={setSelectedRoyalCandyWorkflowId}
-              searchText={royalCandySearchText}
-              selectedCheckId={selectedRoyalCandyCheckId}
-              selectedWorkflowId={selectedRoyalCandyWorkflowId}
-              workflow={royalCandyWorkflow}
-            />
+            isRoyalCandyLoading && !royalCandyWorkflow ? (
+              <WorkflowLoadingPanel label="Royal Candy Workflows" />
+            ) : (
+              <RoyalCandySection
+                onSearchChange={setRoyalCandySearchText}
+                onSelectCheck={setSelectedRoyalCandyCheckId}
+                onSelectWorkflow={setSelectedRoyalCandyWorkflowId}
+                searchText={royalCandySearchText}
+                selectedCheckId={selectedRoyalCandyCheckId}
+                selectedWorkflowId={selectedRoyalCandyWorkflowId}
+                workflow={royalCandyWorkflow}
+              />
+            )
           ) : null}
           {activeSection === 'spreadsheetImport' ? (
-            <SpreadsheetImportSection
-              editSession={editSession}
-              isPreviewing={isSpreadsheetImportPreviewing}
-              onPreviewImport={handlePreviewSpreadsheetImport}
-              onSearchChange={setSpreadsheetImportSearchText}
-              onSelectProfile={setSelectedSpreadsheetImportProfileId}
-              onSourcePathChange={setSpreadsheetImportSourcePath}
-              preview={spreadsheetImportPreview}
-              searchText={spreadsheetImportSearchText}
-              selectedProfileId={selectedSpreadsheetImportProfileId}
-              sourcePath={spreadsheetImportSourcePath}
-              workflow={spreadsheetImportWorkflow}
-            />
+            isSpreadsheetImportLoading && !spreadsheetImportWorkflow ? (
+              <WorkflowLoadingPanel label="Spreadsheet Import" />
+            ) : (
+              <SpreadsheetImportSection
+                editSession={editSession}
+                isPreviewing={isSpreadsheetImportPreviewing}
+                onPreviewImport={handlePreviewSpreadsheetImport}
+                onSearchChange={setSpreadsheetImportSearchText}
+                onSelectProfile={setSelectedSpreadsheetImportProfileId}
+                onSourcePathChange={setSpreadsheetImportSourcePath}
+                preview={spreadsheetImportPreview}
+                searchText={spreadsheetImportSearchText}
+                selectedProfileId={selectedSpreadsheetImportProfileId}
+                sourcePath={spreadsheetImportSourcePath}
+                workflow={spreadsheetImportWorkflow}
+              />
+            )
           ) : null}
           {activeSection === 'changes' ? (
             <ChangesSection
@@ -1241,9 +1406,25 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               onValidateEditSession={handleValidateEditSession}
             />
           ) : null}
+          {activeSection !== 'health' && bridgeDiagnostics.length > 0 ? (
+            <DiagnosticsSection diagnostics={bridgeDiagnostics} />
+          ) : null}
         </div>
       </section>
     </main>
+  );
+}
+
+function WorkflowLoadingPanel({ label }: { label: string }) {
+  return (
+    <section aria-labelledby="workflow-loading-heading" className="panel wide-panel">
+      <div className="panel-heading">
+        <RefreshCw aria-hidden="true" size={18} />
+        <h2 id="workflow-loading-heading">{label}</h2>
+      </div>
+
+      <p className="empty-copy">Loading backend workflow data.</p>
+    </section>
   );
 }
 

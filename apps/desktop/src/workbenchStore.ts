@@ -151,6 +151,13 @@ type WorkbenchState = {
   setWorkflows: (workflows: WorkflowSummary[]) => void;
 };
 
+function resolveWorkflowLoadSection(
+  activeSection: WorkbenchSection,
+  workflowSection: WorkbenchSection
+) {
+  return activeSection === 'workflows' ? workflowSection : activeSection;
+}
+
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   activeSection: 'health',
   applyResult: null,
@@ -236,7 +243,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         : (itemsWorkflow.items[0]?.itemId ?? null);
 
       return {
-        activeSection: 'items',
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'items'),
         applyResult: null,
         changePlan: null,
         editSession: null,
@@ -343,7 +350,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         : (textWorkflow.entries[0]?.textKey ?? null);
 
       return {
-        activeSection: 'text',
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'text'),
         applyResult: null,
         changePlan: null,
         editSession: null,
@@ -362,7 +369,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         : (trainersWorkflow.trainers[0]?.trainerId ?? null);
 
       return {
-        activeSection: 'trainers',
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'trainers'),
         applyResult: null,
         changePlan: null,
         editSession: null,
@@ -381,7 +388,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         : (shopsWorkflow.shops[0]?.shopId ?? null);
 
       return {
-        activeSection: 'shops',
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'shops'),
         applyResult: null,
         changePlan: null,
         editSession: null,
@@ -400,7 +407,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         : (encountersWorkflow.tables[0]?.tableId ?? null);
 
       return {
-        activeSection: 'encounters',
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'encounters'),
         applyResult: null,
         changePlan: null,
         editSession: null,
@@ -419,7 +426,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         : (raidRewardsWorkflow.tables[0]?.tableId ?? null);
 
       return {
-        activeSection: 'raidRewards',
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'raidRewards'),
         applyResult: null,
         changePlan: null,
         editSession: null,
@@ -438,7 +445,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         : (placementWorkflow.objects[0]?.objectId ?? null);
 
       return {
-        activeSection: 'placement',
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'placement'),
         applyResult: null,
         changePlan: null,
         editSession: null,
@@ -462,7 +469,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         : (flagworkSaveWorkflow.saveBlocks[0]?.blockId ?? null);
 
       return {
-        activeSection: 'flagworkSave',
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'flagworkSave'),
         applyResult: null,
         changePlan: null,
         editSession: null,
@@ -487,7 +494,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         : (exeFsPatchWorkflow.checks[0]?.checkId ?? null);
 
       return {
-        activeSection: 'exefsPatches',
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'exefsPatches'),
         applyResult: null,
         changePlan: null,
         editSession: null,
@@ -512,7 +519,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         : (royalCandyWorkflow.checks[0]?.checkId ?? null);
 
       return {
-        activeSection: 'royalCandy',
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'royalCandy'),
         applyResult: null,
         changePlan: null,
         editSession: null,
@@ -532,7 +539,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         : (spreadsheetImportWorkflow.profiles[0]?.profileId ?? null);
 
       return {
-        activeSection: 'spreadsheetImport',
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'spreadsheetImport'),
         applyResult: null,
         changePlan: null,
         editSession: null,

@@ -69,9 +69,15 @@ One focused local run after this cache slice produced these approximate measurem
 | Repeated opened-project ExeFS load | 361 ms | 190.46 MiB |
 | Repeated opened-project Royal Candy with shared ExeFS service | 12 ms | 0.32 MiB |
 
+## Lazy Workflow Loading
+
+The desktop shell now lazy-loads workflow payloads when a user navigates directly to an unloaded workflow section. Opening or validating a project still requests only health, file graph, and workflow summaries; heavy archive-backed workflow payloads remain behind explicit per-workflow bridge calls.
+
+The UI uses the existing backend bridge contracts for lazy loads, shows a loading panel for the selected workflow section, and surfaces bridge diagnostics outside the Health page when a workflow request fails. A regression test verifies that direct section navigation triggers one backend Items workflow request, keeps the loading state visible while the request is pending, and does not steal focus if the user navigates away before the response completes.
+
 ## Next Optimization Targets
 
-1. Cache parsed read-only source data by conservative file identity and language where the same file feeds multiple workflows.
+1. Continue shared-source cache work for Items metadata, item-name text, and archive readers where the same file feeds multiple workflows.
 2. Avoid rebuilding the whole project graph for every workflow navigation action when paths are unchanged.
-3. Lazy-load heavy archives and text tables only when the selected workflow needs them.
+3. Move expensive indexing, parsing, validation, or preview planning behind explicit async/background boundaries where the current bridge blocks responsiveness.
 4. Virtualize or otherwise cap large desktop repeated lists after backend timings show which workflows produce the largest payloads.
