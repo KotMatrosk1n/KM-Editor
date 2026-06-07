@@ -278,6 +278,24 @@ describe('projectBridge', () => {
         });
       }
 
+      if (request.command === 'changePlan.apply') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            applyResult: {
+              applyId: 'apply-1',
+              diagnostics: [
+                {
+                  message: 'Applied Items change plan to the configured output root.',
+                  severity: 'info'
+                }
+              ],
+              writtenFiles: ['romfs/kmeditor/items.readmodel.json']
+            }
+          }
+        });
+      }
+
       return JSON.stringify({
         error: null,
         payload: {
@@ -309,18 +327,25 @@ describe('projectBridge', () => {
       paths: editableProjectPaths,
       session: updated.session
     });
+    const apply = await bridge.applyChangePlan({
+      changePlan: plan.changePlan,
+      paths: editableProjectPaths,
+      session: updated.session
+    });
 
     expect(commands).toEqual([
       'editSession.start',
       'items.buyPrice.update',
       'editSession.validate',
-      'changePlan.create'
+      'changePlan.create',
+      'changePlan.apply'
     ]);
     expect(updated.workflow.items[0]?.buyPrice).toBe(450);
     expect(validation.isValid).toBe(true);
     expect(plan.changePlan.writes[0]?.targetRelativePath).toBe(
       'romfs/kmeditor/items.readmodel.json'
     );
+    expect(apply.applyResult.writtenFiles).toEqual(['romfs/kmeditor/items.readmodel.json']);
   });
 
   it('turns bridge error envelopes into project bridge errors', async () => {

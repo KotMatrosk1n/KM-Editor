@@ -2,6 +2,8 @@
 
 import {
   apiErrorSchema,
+  applyChangePlanRequestSchema,
+  applyChangePlanResponseSchema,
   createChangePlanRequestSchema,
   createChangePlanResponseSchema,
   createBridgeRequestSchema,
@@ -261,6 +263,8 @@ describe('bridge contracts', () => {
     const validateResponseSchema = createBridgeResponseSchema(validateEditSessionResponseSchema);
     const changePlanRequestSchema = createBridgeRequestSchema(createChangePlanRequestSchema);
     const changePlanResponseSchema = createBridgeResponseSchema(createChangePlanResponseSchema);
+    const applyRequestSchema = createBridgeRequestSchema(applyChangePlanRequestSchema);
+    const applyResponseSchema = createBridgeResponseSchema(applyChangePlanResponseSchema);
     const editSession = {
       hasPendingChanges: true,
       pendingEdits: [
@@ -279,6 +283,29 @@ describe('bridge contracts', () => {
         }
       ],
       sessionId: 'session-1'
+    } as const;
+    const changePlan = {
+      canApply: true,
+      diagnostics: [
+        {
+          message: 'Change plan preview contains 1 target file.',
+          severity: 'info'
+        }
+      ],
+      sessionId: 'session-1',
+      writes: [
+        {
+          reason: 'Apply pending Items edit: Set Potion buy price to 450.',
+          replacesExistingOutput: false,
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/kmeditor/items.readmodel.json'
+            }
+          ],
+          targetRelativePath: 'romfs/kmeditor/items.readmodel.json'
+        }
+      ]
     } as const;
     const itemsWorkflow = {
       diagnostics: [],
@@ -397,28 +424,38 @@ describe('bridge contracts', () => {
     expect(
       changePlanResponseSchema.safeParse({
         payload: {
-          changePlan: {
-            canApply: true,
+          changePlan
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      applyRequestSchema.safeParse({
+        command: kmCommandNames.applyChangePlan,
+        payload: {
+          changePlan,
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output'
+          },
+          session: editSession
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      applyResponseSchema.safeParse({
+        payload: {
+          applyResult: {
+            applyId: 'apply-1',
             diagnostics: [
               {
-                message: 'Change plan preview contains 1 target file.',
+                message: 'Applied Items change plan to the configured output root.',
                 severity: 'info'
               }
             ],
-            sessionId: 'session-1',
-            writes: [
-              {
-                reason: 'Apply pending Items edit: Set Potion buy price to 450.',
-                replacesExistingOutput: false,
-                sources: [
-                  {
-                    layer: 'base',
-                    relativePath: 'romfs/kmeditor/items.readmodel.json'
-                  }
-                ],
-                targetRelativePath: 'romfs/kmeditor/items.readmodel.json'
-              }
-            ]
+            writtenFiles: ['romfs/kmeditor/items.readmodel.json']
           }
         }
       }).success

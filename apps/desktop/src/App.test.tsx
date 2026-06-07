@@ -11,6 +11,7 @@ describe('App', () => {
   beforeEach(() => {
     useWorkbenchStore.setState({
       activeSection: 'health',
+      applyResult: null,
       changePlan: null,
       draftPaths: {
         baseExeFsPath: '',
@@ -84,7 +85,7 @@ describe('App', () => {
     expect(screen.getByText('Base only')).toBeInTheDocument();
   });
 
-  it('starts an Items edit session, saves a pending buy price, validates it, and reviews a plan', async () => {
+  it('starts an Items edit session, saves a pending buy price, validates it, reviews a plan, and applies it', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -115,6 +116,11 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
     expect(screen.getAllByText('romfs/kmeditor/items.readmodel.json').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(screen.getByText('Applied Items change plan to the configured output root.')).toBeInTheDocument();
   });
 
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
@@ -218,6 +224,19 @@ function createMockProjectBridge(
   };
 
   return {
+    applyChangePlan: (request) =>
+      Promise.resolve({
+        applyResult: {
+          applyId: 'apply-1',
+          diagnostics: [
+            {
+              message: 'Applied Items change plan to the configured output root.',
+              severity: 'info'
+            }
+          ],
+          writtenFiles: request.changePlan.writes.map((write) => write.targetRelativePath)
+        }
+      }),
     createChangePlan: (request) =>
       Promise.resolve({
         changePlan: {

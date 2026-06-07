@@ -146,6 +146,12 @@ export const createChangePlanRequestSchema = z.strictObject({
   session: editSessionSchema
 });
 
+export const applyChangePlanRequestSchema = z.strictObject({
+  changePlan: z.lazy(() => changePlanSchema),
+  paths: projectPathsSchema,
+  session: editSessionSchema
+});
+
 export const projectFileGraphEntrySchema = z.strictObject({
   baseFile: projectFileReferenceSchema.nullable(),
   layeredFile: projectFileReferenceSchema.nullable(),
@@ -267,6 +273,16 @@ export const createChangePlanResponseSchema = z.strictObject({
   changePlan: changePlanSchema
 });
 
+export const applyResultSchema = z.strictObject({
+  applyId: z.string(),
+  diagnostics: z.array(apiDiagnosticSchema),
+  writtenFiles: z.array(z.string())
+});
+
+export const applyChangePlanResponseSchema = z.strictObject({
+  applyResult: applyResultSchema
+});
+
 export function createBridgeRequestSchema<TPayloadSchema extends ZodTypeAny>(
   payloadSchema: TPayloadSchema
 ) {
@@ -302,6 +318,9 @@ export function createBridgeResponseSchema<TPayloadSchema extends ZodTypeAny>(
 
 export type ApiDiagnostic = z.infer<typeof apiDiagnosticSchema>;
 export type ApiError = z.infer<typeof apiErrorSchema>;
+export type ApplyChangePlanRequest = z.infer<typeof applyChangePlanRequestSchema>;
+export type ApplyChangePlanResponse = z.infer<typeof applyChangePlanResponseSchema>;
+export type ApplyResult = z.infer<typeof applyResultSchema>;
 export type ChangePlan = z.infer<typeof changePlanSchema>;
 export type CreateChangePlanRequest = z.infer<typeof createChangePlanRequestSchema>;
 export type CreateChangePlanResponse = z.infer<typeof createChangePlanResponseSchema>;

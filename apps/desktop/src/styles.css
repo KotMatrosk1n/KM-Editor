@@ -314,6 +314,8 @@ h2 {
 }
 
 .metric-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 36px;
   font-weight: 800;
   line-height: 1;
@@ -648,8 +650,9 @@ h2 {
 
 .change-plan-status {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, minmax(180px, 1fr)) auto;
   gap: 12px;
+  align-items: center;
   margin-top: 16px;
 }
 
@@ -711,6 +714,25 @@ h2 {
 .change-plan-list dd {
   margin: 0;
   color: #202420;
+  font-weight: 700;
+}
+
+.written-file-list {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.written-file-list li {
+  min-width: 0;
+  padding: 10px;
+  overflow-wrap: anywhere;
+  color: #202420;
+  background: #f5f6f4;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
   font-weight: 700;
 }
 

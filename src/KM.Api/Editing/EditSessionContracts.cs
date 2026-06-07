@@ -24,6 +24,13 @@ public sealed record CreateChangePlanRequest(
 
 public sealed record CreateChangePlanResponse(ChangePlanDto ChangePlan);
 
+public sealed record ApplyChangePlanRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto Session,
+    ChangePlanDto ChangePlan);
+
+public sealed record ApplyChangePlanResponse(ApplyResultDto ApplyResult);
+
 public sealed record EditSessionDto(
     string SessionId,
     bool HasPendingChanges,

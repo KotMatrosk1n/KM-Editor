@@ -4,6 +4,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { z, type ZodTypeAny } from 'zod';
 import {
   type ApiError,
+  type ApplyChangePlanRequest,
+  type ApplyChangePlanResponse,
   type CreateChangePlanRequest,
   type CreateChangePlanResponse,
   type ListWorkflowsRequest,
@@ -23,6 +25,7 @@ import {
   type ValidateEditSessionResponse,
   type ValidateProjectRequest,
   type ValidateProjectResponse,
+  applyChangePlanResponseSchema,
   createBridgeResponseSchema,
   createChangePlanResponseSchema,
   kmCommandNames,
@@ -37,6 +40,7 @@ import {
 } from './contracts';
 
 export type ProjectBridge = {
+  applyChangePlan: (request: ApplyChangePlanRequest) => Promise<ApplyChangePlanResponse>;
   createChangePlan: (request: CreateChangePlanRequest) => Promise<CreateChangePlanResponse>;
   listWorkflows: (request: ListWorkflowsRequest) => Promise<ListWorkflowsResponse>;
   loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
@@ -76,6 +80,13 @@ export function createProjectBridge(
   transport: ProjectBridgeTransport = tauriProjectBridgeTransport
 ): ProjectBridge {
   return {
+    applyChangePlan: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.applyChangePlan,
+        request,
+        applyChangePlanResponseSchema
+      ),
     createChangePlan: (request) =>
       sendProjectBridgeRequest(
         transport,
