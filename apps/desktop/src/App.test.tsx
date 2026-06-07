@@ -69,6 +69,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', { level: 3, name: 'Text and Dialogue Map' })
     ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Trainers' })).toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
   });
 
@@ -254,6 +255,13 @@ function createMockProjectBridge(
     id: 'text',
     label: 'Text and Dialogue Map'
   };
+  const trainersWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Trainer parties, classes, battle types, and source provenance.',
+    diagnostics: [],
+    id: 'trainers',
+    label: 'Trainers'
+  };
 
   return {
     applyChangePlan: (request) =>
@@ -297,7 +305,7 @@ function createMockProjectBridge(
       }),
     listWorkflows: () =>
       Promise.resolve({
-        workflows: [itemsWorkflow.summary, textWorkflowSummary]
+        workflows: [itemsWorkflow.summary, textWorkflowSummary, trainersWorkflowSummary]
       }),
     loadItemsWorkflow: () =>
       Promise.resolve({
@@ -315,6 +323,19 @@ function createMockProjectBridge(
             totalTextEntryCount: 0
           },
           summary: textWorkflowSummary
+        }
+      }),
+    loadTrainersWorkflow: () =>
+      Promise.resolve({
+        workflow: {
+          diagnostics: [],
+          stats: {
+            sourceFileCount: 0,
+            totalPokemonCount: 0,
+            totalTrainerCount: 0
+          },
+          summary: trainersWorkflowSummary,
+          trainers: []
         }
       }),
     openProject: () =>

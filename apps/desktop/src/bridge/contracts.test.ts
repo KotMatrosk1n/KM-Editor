@@ -15,6 +15,8 @@ import {
   loadItemsWorkflowResponseSchema,
   loadTextWorkflowRequestSchema,
   loadTextWorkflowResponseSchema,
+  loadTrainersWorkflowRequestSchema,
+  loadTrainersWorkflowResponseSchema,
   openProjectRequestSchema,
   openProjectResponseSchema,
   refreshFileGraphRequestSchema,
@@ -186,6 +188,8 @@ describe('bridge contracts', () => {
     const itemsResponseSchema = createBridgeResponseSchema(loadItemsWorkflowResponseSchema);
     const textRequestSchema = createBridgeRequestSchema(loadTextWorkflowRequestSchema);
     const textResponseSchema = createBridgeResponseSchema(loadTextWorkflowResponseSchema);
+    const trainersRequestSchema = createBridgeRequestSchema(loadTrainersWorkflowRequestSchema);
+    const trainersResponseSchema = createBridgeResponseSchema(loadTrainersWorkflowResponseSchema);
     const itemsWorkflow = {
       diagnostics: [],
       editableFields: [
@@ -272,6 +276,44 @@ describe('bridge contracts', () => {
         label: 'Text and Dialogue Map'
       }
     } as const;
+    const trainersWorkflow = {
+      diagnostics: [],
+      stats: {
+        sourceFileCount: 1,
+        totalPokemonCount: 1,
+        totalTrainerCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Trainer parties, classes, battle types, and source provenance.',
+        diagnostics: [],
+        id: 'trainers',
+        label: 'Trainers'
+      },
+      trainers: [
+        {
+          battleType: 'Single',
+          location: 'Route 1',
+          name: 'Avery',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/trainers.readmodel.json',
+            sourceLayer: 'base'
+          },
+          team: [
+            {
+              heldItem: null,
+              level: 12,
+              moves: ['Scratch', 'Growl'],
+              slot: 1,
+              species: 'Grookey'
+            }
+          ],
+          trainerClass: 'Pokemon Trainer',
+          trainerId: 10
+        }
+      ]
+    } as const;
 
     expect(
       workflowsRequestSchema.safeParse({
@@ -289,7 +331,7 @@ describe('bridge contracts', () => {
     expect(
       workflowsResponseSchema.safeParse({
         payload: {
-          workflows: [itemsWorkflow.summary, textWorkflow.summary]
+          workflows: [itemsWorkflow.summary, textWorkflow.summary, trainersWorkflow.summary]
         }
       }).success
     ).toBe(true);
@@ -332,6 +374,27 @@ describe('bridge contracts', () => {
       textResponseSchema.safeParse({
         payload: {
           workflow: textWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      trainersRequestSchema.safeParse({
+        command: kmCommandNames.loadTrainersWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      trainersResponseSchema.safeParse({
+        payload: {
+          workflow: trainersWorkflow
         }
       }).success
     ).toBe(true);
