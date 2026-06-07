@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Projects;
+using KM.SwSh.Encounters;
 using KM.SwSh.Items;
 using KM.SwSh.Shops;
 using KM.SwSh.Text;
@@ -11,6 +12,7 @@ namespace KM.SwSh.Workflows;
 public sealed class SwShWorkflowService
 {
     private readonly SwShItemsWorkflowService itemsWorkflowService;
+    private readonly SwShEncountersWorkflowService encountersWorkflowService;
     private readonly SwShShopsWorkflowService shopsWorkflowService;
     private readonly SwShTextWorkflowService textWorkflowService;
     private readonly SwShTrainersWorkflowService trainersWorkflowService;
@@ -21,10 +23,12 @@ public sealed class SwShWorkflowService
         SwShItemsWorkflowService? itemsWorkflowService = null,
         SwShTextWorkflowService? textWorkflowService = null,
         SwShTrainersWorkflowService? trainersWorkflowService = null,
-        SwShShopsWorkflowService? shopsWorkflowService = null)
+        SwShShopsWorkflowService? shopsWorkflowService = null,
+        SwShEncountersWorkflowService? encountersWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
+        this.encountersWorkflowService = encountersWorkflowService ?? new SwShEncountersWorkflowService();
         this.shopsWorkflowService = shopsWorkflowService ?? new SwShShopsWorkflowService();
         this.textWorkflowService = textWorkflowService ?? new SwShTextWorkflowService();
         this.trainersWorkflowService = trainersWorkflowService ?? new SwShTrainersWorkflowService();
@@ -42,6 +46,7 @@ public sealed class SwShWorkflowService
                 textWorkflowService.CreateSummary(project),
                 trainersWorkflowService.CreateSummary(project),
                 shopsWorkflowService.CreateSummary(project),
+                encountersWorkflowService.CreateSummary(project),
             ]);
     }
 
@@ -79,5 +84,14 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return shopsWorkflowService.Load(project);
+    }
+
+    public SwShEncountersWorkflow LoadEncounters(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return encountersWorkflowService.Load(project);
     }
 }

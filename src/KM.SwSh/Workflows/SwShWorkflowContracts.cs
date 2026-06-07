@@ -10,6 +10,7 @@ public static class SwShWorkflowIds
     public const string Text = "text";
     public const string Trainers = "trainers";
     public const string Shops = "shops";
+    public const string Encounters = "encounters";
 }
 
 public enum SwShWorkflowAvailability

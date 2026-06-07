@@ -16,6 +16,7 @@ public static class KmCommandNames
     public const string LoadTextWorkflow = "text.load";
     public const string LoadTrainersWorkflow = "trainers.load";
     public const string LoadShopsWorkflow = "shops.load";
+    public const string LoadEncountersWorkflow = "encounters.load";
     public const string StartEditSession = "editSession.start";
     public const string GetEditSession = "editSession.get";
     public const string DiscardEditSession = "editSession.discard";
