@@ -30,6 +30,10 @@ import {
   type ProjectHealth,
   type ProjectPathRole,
   type ProjectPathValidation,
+  type ShopEditableField,
+  type ShopInventoryRecord,
+  type ShopRecord,
+  type ShopsWorkflow,
   type TextEditableField,
   type TextEntryRecord,
   type TextWorkflow,
@@ -79,6 +83,11 @@ const sections: Array<{
     id: 'trainers',
     label: 'Trainers',
     icon: Activity
+  },
+  {
+    id: 'shops',
+    label: 'Shops',
+    icon: ListChecks
   },
   {
     id: 'changes',
@@ -208,6 +217,7 @@ const speciesIdFieldName = 'speciesId';
 const levelFieldName = 'level';
 const heldItemIdFieldName = 'heldItemId';
 const moveFieldNames = ['move1Id', 'move2Id', 'move3Id', 'move4Id'] as const;
+const shopItemIdFieldName = 'itemId';
 
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
@@ -221,8 +231,11 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const openProject = useWorkbenchStore((state) => state.openProject);
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
+  const selectedShopId = useWorkbenchStore((state) => state.selectedShopId);
   const selectedTextKey = useWorkbenchStore((state) => state.selectedTextKey);
   const selectedTrainerId = useWorkbenchStore((state) => state.selectedTrainerId);
+  const shopSearchText = useWorkbenchStore((state) => state.shopSearchText);
+  const shopsWorkflow = useWorkbenchStore((state) => state.shopsWorkflow);
   const textSearchText = useWorkbenchStore((state) => state.textSearchText);
   const textWorkflow = useWorkbenchStore((state) => state.textWorkflow);
   const trainerSearchText = useWorkbenchStore((state) => state.trainerSearchText);
@@ -242,8 +255,11 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
+  const setSelectedShopId = useWorkbenchStore((state) => state.setSelectedShopId);
   const setSelectedTextKey = useWorkbenchStore((state) => state.setSelectedTextKey);
   const setSelectedTrainerId = useWorkbenchStore((state) => state.setSelectedTrainerId);
+  const setShopSearchText = useWorkbenchStore((state) => state.setShopSearchText);
+  const setShopsWorkflow = useWorkbenchStore((state) => state.setShopsWorkflow);
   const setTextSearchText = useWorkbenchStore((state) => state.setTextSearchText);
   const setTextWorkflow = useWorkbenchStore((state) => state.setTextWorkflow);
   const setTrainerSearchText = useWorkbenchStore((state) => state.setTrainerSearchText);
@@ -260,6 +276,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isTextUpdating, setIsTextUpdating] = useState(false);
   const [isTrainersLoading, setIsTrainersLoading] = useState(false);
   const [isTrainerUpdating, setIsTrainerUpdating] = useState(false);
+  const [isShopsLoading, setIsShopsLoading] = useState(false);
+  const [isShopUpdating, setIsShopUpdating] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -339,6 +357,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsTrainersLoading(false);
+    }
+  };
+
+  const handleOpenShopsWorkflow = async () => {
+    setIsShopsLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadShopsWorkflow({ paths: toProjectPaths(draftPaths) });
+      setShopsWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsShopsLoading(false);
     }
   };
 
@@ -428,6 +460,35 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsTrainerUpdating(false);
+    }
+  };
+
+  const handleUpdateShopInventoryItem = async (
+    shopId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => {
+    setIsShopUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateShopInventoryItem({
+        field,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        shopId,
+        slot,
+        value
+      });
+      setShopsWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsShopUpdating(false);
     }
   };
 
@@ -595,7 +656,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               isItemsLoading={isItemsLoading}
               isTextLoading={isTextLoading}
               isTrainersLoading={isTrainersLoading}
+              isShopsLoading={isShopsLoading}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
+              onOpenShopsWorkflow={handleOpenShopsWorkflow}
               onOpenTextWorkflow={handleOpenTextWorkflow}
               onOpenTrainersWorkflow={handleOpenTrainersWorkflow}
               pendingEditCount={pendingEditCount}
@@ -642,6 +705,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               searchText={trainerSearchText}
               selectedTrainerId={selectedTrainerId}
               workflow={trainersWorkflow}
+            />
+          ) : null}
+          {activeSection === 'shops' ? (
+            <ShopsSection
+              editSession={editSession}
+              isEditStarting={isEditStarting}
+              isShopUpdating={isShopUpdating}
+              onSearchChange={setShopSearchText}
+              onSelectShop={setSelectedShopId}
+              onStartEditSession={handleStartEditSession}
+              onUpdateShopInventoryItem={handleUpdateShopInventoryItem}
+              searchText={shopSearchText}
+              selectedShopId={selectedShopId}
+              workflow={shopsWorkflow}
             />
           ) : null}
           {activeSection === 'changes' ? (
@@ -769,9 +846,11 @@ function HealthSection({
 function WorkflowsSection({
   health,
   isItemsLoading,
+  isShopsLoading,
   isTextLoading,
   isTrainersLoading,
   onOpenItemsWorkflow,
+  onOpenShopsWorkflow,
   onOpenTextWorkflow,
   onOpenTrainersWorkflow,
   pendingEditCount,
@@ -779,9 +858,11 @@ function WorkflowsSection({
 }: {
   health: ProjectHealth | null;
   isItemsLoading: boolean;
+  isShopsLoading: boolean;
   isTextLoading: boolean;
   isTrainersLoading: boolean;
   onOpenItemsWorkflow: () => void;
+  onOpenShopsWorkflow: () => void;
   onOpenTextWorkflow: () => void;
   onOpenTrainersWorkflow: () => void;
   pendingEditCount: number;
@@ -802,9 +883,11 @@ function WorkflowsSection({
           const isItemsWorkflow = definition.id === 'items';
           const isTextWorkflow = definition.id === 'text';
           const isTrainersWorkflow = definition.id === 'trainers';
+          const isShopsWorkflow = definition.id === 'shops';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
+          const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
 
           return (
             <article className="workflow-row" key={definition.id}>
@@ -850,6 +933,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isTrainersLoading ? 'Loading' : 'Open Trainers'}</span>
+                  </button>
+                ) : null}
+                {isShopsWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenShops || isShopsLoading}
+                    onClick={onOpenShopsWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isShopsLoading ? 'Loading' : 'Open Shops'}</span>
                   </button>
                 ) : null}
               </div>
@@ -1744,6 +1838,310 @@ function SelectedTrainerPanel({
   );
 }
 
+function ShopsSection({
+  editSession,
+  isEditStarting,
+  isShopUpdating,
+  onSearchChange,
+  onSelectShop,
+  onStartEditSession,
+  onUpdateShopInventoryItem,
+  searchText,
+  selectedShopId,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isShopUpdating: boolean;
+  onSearchChange: (searchText: string) => void;
+  onSelectShop: (shopId: string | null) => void;
+  onStartEditSession: () => void;
+  onUpdateShopInventoryItem: (
+    shopId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => void;
+  searchText: string;
+  selectedShopId: string | null;
+  workflow: ShopsWorkflow | null;
+}) {
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const filteredShops = filterShops(workflow?.shops ?? [], searchText);
+  const selectedShop =
+    workflow?.shops.find((shop) => shop.shopId === selectedShopId) ?? filteredShops[0] ?? null;
+  const selectedInventoryItem =
+    selectedShop?.inventory.find((item) => item.slot === selectedSlot) ??
+    selectedShop?.inventory[0] ??
+    null;
+  const canEditShops = workflow?.summary.availability === 'available';
+  const pendingShopIds = getPendingShopIds(editSession);
+
+  useEffect(() => {
+    if (!selectedShop) {
+      setSelectedSlot(null);
+      return;
+    }
+
+    const hasSelectedSlot = selectedShop.inventory.some((item) => item.slot === selectedSlot);
+    if (!hasSelectedSlot) {
+      setSelectedSlot(selectedShop.inventory[0]?.slot ?? null);
+    }
+  }, [selectedShop?.inventory, selectedShop?.shopId, selectedSlot]);
+
+  return (
+    <>
+      <section aria-labelledby="shops-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <ListChecks aria-hidden="true" size={18} />
+          <h2 id="shops-heading">Shops</h2>
+        </div>
+
+        <div className="items-toolbar shops-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search shops"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search shops"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded shops"
+            value={workflow ? workflow.stats.totalShopCount.toString() : '0'}
+          />
+          <Metric
+            label="Inventory rows"
+            value={workflow ? workflow.stats.totalInventoryItemCount.toString() : '0'}
+          />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="shops-layout">
+            <div className="shops-table" role="table" aria-label="Shops">
+              <div className="shops-row shops-row-heading" role="row">
+                <span role="columnheader">ID</span>
+                <span role="columnheader">Name</span>
+                <span role="columnheader">Location</span>
+                <span role="columnheader">Currency</span>
+                <span role="columnheader">Items</span>
+                <span role="columnheader">Source</span>
+              </div>
+              {filteredShops.map((shop) => (
+                <button
+                  className={`shops-row ${
+                    selectedShop?.shopId === shop.shopId ? 'shops-row-selected' : ''
+                  } ${pendingShopIds.has(shop.shopId) ? 'shops-row-pending' : ''}`}
+                  key={shop.shopId}
+                  onClick={() => onSelectShop(shop.shopId)}
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{shop.shopId}</span>
+                  <span role="cell">{shop.name}</span>
+                  <span role="cell">{shop.location}</span>
+                  <span role="cell">{shop.currency}</span>
+                  <span role="cell">{shop.inventory.length}</span>
+                  <span role="cell">{formatSourceLayer(shop.provenance.sourceLayer)}</span>
+                </button>
+              ))}
+            </div>
+
+            <SelectedShopPanel
+              canEditShops={canEditShops}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              inventoryItem={selectedInventoryItem}
+              isEditStarting={isEditStarting}
+              isShopUpdating={isShopUpdating}
+              onSelectSlot={setSelectedSlot}
+              onStartEditSession={onStartEditSession}
+              onUpdateShopInventoryItem={onUpdateShopInventoryItem}
+              selectedSlot={selectedSlot}
+              shop={selectedShop}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Shops from Workflows to load backend shop data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedShopPanel({
+  canEditShops,
+  editSession,
+  editableFields,
+  inventoryItem,
+  isEditStarting,
+  isShopUpdating,
+  onSelectSlot,
+  onStartEditSession,
+  onUpdateShopInventoryItem,
+  selectedSlot,
+  shop
+}: {
+  canEditShops: boolean;
+  editSession: EditSession | null;
+  editableFields: ShopEditableField[];
+  inventoryItem: ShopInventoryRecord | null;
+  isEditStarting: boolean;
+  isShopUpdating: boolean;
+  onSelectSlot: (slot: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateShopInventoryItem: (
+    shopId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => void;
+  selectedSlot: number | null;
+  shop: ShopRecord | null;
+}) {
+  const [itemIdDraft, setItemIdDraft] = useState('');
+  const itemIdField = editableFields.find((field) => field.field === shopItemIdFieldName);
+
+  useEffect(() => {
+    setItemIdDraft(inventoryItem?.itemId.toString() ?? '');
+  }, [inventoryItem?.itemId, inventoryItem?.slot, shop?.shopId]);
+
+  const draftState = getIntegerDraftState(
+    itemIdDraft,
+    inventoryItem?.itemId ?? null,
+    itemIdField
+  );
+  const canSubmit =
+    editSession !== null && inventoryItem !== null && draftState.canSubmit && draftState.parsedValue !== null;
+
+  return (
+    <aside aria-label="Selected shop provenance" className="shop-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Shop</h3>
+      </div>
+
+      {shop ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Name</dt>
+              <dd>{shop.name}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{shop.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(shop.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(shop.provenance.fileState)}</dd>
+            </div>
+          </dl>
+
+          <div className="shop-edit-form">
+            <div className="shop-inventory-header">
+              <strong>Inventory</strong>
+              <select
+                aria-label="Shop inventory slot"
+                disabled={shop.inventory.length === 0}
+                onChange={(event) => onSelectSlot(Number(event.target.value))}
+                value={selectedSlot ?? ''}
+              >
+                {shop.inventory.map((item) => (
+                  <option key={item.slot} value={item.slot}>
+                    Slot {item.slot}: {item.itemName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {inventoryItem ? (
+              <>
+                <dl className="shop-inventory-detail">
+                  <div>
+                    <dt>Item</dt>
+                    <dd>{inventoryItem.itemName}</dd>
+                  </div>
+                  <div>
+                    <dt>Price</dt>
+                    <dd>{inventoryItem.price}</dd>
+                  </div>
+                  <div>
+                    <dt>Stock</dt>
+                    <dd>{inventoryItem.stockLimit ?? 'None'}</dd>
+                  </div>
+                </dl>
+
+                <div className="shop-editor-row">
+                  <label className="path-field">
+                    <span>{itemIdField?.label ?? 'Item ID'}</span>
+                    <input
+                      aria-label={itemIdField?.label ?? 'Item ID'}
+                      disabled={!canEditShops || editSession === null || isShopUpdating}
+                      max={itemIdField?.maximumValue ?? undefined}
+                      min={itemIdField?.minimumValue ?? undefined}
+                      onChange={(event) => setItemIdDraft(event.target.value)}
+                      type="number"
+                      value={itemIdDraft}
+                    />
+                  </label>
+                  {editSession ? (
+                    <button
+                      className="primary-button compact-button"
+                      disabled={!canSubmit || isShopUpdating}
+                      onClick={() =>
+                        onUpdateShopInventoryItem(
+                          shop.shopId,
+                          inventoryItem.slot,
+                          shopItemIdFieldName,
+                          draftState.parsedValue!.toString()
+                        )
+                      }
+                      type="button"
+                    >
+                      <Save aria-hidden="true" size={16} />
+                      <span>{isShopUpdating ? 'Saving' : 'Save Item'}</span>
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <p className="empty-copy">No inventory slot selected.</p>
+            )}
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditShops || isEditStarting || shop.inventory.length === 0}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No shop selected.</p>
+      )}
+    </aside>
+  );
+}
+
 function ChangesSection({
   applyResult,
   changePlan,
@@ -2049,6 +2447,31 @@ function filterTrainers(trainers: TrainerRecord[], searchText: string) {
   );
 }
 
+function filterShops(shops: ShopRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return shops;
+  }
+
+  return shops.filter((shop) =>
+    [
+      shop.shopId,
+      shop.name,
+      shop.location,
+      shop.currency,
+      shop.provenance.sourceFile,
+      ...shop.inventory.flatMap((item) => [
+        item.slot.toString(),
+        item.itemId.toString(),
+        item.itemName,
+        item.price.toString(),
+        item.stockLimit?.toString() ?? ''
+      ])
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function getEditableItemFieldValue(item: ItemRecord, field: string) {
   switch (field) {
     case buyPriceFieldName:
@@ -2129,7 +2552,7 @@ function getItemPriceDraftState(
 function getIntegerDraftState(
   draftValue: string,
   currentValue: number | null,
-  field: TrainerEditableField | undefined
+  field: ShopEditableField | TrainerEditableField | undefined
 ) {
   const normalizedValue = draftValue.trim();
   const parsedValue = /^\d+$/.test(normalizedValue)
@@ -2175,6 +2598,14 @@ function getPendingTrainerIds(editSession: EditSession | null) {
       .filter((edit) => edit.domain === 'workflow.trainers')
       .map((edit) => Number.parseInt((edit.recordId ?? '').split(':')[0] ?? '', 10))
       .filter(Number.isInteger)
+  );
+}
+
+function getPendingShopIds(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.shops' && edit.recordId)
+      .map((edit) => edit.recordId!.split('#')[0])
   );
 }
 
@@ -2247,6 +2678,7 @@ const workflowAvailabilityClassNames = {
 function formatSourceLayer(
   layer:
     | ItemRecord['provenance']['sourceLayer']
+    | ShopRecord['provenance']['sourceLayer']
     | TextEntryRecord['provenance']['sourceLayer']
     | TrainerRecord['provenance']['sourceLayer']
 ) {
@@ -2270,6 +2702,7 @@ function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][n
 function formatFileState(
   state:
     | ItemRecord['provenance']['fileState']
+    | ShopRecord['provenance']['fileState']
     | TextEntryRecord['provenance']['fileState']
     | TrainerRecord['provenance']['fileState']
 ) {

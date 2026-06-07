@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
 
@@ -28,6 +29,13 @@ public sealed record ShopRecordDto(
     IReadOnlyList<ShopInventoryRecordDto> Inventory,
     ShopProvenanceDto Provenance);
 
+public sealed record ShopEditableFieldDto(
+    string Field,
+    string Label,
+    string ValueKind,
+    int? MinimumValue,
+    int? MaximumValue);
+
 public sealed record ShopsWorkflowStatsDto(
     int TotalShopCount,
     int TotalInventoryItemCount,
@@ -36,7 +44,21 @@ public sealed record ShopsWorkflowStatsDto(
 public sealed record ShopsWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<ShopRecordDto> Shops,
+    IReadOnlyList<ShopEditableFieldDto> EditableFields,
     ShopsWorkflowStatsDto Stats,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record LoadShopsWorkflowResponse(ShopsWorkflowDto Workflow);
+
+public sealed record UpdateShopInventoryItemRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    string ShopId,
+    int Slot,
+    string Field,
+    string Value);
+
+public sealed record UpdateShopInventoryItemResponse(
+    ShopsWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);

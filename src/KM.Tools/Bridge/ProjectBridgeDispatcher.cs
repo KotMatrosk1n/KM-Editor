@@ -20,6 +20,7 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.Items;
+using KM.SwSh.Shops;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
@@ -31,6 +32,7 @@ public sealed class ProjectBridgeDispatcher
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShItemsEditSessionService itemsEditSessionService;
+    private readonly SwShShopsEditSessionService shopsEditSessionService;
     private readonly SwShTextEditSessionService textEditSessionService;
     private readonly SwShTrainersEditSessionService trainersEditSessionService;
     private readonly SwShWorkflowService swShWorkflowService;
@@ -38,12 +40,14 @@ public sealed class ProjectBridgeDispatcher
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
         SwShItemsEditSessionService? itemsEditSessionService = null,
+        SwShShopsEditSessionService? shopsEditSessionService = null,
         SwShTextEditSessionService? textEditSessionService = null,
         SwShTrainersEditSessionService? trainersEditSessionService = null,
         SwShWorkflowService? swShWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsEditSessionService = itemsEditSessionService ?? new SwShItemsEditSessionService(this.projectWorkspaceService);
+        this.shopsEditSessionService = shopsEditSessionService ?? new SwShShopsEditSessionService(this.projectWorkspaceService);
         this.textEditSessionService = textEditSessionService ?? new SwShTextEditSessionService(this.projectWorkspaceService);
         this.trainersEditSessionService = trainersEditSessionService ?? new SwShTrainersEditSessionService(this.projectWorkspaceService);
         this.swShWorkflowService = swShWorkflowService ?? new SwShWorkflowService(this.projectWorkspaceService);
@@ -74,6 +78,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadTrainersWorkflow => DispatchLoadTrainersWorkflow(requestJson),
                 KmCommandNames.UpdateTrainerField => DispatchUpdateTrainerField(requestJson),
                 KmCommandNames.LoadShopsWorkflow => DispatchLoadShopsWorkflow(requestJson),
+                KmCommandNames.UpdateShopInventoryItem => DispatchUpdateShopInventoryItem(requestJson),
                 KmCommandNames.LoadEncountersWorkflow => DispatchLoadEncountersWorkflow(requestJson),
                 KmCommandNames.LoadRaidRewardsWorkflow => DispatchLoadRaidRewardsWorkflow(requestJson),
                 KmCommandNames.LoadPlacementWorkflow => DispatchLoadPlacementWorkflow(requestJson),
@@ -207,6 +212,24 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchUpdateShopInventoryItem(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateShopInventoryItemRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = shopsEditSessionService.UpdateInventoryItem(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            request.Payload.ShopId,
+            request.Payload.Slot,
+            request.Payload.Field,
+            request.Payload.Value);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadEncountersWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadEncountersWorkflowRequest>(requestJson);
@@ -305,6 +328,7 @@ public sealed class ProjectBridgeDispatcher
         var validation = GetEditSessionDomain(session) switch
         {
             EditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
+            EditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
             EditSessionDomain.Text => textEditSessionService.Validate(paths, session),
             EditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
             EditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
@@ -323,6 +347,7 @@ public sealed class ProjectBridgeDispatcher
         var changePlan = GetEditSessionDomain(session) switch
         {
             EditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Text => textEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
@@ -342,6 +367,7 @@ public sealed class ProjectBridgeDispatcher
         var applyResult = GetEditSessionDomain(session) switch
         {
             EditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Text => textEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
@@ -366,6 +392,7 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.items"] => EditSessionDomain.Items,
             ["workflow.text"] => EditSessionDomain.Text,
             ["workflow.trainers"] => EditSessionDomain.Trainers,
+            ["workflow.shops"] => EditSessionDomain.Shops,
             _ => EditSessionDomain.Mixed,
         };
     }
@@ -447,6 +474,7 @@ public sealed class ProjectBridgeDispatcher
         Items,
         Text,
         Trainers,
+        Shops,
         Mixed,
     }
 }

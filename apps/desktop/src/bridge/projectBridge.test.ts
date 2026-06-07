@@ -333,6 +333,15 @@ describe('projectBridge', () => {
           payload: {
             workflow: {
               diagnostics: [],
+              editableFields: [
+                {
+                  field: 'itemId',
+                  label: 'Item ID',
+                  maximumValue: 65535,
+                  minimumValue: 0,
+                  valueKind: 'integer'
+                }
+              ],
               shops: [
                 {
                   currency: 'Money',
@@ -789,6 +798,7 @@ describe('projectBridge', () => {
     expect(text.workflow.editableFields[0]?.field).toBe('value');
     expect(text.workflow.entries[0]?.label).toBe('story #0');
     expect(trainers.workflow.trainers[0]?.name).toBe('Avery');
+    expect(shops.workflow.editableFields[0]?.field).toBe('itemId');
     expect(shops.workflow.shops[0]?.name).toBe('Route 1 Mart');
     expect(encounters.workflow.tables[0]?.slots[0]?.species).toBe('Skwovet');
     expect(raidRewards.workflow.tables[0]?.rewards[0]?.itemName).toBe('Exp. Candy L');
@@ -1109,6 +1119,98 @@ describe('projectBridge', () => {
 
     expect(updated.workflow.trainers[0]?.team[0]?.level).toBe(25);
     expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.trainers');
+  });
+
+  it('runs shop inventory update command', async () => {
+    const bridge = createProjectBridge(async (requestJson) => {
+      const request = JSON.parse(requestJson) as { command: string };
+
+      expect(request.command).toBe('shops.inventory.update');
+
+      return JSON.stringify({
+        error: null,
+        payload: {
+          diagnostics: [],
+          session: {
+            hasPendingChanges: true,
+            pendingEdits: [
+              {
+                domain: 'workflow.shops',
+                field: 'itemId',
+                newValue: '2',
+                recordId: 'single:1F3FF031A3A24490#1',
+                sources: [
+                  {
+                    layer: 'base',
+                    relativePath: 'romfs/bin/app/shop/shop_data.bin'
+                  }
+                ],
+                summary: 'Set Poke Mart slot 1 item ID to 2.'
+              }
+            ],
+            sessionId: 'session-1'
+          },
+          workflow: {
+            diagnostics: [],
+            editableFields: [
+              {
+                field: 'itemId',
+                label: 'Item ID',
+                maximumValue: 65535,
+                minimumValue: 0,
+                valueKind: 'integer'
+              }
+            ],
+            shops: [
+              {
+                currency: 'Money',
+                inventory: [
+                  {
+                    itemId: 2,
+                    itemName: 'Antidote',
+                    price: 200,
+                    slot: 1,
+                    stockLimit: null
+                  }
+                ],
+                location: 'Poke Mart',
+                name: 'Poke Mart',
+                provenance: {
+                  fileState: 'baseOnly',
+                  sourceFile: 'romfs/bin/app/shop/shop_data.bin',
+                  sourceLayer: 'base'
+                },
+                shopId: 'single:1F3FF031A3A24490'
+              }
+            ],
+            stats: {
+              sourceFileCount: 1,
+              totalInventoryItemCount: 1,
+              totalShopCount: 1
+            },
+            summary: {
+              availability: 'available',
+              description: 'Shop inventories, item metadata, and source provenance.',
+              diagnostics: [],
+              id: 'shops',
+              label: 'Shops'
+            }
+          }
+        }
+      });
+    });
+
+    const updated = await bridge.updateShopInventoryItem({
+      field: 'itemId',
+      paths: editableProjectPaths,
+      session: null,
+      shopId: 'single:1F3FF031A3A24490',
+      slot: 1,
+      value: '2'
+    });
+
+    expect(updated.workflow.shops[0]?.inventory[0]?.itemId).toBe(2);
+    expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.shops');
   });
 
   it('turns bridge error envelopes into project bridge errors', async () => {

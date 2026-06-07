@@ -144,6 +144,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateShopInventoryItemResponse ToDto(SwShShopsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateShopInventoryItemResponse(
+            ToShopsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(SwShEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -198,6 +208,7 @@ public static class SwShBridgeMapper
         return new ShopsWorkflowDto(
             ToDto(workflow.Summary),
             workflow.Shops.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
             new ShopsWorkflowStatsDto(
                 workflow.Stats.TotalShopCount,
                 workflow.Stats.TotalInventoryItemCount,
@@ -445,6 +456,16 @@ public static class SwShBridgeMapper
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static ShopEditableFieldDto ToDto(SwShShopEditableField field)
+    {
+        return new ShopEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue);
     }
 
     private static EncounterTableRecordDto ToDto(SwShEncounterTableRecord table)

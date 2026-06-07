@@ -7,6 +7,7 @@ import {
   type ItemsWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
+  type ShopsWorkflow,
   type TextWorkflow,
   type TrainersWorkflow,
   type WorkflowSummary
@@ -32,8 +33,11 @@ describe('App', () => {
       openProject: null,
       projectStatus: 'idle',
       selectedItemId: null,
+      selectedShopId: null,
       selectedTextKey: null,
       selectedTrainerId: null,
+      shopSearchText: '',
+      shopsWorkflow: null,
       textSearchText: '',
       textWorkflow: null,
       trainerSearchText: '',
@@ -249,6 +253,50 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Trainers change plan to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
+  it('opens Shops, edits an inventory item, reviews a shop plan, and applies it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Shops' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Shops' })).toBeInTheDocument();
+    expect(screen.getAllByText('Poke Mart').length).toBeGreaterThan(0);
+    expect(screen.getByRole('option', { name: 'Slot 1: Potion' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const itemIdInput = screen.getByLabelText('Item ID');
+    await user.clear(itemIdInput);
+    await user.type(itemIdInput, '2');
+    await user.click(screen.getByRole('button', { name: 'Save Item' }));
+
+    expect(await screen.findByDisplayValue('2')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Poke Mart slot 1 item ID to 2.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending shop change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(screen.getAllByText('romfs/bin/app/shop/shop_data.bin').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Applied Shops change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
   });
 
@@ -558,10 +606,57 @@ function createMockProjectBridge(
   };
   const shopsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'Shop inventories, prices, stock limits, and source provenance.',
+    description: 'Shop inventories, item metadata, and source provenance.',
     diagnostics: [],
     id: 'shops',
     label: 'Shops'
+  };
+  const shopsWorkflow: ShopsWorkflow = {
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'itemId',
+        label: 'Item ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        valueKind: 'integer'
+      }
+    ],
+    shops: [
+      {
+        currency: 'Money',
+        inventory: [
+          {
+            itemId: 1,
+            itemName: 'Potion',
+            price: 300,
+            slot: 1,
+            stockLimit: null
+          },
+          {
+            itemId: 2,
+            itemName: 'Antidote',
+            price: 200,
+            slot: 2,
+            stockLimit: null
+          }
+        ],
+        location: 'Poke Mart',
+        name: 'Poke Mart',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/app/shop/shop_data.bin',
+          sourceLayer: 'base'
+        },
+        shopId: 'single:1F3FF031A3A24490'
+      }
+    ],
+    stats: {
+      sourceFileCount: 1,
+      totalInventoryItemCount: 2,
+      totalShopCount: 1
+    },
+    summary: shopsWorkflowSummary
   };
   const encountersWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
@@ -667,6 +762,20 @@ function createMockProjectBridge(
                       targetRelativePath: 'romfs/bin/trainer/trainer_poke/trainer_010.bin'
                     }
                   ]
+                : request.session.pendingEdits[0]?.domain === 'workflow.shops'
+                  ? [
+                      {
+                        reason: 'Apply pending Shops edit: Set Poke Mart slot 1 item ID to 2.',
+                        replacesExistingOutput: false,
+                        sources: [
+                          {
+                            layer: 'base',
+                            relativePath: 'romfs/bin/app/shop/shop_data.bin'
+                          }
+                        ],
+                        targetRelativePath: 'romfs/bin/app/shop/shop_data.bin'
+                      }
+                    ]
               : [
                   {
                     reason: 'Apply pending Items edit: Set Potion buy price to 450.',
@@ -802,16 +911,7 @@ function createMockProjectBridge(
       }),
     loadShopsWorkflow: () =>
       Promise.resolve({
-        workflow: {
-          diagnostics: [],
-          shops: [],
-          stats: {
-            sourceFileCount: 0,
-            totalInventoryItemCount: 0,
-            totalShopCount: 0
-          },
-          summary: shopsWorkflowSummary
-        }
+        workflow: shopsWorkflow
       }),
     openProject: () =>
       Promise.resolve({
@@ -948,6 +1048,49 @@ function createMockProjectBridge(
                   )
                 }
               : trainer
+            )
+        }
+      }),
+    updateShopInventoryItem: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.shops',
+              field: request.field,
+              newValue: request.value,
+              recordId: `${request.shopId}#${request.slot}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/app/shop/shop_data.bin'
+                }
+              ],
+              summary: `Set Poke Mart slot ${request.slot} item ID to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...shopsWorkflow,
+          shops: shopsWorkflow.shops.map((shop) =>
+            shop.shopId === request.shopId
+              ? {
+                  ...shop,
+                  inventory: shop.inventory.map((item) =>
+                    item.slot === request.slot
+                      ? {
+                          ...item,
+                          itemId: Number.parseInt(request.value, 10),
+                          itemName: `Item ${request.value}`,
+                          price: 0
+                        }
+                      : item
+                  )
+                }
+              : shop
           )
         }
       }),
@@ -977,6 +1120,10 @@ function getApplyMessage(targetRelativePath: string) {
     return 'Applied Trainers change plan to the configured LayeredFS output root.';
   }
 
+  if (targetRelativePath.includes('/shop/')) {
+    return 'Applied Shops change plan to the configured LayeredFS output root.';
+  }
+
   return 'Applied Items change plan to the configured LayeredFS output root.';
 }
 
@@ -986,6 +1133,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending text change is valid.';
     case 'workflow.trainers':
       return 'Pending trainer change is valid.';
+    case 'workflow.shops':
+      return 'Pending shop change is valid.';
     default:
       return 'Pending item change is valid.';
   }

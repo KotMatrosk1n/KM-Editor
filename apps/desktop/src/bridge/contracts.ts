@@ -14,6 +14,7 @@ export const kmCommandNameValues = [
   'trainers.load',
   'trainers.field.update',
   'shops.load',
+  'shops.inventory.update',
   'encounters.load',
   'raidRewards.load',
   'placement.load',
@@ -44,6 +45,7 @@ export const kmCommandNames = {
   loadTrainersWorkflow: 'trainers.load',
   updateTrainerField: 'trainers.field.update',
   loadShopsWorkflow: 'shops.load',
+  updateShopInventoryItem: 'shops.inventory.update',
   loadEncountersWorkflow: 'encounters.load',
   loadRaidRewardsWorkflow: 'raidRewards.load',
   loadPlacementWorkflow: 'placement.load',
@@ -435,6 +437,14 @@ export const shopInventoryRecordSchema = z.strictObject({
   stockLimit: z.number().int().nonnegative().nullable()
 });
 
+export const shopEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  valueKind: z.string()
+});
+
 export const shopRecordSchema = z.strictObject({
   currency: z.string(),
   inventory: z.array(shopInventoryRecordSchema),
@@ -452,6 +462,7 @@ export const shopsWorkflowStatsSchema = z.strictObject({
 
 export const shopsWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(shopEditableFieldSchema),
   shops: z.array(shopRecordSchema),
   stats: shopsWorkflowStatsSchema,
   summary: workflowSummarySchema
@@ -778,6 +789,21 @@ export const updateTrainerFieldResponseSchema = z.strictObject({
   workflow: trainersWorkflowSchema
 });
 
+export const updateShopInventoryItemRequestSchema = z.strictObject({
+  field: z.string(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  shopId: z.string(),
+  slot: z.number().int().nonnegative(),
+  value: z.string()
+});
+
+export const updateShopInventoryItemResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: shopsWorkflowSchema
+});
+
 export const startEditSessionResponseSchema = z.strictObject({
   session: editSessionSchema
 });
@@ -868,6 +894,9 @@ export type TrainerEditableField = z.infer<typeof trainerEditableFieldSchema>;
 export type TrainerPokemonRecord = z.infer<typeof trainerPokemonRecordSchema>;
 export type TrainerRecord = z.infer<typeof trainerRecordSchema>;
 export type TrainersWorkflow = z.infer<typeof trainersWorkflowSchema>;
+export type ShopEditableField = z.infer<typeof shopEditableFieldSchema>;
+export type ShopInventoryRecord = z.infer<typeof shopInventoryRecordSchema>;
+export type ShopRecord = z.infer<typeof shopRecordSchema>;
 export type ShopsWorkflow = z.infer<typeof shopsWorkflowSchema>;
 export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;
 export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
@@ -920,6 +949,12 @@ export type UpdateTextEntryRequest = z.infer<typeof updateTextEntryRequestSchema
 export type UpdateTextEntryResponse = z.infer<typeof updateTextEntryResponseSchema>;
 export type UpdateTrainerFieldRequest = z.infer<typeof updateTrainerFieldRequestSchema>;
 export type UpdateTrainerFieldResponse = z.infer<typeof updateTrainerFieldResponseSchema>;
+export type UpdateShopInventoryItemRequest = z.infer<
+  typeof updateShopInventoryItemRequestSchema
+>;
+export type UpdateShopInventoryItemResponse = z.infer<
+  typeof updateShopInventoryItemResponseSchema
+>;
 export type ValidateEditSessionRequest = z.infer<typeof validateEditSessionRequestSchema>;
 export type ValidateEditSessionResponse = z.infer<typeof validateEditSessionResponseSchema>;
 export type ValidateProjectRequest = z.infer<typeof validateProjectRequestSchema>;

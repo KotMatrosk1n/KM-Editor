@@ -3,16 +3,55 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Workflows;
-using System.Text.Json;
+using System.Globalization;
 
 namespace KM.SwSh.Shops;
 
 public sealed class SwShShopsWorkflowService
 {
-    public const string ShopsReadModelPath = "romfs/kmeditor/shops.readmodel.json";
+    public const string ItemIdField = "itemId";
+    public const int MinimumItemId = 0;
+    public const int MaximumItemId = 65_535;
+    public const string ShopDataPath = "romfs/bin/app/shop/shop_data.bin";
 
-    private static readonly JsonSerializerOptions ReadModelJsonOptions = new(JsonSerializerDefaults.Web);
+    private const string ShopsEditDomain = "workflow.shops";
+
+    private static readonly IReadOnlyList<SwShShopEditableField> EditableFields =
+    [
+        new SwShShopEditableField(
+            ItemIdField,
+            "Item ID",
+            "integer",
+            MinimumItemId,
+            MaximumItemId),
+    ];
+
+    private static readonly IReadOnlyDictionary<ulong, string> KnownSingleShopNames = new Dictionary<ulong, string>
+    {
+        [0x1F3FF031A3A24490] = "Poke Mart [0 Badges, Before Catching Tutorial]",
+        [0x8E308F85B43038B4] = "Motostoke [Upper Tier, TMs]",
+        [0x8E309085B4303A67] = "Hammerlocke [West, TMs]",
+        [0x8E309185B4303C1A] = "Hammerlocke [East, TMs]",
+        [0x8E309285B4303DCD] = "Wyndon [North, TMs]",
+        [0x3FD7A44219BF30BB] = "Hammerlocke [South, BP Shop]",
+        [0xF49C86F8683842BF] = "Max Lair [Dynite Ore Trader]",
+    };
+
+    private static readonly IReadOnlyDictionary<ulong, string> KnownMultiShopNames = new Dictionary<ulong, string>
+    {
+        [0x66CA73B2966BB871] = "Poke Mart Inventories [0-8 Badges]",
+        [0x5870BD165650F18C] = "Fields of Honor [Watt Trader, 0-8 Badges]",
+    };
+
+    private readonly SwShItemsWorkflowService itemsWorkflowService;
+
+    public SwShShopsWorkflowService(SwShItemsWorkflowService? itemsWorkflowService = null)
+    {
+        this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
+    }
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
@@ -42,88 +81,308 @@ public sealed class SwShShopsWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), sourceFileCount: 0, diagnostics);
         }
 
-        var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
-            string.Equals(entry.RelativePath, ShopsReadModelPath, StringComparison.OrdinalIgnoreCase));
-
-        if (graphEntry is null)
+        var shopDataSource = ResolveShopDataSource(project);
+        if (shopDataSource is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
-                "Shops data is not available for this project yet.",
-                expected: ShopsReadModelPath));
-            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), diagnostics);
+                "Shops data is not available for this project.",
+                expected: ShopDataPath));
+            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), sourceFileCount: 0, diagnostics);
         }
 
-        var sourcePath = ResolveSourcePath(project.Paths, graphEntry);
-        if (sourcePath is null || !File.Exists(sourcePath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Shops data source could not be resolved from the project graph.",
-                file: graphEntry.RelativePath,
-                expected: "Readable Shops read model"));
-            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), diagnostics);
-        }
+        var itemLookup = CreateItemLookup(project, diagnostics);
 
         try
         {
-            using var stream = File.OpenRead(sourcePath);
-            var readModel = JsonSerializer.Deserialize<ShopsReadModel>(stream, ReadModelJsonOptions);
-            var provenance = CreateProvenance(graphEntry);
-            var shops = readModel?.Shops is null
-                ? Array.Empty<SwShShopRecord>()
-                : readModel.Shops
-                    .OrderBy(shop => shop.ShopId, StringComparer.Ordinal)
-                    .Select(shop => ToShopRecord(shop, provenance))
-                    .ToArray();
+            var shopData = SwShShopDataFile.Parse(File.ReadAllBytes(shopDataSource.AbsolutePath));
+            var provenance = CreateProvenance(shopDataSource.GraphEntry);
+            var shops = FlattenShops(shopData, itemLookup, provenance);
 
-            foreach (var duplicateGroup in shops.GroupBy(shop => shop.ShopId).Where(group => group.Count() > 1))
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"Shop id '{duplicateGroup.Key}' appears more than once in the Shops read model.",
-                    file: graphEntry.RelativePath,
-                    expected: "Unique shop ids"));
-            }
-
-            return CreateWorkflow(summary, shops, diagnostics);
+            return CreateWorkflow(summary, shops, sourceFileCount: 1, diagnostics);
         }
-        catch (JsonException exception)
+        catch (InvalidDataException exception)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Shops data source is not valid JSON: {exception.Message}",
-                file: graphEntry.RelativePath,
-                expected: "Sanitized Shops read model JSON"));
-            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), diagnostics);
+                $"Shops data source is not a supported Sword/Shield shop table: {exception.Message}",
+                file: shopDataSource.GraphEntry.RelativePath,
+                expected: "Sword/Shield shop_data.bin"));
+            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), sourceFileCount: 1, diagnostics);
         }
         catch (IOException exception)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 $"Shops data source could not be read: {exception.Message}",
-                file: graphEntry.RelativePath,
-                expected: "Readable Shops read model"));
-            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), diagnostics);
+                file: shopDataSource.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield shop_data.bin"));
+            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), sourceFileCount: 1, diagnostics);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Shops data source could not be read: {exception.Message}",
+                file: shopDataSource.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield shop_data.bin"));
+            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), sourceFileCount: 1, diagnostics);
         }
     }
 
-    private static SwShShopsWorkflow CreateWorkflow(
+    internal static bool TryParseShopId(
+        string? shopId,
+        out SwShShopKind kind,
+        out ulong hash,
+        out int inventoryIndex)
+    {
+        kind = SwShShopKind.Single;
+        hash = 0;
+        inventoryIndex = 0;
+
+        var parts = shopId?.Split(':') ?? [];
+        if (parts.Length == 2
+            && string.Equals(parts[0], "single", StringComparison.Ordinal)
+            && ulong.TryParse(parts[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out hash))
+        {
+            return true;
+        }
+
+        if (parts.Length == 3
+            && string.Equals(parts[0], "multi", StringComparison.Ordinal)
+            && ulong.TryParse(parts[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out hash)
+            && int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out inventoryIndex)
+            && inventoryIndex >= 0)
+        {
+            kind = SwShShopKind.Multi;
+            return true;
+        }
+
+        return false;
+    }
+
+    internal static bool IsEditableField(string? field)
+    {
+        return string.Equals(field, ItemIdField, StringComparison.Ordinal);
+    }
+
+    internal static WorkflowFileSource? ResolveShopDataSource(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        return ResolveWorkflowFile(project, ShopDataPath);
+    }
+
+    internal static WorkflowFileSource? ResolveWorkflowFile(OpenedProject project, string relativePath)
+    {
+        var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
+            string.Equals(entry.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
+
+        if (graphEntry is null)
+        {
+            return null;
+        }
+
+        var sourcePath = ResolveSourcePath(project.Paths, graphEntry);
+
+        return sourcePath is not null && File.Exists(sourcePath)
+            ? new WorkflowFileSource(graphEntry, sourcePath)
+            : null;
+    }
+
+    internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(targetRelativePath);
+
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath) || Path.IsPathRooted(targetRelativePath))
+        {
+            return null;
+        }
+
+        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
+        var targetPath = Path.GetFullPath(Path.Combine(
+            outputRoot,
+            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var outputRootWithSeparator = outputRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? outputRoot
+            : outputRoot + Path.DirectorySeparatorChar;
+
+        return targetPath.StartsWith(outputRootWithSeparator, StringComparison.OrdinalIgnoreCase)
+            ? targetPath
+            : null;
+    }
+
+    internal static string CreateShopId(SwShShopKind kind, ulong hash, int inventoryIndex)
+    {
+        return kind == SwShShopKind.Single
+            ? $"single:{hash:X16}"
+            : $"multi:{hash:X16}:{inventoryIndex.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    internal static string CreateInventoryRecordId(string shopId, int slot)
+    {
+        return $"{shopId}#{slot.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    internal static bool TryParseInventoryRecordId(string? recordId, out string shopId, out int slot)
+    {
+        shopId = string.Empty;
+        slot = 0;
+
+        var separatorIndex = recordId?.LastIndexOf('#') ?? -1;
+        if (separatorIndex <= 0 || separatorIndex >= recordId!.Length - 1)
+        {
+            return false;
+        }
+
+        shopId = recordId[..separatorIndex];
+        return int.TryParse(recordId[(separatorIndex + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out slot)
+            && slot >= 1;
+    }
+
+    private SwShShopsWorkflow CreateWorkflow(
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShShopRecord> shops,
+        int sourceFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         return new SwShShopsWorkflow(
             summary,
             shops,
+            EditableFields,
             new SwShShopsWorkflowStats(
                 shops.Count,
                 shops.Sum(shop => shop.Inventory.Count),
-                shops.Count > 0 ? 1 : 0),
+                sourceFileCount),
             diagnostics);
+    }
+
+    private IReadOnlyDictionary<int, SwShItemRecord> CreateItemLookup(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var itemsWorkflow = itemsWorkflowService.Load(project);
+        if (itemsWorkflow.Items.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Item metadata is not available; shop inventory rows will use item ID fallback labels and zero prices.",
+                expected: SwShItemsWorkflowService.ItemDataPath));
+        }
+
+        return itemsWorkflow.Items
+            .GroupBy(item => item.ItemId)
+            .ToDictionary(group => group.Key, group => group.First());
+    }
+
+    private static SwShShopRecord[] FlattenShops(
+        SwShShopDataFile shopData,
+        IReadOnlyDictionary<int, SwShItemRecord> itemLookup,
+        SwShShopProvenance provenance)
+    {
+        var shops = new List<SwShShopRecord>();
+
+        foreach (var shop in shopData.SingleShops.OrderBy(shop => shop.Hash))
+        {
+            var name = FormatSingleShopName(shop.Hash);
+            shops.Add(ToShopRecord(
+                CreateShopId(SwShShopKind.Single, shop.Hash, inventoryIndex: 0),
+                name,
+                shop.Inventory,
+                itemLookup,
+                provenance));
+        }
+
+        foreach (var shop in shopData.MultiShops.OrderBy(shop => shop.Hash))
+        {
+            var name = FormatMultiShopName(shop.Hash);
+            for (var inventoryIndex = 0; inventoryIndex < shop.Inventories.Count; inventoryIndex++)
+            {
+                shops.Add(ToShopRecord(
+                    CreateShopId(SwShShopKind.Multi, shop.Hash, inventoryIndex),
+                    $"{name} #{inventoryIndex + 1}",
+                    shop.Inventories[inventoryIndex],
+                    itemLookup,
+                    provenance));
+            }
+        }
+
+        return shops.ToArray();
+    }
+
+    private static SwShShopRecord ToShopRecord(
+        string shopId,
+        string name,
+        SwShShopInventory inventory,
+        IReadOnlyDictionary<int, SwShItemRecord> itemLookup,
+        SwShShopProvenance provenance)
+    {
+        return new SwShShopRecord(
+            shopId,
+            name,
+            FormatLocation(name),
+            FormatCurrency(name),
+            inventory.Items
+                .Select((itemId, index) => ToInventoryRecord(index, itemId, itemLookup))
+                .ToArray(),
+            provenance);
+    }
+
+    private static SwShShopInventoryRecord ToInventoryRecord(
+        int index,
+        int itemId,
+        IReadOnlyDictionary<int, SwShItemRecord> itemLookup)
+    {
+        return itemLookup.TryGetValue(itemId, out var item)
+            ? new SwShShopInventoryRecord(index + 1, itemId, item.Name, item.BuyPrice, StockLimit: null)
+            : new SwShShopInventoryRecord(index + 1, itemId, $"Item {itemId}", Price: 0, StockLimit: null);
+    }
+
+    private static string FormatSingleShopName(ulong hash)
+    {
+        return KnownSingleShopNames.TryGetValue(hash, out var name)
+            ? name
+            : $"Single Shop 0x{hash:X16}";
+    }
+
+    private static string FormatMultiShopName(ulong hash)
+    {
+        return KnownMultiShopNames.TryGetValue(hash, out var name)
+            ? name
+            : $"Multi Shop 0x{hash:X16}";
+    }
+
+    private static string FormatLocation(string name)
+    {
+        var bracketIndex = name.IndexOf('[', StringComparison.Ordinal);
+        return bracketIndex > 0
+            ? name[..bracketIndex].Trim()
+            : name;
+    }
+
+    private static string FormatCurrency(string name)
+    {
+        if (name.Contains("Watt", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Watts";
+        }
+
+        if (name.Contains("BP Shop", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Battle Tower", StringComparison.OrdinalIgnoreCase))
+        {
+            return "BP";
+        }
+
+        if (name.Contains("Dynite", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Dynite Ore";
+        }
+
+        return "Money";
     }
 
     private static string? ResolveSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
@@ -162,32 +421,6 @@ public sealed class SwShShopsWorkflowService
         return new SwShShopProvenance(entry.RelativePath, sourceLayer, entry.State);
     }
 
-    private static SwShShopRecord ToShopRecord(
-        ShopReadModelRecord shop,
-        SwShShopProvenance provenance)
-    {
-        return new SwShShopRecord(
-            shop.ShopId,
-            shop.Name,
-            shop.Location,
-            shop.Currency,
-            (shop.Inventory ?? Array.Empty<ShopInventoryReadModelRecord>())
-                .OrderBy(item => item.Slot)
-                .Select(ToShopInventoryRecord)
-                .ToArray(),
-            provenance);
-    }
-
-    private static SwShShopInventoryRecord ToShopInventoryRecord(ShopInventoryReadModelRecord item)
-    {
-        return new SwShShopInventoryRecord(
-            item.Slot,
-            item.ItemId,
-            item.ItemName,
-            item.Price,
-            item.StockLimit);
-    }
-
     private static SwShWorkflowSummary CreateSummary(
         SwShWorkflowAvailability availability,
         params ValidationDiagnostic[] diagnostics)
@@ -195,7 +428,7 @@ public sealed class SwShShopsWorkflowService
         return new SwShWorkflowSummary(
             SwShWorkflowIds.Shops,
             "Shops",
-            "Shop inventories, prices, stock limits, and source provenance.",
+            "Shop inventories, item metadata, and source provenance.",
             availability,
             diagnostics);
     }
@@ -210,25 +443,11 @@ public sealed class SwShShopsWorkflowService
             severity,
             message,
             File: file,
-            Domain: "workflow.shops",
+            Domain: ShopsEditDomain,
             Expected: expected);
     }
 
-    private sealed record ShopsReadModel(
-        int SchemaVersion,
-        IReadOnlyList<ShopReadModelRecord>? Shops);
-
-    private sealed record ShopReadModelRecord(
-        string ShopId,
-        string Name,
-        string Location,
-        string Currency,
-        IReadOnlyList<ShopInventoryReadModelRecord>? Inventory);
-
-    private sealed record ShopInventoryReadModelRecord(
-        int Slot,
-        int ItemId,
-        string ItemName,
-        int Price,
-        int? StockLimit);
+    internal sealed record WorkflowFileSource(
+        ProjectFileGraphEntry GraphEntry,
+        string AbsolutePath);
 }

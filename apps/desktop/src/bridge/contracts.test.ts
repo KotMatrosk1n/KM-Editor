@@ -41,6 +41,8 @@ import {
   startEditSessionResponseSchema,
   updateItemFieldRequestSchema,
   updateItemFieldResponseSchema,
+  updateShopInventoryItemRequestSchema,
+  updateShopInventoryItemResponseSchema,
   updateTextEntryRequestSchema,
   updateTextEntryResponseSchema,
   updateTrainerFieldRequestSchema,
@@ -422,6 +424,15 @@ describe('bridge contracts', () => {
     } as const;
     const shopsWorkflow = {
       diagnostics: [],
+      editableFields: [
+        {
+          field: 'itemId',
+          label: 'Item ID',
+          maximumValue: 65535,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
       shops: [
         {
           currency: 'Money',
@@ -990,6 +1001,12 @@ describe('bridge contracts', () => {
     const updateTextResponseSchema = createBridgeResponseSchema(updateTextEntryResponseSchema);
     const updateTrainerRequestSchema = createBridgeRequestSchema(updateTrainerFieldRequestSchema);
     const updateTrainerResponseSchema = createBridgeResponseSchema(updateTrainerFieldResponseSchema);
+    const updateShopRequestSchema = createBridgeRequestSchema(
+      updateShopInventoryItemRequestSchema
+    );
+    const updateShopResponseSchema = createBridgeResponseSchema(
+      updateShopInventoryItemResponseSchema
+    );
     const validateRequestSchema = createBridgeRequestSchema(validateEditSessionRequestSchema);
     const validateResponseSchema = createBridgeResponseSchema(validateEditSessionResponseSchema);
     const changePlanRequestSchema = createBridgeRequestSchema(createChangePlanRequestSchema);
@@ -1248,6 +1265,71 @@ describe('bridge contracts', () => {
         }
       ]
     } as const;
+    const shopSession = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.shops',
+          field: 'itemId',
+          newValue: '2',
+          recordId: 'single:1F3FF031A3A24490#1',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/bin/app/shop/shop_data.bin'
+            }
+          ],
+          summary: 'Set Poke Mart slot 1 item ID to 2.'
+        }
+      ],
+      sessionId: 'session-1'
+    } as const;
+    const shopsWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'itemId',
+          label: 'Item ID',
+          maximumValue: 65535,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
+      shops: [
+        {
+          currency: 'Money',
+          inventory: [
+            {
+              itemId: 2,
+              itemName: 'Antidote',
+              price: 200,
+              slot: 1,
+              stockLimit: null
+            }
+          ],
+          location: 'Poke Mart',
+          name: 'Poke Mart',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/app/shop/shop_data.bin',
+            sourceLayer: 'base'
+          },
+          shopId: 'single:1F3FF031A3A24490'
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalInventoryItemCount: 1,
+        totalShopCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Shop inventories, item metadata, and source provenance.',
+        diagnostics: [],
+        id: 'shops',
+        label: 'Shops'
+      }
+    } as const;
 
     expect(
       startRequestSchema.safeParse({
@@ -1341,6 +1423,34 @@ describe('bridge contracts', () => {
           diagnostics: [],
           session: trainerSession,
           workflow: trainersWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateShopRequestSchema.safeParse({
+        command: kmCommandNames.updateShopInventoryItem,
+        payload: {
+          field: 'itemId',
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output'
+          },
+          session: editSession,
+          shopId: 'single:1F3FF031A3A24490',
+          slot: 1,
+          value: '2'
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateShopResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: shopSession,
+          workflow: shopsWorkflow
         }
       }).success
     ).toBe(true);
