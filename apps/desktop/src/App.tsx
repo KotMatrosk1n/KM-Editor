@@ -90,6 +90,12 @@ const workflowDefinitions: Array<{
     label: 'Trainers',
     description: 'Trainer parties, classes, battle types, and source provenance.',
     icon: Activity
+  },
+  {
+    id: 'shops',
+    label: 'Shops',
+    description: 'Shop inventories, prices, stock limits, and source provenance.',
+    icon: ListChecks
   }
 ];
 

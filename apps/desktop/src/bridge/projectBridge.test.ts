@@ -137,6 +137,13 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'trainers',
                 label: 'Trainers'
+              },
+              {
+                availability: 'readOnly',
+                description: 'Shop inventories, prices, stock limits, and source provenance.',
+                diagnostics: [],
+                id: 'shops',
+                label: 'Shops'
               }
             ]
           }
@@ -239,6 +246,51 @@ describe('projectBridge', () => {
         });
       }
 
+      if (request.command === 'shops.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              shops: [
+                {
+                  currency: 'Money',
+                  inventory: [
+                    {
+                      itemId: 1,
+                      itemName: 'Potion',
+                      price: 300,
+                      slot: 1,
+                      stockLimit: null
+                    }
+                  ],
+                  location: 'Route 1',
+                  name: 'Route 1 Mart',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/kmeditor/shops.readmodel.json',
+                    sourceLayer: 'base'
+                  },
+                  shopId: 'route_1_mart'
+                }
+              ],
+              stats: {
+                sourceFileCount: 1,
+                totalInventoryItemCount: 1,
+                totalShopCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description: 'Shop inventories, prices, stock limits, and source provenance.',
+                diagnostics: [],
+                id: 'shops',
+                label: 'Shops'
+              }
+            }
+          }
+        });
+      }
+
       return JSON.stringify({
         error: null,
         payload: {
@@ -294,14 +346,17 @@ describe('projectBridge', () => {
     const items = await bridge.loadItemsWorkflow({ paths: projectPaths });
     const text = await bridge.loadTextWorkflow({ paths: projectPaths });
     const trainers = await bridge.loadTrainersWorkflow({ paths: projectPaths });
+    const shops = await bridge.loadShopsWorkflow({ paths: projectPaths });
 
     expect(workflows.workflows[0]?.id).toBe('items');
     expect(workflows.workflows[1]?.id).toBe('text');
     expect(workflows.workflows[2]?.id).toBe('trainers');
+    expect(workflows.workflows[3]?.id).toBe('shops');
     expect(items.workflow.editableFields).toHaveLength(2);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(text.workflow.entries[0]?.label).toBe('Greeting');
     expect(trainers.workflow.trainers[0]?.name).toBe('Avery');
+    expect(shops.workflow.shops[0]?.name).toBe('Route 1 Mart');
   });
 
   it('starts, updates, and validates an Items edit session', async () => {

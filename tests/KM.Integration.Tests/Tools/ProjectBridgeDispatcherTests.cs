@@ -5,6 +5,7 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Items;
 using KM.Api.Projects;
+using KM.Api.Shops;
 using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
@@ -121,6 +122,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("trainers", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("shops", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             });
     }
@@ -273,6 +279,57 @@ public sealed class ProjectBridgeDispatcherTests
         var pokemon = Assert.Single(trainer.Team);
         Assert.Equal("Grookey", pokemon.Species);
         Assert.Equal(12, pokemon.Level);
+        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchLoadShopsWorkflowReturnsSanitizedShopRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/shops.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "shops": [
+                {
+                  "shopId": "route_1_mart",
+                  "name": "Route 1 Mart",
+                  "location": "Route 1",
+                  "currency": "Money",
+                  "inventory": [
+                    {
+                      "slot": 1,
+                      "itemId": 1,
+                      "itemName": "Potion",
+                      "price": 300,
+                      "stockLimit": null
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadShopsWorkflow,
+            new LoadShopsWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-shops");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadShopsWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-shops", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var shop = Assert.Single(response.Payload.Workflow.Shops);
+        Assert.Equal("route_1_mart", shop.ShopId);
+        Assert.Equal("Route 1 Mart", shop.Name);
+        Assert.Equal(ProjectFileLayerDto.Base, shop.Provenance.SourceLayer);
+        var inventoryItem = Assert.Single(shop.Inventory);
+        Assert.Equal("Potion", inventoryItem.ItemName);
+        Assert.Equal(300, inventoryItem.Price);
+        Assert.Null(inventoryItem.StockLimit);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

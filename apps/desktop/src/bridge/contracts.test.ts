@@ -13,6 +13,8 @@ import {
   listWorkflowsResponseSchema,
   loadItemsWorkflowRequestSchema,
   loadItemsWorkflowResponseSchema,
+  loadShopsWorkflowRequestSchema,
+  loadShopsWorkflowResponseSchema,
   loadTextWorkflowRequestSchema,
   loadTextWorkflowResponseSchema,
   loadTrainersWorkflowRequestSchema,
@@ -181,7 +183,7 @@ describe('bridge contracts', () => {
     ).toBe(true);
   });
 
-  it('validates workflow list and Items load envelopes', () => {
+  it('validates workflow list and workflow load envelopes', () => {
     const workflowsRequestSchema = createBridgeRequestSchema(listWorkflowsRequestSchema);
     const workflowsResponseSchema = createBridgeResponseSchema(listWorkflowsResponseSchema);
     const itemsRequestSchema = createBridgeRequestSchema(loadItemsWorkflowRequestSchema);
@@ -190,6 +192,8 @@ describe('bridge contracts', () => {
     const textResponseSchema = createBridgeResponseSchema(loadTextWorkflowResponseSchema);
     const trainersRequestSchema = createBridgeRequestSchema(loadTrainersWorkflowRequestSchema);
     const trainersResponseSchema = createBridgeResponseSchema(loadTrainersWorkflowResponseSchema);
+    const shopsRequestSchema = createBridgeRequestSchema(loadShopsWorkflowRequestSchema);
+    const shopsResponseSchema = createBridgeResponseSchema(loadShopsWorkflowResponseSchema);
     const itemsWorkflow = {
       diagnostics: [],
       editableFields: [
@@ -314,6 +318,43 @@ describe('bridge contracts', () => {
         }
       ]
     } as const;
+    const shopsWorkflow = {
+      diagnostics: [],
+      shops: [
+        {
+          currency: 'Money',
+          inventory: [
+            {
+              itemId: 1,
+              itemName: 'Potion',
+              price: 300,
+              slot: 1,
+              stockLimit: null
+            }
+          ],
+          location: 'Route 1',
+          name: 'Route 1 Mart',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/shops.readmodel.json',
+            sourceLayer: 'base'
+          },
+          shopId: 'route_1_mart'
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalInventoryItemCount: 1,
+        totalShopCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Shop inventories, prices, stock limits, and source provenance.',
+        diagnostics: [],
+        id: 'shops',
+        label: 'Shops'
+      }
+    } as const;
 
     expect(
       workflowsRequestSchema.safeParse({
@@ -331,7 +372,12 @@ describe('bridge contracts', () => {
     expect(
       workflowsResponseSchema.safeParse({
         payload: {
-          workflows: [itemsWorkflow.summary, textWorkflow.summary, trainersWorkflow.summary]
+          workflows: [
+            itemsWorkflow.summary,
+            textWorkflow.summary,
+            trainersWorkflow.summary,
+            shopsWorkflow.summary
+          ]
         }
       }).success
     ).toBe(true);
@@ -395,6 +441,27 @@ describe('bridge contracts', () => {
       trainersResponseSchema.safeParse({
         payload: {
           workflow: trainersWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      shopsRequestSchema.safeParse({
+        command: kmCommandNames.loadShopsWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      shopsResponseSchema.safeParse({
+        payload: {
+          workflow: shopsWorkflow
         }
       }).success
     ).toBe(true);
