@@ -16,7 +16,15 @@ public sealed class ProjectValidator
 
     public ProjectHealth Validate(ProjectPaths paths)
     {
+        return Validate(paths, graphPaths => fileGraphBuilder.Build(graphPaths).ToSummary());
+    }
+
+    internal ProjectHealth Validate(
+        ProjectPaths paths,
+        Func<ProjectPaths, ProjectFileGraphSummary> createFileGraphSummary)
+    {
         ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(createFileGraphSummary);
 
         var baseRomFs = ValidateRequiredDirectory(ProjectPathRole.BaseRomFs, paths.BaseRomFsPath, "Base RomFS");
         var baseExeFs = ValidateRequiredDirectory(ProjectPathRole.BaseExeFs, paths.BaseExeFsPath, "Base ExeFS");
@@ -33,7 +41,12 @@ public sealed class ProjectValidator
         };
         var diagnostics = pathResults.SelectMany(result => result.Diagnostics).ToArray();
         var state = ResolveHealthState(baseRomFs, baseExeFs, outputRoot);
-        var graph = CreateFileGraphSummary(paths, baseRomFs, baseExeFs, outputRoot);
+        var graph = CreateFileGraphSummary(
+            paths,
+            baseRomFs,
+            baseExeFs,
+            outputRoot,
+            createFileGraphSummary);
 
         return new ProjectHealth(state, pathResults, graph, diagnostics);
     }
@@ -42,7 +55,8 @@ public sealed class ProjectValidator
         ProjectPaths paths,
         PathValidationDraft baseRomFs,
         PathValidationDraft baseExeFs,
-        PathValidationDraft outputRoot)
+        PathValidationDraft outputRoot,
+        Func<ProjectPaths, ProjectFileGraphSummary> createFileGraphSummary)
     {
         if (!baseRomFs.IsValid || !baseExeFs.IsValid)
         {
@@ -54,7 +68,7 @@ public sealed class ProjectValidator
             ? paths
             : paths with { OutputRootPath = null };
 
-        return fileGraphBuilder.Build(graphPaths).ToSummary();
+        return createFileGraphSummary(graphPaths);
     }
 
     private static ProjectHealthState ResolveHealthState(
