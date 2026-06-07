@@ -156,6 +156,60 @@ describe('App', () => {
     expect(screen.getByText('Base only')).toBeInTheDocument();
   });
 
+  it('keeps large Items workflows in a bounded rendered row window', async () => {
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge();
+    const baseItemsResponse = await baseBridge.loadItemsWorkflow({
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: null
+      }
+    });
+    const seedItem = baseItemsResponse.workflow.items[0]!;
+    const largeItems = Array.from({ length: 1_000 }, (_, index) => ({
+      ...seedItem,
+      alternatePrice: index + 3,
+      buyPrice: index * 10,
+      category: index % 2 === 0 ? 'Medicine' : 'Battle',
+      itemId: index,
+      name: `Item ${index.toString().padStart(4, '0')}`,
+      sellPrice: index * 5,
+      sharedItemIds: [index],
+      wattsPrice: index
+    }));
+    const bridge: ProjectBridge = {
+      ...baseBridge,
+      loadItemsWorkflow: async () => ({
+        workflow: {
+          ...baseItemsResponse.workflow,
+          items: largeItems,
+          stats: {
+            ...baseItemsResponse.workflow.stats,
+            totalItemCount: largeItems.length
+          }
+        }
+      })
+    };
+
+    render(<App bridge={bridge} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Items' }));
+
+    expect((await screen.findAllByText('Item 0000')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Item 0999')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('row').length).toBeLessThan(100);
+
+    await user.type(screen.getByLabelText('Search items'), 'Item 0999');
+
+    expect((await screen.findAllByText('Item 0999')).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('row').length).toBeLessThan(20);
+  });
+
   it('lazy loads workflow data from direct section navigation without stealing focus', async () => {
     const user = userEvent.setup();
     const baseBridge = createMockProjectBridge();

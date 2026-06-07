@@ -79,9 +79,15 @@ The UI uses the existing backend bridge contracts for lazy loads, shows a loadin
 
 The Tauri `project_bridge_once` command now runs the blocking `dotnet` bridge process spawn, stdin write, and stdout wait inside Tauri's blocking task pool. The JSON bridge contract is unchanged, but expensive backend workflow loads and previews no longer occupy the synchronous command entrypoint while the backend process is running.
 
+## Frontend Large List Responsiveness
+
+The desktop Items, Text, and Trainers master/detail lists now render through a shared virtual row body backed by `@tanstack/react-virtual`. These views still receive backend-owned workflow payloads unchanged, but they cap the active DOM row window while preserving backend search/filter behavior and selected-record inspectors.
+
+A regression test loads a sanitized 1,000-item Items workflow through the normal bridge path. The initial view renders fewer than 100 table rows, keeps the final item out of the DOM until searched, and then renders the searched record with fewer than 20 rows.
+
 ## Next Optimization Targets
 
 1. Continue shared-source cache work for Items metadata, item-name text, and archive readers where the same file feeds multiple workflows.
 2. Avoid rebuilding the whole project graph for every workflow navigation action when paths are unchanged.
 3. Move expensive indexing, parsing, validation, or preview planning behind explicit async/background boundaries where the current bridge blocks responsiveness.
-4. Virtualize or otherwise cap large desktop repeated lists after backend timings show which workflows produce the largest payloads.
+4. Extend row-windowing to other workflow views only when fixture or real-project evidence shows they carry enough repeated rows to justify the extra interaction surface.
