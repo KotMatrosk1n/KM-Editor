@@ -24,8 +24,10 @@ node_modules/
 
 ## Test and coverage output
 TestResults/
+test-results/
 coverage/
 coverage-*/
+playwright-report/
 *.coverage
 *.coveragexml
 

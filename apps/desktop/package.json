@@ -12,7 +12,8 @@
     "tauri:dev": "tauri dev",
     "typecheck": "tsc --build",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "test:workflow": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -30,6 +31,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tauri-apps/cli": "^2.11.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
