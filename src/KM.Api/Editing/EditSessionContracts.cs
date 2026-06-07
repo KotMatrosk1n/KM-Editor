@@ -18,6 +18,12 @@ public sealed record ValidateEditSessionResponse(
     bool IsValid,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
+public sealed record CreateChangePlanRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto Session);
+
+public sealed record CreateChangePlanResponse(ChangePlanDto ChangePlan);
+
 public sealed record EditSessionDto(
     string SessionId,
     bool HasPendingChanges,
@@ -51,6 +57,7 @@ public sealed record ChangePlanDto(
 
 public sealed record PlannedFileWriteDto(
     string TargetRelativePath,
+    IReadOnlyList<FileProvenanceDto> Sources,
     bool ReplacesExistingOutput,
     string Reason);
 

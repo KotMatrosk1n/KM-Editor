@@ -28,6 +28,26 @@ public static class EditSessionBridgeMapper
             session.PendingEdits.Select(ToCore).ToArray());
     }
 
+    public static ChangePlanDto ToDto(ChangePlan changePlan)
+    {
+        ArgumentNullException.ThrowIfNull(changePlan);
+
+        return new ChangePlanDto(
+            changePlan.SessionId.Value,
+            changePlan.CanApply,
+            changePlan.Writes.Select(ToDto).ToArray(),
+            changePlan.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static PlannedFileWriteDto ToDto(PlannedFileWrite write)
+    {
+        return new PlannedFileWriteDto(
+            write.TargetRelativePath,
+            write.Sources.Select(ToDto).ToArray(),
+            write.ReplacesExistingOutput,
+            write.Reason);
+    }
+
     private static PendingEditDto ToDto(PendingEdit edit)
     {
         return new PendingEditDto(

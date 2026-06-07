@@ -113,6 +113,39 @@ public sealed class SwShItemsEditSessionService
             diagnostics);
     }
 
+    public ChangePlan CreateChangePlan(ProjectPaths paths, EditSession session)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(session);
+
+        // Plan review reuses edit-session validation so invalid pending edits cannot produce write targets.
+        var validation = Validate(paths, session);
+        var diagnostics = validation.Diagnostics.ToList();
+
+        if (session.PendingEdits.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Create a pending Items edit before reviewing a change plan.",
+                expected: "Pending item edit"));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
+        var writes = session.PendingEdits
+            .Select(edit => CreatePlannedWrite(paths, edit))
+            .ToArray();
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Info,
+            $"Change plan preview contains {writes.Length} target file{(writes.Length == 1 ? string.Empty : "s")}."));
+
+        return new ChangePlan(session.Id, writes, diagnostics);
+    }
+
     private static bool CanEditItems(
         OpenedProject project,
         SwShItemsWorkflow workflow,
@@ -191,6 +224,30 @@ public sealed class SwShItemsEditSessionService
             .ToArray();
 
         return workflow with { Items = items };
+    }
+
+    private static PlannedFileWrite CreatePlannedWrite(ProjectPaths paths, PendingEdit edit)
+    {
+        var targetRelativePath = SwShItemsWorkflowService.ItemsReadModelPath;
+        var targetPath = CombineGraphPath(paths.OutputRootPath, targetRelativePath);
+
+        return new PlannedFileWrite(
+            targetRelativePath,
+            edit.Sources,
+            !string.IsNullOrWhiteSpace(targetPath) && File.Exists(targetPath),
+            $"Apply pending Items edit: {edit.Summary}");
+    }
+
+    private static string? CombineGraphPath(string? rootPath, string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(rootPath))
+        {
+            return null;
+        }
+
+        return Path.Combine(
+            rootPath,
+            relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     private static ValidationDiagnostic CreateBuyPriceRangeDiagnostic()

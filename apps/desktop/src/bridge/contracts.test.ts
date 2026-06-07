@@ -2,6 +2,8 @@
 
 import {
   apiErrorSchema,
+  createChangePlanRequestSchema,
+  createChangePlanResponseSchema,
   createBridgeRequestSchema,
   createBridgeResponseSchema,
   kmCommandNames,
@@ -257,6 +259,8 @@ describe('bridge contracts', () => {
     const updateResponseSchema = createBridgeResponseSchema(updateItemBuyPriceResponseSchema);
     const validateRequestSchema = createBridgeRequestSchema(validateEditSessionRequestSchema);
     const validateResponseSchema = createBridgeResponseSchema(validateEditSessionResponseSchema);
+    const changePlanRequestSchema = createBridgeRequestSchema(createChangePlanRequestSchema);
+    const changePlanResponseSchema = createBridgeResponseSchema(createChangePlanResponseSchema);
     const editSession = {
       hasPendingChanges: true,
       pendingEdits: [
@@ -372,6 +376,50 @@ describe('bridge contracts', () => {
           ],
           isValid: true,
           session: editSession
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      changePlanRequestSchema.safeParse({
+        command: kmCommandNames.createChangePlan,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output'
+          },
+          session: editSession
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      changePlanResponseSchema.safeParse({
+        payload: {
+          changePlan: {
+            canApply: true,
+            diagnostics: [
+              {
+                message: 'Change plan preview contains 1 target file.',
+                severity: 'info'
+              }
+            ],
+            sessionId: 'session-1',
+            writes: [
+              {
+                reason: 'Apply pending Items edit: Set Potion buy price to 450.',
+                replacesExistingOutput: false,
+                sources: [
+                  {
+                    layer: 'base',
+                    relativePath: 'romfs/kmeditor/items.readmodel.json'
+                  }
+                ],
+                targetRelativePath: 'romfs/kmeditor/items.readmodel.json'
+              }
+            ]
+          }
         }
       }).success
     ).toBe(true);

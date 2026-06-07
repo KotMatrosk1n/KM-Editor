@@ -18,6 +18,7 @@ import {
 import { useEffect, useState } from 'react';
 import {
   type ApiDiagnostic,
+  type ChangePlan,
   type EditSession,
   type ItemsWorkflow,
   type ItemRecord,
@@ -103,6 +104,7 @@ const pathStatusLabels = {
 
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
+  const changePlan = useWorkbenchStore((state) => state.changePlan);
   const draftPaths = useWorkbenchStore((state) => state.draftPaths);
   const editSession = useWorkbenchStore((state) => state.editSession);
   const editValidationDiagnostics = useWorkbenchStore((state) => state.editValidationDiagnostics);
@@ -113,6 +115,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
   const workflows = useWorkbenchStore((state) => state.workflows);
   const setActiveSection = useWorkbenchStore((state) => state.setActiveSection);
+  const setChangePlan = useWorkbenchStore((state) => state.setChangePlan);
   const setDraftPath = useWorkbenchStore((state) => state.setDraftPath);
   const setEditSession = useWorkbenchStore((state) => state.setEditSession);
   const setEditValidationDiagnostics = useWorkbenchStore(
@@ -132,6 +135,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isEditStarting, setIsEditStarting] = useState(false);
   const [isItemsLoading, setIsItemsLoading] = useState(false);
   const [isItemUpdating, setIsItemUpdating] = useState(false);
+  const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
   const pendingEditCount = editSession?.pendingEdits.length ?? 0;
 
@@ -244,6 +248,28 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
     }
   };
 
+  const handleCreateChangePlan = async () => {
+    if (!editSession) {
+      return;
+    }
+
+    setIsChangePlanCreating(true);
+    setBridgeDiagnostics([]);
+    setChangePlan(null);
+
+    try {
+      const response = await bridge.createChangePlan({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setChangePlan(response.changePlan);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsChangePlanCreating(false);
+    }
+  };
+
   const refreshWorkflows = async (
     paths: ReturnType<typeof toProjectPaths>,
     canOpenReadOnlyWorkflows: boolean
@@ -349,9 +375,12 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
           ) : null}
           {activeSection === 'changes' ? (
             <ChangesSection
+              changePlan={changePlan}
               diagnostics={editValidationDiagnostics}
               editSession={editSession}
+              isChangePlanCreating={isChangePlanCreating}
               isSessionValidating={isSessionValidating}
+              onCreateChangePlan={handleCreateChangePlan}
               onValidateEditSession={handleValidateEditSession}
             />
           ) : null}
@@ -727,17 +756,24 @@ function SelectedItemPanel({
 }
 
 function ChangesSection({
+  changePlan,
   diagnostics,
   editSession,
+  isChangePlanCreating,
   isSessionValidating,
+  onCreateChangePlan,
   onValidateEditSession
 }: {
+  changePlan: ChangePlan | null;
   diagnostics: ApiDiagnostic[];
   editSession: EditSession | null;
+  isChangePlanCreating: boolean;
   isSessionValidating: boolean;
+  onCreateChangePlan: () => void;
   onValidateEditSession: () => void;
 }) {
   const pendingEdits = editSession?.pendingEdits ?? [];
+  const combinedDiagnostics = [...diagnostics, ...(changePlan?.diagnostics ?? [])];
 
   return (
     <>
@@ -749,6 +785,7 @@ function ChangesSection({
 
         <div className="changes-summary">
           <Metric label="Pending changes" value={pendingEdits.length.toString()} />
+          <Metric label="Target files" value={(changePlan?.writes.length ?? 0).toString()} />
           <button
             className="secondary-button"
             disabled={pendingEdits.length === 0 || isSessionValidating}
@@ -757,6 +794,15 @@ function ChangesSection({
           >
             <CheckCircle aria-hidden="true" size={18} />
             <span>{isSessionValidating ? 'Validating' : 'Validate Pending Change'}</span>
+          </button>
+          <button
+            className="primary-button"
+            disabled={pendingEdits.length === 0 || isChangePlanCreating}
+            onClick={onCreateChangePlan}
+            type="button"
+          >
+            <ClipboardCheck aria-hidden="true" size={18} />
+            <span>{isChangePlanCreating ? 'Reviewing' : 'Review Change Plan'}</span>
           </button>
         </div>
 
@@ -774,8 +820,54 @@ function ChangesSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={diagnostics} />
+      {changePlan ? <ChangePlanSection changePlan={changePlan} /> : null}
+      <DiagnosticsSection diagnostics={combinedDiagnostics} />
     </>
+  );
+}
+
+function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
+  return (
+    <section aria-labelledby="change-plan-heading" className="panel wide-panel">
+      <div className="panel-heading">
+        <ClipboardCheck aria-hidden="true" size={18} />
+        <h2 id="change-plan-heading">Change Plan Review</h2>
+      </div>
+
+      <div className="change-plan-status">
+        <Metric label="Plan status" value={changePlan.canApply ? 'Ready' : 'Needs fixes'} />
+        <Metric label="Session" value={changePlan.sessionId} />
+      </div>
+
+      {changePlan.writes.length > 0 ? (
+        <ul className="change-plan-list">
+          {changePlan.writes.map((write) => (
+            <li key={write.targetRelativePath}>
+              <div>
+                <strong>{write.targetRelativePath}</strong>
+                <span>{write.reason}</span>
+              </div>
+              <dl>
+                <div>
+                  <dt>Output state</dt>
+                  <dd>{write.replacesExistingOutput ? 'Replaces output file' : 'Creates output file'}</dd>
+                </div>
+                <div>
+                  <dt>Sources</dt>
+                  <dd>
+                    {write.sources
+                      .map((source) => `${formatProjectFileLayer(source.layer)} ${source.relativePath}`)
+                      .join(', ')}
+                  </dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="empty-copy">No target files in this plan.</p>
+      )}
+    </section>
   );
 }
 
@@ -898,6 +990,15 @@ const workflowAvailabilityClassNames = {
 } as const;
 
 function formatSourceLayer(layer: ItemRecord['provenance']['sourceLayer']) {
+  return {
+    base: 'Base',
+    generated: 'Generated',
+    layered: 'LayeredFS',
+    pending: 'Pending'
+  }[layer];
+}
+
+function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][number]['layer']) {
   return {
     base: 'Base',
     generated: 'Generated',

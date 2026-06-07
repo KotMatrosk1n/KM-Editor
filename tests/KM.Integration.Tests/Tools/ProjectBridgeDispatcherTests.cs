@@ -224,6 +224,50 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchCreateChangePlanReturnsPlannedTargetFiles()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/items.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "items": [
+                {
+                  "itemId": 1,
+                  "name": "Potion",
+                  "category": "Medicine",
+                  "buyPrice": 300,
+                  "sellPrice": 150
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var sessionResponseJson = new ProjectBridgeDispatcher().Dispatch(SerializeRequest(
+            KmCommandNames.UpdateItemBuyPrice,
+            new UpdateItemBuyPriceRequest(temp.Paths, Session: null, ItemId: 1, BuyPrice: 450),
+            requestId: "request-items-edit"));
+        var sessionResponse = DeserializeResponse<UpdateItemBuyPriceResponse>(sessionResponseJson);
+        Assert.NotNull(sessionResponse.Payload);
+        var requestJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, sessionResponse.Payload.Session),
+            requestId: "request-change-plan");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<CreateChangePlanResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-change-plan", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.True(response.Payload.ChangePlan.CanApply);
+        var write = Assert.Single(response.Payload.ChangePlan.Writes);
+        Assert.Equal("romfs/kmeditor/items.readmodel.json", write.TargetRelativePath);
+        Assert.Equal(FileLayerDto.Base, Assert.Single(write.Sources).Layer);
+    }
+
+    [Fact]
     public void DispatchUnsupportedCommandReturnsBridgeError()
     {
         var requestJson = JsonSerializer.Serialize(
