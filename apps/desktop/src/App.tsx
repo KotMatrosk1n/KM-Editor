@@ -6,6 +6,7 @@ import {
   FolderOpen,
   Layers,
   ListChecks,
+  Package,
   RefreshCw,
   Search,
   ShieldCheck,
@@ -14,9 +15,12 @@ import {
 import { useState } from 'react';
 import {
   type ApiDiagnostic,
+  type ItemsWorkflow,
+  type ItemRecord,
   type ProjectHealth,
   type ProjectPathRole,
-  type ProjectPathValidation
+  type ProjectPathValidation,
+  type WorkflowSummary
 } from './bridge/contracts';
 import {
   ProjectBridgeError,
@@ -43,6 +47,11 @@ const sections: Array<{
     id: 'workflows',
     label: 'Workflows',
     icon: ListChecks
+  },
+  {
+    id: 'items',
+    label: 'Items',
+    icon: Package
   },
   {
     id: 'changes',
@@ -91,25 +100,36 @@ const pathStatusLabels = {
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
   const draftPaths = useWorkbenchStore((state) => state.draftPaths);
+  const itemSearchText = useWorkbenchStore((state) => state.itemSearchText);
+  const itemsWorkflow = useWorkbenchStore((state) => state.itemsWorkflow);
   const openProject = useWorkbenchStore((state) => state.openProject);
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
+  const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
+  const workflows = useWorkbenchStore((state) => state.workflows);
   const setActiveSection = useWorkbenchStore((state) => state.setActiveSection);
   const setDraftPath = useWorkbenchStore((state) => state.setDraftPath);
+  const setItemSearchText = useWorkbenchStore((state) => state.setItemSearchText);
+  const setItemsWorkflow = useWorkbenchStore((state) => state.setItemsWorkflow);
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
   const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
+  const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
+  const setWorkflows = useWorkbenchStore((state) => state.setWorkflows);
   const health = openProject?.health ?? null;
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
   const isBusy = projectStatus === 'opening' || projectStatus === 'validating';
   const [bridgeDiagnostics, setBridgeDiagnostics] = useState<ApiDiagnostic[]>([]);
+  const [isItemsLoading, setIsItemsLoading] = useState(false);
 
   const handleValidateProject = async () => {
     setProjectStatus('validating');
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.validateProject({ paths: toProjectPaths(draftPaths) });
+      const paths = toProjectPaths(draftPaths);
+      const response = await bridge.validateProject({ paths });
       setProjectHealth(response.health);
+      await refreshWorkflows(paths, response.health.canOpenReadOnlyWorkflows);
     } catch (error) {
       setProjectStatus('idle');
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -121,17 +141,46 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
     setBridgeDiagnostics([]);
 
     try {
-      const response = await bridge.openProject({ paths: toProjectPaths(draftPaths) });
+      const paths = toProjectPaths(draftPaths);
+      const response = await bridge.openProject({ paths });
       setOpenProject({
         fileGraph: response.fileGraph,
         health: response.health,
         projectId: response.projectId
       });
+      await refreshWorkflows(paths, response.health.canOpenReadOnlyWorkflows);
       setActiveSection('health');
     } catch (error) {
       setProjectStatus('idle');
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     }
+  };
+
+  const handleOpenItemsWorkflow = async () => {
+    setIsItemsLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadItemsWorkflow({ paths: toProjectPaths(draftPaths) });
+      setItemsWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsItemsLoading(false);
+    }
+  };
+
+  const refreshWorkflows = async (
+    paths: ReturnType<typeof toProjectPaths>,
+    canOpenReadOnlyWorkflows: boolean
+  ) => {
+    if (!canOpenReadOnlyWorkflows) {
+      setWorkflows([]);
+      return;
+    }
+
+    const response = await bridge.listWorkflows({ paths });
+    setWorkflows(response.workflows);
   };
 
   return (
@@ -200,7 +249,23 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               projectStatus={projectStatus}
             />
           ) : null}
-          {activeSection === 'workflows' ? <WorkflowsSection health={health} /> : null}
+          {activeSection === 'workflows' ? (
+            <WorkflowsSection
+              health={health}
+              isItemsLoading={isItemsLoading}
+              onOpenItemsWorkflow={handleOpenItemsWorkflow}
+              workflows={workflows}
+            />
+          ) : null}
+          {activeSection === 'items' ? (
+            <ItemsSection
+              onSearchChange={setItemSearchText}
+              onSelectItem={setSelectedItemId}
+              searchText={itemSearchText}
+              selectedItemId={selectedItemId}
+              workflow={itemsWorkflow}
+            />
+          ) : null}
           {activeSection === 'changes' ? <ChangesSection /> : null}
         </div>
       </section>
@@ -308,8 +373,20 @@ function HealthSection({
   );
 }
 
-function WorkflowsSection({ health }: { health: ProjectHealth | null }) {
-  const itemsState = getItemsWorkflowState(health);
+function WorkflowsSection({
+  health,
+  isItemsLoading,
+  onOpenItemsWorkflow,
+  workflows
+}: {
+  health: ProjectHealth | null;
+  isItemsLoading: boolean;
+  onOpenItemsWorkflow: () => void;
+  workflows: WorkflowSummary[];
+}) {
+  const itemsWorkflow = workflows.find((workflow) => workflow.id === 'items');
+  const itemsState = getItemsWorkflowState(health, itemsWorkflow);
+  const canOpenItems = itemsState.availability !== 'disabled';
 
   return (
     <section aria-labelledby="workflows-heading" className="panel wide-panel">
@@ -322,12 +399,143 @@ function WorkflowsSection({ health }: { health: ProjectHealth | null }) {
         <article className="workflow-row">
           <div>
             <h3>Items</h3>
-            <p>Item records, names, provenance, and pending item edits.</p>
+            <p>{itemsWorkflow?.description ?? 'Item records, names, and source provenance.'}</p>
           </div>
-          <span className={`status-pill ${itemsState.statusClass}`}>{itemsState.label}</span>
+          <div className="workflow-actions">
+            <span className={`status-pill ${itemsState.statusClass}`}>{itemsState.label}</span>
+            <button
+              className="secondary-button compact-button"
+              disabled={!canOpenItems || isItemsLoading}
+              onClick={onOpenItemsWorkflow}
+              type="button"
+            >
+              <Package aria-hidden="true" size={16} />
+              <span>{isItemsLoading ? 'Loading' : 'Open Items'}</span>
+            </button>
+          </div>
         </article>
       </div>
     </section>
+  );
+}
+
+function ItemsSection({
+  onSearchChange,
+  onSelectItem,
+  searchText,
+  selectedItemId,
+  workflow
+}: {
+  onSearchChange: (searchText: string) => void;
+  onSelectItem: (itemId: number | null) => void;
+  searchText: string;
+  selectedItemId: number | null;
+  workflow: ItemsWorkflow | null;
+}) {
+  const filteredItems = filterItems(workflow?.items ?? [], searchText);
+  const selectedItem =
+    workflow?.items.find((item) => item.itemId === selectedItemId) ?? filteredItems[0] ?? null;
+
+  return (
+    <>
+      <section aria-labelledby="items-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Package aria-hidden="true" size={18} />
+          <h2 id="items-heading">Items</h2>
+        </div>
+
+        <div className="items-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search items"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search items"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded records"
+            value={workflow ? workflow.stats.totalItemCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="items-layout">
+            <div className="items-table" role="table" aria-label="Items">
+              <div className="items-row items-row-heading" role="row">
+                <span role="columnheader">ID</span>
+                <span role="columnheader">Name</span>
+                <span role="columnheader">Category</span>
+                <span role="columnheader">Buy</span>
+                <span role="columnheader">Source</span>
+              </div>
+              {filteredItems.map((item) => (
+                <button
+                  className={`items-row ${selectedItem?.itemId === item.itemId ? 'items-row-selected' : ''}`}
+                  key={item.itemId}
+                  onClick={() => onSelectItem(item.itemId)}
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{item.itemId}</span>
+                  <span role="cell">{item.name}</span>
+                  <span role="cell">{item.category}</span>
+                  <span role="cell">{item.buyPrice}</span>
+                  <span role="cell">{formatSourceLayer(item.provenance.sourceLayer)}</span>
+                </button>
+              ))}
+            </div>
+
+            <SelectedItemPanel item={selectedItem} />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Items from Workflows to load backend item data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedItemPanel({ item }: { item: ItemRecord | null }) {
+  return (
+    <aside aria-label="Selected item provenance" className="item-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Provenance</h3>
+      </div>
+
+      {item ? (
+        <dl className="item-provenance-list">
+          <div>
+            <dt>Name</dt>
+            <dd>{item.name}</dd>
+          </div>
+          <div>
+            <dt>Source file</dt>
+            <dd>{item.provenance.sourceFile}</dd>
+          </div>
+          <div>
+            <dt>Layer</dt>
+            <dd>{formatSourceLayer(item.provenance.sourceLayer)}</dd>
+          </div>
+          <div>
+            <dt>File state</dt>
+            <dd>{formatFileState(item.provenance.fileState)}</dd>
+          </div>
+          <div>
+            <dt>Sell price</dt>
+            <dd>{item.sellPrice}</dd>
+          </div>
+        </dl>
+      ) : (
+        <p className="empty-copy">No item selected.</p>
+      )}
+    </aside>
   );
 }
 
@@ -406,25 +614,66 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function getItemsWorkflowState(health: ProjectHealth | null) {
-  if (!health?.canOpenReadOnlyWorkflows) {
-    return {
-      label: 'Disabled',
-      statusClass: 'status-blocked'
-    };
+function filterItems(items: ItemRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return items;
   }
 
-  if (health.canOpenEditableWorkflows) {
+  return items.filter((item) =>
+    [item.itemId.toString(), item.name, item.category].some((value) =>
+      value.toLocaleLowerCase().includes(normalizedSearch)
+    )
+  );
+}
+
+function getItemsWorkflowState(health: ProjectHealth | null, workflow: WorkflowSummary | undefined) {
+  if (!health?.canOpenReadOnlyWorkflows) {
     return {
-      label: 'Available',
-      statusClass: 'status-ready'
-    };
+      availability: 'disabled',
+      label: 'Disabled',
+      statusClass: 'status-blocked'
+    } as const;
+  }
+
+  if (workflow) {
+    return {
+      availability: workflow.availability,
+      label: workflowAvailabilityLabels[workflow.availability],
+      statusClass: workflowAvailabilityClassNames[workflow.availability]
+    } as const;
   }
 
   return {
+    availability: 'readOnly',
     label: 'Read-only',
     statusClass: 'status-warning'
-  };
+  } as const;
+}
+
+const workflowAvailabilityLabels = {
+  available: 'Available',
+  disabled: 'Disabled',
+  readOnly: 'Read-only'
+} as const;
+
+const workflowAvailabilityClassNames = {
+  available: 'status-ready',
+  disabled: 'status-blocked',
+  readOnly: 'status-warning'
+} as const;
+
+function formatSourceLayer(layer: ItemRecord['provenance']['sourceLayer']) {
+  return layer === 'layered' ? 'LayeredFS' : 'Base';
+}
+
+function formatFileState(state: ItemRecord['provenance']['fileState']) {
+  return {
+    baseOnly: 'Base only',
+    layeredOnly: 'Layered only',
+    layeredOverride: 'Layered override'
+  }[state];
 }
 
 function getPathStatusClassName(pathValidation: ProjectPathValidation | undefined) {

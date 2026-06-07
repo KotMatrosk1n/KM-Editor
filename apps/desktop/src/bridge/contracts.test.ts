@@ -5,6 +5,10 @@ import {
   createBridgeRequestSchema,
   createBridgeResponseSchema,
   kmCommandNames,
+  listWorkflowsRequestSchema,
+  listWorkflowsResponseSchema,
+  loadItemsWorkflowRequestSchema,
+  loadItemsWorkflowResponseSchema,
   openProjectRequestSchema,
   openProjectResponseSchema,
   refreshFileGraphRequestSchema,
@@ -158,6 +162,83 @@ describe('bridge contracts', () => {
       refreshResponseSchema.safeParse({
         payload: {
           fileGraph
+        }
+      }).success
+    ).toBe(true);
+  });
+
+  it('validates workflow list and Items load envelopes', () => {
+    const workflowsRequestSchema = createBridgeRequestSchema(listWorkflowsRequestSchema);
+    const workflowsResponseSchema = createBridgeResponseSchema(listWorkflowsResponseSchema);
+    const itemsRequestSchema = createBridgeRequestSchema(loadItemsWorkflowRequestSchema);
+    const itemsResponseSchema = createBridgeResponseSchema(loadItemsWorkflowResponseSchema);
+    const itemsWorkflow = {
+      diagnostics: [],
+      items: [
+        {
+          buyPrice: 300,
+          category: 'Medicine',
+          itemId: 1,
+          name: 'Potion',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/items.readmodel.json',
+            sourceLayer: 'base'
+          },
+          sellPrice: 150
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalItemCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Item records, names, and source provenance.',
+        diagnostics: [],
+        id: 'items',
+        label: 'Items'
+      }
+    } as const;
+
+    expect(
+      workflowsRequestSchema.safeParse({
+        command: kmCommandNames.listWorkflows,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      workflowsResponseSchema.safeParse({
+        payload: {
+          workflows: [itemsWorkflow.summary]
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      itemsRequestSchema.safeParse({
+        command: kmCommandNames.loadItemsWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      itemsResponseSchema.safeParse({
+        payload: {
+          workflow: itemsWorkflow
         }
       }).success
     ).toBe(true);

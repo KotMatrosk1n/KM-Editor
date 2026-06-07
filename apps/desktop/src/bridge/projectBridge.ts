@@ -4,6 +4,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { z, type ZodTypeAny } from 'zod';
 import {
   type ApiError,
+  type ListWorkflowsRequest,
+  type ListWorkflowsResponse,
+  type LoadItemsWorkflowRequest,
+  type LoadItemsWorkflowResponse,
   type KmCommandName,
   type OpenProjectRequest,
   type OpenProjectResponse,
@@ -13,12 +17,16 @@ import {
   type ValidateProjectResponse,
   createBridgeResponseSchema,
   kmCommandNames,
+  listWorkflowsResponseSchema,
+  loadItemsWorkflowResponseSchema,
   openProjectResponseSchema,
   refreshFileGraphResponseSchema,
   validateProjectResponseSchema
 } from './contracts';
 
 export type ProjectBridge = {
+  listWorkflows: (request: ListWorkflowsRequest) => Promise<ListWorkflowsResponse>;
+  loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
   openProject: (request: OpenProjectRequest) => Promise<OpenProjectResponse>;
   refreshFileGraph: (request: RefreshFileGraphRequest) => Promise<RefreshFileGraphResponse>;
   validateProject: (request: ValidateProjectRequest) => Promise<ValidateProjectResponse>;
@@ -48,6 +56,20 @@ export function createProjectBridge(
   transport: ProjectBridgeTransport = tauriProjectBridgeTransport
 ): ProjectBridge {
   return {
+    listWorkflows: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.listWorkflows,
+        request,
+        listWorkflowsResponseSchema
+      ),
+    loadItemsWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadItemsWorkflow,
+        request,
+        loadItemsWorkflowResponseSchema
+      ),
     openProject: (request) =>
       sendProjectBridgeRequest(
         transport,

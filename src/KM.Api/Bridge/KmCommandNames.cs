@@ -10,6 +10,8 @@ public static class KmCommandNames
     public const string OpenProject = "project.open";
     public const string ValidateProject = "project.validate";
     public const string RefreshFileGraph = "project.fileGraph.refresh";
+    public const string ListWorkflows = "workflow.list";
+    public const string LoadItemsWorkflow = "items.load";
     public const string StartEditSession = "editSession.start";
     public const string GetEditSession = "editSession.get";
     public const string DiscardEditSession = "editSession.discard";

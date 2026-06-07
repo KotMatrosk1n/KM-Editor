@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Bridge;
+using KM.Api.Items;
 using KM.Api.Projects;
+using KM.Api.Workflows;
 using KM.Tools.Bridge;
 using System.Text.Json;
 using Xunit;
@@ -81,6 +83,65 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotNull(response.Payload);
         Assert.Equal(2, response.Payload.FileGraph.Summary.BaseFileCount);
         Assert.Equal(0, response.Payload.FileGraph.Summary.LayeredFileCount);
+    }
+
+    [Fact]
+    public void DispatchListWorkflowsReturnsItemsWorkflowAvailability()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.ListWorkflows,
+            new ListWorkflowsRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-workflows");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<ListWorkflowsResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-workflows", response.RequestId);
+        var workflow = Assert.Single(response.Payload?.Workflows ?? []);
+        Assert.Equal("items", workflow.Id);
+        Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+    }
+
+    [Fact]
+    public void DispatchLoadItemsWorkflowReturnsSanitizedItemRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/items.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "items": [
+                {
+                  "itemId": 1,
+                  "name": "Potion",
+                  "category": "Medicine",
+                  "buyPrice": 300,
+                  "sellPrice": 150
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-items");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadItemsWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-items", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var item = Assert.Single(response.Payload.Workflow.Items);
+        Assert.Equal("Potion", item.Name);
+        Assert.Equal("romfs/kmeditor/items.readmodel.json", item.Provenance.SourceFile);
+        Assert.Equal(ProjectFileLayerDto.Base, item.Provenance.SourceLayer);
     }
 
     [Fact]
