@@ -183,7 +183,8 @@ describe('projectBridge', () => {
               },
               {
                 availability: 'readOnly',
-                description: 'Curated batch workflow recipes, targets, steps, and source provenance.',
+                description:
+                  'Royal Candy source readiness, ExeFS compatibility, and LayeredFS output preview.',
                 diagnostics: [],
                 id: 'royalCandy',
                 label: 'Royal Candy Workflows'
@@ -708,28 +709,66 @@ describe('projectBridge', () => {
           error: null,
           payload: {
             workflow: {
+              checks: [
+                {
+                  area: 'RomFS',
+                  checkId: 'royal-candy-preflight:item-data',
+                  message: 'Item data found.',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/bin/pml/item/item.dat',
+                    sourceLayer: 'base'
+                  },
+                  status: 'Pass',
+                  target: 'romfs/bin/pml/item/item.dat',
+                  workflowId: 'royal-candy-preflight'
+                }
+              ],
               diagnostics: [],
+              outputs: [
+                {
+                  description: 'Royal Candy item row patch.',
+                  outputId: 'royal-candy-unlimited:romfs/bin/pml/item/item.dat',
+                  outputKind: 'RomFS data',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/bin/pml/item/item.dat',
+                    sourceLayer: 'base'
+                  },
+                  relativePath: 'romfs/bin/pml/item/item.dat',
+                  sourceFile: 'romfs/bin/pml/item/item.dat',
+                  status: 'ready',
+                  workflowId: 'royal-candy-unlimited'
+                }
+              ],
               stats: {
+                failCount: 0,
+                outputCount: 1,
+                passCount: 1,
                 sourceFileCount: 1,
+                totalCheckCount: 1,
                 totalStepCount: 1,
-                totalWorkflowCount: 1
+                totalWorkflowCount: 1,
+                warningCount: 0
               },
               summary: {
                 availability: 'readOnly',
                 description:
-                  'Curated batch workflow recipes, targets, steps, and source provenance.',
+                  'Royal Candy source readiness, ExeFS compatibility, and LayeredFS output preview.',
                 diagnostics: [],
                 id: 'royalCandy',
                 label: 'Royal Candy Workflows'
               },
               workflows: [
                 {
-                  category: 'Items',
-                  description: 'Prepare a safe candy reward workflow fixture.',
-                  name: 'Candy Reward Setup',
+                  category: 'Build',
+                  description: 'Prepares Royal Candy item 1128 from Rare Candy item 50.',
+                  itemId: 1128,
+                  mode: 'unlimited',
+                  name: 'Install Unlimited Royal Candy',
                   provenance: {
                     fileState: 'baseOnly',
-                    sourceFile: 'romfs/kmeditor/royal-candy.workflows.readmodel.json',
+                    sourceFile: 'romfs/bin/pml/item/item.dat',
                     sourceLayer: 'base'
                   },
                   status: 'available',
@@ -740,8 +779,9 @@ describe('projectBridge', () => {
                       step: 1
                     }
                   ],
-                  target: 'items',
-                  workflowId: 'candy_reward_setup'
+                  target: 'RomFS + ExeFS LayeredFS',
+                  templateItemId: 50,
+                  workflowId: 'royal-candy-unlimited'
                 }
               ]
             }
@@ -903,7 +943,8 @@ describe('projectBridge', () => {
     expect(flagworkSave.workflow.flags[0]?.name).toBe('FE_TEST_FLAG');
     expect(flagworkSave.workflow.saveBlocks[0]?.key).toBe('0xDDEEFF00');
     expect(exeFsPatches.workflow.patches[0]?.targetFile).toBe('exefs/main');
-    expect(royalCandy.workflow.workflows[0]?.name).toBe('Candy Reward Setup');
+    expect(royalCandy.workflow.workflows[0]?.name).toBe('Install Unlimited Royal Candy');
+    expect(royalCandy.workflow.outputs[0]?.relativePath).toBe('romfs/bin/pml/item/item.dat');
     expect(spreadsheetImport.workflow.profiles[0]?.name).toBe('Items Price Sheet');
   });
 

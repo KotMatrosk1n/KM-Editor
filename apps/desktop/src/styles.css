@@ -1221,6 +1221,14 @@ h2 {
   grid-template-columns: minmax(160px, 1.1fr) minmax(92px, 0.45fr) minmax(84px, 0.45fr) minmax(132px, 0.8fr) minmax(160px, 1fr);
 }
 
+.royal-candy-workflow-row {
+  grid-template-columns: minmax(170px, 1.1fr) minmax(92px, 0.45fr) minmax(96px, 0.55fr) minmax(92px, 0.45fr) minmax(150px, 1fr);
+}
+
+.royal-candy-check-row {
+  grid-template-columns: minmax(150px, 0.9fr) minmax(92px, 0.45fr) minmax(88px, 0.45fr) minmax(150px, 0.9fr) minmax(220px, 1.4fr);
+}
+
 .exefs-row:last-child {
   border-bottom: 0;
 }
@@ -1257,6 +1265,36 @@ h2 {
 .exefs-segment-list {
   display: grid;
   gap: 10px;
+}
+
+.royal-candy-step-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.royal-candy-step-list li {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  background: #ffffff;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.royal-candy-step-list strong,
+.royal-candy-step-list span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.royal-candy-step-list span {
+  color: #6c756a;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .encounter-inspector {

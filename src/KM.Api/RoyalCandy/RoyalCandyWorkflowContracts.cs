@@ -18,11 +18,33 @@ public sealed record RoyalCandyWorkflowStepRecordDto(
     string Label,
     string Description);
 
+public sealed record RoyalCandyWorkflowCheckRecordDto(
+    string CheckId,
+    string WorkflowId,
+    string Status,
+    string Area,
+    string Target,
+    string Message,
+    RoyalCandyProvenanceDto Provenance);
+
+public sealed record RoyalCandyOutputRecordDto(
+    string OutputId,
+    string WorkflowId,
+    string RelativePath,
+    string SourceFile,
+    string OutputKind,
+    string Status,
+    string Description,
+    RoyalCandyProvenanceDto Provenance);
+
 public sealed record RoyalCandyWorkflowRecordDto(
     string WorkflowId,
     string Name,
     string Category,
     string Target,
+    string Mode,
+    int ItemId,
+    int TemplateItemId,
     string Status,
     string Description,
     IReadOnlyList<RoyalCandyWorkflowStepRecordDto> Steps,
@@ -31,11 +53,18 @@ public sealed record RoyalCandyWorkflowRecordDto(
 public sealed record RoyalCandyWorkflowStatsDto(
     int TotalWorkflowCount,
     int TotalStepCount,
+    int TotalCheckCount,
+    int PassCount,
+    int WarningCount,
+    int FailCount,
+    int OutputCount,
     int SourceFileCount);
 
 public sealed record RoyalCandyWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<RoyalCandyWorkflowRecordDto> Workflows,
+    IReadOnlyList<RoyalCandyWorkflowCheckRecordDto> Checks,
+    IReadOnlyList<RoyalCandyOutputRecordDto> Outputs,
     RoyalCandyWorkflowStatsDto Stats,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 

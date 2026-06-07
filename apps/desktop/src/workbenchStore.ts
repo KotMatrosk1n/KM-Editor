@@ -14,6 +14,7 @@ import {
   type ProjectFileGraph,
   type ProjectHealth,
   type RaidRewardsWorkflow,
+  type RoyalCandyWorkflow,
   type ShopsWorkflow,
   type TextWorkflow,
   type TrainersWorkflow,
@@ -32,6 +33,7 @@ export type WorkbenchSection =
   | 'placement'
   | 'flagworkSave'
   | 'exefsPatches'
+  | 'royalCandy'
   | 'changes';
 
 export type ProjectPathDraft = {
@@ -67,12 +69,16 @@ type WorkbenchState = {
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
   raidRewardSearchText: string;
   raidRewardsWorkflow: RaidRewardsWorkflow | null;
+  royalCandySearchText: string;
+  royalCandyWorkflow: RoyalCandyWorkflow | null;
   selectedRaidRewardTableId: string | null;
   selectedPlacementObjectId: string | null;
   selectedFlagId: string | null;
   selectedSaveBlockId: string | null;
   selectedExeFsCheckId: string | null;
   selectedExeFsPatchId: string | null;
+  selectedRoyalCandyCheckId: string | null;
+  selectedRoyalCandyWorkflowId: string | null;
   selectedItemId: number | null;
   selectedEncounterTableId: string | null;
   selectedShopId: string | null;
@@ -106,12 +112,16 @@ type WorkbenchState = {
   setProjectStatus: (projectStatus: WorkbenchState['projectStatus']) => void;
   setRaidRewardSearchText: (raidRewardSearchText: string) => void;
   setRaidRewardsWorkflow: (raidRewardsWorkflow: RaidRewardsWorkflow) => void;
+  setRoyalCandySearchText: (royalCandySearchText: string) => void;
+  setRoyalCandyWorkflow: (royalCandyWorkflow: RoyalCandyWorkflow) => void;
   setSelectedRaidRewardTableId: (selectedRaidRewardTableId: string | null) => void;
   setSelectedPlacementObjectId: (selectedPlacementObjectId: string | null) => void;
   setSelectedFlagId: (selectedFlagId: string | null) => void;
   setSelectedSaveBlockId: (selectedSaveBlockId: string | null) => void;
   setSelectedExeFsCheckId: (selectedExeFsCheckId: string | null) => void;
   setSelectedExeFsPatchId: (selectedExeFsPatchId: string | null) => void;
+  setSelectedRoyalCandyCheckId: (selectedRoyalCandyCheckId: string | null) => void;
+  setSelectedRoyalCandyWorkflowId: (selectedRoyalCandyWorkflowId: string | null) => void;
   setSelectedItemId: (selectedItemId: number | null) => void;
   setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
   setSelectedShopId: (selectedShopId: string | null) => void;
@@ -151,11 +161,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   projectStatus: 'idle',
   raidRewardSearchText: '',
   raidRewardsWorkflow: null,
+  royalCandySearchText: '',
+  royalCandyWorkflow: null,
   selectedRaidRewardTableId: null,
   selectedPlacementObjectId: null,
   selectedFlagId: null,
   selectedExeFsCheckId: null,
   selectedExeFsPatchId: null,
+  selectedRoyalCandyCheckId: null,
+  selectedRoyalCandyWorkflowId: null,
   selectedItemId: null,
   selectedSaveBlockId: null,
   selectedEncounterTableId: null,
@@ -186,6 +200,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setFlagworkSaveSearchText: (flagworkSaveSearchText) => set({ flagworkSaveSearchText }),
   setPlacementSearchText: (placementSearchText) => set({ placementSearchText }),
   setRaidRewardSearchText: (raidRewardSearchText) => set({ raidRewardSearchText }),
+  setRoyalCandySearchText: (royalCandySearchText) => set({ royalCandySearchText }),
   setItemsWorkflow: (itemsWorkflow) =>
     set((state) => {
       const selectedItemId = itemsWorkflow.items.some(
@@ -229,9 +244,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       projectStatus: 'open',
       raidRewardSearchText: '',
       raidRewardsWorkflow: null,
+      royalCandySearchText: '',
+      royalCandyWorkflow: null,
       selectedEncounterTableId: null,
       selectedExeFsCheckId: null,
       selectedExeFsPatchId: null,
+      selectedRoyalCandyCheckId: null,
+      selectedRoyalCandyWorkflowId: null,
       selectedFlagId: null,
       selectedItemId: null,
       selectedPlacementObjectId: null,
@@ -273,6 +292,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setSelectedSaveBlockId: (selectedSaveBlockId) => set({ selectedSaveBlockId }),
   setSelectedExeFsCheckId: (selectedExeFsCheckId) => set({ selectedExeFsCheckId }),
   setSelectedExeFsPatchId: (selectedExeFsPatchId) => set({ selectedExeFsPatchId }),
+  setSelectedRoyalCandyCheckId: (selectedRoyalCandyCheckId) =>
+    set({ selectedRoyalCandyCheckId }),
+  setSelectedRoyalCandyWorkflowId: (selectedRoyalCandyWorkflowId) =>
+    set({ selectedRoyalCandyWorkflowId }),
   setSelectedEncounterTableId: (selectedEncounterTableId) => set({ selectedEncounterTableId }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
   setSelectedShopId: (selectedShopId) => set({ selectedShopId }),
@@ -440,6 +463,31 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         exeFsPatchWorkflow,
         selectedExeFsCheckId,
         selectedExeFsPatchId
+      };
+    }),
+  setRoyalCandyWorkflow: (royalCandyWorkflow) =>
+    set((state) => {
+      const selectedRoyalCandyWorkflowId = royalCandyWorkflow.workflows.some(
+        (workflow) => workflow.workflowId === state.selectedRoyalCandyWorkflowId
+      )
+        ? state.selectedRoyalCandyWorkflowId
+        : (royalCandyWorkflow.workflows[0]?.workflowId ?? null);
+      const selectedRoyalCandyCheckId = royalCandyWorkflow.checks.some(
+        (check) => check.checkId === state.selectedRoyalCandyCheckId
+      )
+        ? state.selectedRoyalCandyCheckId
+        : (royalCandyWorkflow.checks[0]?.checkId ?? null);
+
+      return {
+        activeSection: 'royalCandy',
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        royalCandySearchText: '',
+        royalCandyWorkflow,
+        selectedRoyalCandyCheckId,
+        selectedRoyalCandyWorkflowId
       };
     }),
   setWorkflows: (workflows) => set({ workflows })
