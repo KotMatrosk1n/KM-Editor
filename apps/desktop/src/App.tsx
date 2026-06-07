@@ -6,11 +6,23 @@ import {
   FolderOpen,
   Layers,
   ListChecks,
+  RefreshCw,
   Search,
   ShieldCheck,
   type LucideIcon
 } from 'lucide-react';
-import { type WorkbenchSection, useWorkbenchStore } from './workbenchStore';
+import {
+  type ApiDiagnostic,
+  type ProjectHealth,
+  type ProjectPathRole,
+  type ProjectPathValidation
+} from './bridge/contracts';
+import { projectBridge } from './bridge/projectBridge';
+import {
+  type ProjectPathDraft,
+  type WorkbenchSection,
+  useWorkbenchStore
+} from './workbenchStore';
 
 const sections: Array<{
   id: WorkbenchSection;
@@ -34,24 +46,73 @@ const sections: Array<{
   }
 ];
 
-const pathStates = [
+const pathFields: Array<{
+  field: keyof ProjectPathDraft;
+  label: string;
+  role: ProjectPathRole;
+}> = [
   {
+    field: 'baseRomFsPath',
     label: 'Base RomFS',
-    value: 'Not set'
+    role: 'baseRomFs'
   },
   {
+    field: 'baseExeFsPath',
     label: 'Base ExeFS',
-    value: 'Not set'
+    role: 'baseExeFs'
   },
   {
+    field: 'outputRootPath',
     label: 'Output Root',
-    value: 'Not set'
+    role: 'outputRoot'
   }
 ];
 
+const healthLabels = {
+  blocked: 'Blocked',
+  editableReady: 'Editable ready',
+  needsPaths: 'Needs paths',
+  readOnlyReady: 'Read-only ready'
+} as const satisfies Record<ProjectHealth['state'], string>;
+
+const pathStatusLabels = {
+  missing: 'Missing',
+  notSet: 'Not set',
+  unsafe: 'Unsafe',
+  valid: 'Valid',
+  wrongKind: 'Wrong kind'
+} as const;
+
 export function App() {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
+  const draftPaths = useWorkbenchStore((state) => state.draftPaths);
+  const openProject = useWorkbenchStore((state) => state.openProject);
+  const projectStatus = useWorkbenchStore((state) => state.projectStatus);
   const setActiveSection = useWorkbenchStore((state) => state.setActiveSection);
+  const setDraftPath = useWorkbenchStore((state) => state.setDraftPath);
+  const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
+  const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
+  const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
+  const health = openProject?.health ?? null;
+  const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
+  const isBusy = projectStatus === 'opening' || projectStatus === 'validating';
+
+  const handleValidateProject = async () => {
+    setProjectStatus('validating');
+    const response = await projectBridge.validateProject({ paths: toProjectPaths(draftPaths) });
+    setProjectHealth(response.health);
+  };
+
+  const handleOpenProject = async () => {
+    setProjectStatus('opening');
+    const response = await projectBridge.openProject({ paths: toProjectPaths(draftPaths) });
+    setOpenProject({
+      fileGraph: response.fileGraph,
+      health: response.health,
+      projectId: response.projectId
+    });
+    setActiveSection('health');
+  };
 
   return (
     <main className="app-shell">
@@ -86,8 +147,8 @@ export function App() {
       <section className="workspace">
         <header className="toolbar">
           <div className="title-block">
-            <p className="project-state">No project open</p>
-            <h1>{sections.find((section) => section.id === activeSection)?.label}</h1>
+            <p className="project-state">{getProjectStateLabel(health, projectStatus)}</p>
+            <h1>{activeSectionLabel}</h1>
           </div>
 
           <label className="search-box">
@@ -95,42 +156,287 @@ export function App() {
             <input disabled placeholder="Search project" type="search" />
           </label>
 
-          <button className="primary-button" type="button">
+          <button
+            className="primary-button"
+            disabled={isBusy}
+            onClick={handleOpenProject}
+            type="button"
+          >
             <FolderOpen aria-hidden="true" size={18} />
-            <span>Open Project</span>
+            <span>{projectStatus === 'opening' ? 'Opening' : 'Open Project'}</span>
           </button>
         </header>
 
-        <div className="content-grid">
-          <section aria-labelledby="paths-heading" className="panel">
-            <div className="panel-heading">
-              <ShieldCheck aria-hidden="true" size={18} />
-              <h2 id="paths-heading">Paths</h2>
-            </div>
-
-            <dl className="path-list">
-              {pathStates.map((pathState) => (
-                <div className="path-row" key={pathState.label}>
-                  <dt>{pathState.label}</dt>
-                  <dd>{pathState.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-
-          <section aria-labelledby="session-heading" className="panel">
-            <div className="panel-heading">
-              <ClipboardCheck aria-hidden="true" size={18} />
-              <h2 id="session-heading">Edit Session</h2>
-            </div>
-
-            <div className="session-summary">
-              <span className="metric-value">0</span>
-              <span className="metric-label">Pending changes</span>
-            </div>
-          </section>
+        <div className="workspace-content">
+          {activeSection === 'health' ? (
+            <HealthSection
+              draftPaths={draftPaths}
+              health={health}
+              isBusy={isBusy}
+              onOpenProject={handleOpenProject}
+              onSetDraftPath={setDraftPath}
+              onValidateProject={handleValidateProject}
+              projectStatus={projectStatus}
+            />
+          ) : null}
+          {activeSection === 'workflows' ? <WorkflowsSection health={health} /> : null}
+          {activeSection === 'changes' ? <ChangesSection /> : null}
         </div>
       </section>
     </main>
   );
+}
+
+function HealthSection({
+  draftPaths,
+  health,
+  isBusy,
+  onOpenProject,
+  onSetDraftPath,
+  onValidateProject,
+  projectStatus
+}: {
+  draftPaths: ProjectPathDraft;
+  health: ProjectHealth | null;
+  isBusy: boolean;
+  onOpenProject: () => void;
+  onSetDraftPath: (field: keyof ProjectPathDraft, value: string) => void;
+  onValidateProject: () => void;
+  projectStatus: 'idle' | 'validating' | 'opening' | 'open';
+}) {
+  return (
+    <>
+      <section aria-labelledby="project-gate-heading" className="panel project-gate">
+        <div className="panel-heading">
+          <FolderOpen aria-hidden="true" size={18} />
+          <h2 id="project-gate-heading">Project Paths</h2>
+        </div>
+
+        <div className="path-form">
+          {pathFields.map((pathField) => {
+            const pathValidation = health?.paths.find((path) => path.role === pathField.role);
+
+            return (
+              <label className="path-field" key={pathField.field}>
+                <span>{pathField.label}</span>
+                <input
+                  aria-label={pathField.label}
+                  aria-describedby={`${pathField.field}-status`}
+                  onChange={(event) => onSetDraftPath(pathField.field, event.target.value)}
+                  placeholder="Not set"
+                  value={draftPaths[pathField.field]}
+                />
+                <small
+                  className={getPathStatusClassName(pathValidation)}
+                  id={`${pathField.field}-status`}
+                >
+                  {pathValidation ? pathStatusLabels[pathValidation.status] : 'Not checked'}
+                </small>
+              </label>
+            );
+          })}
+        </div>
+
+        <div className="action-row">
+          <button
+            className="secondary-button"
+            disabled={isBusy}
+            onClick={onValidateProject}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={18} />
+            <span>{projectStatus === 'validating' ? 'Validating' : 'Validate Paths'}</span>
+          </button>
+          <button
+            className="primary-button"
+            disabled={isBusy}
+            onClick={onOpenProject}
+            type="button"
+          >
+            <FolderOpen aria-hidden="true" size={18} />
+            <span>{projectStatus === 'opening' ? 'Opening' : 'Open Project'}</span>
+          </button>
+        </div>
+      </section>
+
+      <section aria-labelledby="health-heading" className="panel">
+        <div className="panel-heading">
+          <ShieldCheck aria-hidden="true" size={18} />
+          <h2 id="health-heading">Health Summary</h2>
+        </div>
+
+        <div className="health-grid">
+          <Metric label="State" value={health ? healthLabels[health.state] : 'No project'} />
+          <Metric
+            label="Read-only workflows"
+            value={health?.canOpenReadOnlyWorkflows ? 'Enabled' : 'Disabled'}
+          />
+          <Metric
+            label="Write workflows"
+            value={health?.canOpenEditableWorkflows ? 'Enabled' : 'Disabled'}
+          />
+          <Metric label="Pending changes" value="0" />
+        </div>
+      </section>
+
+      <PathStatusSection health={health} />
+      <DiagnosticsSection diagnostics={health?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function WorkflowsSection({ health }: { health: ProjectHealth | null }) {
+  const itemsState = getItemsWorkflowState(health);
+
+  return (
+    <section aria-labelledby="workflows-heading" className="panel wide-panel">
+      <div className="panel-heading">
+        <ListChecks aria-hidden="true" size={18} />
+        <h2 id="workflows-heading">Workflow List</h2>
+      </div>
+
+      <div className="workflow-list">
+        <article className="workflow-row">
+          <div>
+            <h3>Items</h3>
+            <p>Item records, names, provenance, and pending item edits.</p>
+          </div>
+          <span className={`status-pill ${itemsState.statusClass}`}>{itemsState.label}</span>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+function ChangesSection() {
+  return (
+    <section aria-labelledby="changes-heading" className="panel wide-panel">
+      <div className="panel-heading">
+        <ClipboardCheck aria-hidden="true" size={18} />
+        <h2 id="changes-heading">Edit Session</h2>
+      </div>
+
+      <div className="empty-state">
+        <span className="metric-value">0</span>
+        <span className="metric-label">Pending changes</span>
+      </div>
+    </section>
+  );
+}
+
+function PathStatusSection({ health }: { health: ProjectHealth | null }) {
+  return (
+    <section aria-labelledby="paths-heading" className="panel">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h2 id="paths-heading">Paths</h2>
+      </div>
+
+      <dl className="path-list">
+        {pathFields.map((pathField) => {
+          const pathValidation = health?.paths.find((path) => path.role === pathField.role);
+
+          return (
+            <div className="path-row" key={pathField.role}>
+              <dt>{pathField.label}</dt>
+              <dd className={getPathStatusClassName(pathValidation)}>
+                {pathValidation ? pathStatusLabels[pathValidation.status] : 'Not checked'}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+    </section>
+  );
+}
+
+function DiagnosticsSection({ diagnostics }: { diagnostics: ApiDiagnostic[] }) {
+  return (
+    <section aria-labelledby="diagnostics-heading" className="panel">
+      <div className="panel-heading">
+        <Activity aria-hidden="true" size={18} />
+        <h2 id="diagnostics-heading">Diagnostics</h2>
+      </div>
+
+      {diagnostics.length > 0 ? (
+        <ul className="diagnostic-list">
+          {diagnostics.map((diagnostic) => (
+            <li className={`diagnostic diagnostic-${diagnostic.severity}`} key={diagnostic.message}>
+              <strong>{diagnostic.severity}</strong>
+              <span>{diagnostic.message}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="empty-copy">No diagnostics.</p>
+      )}
+    </section>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="metric">
+      <span className="metric-label">{label}</span>
+      <span className="metric-value metric-value-small">{value}</span>
+    </div>
+  );
+}
+
+function getItemsWorkflowState(health: ProjectHealth | null) {
+  if (!health?.canOpenReadOnlyWorkflows) {
+    return {
+      label: 'Disabled',
+      statusClass: 'status-blocked'
+    };
+  }
+
+  if (health.canOpenEditableWorkflows) {
+    return {
+      label: 'Available',
+      statusClass: 'status-ready'
+    };
+  }
+
+  return {
+    label: 'Read-only',
+    statusClass: 'status-warning'
+  };
+}
+
+function getPathStatusClassName(pathValidation: ProjectPathValidation | undefined) {
+  if (!pathValidation) {
+    return 'path-status path-status-muted';
+  }
+
+  return `path-status path-status-${pathValidation.status}`;
+}
+
+function getProjectStateLabel(
+  health: ProjectHealth | null,
+  projectStatus: 'idle' | 'validating' | 'opening' | 'open'
+) {
+  if (projectStatus === 'opening') {
+    return 'Opening project';
+  }
+
+  if (projectStatus === 'validating') {
+    return 'Validating paths';
+  }
+
+  return health ? healthLabels[health.state] : 'No project open';
+}
+
+function toProjectPaths(draftPaths: ProjectPathDraft) {
+  return {
+    baseExeFsPath: normalizeDraftPath(draftPaths.baseExeFsPath),
+    baseRomFsPath: normalizeDraftPath(draftPaths.baseRomFsPath),
+    outputRootPath: normalizeDraftPath(draftPaths.outputRootPath)
+  };
+}
+
+function normalizeDraftPath(path: string) {
+  const trimmedPath = path.trim();
+
+  return trimmedPath.length > 0 ? trimmedPath : null;
 }
