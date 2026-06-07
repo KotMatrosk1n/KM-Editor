@@ -10,9 +10,20 @@ namespace KM.SwSh.Items;
 
 public sealed class SwShItemsWorkflowService
 {
+    public const string BuyPriceField = "buyPrice";
+    public const int MaximumBuyPrice = 999_999;
     public const string ItemsReadModelPath = "romfs/kmeditor/items.readmodel.json";
 
     private static readonly JsonSerializerOptions ReadModelJsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly IReadOnlyList<SwShItemEditableField> EditableFields =
+    [
+        new SwShItemEditableField(
+            BuyPriceField,
+            "Buy price",
+            "integer",
+            MinimumValue: 0,
+            MaximumBuyPrice),
+    ];
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
@@ -110,6 +121,7 @@ public sealed class SwShItemsWorkflowService
         return new SwShItemsWorkflow(
             summary,
             items,
+            EditableFields,
             new SwShItemsWorkflowStats(items.Count, items.Count > 0 ? 1 : 0),
             diagnostics);
     }

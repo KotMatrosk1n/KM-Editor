@@ -19,8 +19,8 @@ import {
   refreshFileGraphResponseSchema,
   startEditSessionRequestSchema,
   startEditSessionResponseSchema,
-  updateItemBuyPriceRequestSchema,
-  updateItemBuyPriceResponseSchema,
+  updateItemFieldRequestSchema,
+  updateItemFieldResponseSchema,
   validateEditSessionRequestSchema,
   validateEditSessionResponseSchema,
   validateProjectRequestSchema,
@@ -184,6 +184,15 @@ describe('bridge contracts', () => {
     const itemsResponseSchema = createBridgeResponseSchema(loadItemsWorkflowResponseSchema);
     const itemsWorkflow = {
       diagnostics: [],
+      editableFields: [
+        {
+          field: 'buyPrice',
+          label: 'Buy price',
+          maximumValue: 999999,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
       items: [
         {
           buyPrice: 300,
@@ -257,8 +266,8 @@ describe('bridge contracts', () => {
   it('validates edit session and Items buy price update envelopes', () => {
     const startRequestSchema = createBridgeRequestSchema(startEditSessionRequestSchema);
     const startResponseSchema = createBridgeResponseSchema(startEditSessionResponseSchema);
-    const updateRequestSchema = createBridgeRequestSchema(updateItemBuyPriceRequestSchema);
-    const updateResponseSchema = createBridgeResponseSchema(updateItemBuyPriceResponseSchema);
+    const updateRequestSchema = createBridgeRequestSchema(updateItemFieldRequestSchema);
+    const updateResponseSchema = createBridgeResponseSchema(updateItemFieldResponseSchema);
     const validateRequestSchema = createBridgeRequestSchema(validateEditSessionRequestSchema);
     const validateResponseSchema = createBridgeResponseSchema(validateEditSessionResponseSchema);
     const changePlanRequestSchema = createBridgeRequestSchema(createChangePlanRequestSchema);
@@ -309,6 +318,15 @@ describe('bridge contracts', () => {
     } as const;
     const itemsWorkflow = {
       diagnostics: [],
+      editableFields: [
+        {
+          field: 'buyPrice',
+          label: 'Buy price',
+          maximumValue: 999999,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
       items: [
         {
           buyPrice: 450,
@@ -353,16 +371,17 @@ describe('bridge contracts', () => {
 
     expect(
       updateRequestSchema.safeParse({
-        command: kmCommandNames.updateItemBuyPrice,
+        command: kmCommandNames.updateItemField,
         payload: {
-          buyPrice: 450,
+          field: 'buyPrice',
           itemId: 1,
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
             outputRootPath: 'output'
           },
-          session: editSession
+          session: editSession,
+          value: '450'
         }
       }).success
     ).toBe(true);
@@ -397,7 +416,7 @@ describe('bridge contracts', () => {
           diagnostics: [
             {
               field: 'buyPrice',
-              message: 'Pending item buy price change is valid.',
+              message: 'Pending item change is valid.',
               severity: 'info'
             }
           ],

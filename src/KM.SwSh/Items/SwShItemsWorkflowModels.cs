@@ -19,6 +19,13 @@ public sealed record SwShItemRecord(
     int SellPrice,
     SwShItemProvenance Provenance);
 
+public sealed record SwShItemEditableField(
+    string Field,
+    string Label,
+    string ValueKind,
+    int? MinimumValue,
+    int? MaximumValue);
+
 public sealed record SwShItemsWorkflowStats(
     int TotalItemCount,
     int SourceFileCount);
@@ -26,5 +33,6 @@ public sealed record SwShItemsWorkflowStats(
 public sealed record SwShItemsWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShItemRecord> Items,
+    IReadOnlyList<SwShItemEditableField> EditableFields,
     SwShItemsWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);

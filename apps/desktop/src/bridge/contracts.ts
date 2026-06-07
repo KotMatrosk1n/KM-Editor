@@ -8,7 +8,7 @@ export const kmCommandNameValues = [
   'project.fileGraph.refresh',
   'workflow.list',
   'items.load',
-  'items.buyPrice.update',
+  'items.field.update',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -30,7 +30,7 @@ export const kmCommandNames = {
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
-  updateItemBuyPrice: 'items.buyPrice.update',
+  updateItemField: 'items.field.update',
   validateEditSession: 'editSession.validate',
   validateProject: 'project.validate'
 } as const satisfies Record<string, KmCommandName>;
@@ -216,6 +216,14 @@ export const itemRecordSchema = z.strictObject({
   sellPrice: z.number().int().nonnegative()
 });
 
+export const itemEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  valueKind: z.string()
+});
+
 export const itemsWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
   totalItemCount: z.number().int().nonnegative()
@@ -223,6 +231,7 @@ export const itemsWorkflowStatsSchema = z.strictObject({
 
 export const itemsWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(itemEditableFieldSchema),
   items: z.array(itemRecordSchema),
   stats: itemsWorkflowStatsSchema,
   summary: workflowSummarySchema
@@ -232,14 +241,15 @@ export const loadItemsWorkflowResponseSchema = z.strictObject({
   workflow: itemsWorkflowSchema
 });
 
-export const updateItemBuyPriceRequestSchema = z.strictObject({
-  buyPrice: z.number().int().nonnegative(),
+export const updateItemFieldRequestSchema = z.strictObject({
+  field: z.string(),
   itemId: z.number().int().nonnegative(),
   paths: projectPathsSchema,
-  session: editSessionSchema.nullable()
+  session: editSessionSchema.nullable(),
+  value: z.string()
 });
 
-export const updateItemBuyPriceResponseSchema = z.strictObject({
+export const updateItemFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
   workflow: itemsWorkflowSchema
@@ -325,6 +335,7 @@ export type ChangePlan = z.infer<typeof changePlanSchema>;
 export type CreateChangePlanRequest = z.infer<typeof createChangePlanRequestSchema>;
 export type CreateChangePlanResponse = z.infer<typeof createChangePlanResponseSchema>;
 export type EditSession = z.infer<typeof editSessionSchema>;
+export type ItemEditableField = z.infer<typeof itemEditableFieldSchema>;
 export type ItemRecord = z.infer<typeof itemRecordSchema>;
 export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
@@ -341,8 +352,8 @@ export type RefreshFileGraphRequest = z.infer<typeof refreshFileGraphRequestSche
 export type RefreshFileGraphResponse = z.infer<typeof refreshFileGraphResponseSchema>;
 export type StartEditSessionRequest = z.infer<typeof startEditSessionRequestSchema>;
 export type StartEditSessionResponse = z.infer<typeof startEditSessionResponseSchema>;
-export type UpdateItemBuyPriceRequest = z.infer<typeof updateItemBuyPriceRequestSchema>;
-export type UpdateItemBuyPriceResponse = z.infer<typeof updateItemBuyPriceResponseSchema>;
+export type UpdateItemFieldRequest = z.infer<typeof updateItemFieldRequestSchema>;
+export type UpdateItemFieldResponse = z.infer<typeof updateItemFieldResponseSchema>;
 export type ValidateEditSessionRequest = z.infer<typeof validateEditSessionRequestSchema>;
 export type ValidateEditSessionResponse = z.infer<typeof validateEditSessionResponseSchema>;
 export type ValidateProjectRequest = z.infer<typeof validateProjectRequestSchema>;

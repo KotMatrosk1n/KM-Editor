@@ -144,10 +144,13 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("Potion", item.Name);
         Assert.Equal("romfs/kmeditor/items.readmodel.json", item.Provenance.SourceFile);
         Assert.Equal(ProjectFileLayerDto.Base, item.Provenance.SourceLayer);
+        var editableField = Assert.Single(response.Payload.Workflow.EditableFields);
+        Assert.Equal("buyPrice", editableField.Field);
+        Assert.Equal(999_999, editableField.MaximumValue);
     }
 
     [Fact]
-    public void DispatchUpdateItemBuyPriceReturnsPendingEditSession()
+    public void DispatchUpdateItemFieldReturnsPendingEditSession()
     {
         using var temp = TemporaryBridgeProject.Create();
         temp.WriteBaseRomFsFile(
@@ -168,12 +171,12 @@ public sealed class ProjectBridgeDispatcherTests
             """);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
-            KmCommandNames.UpdateItemBuyPrice,
-            new UpdateItemBuyPriceRequest(temp.Paths, Session: null, ItemId: 1, BuyPrice: 450),
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(temp.Paths, Session: null, ItemId: 1, Field: "buyPrice", Value: "450"),
             requestId: "request-items-edit");
 
         var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
-        var response = DeserializeResponse<UpdateItemBuyPriceResponse>(responseJson);
+        var response = DeserializeResponse<UpdateItemFieldResponse>(responseJson);
 
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
@@ -204,10 +207,10 @@ public sealed class ProjectBridgeDispatcherTests
             """);
         temp.WriteBaseExeFsFile("main", "base-main");
         var sessionResponseJson = new ProjectBridgeDispatcher().Dispatch(SerializeRequest(
-            KmCommandNames.UpdateItemBuyPrice,
-            new UpdateItemBuyPriceRequest(temp.Paths, Session: null, ItemId: 1, BuyPrice: 450),
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(temp.Paths, Session: null, ItemId: 1, Field: "buyPrice", Value: "450"),
             requestId: "request-items-edit"));
-        var sessionResponse = DeserializeResponse<UpdateItemBuyPriceResponse>(sessionResponseJson);
+        var sessionResponse = DeserializeResponse<UpdateItemFieldResponse>(sessionResponseJson);
         Assert.NotNull(sessionResponse.Payload);
         var requestJson = SerializeRequest(
             KmCommandNames.ValidateEditSession,
@@ -245,10 +248,10 @@ public sealed class ProjectBridgeDispatcherTests
             """);
         temp.WriteBaseExeFsFile("main", "base-main");
         var sessionResponseJson = new ProjectBridgeDispatcher().Dispatch(SerializeRequest(
-            KmCommandNames.UpdateItemBuyPrice,
-            new UpdateItemBuyPriceRequest(temp.Paths, Session: null, ItemId: 1, BuyPrice: 450),
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(temp.Paths, Session: null, ItemId: 1, Field: "buyPrice", Value: "450"),
             requestId: "request-items-edit"));
-        var sessionResponse = DeserializeResponse<UpdateItemBuyPriceResponse>(sessionResponseJson);
+        var sessionResponse = DeserializeResponse<UpdateItemFieldResponse>(sessionResponseJson);
         Assert.NotNull(sessionResponse.Payload);
         var requestJson = SerializeRequest(
             KmCommandNames.CreateChangePlan,
@@ -290,10 +293,10 @@ public sealed class ProjectBridgeDispatcherTests
         temp.WriteBaseExeFsFile("main", "base-main");
         var dispatcher = new ProjectBridgeDispatcher();
         var sessionResponseJson = dispatcher.Dispatch(SerializeRequest(
-            KmCommandNames.UpdateItemBuyPrice,
-            new UpdateItemBuyPriceRequest(temp.Paths, Session: null, ItemId: 1, BuyPrice: 450),
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(temp.Paths, Session: null, ItemId: 1, Field: "buyPrice", Value: "450"),
             requestId: "request-items-edit"));
-        var sessionResponse = DeserializeResponse<UpdateItemBuyPriceResponse>(sessionResponseJson);
+        var sessionResponse = DeserializeResponse<UpdateItemFieldResponse>(sessionResponseJson);
         Assert.NotNull(sessionResponse.Payload);
         var planResponseJson = dispatcher.Dispatch(SerializeRequest(
             KmCommandNames.CreateChangePlan,

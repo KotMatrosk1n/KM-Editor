@@ -11,12 +11,17 @@ namespace KM.SwSh.Tests.Items;
 public sealed class SwShItemsEditSessionServiceTests
 {
     [Fact]
-    public void UpdateBuyPriceAddsPendingEditAndPreviewsWorkflowValue()
+    public void UpdateFieldAddsPendingEditAndPreviewsWorkflowValue()
     {
         using var temp = CreateEditableProject();
         var service = new SwShItemsEditSessionService();
 
-        var result = service.UpdateBuyPrice(temp.Paths, session: null, itemId: 1, buyPrice: 450);
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.BuyPriceField,
+            value: "450");
 
         Assert.Empty(result.Diagnostics);
         Assert.True(result.Session.HasPendingChanges);
@@ -30,11 +35,57 @@ public sealed class SwShItemsEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateFieldReplacesExistingPendingEditForSameItemField()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+        var firstResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.BuyPriceField,
+            value: "450");
+
+        var secondResult = service.UpdateField(
+            temp.Paths,
+            firstResult.Session,
+            itemId: 1,
+            field: SwShItemsWorkflowService.BuyPriceField,
+            value: "600");
+
+        var edit = Assert.Single(secondResult.Session.PendingEdits);
+        Assert.Equal("600", edit.NewValue);
+        Assert.Equal(600, Assert.Single(secondResult.Workflow.Items).BuyPrice);
+    }
+
+    [Fact]
+    public void UpdateFieldRejectsUnsupportedItemField()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: "sellPrice",
+            value: "250");
+
+        Assert.False(result.Session.HasPendingChanges);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public void ValidateAcceptsPendingBuyPriceForLoadedItem()
     {
         using var temp = CreateEditableProject();
         var service = new SwShItemsEditSessionService();
-        var editResult = service.UpdateBuyPrice(temp.Paths, session: null, itemId: 1, buyPrice: 450);
+        var editResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.BuyPriceField,
+            value: "450");
 
         var validation = service.Validate(temp.Paths, editResult.Session);
 
@@ -48,7 +99,12 @@ public sealed class SwShItemsEditSessionServiceTests
     {
         using var temp = CreateEditableProject();
         var service = new SwShItemsEditSessionService();
-        var editResult = service.UpdateBuyPrice(temp.Paths, session: null, itemId: 1, buyPrice: 450);
+        var editResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.BuyPriceField,
+            value: "450");
 
         var changePlan = service.CreateChangePlan(temp.Paths, editResult.Session);
 
@@ -82,7 +138,12 @@ public sealed class SwShItemsEditSessionServiceTests
             }
             """);
         var service = new SwShItemsEditSessionService();
-        var editResult = service.UpdateBuyPrice(temp.Paths, session: null, itemId: 1, buyPrice: 450);
+        var editResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.BuyPriceField,
+            value: "450");
 
         var write = Assert.Single(service.CreateChangePlan(temp.Paths, editResult.Session).Writes);
 
@@ -94,7 +155,12 @@ public sealed class SwShItemsEditSessionServiceTests
     {
         using var temp = CreateEditableProject();
         var service = new SwShItemsEditSessionService();
-        var editResult = service.UpdateBuyPrice(temp.Paths, session: null, itemId: 1, buyPrice: 450);
+        var editResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.BuyPriceField,
+            value: "450");
         var changePlan = service.CreateChangePlan(temp.Paths, editResult.Session);
 
         var applyResult = service.ApplyChangePlan(temp.Paths, editResult.Session, changePlan);
@@ -113,7 +179,12 @@ public sealed class SwShItemsEditSessionServiceTests
     {
         using var temp = CreateEditableProject();
         var service = new SwShItemsEditSessionService();
-        var editResult = service.UpdateBuyPrice(temp.Paths, session: null, itemId: 1, buyPrice: 450);
+        var editResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.BuyPriceField,
+            value: "450");
         var changePlan = service.CreateChangePlan(temp.Paths, editResult.Session);
         var staleWrite = Assert.Single(changePlan.Writes) with { TargetRelativePath = "romfs/kmeditor/stale.json" };
         var stalePlan = new ChangePlan(changePlan.SessionId, [staleWrite], changePlan.Diagnostics);
@@ -126,16 +197,17 @@ public sealed class SwShItemsEditSessionServiceTests
     }
 
     [Fact]
-    public void UpdateBuyPriceRequiresEditableProjectPaths()
+    public void UpdateFieldRequiresEditableProjectPaths()
     {
         using var temp = CreateEditableProject();
         var service = new SwShItemsEditSessionService();
 
-        var result = service.UpdateBuyPrice(
+        var result = service.UpdateField(
             temp.Paths with { OutputRootPath = null },
             session: null,
             itemId: 1,
-            buyPrice: 450);
+            field: SwShItemsWorkflowService.BuyPriceField,
+            value: "450");
 
         Assert.False(result.Session.HasPendingChanges);
         Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);

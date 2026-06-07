@@ -12,10 +12,9 @@ namespace KM.SwSh.Items;
 
 public sealed class SwShItemsEditSessionService
 {
-    public const string BuyPriceField = "buyPrice";
+    public const string BuyPriceField = SwShItemsWorkflowService.BuyPriceField;
 
     private const string ItemsEditDomain = "workflow.items";
-    private const int MaximumBuyPrice = 999_999;
 
     private static readonly JsonSerializerOptions WriteModelJsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -38,13 +37,16 @@ public sealed class SwShItemsEditSessionService
         return EditSession.Start();
     }
 
-    public SwShItemsEditResult UpdateBuyPrice(
+    public SwShItemsEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,
         int itemId,
-        int buyPrice)
+        string field,
+        string value)
     {
         ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(value);
 
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
@@ -67,24 +69,16 @@ public sealed class SwShItemsEditSessionService
             return new SwShItemsEditResult(workflow, currentSession, diagnostics);
         }
 
-        if (!IsBuyPriceInRange(buyPrice))
+        var pendingEdit = CreatePendingEdit(selectedItem, field, value, diagnostics);
+        if (pendingEdit is null)
         {
-            diagnostics.Add(CreateBuyPriceRangeDiagnostic());
             return new SwShItemsEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = new PendingEdit(
-            ItemsEditDomain,
-            $"Set {selectedItem.Name} buy price to {buyPrice}.",
-            [new ProjectFileReference(selectedItem.Provenance.SourceLayer, selectedItem.Provenance.SourceFile)],
-            RecordId: selectedItem.ItemId.ToString(CultureInfo.InvariantCulture),
-            Field: BuyPriceField,
-            NewValue: buyPrice.ToString(CultureInfo.InvariantCulture));
-        var updatedSession = currentSession.WithPendingEdit(pendingEdit);
+        var updatedSession = ReplacePendingItemEdit(currentSession, pendingEdit);
 
-        // This is a preview overlay only; apply/change-plan support is deliberately outside this branch.
         return new SwShItemsEditResult(
-            OverlayPendingBuyPrice(workflow, itemId, buyPrice),
+            OverlayPendingEdit(workflow, pendingEdit),
             updatedSession,
             diagnostics);
     }
@@ -109,7 +103,7 @@ public sealed class SwShItemsEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                "Pending item buy price change is valid.",
+                "Pending item change is valid.",
                 field: BuyPriceField));
         }
 
@@ -246,15 +240,6 @@ public sealed class SwShItemsEditSessionService
             return;
         }
 
-        if (!string.Equals(edit.Field, BuyPriceField, StringComparison.Ordinal))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Pending item field '{edit.Field ?? "(missing)"}' is not supported yet.",
-                expected: BuyPriceField));
-            return;
-        }
-
         if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
             || workflow.Items.All(item => item.ItemId != itemId))
         {
@@ -266,16 +251,101 @@ public sealed class SwShItemsEditSessionService
             return;
         }
 
-        if (!int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var buyPrice)
-            || !IsBuyPriceInRange(buyPrice))
+        if (TryParsePendingEditValue(edit, diagnostics) is null)
+        {
+            return;
+        }
+    }
+
+    private static PendingEdit? CreatePendingEdit(
+        SwShItemRecord selectedItem,
+        string field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var normalizedField = field.Trim();
+
+        if (!string.Equals(normalizedField, BuyPriceField, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(normalizedField));
+            return null;
+        }
+
+        if (!TryParseBuyPrice(value, out var buyPrice))
         {
             diagnostics.Add(CreateBuyPriceRangeDiagnostic());
+            return null;
         }
+
+        return new PendingEdit(
+            ItemsEditDomain,
+            $"Set {selectedItem.Name} buy price to {buyPrice}.",
+            [new ProjectFileReference(selectedItem.Provenance.SourceLayer, selectedItem.Provenance.SourceFile)],
+            RecordId: selectedItem.ItemId.ToString(CultureInfo.InvariantCulture),
+            Field: BuyPriceField,
+            NewValue: buyPrice.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static int? TryParsePendingEditValue(
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(edit.Field, BuyPriceField, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
+            return null;
+        }
+
+        if (!TryParseBuyPrice(edit.NewValue, out var buyPrice))
+        {
+            diagnostics.Add(CreateBuyPriceRangeDiagnostic());
+            return null;
+        }
+
+        return buyPrice;
+    }
+
+    private static bool TryParseBuyPrice(string? value, out int buyPrice)
+    {
+        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out buyPrice)
+            && IsBuyPriceInRange(buyPrice);
     }
 
     private static bool IsBuyPriceInRange(int buyPrice)
     {
-        return buyPrice is >= 0 and <= MaximumBuyPrice;
+        return buyPrice is >= 0 and <= SwShItemsWorkflowService.MaximumBuyPrice;
+    }
+
+    private static EditSession ReplacePendingItemEdit(EditSession session, PendingEdit pendingEdit)
+    {
+        // Keep one draft per item field so repeated inspector saves update the pending change.
+        var pendingEdits = session.PendingEdits
+            .Where(edit => !IsSameItemFieldEdit(edit, pendingEdit))
+            .Append(pendingEdit)
+            .ToArray();
+
+        return session with { PendingEdits = pendingEdits };
+    }
+
+    private static bool IsSameItemFieldEdit(PendingEdit candidate, PendingEdit pendingEdit)
+    {
+        return string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal)
+            && string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
+            && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal);
+    }
+
+    private static SwShItemsWorkflow OverlayPendingEdit(
+        SwShItemsWorkflow workflow,
+        PendingEdit edit)
+    {
+        if (!string.Equals(edit.Field, BuyPriceField, StringComparison.Ordinal)
+            || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+            || !TryParseBuyPrice(edit.NewValue, out var buyPrice))
+        {
+            return workflow;
+        }
+
+        return OverlayPendingBuyPrice(workflow, itemId, buyPrice);
     }
 
     private static SwShItemsWorkflow OverlayPendingBuyPrice(
@@ -298,12 +368,7 @@ public sealed class SwShItemsEditSessionService
 
         foreach (var edit in edits)
         {
-            if (string.Equals(edit.Field, BuyPriceField, StringComparison.Ordinal)
-                && int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
-                && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var buyPrice))
-            {
-                updatedWorkflow = OverlayPendingBuyPrice(updatedWorkflow, itemId, buyPrice);
-            }
+            updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit);
         }
 
         return updatedWorkflow;
@@ -431,9 +496,18 @@ public sealed class SwShItemsEditSessionService
     {
         return CreateDiagnostic(
             DiagnosticSeverity.Error,
-            $"Item buy price must be between 0 and {MaximumBuyPrice}.",
+            $"Item buy price must be between 0 and {SwShItemsWorkflowService.MaximumBuyPrice}.",
             field: BuyPriceField,
             expected: "Safe item buy price");
+    }
+
+    private static ValidationDiagnostic CreateUnsupportedFieldDiagnostic(string field)
+    {
+        return CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"Item field '{field}' is not supported by the Items workflow yet.",
+            field: "field",
+            expected: BuyPriceField);
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

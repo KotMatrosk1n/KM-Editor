@@ -110,7 +110,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
 
-    expect(await screen.findByText('Pending item buy price change is valid.')).toBeInTheDocument();
+    expect(await screen.findByText('Pending item change is valid.')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
 
@@ -184,6 +184,15 @@ function createMockProjectBridge(
   };
   const itemsWorkflow: ItemsWorkflow = {
     diagnostics: [],
+    editableFields: [
+      {
+        field: 'buyPrice',
+        label: 'Buy price',
+        maximumValue: 999_999,
+        minimumValue: 0,
+        valueKind: 'integer'
+      }
+    ],
     items: [
       {
         buyPrice: 300,
@@ -286,7 +295,7 @@ function createMockProjectBridge(
           sessionId: 'session-1'
         }
       }),
-    updateItemBuyPrice: (request) =>
+    updateItemField: (request) =>
       Promise.resolve({
         diagnostics: [],
         session: {
@@ -294,8 +303,8 @@ function createMockProjectBridge(
           pendingEdits: [
             {
               domain: 'workflow.items',
-              field: 'buyPrice',
-              newValue: request.buyPrice.toString(),
+              field: request.field,
+              newValue: request.value,
               recordId: request.itemId.toString(),
               sources: [
                 {
@@ -303,7 +312,7 @@ function createMockProjectBridge(
                   relativePath: 'romfs/kmeditor/items.readmodel.json'
                 }
               ],
-              summary: `Set Potion buy price to ${request.buyPrice}.`
+              summary: `Set Potion buy price to ${request.value}.`
             }
           ],
           sessionId: 'session-1'
@@ -311,7 +320,9 @@ function createMockProjectBridge(
         workflow: {
           ...itemsWorkflow,
           items: itemsWorkflow.items.map((item) =>
-            item.itemId === request.itemId ? { ...item, buyPrice: request.buyPrice } : item
+            item.itemId === request.itemId
+              ? { ...item, buyPrice: Number.parseInt(request.value, 10) }
+              : item
           )
         }
       }),
@@ -320,7 +331,7 @@ function createMockProjectBridge(
         diagnostics: [
           {
             field: 'buyPrice',
-            message: 'Pending item buy price change is valid.',
+            message: 'Pending item change is valid.',
             severity: 'info'
           }
         ],

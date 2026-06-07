@@ -21,6 +21,7 @@ import {
   type ApplyResult,
   type ChangePlan,
   type EditSession,
+  type ItemEditableField,
   type ItemsWorkflow,
   type ItemRecord,
   type ProjectHealth,
@@ -102,6 +103,8 @@ const pathStatusLabels = {
   valid: 'Valid',
   wrongKind: 'Wrong kind'
 } as const;
+
+const buyPriceFieldName = 'buyPrice';
 
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
@@ -207,17 +210,18 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
     }
   };
 
-  const handleUpdateItemBuyPrice = async (itemId: number, buyPrice: number) => {
+  const handleUpdateItemField = async (itemId: number, field: string, value: string) => {
     setIsItemUpdating(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updateItemBuyPrice({
-        buyPrice,
+      const response = await bridge.updateItemField({
+        field,
         itemId,
         paths: toProjectPaths(draftPaths),
-        session: editSession
+        session: editSession,
+        value
       });
       setItemsWorkflow(response.workflow);
       setEditSession(response.session);
@@ -401,7 +405,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               onSearchChange={setItemSearchText}
               onSelectItem={setSelectedItemId}
               onStartEditSession={handleStartEditSession}
-              onUpdateItemBuyPrice={handleUpdateItemBuyPrice}
+              onUpdateItemField={handleUpdateItemField}
               searchText={itemSearchText}
               selectedItemId={selectedItemId}
               editSession={editSession}
@@ -588,7 +592,7 @@ function ItemsSection({
   onSearchChange,
   onSelectItem,
   onStartEditSession,
-  onUpdateItemBuyPrice,
+  onUpdateItemField,
   searchText,
   selectedItemId,
   workflow
@@ -599,7 +603,7 @@ function ItemsSection({
   onSearchChange: (searchText: string) => void;
   onSelectItem: (itemId: number | null) => void;
   onStartEditSession: () => void;
-  onUpdateItemBuyPrice: (itemId: number, buyPrice: number) => void;
+  onUpdateItemField: (itemId: number, field: string, value: string) => void;
   searchText: string;
   selectedItemId: number | null;
   workflow: ItemsWorkflow | null;
@@ -675,8 +679,9 @@ function ItemsSection({
               isEditStarting={isEditStarting}
               isItemUpdating={isItemUpdating}
               item={selectedItem}
+              editableFields={workflow.editableFields}
               onStartEditSession={onStartEditSession}
-              onUpdateItemBuyPrice={onUpdateItemBuyPrice}
+              onUpdateItemField={onUpdateItemField}
             />
           </div>
         ) : (
@@ -692,32 +697,41 @@ function ItemsSection({
 function SelectedItemPanel({
   canEditItems,
   editSession,
+  editableFields,
   isEditStarting,
   isItemUpdating,
   item,
   onStartEditSession,
-  onUpdateItemBuyPrice
+  onUpdateItemField
 }: {
   canEditItems: boolean;
   editSession: EditSession | null;
+  editableFields: ItemEditableField[];
   isEditStarting: boolean;
   isItemUpdating: boolean;
   item: ItemRecord | null;
   onStartEditSession: () => void;
-  onUpdateItemBuyPrice: (itemId: number, buyPrice: number) => void;
+  onUpdateItemField: (itemId: number, field: string, value: string) => void;
 }) {
   const [buyPriceDraft, setBuyPriceDraft] = useState('');
+  const buyPriceField = editableFields.find((field) => field.field === buyPriceFieldName);
+  const minimumBuyPrice = buyPriceField?.minimumValue ?? null;
+  const maximumBuyPrice = buyPriceField?.maximumValue ?? null;
 
   useEffect(() => {
     setBuyPriceDraft(item ? item.buyPrice.toString() : '');
   }, [item?.buyPrice, item?.itemId]);
 
   const parsedBuyPrice = Number.parseInt(buyPriceDraft, 10);
+  const buyPriceInRange =
+    Number.isInteger(parsedBuyPrice) &&
+    (minimumBuyPrice === null || parsedBuyPrice >= minimumBuyPrice) &&
+    (maximumBuyPrice === null || parsedBuyPrice <= maximumBuyPrice);
   const canSubmitBuyPrice =
     item !== null &&
     editSession !== null &&
-    Number.isInteger(parsedBuyPrice) &&
-    parsedBuyPrice >= 0 &&
+    buyPriceField !== undefined &&
+    buyPriceInRange &&
     parsedBuyPrice !== item.buyPrice;
 
   return (
@@ -754,11 +768,17 @@ function SelectedItemPanel({
 
           <div className="item-edit-form">
             <label className="path-field">
-              <span>Buy price</span>
+              <span>{buyPriceField?.label ?? 'Buy price'}</span>
               <input
                 aria-label="Buy price"
-                disabled={!canEditItems || editSession === null || isItemUpdating}
-                min={0}
+                disabled={
+                  !canEditItems ||
+                  editSession === null ||
+                  buyPriceField === undefined ||
+                  isItemUpdating
+                }
+                max={maximumBuyPrice ?? undefined}
+                min={minimumBuyPrice ?? undefined}
                 onChange={(event) => setBuyPriceDraft(event.target.value)}
                 type="number"
                 value={buyPriceDraft}
@@ -769,7 +789,9 @@ function SelectedItemPanel({
               <button
                 className="primary-button"
                 disabled={!canSubmitBuyPrice || isItemUpdating}
-                onClick={() => onUpdateItemBuyPrice(item.itemId, parsedBuyPrice)}
+                onClick={() =>
+                  onUpdateItemField(item.itemId, buyPriceFieldName, parsedBuyPrice.toString())
+                }
                 type="button"
               >
                 <Save aria-hidden="true" size={16} />
@@ -1050,7 +1072,7 @@ function filterItems(items: ItemRecord[], searchText: string) {
 function getPendingItemIds(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
-      .filter((edit) => edit.domain === 'workflow.items' && edit.field === 'buyPrice')
+      .filter((edit) => edit.domain === 'workflow.items')
       .map((edit) => Number.parseInt(edit.recordId ?? '', 10))
       .filter(Number.isInteger)
   );

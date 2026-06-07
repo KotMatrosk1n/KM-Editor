@@ -19,8 +19,8 @@ import {
   type RefreshFileGraphResponse,
   type StartEditSessionRequest,
   type StartEditSessionResponse,
-  type UpdateItemBuyPriceRequest,
-  type UpdateItemBuyPriceResponse,
+  type UpdateItemFieldRequest,
+  type UpdateItemFieldResponse,
   type ValidateEditSessionRequest,
   type ValidateEditSessionResponse,
   type ValidateProjectRequest,
@@ -34,7 +34,7 @@ import {
   openProjectResponseSchema,
   refreshFileGraphResponseSchema,
   startEditSessionResponseSchema,
-  updateItemBuyPriceResponseSchema,
+  updateItemFieldResponseSchema,
   validateEditSessionResponseSchema,
   validateProjectResponseSchema
 } from './contracts';
@@ -47,9 +47,7 @@ export type ProjectBridge = {
   openProject: (request: OpenProjectRequest) => Promise<OpenProjectResponse>;
   refreshFileGraph: (request: RefreshFileGraphRequest) => Promise<RefreshFileGraphResponse>;
   startEditSession: (request: StartEditSessionRequest) => Promise<StartEditSessionResponse>;
-  updateItemBuyPrice: (
-    request: UpdateItemBuyPriceRequest
-  ) => Promise<UpdateItemBuyPriceResponse>;
+  updateItemField: (request: UpdateItemFieldRequest) => Promise<UpdateItemFieldResponse>;
   validateEditSession: (
     request: ValidateEditSessionRequest
   ) => Promise<ValidateEditSessionResponse>;
@@ -129,12 +127,12 @@ export function createProjectBridge(
         request,
         startEditSessionResponseSchema
       ),
-    updateItemBuyPrice: (request) =>
+    updateItemField: (request) =>
       sendProjectBridgeRequest(
         transport,
-        kmCommandNames.updateItemBuyPrice,
+        kmCommandNames.updateItemField,
         request,
-        updateItemBuyPriceResponseSchema
+        updateItemFieldResponseSchema
       ),
     validateEditSession: (request) =>
       sendProjectBridgeRequest(
