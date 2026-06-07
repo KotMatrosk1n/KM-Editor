@@ -1,11 +1,53 @@
+## Build output
 bin/
 obj/
-node_modules/
 dist/
 build/
+out/
+
+## Dependencies
+node_modules/
+
+## IDE and user state
 .vs/
 .vscode/
 *.user
 *.suo
-*.log
 
+## Logs and local environment
+*.log
+.env
+.env.*
+!.env.example
+
+## Test and coverage output
+TestResults/
+coverage/
+coverage-*/
+*.coverage
+*.coveragexml
+
+## Root-level local game data and generated output
+/romfs/
+/exefs/
+/base-romfs/
+/base-exefs/
+/dump/
+/dumps/
+/layeredfs/
+/LayeredFS/
+/output/
+/outputs/
+/generated/
+
+## Scratch and temporary work
+/.cache/
+/.scratch/
+/.tmp/
+/scratch/
+/tmp/
+/temp/
+
+## Private fixtures
+/fixtures/private/
+/tests/fixtures/private/
