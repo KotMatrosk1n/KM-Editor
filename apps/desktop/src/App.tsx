@@ -33,6 +33,10 @@ import {
   type TextEditableField,
   type TextEntryRecord,
   type TextWorkflow,
+  type TrainerEditableField,
+  type TrainerPokemonRecord,
+  type TrainerRecord,
+  type TrainersWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
 import {
@@ -70,6 +74,11 @@ const sections: Array<{
     id: 'text',
     label: 'Text',
     icon: ListChecks
+  },
+  {
+    id: 'trainers',
+    label: 'Trainers',
+    icon: Activity
   },
   {
     id: 'changes',
@@ -193,6 +202,12 @@ const buyPriceFieldName = 'buyPrice';
 const sellPriceFieldName = 'sellPrice';
 const wattsPriceFieldName = 'wattsPrice';
 const alternatePriceFieldName = 'alternatePrice';
+const trainerClassIdFieldName = 'trainerClassId';
+const battleTypeFieldName = 'battleType';
+const speciesIdFieldName = 'speciesId';
+const levelFieldName = 'level';
+const heldItemIdFieldName = 'heldItemId';
+const moveFieldNames = ['move1Id', 'move2Id', 'move3Id', 'move4Id'] as const;
 
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
@@ -207,8 +222,11 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
   const selectedTextKey = useWorkbenchStore((state) => state.selectedTextKey);
+  const selectedTrainerId = useWorkbenchStore((state) => state.selectedTrainerId);
   const textSearchText = useWorkbenchStore((state) => state.textSearchText);
   const textWorkflow = useWorkbenchStore((state) => state.textWorkflow);
+  const trainerSearchText = useWorkbenchStore((state) => state.trainerSearchText);
+  const trainersWorkflow = useWorkbenchStore((state) => state.trainersWorkflow);
   const workflows = useWorkbenchStore((state) => state.workflows);
   const setActiveSection = useWorkbenchStore((state) => state.setActiveSection);
   const setApplyResult = useWorkbenchStore((state) => state.setApplyResult);
@@ -225,8 +243,11 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
   const setSelectedTextKey = useWorkbenchStore((state) => state.setSelectedTextKey);
+  const setSelectedTrainerId = useWorkbenchStore((state) => state.setSelectedTrainerId);
   const setTextSearchText = useWorkbenchStore((state) => state.setTextSearchText);
   const setTextWorkflow = useWorkbenchStore((state) => state.setTextWorkflow);
+  const setTrainerSearchText = useWorkbenchStore((state) => state.setTrainerSearchText);
+  const setTrainersWorkflow = useWorkbenchStore((state) => state.setTrainersWorkflow);
   const setWorkflows = useWorkbenchStore((state) => state.setWorkflows);
   const health = openProject?.health ?? null;
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
@@ -237,6 +258,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isItemUpdating, setIsItemUpdating] = useState(false);
   const [isTextLoading, setIsTextLoading] = useState(false);
   const [isTextUpdating, setIsTextUpdating] = useState(false);
+  const [isTrainersLoading, setIsTrainersLoading] = useState(false);
+  const [isTrainerUpdating, setIsTrainerUpdating] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -305,6 +328,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
     }
   };
 
+  const handleOpenTrainersWorkflow = async () => {
+    setIsTrainersLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadTrainersWorkflow({ paths: toProjectPaths(draftPaths) });
+      setTrainersWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTrainersLoading(false);
+    }
+  };
+
   const handleStartEditSession = async () => {
     setIsEditStarting(true);
     setBridgeDiagnostics([]);
@@ -362,6 +399,35 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsTextUpdating(false);
+    }
+  };
+
+  const handleUpdateTrainerField = async (
+    trainerId: number,
+    slot: number | null,
+    field: string,
+    value: string
+  ) => {
+    setIsTrainerUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateTrainerField({
+        field,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        slot,
+        trainerId,
+        value
+      });
+      setTrainersWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTrainerUpdating(false);
     }
   };
 
@@ -528,8 +594,10 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               health={health}
               isItemsLoading={isItemsLoading}
               isTextLoading={isTextLoading}
+              isTrainersLoading={isTrainersLoading}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenTextWorkflow={handleOpenTextWorkflow}
+              onOpenTrainersWorkflow={handleOpenTrainersWorkflow}
               pendingEditCount={pendingEditCount}
               workflows={workflows}
             />
@@ -560,6 +628,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               searchText={textSearchText}
               selectedTextKey={selectedTextKey}
               workflow={textWorkflow}
+            />
+          ) : null}
+          {activeSection === 'trainers' ? (
+            <TrainersSection
+              editSession={editSession}
+              isEditStarting={isEditStarting}
+              isTrainerUpdating={isTrainerUpdating}
+              onSearchChange={setTrainerSearchText}
+              onSelectTrainer={setSelectedTrainerId}
+              onStartEditSession={handleStartEditSession}
+              onUpdateTrainerField={handleUpdateTrainerField}
+              searchText={trainerSearchText}
+              selectedTrainerId={selectedTrainerId}
+              workflow={trainersWorkflow}
             />
           ) : null}
           {activeSection === 'changes' ? (
@@ -688,16 +770,20 @@ function WorkflowsSection({
   health,
   isItemsLoading,
   isTextLoading,
+  isTrainersLoading,
   onOpenItemsWorkflow,
   onOpenTextWorkflow,
+  onOpenTrainersWorkflow,
   pendingEditCount,
   workflows
 }: {
   health: ProjectHealth | null;
   isItemsLoading: boolean;
   isTextLoading: boolean;
+  isTrainersLoading: boolean;
   onOpenItemsWorkflow: () => void;
   onOpenTextWorkflow: () => void;
+  onOpenTrainersWorkflow: () => void;
   pendingEditCount: number;
   workflows: WorkflowSummary[];
 }) {
@@ -715,8 +801,10 @@ function WorkflowsSection({
           const Icon = definition.icon;
           const isItemsWorkflow = definition.id === 'items';
           const isTextWorkflow = definition.id === 'text';
+          const isTrainersWorkflow = definition.id === 'trainers';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
+          const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
 
           return (
             <article className="workflow-row" key={definition.id}>
@@ -751,6 +839,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isTextLoading ? 'Loading' : 'Open Text'}</span>
+                  </button>
+                ) : null}
+                {isTrainersWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenTrainers || isTrainersLoading}
+                    onClick={onOpenTrainersWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isTrainersLoading ? 'Loading' : 'Open Trainers'}</span>
                   </button>
                 ) : null}
               </div>
@@ -1248,6 +1347,403 @@ function SelectedTextPanel({
   );
 }
 
+function TrainersSection({
+  editSession,
+  isEditStarting,
+  isTrainerUpdating,
+  onSearchChange,
+  onSelectTrainer,
+  onStartEditSession,
+  onUpdateTrainerField,
+  searchText,
+  selectedTrainerId,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isTrainerUpdating: boolean;
+  onSearchChange: (searchText: string) => void;
+  onSelectTrainer: (trainerId: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateTrainerField: (
+    trainerId: number,
+    slot: number | null,
+    field: string,
+    value: string
+  ) => void;
+  searchText: string;
+  selectedTrainerId: number | null;
+  workflow: TrainersWorkflow | null;
+}) {
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const filteredTrainers = filterTrainers(workflow?.trainers ?? [], searchText);
+  const selectedTrainer =
+    workflow?.trainers.find((trainer) => trainer.trainerId === selectedTrainerId) ??
+    filteredTrainers[0] ??
+    null;
+  const selectedPokemon =
+    selectedTrainer?.team.find((pokemon) => pokemon.slot === selectedSlot) ??
+    selectedTrainer?.team[0] ??
+    null;
+  const canEditTrainers = workflow?.summary.availability === 'available';
+  const pendingTrainerIds = getPendingTrainerIds(editSession);
+
+  useEffect(() => {
+    if (!selectedTrainer) {
+      setSelectedSlot(null);
+      return;
+    }
+
+    const hasSelectedSlot = selectedTrainer.team.some((pokemon) => pokemon.slot === selectedSlot);
+    if (!hasSelectedSlot) {
+      setSelectedSlot(selectedTrainer.team[0]?.slot ?? null);
+    }
+  }, [selectedSlot, selectedTrainer?.trainerId, selectedTrainer?.team]);
+
+  return (
+    <>
+      <section aria-labelledby="trainers-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Activity aria-hidden="true" size={18} />
+          <h2 id="trainers-heading">Trainers</h2>
+        </div>
+
+        <div className="items-toolbar trainers-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search trainers"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search trainers"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded trainers"
+            value={workflow ? workflow.stats.totalTrainerCount.toString() : '0'}
+          />
+          <Metric
+            label="Party Pokemon"
+            value={workflow ? workflow.stats.totalPokemonCount.toString() : '0'}
+          />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="trainers-layout">
+            <div className="trainers-table" role="table" aria-label="Trainers">
+              <div className="trainers-row trainers-row-heading" role="row">
+                <span role="columnheader">ID</span>
+                <span role="columnheader">Name</span>
+                <span role="columnheader">Class</span>
+                <span role="columnheader">Battle</span>
+                <span role="columnheader">Team</span>
+                <span role="columnheader">Source</span>
+              </div>
+              {filteredTrainers.map((trainer) => (
+                <button
+                  className={`trainers-row ${
+                    selectedTrainer?.trainerId === trainer.trainerId ? 'trainers-row-selected' : ''
+                  } ${pendingTrainerIds.has(trainer.trainerId) ? 'trainers-row-pending' : ''}`}
+                  key={trainer.trainerId}
+                  onClick={() => onSelectTrainer(trainer.trainerId)}
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{trainer.trainerId}</span>
+                  <span role="cell">{trainer.name}</span>
+                  <span role="cell">{trainer.trainerClass}</span>
+                  <span role="cell">{trainer.battleType}</span>
+                  <span role="cell">{trainer.team.length}</span>
+                  <span role="cell">{formatSourceLayer(trainer.provenance.sourceLayer)}</span>
+                </button>
+              ))}
+            </div>
+
+            <SelectedTrainerPanel
+              canEditTrainers={canEditTrainers}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              isEditStarting={isEditStarting}
+              isTrainerUpdating={isTrainerUpdating}
+              onSelectSlot={setSelectedSlot}
+              onStartEditSession={onStartEditSession}
+              onUpdateTrainerField={onUpdateTrainerField}
+              selectedPokemon={selectedPokemon}
+              selectedSlot={selectedSlot}
+              trainer={selectedTrainer}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Trainers from Workflows to load backend trainer data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedTrainerPanel({
+  canEditTrainers,
+  editSession,
+  editableFields,
+  isEditStarting,
+  isTrainerUpdating,
+  onSelectSlot,
+  onStartEditSession,
+  onUpdateTrainerField,
+  selectedPokemon,
+  selectedSlot,
+  trainer
+}: {
+  canEditTrainers: boolean;
+  editSession: EditSession | null;
+  editableFields: TrainerEditableField[];
+  isEditStarting: boolean;
+  isTrainerUpdating: boolean;
+  onSelectSlot: (slot: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateTrainerField: (
+    trainerId: number,
+    slot: number | null,
+    field: string,
+    value: string
+  ) => void;
+  selectedPokemon: TrainerPokemonRecord | null;
+  selectedSlot: number | null;
+  trainer: TrainerRecord | null;
+}) {
+  const [trainerDrafts, setTrainerDrafts] = useState<Record<string, string>>({});
+  const [pokemonDrafts, setPokemonDrafts] = useState<Record<string, string>>({});
+  const trainerFields = editableFields.filter((field) =>
+    [trainerClassIdFieldName, battleTypeFieldName].includes(field.field)
+  );
+  const pokemonFields = editableFields.filter((field) =>
+    [speciesIdFieldName, levelFieldName, heldItemIdFieldName, ...moveFieldNames].includes(
+      field.field as (typeof moveFieldNames)[number]
+    )
+  );
+
+  useEffect(() => {
+    if (!trainer) {
+      setTrainerDrafts({});
+      return;
+    }
+
+    setTrainerDrafts(
+      Object.fromEntries(
+        trainerFields.map((field) => [
+          field.field,
+          (getEditableTrainerFieldValue(trainer, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [editableFields, trainer?.battleTypeValue, trainer?.trainerClassId, trainer?.trainerId]);
+
+  useEffect(() => {
+    if (!selectedPokemon) {
+      setPokemonDrafts({});
+      return;
+    }
+
+    setPokemonDrafts(
+      Object.fromEntries(
+        pokemonFields.map((field) => [
+          field.field,
+          (getEditablePokemonFieldValue(selectedPokemon, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [
+    editableFields,
+    selectedPokemon?.heldItemId,
+    selectedPokemon?.level,
+    selectedPokemon?.moveIds,
+    selectedPokemon?.slot,
+    selectedPokemon?.speciesId
+  ]);
+
+  return (
+    <aside aria-label="Selected trainer provenance" className="trainer-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Trainer</h3>
+      </div>
+
+      {trainer ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Name</dt>
+              <dd>{trainer.name}</dd>
+            </div>
+            <div>
+              <dt>Data file</dt>
+              <dd>{trainer.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Party file</dt>
+              <dd>{trainer.provenance.teamSourceFile}</dd>
+            </div>
+            <div>
+              <dt>Data layer</dt>
+              <dd>{formatSourceLayer(trainer.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>Party layer</dt>
+              <dd>{formatSourceLayer(trainer.provenance.teamSourceLayer)}</dd>
+            </div>
+          </dl>
+
+          <div className="trainer-edit-form">
+            <div className="trainer-field-grid">
+              {trainerFields.map((field) => {
+                const currentValue = getEditableTrainerFieldValue(trainer, field.field);
+                const draftValue = trainerDrafts[field.field] ?? '';
+                const draftState = getIntegerDraftState(draftValue, currentValue, field);
+                const canSubmit =
+                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+
+                return (
+                  <div className="trainer-editor-row" key={field.field}>
+                    <label className="path-field">
+                      <span>{field.label}</span>
+                      <input
+                        aria-label={field.label}
+                        disabled={!canEditTrainers || editSession === null || isTrainerUpdating}
+                        max={field.maximumValue ?? undefined}
+                        min={field.minimumValue ?? undefined}
+                        onChange={(event) =>
+                          setTrainerDrafts((currentDrafts) => ({
+                            ...currentDrafts,
+                            [field.field]: event.target.value
+                          }))
+                        }
+                        type="number"
+                        value={draftValue}
+                      />
+                    </label>
+                    {editSession ? (
+                      <button
+                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                        className="primary-button compact-button"
+                        disabled={!canSubmit || isTrainerUpdating}
+                        onClick={() =>
+                          onUpdateTrainerField(
+                            trainer.trainerId,
+                            null,
+                            field.field,
+                            draftState.parsedValue!.toString()
+                          )
+                        }
+                        type="button"
+                      >
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isTrainerUpdating ? 'Saving' : 'Save'}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="trainer-party-header">
+              <strong>Party</strong>
+              <select
+                aria-label="Trainer party slot"
+                disabled={trainer.team.length === 0}
+                onChange={(event) => onSelectSlot(Number(event.target.value))}
+                value={selectedSlot ?? ''}
+              >
+                {trainer.team.map((pokemon) => (
+                  <option key={pokemon.slot} value={pokemon.slot}>
+                    Slot {pokemon.slot}: {pokemon.species}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedPokemon ? (
+              <div className="trainer-field-grid">
+                {pokemonFields.map((field) => {
+                  const currentValue = getEditablePokemonFieldValue(selectedPokemon, field.field);
+                  const draftValue = pokemonDrafts[field.field] ?? '';
+                  const draftState = getIntegerDraftState(draftValue, currentValue, field);
+                  const canSubmit =
+                    editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+
+                  return (
+                    <div className="trainer-editor-row" key={field.field}>
+                      <label className="path-field">
+                        <span>{field.label}</span>
+                        <input
+                          aria-label={field.label}
+                          disabled={!canEditTrainers || editSession === null || isTrainerUpdating}
+                          max={field.maximumValue ?? undefined}
+                          min={field.minimumValue ?? undefined}
+                          onChange={(event) =>
+                            setPokemonDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [field.field]: event.target.value
+                            }))
+                          }
+                          type="number"
+                          value={draftValue}
+                        />
+                      </label>
+                      {editSession ? (
+                        <button
+                          aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                          className="primary-button compact-button"
+                          disabled={!canSubmit || isTrainerUpdating}
+                          onClick={() =>
+                            onUpdateTrainerField(
+                              trainer.trainerId,
+                              selectedPokemon.slot,
+                              field.field,
+                              draftState.parsedValue!.toString()
+                            )
+                          }
+                          type="button"
+                        >
+                          <Save aria-hidden="true" size={16} />
+                          <span>{isTrainerUpdating ? 'Saving' : 'Save'}</span>
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="empty-copy">No party Pokemon selected.</p>
+            )}
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditTrainers || isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No trainer selected.</p>
+      )}
+    </aside>
+  );
+}
+
 function ChangesSection({
   applyResult,
   changePlan,
@@ -1525,6 +2021,34 @@ function filterTextEntries(entries: TextEntryRecord[], searchText: string) {
   );
 }
 
+function filterTrainers(trainers: TrainerRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return trainers;
+  }
+
+  return trainers.filter((trainer) =>
+    [
+      trainer.trainerId.toString(),
+      trainer.name,
+      trainer.trainerClass,
+      trainer.trainerClassId.toString(),
+      trainer.battleType,
+      trainer.provenance.sourceFile,
+      trainer.provenance.teamSourceFile,
+      ...trainer.team.flatMap((pokemon) => [
+        pokemon.species,
+        pokemon.speciesId.toString(),
+        pokemon.level.toString(),
+        pokemon.heldItem ?? '',
+        ...pokemon.moves,
+        ...pokemon.moveIds.map((moveId) => moveId.toString())
+      ])
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function getEditableItemFieldValue(item: ItemRecord, field: string) {
   switch (field) {
     case buyPriceFieldName:
@@ -1540,6 +2064,38 @@ function getEditableItemFieldValue(item: ItemRecord, field: string) {
   }
 }
 
+function getEditableTrainerFieldValue(trainer: TrainerRecord, field: string) {
+  switch (field) {
+    case trainerClassIdFieldName:
+      return trainer.trainerClassId;
+    case battleTypeFieldName:
+      return trainer.battleTypeValue;
+    default:
+      return null;
+  }
+}
+
+function getEditablePokemonFieldValue(pokemon: TrainerPokemonRecord, field: string) {
+  switch (field) {
+    case speciesIdFieldName:
+      return pokemon.speciesId;
+    case levelFieldName:
+      return pokemon.level;
+    case heldItemIdFieldName:
+      return pokemon.heldItemId;
+    case moveFieldNames[0]:
+      return pokemon.moveIds[0] ?? null;
+    case moveFieldNames[1]:
+      return pokemon.moveIds[1] ?? null;
+    case moveFieldNames[2]:
+      return pokemon.moveIds[2] ?? null;
+    case moveFieldNames[3]:
+      return pokemon.moveIds[3] ?? null;
+    default:
+      return null;
+  }
+}
+
 function getItemFieldSaveLabel(field: ItemEditableField) {
   return `Save ${field.label.replace(/\s+price$/i, '')}`;
 }
@@ -1548,6 +2104,32 @@ function getItemPriceDraftState(
   draftValue: string,
   currentValue: number | null,
   field: ItemEditableField | undefined
+) {
+  const normalizedValue = draftValue.trim();
+  const parsedValue = /^\d+$/.test(normalizedValue)
+    ? Number.parseInt(normalizedValue, 10)
+    : null;
+  const minimumValue = field?.minimumValue ?? null;
+  const maximumValue = field?.maximumValue ?? null;
+  const inRange =
+    parsedValue !== null &&
+    (minimumValue === null || parsedValue >= minimumValue) &&
+    (maximumValue === null || parsedValue <= maximumValue);
+
+  return {
+    canSubmit:
+      field !== undefined &&
+      currentValue !== null &&
+      inRange &&
+      parsedValue !== currentValue,
+    parsedValue
+  };
+}
+
+function getIntegerDraftState(
+  draftValue: string,
+  currentValue: number | null,
+  field: TrainerEditableField | undefined
 ) {
   const normalizedValue = draftValue.trim();
   const parsedValue = /^\d+$/.test(normalizedValue)
@@ -1584,6 +2166,15 @@ function getPendingTextKeys(editSession: EditSession | null) {
     (editSession?.pendingEdits ?? [])
       .filter((edit) => edit.domain === 'workflow.text' && edit.recordId)
       .map((edit) => edit.recordId!)
+  );
+}
+
+function getPendingTrainerIds(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.trainers')
+      .map((edit) => Number.parseInt((edit.recordId ?? '').split(':')[0] ?? '', 10))
+      .filter(Number.isInteger)
   );
 }
 
@@ -1654,7 +2245,10 @@ const workflowAvailabilityClassNames = {
 } as const;
 
 function formatSourceLayer(
-  layer: ItemRecord['provenance']['sourceLayer'] | TextEntryRecord['provenance']['sourceLayer']
+  layer:
+    | ItemRecord['provenance']['sourceLayer']
+    | TextEntryRecord['provenance']['sourceLayer']
+    | TrainerRecord['provenance']['sourceLayer']
 ) {
   return {
     base: 'Base',
@@ -1674,7 +2268,10 @@ function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][n
 }
 
 function formatFileState(
-  state: ItemRecord['provenance']['fileState'] | TextEntryRecord['provenance']['fileState']
+  state:
+    | ItemRecord['provenance']['fileState']
+    | TextEntryRecord['provenance']['fileState']
+    | TrainerRecord['provenance']['fileState']
 ) {
   return {
     baseOnly: 'Base only',

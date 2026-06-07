@@ -43,6 +43,8 @@ import {
   updateItemFieldResponseSchema,
   updateTextEntryRequestSchema,
   updateTextEntryResponseSchema,
+  updateTrainerFieldRequestSchema,
+  updateTrainerFieldResponseSchema,
   validateEditSessionRequestSchema,
   validateEditSessionResponseSchema,
   validateProjectRequestSchema,
@@ -365,8 +367,17 @@ describe('bridge contracts', () => {
     } as const;
     const trainersWorkflow = {
       diagnostics: [],
+      editableFields: [
+        {
+          field: 'level',
+          label: 'Level',
+          maximumValue: 100,
+          minimumValue: 1,
+          valueKind: 'integer'
+        }
+      ],
       stats: {
-        sourceFileCount: 1,
+        sourceFileCount: 2,
         totalPokemonCount: 1,
         totalTrainerCount: 1
       },
@@ -379,24 +390,32 @@ describe('bridge contracts', () => {
       },
       trainers: [
         {
-          battleType: 'Single',
-          location: 'Route 1',
+          battleType: 'Doubles',
+          battleTypeValue: 1,
+          location: 'Trainer 10',
           name: 'Avery',
           provenance: {
             fileState: 'baseOnly',
-            sourceFile: 'romfs/kmeditor/trainers.readmodel.json',
-            sourceLayer: 'base'
+            sourceFile: 'romfs/bin/trainer/trainer_data/trainer_010.bin',
+            sourceLayer: 'base',
+            teamFileState: 'baseOnly',
+            teamSourceFile: 'romfs/bin/trainer/trainer_poke/trainer_010.bin',
+            teamSourceLayer: 'base'
           },
           team: [
             {
-              heldItem: null,
+              heldItem: 'Potion',
+              heldItemId: 1,
               level: 12,
-              moves: ['Scratch', 'Growl'],
+              moveIds: [1, 2, 0, 0],
+              moves: ['Scratch', 'Growl', 'None', 'None'],
               slot: 1,
-              species: 'Grookey'
+              species: 'Grookey',
+              speciesId: 810
             }
           ],
           trainerClass: 'Pokemon Trainer',
+          trainerClassId: 5,
           trainerId: 10
         }
       ]
@@ -969,6 +988,8 @@ describe('bridge contracts', () => {
     const updateResponseSchema = createBridgeResponseSchema(updateItemFieldResponseSchema);
     const updateTextRequestSchema = createBridgeRequestSchema(updateTextEntryRequestSchema);
     const updateTextResponseSchema = createBridgeResponseSchema(updateTextEntryResponseSchema);
+    const updateTrainerRequestSchema = createBridgeRequestSchema(updateTrainerFieldRequestSchema);
+    const updateTrainerResponseSchema = createBridgeResponseSchema(updateTrainerFieldResponseSchema);
     const validateRequestSchema = createBridgeRequestSchema(validateEditSessionRequestSchema);
     const validateResponseSchema = createBridgeResponseSchema(validateEditSessionResponseSchema);
     const changePlanRequestSchema = createBridgeRequestSchema(createChangePlanRequestSchema);
@@ -1153,6 +1174,80 @@ describe('bridge contracts', () => {
         label: 'Text and Dialogue Map'
       }
     } as const;
+    const trainerSession = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.trainers',
+          field: 'level',
+          newValue: '25',
+          recordId: '10:1',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/bin/trainer/trainer_poke/trainer_010.bin'
+            }
+          ],
+          summary: 'Set Avery slot 1 level to 25.'
+        }
+      ],
+      sessionId: 'session-1'
+    } as const;
+    const trainersWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'level',
+          label: 'Level',
+          maximumValue: 100,
+          minimumValue: 1,
+          valueKind: 'integer'
+        }
+      ],
+      stats: {
+        sourceFileCount: 2,
+        totalPokemonCount: 1,
+        totalTrainerCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Trainer parties, classes, battle types, and source provenance.',
+        diagnostics: [],
+        id: 'trainers',
+        label: 'Trainers'
+      },
+      trainers: [
+        {
+          battleType: 'Doubles',
+          battleTypeValue: 1,
+          location: 'Trainer 10',
+          name: 'Avery',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/trainer/trainer_data/trainer_010.bin',
+            sourceLayer: 'base',
+            teamFileState: 'baseOnly',
+            teamSourceFile: 'romfs/bin/trainer/trainer_poke/trainer_010.bin',
+            teamSourceLayer: 'base'
+          },
+          team: [
+            {
+              heldItem: 'Potion',
+              heldItemId: 1,
+              level: 25,
+              moveIds: [1, 2, 0, 0],
+              moves: ['Scratch', 'Growl', 'None', 'None'],
+              slot: 1,
+              species: 'Grookey',
+              speciesId: 810
+            }
+          ],
+          trainerClass: 'Pokemon Trainer',
+          trainerClassId: 5,
+          trainerId: 10
+        }
+      ]
+    } as const;
 
     expect(
       startRequestSchema.safeParse({
@@ -1218,6 +1313,34 @@ describe('bridge contracts', () => {
           diagnostics: [],
           session: textSession,
           workflow: textWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateTrainerRequestSchema.safeParse({
+        command: kmCommandNames.updateTrainerField,
+        payload: {
+          field: 'level',
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output'
+          },
+          session: editSession,
+          slot: 1,
+          trainerId: 10,
+          value: '25'
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateTrainerResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: trainerSession,
+          workflow: trainersWorkflow
         }
       }).success
     ).toBe(true);

@@ -16,6 +16,7 @@ public static class KmCommandNames
     public const string LoadTextWorkflow = "text.load";
     public const string UpdateTextEntry = "text.entry.update";
     public const string LoadTrainersWorkflow = "trainers.load";
+    public const string UpdateTrainerField = "trainers.field.update";
     public const string LoadShopsWorkflow = "shops.load";
     public const string LoadEncountersWorkflow = "encounters.load";
     public const string LoadRaidRewardsWorkflow = "raidRewards.load";

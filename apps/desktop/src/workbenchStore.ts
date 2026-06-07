@@ -10,10 +10,11 @@ import {
   type ProjectFileGraph,
   type ProjectHealth,
   type TextWorkflow,
+  type TrainersWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
 
-export type WorkbenchSection = 'health' | 'workflows' | 'items' | 'text' | 'changes';
+export type WorkbenchSection = 'health' | 'workflows' | 'items' | 'text' | 'trainers' | 'changes';
 
 export type ProjectPathDraft = {
   baseExeFsPath: string;
@@ -40,8 +41,11 @@ type WorkbenchState = {
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
   selectedItemId: number | null;
   selectedTextKey: string | null;
+  selectedTrainerId: number | null;
   textSearchText: string;
   textWorkflow: TextWorkflow | null;
+  trainerSearchText: string;
+  trainersWorkflow: TrainersWorkflow | null;
   workflows: WorkflowSummary[];
   setDraftPath: (field: keyof ProjectPathDraft, value: string) => void;
   setActiveSection: (activeSection: WorkbenchSection) => void;
@@ -56,8 +60,11 @@ type WorkbenchState = {
   setProjectStatus: (projectStatus: WorkbenchState['projectStatus']) => void;
   setSelectedItemId: (selectedItemId: number | null) => void;
   setSelectedTextKey: (selectedTextKey: string | null) => void;
+  setSelectedTrainerId: (selectedTrainerId: number | null) => void;
   setTextSearchText: (textSearchText: string) => void;
   setTextWorkflow: (textWorkflow: TextWorkflow) => void;
+  setTrainerSearchText: (trainerSearchText: string) => void;
+  setTrainersWorkflow: (trainersWorkflow: TrainersWorkflow) => void;
   setWorkflows: (workflows: WorkflowSummary[]) => void;
 };
 
@@ -78,8 +85,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   projectStatus: 'idle',
   selectedItemId: null,
   selectedTextKey: null,
+  selectedTrainerId: null,
   textSearchText: '',
   textWorkflow: null,
+  trainerSearchText: '',
+  trainersWorkflow: null,
   workflows: [],
   setActiveSection: (activeSection) => set({ activeSection }),
   setApplyResult: (applyResult) => set({ applyResult }),
@@ -114,6 +124,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setItemSearchText: (itemSearchText) => set({ itemSearchText }),
   setTextSearchText: (textSearchText) => set({ textSearchText }),
+  setTrainerSearchText: (trainerSearchText) => set({ trainerSearchText }),
   setOpenProject: (openProject) =>
     set({
       applyResult: null,
@@ -126,8 +137,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       projectStatus: 'open',
       selectedItemId: null,
       selectedTextKey: null,
+      selectedTrainerId: null,
       textSearchText: '',
-      textWorkflow: null
+      textWorkflow: null,
+      trainerSearchText: '',
+      trainersWorkflow: null
     }),
   setProjectHealth: (health) =>
     set((state) => ({
@@ -149,6 +163,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setProjectStatus: (projectStatus) => set({ projectStatus }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
   setSelectedTextKey: (selectedTextKey) => set({ selectedTextKey }),
+  setSelectedTrainerId: (selectedTrainerId) => set({ selectedTrainerId }),
   setTextWorkflow: (textWorkflow) =>
     set((state) => {
       const selectedTextKey = textWorkflow.entries.some(
@@ -166,6 +181,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         selectedTextKey,
         textSearchText: '',
         textWorkflow
+      };
+    }),
+  setTrainersWorkflow: (trainersWorkflow) =>
+    set((state) => {
+      const selectedTrainerId = trainersWorkflow.trainers.some(
+        (trainer) => trainer.trainerId === state.selectedTrainerId
+      )
+        ? state.selectedTrainerId
+        : (trainersWorkflow.trainers[0]?.trainerId ?? null);
+
+      return {
+        activeSection: 'trainers',
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        selectedTrainerId,
+        trainerSearchText: '',
+        trainersWorkflow
       };
     }),
   setWorkflows: (workflows) => set({ workflows })

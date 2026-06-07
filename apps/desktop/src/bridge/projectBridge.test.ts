@@ -270,8 +270,17 @@ describe('projectBridge', () => {
           payload: {
             workflow: {
               diagnostics: [],
+              editableFields: [
+                {
+                  field: 'level',
+                  label: 'Level',
+                  maximumValue: 100,
+                  minimumValue: 1,
+                  valueKind: 'integer'
+                }
+              ],
               stats: {
-                sourceFileCount: 1,
+                sourceFileCount: 2,
                 totalPokemonCount: 1,
                 totalTrainerCount: 1
               },
@@ -284,24 +293,32 @@ describe('projectBridge', () => {
               },
               trainers: [
                 {
-                  battleType: 'Single',
-                  location: 'Route 1',
+                  battleType: 'Doubles',
+                  battleTypeValue: 1,
+                  location: 'Trainer 10',
                   name: 'Avery',
                   provenance: {
                     fileState: 'baseOnly',
-                    sourceFile: 'romfs/kmeditor/trainers.readmodel.json',
-                    sourceLayer: 'base'
+                    sourceFile: 'romfs/bin/trainer/trainer_data/trainer_010.bin',
+                    sourceLayer: 'base',
+                    teamFileState: 'baseOnly',
+                    teamSourceFile: 'romfs/bin/trainer/trainer_poke/trainer_010.bin',
+                    teamSourceLayer: 'base'
                   },
                   team: [
                     {
-                      heldItem: null,
+                      heldItem: 'Potion',
+                      heldItemId: 1,
                       level: 12,
-                      moves: ['Scratch', 'Growl'],
+                      moveIds: [1, 2, 0, 0],
+                      moves: ['Scratch', 'Growl', 'None', 'None'],
                       slot: 1,
-                      species: 'Grookey'
+                      species: 'Grookey',
+                      speciesId: 810
                     }
                   ],
                   trainerClass: 'Pokemon Trainer',
+                  trainerClassId: 5,
                   trainerId: 10
                 }
               ]
@@ -991,6 +1008,107 @@ describe('projectBridge', () => {
       'romfs/bin/pml/item/item.dat'
     );
     expect(apply.applyResult.writtenFiles).toEqual(['romfs/bin/pml/item/item.dat']);
+  });
+
+  it('runs trainer field update command', async () => {
+    const bridge = createProjectBridge(async (requestJson) => {
+      const request = JSON.parse(requestJson) as { command: string };
+
+      expect(request.command).toBe('trainers.field.update');
+
+      return JSON.stringify({
+        error: null,
+        payload: {
+          diagnostics: [],
+          session: {
+            hasPendingChanges: true,
+            pendingEdits: [
+              {
+                domain: 'workflow.trainers',
+                field: 'level',
+                newValue: '25',
+                recordId: '10:1',
+                sources: [
+                  {
+                    layer: 'base',
+                    relativePath: 'romfs/bin/trainer/trainer_poke/trainer_010.bin'
+                  }
+                ],
+                summary: 'Set Avery slot 1 level to 25.'
+              }
+            ],
+            sessionId: 'session-1'
+          },
+          workflow: {
+            diagnostics: [],
+            editableFields: [
+              {
+                field: 'level',
+                label: 'Level',
+                maximumValue: 100,
+                minimumValue: 1,
+                valueKind: 'integer'
+              }
+            ],
+            stats: {
+              sourceFileCount: 2,
+              totalPokemonCount: 1,
+              totalTrainerCount: 1
+            },
+            summary: {
+              availability: 'available',
+              description: 'Trainer parties, classes, battle types, and source provenance.',
+              diagnostics: [],
+              id: 'trainers',
+              label: 'Trainers'
+            },
+            trainers: [
+              {
+                battleType: 'Doubles',
+                battleTypeValue: 1,
+                location: 'Trainer 10',
+                name: 'Avery',
+                provenance: {
+                  fileState: 'baseOnly',
+                  sourceFile: 'romfs/bin/trainer/trainer_data/trainer_010.bin',
+                  sourceLayer: 'base',
+                  teamFileState: 'baseOnly',
+                  teamSourceFile: 'romfs/bin/trainer/trainer_poke/trainer_010.bin',
+                  teamSourceLayer: 'base'
+                },
+                team: [
+                  {
+                    heldItem: 'Potion',
+                    heldItemId: 1,
+                    level: 25,
+                    moveIds: [1, 2, 0, 0],
+                    moves: ['Scratch', 'Growl', 'None', 'None'],
+                    slot: 1,
+                    species: 'Grookey',
+                    speciesId: 810
+                  }
+                ],
+                trainerClass: 'Pokemon Trainer',
+                trainerClassId: 5,
+                trainerId: 10
+              }
+            ]
+          }
+        }
+      });
+    });
+
+    const updated = await bridge.updateTrainerField({
+      field: 'level',
+      paths: editableProjectPaths,
+      session: null,
+      slot: 1,
+      trainerId: 10,
+      value: '25'
+    });
+
+    expect(updated.workflow.trainers[0]?.team[0]?.level).toBe(25);
+    expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.trainers');
   });
 
   it('turns bridge error envelopes into project bridge errors', async () => {

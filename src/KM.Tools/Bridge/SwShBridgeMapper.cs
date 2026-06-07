@@ -134,6 +134,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateTrainerFieldResponse ToDto(SwShTrainersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTrainerFieldResponse(
+            ToTrainersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(SwShEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -175,6 +185,7 @@ public static class SwShBridgeMapper
         return new TrainersWorkflowDto(
             ToDto(workflow.Summary),
             workflow.Trainers.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
             new TrainersWorkflowStatsDto(
                 workflow.Stats.TotalTrainerCount,
                 workflow.Stats.TotalPokemonCount,
@@ -364,8 +375,10 @@ public static class SwShBridgeMapper
         return new TrainerRecordDto(
             trainer.TrainerId,
             trainer.Name,
+            trainer.TrainerClassId,
             trainer.TrainerClass,
             trainer.Location,
+            trainer.BattleTypeValue,
             trainer.BattleType,
             trainer.Team.Select(ToDto).ToArray(),
             ToDto(trainer.Provenance));
@@ -375,18 +388,34 @@ public static class SwShBridgeMapper
     {
         return new TrainerPokemonRecordDto(
             pokemon.Slot,
+            pokemon.SpeciesId,
             pokemon.Species,
             pokemon.Level,
+            pokemon.HeldItemId,
             pokemon.HeldItem,
+            pokemon.MoveIds,
             pokemon.Moves);
+    }
+
+    private static TrainerEditableFieldDto ToDto(SwShTrainerEditableField field)
+    {
+        return new TrainerEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue);
     }
 
     private static TrainerProvenanceDto ToDto(SwShTrainerProvenance provenance)
     {
         return new TrainerProvenanceDto(
             provenance.SourceFile,
+            provenance.TeamSourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
-            ProjectBridgeMapper.ToDto(provenance.FileState));
+            ProjectBridgeMapper.ToDto(provenance.TeamSourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState),
+            ProjectBridgeMapper.ToDto(provenance.TeamFileState));
     }
 
     private static ShopRecordDto ToDto(SwShShopRecord shop)

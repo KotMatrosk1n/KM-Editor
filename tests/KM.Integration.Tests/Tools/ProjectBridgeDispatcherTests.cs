@@ -259,34 +259,10 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadTrainersWorkflowReturnsSanitizedTrainerRecords()
+    public void DispatchLoadTrainersWorkflowReturnsRealTrainerRecords()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/trainers.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "trainers": [
-                {
-                  "trainerId": 10,
-                  "name": "Avery",
-                  "trainerClass": "Pokemon Trainer",
-                  "location": "Route 1",
-                  "battleType": "Single",
-                  "team": [
-                    {
-                      "slot": 1,
-                      "species": "Grookey",
-                      "level": 12,
-                      "heldItem": null,
-                      "moves": ["Scratch", "Growl"]
-                    }
-                  ]
-                }
-              ]
-            }
-            """);
+        SwShTrainerBridgeFixtures.WriteBaseTrainers(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.LoadTrainersWorkflow,
@@ -301,12 +277,77 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotNull(response.Payload);
         var trainer = Assert.Single(response.Payload.Workflow.Trainers);
         Assert.Equal("Avery", trainer.Name);
+        Assert.Equal(5, trainer.TrainerClassId);
         Assert.Equal("Pokemon Trainer", trainer.TrainerClass);
+        Assert.Equal(1, trainer.BattleTypeValue);
+        Assert.Equal("Doubles", trainer.BattleType);
         Assert.Equal(ProjectFileLayerDto.Base, trainer.Provenance.SourceLayer);
+        Assert.Equal(ProjectFileLayerDto.Base, trainer.Provenance.TeamSourceLayer);
         var pokemon = Assert.Single(trainer.Team);
+        Assert.Equal(810, pokemon.SpeciesId);
         Assert.Equal("Grookey", pokemon.Species);
         Assert.Equal(12, pokemon.Level);
-        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+        Assert.Equal(1, pokemon.HeldItemId);
+        Assert.Equal("Potion", pokemon.HeldItem);
+        Assert.Equal([1, 2, 0, 0], pokemon.MoveIds);
+        Assert.Equal(9, response.Payload.Workflow.EditableFields.Count);
+        Assert.Equal(2, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchTrainerUpdateValidatePlanAndApplyWritesLayeredOutput()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShTrainerBridgeFixtures.WriteBaseTrainers(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateTrainerField,
+            new UpdateTrainerFieldRequest(
+                temp.Paths,
+                Session: null,
+                TrainerId: 10,
+                Slot: 1,
+                Field: "level",
+                Value: "25"),
+            requestId: "request-trainer-update");
+
+        var updateResponse = DeserializeResponse<UpdateTrainerFieldResponse>(dispatcher.Dispatch(updateJson));
+        Assert.Null(updateResponse.Error);
+        Assert.NotNull(updateResponse.Payload);
+        Assert.Equal(25, Assert.Single(updateResponse.Payload.Workflow.Trainers).Team[0].Level);
+        Assert.Single(updateResponse.Payload.Session.PendingEdits);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-trainer-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-trainer-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.Equal("romfs/bin/trainer/trainer_poke/trainer_010.bin", Assert.Single(planResponse.Payload.ChangePlan.Writes).TargetRelativePath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, updateResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-trainer-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.Equal("romfs/bin/trainer/trainer_poke/trainer_010.bin", Assert.Single(applyResponse.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "trainer", "trainer_poke", "trainer_010.bin");
+        var output = SwShTrainerTeamFile.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal(25, output.Records[0].Level);
     }
 
     [Fact]

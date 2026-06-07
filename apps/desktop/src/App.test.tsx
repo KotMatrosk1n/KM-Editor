@@ -8,6 +8,7 @@ import {
   type ProjectFileGraph,
   type ProjectHealth,
   type TextWorkflow,
+  type TrainersWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
 import { type ProjectBridge } from './bridge/projectBridge';
@@ -32,8 +33,11 @@ describe('App', () => {
       projectStatus: 'idle',
       selectedItemId: null,
       selectedTextKey: null,
+      selectedTrainerId: null,
       textSearchText: '',
       textWorkflow: null,
+      trainerSearchText: '',
+      trainersWorkflow: null,
       workflows: []
     });
   });
@@ -200,6 +204,52 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(screen.getByText('Applied Text change plan to the configured LayeredFS output root.')).toBeInTheDocument();
+  });
+
+  it('opens Trainers, edits a party level, reviews a trainer plan, and applies it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Trainers' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Trainers' })).toBeInTheDocument();
+    expect(screen.getAllByText('Avery').length).toBeGreaterThan(0);
+    expect(screen.getByRole('option', { name: 'Slot 1: Grookey' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const levelInput = screen.getByLabelText('Level');
+    await user.clear(levelInput);
+    await user.type(levelInput, '25');
+    await user.click(screen.getByRole('button', { name: 'Save level' }));
+
+    expect(await screen.findByDisplayValue('25')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Avery slot 1 level to 25.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending trainer change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(
+      screen.getAllByText('romfs/bin/trainer/trainer_poke/trainer_010.bin').length
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Applied Trainers change plan to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
   });
 
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
@@ -401,6 +451,111 @@ function createMockProjectBridge(
     id: 'trainers',
     label: 'Trainers'
   };
+  const trainersWorkflow: TrainersWorkflow = {
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'trainerClassId',
+        label: 'Trainer class ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'battleType',
+        label: 'Battle type',
+        maximumValue: 2,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'speciesId',
+        label: 'Species ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'level',
+        label: 'Level',
+        maximumValue: 100,
+        minimumValue: 1,
+        valueKind: 'integer'
+      },
+      {
+        field: 'heldItemId',
+        label: 'Held item ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'move1Id',
+        label: 'Move 1 ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'move2Id',
+        label: 'Move 2 ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'move3Id',
+        label: 'Move 3 ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'move4Id',
+        label: 'Move 4 ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        valueKind: 'integer'
+      }
+    ],
+    stats: {
+      sourceFileCount: 2,
+      totalPokemonCount: 1,
+      totalTrainerCount: 1
+    },
+    summary: trainersWorkflowSummary,
+    trainers: [
+      {
+        battleType: 'Doubles',
+        battleTypeValue: 1,
+        location: 'Trainer 10',
+        name: 'Avery',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/trainer/trainer_data/trainer_010.bin',
+          sourceLayer: 'base',
+          teamFileState: 'baseOnly',
+          teamSourceFile: 'romfs/bin/trainer/trainer_poke/trainer_010.bin',
+          teamSourceLayer: 'base'
+        },
+        team: [
+          {
+            heldItem: 'Potion',
+            heldItemId: 1,
+            level: 12,
+            moveIds: [1, 2, 0, 0],
+            moves: ['Scratch', 'Growl', 'None', 'None'],
+            slot: 1,
+            species: 'Grookey',
+            speciesId: 810
+          }
+        ],
+        trainerClass: 'Pokemon Trainer',
+        trainerClassId: 5,
+        trainerId: 10
+      }
+    ]
+  };
   const shopsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Shop inventories, prices, stock limits, and source provenance.',
@@ -465,9 +620,7 @@ function createMockProjectBridge(
           applyId: 'apply-1',
           diagnostics: [
             {
-              message: request.changePlan.writes[0]?.targetRelativePath.includes('/message/')
-                ? 'Applied Text change plan to the configured LayeredFS output root.'
-                : 'Applied Items change plan to the configured LayeredFS output root.',
+              message: getApplyMessage(request.changePlan.writes[0]?.targetRelativePath ?? ''),
               severity: 'info'
             }
           ],
@@ -500,6 +653,20 @@ function createMockProjectBridge(
                     targetRelativePath: 'romfs/bin/message/English/common/story.dat'
                   }
                 ]
+              : request.session.pendingEdits[0]?.domain === 'workflow.trainers'
+                ? [
+                    {
+                      reason: 'Apply pending Trainers edit: Set Avery slot 1 level to 25.',
+                      replacesExistingOutput: false,
+                      sources: [
+                        {
+                          layer: 'base',
+                          relativePath: 'romfs/bin/trainer/trainer_poke/trainer_010.bin'
+                        }
+                      ],
+                      targetRelativePath: 'romfs/bin/trainer/trainer_poke/trainer_010.bin'
+                    }
+                  ]
               : [
                   {
                     reason: 'Apply pending Items edit: Set Potion buy price to 450.',
@@ -631,16 +798,7 @@ function createMockProjectBridge(
       }),
     loadTrainersWorkflow: () =>
       Promise.resolve({
-        workflow: {
-          diagnostics: [],
-          stats: {
-            sourceFileCount: 0,
-            totalPokemonCount: 0,
-            totalTrainerCount: 0
-          },
-          summary: trainersWorkflowSummary,
-          trainers: []
-        }
+        workflow: trainersWorkflow
       }),
     loadShopsWorkflow: () =>
       Promise.resolve({
@@ -749,15 +907,56 @@ function createMockProjectBridge(
           )
         }
       }),
+    updateTrainerField: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.trainers',
+              field: request.field,
+              newValue: request.value,
+              recordId: request.slot === null ? request.trainerId.toString() : `${request.trainerId}:${request.slot}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath:
+                    request.slot === null
+                      ? 'romfs/bin/trainer/trainer_data/trainer_010.bin'
+                      : 'romfs/bin/trainer/trainer_poke/trainer_010.bin'
+                }
+              ],
+              summary:
+                request.slot === null
+                  ? `Set Avery ${request.field} to ${request.value}.`
+                  : `Set Avery slot ${request.slot} level to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...trainersWorkflow,
+          trainers: trainersWorkflow.trainers.map((trainer) =>
+            trainer.trainerId === request.trainerId
+              ? {
+                  ...trainer,
+                  team: trainer.team.map((pokemon) =>
+                    pokemon.slot === request.slot
+                      ? { ...pokemon, level: Number.parseInt(request.value, 10) }
+                      : pokemon
+                  )
+                }
+              : trainer
+          )
+        }
+      }),
     validateEditSession: (request) =>
       Promise.resolve({
         diagnostics: [
           {
             field: request.session.pendingEdits[0]?.field ?? 'value',
-            message:
-              request.session.pendingEdits[0]?.domain === 'workflow.text'
-                ? 'Pending text change is valid.'
-                : 'Pending item change is valid.',
+            message: getValidationMessage(request.session.pendingEdits[0]?.domain),
             severity: 'info'
           }
         ],
@@ -767,4 +966,27 @@ function createMockProjectBridge(
     validateProject: () => Promise.resolve({ health }),
     ...overrides
   };
+}
+
+function getApplyMessage(targetRelativePath: string) {
+  if (targetRelativePath.includes('/message/')) {
+    return 'Applied Text change plan to the configured LayeredFS output root.';
+  }
+
+  if (targetRelativePath.includes('/trainer/')) {
+    return 'Applied Trainers change plan to the configured LayeredFS output root.';
+  }
+
+  return 'Applied Items change plan to the configured LayeredFS output root.';
+}
+
+function getValidationMessage(domain: string | undefined) {
+  switch (domain) {
+    case 'workflow.text':
+      return 'Pending text change is valid.';
+    case 'workflow.trainers':
+      return 'Pending trainer change is valid.';
+    default:
+      return 'Pending item change is valid.';
+  }
 }
