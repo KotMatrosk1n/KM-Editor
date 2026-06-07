@@ -183,6 +183,8 @@ const pathStatusLabels = {
 
 const buyPriceFieldName = 'buyPrice';
 const sellPriceFieldName = 'sellPrice';
+const wattsPriceFieldName = 'wattsPrice';
+const alternatePriceFieldName = 'alternatePrice';
 
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
@@ -743,6 +745,8 @@ function ItemsSection({
                 <span role="columnheader">Category</span>
                 <span role="columnheader">Buy</span>
                 <span role="columnheader">Sell</span>
+                <span role="columnheader">Watts</span>
+                <span role="columnheader">Alt</span>
                 <span role="columnheader">Source</span>
               </div>
               {filteredItems.map((item) => (
@@ -760,6 +764,8 @@ function ItemsSection({
                   <span role="cell">{item.category}</span>
                   <span role="cell">{item.buyPrice}</span>
                   <span role="cell">{item.sellPrice}</span>
+                  <span role="cell">{item.wattsPrice}</span>
+                  <span role="cell">{item.alternatePrice}</span>
                   <span role="cell">{formatSourceLayer(item.provenance.sourceLayer)}</span>
                 </button>
               ))}
@@ -805,32 +811,30 @@ function SelectedItemPanel({
   onStartEditSession: () => void;
   onUpdateItemField: (itemId: number, field: string, value: string) => void;
 }) {
-  const [buyPriceDraft, setBuyPriceDraft] = useState('');
-  const [sellPriceDraft, setSellPriceDraft] = useState('');
-  const buyPriceField = editableFields.find((field) => field.field === buyPriceFieldName);
-  const sellPriceField = editableFields.find((field) => field.field === sellPriceFieldName);
-  const buyPriceState = getItemPriceDraftState(buyPriceDraft, item?.buyPrice ?? null, buyPriceField);
-  const sellPriceState = getItemPriceDraftState(
-    sellPriceDraft,
-    item?.sellPrice ?? null,
-    sellPriceField
-  );
+  const [fieldDrafts, setFieldDrafts] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    setBuyPriceDraft(item ? item.buyPrice.toString() : '');
-    setSellPriceDraft(item ? item.sellPrice.toString() : '');
-  }, [item?.buyPrice, item?.itemId, item?.sellPrice]);
+    if (!item) {
+      setFieldDrafts({});
+      return;
+    }
 
-  const canSubmitBuyPrice =
-    item !== null &&
-    editSession !== null &&
-    buyPriceState.canSubmit &&
-    buyPriceState.parsedValue !== null;
-  const canSubmitSellPrice =
-    item !== null &&
-    editSession !== null &&
-    sellPriceState.canSubmit &&
-    sellPriceState.parsedValue !== null;
+    setFieldDrafts(
+      Object.fromEntries(
+        editableFields.map((field) => [
+          field.field,
+          (getEditableItemFieldValue(item, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [
+    editableFields,
+    item?.alternatePrice,
+    item?.buyPrice,
+    item?.itemId,
+    item?.sellPrice,
+    item?.wattsPrice
+  ]);
 
   return (
     <aside aria-label="Selected item provenance" className="item-inspector">
@@ -858,83 +862,62 @@ function SelectedItemPanel({
               <dt>File state</dt>
               <dd>{formatFileState(item.provenance.fileState)}</dd>
             </div>
+            <div>
+              <dt>Shared row</dt>
+              <dd>{formatSharedItemIds(item)}</dd>
+            </div>
           </dl>
 
           <div className="item-edit-form">
             <div className="item-price-editor">
-              <label className="path-field">
-                <span>{buyPriceField?.label ?? 'Buy price'}</span>
-                <input
-                  aria-label="Buy price"
-                  disabled={
-                    !canEditItems ||
-                    editSession === null ||
-                    buyPriceField === undefined ||
-                    isItemUpdating
-                  }
-                  max={buyPriceField?.maximumValue ?? undefined}
-                  min={buyPriceField?.minimumValue ?? undefined}
-                  onChange={(event) => setBuyPriceDraft(event.target.value)}
-                  type="number"
-                  value={buyPriceDraft}
-                />
-              </label>
+              {editableFields.map((field) => {
+                const currentValue = getEditableItemFieldValue(item, field.field);
+                const draftValue = fieldDrafts[field.field] ?? '';
+                const draftState = getItemPriceDraftState(draftValue, currentValue, field);
+                const canSubmit =
+                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
 
-              {editSession ? (
-                <button
-                  aria-label="Save buy price"
-                  className="primary-button compact-button"
-                  disabled={!canSubmitBuyPrice || isItemUpdating}
-                  onClick={() =>
-                    onUpdateItemField(
-                      item.itemId,
-                      buyPriceFieldName,
-                      buyPriceState.parsedValue!.toString()
-                    )
-                  }
-                  type="button"
-                >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isItemUpdating ? 'Saving' : 'Save Buy'}</span>
-                </button>
-              ) : null}
+                return (
+                  <div className="item-price-editor-row" key={field.field}>
+                    <label className="path-field">
+                      <span>{field.label}</span>
+                      <input
+                        aria-label={field.label}
+                        disabled={!canEditItems || editSession === null || isItemUpdating}
+                        max={field.maximumValue ?? undefined}
+                        min={field.minimumValue ?? undefined}
+                        onChange={(event) =>
+                          setFieldDrafts((currentDrafts) => ({
+                            ...currentDrafts,
+                            [field.field]: event.target.value
+                          }))
+                        }
+                        type="number"
+                        value={draftValue}
+                      />
+                    </label>
 
-              <label className="path-field">
-                <span>{sellPriceField?.label ?? 'Sell price'}</span>
-                <input
-                  aria-label="Sell price"
-                  disabled={
-                    !canEditItems ||
-                    editSession === null ||
-                    sellPriceField === undefined ||
-                    isItemUpdating
-                  }
-                  max={sellPriceField?.maximumValue ?? undefined}
-                  min={sellPriceField?.minimumValue ?? undefined}
-                  onChange={(event) => setSellPriceDraft(event.target.value)}
-                  type="number"
-                  value={sellPriceDraft}
-                />
-              </label>
-
-              {editSession ? (
-                <button
-                  aria-label="Save sell price"
-                  className="primary-button compact-button"
-                  disabled={!canSubmitSellPrice || isItemUpdating}
-                  onClick={() =>
-                    onUpdateItemField(
-                      item.itemId,
-                      sellPriceFieldName,
-                      sellPriceState.parsedValue!.toString()
-                    )
-                  }
-                  type="button"
-                >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isItemUpdating ? 'Saving' : 'Save Sell'}</span>
-                </button>
-              ) : null}
+                    {editSession ? (
+                      <button
+                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                        className="primary-button compact-button"
+                        disabled={!canSubmit || isItemUpdating}
+                        onClick={() =>
+                          onUpdateItemField(
+                            item.itemId,
+                            field.field,
+                            draftState.parsedValue!.toString()
+                          )
+                        }
+                        type="button"
+                      >
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isItemUpdating ? 'Saving' : getItemFieldSaveLabel(field)}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
 
             {!editSession ? (
@@ -1208,9 +1191,30 @@ function filterItems(items: ItemRecord[], searchText: string) {
       item.name,
       item.category,
       item.buyPrice.toString(),
-      item.sellPrice.toString()
+      item.sellPrice.toString(),
+      item.wattsPrice.toString(),
+      item.alternatePrice.toString()
     ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
   );
+}
+
+function getEditableItemFieldValue(item: ItemRecord, field: string) {
+  switch (field) {
+    case buyPriceFieldName:
+      return item.buyPrice;
+    case sellPriceFieldName:
+      return item.sellPrice;
+    case wattsPriceFieldName:
+      return item.wattsPrice;
+    case alternatePriceFieldName:
+      return item.alternatePrice;
+    default:
+      return null;
+  }
+}
+
+function getItemFieldSaveLabel(field: ItemEditableField) {
+  return `Save ${field.label.replace(/\s+price$/i, '')}`;
 }
 
 function getItemPriceDraftState(
@@ -1246,6 +1250,14 @@ function getPendingItemIds(editSession: EditSession | null) {
       .map((edit) => Number.parseInt(edit.recordId ?? '', 10))
       .filter(Number.isInteger)
   );
+}
+
+function formatSharedItemIds(item: ItemRecord) {
+  if (item.sharedItemIds.length <= 1) {
+    return 'No';
+  }
+
+  return item.sharedItemIds.join(', ');
 }
 
 function getWorkflowState(health: ProjectHealth | null, workflow: WorkflowSummary | undefined) {

@@ -285,6 +285,9 @@ public static class SwShBridgeMapper
             item.Category,
             item.BuyPrice,
             item.SellPrice,
+            item.WattsPrice,
+            item.AlternatePrice,
+            item.SharedItemIds,
             new ItemProvenanceDto(
                 item.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(item.Provenance.SourceLayer),

@@ -32,6 +32,9 @@ public sealed record ItemRecordDto(
     string Category,
     int BuyPrice,
     int SellPrice,
+    int WattsPrice,
+    int AlternatePrice,
+    IReadOnlyList<int> SharedItemIds,
     ItemProvenanceDto Provenance);
 
 public sealed record ItemEditableFieldDto(

@@ -3,8 +3,8 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
 using KM.SwSh.Workflows;
-using System.Text.Json;
 
 namespace KM.SwSh.Items;
 
@@ -12,11 +12,15 @@ public sealed class SwShItemsWorkflowService
 {
     public const string BuyPriceField = "buyPrice";
     public const string SellPriceField = "sellPrice";
+    public const string WattsPriceField = "wattsPrice";
+    public const string AlternatePriceField = "alternatePrice";
     public const int MaximumBuyPrice = 999_999;
-    public const int MaximumSellPrice = 999_999;
-    public const string ItemsReadModelPath = "romfs/kmeditor/items.readmodel.json";
+    public const int MaximumSellPrice = MaximumBuyPrice / 2;
+    public const int MaximumWattsPrice = 999_999;
+    public const int MaximumAlternatePrice = 999_999;
+    public const string ItemDataPath = SwShItemTable.ItemDataRelativePath;
+    public const string EnglishItemNamePath = "romfs/bin/message/English/common/itemname.dat";
 
-    private static readonly JsonSerializerOptions ReadModelJsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly IReadOnlyList<SwShItemEditableField> EditableFields =
     [
         new SwShItemEditableField(
@@ -31,6 +35,18 @@ public sealed class SwShItemsWorkflowService
             "integer",
             MinimumValue: 0,
             MaximumSellPrice),
+        new SwShItemEditableField(
+            WattsPriceField,
+            "Watts price",
+            "integer",
+            MinimumValue: 0,
+            MaximumWattsPrice),
+        new SwShItemEditableField(
+            AlternatePriceField,
+            "Alternate price",
+            "integer",
+            MinimumValue: 0,
+            MaximumAlternatePrice),
     ];
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -61,77 +77,182 @@ public sealed class SwShItemsWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), sourceFileCount: 0, diagnostics);
         }
 
-        var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
-            string.Equals(entry.RelativePath, ItemsReadModelPath, StringComparison.OrdinalIgnoreCase));
-
-        if (graphEntry is null)
+        var itemDataSource = ResolveWorkflowFile(project, ItemDataPath);
+        if (itemDataSource is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
-                "Items data is not available for this project yet.",
-                expected: ItemsReadModelPath));
-            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), diagnostics);
+                "Items data is not available for this project.",
+                expected: ItemDataPath));
+            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), sourceFileCount: 0, diagnostics);
         }
 
-        var sourcePath = ResolveSourcePath(project.Paths, graphEntry);
-        if (sourcePath is null || !File.Exists(sourcePath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Items data source could not be resolved from the project graph.",
-                file: graphEntry.RelativePath,
-                expected: "Readable Items read model"));
-            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), diagnostics);
-        }
+        var itemNamesSource = ResolveItemNamesSource(project, diagnostics);
+        var itemNames = itemNamesSource is null
+            ? Array.Empty<string>()
+            : LoadItemNames(itemNamesSource, diagnostics);
 
         try
         {
-            using var stream = File.OpenRead(sourcePath);
-            var readModel = JsonSerializer.Deserialize<ItemsReadModel>(stream, ReadModelJsonOptions);
-            var provenance = CreateProvenance(graphEntry);
-            var items = readModel?.Items is null
-                ? Array.Empty<SwShItemRecord>()
-                : readModel.Items
-                    .OrderBy(item => item.ItemId)
-                    .Select(item => ToItemRecord(item, provenance))
-                    .ToArray();
+            var itemTable = SwShItemTable.Parse(File.ReadAllBytes(itemDataSource.AbsolutePath));
+            var provenance = CreateProvenance(itemDataSource.GraphEntry);
+            var items = itemTable.Records
+                .OrderBy(item => item.ItemId)
+                .Select(item => ToItemRecord(item, itemNames, provenance))
+                .ToArray();
+            var sourceFileCount = itemNamesSource is null ? 1 : 2;
 
-            return CreateWorkflow(summary, items, diagnostics);
+            return CreateWorkflow(summary, items, sourceFileCount, diagnostics);
         }
-        catch (JsonException exception)
+        catch (InvalidDataException exception)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Items data source is not valid JSON: {exception.Message}",
-                file: graphEntry.RelativePath,
-                expected: "Sanitized Items read model JSON"));
-            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), diagnostics);
+                $"Items data source is not a supported Sword/Shield item table: {exception.Message}",
+                file: itemDataSource.GraphEntry.RelativePath,
+                expected: "Sword/Shield item.dat"));
+            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), sourceFileCount: 1, diagnostics);
         }
         catch (IOException exception)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 $"Items data source could not be read: {exception.Message}",
-                file: graphEntry.RelativePath,
-                expected: "Readable Items read model"));
-            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), diagnostics);
+                file: itemDataSource.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield item.dat"));
+            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), sourceFileCount: 1, diagnostics);
         }
+    }
+
+    internal static WorkflowFileSource? ResolveItemDataSource(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        return ResolveWorkflowFile(project, ItemDataPath);
+    }
+
+    internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(targetRelativePath);
+
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath) || Path.IsPathRooted(targetRelativePath))
+        {
+            return null;
+        }
+
+        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
+        var targetPath = Path.GetFullPath(Path.Combine(
+            outputRoot,
+            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var outputRootWithSeparator = outputRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? outputRoot
+            : outputRoot + Path.DirectorySeparatorChar;
+
+        return targetPath.StartsWith(outputRootWithSeparator, StringComparison.OrdinalIgnoreCase)
+            ? targetPath
+            : null;
     }
 
     private static SwShItemsWorkflow CreateWorkflow(
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShItemRecord> items,
+        int sourceFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         return new SwShItemsWorkflow(
             summary,
             items,
             EditableFields,
-            new SwShItemsWorkflowStats(items.Count, items.Count > 0 ? 1 : 0),
+            new SwShItemsWorkflowStats(items.Count, sourceFileCount),
             diagnostics);
+    }
+
+    private static WorkflowFileSource? ResolveItemNamesSource(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var englishNames = ResolveWorkflowFile(project, EnglishItemNamePath);
+        if (englishNames is not null)
+        {
+            return englishNames;
+        }
+
+        var fallback = project.FileGraph.Entries
+            .Where(entry =>
+                entry.RelativePath.StartsWith("romfs/bin/message/", StringComparison.OrdinalIgnoreCase)
+                && entry.RelativePath.EndsWith("/common/itemname.dat", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .Select(entry => ResolveWorkflowFile(project, entry.RelativePath))
+            .FirstOrDefault(source => source is not null);
+
+        if (fallback is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Item names are not available; item IDs will be shown as fallback names.",
+                expected: "romfs/bin/message/{language}/common/itemname.dat"));
+            return null;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Warning,
+            "English item names are not available; using another available item name table.",
+            file: fallback.GraphEntry.RelativePath,
+            expected: EnglishItemNamePath));
+
+        return fallback;
+    }
+
+    private static string[] LoadItemNames(
+        WorkflowFileSource itemNamesSource,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        try
+        {
+            return SwShGameTextFile.Parse(File.ReadAllBytes(itemNamesSource.AbsolutePath))
+                .Lines
+                .Select(line => line.Text)
+                .ToArray();
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Item name table could not be decoded: {exception.Message}",
+                file: itemNamesSource.GraphEntry.RelativePath,
+                expected: "Sword/Shield itemname.dat"));
+            return Array.Empty<string>();
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Item name table could not be read: {exception.Message}",
+                file: itemNamesSource.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield itemname.dat"));
+            return Array.Empty<string>();
+        }
+    }
+
+    private static WorkflowFileSource? ResolveWorkflowFile(OpenedProject project, string relativePath)
+    {
+        var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
+            string.Equals(entry.RelativePath, relativePath, StringComparison.OrdinalIgnoreCase));
+
+        if (graphEntry is null)
+        {
+            return null;
+        }
+
+        var sourcePath = ResolveSourcePath(project.Paths, graphEntry);
+
+        return sourcePath is not null && File.Exists(sourcePath)
+            ? new WorkflowFileSource(graphEntry, sourcePath)
+            : null;
     }
 
     private static string? ResolveSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
@@ -170,15 +291,48 @@ public sealed class SwShItemsWorkflowService
         return new SwShItemProvenance(entry.RelativePath, sourceLayer, entry.State);
     }
 
-    private static SwShItemRecord ToItemRecord(ItemReadModelRecord item, SwShItemProvenance provenance)
+    private static SwShItemRecord ToItemRecord(
+        SwShItemTableRecord item,
+        IReadOnlyList<string> itemNames,
+        SwShItemProvenance provenance)
     {
         return new SwShItemRecord(
             item.ItemId,
-            item.Name,
-            item.Category,
-            item.BuyPrice,
-            item.SellPrice,
+            GetItemName(item.ItemId, itemNames),
+            FormatPouch(item.Pouch),
+            checked((int)item.BuyPrice),
+            checked((int)(item.BuyPrice / 2)),
+            checked((int)item.WattsPrice),
+            checked((int)item.AlternatePrice),
+            item.SharedItemIds,
             provenance);
+    }
+
+    private static string GetItemName(int itemId, IReadOnlyList<string> itemNames)
+    {
+        if ((uint)itemId < (uint)itemNames.Count && !string.IsNullOrWhiteSpace(itemNames[itemId]))
+        {
+            return itemNames[itemId];
+        }
+
+        return $"Item {itemId}";
+    }
+
+    private static string FormatPouch(SwShItemPouch pouch)
+    {
+        return pouch switch
+        {
+            SwShItemPouch.Medicine => "Medicine",
+            SwShItemPouch.Balls => "Balls",
+            SwShItemPouch.BattleItems => "Battle Items",
+            SwShItemPouch.Berries => "Berries",
+            SwShItemPouch.Items => "Items",
+            SwShItemPouch.TMs => "TMs",
+            SwShItemPouch.Treasures => "Treasures",
+            SwShItemPouch.Ingredients => "Ingredients",
+            SwShItemPouch.KeyItems => "Key Items",
+            _ => $"Pouch {(byte)pouch}",
+        };
     }
 
     private static SwShWorkflowSummary CreateSummary(
@@ -207,14 +361,7 @@ public sealed class SwShItemsWorkflowService
             Expected: expected);
     }
 
-    private sealed record ItemsReadModel(
-        int SchemaVersion,
-        IReadOnlyList<ItemReadModelRecord>? Items);
-
-    private sealed record ItemReadModelRecord(
-        int ItemId,
-        string Name,
-        string Category,
-        int BuyPrice,
-        int SellPrice);
+    internal sealed record WorkflowFileSource(
+        ProjectFileGraphEntry GraphEntry,
+        string AbsolutePath);
 }

@@ -268,12 +268,15 @@ export const itemProvenanceSchema = z.strictObject({
 });
 
 export const itemRecordSchema = z.strictObject({
+  alternatePrice: z.number().int().nonnegative(),
   buyPrice: z.number().int().nonnegative(),
   category: z.string(),
   itemId: z.number().int().nonnegative(),
   name: z.string(),
   provenance: itemProvenanceSchema,
-  sellPrice: z.number().int().nonnegative()
+  sellPrice: z.number().int().nonnegative(),
+  sharedItemIds: z.array(z.number().int().nonnegative()),
+  wattsPrice: z.number().int().nonnegative()
 });
 
 export const itemEditableFieldSchema = z.strictObject({

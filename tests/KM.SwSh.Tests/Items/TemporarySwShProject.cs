@@ -37,12 +37,22 @@ internal sealed class TemporarySwShProject : IDisposable
         WriteFile(BaseRomFsPath, relativePath, contents);
     }
 
+    public void WriteBaseRomFsFile(string relativePath, byte[] contents)
+    {
+        WriteFile(BaseRomFsPath, relativePath, contents);
+    }
+
     public void WriteBaseExeFsFile(string relativePath, string contents)
     {
         WriteFile(BaseExeFsPath, relativePath, contents);
     }
 
     public void WriteOutputFile(string relativePath, string contents)
+    {
+        WriteFile(OutputRootPath, relativePath, contents);
+    }
+
+    public void WriteOutputFile(string relativePath, byte[] contents)
     {
         WriteFile(OutputRootPath, relativePath, contents);
     }
@@ -60,5 +70,12 @@ internal sealed class TemporarySwShProject : IDisposable
         var filePath = Path.Combine(rootPath, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
         File.WriteAllText(filePath, contents);
+    }
+
+    private static void WriteFile(string rootPath, string relativePath, byte[] contents)
+    {
+        var filePath = Path.Combine(rootPath, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        File.WriteAllBytes(filePath, contents);
     }
 }

@@ -16,6 +16,7 @@ using KM.Api.SpreadsheetImport;
 using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
+using KM.Formats.SwSh;
 using KM.Tools.Bridge;
 using System.Text.Json;
 using Xunit;
@@ -174,25 +175,10 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadItemsWorkflowReturnsSanitizedItemRecords()
+    public void DispatchLoadItemsWorkflowReturnsRealItemRecords()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/items.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "items": [
-                {
-                  "itemId": 1,
-                  "name": "Potion",
-                  "category": "Medicine",
-                  "buyPrice": 300,
-                  "sellPrice": 150
-                }
-              ]
-            }
-            """);
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.LoadItemsWorkflow,
@@ -205,9 +191,14 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.Equal("request-items", response.RequestId);
         Assert.NotNull(response.Payload);
-        var item = Assert.Single(response.Payload.Workflow.Items);
+        Assert.Equal(3, response.Payload.Workflow.Items.Count);
+        var item = response.Payload.Workflow.Items[1];
         Assert.Equal("Potion", item.Name);
-        Assert.Equal("romfs/kmeditor/items.readmodel.json", item.Provenance.SourceFile);
+        Assert.Equal(300, item.BuyPrice);
+        Assert.Equal(150, item.SellPrice);
+        Assert.Equal(15, item.WattsPrice);
+        Assert.Equal(3, item.AlternatePrice);
+        Assert.Equal("romfs/bin/pml/item/item.dat", item.Provenance.SourceFile);
         Assert.Equal(ProjectFileLayerDto.Base, item.Provenance.SourceLayer);
         Assert.Collection(
             response.Payload.Workflow.EditableFields,
@@ -219,6 +210,16 @@ public sealed class ProjectBridgeDispatcherTests
             editableField =>
             {
                 Assert.Equal("sellPrice", editableField.Field);
+                Assert.Equal(499_999, editableField.MaximumValue);
+            },
+            editableField =>
+            {
+                Assert.Equal("wattsPrice", editableField.Field);
+                Assert.Equal(999_999, editableField.MaximumValue);
+            },
+            editableField =>
+            {
+                Assert.Equal("alternatePrice", editableField.Field);
                 Assert.Equal(999_999, editableField.MaximumValue);
             });
     }
@@ -726,22 +727,7 @@ public sealed class ProjectBridgeDispatcherTests
     public void DispatchUpdateItemFieldReturnsPendingEditSession()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/items.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "items": [
-                {
-                  "itemId": 1,
-                  "name": "Potion",
-                  "category": "Medicine",
-                  "buyPrice": 300,
-                  "sellPrice": 150
-                }
-              ]
-            }
-            """);
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.UpdateItemField,
@@ -754,7 +740,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.True(response.Payload.Session.HasPendingChanges);
-        Assert.Equal(450, Assert.Single(response.Payload.Workflow.Items).BuyPrice);
+        Assert.Equal(450, response.Payload.Workflow.Items[1].BuyPrice);
         Assert.Equal("450", Assert.Single(response.Payload.Session.PendingEdits).NewValue);
     }
 
@@ -762,22 +748,7 @@ public sealed class ProjectBridgeDispatcherTests
     public void DispatchUpdateItemFieldReturnsPendingSellPriceSession()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/items.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "items": [
-                {
-                  "itemId": 1,
-                  "name": "Potion",
-                  "category": "Medicine",
-                  "buyPrice": 300,
-                  "sellPrice": 150
-                }
-              ]
-            }
-            """);
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.UpdateItemField,
@@ -795,8 +766,8 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.True(response.Payload.Session.HasPendingChanges);
-        var item = Assert.Single(response.Payload.Workflow.Items);
-        Assert.Equal(300, item.BuyPrice);
+        var item = response.Payload.Workflow.Items[1];
+        Assert.Equal(350, item.BuyPrice);
         Assert.Equal(175, item.SellPrice);
         var edit = Assert.Single(response.Payload.Session.PendingEdits);
         Assert.Equal("sellPrice", edit.Field);
@@ -807,22 +778,7 @@ public sealed class ProjectBridgeDispatcherTests
     public void DispatchValidateEditSessionReturnsValidationPayload()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/items.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "items": [
-                {
-                  "itemId": 1,
-                  "name": "Potion",
-                  "category": "Medicine",
-                  "buyPrice": 300,
-                  "sellPrice": 150
-                }
-              ]
-            }
-            """);
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var sessionResponseJson = new ProjectBridgeDispatcher().Dispatch(SerializeRequest(
             KmCommandNames.UpdateItemField,
@@ -848,22 +804,7 @@ public sealed class ProjectBridgeDispatcherTests
     public void DispatchCreateChangePlanReturnsPlannedTargetFiles()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/items.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "items": [
-                {
-                  "itemId": 1,
-                  "name": "Potion",
-                  "category": "Medicine",
-                  "buyPrice": 300,
-                  "sellPrice": 150
-                }
-              ]
-            }
-            """);
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var sessionResponseJson = new ProjectBridgeDispatcher().Dispatch(SerializeRequest(
             KmCommandNames.UpdateItemField,
@@ -884,7 +825,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotNull(response.Payload);
         Assert.True(response.Payload.ChangePlan.CanApply);
         var write = Assert.Single(response.Payload.ChangePlan.Writes);
-        Assert.Equal("romfs/kmeditor/items.readmodel.json", write.TargetRelativePath);
+        Assert.Equal("romfs/bin/pml/item/item.dat", write.TargetRelativePath);
         Assert.Equal(FileLayerDto.Base, Assert.Single(write.Sources).Layer);
     }
 
@@ -892,22 +833,7 @@ public sealed class ProjectBridgeDispatcherTests
     public void DispatchApplyChangePlanReturnsWrittenFiles()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/items.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "items": [
-                {
-                  "itemId": 1,
-                  "name": "Potion",
-                  "category": "Medicine",
-                  "buyPrice": 300,
-                  "sellPrice": 150
-                }
-              ]
-            }
-            """);
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var dispatcher = new ProjectBridgeDispatcher();
         var sessionResponseJson = dispatcher.Dispatch(SerializeRequest(
@@ -933,9 +859,10 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.Equal("request-change-plan-apply", response.RequestId);
         Assert.NotNull(response.Payload);
-        Assert.Equal("romfs/kmeditor/items.readmodel.json", Assert.Single(response.Payload.ApplyResult.WrittenFiles));
-        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "kmeditor", "items.readmodel.json");
-        Assert.Contains("\"buyPrice\": 450", File.ReadAllText(outputPath));
+        Assert.Equal("romfs/bin/pml/item/item.dat", Assert.Single(response.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
+        Assert.Equal(450u, item.BuyPrice);
         Assert.DoesNotContain(
             response.Payload.ApplyResult.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);

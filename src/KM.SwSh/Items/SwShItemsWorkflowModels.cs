@@ -17,6 +17,9 @@ public sealed record SwShItemRecord(
     string Category,
     int BuyPrice,
     int SellPrice,
+    int WattsPrice,
+    int AlternatePrice,
+    IReadOnlyList<int> SharedItemIds,
     SwShItemProvenance Provenance);
 
 public sealed record SwShItemEditableField(
