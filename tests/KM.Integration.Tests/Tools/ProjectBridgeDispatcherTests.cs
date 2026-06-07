@@ -12,6 +12,7 @@ using KM.Api.Projects;
 using KM.Api.Raids;
 using KM.Api.RoyalCandy;
 using KM.Api.Shops;
+using KM.Api.SpreadsheetImport;
 using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
@@ -163,6 +164,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("royalCandy", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("spreadsheetImport", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             });
     }
@@ -659,6 +665,60 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(ProjectFileLayerDto.Base, workflow.Provenance.SourceLayer);
         var step = Assert.Single(workflow.Steps);
         Assert.Equal(1, step.Step);
+        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchLoadSpreadsheetImportWorkflowReturnsSanitizedImportProfiles()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/spreadsheet-import.profiles.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "profiles": [
+                {
+                  "profileId": "items_price_sheet",
+                  "name": "Items Price Sheet",
+                  "sourceKind": "xlsx",
+                  "targetWorkflow": "items",
+                  "status": "available",
+                  "description": "Import item price columns from a workbook fixture.",
+                  "columns": [
+                    {
+                      "column": 1,
+                      "header": "ItemId",
+                      "valueKind": "integer",
+                      "isRequired": true,
+                      "description": "Item identifier."
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadSpreadsheetImportWorkflow,
+            new LoadSpreadsheetImportWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-spreadsheet-import");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadSpreadsheetImportWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-spreadsheet-import", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var profile = Assert.Single(response.Payload.Workflow.Profiles);
+        Assert.Equal("items_price_sheet", profile.ProfileId);
+        Assert.Equal("Items Price Sheet", profile.Name);
+        Assert.Equal("xlsx", profile.SourceKind);
+        Assert.Equal("items", profile.TargetWorkflow);
+        Assert.Equal(ProjectFileLayerDto.Base, profile.Provenance.SourceLayer);
+        var column = Assert.Single(profile.Columns);
+        Assert.Equal("ItemId", column.Header);
+        Assert.True(column.IsRequired);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

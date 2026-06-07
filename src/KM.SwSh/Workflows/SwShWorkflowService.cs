@@ -9,6 +9,7 @@ using KM.SwSh.Placement;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Shops;
+using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
 
@@ -24,6 +25,7 @@ public sealed class SwShWorkflowService
     private readonly SwShRaidRewardsWorkflowService raidRewardsWorkflowService;
     private readonly SwShRoyalCandyWorkflowService royalCandyWorkflowService;
     private readonly SwShShopsWorkflowService shopsWorkflowService;
+    private readonly SwShSpreadsheetImportWorkflowService spreadsheetImportWorkflowService;
     private readonly SwShTextWorkflowService textWorkflowService;
     private readonly SwShTrainersWorkflowService trainersWorkflowService;
     private readonly ProjectWorkspaceService projectWorkspaceService;
@@ -39,7 +41,8 @@ public sealed class SwShWorkflowService
         SwShPlacementWorkflowService? placementWorkflowService = null,
         SwShFlagworkSaveWorkflowService? flagworkSaveWorkflowService = null,
         SwShExeFsPatchWorkflowService? exeFsPatchWorkflowService = null,
-        SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null)
+        SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null,
+        SwShSpreadsheetImportWorkflowService? spreadsheetImportWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
@@ -50,6 +53,7 @@ public sealed class SwShWorkflowService
         this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
         this.royalCandyWorkflowService = royalCandyWorkflowService ?? new SwShRoyalCandyWorkflowService();
         this.shopsWorkflowService = shopsWorkflowService ?? new SwShShopsWorkflowService();
+        this.spreadsheetImportWorkflowService = spreadsheetImportWorkflowService ?? new SwShSpreadsheetImportWorkflowService();
         this.textWorkflowService = textWorkflowService ?? new SwShTextWorkflowService();
         this.trainersWorkflowService = trainersWorkflowService ?? new SwShTrainersWorkflowService();
     }
@@ -72,6 +76,7 @@ public sealed class SwShWorkflowService
                 flagworkSaveWorkflowService.CreateSummary(project),
                 exeFsPatchWorkflowService.CreateSummary(project),
                 royalCandyWorkflowService.CreateSummary(project),
+                spreadsheetImportWorkflowService.CreateSummary(project),
             ]);
     }
 
@@ -163,5 +168,14 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return royalCandyWorkflowService.Load(project);
+    }
+
+    public SwShSpreadsheetImportWorkflow LoadSpreadsheetImport(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return spreadsheetImportWorkflowService.Load(project);
     }
 }

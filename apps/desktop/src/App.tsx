@@ -4,6 +4,7 @@ import {
   Activity,
   CheckCircle,
   ClipboardCheck,
+  FileSpreadsheet,
   FolderOpen,
   Layers,
   ListChecks,
@@ -134,6 +135,12 @@ const workflowDefinitions: Array<{
     label: 'Royal Candy Workflows',
     description: 'Curated batch workflow recipes, targets, steps, and source provenance.',
     icon: CheckCircle
+  },
+  {
+    id: 'spreadsheetImport',
+    label: 'Spreadsheet Import Tooling',
+    description: 'Spreadsheet import profiles, target workflows, columns, and source provenance.',
+    icon: FileSpreadsheet
   }
 ];
 

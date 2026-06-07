@@ -10,6 +10,7 @@ using KM.Api.Shops;
 using KM.Api.Raids;
 using KM.Api.RoyalCandy;
 using KM.Api.Text;
+using KM.Api.SpreadsheetImport;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
@@ -21,6 +22,7 @@ using KM.SwSh.Shops;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Text;
+using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
 
@@ -103,6 +105,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadRoyalCandyWorkflowResponse(ToRoyalCandyWorkflowDto(workflow));
+    }
+
+    public static LoadSpreadsheetImportWorkflowResponse ToDto(SwShSpreadsheetImportWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadSpreadsheetImportWorkflowResponse(ToSpreadsheetImportWorkflowDto(workflow));
     }
 
     public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
@@ -241,6 +250,19 @@ public static class SwShBridgeMapper
             new RoyalCandyWorkflowStatsDto(
                 workflow.Stats.TotalWorkflowCount,
                 workflow.Stats.TotalStepCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static SpreadsheetImportWorkflowDto ToSpreadsheetImportWorkflowDto(
+        SwShSpreadsheetImportWorkflow workflow)
+    {
+        return new SpreadsheetImportWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Profiles.Select(ToDto).ToArray(),
+            new SpreadsheetImportWorkflowStatsDto(
+                workflow.Stats.TotalProfileCount,
+                workflow.Stats.TotalColumnCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -526,6 +548,39 @@ public static class SwShBridgeMapper
     private static RoyalCandyProvenanceDto ToDto(SwShRoyalCandyProvenance provenance)
     {
         return new RoyalCandyProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static SpreadsheetImportProfileRecordDto ToDto(
+        SwShSpreadsheetImportProfileRecord profile)
+    {
+        return new SpreadsheetImportProfileRecordDto(
+            profile.ProfileId,
+            profile.Name,
+            profile.SourceKind,
+            profile.TargetWorkflow,
+            profile.Status,
+            profile.Description,
+            profile.Columns.Select(ToDto).ToArray(),
+            ToDto(profile.Provenance));
+    }
+
+    private static SpreadsheetImportColumnRecordDto ToDto(
+        SwShSpreadsheetImportColumnRecord column)
+    {
+        return new SpreadsheetImportColumnRecordDto(
+            column.Column,
+            column.Header,
+            column.ValueKind,
+            column.IsRequired,
+            column.Description);
+    }
+
+    private static SpreadsheetImportProvenanceDto ToDto(SwShSpreadsheetImportProvenance provenance)
+    {
+        return new SpreadsheetImportProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

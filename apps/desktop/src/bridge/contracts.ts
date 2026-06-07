@@ -18,6 +18,7 @@ export const kmCommandNameValues = [
   'flagworkSave.load',
   'exefsPatches.load',
   'royalCandy.load',
+  'spreadsheetImport.load',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -45,6 +46,7 @@ export const kmCommandNames = {
   loadFlagworkSaveWorkflow: 'flagworkSave.load',
   loadExeFsPatchWorkflow: 'exefsPatches.load',
   loadRoyalCandyWorkflow: 'royalCandy.load',
+  loadSpreadsheetImportWorkflow: 'spreadsheetImport.load',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -129,6 +131,10 @@ export const loadExeFsPatchWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadRoyalCandyWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadSpreadsheetImportWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -650,6 +656,48 @@ export const loadRoyalCandyWorkflowResponseSchema = z.strictObject({
   workflow: royalCandyWorkflowSchema
 });
 
+export const spreadsheetImportProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const spreadsheetImportColumnRecordSchema = z.strictObject({
+  column: z.number().int().nonnegative(),
+  description: z.string(),
+  header: z.string(),
+  isRequired: z.boolean(),
+  valueKind: z.string()
+});
+
+export const spreadsheetImportProfileRecordSchema = z.strictObject({
+  columns: z.array(spreadsheetImportColumnRecordSchema),
+  description: z.string(),
+  name: z.string(),
+  profileId: z.string(),
+  provenance: spreadsheetImportProvenanceSchema,
+  sourceKind: z.string(),
+  status: z.string(),
+  targetWorkflow: z.string()
+});
+
+export const spreadsheetImportWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalColumnCount: z.number().int().nonnegative(),
+  totalProfileCount: z.number().int().nonnegative()
+});
+
+export const spreadsheetImportWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  profiles: z.array(spreadsheetImportProfileRecordSchema),
+  stats: spreadsheetImportWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadSpreadsheetImportWorkflowResponseSchema = z.strictObject({
+  workflow: spreadsheetImportWorkflowSchema
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -756,6 +804,7 @@ export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
 export type FlagworkSaveWorkflow = z.infer<typeof flagworkSaveWorkflowSchema>;
 export type ExeFsPatchWorkflow = z.infer<typeof exeFsPatchWorkflowSchema>;
 export type RoyalCandyWorkflow = z.infer<typeof royalCandyWorkflowSchema>;
+export type SpreadsheetImportWorkflow = z.infer<typeof spreadsheetImportWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
@@ -778,6 +827,12 @@ export type LoadExeFsPatchWorkflowRequest = z.infer<typeof loadExeFsPatchWorkflo
 export type LoadExeFsPatchWorkflowResponse = z.infer<typeof loadExeFsPatchWorkflowResponseSchema>;
 export type LoadRoyalCandyWorkflowRequest = z.infer<typeof loadRoyalCandyWorkflowRequestSchema>;
 export type LoadRoyalCandyWorkflowResponse = z.infer<typeof loadRoyalCandyWorkflowResponseSchema>;
+export type LoadSpreadsheetImportWorkflowRequest = z.infer<
+  typeof loadSpreadsheetImportWorkflowRequestSchema
+>;
+export type LoadSpreadsheetImportWorkflowResponse = z.infer<
+  typeof loadSpreadsheetImportWorkflowResponseSchema
+>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;
