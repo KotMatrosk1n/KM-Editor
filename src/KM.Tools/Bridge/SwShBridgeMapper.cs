@@ -24,11 +24,11 @@ public static class SwShBridgeMapper
         return new LoadItemsWorkflowResponse(ToItemsWorkflowDto(workflow));
     }
 
-    public static UpdateItemBuyPriceResponse ToDto(SwShItemsEditResult result)
+    public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
 
-        return new UpdateItemBuyPriceResponse(
+        return new UpdateItemFieldResponse(
             ToItemsWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
@@ -49,6 +49,7 @@ public static class SwShBridgeMapper
         return new ItemsWorkflowDto(
             ToDto(workflow.Summary),
             workflow.Items.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
             new ItemsWorkflowStatsDto(
                 workflow.Stats.TotalItemCount,
                 workflow.Stats.SourceFileCount),
@@ -77,6 +78,16 @@ public static class SwShBridgeMapper
                 item.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(item.Provenance.SourceLayer),
                 ProjectBridgeMapper.ToDto(item.Provenance.FileState)));
+    }
+
+    private static ItemEditableFieldDto ToDto(SwShItemEditableField field)
+    {
+        return new ItemEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue);
     }
 
     private static WorkflowAvailabilityDto ToDto(SwShWorkflowAvailability availability)

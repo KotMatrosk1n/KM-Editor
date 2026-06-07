@@ -47,7 +47,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.RefreshFileGraph => DispatchRefreshFileGraph(requestJson),
                 KmCommandNames.ListWorkflows => DispatchListWorkflows(requestJson),
                 KmCommandNames.LoadItemsWorkflow => DispatchLoadItemsWorkflow(requestJson),
-                KmCommandNames.UpdateItemBuyPrice => DispatchUpdateItemBuyPrice(requestJson),
+                KmCommandNames.UpdateItemField => DispatchUpdateItemField(requestJson),
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
@@ -113,17 +113,18 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
-    private string DispatchUpdateItemBuyPrice(string requestJson)
+    private string DispatchUpdateItemField(string requestJson)
     {
-        var request = DeserializeRequest<UpdateItemBuyPriceRequest>(requestJson);
+        var request = DeserializeRequest<UpdateItemFieldRequest>(requestJson);
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = itemsEditSessionService.UpdateBuyPrice(
+        var result = itemsEditSessionService.UpdateField(
             ProjectBridgeMapper.ToCore(request.Payload.Paths),
             session,
             request.Payload.ItemId,
-            request.Payload.BuyPrice);
+            request.Payload.Field,
+            request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);

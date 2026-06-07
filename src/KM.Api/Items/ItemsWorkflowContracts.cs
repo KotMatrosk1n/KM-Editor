@@ -9,13 +9,14 @@ namespace KM.Api.Items;
 
 public sealed record LoadItemsWorkflowRequest(ProjectPathsDto Paths);
 
-public sealed record UpdateItemBuyPriceRequest(
+public sealed record UpdateItemFieldRequest(
     ProjectPathsDto Paths,
     EditSessionDto? Session,
     int ItemId,
-    int BuyPrice);
+    string Field,
+    string Value);
 
-public sealed record UpdateItemBuyPriceResponse(
+public sealed record UpdateItemFieldResponse(
     ItemsWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
@@ -33,6 +34,13 @@ public sealed record ItemRecordDto(
     int SellPrice,
     ItemProvenanceDto Provenance);
 
+public sealed record ItemEditableFieldDto(
+    string Field,
+    string Label,
+    string ValueKind,
+    int? MinimumValue,
+    int? MaximumValue);
+
 public sealed record ItemsWorkflowStatsDto(
     int TotalItemCount,
     int SourceFileCount);
@@ -40,6 +48,7 @@ public sealed record ItemsWorkflowStatsDto(
 public sealed record ItemsWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<ItemRecordDto> Items,
+    IReadOnlyList<ItemEditableFieldDto> EditableFields,
     ItemsWorkflowStatsDto Stats,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 

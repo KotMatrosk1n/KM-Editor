@@ -134,6 +134,15 @@ describe('projectBridge', () => {
         payload: {
           workflow: {
             diagnostics: [],
+            editableFields: [
+              {
+                field: 'buyPrice',
+                label: 'Buy price',
+                maximumValue: 999999,
+                minimumValue: 0,
+                valueKind: 'integer'
+              }
+            ],
             items: [
               {
                 buyPrice: 300,
@@ -209,7 +218,7 @@ describe('projectBridge', () => {
         });
       }
 
-      if (request.command === 'items.buyPrice.update') {
+      if (request.command === 'items.field.update') {
         return JSON.stringify({
           error: null,
           payload: {
@@ -217,6 +226,15 @@ describe('projectBridge', () => {
             session,
             workflow: {
               diagnostics: [],
+              editableFields: [
+                {
+                  field: 'buyPrice',
+                  label: 'Buy price',
+                  maximumValue: 999999,
+                  minimumValue: 0,
+                  valueKind: 'integer'
+                }
+              ],
               items: [
                 {
                   buyPrice: 450,
@@ -302,7 +320,7 @@ describe('projectBridge', () => {
           diagnostics: [
             {
               field: 'buyPrice',
-              message: 'Pending item buy price change is valid.',
+              message: 'Pending item change is valid.',
               severity: 'info'
             }
           ],
@@ -313,11 +331,12 @@ describe('projectBridge', () => {
     });
 
     const started = await bridge.startEditSession({ paths: editableProjectPaths });
-    const updated = await bridge.updateItemBuyPrice({
-      buyPrice: 450,
+    const updated = await bridge.updateItemField({
+      field: 'buyPrice',
       itemId: 1,
       paths: editableProjectPaths,
-      session: started.session
+      session: started.session,
+      value: '450'
     });
     const validation = await bridge.validateEditSession({
       paths: editableProjectPaths,
@@ -335,7 +354,7 @@ describe('projectBridge', () => {
 
     expect(commands).toEqual([
       'editSession.start',
-      'items.buyPrice.update',
+      'items.field.update',
       'editSession.validate',
       'changePlan.create',
       'changePlan.apply'
