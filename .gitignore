@@ -4,6 +4,7 @@ obj/
 dist/
 build/
 out/
+target/
 
 ## Dependencies
 node_modules/

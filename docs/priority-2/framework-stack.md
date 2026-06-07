@@ -50,12 +50,28 @@ dotnet test KM.Editor.slnx --no-restore
 
 ## Desktop Wrapper Direction
 
-Tauri 2 is the preferred desktop wrapper direction because it keeps the frontend lightweight and can run a local backend sidecar. Electron remains the fallback if Tauri sidecar or backend integration slows development down.
+Tauri 2 is the selected initial desktop wrapper because it keeps the frontend lightweight and can run a local backend sidecar. Electron remains the fallback only if Tauri sidecar or backend integration slows development down.
 
-The first frontend shell branch intentionally keeps the Vite app independent of the desktop wrapper so Tauri setup can be evaluated in a focused branch.
+The desktop package has a Tauri 2 scaffold under `apps/desktop/src-tauri`.
+
+Run the desktop shell from the repository root:
+
+```powershell
+pnpm tauri:dev
+```
+
+Build the desktop shell from the repository root:
+
+```powershell
+pnpm tauri:build
+```
+
+On Windows, Tauri/Rust builds require Visual Studio Build Tools with the Microsoft C++ toolchain and Windows SDK components available to the Rust MSVC target.
 
 ## Bridge Direction
 
 The UI should call the backend through typed request and response contracts. The preferred transport direction is JSON-RPC-style messages over a desktop-safe channel, starting with stdio for a backend sidecar if Tauri integration is smooth.
 
 Contract validation should use generated or mirrored TypeScript types plus Zod validation at the bridge boundary.
+
+The Tauri shell includes the shell plugin needed for future sidecar launch work. The actual backend sidecar binary, command allowlist, JSON-RPC framing, and contract generation belong in the bridge setup branch.
