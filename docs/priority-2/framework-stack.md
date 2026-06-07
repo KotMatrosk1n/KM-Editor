@@ -36,6 +36,18 @@ KM Editor uses a pnpm workspace with the desktop frontend in `apps/desktop`.
 - Component rendering tests use Testing Library and jsdom.
 - Browser workflow tests should use Playwright in a later Priority 2 branch.
 
+## Backend Tests
+
+- Backend unit and integration tests use xUnit.
+- Test discovery through `dotnet test` uses `Microsoft.NET.Test.Sdk` plus the xUnit Visual Studio test adapter.
+- Backend test projects are marked as test projects and not packable.
+
+Run backend tests from the repository root:
+
+```powershell
+dotnet test KM.Editor.slnx --no-restore
+```
+
 ## Desktop Wrapper Direction
 
 Tauri 2 is the preferred desktop wrapper direction because it keeps the frontend lightweight and can run a local backend sidecar. Electron remains the fallback if Tauri sidecar or backend integration slows development down.
