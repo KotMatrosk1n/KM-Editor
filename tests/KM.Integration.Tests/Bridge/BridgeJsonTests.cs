@@ -41,4 +41,33 @@ public sealed class BridgeJsonTests
         Assert.Contains("\"requestId\":\"request-2\"", json);
         Assert.DoesNotContain("\"succeeded\"", json);
     }
+
+    [Fact]
+    public void SerializesProjectHealthStateAsString()
+    {
+        var health = new ProjectHealthDto(
+            State: ProjectHealthStateDto.EditableReady,
+            CanOpenReadOnlyWorkflows: true,
+            CanOpenEditableWorkflows: true,
+            Paths:
+            [
+                new ProjectPathValidationDto(
+                    Role: ProjectPathRoleDto.BaseRomFs,
+                    Path: "base-romfs",
+                    Status: ProjectPathStatusDto.Valid,
+                    IsRequired: true,
+                    Diagnostics: []),
+            ],
+            FileGraph: new ProjectFileGraphSummaryDto(BaseFileCount: 1, LayeredFileCount: 0, OverrideCount: 0, LayeredOnlyCount: 0),
+            Diagnostics: []);
+        var response = BridgeResponse<OpenProjectResponse>.Success(
+            new OpenProjectResponse("project-1", health),
+            requestId: "request-3");
+
+        var json = JsonSerializer.Serialize(response, BridgeJson.SerializerOptions);
+
+        Assert.Contains("\"state\":\"editableReady\"", json);
+        Assert.Contains("\"role\":\"baseRomFs\"", json);
+        Assert.Contains("\"status\":\"valid\"", json);
+    }
 }

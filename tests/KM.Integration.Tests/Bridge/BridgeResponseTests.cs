@@ -11,7 +11,13 @@ public sealed class BridgeResponseTests
     [Fact]
     public void SuccessCarriesPayloadAndRequestId()
     {
-        var health = new ProjectHealthDto(CanOpenEditableWorkflows: true, Diagnostics: []);
+        var health = new ProjectHealthDto(
+            State: ProjectHealthStateDto.EditableReady,
+            CanOpenReadOnlyWorkflows: true,
+            CanOpenEditableWorkflows: true,
+            Paths: [],
+            FileGraph: new ProjectFileGraphSummaryDto(BaseFileCount: 0, LayeredFileCount: 0, OverrideCount: 0, LayeredOnlyCount: 0),
+            Diagnostics: []);
         var payload = new OpenProjectResponse("project-1", health);
 
         var response = BridgeResponse<OpenProjectResponse>.Success(payload, requestId: "request-1");

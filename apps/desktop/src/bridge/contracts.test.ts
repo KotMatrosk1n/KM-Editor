@@ -1,28 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { z } from 'zod';
 import {
   apiErrorSchema,
   createBridgeRequestSchema,
   createBridgeResponseSchema,
-  kmCommandNames
+  kmCommandNames,
+  openProjectRequestSchema,
+  openProjectResponseSchema
 } from './contracts';
-
-const openProjectRequestSchema = z.strictObject({
-  paths: z.strictObject({
-    baseExeFsPath: z.string(),
-    baseRomFsPath: z.string(),
-    outputRootPath: z.string().nullable()
-  })
-});
-
-const openProjectResponseSchema = z.strictObject({
-  health: z.strictObject({
-    canOpenEditableWorkflows: z.boolean(),
-    diagnostics: z.array(z.unknown())
-  }),
-  projectId: z.string()
-});
 
 describe('bridge contracts', () => {
   it('validates known command request envelopes', () => {
@@ -51,8 +36,25 @@ describe('bridge contracts', () => {
         error: null,
         payload: {
           health: {
+            canOpenReadOnlyWorkflows: true,
             canOpenEditableWorkflows: true,
-            diagnostics: []
+            diagnostics: [],
+            fileGraph: {
+              baseFileCount: 2,
+              layeredFileCount: 1,
+              layeredOnlyCount: 0,
+              overrideCount: 1
+            },
+            paths: [
+              {
+                diagnostics: [],
+                isRequired: true,
+                path: 'base-romfs',
+                role: 'baseRomFs',
+                status: 'valid'
+              }
+            ],
+            state: 'editableReady'
           },
           projectId: 'project-1'
         },
