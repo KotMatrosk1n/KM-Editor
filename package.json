@@ -15,6 +15,7 @@
     "typecheck": "pnpm --filter @km-editor/desktop typecheck",
     "test": "pnpm --filter @km-editor/desktop test",
     "test:run": "pnpm --filter @km-editor/desktop test:run",
+    "test:workflow": "pnpm --filter @km-editor/desktop test:workflow",
     "check": "pnpm run typecheck && pnpm run build && pnpm run test:run"
   }
 }

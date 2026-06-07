@@ -34,7 +34,15 @@ KM Editor uses a pnpm workspace with the desktop frontend in `apps/desktop`.
 
 - Unit and component tests use Vitest.
 - Component rendering tests use Testing Library and jsdom.
-- Browser workflow tests should use Playwright in a later Priority 2 branch.
+- Browser workflow tests use Playwright.
+
+Run browser workflow tests from the repository root:
+
+```powershell
+pnpm test:workflow
+```
+
+The first Playwright coverage targets the desktop Vite shell. Tauri-window and backend-sidecar workflow coverage should wait until the bridge scaffold exists.
 
 ## Backend Tests
 
