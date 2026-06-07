@@ -4,12 +4,14 @@ using KM.Api.Items;
 using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.Shops;
+using KM.Api.Raids;
 using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
 using KM.SwSh.Encounters;
 using KM.SwSh.Shops;
+using KM.SwSh.Raids;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
@@ -58,6 +60,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadEncountersWorkflowResponse(ToEncountersWorkflowDto(workflow));
+    }
+
+    public static LoadRaidRewardsWorkflowResponse ToDto(SwShRaidRewardsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadRaidRewardsWorkflowResponse(ToRaidRewardsWorkflowDto(workflow));
     }
 
     public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
@@ -137,6 +146,18 @@ public static class SwShBridgeMapper
             new EncountersWorkflowStatsDto(
                 workflow.Stats.TotalTableCount,
                 workflow.Stats.TotalSlotCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static RaidRewardsWorkflowDto ToRaidRewardsWorkflowDto(SwShRaidRewardsWorkflow workflow)
+    {
+        return new RaidRewardsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Tables.Select(ToDto).ToArray(),
+            new RaidRewardsWorkflowStatsDto(
+                workflow.Stats.TotalTableCount,
+                workflow.Stats.TotalRewardItemCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -290,6 +311,35 @@ public static class SwShBridgeMapper
     private static EncounterProvenanceDto ToDto(SwShEncounterProvenance provenance)
     {
         return new EncounterProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static RaidRewardTableRecordDto ToDto(SwShRaidRewardTableRecord table)
+    {
+        return new RaidRewardTableRecordDto(
+            table.TableId,
+            table.DenId,
+            table.Rank,
+            table.GameVersion,
+            table.Rewards.Select(ToDto).ToArray(),
+            ToDto(table.Provenance));
+    }
+
+    private static RaidRewardItemRecordDto ToDto(SwShRaidRewardItemRecord reward)
+    {
+        return new RaidRewardItemRecordDto(
+            reward.Slot,
+            reward.ItemId,
+            reward.ItemName,
+            reward.Quantity,
+            reward.Weight);
+    }
+
+    private static RaidRewardProvenanceDto ToDto(SwShRaidRewardProvenance provenance)
+    {
+        return new RaidRewardProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

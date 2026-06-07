@@ -3,6 +3,7 @@
 using KM.Core.Projects;
 using KM.SwSh.Encounters;
 using KM.SwSh.Items;
+using KM.SwSh.Raids;
 using KM.SwSh.Shops;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
@@ -13,6 +14,7 @@ public sealed class SwShWorkflowService
 {
     private readonly SwShItemsWorkflowService itemsWorkflowService;
     private readonly SwShEncountersWorkflowService encountersWorkflowService;
+    private readonly SwShRaidRewardsWorkflowService raidRewardsWorkflowService;
     private readonly SwShShopsWorkflowService shopsWorkflowService;
     private readonly SwShTextWorkflowService textWorkflowService;
     private readonly SwShTrainersWorkflowService trainersWorkflowService;
@@ -24,11 +26,13 @@ public sealed class SwShWorkflowService
         SwShTextWorkflowService? textWorkflowService = null,
         SwShTrainersWorkflowService? trainersWorkflowService = null,
         SwShShopsWorkflowService? shopsWorkflowService = null,
-        SwShEncountersWorkflowService? encountersWorkflowService = null)
+        SwShEncountersWorkflowService? encountersWorkflowService = null,
+        SwShRaidRewardsWorkflowService? raidRewardsWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
         this.encountersWorkflowService = encountersWorkflowService ?? new SwShEncountersWorkflowService();
+        this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
         this.shopsWorkflowService = shopsWorkflowService ?? new SwShShopsWorkflowService();
         this.textWorkflowService = textWorkflowService ?? new SwShTextWorkflowService();
         this.trainersWorkflowService = trainersWorkflowService ?? new SwShTrainersWorkflowService();
@@ -47,6 +51,7 @@ public sealed class SwShWorkflowService
                 trainersWorkflowService.CreateSummary(project),
                 shopsWorkflowService.CreateSummary(project),
                 encountersWorkflowService.CreateSummary(project),
+                raidRewardsWorkflowService.CreateSummary(project),
             ]);
     }
 
@@ -93,5 +98,14 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return encountersWorkflowService.Load(project);
+    }
+
+    public SwShRaidRewardsWorkflow LoadRaidRewards(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return raidRewardsWorkflowService.Load(project);
     }
 }

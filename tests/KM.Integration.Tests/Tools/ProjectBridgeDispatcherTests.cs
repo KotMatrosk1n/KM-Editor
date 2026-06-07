@@ -6,6 +6,7 @@ using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.Items;
 using KM.Api.Projects;
+using KM.Api.Raids;
 using KM.Api.Shops;
 using KM.Api.Text;
 using KM.Api.Trainers;
@@ -133,6 +134,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("encounters", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("raidRewards", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             });
     }
@@ -390,6 +396,57 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("Skwovet", slot.Species);
         Assert.Equal(3, slot.LevelMin);
         Assert.Equal(5, slot.LevelMax);
+        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchLoadRaidRewardsWorkflowReturnsSanitizedRewardTables()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/raid.rewards.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "tables": [
+                {
+                  "tableId": "den_001_rank_5_sword",
+                  "denId": "den_001",
+                  "rank": 5,
+                  "gameVersion": "Sword",
+                  "rewards": [
+                    {
+                      "slot": 1,
+                      "itemId": 1,
+                      "itemName": "Exp. Candy L",
+                      "quantity": 2,
+                      "weight": 40
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadRaidRewardsWorkflow,
+            new LoadRaidRewardsWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-raid-rewards");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadRaidRewardsWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-raid-rewards", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var table = Assert.Single(response.Payload.Workflow.Tables);
+        Assert.Equal("den_001_rank_5_sword", table.TableId);
+        Assert.Equal("den_001", table.DenId);
+        Assert.Equal(5, table.Rank);
+        Assert.Equal(ProjectFileLayerDto.Base, table.Provenance.SourceLayer);
+        var reward = Assert.Single(table.Rewards);
+        Assert.Equal("Exp. Candy L", reward.ItemName);
+        Assert.Equal(2, reward.Quantity);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

@@ -13,6 +13,7 @@ export const kmCommandNameValues = [
   'trainers.load',
   'shops.load',
   'encounters.load',
+  'raidRewards.load',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -35,6 +36,7 @@ export const kmCommandNames = {
   loadTrainersWorkflow: 'trainers.load',
   loadShopsWorkflow: 'shops.load',
   loadEncountersWorkflow: 'encounters.load',
+  loadRaidRewardsWorkflow: 'raidRewards.load',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -99,6 +101,10 @@ export const loadShopsWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadEncountersWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadRaidRewardsWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -430,6 +436,46 @@ export const loadEncountersWorkflowResponseSchema = z.strictObject({
   workflow: encountersWorkflowSchema
 });
 
+export const raidRewardProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const raidRewardItemRecordSchema = z.strictObject({
+  itemId: z.number().int().nonnegative(),
+  itemName: z.string(),
+  quantity: z.number().int().nonnegative(),
+  slot: z.number().int().nonnegative(),
+  weight: z.number().int().nonnegative()
+});
+
+export const raidRewardTableRecordSchema = z.strictObject({
+  denId: z.string(),
+  gameVersion: z.string(),
+  provenance: raidRewardProvenanceSchema,
+  rank: z.number().int().nonnegative(),
+  rewards: z.array(raidRewardItemRecordSchema),
+  tableId: z.string()
+});
+
+export const raidRewardsWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalRewardItemCount: z.number().int().nonnegative(),
+  totalTableCount: z.number().int().nonnegative()
+});
+
+export const raidRewardsWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  stats: raidRewardsWorkflowStatsSchema,
+  summary: workflowSummarySchema,
+  tables: z.array(raidRewardTableRecordSchema)
+});
+
+export const loadRaidRewardsWorkflowResponseSchema = z.strictObject({
+  workflow: raidRewardsWorkflowSchema
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -531,6 +577,7 @@ export type TextWorkflow = z.infer<typeof textWorkflowSchema>;
 export type TrainersWorkflow = z.infer<typeof trainersWorkflowSchema>;
 export type ShopsWorkflow = z.infer<typeof shopsWorkflowSchema>;
 export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;
+export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
@@ -543,6 +590,8 @@ export type LoadShopsWorkflowRequest = z.infer<typeof loadShopsWorkflowRequestSc
 export type LoadShopsWorkflowResponse = z.infer<typeof loadShopsWorkflowResponseSchema>;
 export type LoadEncountersWorkflowRequest = z.infer<typeof loadEncountersWorkflowRequestSchema>;
 export type LoadEncountersWorkflowResponse = z.infer<typeof loadEncountersWorkflowResponseSchema>;
+export type LoadRaidRewardsWorkflowRequest = z.infer<typeof loadRaidRewardsWorkflowRequestSchema>;
+export type LoadRaidRewardsWorkflowResponse = z.infer<typeof loadRaidRewardsWorkflowResponseSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;

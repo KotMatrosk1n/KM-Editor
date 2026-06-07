@@ -102,6 +102,12 @@ const workflowDefinitions: Array<{
     label: 'Encounters and Wild Data',
     description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
     icon: Layers
+  },
+  {
+    id: 'raidRewards',
+    label: 'Raid Rewards',
+    description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
+    icon: ShieldCheck
   }
 ];
 
