@@ -98,9 +98,10 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: 'Start Edit Session' }));
 
     const buyPriceInput = screen.getByLabelText('Buy price');
+    expect(screen.getByLabelText('Sell price')).toBeInTheDocument();
     await user.clear(buyPriceInput);
     await user.type(buyPriceInput, '450');
-    await user.click(screen.getByRole('button', { name: 'Save Pending' }));
+    await user.click(screen.getByRole('button', { name: 'Save buy price' }));
 
     expect(await screen.findByDisplayValue('450')).toBeInTheDocument();
 
@@ -188,6 +189,13 @@ function createMockProjectBridge(
       {
         field: 'buyPrice',
         label: 'Buy price',
+        maximumValue: 999_999,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'sellPrice',
+        label: 'Sell price',
         maximumValue: 999_999,
         minimumValue: 0,
         valueKind: 'integer'
@@ -295,8 +303,10 @@ function createMockProjectBridge(
           sessionId: 'session-1'
         }
       }),
-    updateItemField: (request) =>
-      Promise.resolve({
+    updateItemField: (request) => {
+      const fieldLabel = request.field === 'sellPrice' ? 'sell price' : 'buy price';
+
+      return Promise.resolve({
         diagnostics: [],
         session: {
           hasPendingChanges: true,
@@ -312,20 +322,25 @@ function createMockProjectBridge(
                   relativePath: 'romfs/kmeditor/items.readmodel.json'
                 }
               ],
-              summary: `Set Potion buy price to ${request.value}.`
+              summary: `Set Potion ${fieldLabel} to ${request.value}.`
             }
           ],
           sessionId: 'session-1'
         },
         workflow: {
           ...itemsWorkflow,
-          items: itemsWorkflow.items.map((item) =>
-            item.itemId === request.itemId
-              ? { ...item, buyPrice: Number.parseInt(request.value, 10) }
-              : item
-          )
+          items: itemsWorkflow.items.map((item) => {
+            if (item.itemId !== request.itemId) {
+              return item;
+            }
+
+            return request.field === 'sellPrice'
+              ? { ...item, sellPrice: Number.parseInt(request.value, 10) }
+              : { ...item, buyPrice: Number.parseInt(request.value, 10) };
+          })
         }
-      }),
+      });
+    },
     validateEditSession: (request) =>
       Promise.resolve({
         diagnostics: [

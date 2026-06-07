@@ -35,6 +35,29 @@ public sealed class SwShItemsEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateFieldAddsPendingSellPriceAndPreviewsWorkflowValue()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.SellPriceField,
+            value: "175");
+
+        Assert.Empty(result.Diagnostics);
+        Assert.True(result.Session.HasPendingChanges);
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal(SwShItemsEditSessionService.SellPriceField, edit.Field);
+        Assert.Equal("175", edit.NewValue);
+        var item = Assert.Single(result.Workflow.Items);
+        Assert.Equal(300, item.BuyPrice);
+        Assert.Equal(175, item.SellPrice);
+    }
+
+    [Fact]
     public void UpdateFieldReplacesExistingPendingEditForSameItemField()
     {
         using var temp = CreateEditableProject();
@@ -59,6 +82,37 @@ public sealed class SwShItemsEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateFieldKeepsSeparatePendingEditsForDifferentItemFields()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+        var buyResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.BuyPriceField,
+            value: "450");
+
+        var sellResult = service.UpdateField(
+            temp.Paths,
+            buyResult.Session,
+            itemId: 1,
+            field: SwShItemsWorkflowService.SellPriceField,
+            value: "175");
+
+        Assert.Equal(2, sellResult.Session.PendingEdits.Count);
+        Assert.Contains(
+            sellResult.Session.PendingEdits,
+            edit => edit.Field == SwShItemsEditSessionService.BuyPriceField);
+        Assert.Contains(
+            sellResult.Session.PendingEdits,
+            edit => edit.Field == SwShItemsEditSessionService.SellPriceField);
+        var item = Assert.Single(sellResult.Workflow.Items);
+        Assert.Equal(450, item.BuyPrice);
+        Assert.Equal(175, item.SellPrice);
+    }
+
+    [Fact]
     public void UpdateFieldRejectsUnsupportedItemField()
     {
         using var temp = CreateEditableProject();
@@ -68,7 +122,7 @@ public sealed class SwShItemsEditSessionServiceTests
             temp.Paths,
             session: null,
             itemId: 1,
-            field: "sellPrice",
+            field: "category",
             value: "250");
 
         Assert.False(result.Session.HasPendingChanges);
@@ -171,6 +225,35 @@ public sealed class SwShItemsEditSessionServiceTests
         var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "kmeditor", "items.readmodel.json");
         Assert.True(File.Exists(outputPath));
         Assert.Contains("\"buyPrice\": 450", File.ReadAllText(outputPath));
+        Assert.DoesNotContain(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ApplyChangePlanWritesCombinedItemPriceEditsToOutputRoot()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+        var buyResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.BuyPriceField,
+            value: "450");
+        var sellResult = service.UpdateField(
+            temp.Paths,
+            buyResult.Session,
+            itemId: 1,
+            field: SwShItemsWorkflowService.SellPriceField,
+            value: "175");
+        var changePlan = service.CreateChangePlan(temp.Paths, sellResult.Session);
+
+        var applyResult = service.ApplyChangePlan(temp.Paths, sellResult.Session, changePlan);
+
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "kmeditor", "items.readmodel.json");
+        var outputJson = File.ReadAllText(outputPath);
+        Assert.Single(changePlan.Writes);
+        Assert.Contains("\"buyPrice\": 450", outputJson);
+        Assert.Contains("\"sellPrice\": 175", outputJson);
         Assert.DoesNotContain(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 

@@ -47,9 +47,18 @@ public sealed class SwShItemsWorkflowServiceTests
         Assert.Equal("Antidote", workflow.Items[1].Name);
         Assert.Equal(ProjectFileLayer.Base, workflow.Items[0].Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.BaseOnly, workflow.Items[0].Provenance.FileState);
-        var editableField = Assert.Single(workflow.EditableFields);
-        Assert.Equal(SwShItemsWorkflowService.BuyPriceField, editableField.Field);
-        Assert.Equal(SwShItemsWorkflowService.MaximumBuyPrice, editableField.MaximumValue);
+        Assert.Collection(
+            workflow.EditableFields,
+            editableField =>
+            {
+                Assert.Equal(SwShItemsWorkflowService.BuyPriceField, editableField.Field);
+                Assert.Equal(SwShItemsWorkflowService.MaximumBuyPrice, editableField.MaximumValue);
+            },
+            editableField =>
+            {
+                Assert.Equal(SwShItemsWorkflowService.SellPriceField, editableField.Field);
+                Assert.Equal(SwShItemsWorkflowService.MaximumSellPrice, editableField.MaximumValue);
+            });
         Assert.Empty(workflow.Diagnostics);
     }
 

@@ -144,9 +144,18 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("Potion", item.Name);
         Assert.Equal("romfs/kmeditor/items.readmodel.json", item.Provenance.SourceFile);
         Assert.Equal(ProjectFileLayerDto.Base, item.Provenance.SourceLayer);
-        var editableField = Assert.Single(response.Payload.Workflow.EditableFields);
-        Assert.Equal("buyPrice", editableField.Field);
-        Assert.Equal(999_999, editableField.MaximumValue);
+        Assert.Collection(
+            response.Payload.Workflow.EditableFields,
+            editableField =>
+            {
+                Assert.Equal("buyPrice", editableField.Field);
+                Assert.Equal(999_999, editableField.MaximumValue);
+            },
+            editableField =>
+            {
+                Assert.Equal("sellPrice", editableField.Field);
+                Assert.Equal(999_999, editableField.MaximumValue);
+            });
     }
 
     [Fact]
@@ -183,6 +192,51 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.True(response.Payload.Session.HasPendingChanges);
         Assert.Equal(450, Assert.Single(response.Payload.Workflow.Items).BuyPrice);
         Assert.Equal("450", Assert.Single(response.Payload.Session.PendingEdits).NewValue);
+    }
+
+    [Fact]
+    public void DispatchUpdateItemFieldReturnsPendingSellPriceSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/items.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "items": [
+                {
+                  "itemId": 1,
+                  "name": "Potion",
+                  "category": "Medicine",
+                  "buyPrice": 300,
+                  "sellPrice": 150
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(
+                temp.Paths,
+                Session: null,
+                ItemId: 1,
+                Field: "sellPrice",
+                Value: "175"),
+            requestId: "request-items-sell-edit");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdateItemFieldResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.True(response.Payload.Session.HasPendingChanges);
+        var item = Assert.Single(response.Payload.Workflow.Items);
+        Assert.Equal(300, item.BuyPrice);
+        Assert.Equal(175, item.SellPrice);
+        var edit = Assert.Single(response.Payload.Session.PendingEdits);
+        Assert.Equal("sellPrice", edit.Field);
+        Assert.Equal("175", edit.NewValue);
     }
 
     [Fact]

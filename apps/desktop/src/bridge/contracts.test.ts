@@ -191,6 +191,13 @@ describe('bridge contracts', () => {
           maximumValue: 999999,
           minimumValue: 0,
           valueKind: 'integer'
+        },
+        {
+          field: 'sellPrice',
+          label: 'Sell price',
+          maximumValue: 999999,
+          minimumValue: 0,
+          valueKind: 'integer'
         }
       ],
       items: [
@@ -322,6 +329,13 @@ describe('bridge contracts', () => {
         {
           field: 'buyPrice',
           label: 'Buy price',
+          maximumValue: 999999,
+          minimumValue: 0,
+          valueKind: 'integer'
+        },
+        {
+          field: 'sellPrice',
+          label: 'Sell price',
           maximumValue: 999999,
           minimumValue: 0,
           valueKind: 'integer'
