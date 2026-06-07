@@ -21,8 +21,7 @@ public sealed class ProjectWorkspaceService
     {
         ArgumentNullException.ThrowIfNull(paths);
 
-        var health = Validate(paths);
-        var fileGraph = RefreshFileGraph(paths, health);
+        var (health, fileGraph) = ValidateAndBuildFileGraph(paths);
 
         return new OpenedProject(
             ProjectId.New(),
@@ -43,43 +42,20 @@ public sealed class ProjectWorkspaceService
     {
         ArgumentNullException.ThrowIfNull(paths);
 
-        return RefreshFileGraph(paths, Validate(paths));
+        var (_, fileGraph) = ValidateAndBuildFileGraph(paths);
+
+        return fileGraph;
     }
 
-    private ProjectFileGraph RefreshFileGraph(ProjectPaths paths, ProjectHealth health)
+    private (ProjectHealth Health, ProjectFileGraph FileGraph) ValidateAndBuildFileGraph(ProjectPaths paths)
     {
-        if (!CanBuildBaseFileGraph(health))
+        ProjectFileGraph? fileGraph = null;
+        var health = validator.Validate(paths, graphPaths =>
         {
-            return EmptyFileGraph;
-        }
+            fileGraph = fileGraphBuilder.Build(graphPaths);
+            return fileGraph.ToSummary();
+        });
 
-        // Only a validated output root can add LayeredFS entries; invalid output paths must not leak into the graph.
-        var graphPaths = IsOutputRootValid(health)
-            ? paths
-            : paths with { OutputRootPath = null };
-
-        return fileGraphBuilder.Build(graphPaths);
-    }
-
-    private static bool IsOutputRootValid(ProjectHealth health)
-    {
-        return health.Paths.Any(path =>
-            path.Role == ProjectPathRole.OutputRoot
-            && path.Status == ProjectPathStatus.Valid
-            && !path.HasBlockingError);
-    }
-
-    private static bool CanBuildBaseFileGraph(ProjectHealth health)
-    {
-        return health.Paths.Any(IsValidBasePath(ProjectPathRole.BaseRomFs))
-            && health.Paths.Any(IsValidBasePath(ProjectPathRole.BaseExeFs));
-    }
-
-    private static Func<ProjectPathValidation, bool> IsValidBasePath(ProjectPathRole role)
-    {
-        return path =>
-            path.Role == role
-            && path.Status == ProjectPathStatus.Valid
-            && !path.HasBlockingError;
+        return (health, fileGraph ?? EmptyFileGraph);
     }
 }

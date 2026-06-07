@@ -85,9 +85,22 @@ The desktop Items, Text, and Trainers master/detail lists now render through a s
 
 A regression test loads a sanitized 1,000-item Items workflow through the normal bridge path. The initial view renders fewer than 100 table rows, keeps the final item out of the DOM until searched, and then renders the searched record with fewer than 20 rows.
 
+## Single-Pass Project Graphs
+
+Project open and file-graph refresh now build the project file graph once and reuse its summary for project health. This removes the duplicate recursive graph enumeration that previously happened when `ProjectWorkspaceService.Open` validated paths and then produced the full graph snapshot.
+
+One focused local run after this cleanup produced these approximate measurements:
+
+| Probe | Time | Allocated |
+| --- | ---: | ---: |
+| Project open on synthetic project | 6.5 ms | 0.85 MiB |
+| Workflow list through public service | 6.2 ms | 0.85 MiB |
+| Repeated opened-project open #1 | 4.1 ms | 0.85 MiB |
+| Repeated opened-project open #2 | 3.5 ms | 0.85 MiB |
+
 ## Next Optimization Targets
 
 1. Continue shared-source cache work for Items metadata, item-name text, and archive readers where the same file feeds multiple workflows.
-2. Avoid rebuilding the whole project graph for every workflow navigation action when paths are unchanged.
-3. Move expensive indexing, parsing, validation, or preview planning behind explicit async/background boundaries where the current bridge blocks responsiveness.
+2. Avoid rebuilding the whole project graph across separate workflow navigation actions when unchanged paths and output roots can be invalidated conservatively.
+3. Continue moving expensive indexing, parsing, validation, or preview planning behind explicit async/background boundaries where the current bridge blocks responsiveness.
 4. Extend row-windowing to other workflow views only when fixture or real-project evidence shows they carry enough repeated rows to justify the extra interaction surface.
