@@ -43,6 +43,8 @@ import {
   type UpdateItemFieldResponse,
   type UpdateEncounterSlotFieldRequest,
   type UpdateEncounterSlotFieldResponse,
+  type UpdatePlacementObjectFieldRequest,
+  type UpdatePlacementObjectFieldResponse,
   type UpdateRaidRewardFieldRequest,
   type UpdateRaidRewardFieldResponse,
   type UpdateShopInventoryItemRequest,
@@ -76,6 +78,7 @@ import {
   startEditSessionResponseSchema,
   updateItemFieldResponseSchema,
   updateEncounterSlotFieldResponseSchema,
+  updatePlacementObjectFieldResponseSchema,
   updateRaidRewardFieldResponseSchema,
   updateShopInventoryItemResponseSchema,
   updateTextEntryResponseSchema,
@@ -125,6 +128,9 @@ export type ProjectBridge = {
   updateRaidRewardField: (
     request: UpdateRaidRewardFieldRequest
   ) => Promise<UpdateRaidRewardFieldResponse>;
+  updatePlacementObjectField: (
+    request: UpdatePlacementObjectFieldRequest
+  ) => Promise<UpdatePlacementObjectFieldResponse>;
   updateShopInventoryItem: (
     request: UpdateShopInventoryItemRequest
   ) => Promise<UpdateShopInventoryItemResponse>;
@@ -301,6 +307,13 @@ export function createProjectBridge(
         kmCommandNames.updateRaidRewardField,
         request,
         updateRaidRewardFieldResponseSchema
+      ),
+    updatePlacementObjectField: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updatePlacementObjectField,
+        request,
+        updatePlacementObjectFieldResponseSchema
       ),
     updateShopInventoryItem: (request) =>
       sendProjectBridgeRequest(

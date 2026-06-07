@@ -634,29 +634,10 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadPlacementWorkflowReturnsSanitizedPlacedObjects()
+    public void DispatchLoadPlacementWorkflowReturnsRealPlacedObjects()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/placement.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "objects": [
-                {
-                  "objectId": "route_1_hidden_potion",
-                  "objectType": "HiddenItem",
-                  "label": "Hidden Potion",
-                  "map": "Route 1",
-                  "x": 10.5,
-                  "y": 0,
-                  "z": -4.25,
-                  "rotationY": 90,
-                  "scriptId": "script_hidden_item_001"
-                }
-              ]
-            }
-            """);
+        SwShPlacementBridgeFixtures.WriteBasePlacement(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.LoadPlacementWorkflow,
@@ -669,13 +650,90 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.Equal("request-placement", response.RequestId);
         Assert.NotNull(response.Payload);
-        var placedObject = Assert.Single(response.Payload.Workflow.Objects);
-        Assert.Equal("route_1_hidden_potion", placedObject.ObjectId);
-        Assert.Equal("Hidden Potion", placedObject.Label);
+        Assert.Equal(2, response.Payload.Workflow.Objects.Count);
+        var placedObject = response.Payload.Workflow.Objects.Single(placedObject => placedObject.ObjectType == "FieldItem");
+        Assert.Equal($"{SwShPlacementBridgeFixtures.AreaMember}|0|fieldItem|0|-", placedObject.ObjectId);
+        Assert.Equal("Field item: Potion", placedObject.Label);
         Assert.Equal("Route 1", placedObject.Map);
+        Assert.Equal(SwShPlacementBridgeFixtures.AreaMember, placedObject.ArchiveMember);
+        Assert.Equal(1u, placedObject.ItemId);
+        Assert.Equal("Potion", placedObject.ItemName);
+        Assert.Equal("0xAABBCCDD00112233", placedObject.ItemHash);
+        Assert.Equal(1, placedObject.Quantity);
         Assert.Equal(10.5, placedObject.X);
         Assert.Equal(ProjectFileLayerDto.Base, placedObject.Provenance.SourceLayer);
-        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+        Assert.Equal(1, response.Payload.Workflow.Stats.TotalAreaCount);
+        Assert.Equal(3, response.Payload.Workflow.Stats.SourceFileCount);
+        Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "itemId");
+    }
+
+    [Fact]
+    public void DispatchPlacementEditValidatePlanAndApplyWritesPlacementPack()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShPlacementBridgeFixtures.WriteBasePlacement(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loadJson = SerializeRequest(
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(temp.Paths),
+            requestId: "request-placement-load");
+        var loadResponse = DeserializeResponse<LoadPlacementWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.NotNull(loadResponse.Payload);
+        var fieldItem = loadResponse.Payload.Workflow.Objects.Single(placedObject => placedObject.ObjectType == "FieldItem");
+        var startJson = SerializeRequest(
+            KmCommandNames.StartEditSession,
+            new StartEditSessionRequest(temp.Paths),
+            requestId: "request-placement-start");
+        var startResponse = DeserializeResponse<StartEditSessionResponse>(dispatcher.Dispatch(startJson));
+        Assert.NotNull(startResponse.Payload);
+
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdatePlacementObjectField,
+            new UpdatePlacementObjectFieldRequest(
+                temp.Paths,
+                startResponse.Payload.Session,
+                fieldItem.ObjectId,
+                Field: "quantity",
+                Value: "5"),
+            requestId: "request-placement-update");
+        var updateResponse = DeserializeResponse<UpdatePlacementObjectFieldResponse>(dispatcher.Dispatch(updateJson));
+
+        Assert.Null(updateResponse.Error);
+        Assert.NotNull(updateResponse.Payload);
+        Assert.Equal(5, updateResponse.Payload.Workflow.Objects.Single(placedObject => placedObject.ObjectId == fieldItem.ObjectId).Quantity);
+        Assert.Equal("workflow.placement", Assert.Single(updateResponse.Payload.Session.PendingEdits).Domain);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-placement-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-placement-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.NotNull(planResponse.Payload);
+        Assert.Equal("romfs/bin/archive/field/resident/placement.gfpak", Assert.Single(planResponse.Payload.ChangePlan.Writes).TargetRelativePath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, updateResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-placement-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.Equal("romfs/bin/archive/field/resident/placement.gfpak", Assert.Single(applyResponse.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "archive", "field", "resident", "placement.gfpak");
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
+        var outputArchive = SwShPlacementZoneArchive.Parse(outputPack.GetFileByName(SwShPlacementBridgeFixtures.AreaMember));
+        Assert.Equal(5, outputArchive.Zones[0].FieldItems[0].Quantity);
     }
 
     [Fact]

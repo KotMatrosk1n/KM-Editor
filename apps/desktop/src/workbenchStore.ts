@@ -8,6 +8,7 @@ import {
   type EditSession,
   type EncountersWorkflow,
   type ItemsWorkflow,
+  type PlacementWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
   type RaidRewardsWorkflow,
@@ -26,6 +27,7 @@ export type WorkbenchSection =
   | 'shops'
   | 'encounters'
   | 'raidRewards'
+  | 'placement'
   | 'changes';
 
 export type ProjectPathDraft = {
@@ -52,10 +54,13 @@ type WorkbenchState = {
   itemSearchText: string;
   itemsWorkflow: ItemsWorkflow | null;
   openProject: OpenProjectState | null;
+  placementSearchText: string;
+  placementWorkflow: PlacementWorkflow | null;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
   raidRewardSearchText: string;
   raidRewardsWorkflow: RaidRewardsWorkflow | null;
   selectedRaidRewardTableId: string | null;
+  selectedPlacementObjectId: string | null;
   selectedItemId: number | null;
   selectedEncounterTableId: string | null;
   selectedShopId: string | null;
@@ -79,11 +84,14 @@ type WorkbenchState = {
   setItemsWorkflow: (itemsWorkflow: ItemsWorkflow) => void;
   setItemSearchText: (itemSearchText: string) => void;
   setOpenProject: (project: OpenProjectState) => void;
+  setPlacementSearchText: (placementSearchText: string) => void;
+  setPlacementWorkflow: (placementWorkflow: PlacementWorkflow) => void;
   setProjectHealth: (health: ProjectHealth) => void;
   setProjectStatus: (projectStatus: WorkbenchState['projectStatus']) => void;
   setRaidRewardSearchText: (raidRewardSearchText: string) => void;
   setRaidRewardsWorkflow: (raidRewardsWorkflow: RaidRewardsWorkflow) => void;
   setSelectedRaidRewardTableId: (selectedRaidRewardTableId: string | null) => void;
+  setSelectedPlacementObjectId: (selectedPlacementObjectId: string | null) => void;
   setSelectedItemId: (selectedItemId: number | null) => void;
   setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
   setSelectedShopId: (selectedShopId: string | null) => void;
@@ -114,10 +122,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   itemSearchText: '',
   itemsWorkflow: null,
   openProject: null,
+  placementSearchText: '',
+  placementWorkflow: null,
   projectStatus: 'idle',
   raidRewardSearchText: '',
   raidRewardsWorkflow: null,
   selectedRaidRewardTableId: null,
+  selectedPlacementObjectId: null,
   selectedItemId: null,
   selectedEncounterTableId: null,
   selectedShopId: null,
@@ -143,6 +154,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setEditSession: (editSession) => set({ applyResult: null, changePlan: null, editSession }),
   setEditValidationDiagnostics: (editValidationDiagnostics) => set({ editValidationDiagnostics }),
   setEncounterSearchText: (encounterSearchText) => set({ encounterSearchText }),
+  setPlacementSearchText: (placementSearchText) => set({ placementSearchText }),
   setRaidRewardSearchText: (raidRewardSearchText) => set({ raidRewardSearchText }),
   setItemsWorkflow: (itemsWorkflow) =>
     set((state) => {
@@ -178,11 +190,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       itemSearchText: '',
       itemsWorkflow: null,
       openProject,
+      placementSearchText: '',
+      placementWorkflow: null,
       projectStatus: 'open',
       raidRewardSearchText: '',
       raidRewardsWorkflow: null,
       selectedEncounterTableId: null,
       selectedItemId: null,
+      selectedPlacementObjectId: null,
       selectedRaidRewardTableId: null,
       selectedShopId: null,
       selectedTextKey: null,
@@ -214,6 +229,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setProjectStatus: (projectStatus) => set({ projectStatus }),
   setSelectedRaidRewardTableId: (selectedRaidRewardTableId) =>
     set({ selectedRaidRewardTableId }),
+  setSelectedPlacementObjectId: (selectedPlacementObjectId) =>
+    set({ selectedPlacementObjectId }),
   setSelectedEncounterTableId: (selectedEncounterTableId) => set({ selectedEncounterTableId }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
   setSelectedShopId: (selectedShopId) => set({ selectedShopId }),
@@ -312,6 +329,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         raidRewardSearchText: '',
         raidRewardsWorkflow,
         selectedRaidRewardTableId
+      };
+    }),
+  setPlacementWorkflow: (placementWorkflow) =>
+    set((state) => {
+      const selectedPlacementObjectId = placementWorkflow.objects.some(
+        (placedObject) => placedObject.objectId === state.selectedPlacementObjectId
+      )
+        ? state.selectedPlacementObjectId
+        : (placementWorkflow.objects[0]?.objectId ?? null);
+
+      return {
+        activeSection: 'placement',
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        placementSearchText: '',
+        placementWorkflow,
+        selectedPlacementObjectId
       };
     }),
   setWorkflows: (workflows) => set({ workflows })

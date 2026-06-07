@@ -24,6 +24,7 @@ public static class KmCommandNames
     public const string LoadRaidRewardsWorkflow = "raidRewards.load";
     public const string UpdateRaidRewardField = "raidRewards.reward.update";
     public const string LoadPlacementWorkflow = "placement.load";
+    public const string UpdatePlacementObjectField = "placement.object.update";
     public const string LoadFlagworkSaveWorkflow = "flagworkSave.load";
     public const string LoadExeFsPatchWorkflow = "exefsPatches.load";
     public const string LoadRoyalCandyWorkflow = "royalCandy.load";

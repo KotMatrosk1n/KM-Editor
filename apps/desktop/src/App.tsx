@@ -31,6 +31,9 @@ import {
   type ItemEditableField,
   type ItemsWorkflow,
   type ItemRecord,
+  type PlacedObjectRecord,
+  type PlacementEditableField,
+  type PlacementWorkflow,
   type ProjectHealth,
   type ProjectPathRole,
   type ProjectPathValidation,
@@ -106,6 +109,11 @@ const sections: Array<{
     id: 'raidRewards',
     label: 'Raid Rewards',
     icon: ShieldCheck
+  },
+  {
+    id: 'placement',
+    label: 'Placement',
+    icon: MapPin
   },
   {
     id: 'changes',
@@ -248,6 +256,13 @@ const raidRewardValueFieldNames = [
   'star4Value',
   'star5Value'
 ] as const;
+const placementLocationXFieldName = 'locationX';
+const placementLocationYFieldName = 'locationY';
+const placementLocationZFieldName = 'locationZ';
+const placementRotationYFieldName = 'rotationY';
+const placementItemIdFieldName = 'itemId';
+const placementQuantityFieldName = 'quantity';
+const placementChanceFieldName = 'chance';
 
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
@@ -261,6 +276,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const itemSearchText = useWorkbenchStore((state) => state.itemSearchText);
   const itemsWorkflow = useWorkbenchStore((state) => state.itemsWorkflow);
   const openProject = useWorkbenchStore((state) => state.openProject);
+  const placementSearchText = useWorkbenchStore((state) => state.placementSearchText);
+  const placementWorkflow = useWorkbenchStore((state) => state.placementWorkflow);
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
   const raidRewardSearchText = useWorkbenchStore((state) => state.raidRewardSearchText);
   const raidRewardsWorkflow = useWorkbenchStore((state) => state.raidRewardsWorkflow);
@@ -268,6 +285,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
   const selectedRaidRewardTableId = useWorkbenchStore(
     (state) => state.selectedRaidRewardTableId
+  );
+  const selectedPlacementObjectId = useWorkbenchStore(
+    (state) => state.selectedPlacementObjectId
   );
   const selectedShopId = useWorkbenchStore((state) => state.selectedShopId);
   const selectedTextKey = useWorkbenchStore((state) => state.selectedTextKey);
@@ -292,12 +312,17 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const setItemSearchText = useWorkbenchStore((state) => state.setItemSearchText);
   const setItemsWorkflow = useWorkbenchStore((state) => state.setItemsWorkflow);
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
+  const setPlacementSearchText = useWorkbenchStore((state) => state.setPlacementSearchText);
+  const setPlacementWorkflow = useWorkbenchStore((state) => state.setPlacementWorkflow);
   const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
   const setRaidRewardSearchText = useWorkbenchStore((state) => state.setRaidRewardSearchText);
   const setRaidRewardsWorkflow = useWorkbenchStore((state) => state.setRaidRewardsWorkflow);
   const setSelectedRaidRewardTableId = useWorkbenchStore(
     (state) => state.setSelectedRaidRewardTableId
+  );
+  const setSelectedPlacementObjectId = useWorkbenchStore(
+    (state) => state.setSelectedPlacementObjectId
   );
   const setSelectedEncounterTableId = useWorkbenchStore(
     (state) => state.setSelectedEncounterTableId
@@ -330,6 +355,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isEncounterUpdating, setIsEncounterUpdating] = useState(false);
   const [isRaidRewardsLoading, setIsRaidRewardsLoading] = useState(false);
   const [isRaidRewardUpdating, setIsRaidRewardUpdating] = useState(false);
+  const [isPlacementLoading, setIsPlacementLoading] = useState(false);
+  const [isPlacementUpdating, setIsPlacementUpdating] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -451,6 +478,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsRaidRewardsLoading(false);
+    }
+  };
+
+  const handleOpenPlacementWorkflow = async () => {
+    setIsPlacementLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadPlacementWorkflow({ paths: toProjectPaths(draftPaths) });
+      setPlacementWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsPlacementLoading(false);
     }
   };
 
@@ -630,6 +671,33 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
     }
   };
 
+  const handleUpdatePlacementObjectField = async (
+    objectId: string,
+    field: string,
+    value: string
+  ) => {
+    setIsPlacementUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updatePlacementObjectField({
+        field,
+        objectId,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        value
+      });
+      setPlacementWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsPlacementUpdating(false);
+    }
+  };
+
   const handleValidateEditSession = async () => {
     if (!editSession) {
       return;
@@ -797,8 +865,10 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               isShopsLoading={isShopsLoading}
               isEncountersLoading={isEncountersLoading}
               isRaidRewardsLoading={isRaidRewardsLoading}
+              isPlacementLoading={isPlacementLoading}
               onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
+              onOpenPlacementWorkflow={handleOpenPlacementWorkflow}
               onOpenRaidRewardsWorkflow={handleOpenRaidRewardsWorkflow}
               onOpenShopsWorkflow={handleOpenShopsWorkflow}
               onOpenTextWorkflow={handleOpenTextWorkflow}
@@ -889,6 +959,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               searchText={raidRewardSearchText}
               selectedTableId={selectedRaidRewardTableId}
               workflow={raidRewardsWorkflow}
+            />
+          ) : null}
+          {activeSection === 'placement' ? (
+            <PlacementSection
+              editSession={editSession}
+              isEditStarting={isEditStarting}
+              isPlacementUpdating={isPlacementUpdating}
+              onSearchChange={setPlacementSearchText}
+              onSelectObject={setSelectedPlacementObjectId}
+              onStartEditSession={handleStartEditSession}
+              onUpdatePlacementObjectField={handleUpdatePlacementObjectField}
+              searchText={placementSearchText}
+              selectedObjectId={selectedPlacementObjectId}
+              workflow={placementWorkflow}
             />
           ) : null}
           {activeSection === 'changes' ? (
@@ -1021,8 +1105,10 @@ function WorkflowsSection({
   isTextLoading,
   isTrainersLoading,
   isRaidRewardsLoading,
+  isPlacementLoading,
   onOpenEncountersWorkflow,
   onOpenItemsWorkflow,
+  onOpenPlacementWorkflow,
   onOpenRaidRewardsWorkflow,
   onOpenShopsWorkflow,
   onOpenTextWorkflow,
@@ -1037,8 +1123,10 @@ function WorkflowsSection({
   isTextLoading: boolean;
   isTrainersLoading: boolean;
   isRaidRewardsLoading: boolean;
+  isPlacementLoading: boolean;
   onOpenEncountersWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
+  onOpenPlacementWorkflow: () => void;
   onOpenRaidRewardsWorkflow: () => void;
   onOpenShopsWorkflow: () => void;
   onOpenTextWorkflow: () => void;
@@ -1064,6 +1152,7 @@ function WorkflowsSection({
           const isShopsWorkflow = definition.id === 'shops';
           const isEncountersWorkflow = definition.id === 'encounters';
           const isRaidRewardsWorkflow = definition.id === 'raidRewards';
+          const isPlacementWorkflow = definition.id === 'placement';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
@@ -1072,6 +1161,8 @@ function WorkflowsSection({
             isEncountersWorkflow && workflowState.availability !== 'disabled';
           const canOpenRaidRewards =
             isRaidRewardsWorkflow && workflowState.availability !== 'disabled';
+          const canOpenPlacement =
+            isPlacementWorkflow && workflowState.availability !== 'disabled';
 
           return (
             <article className="workflow-row" key={definition.id}>
@@ -1150,6 +1241,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isRaidRewardsLoading ? 'Loading' : 'Open Raid Rewards'}</span>
+                  </button>
+                ) : null}
+                {isPlacementWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenPlacement || isPlacementLoading}
+                    onClick={onOpenPlacementWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isPlacementLoading ? 'Loading' : 'Open Placement'}</span>
                   </button>
                 ) : null}
               </div>
@@ -3065,6 +3167,342 @@ function SelectedRaidRewardPanel({
   );
 }
 
+function PlacementSection({
+  editSession,
+  isEditStarting,
+  isPlacementUpdating,
+  onSearchChange,
+  onSelectObject,
+  onStartEditSession,
+  onUpdatePlacementObjectField,
+  searchText,
+  selectedObjectId,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isPlacementUpdating: boolean;
+  onSearchChange: (value: string) => void;
+  onSelectObject: (objectId: string | null) => void;
+  onStartEditSession: () => void;
+  onUpdatePlacementObjectField: (objectId: string, field: string, value: string) => void;
+  searchText: string;
+  selectedObjectId: string | null;
+  workflow: PlacementWorkflow | null;
+}) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+  const filteredObjects =
+    workflow?.objects.filter((placedObject) => {
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return [
+        placedObject.archiveMember,
+        placedObject.itemHash,
+        placedObject.itemId?.toString() ?? '',
+        placedObject.itemName,
+        placedObject.label,
+        placedObject.map,
+        placedObject.objectType,
+        placedObject.scriptId ?? ''
+      ]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(normalizedSearch);
+    }) ?? [];
+  const selectedObject =
+    filteredObjects.find((placedObject) => placedObject.objectId === selectedObjectId) ??
+    workflow?.objects.find((placedObject) => placedObject.objectId === selectedObjectId) ??
+    filteredObjects[0] ??
+    workflow?.objects[0] ??
+    null;
+  const canEditPlacement = workflow?.summary.availability === 'available';
+  const pendingPlacementObjectIds = getPendingPlacementObjectIds(editSession);
+
+  useEffect(() => {
+    if (selectedObject && selectedObject.objectId !== selectedObjectId) {
+      onSelectObject(selectedObject.objectId);
+    }
+  }, [onSelectObject, selectedObject?.objectId, selectedObjectId]);
+
+  return (
+    <>
+      <section aria-labelledby="placement-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <MapPin aria-hidden="true" size={18} />
+          <h2 id="placement-heading">Placement</h2>
+        </div>
+
+        <div className="items-toolbar encounters-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search placement"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search placement"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded objects"
+            value={workflow ? workflow.stats.totalObjectCount.toString() : '0'}
+          />
+          <Metric
+            label="Areas"
+            value={workflow ? workflow.stats.totalAreaCount.toString() : '0'}
+          />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="encounters-layout">
+            <div className="raid-rewards-table" role="table" aria-label="Placed objects">
+              <div className="raid-rewards-row raid-rewards-row-heading" role="row">
+                <span role="columnheader">Object</span>
+                <span role="columnheader">Map</span>
+                <span role="columnheader">Item</span>
+                <span role="columnheader">Position</span>
+              </div>
+              {filteredObjects.map((placedObject) => (
+                <button
+                  className={`raid-rewards-row ${
+                    selectedObject?.objectId === placedObject.objectId
+                      ? 'raid-rewards-row-selected'
+                      : ''
+                  } ${
+                    pendingPlacementObjectIds.has(placedObject.objectId)
+                      ? 'raid-rewards-row-pending'
+                      : ''
+                  }`}
+                  key={placedObject.objectId}
+                  onClick={() => onSelectObject(placedObject.objectId)}
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{placedObject.label}</span>
+                  <span role="cell">{placedObject.map}</span>
+                  <span role="cell">{formatPlacementItem(placedObject)}</span>
+                  <span role="cell">{formatPlacementCoordinates(placedObject)}</span>
+                </button>
+              ))}
+            </div>
+
+            <SelectedPlacementPanel
+              canEditPlacement={canEditPlacement}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              isEditStarting={isEditStarting}
+              isPlacementUpdating={isPlacementUpdating}
+              onStartEditSession={onStartEditSession}
+              onUpdatePlacementObjectField={onUpdatePlacementObjectField}
+              placedObject={selectedObject}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Placement from Workflows to load backend placement data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedPlacementPanel({
+  canEditPlacement,
+  editSession,
+  editableFields,
+  isEditStarting,
+  isPlacementUpdating,
+  onStartEditSession,
+  onUpdatePlacementObjectField,
+  placedObject
+}: {
+  canEditPlacement: boolean;
+  editSession: EditSession | null;
+  editableFields: PlacementEditableField[];
+  isEditStarting: boolean;
+  isPlacementUpdating: boolean;
+  onStartEditSession: () => void;
+  onUpdatePlacementObjectField: (objectId: string, field: string, value: string) => void;
+  placedObject: PlacedObjectRecord | null;
+}) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const visibleFields = editableFields.filter((field) =>
+    placedObject ? isPlacementFieldVisible(placedObject, field.field) : false
+  );
+
+  useEffect(() => {
+    if (!placedObject) {
+      setDrafts({});
+      return;
+    }
+
+    setDrafts(
+      Object.fromEntries(
+        visibleFields.map((field) => [
+          field.field,
+          (getEditablePlacementFieldValue(placedObject, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [
+    placedObject?.chance,
+    placedObject?.itemId,
+    placedObject?.objectId,
+    placedObject?.quantity,
+    placedObject?.rotationY,
+    placedObject?.x,
+    placedObject?.y,
+    placedObject?.z,
+    visibleFields.map((field) => field.field).join('|')
+  ]);
+
+  return (
+    <aside aria-label="Selected placement object provenance" className="encounter-inspector">
+      <div className="panel-heading">
+        <MapPin aria-hidden="true" size={18} />
+        <h3>Selected Object</h3>
+      </div>
+
+      {placedObject ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Object</dt>
+              <dd>{placedObject.label}</dd>
+            </div>
+            <div>
+              <dt>Type</dt>
+              <dd>{placedObject.objectType}</dd>
+            </div>
+            <div>
+              <dt>Map</dt>
+              <dd>{placedObject.map}</dd>
+            </div>
+            <div>
+              <dt>Archive member</dt>
+              <dd>{placedObject.archiveMember}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{placedObject.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(placedObject.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(placedObject.provenance.fileState)}</dd>
+            </div>
+          </dl>
+
+          <div className="encounter-edit-form">
+            <dl className="encounter-slot-detail">
+              <div>
+                <dt>Item</dt>
+                <dd>{formatPlacementItem(placedObject)}</dd>
+              </div>
+              <div>
+                <dt>Quantity</dt>
+                <dd>{placedObject.quantity}</dd>
+              </div>
+              <div>
+                <dt>Chance</dt>
+                <dd>{placedObject.chance ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>Position</dt>
+                <dd>{formatPlacementCoordinates(placedObject)}</dd>
+              </div>
+              <div>
+                <dt>Link</dt>
+                <dd>{placedObject.scriptId || 'n/a'}</dd>
+              </div>
+            </dl>
+
+            <div className="encounter-field-grid">
+              {visibleFields.map((field) => {
+                const currentValue = getEditablePlacementFieldValue(placedObject, field.field);
+                const draftValue = drafts[field.field] ?? '';
+                const draftState = getPlacementDraftState(draftValue, currentValue, field);
+                const canSubmit =
+                  editSession !== null &&
+                  draftState.canSubmit &&
+                  draftState.normalizedValue !== null;
+
+                return (
+                  <div className="trainer-editor-row" key={field.field}>
+                    <label className="path-field">
+                      <span>{field.label}</span>
+                      <input
+                        aria-label={field.label}
+                        disabled={
+                          !canEditPlacement || editSession === null || isPlacementUpdating
+                        }
+                        max={field.maximumValue}
+                        min={field.minimumValue}
+                        onChange={(event) =>
+                          setDrafts((currentDrafts) => ({
+                            ...currentDrafts,
+                            [field.field]: event.target.value
+                          }))
+                        }
+                        step={field.valueKind === 'integer' ? 1 : 'any'}
+                        type="number"
+                        value={draftValue}
+                      />
+                    </label>
+                    {editSession ? (
+                      <button
+                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                        className="primary-button compact-button"
+                        disabled={!canSubmit || isPlacementUpdating}
+                        onClick={() =>
+                          onUpdatePlacementObjectField(
+                            placedObject.objectId,
+                            field.field,
+                            draftState.normalizedValue!
+                          )
+                        }
+                        type="button"
+                      >
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isPlacementUpdating ? 'Saving' : 'Save'}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditPlacement || isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No placement object selected.</p>
+      )}
+    </aside>
+  );
+}
+
 function ChangesSection({
   applyResult,
   changePlan,
@@ -3600,6 +4038,14 @@ function getPendingRaidRewardTableIds(editSession: EditSession | null) {
   );
 }
 
+function getPendingPlacementObjectIds(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.placement' && edit.recordId)
+      .map((edit) => edit.recordId!)
+  );
+}
+
 function getTextDraftState(
   draftValue: string,
   entry: TextEntryRecord | null,
@@ -3661,6 +4107,99 @@ function getEditableRaidRewardFieldValue(reward: RaidRewardItemRecord, field: st
 
   const valueIndex = raidRewardValueFieldNames.findIndex((fieldName) => fieldName === field);
   return valueIndex >= 0 ? (reward.values[valueIndex] ?? 0) : null;
+}
+
+function isPlacementFieldVisible(placedObject: PlacedObjectRecord, field: string) {
+  if (field === placementChanceFieldName) {
+    return placedObject.objectType === 'HiddenItem';
+  }
+
+  if (field === placementItemIdFieldName) {
+    return placedObject.itemId !== null || placedObject.itemHash.length > 0;
+  }
+
+  return [
+    placementLocationXFieldName,
+    placementLocationYFieldName,
+    placementLocationZFieldName,
+    placementRotationYFieldName,
+    placementQuantityFieldName
+  ].includes(field);
+}
+
+function getEditablePlacementFieldValue(placedObject: PlacedObjectRecord, field: string) {
+  switch (field) {
+    case placementLocationXFieldName:
+      return placedObject.x;
+    case placementLocationYFieldName:
+      return placedObject.y;
+    case placementLocationZFieldName:
+      return placedObject.z;
+    case placementRotationYFieldName:
+      return placedObject.rotationY;
+    case placementItemIdFieldName:
+      return placedObject.itemId;
+    case placementQuantityFieldName:
+      return placedObject.quantity;
+    case placementChanceFieldName:
+      return placedObject.chance;
+    default:
+      return null;
+  }
+}
+
+function getPlacementDraftState(
+  draftValue: string,
+  currentValue: number | null,
+  field: PlacementEditableField
+) {
+  const normalizedValue = draftValue.trim();
+  if (!normalizedValue) {
+    return {
+      canSubmit: false,
+      normalizedValue: null
+    };
+  }
+
+  const parsedValue =
+    field.valueKind === 'integer'
+      ? /^-?\d+$/.test(normalizedValue)
+        ? Number.parseInt(normalizedValue, 10)
+        : Number.NaN
+      : Number(normalizedValue);
+  const isValidNumber = Number.isFinite(parsedValue);
+  const inRange =
+    isValidNumber &&
+    parsedValue >= field.minimumValue &&
+    parsedValue <= field.maximumValue &&
+    (field.valueKind !== 'integer' || Number.isInteger(parsedValue));
+  const nextValue =
+    field.valueKind === 'integer'
+      ? parsedValue.toString()
+      : parsedValue.toString();
+
+  return {
+    canSubmit:
+      inRange &&
+      (currentValue === null || Math.abs(parsedValue - currentValue) > Number.EPSILON),
+    normalizedValue: inRange ? nextValue : null
+  };
+}
+
+function formatPlacementItem(placedObject: PlacedObjectRecord) {
+  if (placedObject.itemId === null) {
+    return placedObject.itemHash || placedObject.itemName;
+  }
+
+  return `${placedObject.itemName} (${placedObject.itemId})`;
+}
+
+function formatPlacementCoordinates(placedObject: PlacedObjectRecord) {
+  return `${formatCoordinate(placedObject.x)}, ${formatCoordinate(placedObject.y)}, ${formatCoordinate(placedObject.z)}`;
+}
+
+function formatCoordinate(value: number) {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
 }
 
 const workflowAvailabilityLabels = {

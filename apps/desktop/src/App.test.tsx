@@ -6,6 +6,7 @@ import { App } from './App';
 import {
   type EncountersWorkflow,
   type ItemsWorkflow,
+  type PlacementWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
   type RaidRewardsWorkflow,
@@ -35,11 +36,14 @@ describe('App', () => {
       itemSearchText: '',
       itemsWorkflow: null,
       openProject: null,
+      placementSearchText: '',
+      placementWorkflow: null,
       projectStatus: 'idle',
       raidRewardSearchText: '',
       raidRewardsWorkflow: null,
       selectedEncounterTableId: null,
       selectedItemId: null,
+      selectedPlacementObjectId: null,
       selectedRaidRewardTableId: null,
       selectedShopId: null,
       selectedTextKey: null,
@@ -922,10 +926,55 @@ function createMockProjectBridge(
   };
   const placementWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'Placed objects, map coordinates, script links, and source provenance.',
+    description: 'Placed objects, map coordinates, item pickups, and source provenance.',
     diagnostics: [],
     id: 'placement',
     label: 'Placement'
+  };
+  const placementWorkflow: PlacementWorkflow = {
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'quantity',
+        label: 'Quantity',
+        maximumValue: 999,
+        minimumValue: 0,
+        valueKind: 'integer'
+      }
+    ],
+    objects: [
+      {
+        archiveMember: 'a_test.bin',
+        chance: null,
+        chanceIndex: null,
+        itemHash: '0xAABBCCDD00112233',
+        itemId: 1,
+        itemName: 'Potion',
+        label: 'Field item: Potion',
+        map: 'Route 1',
+        objectId: 'a_test.bin|0|fieldItem|0|-',
+        objectIndex: 0,
+        objectType: 'FieldItem',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/archive/field/resident/placement.gfpak',
+          sourceLayer: 'base'
+        },
+        quantity: 1,
+        rotationY: 90,
+        scriptId: 'visible_potion',
+        x: 10.5,
+        y: 0,
+        zoneIndex: 0,
+        z: -4.25
+      }
+    ],
+    stats: {
+      sourceFileCount: 3,
+      totalAreaCount: 1,
+      totalObjectCount: 1
+    },
+    summary: placementWorkflowSummary
   };
   const flagworkSaveWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
@@ -1150,15 +1199,7 @@ function createMockProjectBridge(
       }),
     loadPlacementWorkflow: () =>
       Promise.resolve({
-        workflow: {
-          diagnostics: [],
-          objects: [],
-          stats: {
-            sourceFileCount: 0,
-            totalObjectCount: 0
-          },
-          summary: placementWorkflowSummary
-        }
+        workflow: placementWorkflow
       }),
     loadRaidRewardsWorkflow: () =>
       Promise.resolve({
@@ -1441,6 +1482,37 @@ function createMockProjectBridge(
                   )
                 }
               : table
+          )
+        }
+      }),
+    updatePlacementObjectField: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.placement',
+              field: request.field,
+              newValue: request.value,
+              recordId: request.objectId,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/archive/field/resident/placement.gfpak'
+                }
+              ],
+              summary: `Set Field item: Potion ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...placementWorkflow,
+          objects: placementWorkflow.objects.map((placedObject) =>
+            placedObject.objectId === request.objectId
+              ? { ...placedObject, quantity: Number.parseInt(request.value, 10) }
+              : placedObject
           )
         }
       }),
