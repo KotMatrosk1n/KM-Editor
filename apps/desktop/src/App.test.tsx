@@ -3,6 +3,8 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
+import { type ProjectFileGraph, type ProjectHealth } from './bridge/contracts';
+import { type ProjectBridge } from './bridge/projectBridge';
 import { useWorkbenchStore } from './workbenchStore';
 
 describe('App', () => {
@@ -39,7 +41,7 @@ describe('App', () => {
 
   it('validates and opens a read-only project shell state', async () => {
     const user = userEvent.setup();
-    render(<App />);
+    render(<App bridge={createMockProjectBridge()} />);
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
@@ -53,4 +55,73 @@ describe('App', () => {
     expect(screen.getByText('Items')).toBeInTheDocument();
     expect(screen.getByText('Read-only')).toBeInTheDocument();
   });
+
+  it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={createMockProjectBridge({
+          validateProject: () => Promise.reject(new Error('Project bridge unavailable.'))
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+
+    expect(await screen.findByText('Project bridge unavailable.')).toBeInTheDocument();
+  });
 });
+
+function createMockProjectBridge(overrides: Partial<ProjectBridge> = {}): ProjectBridge {
+  const health: ProjectHealth = {
+    canOpenEditableWorkflows: false,
+    canOpenReadOnlyWorkflows: true,
+    diagnostics: [],
+    fileGraph: {
+      baseFileCount: 2,
+      layeredFileCount: 0,
+      layeredOnlyCount: 0,
+      overrideCount: 0
+    },
+    paths: [
+      {
+        diagnostics: [],
+        isRequired: true,
+        path: 'base-romfs',
+        role: 'baseRomFs',
+        status: 'valid'
+      },
+      {
+        diagnostics: [],
+        isRequired: true,
+        path: 'base-exefs',
+        role: 'baseExeFs',
+        status: 'valid'
+      },
+      {
+        diagnostics: [],
+        isRequired: false,
+        path: null,
+        role: 'outputRoot',
+        status: 'notSet'
+      }
+    ],
+    state: 'readOnlyReady'
+  };
+  const fileGraph: ProjectFileGraph = {
+    entries: [],
+    summary: health.fileGraph
+  };
+
+  return {
+    openProject: () =>
+      Promise.resolve({
+        fileGraph,
+        health,
+        projectId: 'project-1'
+      }),
+    refreshFileGraph: () => Promise.resolve({ fileGraph }),
+    validateProject: () => Promise.resolve({ health }),
+    ...overrides
+  };
+}

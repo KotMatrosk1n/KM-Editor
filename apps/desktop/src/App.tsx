@@ -11,13 +11,18 @@ import {
   ShieldCheck,
   type LucideIcon
 } from 'lucide-react';
+import { useState } from 'react';
 import {
   type ApiDiagnostic,
   type ProjectHealth,
   type ProjectPathRole,
   type ProjectPathValidation
 } from './bridge/contracts';
-import { projectBridge } from './bridge/projectBridge';
+import {
+  ProjectBridgeError,
+  projectBridge as defaultProjectBridge,
+  type ProjectBridge
+} from './bridge/projectBridge';
 import {
   type ProjectPathDraft,
   type WorkbenchSection,
@@ -83,7 +88,7 @@ const pathStatusLabels = {
   wrongKind: 'Wrong kind'
 } as const;
 
-export function App() {
+export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
   const draftPaths = useWorkbenchStore((state) => state.draftPaths);
   const openProject = useWorkbenchStore((state) => state.openProject);
@@ -96,22 +101,37 @@ export function App() {
   const health = openProject?.health ?? null;
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
   const isBusy = projectStatus === 'opening' || projectStatus === 'validating';
+  const [bridgeDiagnostics, setBridgeDiagnostics] = useState<ApiDiagnostic[]>([]);
 
   const handleValidateProject = async () => {
     setProjectStatus('validating');
-    const response = await projectBridge.validateProject({ paths: toProjectPaths(draftPaths) });
-    setProjectHealth(response.health);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.validateProject({ paths: toProjectPaths(draftPaths) });
+      setProjectHealth(response.health);
+    } catch (error) {
+      setProjectStatus('idle');
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    }
   };
 
   const handleOpenProject = async () => {
     setProjectStatus('opening');
-    const response = await projectBridge.openProject({ paths: toProjectPaths(draftPaths) });
-    setOpenProject({
-      fileGraph: response.fileGraph,
-      health: response.health,
-      projectId: response.projectId
-    });
-    setActiveSection('health');
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.openProject({ paths: toProjectPaths(draftPaths) });
+      setOpenProject({
+        fileGraph: response.fileGraph,
+        health: response.health,
+        projectId: response.projectId
+      });
+      setActiveSection('health');
+    } catch (error) {
+      setProjectStatus('idle');
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    }
   };
 
   return (
@@ -172,6 +192,7 @@ export function App() {
             <HealthSection
               draftPaths={draftPaths}
               health={health}
+              bridgeDiagnostics={bridgeDiagnostics}
               isBusy={isBusy}
               onOpenProject={handleOpenProject}
               onSetDraftPath={setDraftPath}
@@ -188,6 +209,7 @@ export function App() {
 }
 
 function HealthSection({
+  bridgeDiagnostics,
   draftPaths,
   health,
   isBusy,
@@ -196,6 +218,7 @@ function HealthSection({
   onValidateProject,
   projectStatus
 }: {
+  bridgeDiagnostics: ApiDiagnostic[];
   draftPaths: ProjectPathDraft;
   health: ProjectHealth | null;
   isBusy: boolean;
@@ -280,7 +303,7 @@ function HealthSection({
       </section>
 
       <PathStatusSection health={health} />
-      <DiagnosticsSection diagnostics={health?.diagnostics ?? []} />
+      <DiagnosticsSection diagnostics={[...bridgeDiagnostics, ...(health?.diagnostics ?? [])]} />
     </>
   );
 }
@@ -439,4 +462,26 @@ function normalizeDraftPath(path: string) {
   const trimmedPath = path.trim();
 
   return trimmedPath.length > 0 ? trimmedPath : null;
+}
+
+function toBridgeDiagnostics(error: unknown): ApiDiagnostic[] {
+  if (error instanceof ProjectBridgeError) {
+    return error.apiError.diagnostics.length > 0
+      ? error.apiError.diagnostics
+      : [
+          {
+            domain: 'bridge',
+            message: error.apiError.message,
+            severity: 'error'
+          }
+        ];
+  }
+
+  return [
+    {
+      domain: 'bridge',
+      message: error instanceof Error ? error.message : 'Project bridge request failed.',
+      severity: 'error'
+    }
+  ];
 }
