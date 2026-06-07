@@ -1,0 +1,58 @@
+# Priority 7 Performance Baseline
+
+Priority 7 starts with measurement rather than broad optimization. The first baseline uses sanitized synthetic Sword/Shield-shaped fixtures and exercises the same backend-owned project and workflow services used by the desktop bridge.
+
+## Baseline Coverage
+
+- Project open and file graph building across base RomFS, base ExeFS, and LayeredFS output roots.
+- Workflow list creation through `SwShWorkflowService.List`.
+- Individual workflow loads for Items, Text, Trainers, Shops, Encounters, Raid Rewards, Placement, Flagwork/Save, ExeFS Patches, Royal Candy, and Spreadsheet Import.
+- Repeated opened-project workflow loads that currently reparse shared sources such as item metadata and ExeFS compatibility data.
+- Large frontend risk identification from current app shape: workflow arrays are stored and rendered as full repeated lists, so future UI work should measure render cost before adding more rows.
+
+## Current Bottleneck Candidates
+
+- `ProjectWorkspaceService.Open` validates paths and rebuilds the recursive file graph. Public workflow load methods call it for each workflow load, so navigation can pay repeated graph scans.
+- Several workflow services parse the same source files independently. Shops and Spreadsheet Import load Items metadata; Royal Candy loads ExeFS Patch compatibility; placement, raid rewards, and items also decode item-name sources.
+- Text workflow loading decodes every selected-language message table into full records and dialogue references.
+- Large desktop tables in `apps/desktop/src/App.tsx` filter and map full workflow arrays without virtualization.
+
+## Benchmark Tests
+
+The baseline lives in `tests/KM.SwSh.Tests/Performance`:
+
+- `FullWorkflowLoadingHasSyntheticPerformanceBaseline` measures project open, workflow summaries, and all P6 workflow loads through the public workflow service path.
+- `RepeatedOpenedProjectLoadsExposeSharedParseBaseline` measures opened-project loads that are likely candidates for conservative cache reuse in later Priority 7 branches.
+
+The tests assert fixture shape and use generous timing budgets to catch extreme regressions without treating CI as a precise benchmark machine. Focused runs with detailed console output provide timing and allocation evidence for future optimization branches.
+
+## Initial Synthetic Baseline
+
+One focused local run of `dotnet test tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj --no-restore --filter "FullyQualifiedName~Performance" --logger "console;verbosity=detailed"` produced these approximate measurements:
+
+| Probe | Time | Allocated |
+| --- | ---: | ---: |
+| Project open on synthetic project | 10-19 ms | 1.69 MiB |
+| Workflow list through public service | 14 ms | 1.69 MiB |
+| Items load through public service | 13 ms | 3.19 MiB |
+| Text load through public service | 36 ms | 15.88 MiB |
+| Trainers load through public service | 30 ms | 3.72 MiB |
+| Shops load through public service | 13 ms | 3.57 MiB |
+| Encounters load through public service | 20 ms | 3.05 MiB |
+| Raid Rewards load through public service | 18 ms | 2.83 MiB |
+| Placement load through public service | 46 ms | 3.70 MiB |
+| Flagwork/Save load through public service | 16 ms | 2.00 MiB |
+| ExeFS Patches load through public service | 338 ms | 192.16 MiB |
+| Royal Candy load through public service | 313 ms | 192.47 MiB |
+| Spreadsheet Import load through public service | 8 ms | 3.19 MiB |
+| Repeated opened-project ExeFS load | 334 ms | 190.46 MiB |
+| Repeated opened-project Royal Candy load | 349 ms | 190.84 MiB |
+
+These numbers are environment-sensitive and should be used for direction, not as product guarantees. The first high-impact backend targets are ExeFS parse/scan reuse and conservative shared-source caching for workflows that currently reload Items or ExeFS data.
+
+## Next Optimization Targets
+
+1. Cache parsed read-only source data by conservative file identity and language where the same file feeds multiple workflows.
+2. Avoid rebuilding the whole project graph for every workflow navigation action when paths are unchanged.
+3. Lazy-load heavy archives and text tables only when the selected workflow needs them.
+4. Virtualize or otherwise cap large desktop repeated lists after backend timings show which workflows produce the largest payloads.
