@@ -74,6 +74,7 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', { level: 3, name: 'Encounters and Wild Data' })
     ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Raid Rewards' })).toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
   });
 
@@ -280,6 +281,13 @@ function createMockProjectBridge(
     id: 'encounters',
     label: 'Encounters and Wild Data'
   };
+  const raidRewardsWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
+    diagnostics: [],
+    id: 'raidRewards',
+    label: 'Raid Rewards'
+  };
 
   return {
     applyChangePlan: (request) =>
@@ -328,7 +336,8 @@ function createMockProjectBridge(
           textWorkflowSummary,
           trainersWorkflowSummary,
           shopsWorkflowSummary,
-          encountersWorkflowSummary
+          encountersWorkflowSummary,
+          raidRewardsWorkflowSummary
         ]
       }),
     loadEncountersWorkflow: () =>
@@ -341,6 +350,19 @@ function createMockProjectBridge(
             totalTableCount: 0
           },
           summary: encountersWorkflowSummary,
+          tables: []
+        }
+      }),
+    loadRaidRewardsWorkflow: () =>
+      Promise.resolve({
+        workflow: {
+          diagnostics: [],
+          stats: {
+            sourceFileCount: 0,
+            totalRewardItemCount: 0,
+            totalTableCount: 0
+          },
+          summary: raidRewardsWorkflowSummary,
           tables: []
         }
       }),

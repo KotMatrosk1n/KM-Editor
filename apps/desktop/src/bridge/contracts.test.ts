@@ -15,6 +15,8 @@ import {
   loadEncountersWorkflowResponseSchema,
   loadItemsWorkflowRequestSchema,
   loadItemsWorkflowResponseSchema,
+  loadRaidRewardsWorkflowRequestSchema,
+  loadRaidRewardsWorkflowResponseSchema,
   loadShopsWorkflowRequestSchema,
   loadShopsWorkflowResponseSchema,
   loadTextWorkflowRequestSchema,
@@ -201,6 +203,12 @@ describe('bridge contracts', () => {
     );
     const encountersResponseSchema = createBridgeResponseSchema(
       loadEncountersWorkflowResponseSchema
+    );
+    const raidRewardsRequestSchema = createBridgeRequestSchema(
+      loadRaidRewardsWorkflowRequestSchema
+    );
+    const raidRewardsResponseSchema = createBridgeResponseSchema(
+      loadRaidRewardsWorkflowResponseSchema
     );
     const itemsWorkflow = {
       diagnostics: [],
@@ -403,6 +411,43 @@ describe('bridge contracts', () => {
         }
       ]
     } as const;
+    const raidRewardsWorkflow = {
+      diagnostics: [],
+      stats: {
+        sourceFileCount: 1,
+        totalRewardItemCount: 1,
+        totalTableCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
+        diagnostics: [],
+        id: 'raidRewards',
+        label: 'Raid Rewards'
+      },
+      tables: [
+        {
+          denId: 'den_001',
+          gameVersion: 'Sword',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/raid.rewards.readmodel.json',
+            sourceLayer: 'base'
+          },
+          rank: 5,
+          rewards: [
+            {
+              itemId: 1,
+              itemName: 'Exp. Candy L',
+              quantity: 2,
+              slot: 1,
+              weight: 40
+            }
+          ],
+          tableId: 'den_001_rank_5_sword'
+        }
+      ]
+    } as const;
 
     expect(
       workflowsRequestSchema.safeParse({
@@ -425,7 +470,8 @@ describe('bridge contracts', () => {
             textWorkflow.summary,
             trainersWorkflow.summary,
             shopsWorkflow.summary,
-            encountersWorkflow.summary
+            encountersWorkflow.summary,
+            raidRewardsWorkflow.summary
           ]
         }
       }).success
@@ -532,6 +578,27 @@ describe('bridge contracts', () => {
       encountersResponseSchema.safeParse({
         payload: {
           workflow: encountersWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      raidRewardsRequestSchema.safeParse({
+        command: kmCommandNames.loadRaidRewardsWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      raidRewardsResponseSchema.safeParse({
+        payload: {
+          workflow: raidRewardsWorkflow
         }
       }).success
     ).toBe(true);

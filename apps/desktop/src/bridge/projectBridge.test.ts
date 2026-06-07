@@ -151,6 +151,13 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'encounters',
                 label: 'Encounters and Wild Data'
+              },
+              {
+                availability: 'readOnly',
+                description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
+                diagnostics: [],
+                id: 'raidRewards',
+                label: 'Raid Rewards'
               }
             ]
           }
@@ -347,6 +354,52 @@ describe('projectBridge', () => {
         });
       }
 
+      if (request.command === 'raidRewards.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              stats: {
+                sourceFileCount: 1,
+                totalRewardItemCount: 1,
+                totalTableCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description:
+                  'Raid reward tables, den ranks, item quantities, and source provenance.',
+                diagnostics: [],
+                id: 'raidRewards',
+                label: 'Raid Rewards'
+              },
+              tables: [
+                {
+                  denId: 'den_001',
+                  gameVersion: 'Sword',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/kmeditor/raid.rewards.readmodel.json',
+                    sourceLayer: 'base'
+                  },
+                  rank: 5,
+                  rewards: [
+                    {
+                      itemId: 1,
+                      itemName: 'Exp. Candy L',
+                      quantity: 2,
+                      slot: 1,
+                      weight: 40
+                    }
+                  ],
+                  tableId: 'den_001_rank_5_sword'
+                }
+              ]
+            }
+          }
+        });
+      }
+
       return JSON.stringify({
         error: null,
         payload: {
@@ -404,18 +457,21 @@ describe('projectBridge', () => {
     const trainers = await bridge.loadTrainersWorkflow({ paths: projectPaths });
     const shops = await bridge.loadShopsWorkflow({ paths: projectPaths });
     const encounters = await bridge.loadEncountersWorkflow({ paths: projectPaths });
+    const raidRewards = await bridge.loadRaidRewardsWorkflow({ paths: projectPaths });
 
     expect(workflows.workflows[0]?.id).toBe('items');
     expect(workflows.workflows[1]?.id).toBe('text');
     expect(workflows.workflows[2]?.id).toBe('trainers');
     expect(workflows.workflows[3]?.id).toBe('shops');
     expect(workflows.workflows[4]?.id).toBe('encounters');
+    expect(workflows.workflows[5]?.id).toBe('raidRewards');
     expect(items.workflow.editableFields).toHaveLength(2);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(text.workflow.entries[0]?.label).toBe('Greeting');
     expect(trainers.workflow.trainers[0]?.name).toBe('Avery');
     expect(shops.workflow.shops[0]?.name).toBe('Route 1 Mart');
     expect(encounters.workflow.tables[0]?.slots[0]?.species).toBe('Skwovet');
+    expect(raidRewards.workflow.tables[0]?.rewards[0]?.itemName).toBe('Exp. Candy L');
   });
 
   it('starts, updates, and validates an Items edit session', async () => {
