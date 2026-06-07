@@ -13,6 +13,8 @@ import {
   listWorkflowsResponseSchema,
   loadItemsWorkflowRequestSchema,
   loadItemsWorkflowResponseSchema,
+  loadTextWorkflowRequestSchema,
+  loadTextWorkflowResponseSchema,
   openProjectRequestSchema,
   openProjectResponseSchema,
   refreshFileGraphRequestSchema,
@@ -182,6 +184,8 @@ describe('bridge contracts', () => {
     const workflowsResponseSchema = createBridgeResponseSchema(listWorkflowsResponseSchema);
     const itemsRequestSchema = createBridgeRequestSchema(loadItemsWorkflowRequestSchema);
     const itemsResponseSchema = createBridgeResponseSchema(loadItemsWorkflowResponseSchema);
+    const textRequestSchema = createBridgeRequestSchema(loadTextWorkflowRequestSchema);
+    const textResponseSchema = createBridgeResponseSchema(loadTextWorkflowResponseSchema);
     const itemsWorkflow = {
       diagnostics: [],
       editableFields: [
@@ -226,6 +230,48 @@ describe('bridge contracts', () => {
         label: 'Items'
       }
     } as const;
+    const textWorkflow = {
+      diagnostics: [],
+      dialogueReferences: [
+        {
+          context: 'Intro',
+          dialogueId: 'intro.lab.greeting',
+          label: 'Lab greeting',
+          preview: 'Welcome to the lab.',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/text.dialogue.readmodel.json',
+            sourceLayer: 'base'
+          },
+          textId: 10
+        }
+      ],
+      entries: [
+        {
+          label: 'Greeting',
+          language: 'en',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/text.dialogue.readmodel.json',
+            sourceLayer: 'base'
+          },
+          textId: 10,
+          value: 'Welcome to the lab.'
+        }
+      ],
+      stats: {
+        dialogueReferenceCount: 1,
+        sourceFileCount: 1,
+        totalTextEntryCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Text entries, dialogue references, and source provenance.',
+        diagnostics: [],
+        id: 'text',
+        label: 'Text and Dialogue Map'
+      }
+    } as const;
 
     expect(
       workflowsRequestSchema.safeParse({
@@ -243,7 +289,7 @@ describe('bridge contracts', () => {
     expect(
       workflowsResponseSchema.safeParse({
         payload: {
-          workflows: [itemsWorkflow.summary]
+          workflows: [itemsWorkflow.summary, textWorkflow.summary]
         }
       }).success
     ).toBe(true);
@@ -265,6 +311,27 @@ describe('bridge contracts', () => {
       itemsResponseSchema.safeParse({
         payload: {
           workflow: itemsWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      textRequestSchema.safeParse({
+        command: kmCommandNames.loadTextWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      textResponseSchema.safeParse({
+        payload: {
+          workflow: textWorkflow
         }
       }).success
     ).toBe(true);

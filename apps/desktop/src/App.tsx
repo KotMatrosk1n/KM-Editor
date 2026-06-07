@@ -67,6 +67,26 @@ const sections: Array<{
   }
 ];
 
+const workflowDefinitions: Array<{
+  id: string;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+}> = [
+  {
+    id: 'items',
+    label: 'Items',
+    description: 'Item records, names, and source provenance.',
+    icon: Package
+  },
+  {
+    id: 'text',
+    label: 'Text and Dialogue Map',
+    description: 'Text entries, dialogue references, and source provenance.',
+    icon: ListChecks
+  }
+];
+
 const pathFields: Array<{
   field: keyof ProjectPathDraft;
   label: string;
@@ -550,10 +570,6 @@ function WorkflowsSection({
   pendingEditCount: number;
   workflows: WorkflowSummary[];
 }) {
-  const itemsWorkflow = workflows.find((workflow) => workflow.id === 'items');
-  const itemsState = getItemsWorkflowState(health, itemsWorkflow);
-  const canOpenItems = itemsState.availability !== 'disabled';
-
   return (
     <section aria-labelledby="workflows-heading" className="panel wide-panel">
       <div className="panel-heading">
@@ -562,25 +578,41 @@ function WorkflowsSection({
       </div>
 
       <div className="workflow-list">
-        <article className="workflow-row">
-          <div>
-            <h3>Items</h3>
-            <p>{itemsWorkflow?.description ?? 'Item records, names, and source provenance.'}</p>
-            <span className="inline-metric">Pending changes: {pendingEditCount}</span>
-          </div>
-          <div className="workflow-actions">
-            <span className={`status-pill ${itemsState.statusClass}`}>{itemsState.label}</span>
-            <button
-              className="secondary-button compact-button"
-              disabled={!canOpenItems || isItemsLoading}
-              onClick={onOpenItemsWorkflow}
-              type="button"
-            >
-              <Package aria-hidden="true" size={16} />
-              <span>{isItemsLoading ? 'Loading' : 'Open Items'}</span>
-            </button>
-          </div>
-        </article>
+        {workflowDefinitions.map((definition) => {
+          const workflow = workflows.find((candidate) => candidate.id === definition.id);
+          const workflowState = getWorkflowState(health, workflow);
+          const Icon = definition.icon;
+          const isItemsWorkflow = definition.id === 'items';
+          const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
+
+          return (
+            <article className="workflow-row" key={definition.id}>
+              <div>
+                <h3>{workflow?.label ?? definition.label}</h3>
+                <p>{workflow?.description ?? definition.description}</p>
+                {isItemsWorkflow ? (
+                  <span className="inline-metric">Pending changes: {pendingEditCount}</span>
+                ) : null}
+              </div>
+              <div className="workflow-actions">
+                <span className={`status-pill ${workflowState.statusClass}`}>
+                  {workflowState.label}
+                </span>
+                {isItemsWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenItems || isItemsLoading}
+                    onClick={onOpenItemsWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isItemsLoading ? 'Loading' : 'Open Items'}</span>
+                  </button>
+                ) : null}
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -1159,7 +1191,7 @@ function getPendingItemIds(editSession: EditSession | null) {
   );
 }
 
-function getItemsWorkflowState(health: ProjectHealth | null, workflow: WorkflowSummary | undefined) {
+function getWorkflowState(health: ProjectHealth | null, workflow: WorkflowSummary | undefined) {
   if (!health?.canOpenReadOnlyWorkflows) {
     return {
       availability: 'disabled',

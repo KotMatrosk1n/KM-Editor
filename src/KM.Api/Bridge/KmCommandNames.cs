@@ -13,6 +13,7 @@ public static class KmCommandNames
     public const string ListWorkflows = "workflow.list";
     public const string LoadItemsWorkflow = "items.load";
     public const string UpdateItemField = "items.field.update";
+    public const string LoadTextWorkflow = "text.load";
     public const string StartEditSession = "editSession.start";
     public const string GetEditSession = "editSession.get";
     public const string DiscardEditSession = "editSession.discard";

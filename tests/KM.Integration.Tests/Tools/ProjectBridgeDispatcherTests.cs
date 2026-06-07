@@ -5,6 +5,7 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Items;
 using KM.Api.Projects;
+using KM.Api.Text;
 using KM.Api.Workflows;
 using KM.Tools.Bridge;
 using System.Text.Json;
@@ -103,9 +104,19 @@ public sealed class ProjectBridgeDispatcherTests
 
         Assert.Null(response.Error);
         Assert.Equal("request-workflows", response.RequestId);
-        var workflow = Assert.Single(response.Payload?.Workflows ?? []);
-        Assert.Equal("items", workflow.Id);
-        Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+        var workflows = response.Payload?.Workflows ?? [];
+        Assert.Collection(
+            workflows,
+            workflow =>
+            {
+                Assert.Equal("items", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("text", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            });
     }
 
     [Fact]
@@ -156,6 +167,56 @@ public sealed class ProjectBridgeDispatcherTests
                 Assert.Equal("sellPrice", editableField.Field);
                 Assert.Equal(999_999, editableField.MaximumValue);
             });
+    }
+
+    [Fact]
+    public void DispatchLoadTextWorkflowReturnsSanitizedDialogueRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/text.dialogue.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "language": "en",
+              "entries": [
+                {
+                  "textId": 10,
+                  "label": "Greeting",
+                  "value": "Welcome to the lab."
+                }
+              ],
+              "dialogueReferences": [
+                {
+                  "dialogueId": "intro.lab.greeting",
+                  "label": "Lab greeting",
+                  "textId": 10,
+                  "context": "Intro",
+                  "preview": "Welcome to the lab."
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadTextWorkflow,
+            new LoadTextWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-text");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadTextWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-text", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var entry = Assert.Single(response.Payload.Workflow.Entries);
+        Assert.Equal("Greeting", entry.Label);
+        Assert.Equal("en", entry.Language);
+        Assert.Equal(ProjectFileLayerDto.Base, entry.Provenance.SourceLayer);
+        var reference = Assert.Single(response.Payload.Workflow.DialogueReferences);
+        Assert.Equal("intro.lab.greeting", reference.DialogueId);
+        Assert.Equal(10, reference.TextId);
+        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 
     [Fact]

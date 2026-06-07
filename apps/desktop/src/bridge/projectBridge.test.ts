@@ -123,8 +123,65 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'items',
                 label: 'Items'
+              },
+              {
+                availability: 'readOnly',
+                description: 'Text entries, dialogue references, and source provenance.',
+                diagnostics: [],
+                id: 'text',
+                label: 'Text and Dialogue Map'
               }
             ]
+          }
+        });
+      }
+
+      if (request.command === 'text.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              dialogueReferences: [
+                {
+                  context: 'Intro',
+                  dialogueId: 'intro.lab.greeting',
+                  label: 'Lab greeting',
+                  preview: 'Welcome to the lab.',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/kmeditor/text.dialogue.readmodel.json',
+                    sourceLayer: 'base'
+                  },
+                  textId: 10
+                }
+              ],
+              entries: [
+                {
+                  label: 'Greeting',
+                  language: 'en',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/kmeditor/text.dialogue.readmodel.json',
+                    sourceLayer: 'base'
+                  },
+                  textId: 10,
+                  value: 'Welcome to the lab.'
+                }
+              ],
+              stats: {
+                dialogueReferenceCount: 1,
+                sourceFileCount: 1,
+                totalTextEntryCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description: 'Text entries, dialogue references, and source provenance.',
+                diagnostics: [],
+                id: 'text',
+                label: 'Text and Dialogue Map'
+              }
+            }
           }
         });
       }
@@ -182,10 +239,13 @@ describe('projectBridge', () => {
 
     const workflows = await bridge.listWorkflows({ paths: projectPaths });
     const items = await bridge.loadItemsWorkflow({ paths: projectPaths });
+    const text = await bridge.loadTextWorkflow({ paths: projectPaths });
 
     expect(workflows.workflows[0]?.id).toBe('items');
+    expect(workflows.workflows[1]?.id).toBe('text');
     expect(items.workflow.editableFields).toHaveLength(2);
     expect(items.workflow.items[0]?.name).toBe('Potion');
+    expect(text.workflow.entries[0]?.label).toBe('Greeting');
   });
 
   it('starts, updates, and validates an Items edit session', async () => {

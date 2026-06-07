@@ -2,8 +2,10 @@
 
 using KM.Api.Items;
 using KM.Api.Editing;
+using KM.Api.Text;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
+using KM.SwSh.Text;
 using KM.SwSh.Workflows;
 
 namespace KM.Tools.Bridge;
@@ -22,6 +24,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadItemsWorkflowResponse(ToItemsWorkflowDto(workflow));
+    }
+
+    public static LoadTextWorkflowResponse ToDto(SwShTextWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTextWorkflowResponse(ToTextWorkflowDto(workflow));
     }
 
     public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
@@ -52,6 +61,19 @@ public static class SwShBridgeMapper
             workflow.EditableFields.Select(ToDto).ToArray(),
             new ItemsWorkflowStatsDto(
                 workflow.Stats.TotalItemCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TextWorkflowDto ToTextWorkflowDto(SwShTextWorkflow workflow)
+    {
+        return new TextWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Entries.Select(ToDto).ToArray(),
+            workflow.DialogueReferences.Select(ToDto).ToArray(),
+            new TextWorkflowStatsDto(
+                workflow.Stats.TotalTextEntryCount,
+                workflow.Stats.DialogueReferenceCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -88,6 +110,35 @@ public static class SwShBridgeMapper
             field.ValueKind,
             field.MinimumValue,
             field.MaximumValue);
+    }
+
+    private static TextEntryRecordDto ToDto(SwShTextEntryRecord entry)
+    {
+        return new TextEntryRecordDto(
+            entry.TextId,
+            entry.Label,
+            entry.Language,
+            entry.Value,
+            ToDto(entry.Provenance));
+    }
+
+    private static DialogueReferenceRecordDto ToDto(SwShDialogueReferenceRecord reference)
+    {
+        return new DialogueReferenceRecordDto(
+            reference.DialogueId,
+            reference.Label,
+            reference.TextId,
+            reference.Context,
+            reference.Preview,
+            ToDto(reference.Provenance));
+    }
+
+    private static TextProvenanceDto ToDto(SwShTextProvenance provenance)
+    {
+        return new TextProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
     }
 
     private static WorkflowAvailabilityDto ToDto(SwShWorkflowAvailability availability)
