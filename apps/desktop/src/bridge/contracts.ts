@@ -10,6 +10,7 @@ export const kmCommandNameValues = [
   'items.load',
   'items.field.update',
   'text.load',
+  'text.entry.update',
   'trainers.load',
   'shops.load',
   'encounters.load',
@@ -38,6 +39,7 @@ export const kmCommandNames = {
   listWorkflows: 'workflow.list',
   loadItemsWorkflow: 'items.load',
   loadTextWorkflow: 'text.load',
+  updateTextEntry: 'text.entry.update',
   loadTrainersWorkflow: 'trainers.load',
   loadShopsWorkflow: 'shops.load',
   loadEncountersWorkflow: 'encounters.load',
@@ -311,10 +313,15 @@ export const textProvenanceSchema = z.strictObject({
 });
 
 export const textEntryRecordSchema = z.strictObject({
+  canEdit: z.boolean(),
+  editBlockedReason: z.string().nullable(),
   label: z.string(),
   language: z.string(),
+  lineIndex: z.number().int().nonnegative(),
   provenance: textProvenanceSchema,
+  sourceFile: z.string(),
   textId: z.number().int().nonnegative(),
+  textKey: z.string(),
   value: z.string()
 });
 
@@ -333,9 +340,18 @@ export const textWorkflowStatsSchema = z.strictObject({
   totalTextEntryCount: z.number().int().nonnegative()
 });
 
+export const textEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumLength: z.number().int().nullable(),
+  minimumLength: z.number().int().nullable(),
+  valueKind: z.string()
+});
+
 export const textWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   dialogueReferences: z.array(dialogueReferenceRecordSchema),
+  editableFields: z.array(textEditableFieldSchema),
   entries: z.array(textEntryRecordSchema),
   stats: textWorkflowStatsSchema,
   summary: workflowSummarySchema
@@ -715,6 +731,19 @@ export const updateItemFieldResponseSchema = z.strictObject({
   workflow: itemsWorkflowSchema
 });
 
+export const updateTextEntryRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  textKey: z.string(),
+  value: z.string()
+});
+
+export const updateTextEntryResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: textWorkflowSchema
+});
+
 export const startEditSessionResponseSchema = z.strictObject({
   session: editSessionSchema
 });
@@ -798,6 +827,8 @@ export type EditSession = z.infer<typeof editSessionSchema>;
 export type ItemEditableField = z.infer<typeof itemEditableFieldSchema>;
 export type ItemRecord = z.infer<typeof itemRecordSchema>;
 export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
+export type TextEditableField = z.infer<typeof textEditableFieldSchema>;
+export type TextEntryRecord = z.infer<typeof textEntryRecordSchema>;
 export type TextWorkflow = z.infer<typeof textWorkflowSchema>;
 export type TrainersWorkflow = z.infer<typeof trainersWorkflowSchema>;
 export type ShopsWorkflow = z.infer<typeof shopsWorkflowSchema>;
@@ -848,6 +879,8 @@ export type StartEditSessionRequest = z.infer<typeof startEditSessionRequestSche
 export type StartEditSessionResponse = z.infer<typeof startEditSessionResponseSchema>;
 export type UpdateItemFieldRequest = z.infer<typeof updateItemFieldRequestSchema>;
 export type UpdateItemFieldResponse = z.infer<typeof updateItemFieldResponseSchema>;
+export type UpdateTextEntryRequest = z.infer<typeof updateTextEntryRequestSchema>;
+export type UpdateTextEntryResponse = z.infer<typeof updateTextEntryResponseSchema>;
 export type ValidateEditSessionRequest = z.infer<typeof validateEditSessionRequestSchema>;
 export type ValidateEditSessionResponse = z.infer<typeof validateEditSessionResponseSchema>;
 export type ValidateProjectRequest = z.infer<typeof validateProjectRequestSchema>;

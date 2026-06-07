@@ -30,6 +30,9 @@ import {
   type ProjectHealth,
   type ProjectPathRole,
   type ProjectPathValidation,
+  type TextEditableField,
+  type TextEntryRecord,
+  type TextWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
 import {
@@ -62,6 +65,11 @@ const sections: Array<{
     id: 'items',
     label: 'Items',
     icon: Package
+  },
+  {
+    id: 'text',
+    label: 'Text',
+    icon: ListChecks
   },
   {
     id: 'changes',
@@ -198,6 +206,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const openProject = useWorkbenchStore((state) => state.openProject);
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
+  const selectedTextKey = useWorkbenchStore((state) => state.selectedTextKey);
+  const textSearchText = useWorkbenchStore((state) => state.textSearchText);
+  const textWorkflow = useWorkbenchStore((state) => state.textWorkflow);
   const workflows = useWorkbenchStore((state) => state.workflows);
   const setActiveSection = useWorkbenchStore((state) => state.setActiveSection);
   const setApplyResult = useWorkbenchStore((state) => state.setApplyResult);
@@ -213,6 +224,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
+  const setSelectedTextKey = useWorkbenchStore((state) => state.setSelectedTextKey);
+  const setTextSearchText = useWorkbenchStore((state) => state.setTextSearchText);
+  const setTextWorkflow = useWorkbenchStore((state) => state.setTextWorkflow);
   const setWorkflows = useWorkbenchStore((state) => state.setWorkflows);
   const health = openProject?.health ?? null;
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
@@ -221,6 +235,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isEditStarting, setIsEditStarting] = useState(false);
   const [isItemsLoading, setIsItemsLoading] = useState(false);
   const [isItemUpdating, setIsItemUpdating] = useState(false);
+  const [isTextLoading, setIsTextLoading] = useState(false);
+  const [isTextUpdating, setIsTextUpdating] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -275,6 +291,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
     }
   };
 
+  const handleOpenTextWorkflow = async () => {
+    setIsTextLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadTextWorkflow({ paths: toProjectPaths(draftPaths) });
+      setTextWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTextLoading(false);
+    }
+  };
+
   const handleStartEditSession = async () => {
     setIsEditStarting(true);
     setBridgeDiagnostics([]);
@@ -310,6 +340,28 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsItemUpdating(false);
+    }
+  };
+
+  const handleUpdateTextEntry = async (textKey: string, value: string) => {
+    setIsTextUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateTextEntry({
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        textKey,
+        value
+      });
+      setTextWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTextUpdating(false);
     }
   };
 
@@ -475,7 +527,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
             <WorkflowsSection
               health={health}
               isItemsLoading={isItemsLoading}
+              isTextLoading={isTextLoading}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
+              onOpenTextWorkflow={handleOpenTextWorkflow}
               pendingEditCount={pendingEditCount}
               workflows={workflows}
             />
@@ -492,6 +546,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               isEditStarting={isEditStarting}
               isItemUpdating={isItemUpdating}
               workflow={itemsWorkflow}
+            />
+          ) : null}
+          {activeSection === 'text' ? (
+            <TextSection
+              editSession={editSession}
+              isEditStarting={isEditStarting}
+              isTextUpdating={isTextUpdating}
+              onSearchChange={setTextSearchText}
+              onSelectTextEntry={setSelectedTextKey}
+              onStartEditSession={handleStartEditSession}
+              onUpdateTextEntry={handleUpdateTextEntry}
+              searchText={textSearchText}
+              selectedTextKey={selectedTextKey}
+              workflow={textWorkflow}
             />
           ) : null}
           {activeSection === 'changes' ? (
@@ -619,13 +687,17 @@ function HealthSection({
 function WorkflowsSection({
   health,
   isItemsLoading,
+  isTextLoading,
   onOpenItemsWorkflow,
+  onOpenTextWorkflow,
   pendingEditCount,
   workflows
 }: {
   health: ProjectHealth | null;
   isItemsLoading: boolean;
+  isTextLoading: boolean;
   onOpenItemsWorkflow: () => void;
+  onOpenTextWorkflow: () => void;
   pendingEditCount: number;
   workflows: WorkflowSummary[];
 }) {
@@ -642,7 +714,9 @@ function WorkflowsSection({
           const workflowState = getWorkflowState(health, workflow);
           const Icon = definition.icon;
           const isItemsWorkflow = definition.id === 'items';
+          const isTextWorkflow = definition.id === 'text';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
+          const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
 
           return (
             <article className="workflow-row" key={definition.id}>
@@ -666,6 +740,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isItemsLoading ? 'Loading' : 'Open Items'}</span>
+                  </button>
+                ) : null}
+                {isTextWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenText || isTextLoading}
+                    onClick={onOpenTextWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isTextLoading ? 'Loading' : 'Open Text'}</span>
                   </button>
                 ) : null}
               </div>
@@ -940,6 +1025,229 @@ function SelectedItemPanel({
   );
 }
 
+function TextSection({
+  editSession,
+  isEditStarting,
+  isTextUpdating,
+  onSearchChange,
+  onSelectTextEntry,
+  onStartEditSession,
+  onUpdateTextEntry,
+  searchText,
+  selectedTextKey,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isTextUpdating: boolean;
+  onSearchChange: (searchText: string) => void;
+  onSelectTextEntry: (textKey: string | null) => void;
+  onStartEditSession: () => void;
+  onUpdateTextEntry: (textKey: string, value: string) => void;
+  searchText: string;
+  selectedTextKey: string | null;
+  workflow: TextWorkflow | null;
+}) {
+  const filteredEntries = filterTextEntries(workflow?.entries ?? [], searchText);
+  const selectedEntry =
+    workflow?.entries.find((entry) => entry.textKey === selectedTextKey) ??
+    filteredEntries[0] ??
+    null;
+  const canEditText = workflow?.summary.availability === 'available';
+  const pendingTextKeys = getPendingTextKeys(editSession);
+
+  return (
+    <>
+      <section aria-labelledby="text-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <ListChecks aria-hidden="true" size={18} />
+          <h2 id="text-heading">Text and Dialogue Map</h2>
+        </div>
+
+        <div className="items-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search text entries"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search text"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded entries"
+            value={workflow ? workflow.stats.totalTextEntryCount.toString() : '0'}
+          />
+          <Metric
+            label="Dialogue refs"
+            value={workflow ? workflow.stats.dialogueReferenceCount.toString() : '0'}
+          />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="text-layout">
+            <div className="text-table" role="table" aria-label="Text entries">
+              <div className="text-row text-row-heading" role="row">
+                <span role="columnheader">ID</span>
+                <span role="columnheader">File</span>
+                <span role="columnheader">Line</span>
+                <span role="columnheader">Value</span>
+                <span role="columnheader">Source</span>
+              </div>
+              {filteredEntries.map((entry) => (
+                <button
+                  className={`text-row ${selectedEntry?.textKey === entry.textKey ? 'text-row-selected' : ''} ${
+                    pendingTextKeys.has(entry.textKey) ? 'text-row-pending' : ''
+                  }`}
+                  key={entry.textKey}
+                  onClick={() => onSelectTextEntry(entry.textKey)}
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{entry.textId}</span>
+                  <span role="cell">{entry.sourceFile}</span>
+                  <span role="cell">{entry.lineIndex}</span>
+                  <span role="cell">{entry.value}</span>
+                  <span role="cell">{formatSourceLayer(entry.provenance.sourceLayer)}</span>
+                </button>
+              ))}
+            </div>
+
+            <SelectedTextPanel
+              canEditText={canEditText}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              entry={selectedEntry}
+              isEditStarting={isEditStarting}
+              isTextUpdating={isTextUpdating}
+              onStartEditSession={onStartEditSession}
+              onUpdateTextEntry={onUpdateTextEntry}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Text from Workflows to load backend message tables.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedTextPanel({
+  canEditText,
+  editSession,
+  editableFields,
+  entry,
+  isEditStarting,
+  isTextUpdating,
+  onStartEditSession,
+  onUpdateTextEntry
+}: {
+  canEditText: boolean;
+  editSession: EditSession | null;
+  editableFields: TextEditableField[];
+  entry: TextEntryRecord | null;
+  isEditStarting: boolean;
+  isTextUpdating: boolean;
+  onStartEditSession: () => void;
+  onUpdateTextEntry: (textKey: string, value: string) => void;
+}) {
+  const [draftValue, setDraftValue] = useState('');
+  const valueField = editableFields.find((field) => field.field === 'value');
+
+  useEffect(() => {
+    setDraftValue(entry?.value ?? '');
+  }, [entry?.textKey, entry?.value]);
+
+  const draftState = getTextDraftState(draftValue, entry, valueField);
+  const canSubmit = editSession !== null && draftState.canSubmit;
+
+  return (
+    <aside aria-label="Selected text provenance" className="text-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Text</h3>
+      </div>
+
+      {entry ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Label</dt>
+              <dd>{entry.label}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{entry.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Line</dt>
+              <dd>{entry.lineIndex}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(entry.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(entry.provenance.fileState)}</dd>
+            </div>
+          </dl>
+
+          <div className="text-edit-form">
+            <label className="path-field">
+              <span>{valueField?.label ?? 'Text value'}</span>
+              <textarea
+                aria-label={valueField?.label ?? 'Text value'}
+                disabled={!canEditText || editSession === null || isTextUpdating || !entry.canEdit}
+                maxLength={valueField?.maximumLength ?? undefined}
+                onChange={(event) => setDraftValue(event.target.value)}
+                rows={8}
+                value={draftValue}
+              />
+            </label>
+
+            {!entry.canEdit ? (
+              <p className="empty-copy">{entry.editBlockedReason ?? 'This text line is read-only.'}</p>
+            ) : null}
+
+            {editSession ? (
+              <button
+                className="primary-button"
+                disabled={!canSubmit || isTextUpdating}
+                onClick={() => onUpdateTextEntry(entry.textKey, draftValue)}
+                type="button"
+              >
+                <Save aria-hidden="true" size={16} />
+                <span>{isTextUpdating ? 'Saving' : 'Save Text'}</span>
+              </button>
+            ) : (
+              <button
+                className="secondary-button"
+                disabled={!canEditText || isEditStarting || !entry.canEdit}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No text entry selected.</p>
+      )}
+    </aside>
+  );
+}
+
 function ChangesSection({
   applyResult,
   changePlan,
@@ -1198,6 +1506,25 @@ function filterItems(items: ItemRecord[], searchText: string) {
   );
 }
 
+function filterTextEntries(entries: TextEntryRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return entries;
+  }
+
+  return entries.filter((entry) =>
+    [
+      entry.textId.toString(),
+      entry.label,
+      entry.language,
+      entry.sourceFile,
+      entry.lineIndex.toString(),
+      entry.value
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function getEditableItemFieldValue(item: ItemRecord, field: string) {
   switch (field) {
     case buyPriceFieldName:
@@ -1252,6 +1579,36 @@ function getPendingItemIds(editSession: EditSession | null) {
   );
 }
 
+function getPendingTextKeys(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.text' && edit.recordId)
+      .map((edit) => edit.recordId!)
+  );
+}
+
+function getTextDraftState(
+  draftValue: string,
+  entry: TextEntryRecord | null,
+  field: TextEditableField | undefined
+) {
+  const minimumLength = field?.minimumLength ?? null;
+  const maximumLength = field?.maximumLength ?? null;
+  const inRange =
+    (minimumLength === null || draftValue.length >= minimumLength) &&
+    (maximumLength === null || draftValue.length <= maximumLength);
+  const hasVariablePlaceholder = draftValue.includes('[VAR');
+
+  return {
+    canSubmit:
+      entry !== null &&
+      entry.canEdit &&
+      inRange &&
+      !hasVariablePlaceholder &&
+      draftValue !== entry.value
+  };
+}
+
 function formatSharedItemIds(item: ItemRecord) {
   if (item.sharedItemIds.length <= 1) {
     return 'No';
@@ -1296,7 +1653,9 @@ const workflowAvailabilityClassNames = {
   readOnly: 'status-warning'
 } as const;
 
-function formatSourceLayer(layer: ItemRecord['provenance']['sourceLayer']) {
+function formatSourceLayer(
+  layer: ItemRecord['provenance']['sourceLayer'] | TextEntryRecord['provenance']['sourceLayer']
+) {
   return {
     base: 'Base',
     generated: 'Generated',
@@ -1314,7 +1673,9 @@ function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][n
   }[layer];
 }
 
-function formatFileState(state: ItemRecord['provenance']['fileState']) {
+function formatFileState(
+  state: ItemRecord['provenance']['fileState'] | TextEntryRecord['provenance']['fileState']
+) {
   return {
     baseOnly: 'Base only',
     layeredOnly: 'Layered only',

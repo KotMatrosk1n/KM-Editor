@@ -7,6 +7,7 @@ import {
   type ItemsWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
+  type TextWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
 import { type ProjectBridge } from './bridge/projectBridge';
@@ -30,6 +31,9 @@ describe('App', () => {
       openProject: null,
       projectStatus: 'idle',
       selectedItemId: null,
+      selectedTextKey: null,
+      textSearchText: '',
+      textWorkflow: null,
       workflows: []
     });
   });
@@ -149,6 +153,53 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(screen.getByText('Applied Items change plan to the configured LayeredFS output root.')).toBeInTheDocument();
+  });
+
+  it('opens Text, edits a line, reviews a message table plan, and applies it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Text' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Text and Dialogue Map' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText('romfs/bin/message/English/common/story.dat').length
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const textValue = screen.getByLabelText('Text value');
+    await user.clear(textValue);
+    await user.type(textValue, 'Hello there.');
+    await user.click(screen.getByRole('button', { name: 'Save Text' }));
+
+    expect(await screen.findByDisplayValue('Hello there.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set story #0 to "Hello there.".')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending text change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(
+      screen.getAllByText('romfs/bin/message/English/common/story.dat').length
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(screen.getByText('Applied Text change plan to the configured LayeredFS output root.')).toBeInTheDocument();
   });
 
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
@@ -293,6 +344,56 @@ function createMockProjectBridge(
     id: 'text',
     label: 'Text and Dialogue Map'
   };
+  const textWorkflow: TextWorkflow = {
+    diagnostics: [],
+    dialogueReferences: [
+      {
+        context: 'common/story.dat',
+        dialogueId: 'common/story:0',
+        label: 'story #0',
+        preview: 'Welcome to the lab.',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/message/English/common/story.dat',
+          sourceLayer: 'base'
+        },
+        textId: 0
+      }
+    ],
+    editableFields: [
+      {
+        field: 'value',
+        label: 'Text value',
+        maximumLength: 4096,
+        minimumLength: 0,
+        valueKind: 'multilineText'
+      }
+    ],
+    entries: [
+      {
+        canEdit: true,
+        editBlockedReason: null,
+        label: 'story #0',
+        language: 'English',
+        lineIndex: 0,
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/message/English/common/story.dat',
+          sourceLayer: 'base'
+        },
+        sourceFile: 'romfs/bin/message/English/common/story.dat',
+        textId: 0,
+        textKey: 'romfs/bin/message/English/common/story.dat#0',
+        value: 'Welcome to the lab.'
+      }
+    ],
+    stats: {
+      dialogueReferenceCount: 1,
+      sourceFileCount: 1,
+      totalTextEntryCount: 1
+    },
+    summary: textWorkflowSummary
+  };
   const trainersWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Trainer parties, classes, battle types, and source provenance.',
@@ -364,7 +465,9 @@ function createMockProjectBridge(
           applyId: 'apply-1',
           diagnostics: [
             {
-              message: 'Applied Items change plan to the configured LayeredFS output root.',
+              message: request.changePlan.writes[0]?.targetRelativePath.includes('/message/')
+                ? 'Applied Text change plan to the configured LayeredFS output root.'
+                : 'Applied Items change plan to the configured LayeredFS output root.',
               severity: 'info'
             }
           ],
@@ -382,19 +485,34 @@ function createMockProjectBridge(
             }
           ],
           sessionId: request.session.sessionId,
-          writes: [
-            {
-              reason: 'Apply pending Items edit: Set Potion buy price to 450.',
-              replacesExistingOutput: false,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/pml/item/item.dat'
-                }
-              ],
-              targetRelativePath: 'romfs/bin/pml/item/item.dat'
-            }
-          ]
+          writes:
+            request.session.pendingEdits[0]?.domain === 'workflow.text'
+              ? [
+                  {
+                    reason: 'Apply pending Text edit: Set story #0 to "Hello there.".',
+                    replacesExistingOutput: false,
+                    sources: [
+                      {
+                        layer: 'base',
+                        relativePath: 'romfs/bin/message/English/common/story.dat'
+                      }
+                    ],
+                    targetRelativePath: 'romfs/bin/message/English/common/story.dat'
+                  }
+                ]
+              : [
+                  {
+                    reason: 'Apply pending Items edit: Set Potion buy price to 450.',
+                    replacesExistingOutput: false,
+                    sources: [
+                      {
+                        layer: 'base',
+                        relativePath: 'romfs/bin/pml/item/item.dat'
+                      }
+                    ],
+                    targetRelativePath: 'romfs/bin/pml/item/item.dat'
+                  }
+                ]
         }
       }),
     listWorkflows: () =>
@@ -509,17 +627,7 @@ function createMockProjectBridge(
       }),
     loadTextWorkflow: () =>
       Promise.resolve({
-        workflow: {
-          diagnostics: [],
-          dialogueReferences: [],
-          entries: [],
-          stats: {
-            dialogueReferenceCount: 0,
-            sourceFileCount: 0,
-            totalTextEntryCount: 0
-          },
-          summary: textWorkflowSummary
-        }
+        workflow: textWorkflow
       }),
     loadTrainersWorkflow: () =>
       Promise.resolve({
@@ -608,12 +716,48 @@ function createMockProjectBridge(
         }
       });
     },
+    updateTextEntry: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.text',
+              field: 'value',
+              newValue: request.value,
+              recordId: request.textKey,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/message/English/common/story.dat'
+                }
+              ],
+              summary: `Set story #0 to "${request.value}".`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...textWorkflow,
+          dialogueReferences: textWorkflow.dialogueReferences.map((reference) => ({
+            ...reference,
+            preview: request.value
+          })),
+          entries: textWorkflow.entries.map((entry) =>
+            entry.textKey === request.textKey ? { ...entry, value: request.value } : entry
+          )
+        }
+      }),
     validateEditSession: (request) =>
       Promise.resolve({
         diagnostics: [
           {
-            field: 'buyPrice',
-            message: 'Pending item change is valid.',
+            field: request.session.pendingEdits[0]?.field ?? 'value',
+            message:
+              request.session.pendingEdits[0]?.domain === 'workflow.text'
+                ? 'Pending text change is valid.'
+                : 'Pending item change is valid.',
             severity: 'info'
           }
         ],

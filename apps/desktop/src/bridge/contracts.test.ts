@@ -41,6 +41,8 @@ import {
   startEditSessionResponseSchema,
   updateItemFieldRequestSchema,
   updateItemFieldResponseSchema,
+  updateTextEntryRequestSchema,
+  updateTextEntryResponseSchema,
   validateEditSessionRequestSchema,
   validateEditSessionResponseSchema,
   validateProjectRequestSchema,
@@ -309,28 +311,42 @@ describe('bridge contracts', () => {
       diagnostics: [],
       dialogueReferences: [
         {
-          context: 'Intro',
-          dialogueId: 'intro.lab.greeting',
-          label: 'Lab greeting',
+          context: 'common/story.dat',
+          dialogueId: 'common/story:0',
+          label: 'story #0',
           preview: 'Welcome to the lab.',
           provenance: {
             fileState: 'baseOnly',
-            sourceFile: 'romfs/kmeditor/text.dialogue.readmodel.json',
+            sourceFile: 'romfs/bin/message/English/common/story.dat',
             sourceLayer: 'base'
           },
-          textId: 10
+          textId: 0
+        }
+      ],
+      editableFields: [
+        {
+          field: 'value',
+          label: 'Text value',
+          maximumLength: 4096,
+          minimumLength: 0,
+          valueKind: 'multilineText'
         }
       ],
       entries: [
         {
-          label: 'Greeting',
-          language: 'en',
+          canEdit: true,
+          editBlockedReason: null,
+          label: 'story #0',
+          language: 'English',
+          lineIndex: 0,
           provenance: {
             fileState: 'baseOnly',
-            sourceFile: 'romfs/kmeditor/text.dialogue.readmodel.json',
+            sourceFile: 'romfs/bin/message/English/common/story.dat',
             sourceLayer: 'base'
           },
-          textId: 10,
+          sourceFile: 'romfs/bin/message/English/common/story.dat',
+          textId: 0,
+          textKey: 'romfs/bin/message/English/common/story.dat#0',
           value: 'Welcome to the lab.'
         }
       ],
@@ -951,6 +967,8 @@ describe('bridge contracts', () => {
     const startResponseSchema = createBridgeResponseSchema(startEditSessionResponseSchema);
     const updateRequestSchema = createBridgeRequestSchema(updateItemFieldRequestSchema);
     const updateResponseSchema = createBridgeResponseSchema(updateItemFieldResponseSchema);
+    const updateTextRequestSchema = createBridgeRequestSchema(updateTextEntryRequestSchema);
+    const updateTextResponseSchema = createBridgeResponseSchema(updateTextEntryResponseSchema);
     const validateRequestSchema = createBridgeRequestSchema(validateEditSessionRequestSchema);
     const validateResponseSchema = createBridgeResponseSchema(validateEditSessionResponseSchema);
     const changePlanRequestSchema = createBridgeRequestSchema(createChangePlanRequestSchema);
@@ -1060,6 +1078,81 @@ describe('bridge contracts', () => {
         label: 'Items'
       }
     } as const;
+    const textSession = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.text',
+          field: 'value',
+          newValue: 'Hello there.',
+          recordId: 'romfs/bin/message/English/common/story.dat#0',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/bin/message/English/common/story.dat'
+            }
+          ],
+          summary: 'Set story #0 to "Hello there.".'
+        }
+      ],
+      sessionId: 'session-1'
+    } as const;
+    const textWorkflow = {
+      diagnostics: [],
+      dialogueReferences: [
+        {
+          context: 'common/story.dat',
+          dialogueId: 'common/story:0',
+          label: 'story #0',
+          preview: 'Hello there.',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/message/English/common/story.dat',
+            sourceLayer: 'base'
+          },
+          textId: 0
+        }
+      ],
+      editableFields: [
+        {
+          field: 'value',
+          label: 'Text value',
+          maximumLength: 4096,
+          minimumLength: 0,
+          valueKind: 'multilineText'
+        }
+      ],
+      entries: [
+        {
+          canEdit: true,
+          editBlockedReason: null,
+          label: 'story #0',
+          language: 'English',
+          lineIndex: 0,
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/message/English/common/story.dat',
+            sourceLayer: 'base'
+          },
+          sourceFile: 'romfs/bin/message/English/common/story.dat',
+          textId: 0,
+          textKey: 'romfs/bin/message/English/common/story.dat#0',
+          value: 'Hello there.'
+        }
+      ],
+      stats: {
+        dialogueReferenceCount: 1,
+        sourceFileCount: 1,
+        totalTextEntryCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Text entries, dialogue references, and source provenance.',
+        diagnostics: [],
+        id: 'text',
+        label: 'Text and Dialogue Map'
+      }
+    } as const;
 
     expect(
       startRequestSchema.safeParse({
@@ -1099,6 +1192,32 @@ describe('bridge contracts', () => {
           diagnostics: [],
           session: editSession,
           workflow: itemsWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateTextRequestSchema.safeParse({
+        command: kmCommandNames.updateTextEntry,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output'
+          },
+          session: editSession,
+          textKey: 'romfs/bin/message/English/common/story.dat#0',
+          value: 'Hello there.'
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateTextResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: textSession,
+          workflow: textWorkflow
         }
       }).success
     ).toBe(true);

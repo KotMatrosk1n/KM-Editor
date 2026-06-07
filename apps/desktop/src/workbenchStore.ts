@@ -9,10 +9,11 @@ import {
   type ItemsWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
+  type TextWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
 
-export type WorkbenchSection = 'health' | 'workflows' | 'items' | 'changes';
+export type WorkbenchSection = 'health' | 'workflows' | 'items' | 'text' | 'changes';
 
 export type ProjectPathDraft = {
   baseExeFsPath: string;
@@ -38,6 +39,9 @@ type WorkbenchState = {
   openProject: OpenProjectState | null;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
   selectedItemId: number | null;
+  selectedTextKey: string | null;
+  textSearchText: string;
+  textWorkflow: TextWorkflow | null;
   workflows: WorkflowSummary[];
   setDraftPath: (field: keyof ProjectPathDraft, value: string) => void;
   setActiveSection: (activeSection: WorkbenchSection) => void;
@@ -51,6 +55,9 @@ type WorkbenchState = {
   setProjectHealth: (health: ProjectHealth) => void;
   setProjectStatus: (projectStatus: WorkbenchState['projectStatus']) => void;
   setSelectedItemId: (selectedItemId: number | null) => void;
+  setSelectedTextKey: (selectedTextKey: string | null) => void;
+  setTextSearchText: (textSearchText: string) => void;
+  setTextWorkflow: (textWorkflow: TextWorkflow) => void;
   setWorkflows: (workflows: WorkflowSummary[]) => void;
 };
 
@@ -70,6 +77,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   openProject: null,
   projectStatus: 'idle',
   selectedItemId: null,
+  selectedTextKey: null,
+  textSearchText: '',
+  textWorkflow: null,
   workflows: [],
   setActiveSection: (activeSection) => set({ activeSection }),
   setApplyResult: (applyResult) => set({ applyResult }),
@@ -103,6 +113,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       };
     }),
   setItemSearchText: (itemSearchText) => set({ itemSearchText }),
+  setTextSearchText: (textSearchText) => set({ textSearchText }),
   setOpenProject: (openProject) =>
     set({
       applyResult: null,
@@ -113,7 +124,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       itemsWorkflow: null,
       openProject,
       projectStatus: 'open',
-      selectedItemId: null
+      selectedItemId: null,
+      selectedTextKey: null,
+      textSearchText: '',
+      textWorkflow: null
     }),
   setProjectHealth: (health) =>
     set((state) => ({
@@ -134,5 +148,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     })),
   setProjectStatus: (projectStatus) => set({ projectStatus }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
+  setSelectedTextKey: (selectedTextKey) => set({ selectedTextKey }),
+  setTextWorkflow: (textWorkflow) =>
+    set((state) => {
+      const selectedTextKey = textWorkflow.entries.some(
+        (entry) => entry.textKey === state.selectedTextKey
+      )
+        ? state.selectedTextKey
+        : (textWorkflow.entries[0]?.textKey ?? null);
+
+      return {
+        activeSection: 'text',
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        selectedTextKey,
+        textSearchText: '',
+        textWorkflow
+      };
+    }),
   setWorkflows: (workflows) => set({ workflows })
 }));

@@ -124,6 +124,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateTextEntryResponse ToDto(SwShTextEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTextEntryResponse(
+            ToTextWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(SwShEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -152,6 +162,7 @@ public static class SwShBridgeMapper
             ToDto(workflow.Summary),
             workflow.Entries.Select(ToDto).ToArray(),
             workflow.DialogueReferences.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
             new TextWorkflowStatsDto(
                 workflow.Stats.TotalTextEntryCount,
                 workflow.Stats.DialogueReferenceCount,
@@ -308,10 +319,25 @@ public static class SwShBridgeMapper
     {
         return new TextEntryRecordDto(
             entry.TextId,
+            entry.TextKey,
             entry.Label,
             entry.Language,
+            entry.SourceFile,
+            entry.LineIndex,
             entry.Value,
+            entry.CanEdit,
+            entry.EditBlockedReason,
             ToDto(entry.Provenance));
+    }
+
+    private static TextEditableFieldDto ToDto(SwShTextEditableField field)
+    {
+        return new TextEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumLength,
+            field.MaximumLength);
     }
 
     private static DialogueReferenceRecordDto ToDto(SwShDialogueReferenceRecord reference)
