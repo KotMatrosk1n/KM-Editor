@@ -11,6 +11,10 @@ public sealed record ProjectPathsDto(
 
 public sealed record OpenProjectRequest(ProjectPathsDto Paths);
 
+public sealed record ValidateProjectRequest(ProjectPathsDto Paths);
+
+public sealed record RefreshFileGraphRequest(ProjectPathsDto Paths);
+
 public enum ProjectHealthStateDto
 {
     NeedsPaths,
@@ -48,6 +52,35 @@ public sealed record ProjectFileGraphSummaryDto(
     int OverrideCount,
     int LayeredOnlyCount);
 
+public enum ProjectFileGraphEntryStateDto
+{
+    BaseOnly,
+    LayeredOverride,
+    LayeredOnly,
+}
+
+public enum ProjectFileLayerDto
+{
+    Base,
+    Layered,
+    Pending,
+    Generated,
+}
+
+public sealed record ProjectFileReferenceDto(
+    ProjectFileLayerDto Layer,
+    string RelativePath);
+
+public sealed record ProjectFileGraphEntryDto(
+    string RelativePath,
+    ProjectFileReferenceDto? BaseFile,
+    ProjectFileReferenceDto? LayeredFile,
+    ProjectFileGraphEntryStateDto State);
+
+public sealed record ProjectFileGraphDto(
+    IReadOnlyList<ProjectFileGraphEntryDto> Entries,
+    ProjectFileGraphSummaryDto Summary);
+
 public sealed record ProjectHealthDto(
     ProjectHealthStateDto State,
     bool CanOpenReadOnlyWorkflows,
@@ -58,4 +91,9 @@ public sealed record ProjectHealthDto(
 
 public sealed record OpenProjectResponse(
     string ProjectId,
-    ProjectHealthDto Health);
+    ProjectHealthDto Health,
+    ProjectFileGraphDto FileGraph);
+
+public sealed record ValidateProjectResponse(ProjectHealthDto Health);
+
+public sealed record RefreshFileGraphResponse(ProjectFileGraphDto FileGraph);

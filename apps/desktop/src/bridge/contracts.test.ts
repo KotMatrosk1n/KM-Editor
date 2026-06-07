@@ -6,8 +6,52 @@ import {
   createBridgeResponseSchema,
   kmCommandNames,
   openProjectRequestSchema,
-  openProjectResponseSchema
+  openProjectResponseSchema,
+  refreshFileGraphRequestSchema,
+  refreshFileGraphResponseSchema,
+  validateProjectRequestSchema,
+  validateProjectResponseSchema
 } from './contracts';
+
+const editableHealth = {
+  canOpenEditableWorkflows: true,
+  canOpenReadOnlyWorkflows: true,
+  diagnostics: [],
+  fileGraph: {
+    baseFileCount: 2,
+    layeredFileCount: 1,
+    layeredOnlyCount: 0,
+    overrideCount: 1
+  },
+  paths: [
+    {
+      diagnostics: [],
+      isRequired: true,
+      path: 'base-romfs',
+      role: 'baseRomFs',
+      status: 'valid'
+    }
+  ],
+  state: 'editableReady'
+} as const;
+
+const fileGraph = {
+  entries: [
+    {
+      baseFile: {
+        layer: 'base',
+        relativePath: 'romfs/data/items.bin'
+      },
+      layeredFile: {
+        layer: 'layered',
+        relativePath: 'romfs/data/items.bin'
+      },
+      relativePath: 'romfs/data/items.bin',
+      state: 'layeredOverride'
+    }
+  ],
+  summary: editableHealth.fileGraph
+} as const;
 
 describe('bridge contracts', () => {
   it('validates known command request envelopes', () => {
@@ -35,26 +79,9 @@ describe('bridge contracts', () => {
       responseSchema.safeParse({
         error: null,
         payload: {
+          fileGraph,
           health: {
-            canOpenReadOnlyWorkflows: true,
-            canOpenEditableWorkflows: true,
-            diagnostics: [],
-            fileGraph: {
-              baseFileCount: 2,
-              layeredFileCount: 1,
-              layeredOnlyCount: 0,
-              overrideCount: 1
-            },
-            paths: [
-              {
-                diagnostics: [],
-                isRequired: true,
-                path: 'base-romfs',
-                role: 'baseRomFs',
-                status: 'valid'
-              }
-            ],
-            state: 'editableReady'
+            ...editableHealth
           },
           projectId: 'project-1'
         },
@@ -85,6 +112,55 @@ describe('bridge contracts', () => {
         requestId: 'request-3'
       }).success
     ).toBe(false);
+  });
+
+  it('validates project validate and file graph refresh envelopes', () => {
+    const validateRequestSchema = createBridgeRequestSchema(validateProjectRequestSchema);
+    const validateResponseSchema = createBridgeResponseSchema(validateProjectResponseSchema);
+    const refreshRequestSchema = createBridgeRequestSchema(refreshFileGraphRequestSchema);
+    const refreshResponseSchema = createBridgeResponseSchema(refreshFileGraphResponseSchema);
+
+    expect(
+      validateRequestSchema.safeParse({
+        command: kmCommandNames.validateProject,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      validateResponseSchema.safeParse({
+        payload: {
+          health: editableHealth
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      refreshRequestSchema.safeParse({
+        command: kmCommandNames.refreshFileGraph,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output'
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      refreshResponseSchema.safeParse({
+        payload: {
+          fileGraph
+        }
+      }).success
+    ).toBe(true);
   });
 
   it('validates diagnostic severity strings', () => {

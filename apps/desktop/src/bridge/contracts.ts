@@ -56,6 +56,14 @@ export const openProjectRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
+export const validateProjectRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const refreshFileGraphRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
 export const projectHealthStateSchema = z.enum([
   'needsPaths',
   'readOnlyReady',
@@ -82,6 +90,31 @@ export const projectFileGraphSummarySchema = z.strictObject({
   overrideCount: z.number().int().nonnegative()
 });
 
+export const projectFileGraphEntryStateSchema = z.enum([
+  'baseOnly',
+  'layeredOverride',
+  'layeredOnly'
+]);
+
+export const projectFileLayerSchema = z.enum(['base', 'layered', 'pending', 'generated']);
+
+export const projectFileReferenceSchema = z.strictObject({
+  layer: projectFileLayerSchema,
+  relativePath: z.string()
+});
+
+export const projectFileGraphEntrySchema = z.strictObject({
+  baseFile: projectFileReferenceSchema.nullable(),
+  layeredFile: projectFileReferenceSchema.nullable(),
+  relativePath: z.string(),
+  state: projectFileGraphEntryStateSchema
+});
+
+export const projectFileGraphSchema = z.strictObject({
+  entries: z.array(projectFileGraphEntrySchema),
+  summary: projectFileGraphSummarySchema
+});
+
 export const projectHealthSchema = z.strictObject({
   canOpenEditableWorkflows: z.boolean(),
   canOpenReadOnlyWorkflows: z.boolean(),
@@ -92,8 +125,17 @@ export const projectHealthSchema = z.strictObject({
 });
 
 export const openProjectResponseSchema = z.strictObject({
+  fileGraph: projectFileGraphSchema,
   health: projectHealthSchema,
   projectId: z.string()
+});
+
+export const validateProjectResponseSchema = z.strictObject({
+  health: projectHealthSchema
+});
+
+export const refreshFileGraphResponseSchema = z.strictObject({
+  fileGraph: projectFileGraphSchema
 });
 
 export function createBridgeRequestSchema<TPayloadSchema extends ZodTypeAny>(
@@ -133,4 +175,7 @@ export type ApiDiagnostic = z.infer<typeof apiDiagnosticSchema>;
 export type ApiError = z.infer<typeof apiErrorSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
+export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;
 export type ProjectHealth = z.infer<typeof projectHealthSchema>;
+export type RefreshFileGraphResponse = z.infer<typeof refreshFileGraphResponseSchema>;
+export type ValidateProjectResponse = z.infer<typeof validateProjectResponseSchema>;

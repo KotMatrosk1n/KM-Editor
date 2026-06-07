@@ -18,7 +18,7 @@ public sealed class BridgeResponseTests
             Paths: [],
             FileGraph: new ProjectFileGraphSummaryDto(BaseFileCount: 0, LayeredFileCount: 0, OverrideCount: 0, LayeredOnlyCount: 0),
             Diagnostics: []);
-        var payload = new OpenProjectResponse("project-1", health);
+        var payload = new OpenProjectResponse("project-1", health, CreateEmptyGraph());
 
         var response = BridgeResponse<OpenProjectResponse>.Success(payload, requestId: "request-1");
 
@@ -39,5 +39,12 @@ public sealed class BridgeResponseTests
         Assert.Null(response.Payload);
         Assert.Same(error, response.Error);
         Assert.Equal("request-2", response.RequestId);
+    }
+
+    private static ProjectFileGraphDto CreateEmptyGraph()
+    {
+        return new ProjectFileGraphDto(
+            Entries: [],
+            Summary: new ProjectFileGraphSummaryDto(BaseFileCount: 0, LayeredFileCount: 0, OverrideCount: 0, LayeredOnlyCount: 0));
     }
 }

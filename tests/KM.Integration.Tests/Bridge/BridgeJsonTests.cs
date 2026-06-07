@@ -61,7 +61,19 @@ public sealed class BridgeJsonTests
             FileGraph: new ProjectFileGraphSummaryDto(BaseFileCount: 1, LayeredFileCount: 0, OverrideCount: 0, LayeredOnlyCount: 0),
             Diagnostics: []);
         var response = BridgeResponse<OpenProjectResponse>.Success(
-            new OpenProjectResponse("project-1", health),
+            new OpenProjectResponse(
+                "project-1",
+                health,
+                new ProjectFileGraphDto(
+                    Entries:
+                    [
+                        new ProjectFileGraphEntryDto(
+                            RelativePath: "romfs/data/items.bin",
+                            BaseFile: new ProjectFileReferenceDto(ProjectFileLayerDto.Base, "romfs/data/items.bin"),
+                            LayeredFile: new ProjectFileReferenceDto(ProjectFileLayerDto.Layered, "romfs/data/items.bin"),
+                            State: ProjectFileGraphEntryStateDto.LayeredOverride),
+                    ],
+                    Summary: new ProjectFileGraphSummaryDto(BaseFileCount: 1, LayeredFileCount: 1, OverrideCount: 1, LayeredOnlyCount: 0))),
             requestId: "request-3");
 
         var json = JsonSerializer.Serialize(response, BridgeJson.SerializerOptions);
@@ -69,5 +81,7 @@ public sealed class BridgeJsonTests
         Assert.Contains("\"state\":\"editableReady\"", json);
         Assert.Contains("\"role\":\"baseRomFs\"", json);
         Assert.Contains("\"status\":\"valid\"", json);
+        Assert.Contains("\"layer\":\"base\"", json);
+        Assert.Contains("\"state\":\"layeredOverride\"", json);
     }
 }
