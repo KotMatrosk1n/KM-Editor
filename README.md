@@ -10,3 +10,4 @@ KM Editor is a project for a modern Pokemon Sword/Shield editor.
 - [Priority 0 UX and project model](docs/priority-0/ux-project-model.md)
 - [Priority 1 technical spine](docs/priority-1/technical-spine.md)
 - [Priority 2 framework and library stack](docs/priority-2/framework-stack.md)
+- [Priority 3 workbench navigation model](docs/priority-3/workbench-navigation.md)
