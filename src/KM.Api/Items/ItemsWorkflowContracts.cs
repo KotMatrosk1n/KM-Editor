@@ -1,12 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
 
 namespace KM.Api.Items;
 
 public sealed record LoadItemsWorkflowRequest(ProjectPathsDto Paths);
+
+public sealed record UpdateItemBuyPriceRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    int ItemId,
+    int BuyPrice);
+
+public sealed record UpdateItemBuyPriceResponse(
+    ItemsWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record ItemProvenanceDto(
     string SourceFile,

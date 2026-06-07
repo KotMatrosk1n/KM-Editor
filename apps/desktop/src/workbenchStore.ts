@@ -2,6 +2,8 @@
 
 import { create } from 'zustand';
 import {
+  type ApiDiagnostic,
+  type EditSession,
   type ItemsWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
@@ -25,6 +27,8 @@ export type OpenProjectState = {
 type WorkbenchState = {
   activeSection: WorkbenchSection;
   draftPaths: ProjectPathDraft;
+  editSession: EditSession | null;
+  editValidationDiagnostics: ApiDiagnostic[];
   itemSearchText: string;
   itemsWorkflow: ItemsWorkflow | null;
   openProject: OpenProjectState | null;
@@ -33,6 +37,8 @@ type WorkbenchState = {
   workflows: WorkflowSummary[];
   setDraftPath: (field: keyof ProjectPathDraft, value: string) => void;
   setActiveSection: (activeSection: WorkbenchSection) => void;
+  setEditSession: (editSession: EditSession | null) => void;
+  setEditValidationDiagnostics: (diagnostics: ApiDiagnostic[]) => void;
   setItemsWorkflow: (itemsWorkflow: ItemsWorkflow) => void;
   setItemSearchText: (itemSearchText: string) => void;
   setOpenProject: (project: OpenProjectState) => void;
@@ -49,6 +55,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     baseRomFsPath: '',
     outputRootPath: ''
   },
+  editSession: null,
+  editValidationDiagnostics: [],
   itemSearchText: '',
   itemsWorkflow: null,
   openProject: null,
@@ -63,15 +71,36 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         [field]: value
       }
     })),
+  setEditSession: (editSession) => set({ editSession }),
+  setEditValidationDiagnostics: (editValidationDiagnostics) => set({ editValidationDiagnostics }),
   setItemsWorkflow: (itemsWorkflow) =>
-    set({
-      activeSection: 'items',
-      itemSearchText: '',
-      itemsWorkflow,
-      selectedItemId: itemsWorkflow.items[0]?.itemId ?? null
+    set((state) => {
+      const selectedItemId = itemsWorkflow.items.some(
+        (item) => item.itemId === state.selectedItemId
+      )
+        ? state.selectedItemId
+        : (itemsWorkflow.items[0]?.itemId ?? null);
+
+      return {
+        activeSection: 'items',
+        editSession: null,
+        editValidationDiagnostics: [],
+        itemSearchText: '',
+        itemsWorkflow,
+        selectedItemId
+      };
     }),
   setItemSearchText: (itemSearchText) => set({ itemSearchText }),
-  setOpenProject: (openProject) => set({ openProject, projectStatus: 'open' }),
+  setOpenProject: (openProject) =>
+    set({
+      editSession: null,
+      editValidationDiagnostics: [],
+      itemSearchText: '',
+      itemsWorkflow: null,
+      openProject,
+      projectStatus: 'open',
+      selectedItemId: null
+    }),
   setProjectHealth: (health) =>
     set((state) => ({
       openProject: state.openProject

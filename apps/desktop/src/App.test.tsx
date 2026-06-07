@@ -16,6 +16,8 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: ''
       },
+      editSession: null,
+      editValidationDiagnostics: [],
       itemSearchText: '',
       itemsWorkflow: null,
       openProject: null,
@@ -81,6 +83,34 @@ describe('App', () => {
     expect(screen.getByText('Base only')).toBeInTheDocument();
   });
 
+  it('starts an Items edit session, saves a pending buy price, and validates it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Items' }));
+    await user.click(await screen.findByRole('button', { name: 'Start Edit Session' }));
+
+    const buyPriceInput = screen.getByLabelText('Buy price');
+    await user.clear(buyPriceInput);
+    await user.type(buyPriceInput, '450');
+    await user.click(screen.getByRole('button', { name: 'Save Pending' }));
+
+    expect(await screen.findByDisplayValue('450')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Potion buy price to 450.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending item buy price change is valid.')).toBeInTheDocument();
+  });
+
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
     const user = userEvent.setup();
     render(
@@ -97,9 +127,12 @@ describe('App', () => {
   });
 });
 
-function createMockProjectBridge(overrides: Partial<ProjectBridge> = {}): ProjectBridge {
+function createMockProjectBridge(
+  overrides: Partial<ProjectBridge> = {},
+  canEdit = false
+): ProjectBridge {
   const health: ProjectHealth = {
-    canOpenEditableWorkflows: false,
+    canOpenEditableWorkflows: canEdit,
     canOpenReadOnlyWorkflows: true,
     diagnostics: [],
     fileGraph: {
@@ -126,12 +159,12 @@ function createMockProjectBridge(overrides: Partial<ProjectBridge> = {}): Projec
       {
         diagnostics: [],
         isRequired: false,
-        path: null,
+        path: canEdit ? 'output' : null,
         role: 'outputRoot',
-        status: 'notSet'
+        status: canEdit ? 'valid' : 'notSet'
       }
     ],
-    state: 'readOnlyReady'
+    state: canEdit ? 'editableReady' : 'readOnlyReady'
   };
   const fileGraph: ProjectFileGraph = {
     entries: [],
@@ -170,7 +203,7 @@ function createMockProjectBridge(overrides: Partial<ProjectBridge> = {}): Projec
       totalItemCount: 2
     },
     summary: {
-      availability: 'readOnly',
+      availability: canEdit ? 'available' : 'readOnly',
       description: 'Item records, names, and source provenance.',
       diagnostics: [],
       id: 'items',
@@ -194,6 +227,55 @@ function createMockProjectBridge(overrides: Partial<ProjectBridge> = {}): Projec
         projectId: 'project-1'
       }),
     refreshFileGraph: () => Promise.resolve({ fileGraph }),
+    startEditSession: () =>
+      Promise.resolve({
+        session: {
+          hasPendingChanges: false,
+          pendingEdits: [],
+          sessionId: 'session-1'
+        }
+      }),
+    updateItemBuyPrice: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.items',
+              field: 'buyPrice',
+              newValue: request.buyPrice.toString(),
+              recordId: request.itemId.toString(),
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/kmeditor/items.readmodel.json'
+                }
+              ],
+              summary: `Set Potion buy price to ${request.buyPrice}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...itemsWorkflow,
+          items: itemsWorkflow.items.map((item) =>
+            item.itemId === request.itemId ? { ...item, buyPrice: request.buyPrice } : item
+          )
+        }
+      }),
+    validateEditSession: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            field: 'buyPrice',
+            message: 'Pending item buy price change is valid.',
+            severity: 'info'
+          }
+        ],
+        isValid: true,
+        session: request.session
+      }),
     validateProject: () => Promise.resolve({ health }),
     ...overrides
   };

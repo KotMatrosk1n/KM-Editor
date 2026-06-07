@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Bridge;
+using KM.Api.Diagnostics;
+using KM.Api.Editing;
 using KM.Api.Items;
 using KM.Api.Projects;
 using KM.Api.Workflows;
@@ -142,6 +144,83 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("Potion", item.Name);
         Assert.Equal("romfs/kmeditor/items.readmodel.json", item.Provenance.SourceFile);
         Assert.Equal(ProjectFileLayerDto.Base, item.Provenance.SourceLayer);
+    }
+
+    [Fact]
+    public void DispatchUpdateItemBuyPriceReturnsPendingEditSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/items.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "items": [
+                {
+                  "itemId": 1,
+                  "name": "Potion",
+                  "category": "Medicine",
+                  "buyPrice": 300,
+                  "sellPrice": 150
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdateItemBuyPrice,
+            new UpdateItemBuyPriceRequest(temp.Paths, Session: null, ItemId: 1, BuyPrice: 450),
+            requestId: "request-items-edit");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdateItemBuyPriceResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.True(response.Payload.Session.HasPendingChanges);
+        Assert.Equal(450, Assert.Single(response.Payload.Workflow.Items).BuyPrice);
+        Assert.Equal("450", Assert.Single(response.Payload.Session.PendingEdits).NewValue);
+    }
+
+    [Fact]
+    public void DispatchValidateEditSessionReturnsValidationPayload()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/items.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "items": [
+                {
+                  "itemId": 1,
+                  "name": "Potion",
+                  "category": "Medicine",
+                  "buyPrice": 300,
+                  "sellPrice": 150
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var sessionResponseJson = new ProjectBridgeDispatcher().Dispatch(SerializeRequest(
+            KmCommandNames.UpdateItemBuyPrice,
+            new UpdateItemBuyPriceRequest(temp.Paths, Session: null, ItemId: 1, BuyPrice: 450),
+            requestId: "request-items-edit"));
+        var sessionResponse = DeserializeResponse<UpdateItemBuyPriceResponse>(sessionResponseJson);
+        Assert.NotNull(sessionResponse.Payload);
+        var requestJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, sessionResponse.Payload.Session),
+            requestId: "request-session-validate");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<ValidateEditSessionResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.True(response.Payload.IsValid);
+        Assert.Contains(response.Payload.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Info);
     }
 
     [Fact]

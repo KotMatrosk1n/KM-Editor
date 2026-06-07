@@ -1,8 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using KM.Api.Projects;
 
 namespace KM.Api.Editing;
+
+public sealed record StartEditSessionRequest(ProjectPathsDto Paths);
+
+public sealed record StartEditSessionResponse(EditSessionDto Session);
+
+public sealed record ValidateEditSessionRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto Session);
+
+public sealed record ValidateEditSessionResponse(
+    EditSessionDto Session,
+    bool IsValid,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record EditSessionDto(
     string SessionId,
@@ -12,7 +26,10 @@ public sealed record EditSessionDto(
 public sealed record PendingEditDto(
     string Domain,
     string Summary,
-    IReadOnlyList<FileProvenanceDto> Sources);
+    IReadOnlyList<FileProvenanceDto> Sources,
+    string? RecordId = null,
+    string? Field = null,
+    string? NewValue = null);
 
 public enum FileLayerDto
 {

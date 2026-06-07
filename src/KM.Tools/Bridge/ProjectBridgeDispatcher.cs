@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Bridge;
+using KM.Api.Editing;
 using KM.Api.Items;
 using KM.Api.Projects;
 using KM.Api.Workflows;
 using KM.Core.Projects;
+using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Text.Json;
 
@@ -13,13 +15,16 @@ namespace KM.Tools.Bridge;
 public sealed class ProjectBridgeDispatcher
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
+    private readonly SwShItemsEditSessionService itemsEditSessionService;
     private readonly SwShWorkflowService swShWorkflowService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
+        SwShItemsEditSessionService? itemsEditSessionService = null,
         SwShWorkflowService? swShWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
+        this.itemsEditSessionService = itemsEditSessionService ?? new SwShItemsEditSessionService(this.projectWorkspaceService);
         this.swShWorkflowService = swShWorkflowService ?? new SwShWorkflowService(this.projectWorkspaceService);
     }
 
@@ -42,6 +47,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.RefreshFileGraph => DispatchRefreshFileGraph(requestJson),
                 KmCommandNames.ListWorkflows => DispatchListWorkflows(requestJson),
                 KmCommandNames.LoadItemsWorkflow => DispatchLoadItemsWorkflow(requestJson),
+                KmCommandNames.UpdateItemBuyPrice => DispatchUpdateItemBuyPrice(requestJson),
+                KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
+                KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 null => SerializeFailure("bridge.missingCommand", "Bridge request is missing a command.", envelope?.RequestId),
                 _ => SerializeFailure(
                     "bridge.unsupportedCommand",
@@ -99,6 +107,43 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<LoadItemsWorkflowRequest>(requestJson);
         var workflow = swShWorkflowService.LoadItems(ProjectBridgeMapper.ToCore(request.Payload.Paths));
         var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateItemBuyPrice(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateItemBuyPriceRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = itemsEditSessionService.UpdateBuyPrice(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            request.Payload.ItemId,
+            request.Payload.BuyPrice);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStartEditSession(string requestJson)
+    {
+        var request = DeserializeRequest<StartEditSessionRequest>(requestJson);
+        _ = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = new StartEditSessionResponse(
+            EditSessionBridgeMapper.ToDto(itemsEditSessionService.StartSession()));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchValidateEditSession(string requestJson)
+    {
+        var request = DeserializeRequest<ValidateEditSessionRequest>(requestJson);
+        var validation = itemsEditSessionService.Validate(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            EditSessionBridgeMapper.ToCore(request.Payload.Session));
+        var response = SwShBridgeMapper.ToDto(validation);
 
         return SerializeSuccess(response, request.RequestId);
     }

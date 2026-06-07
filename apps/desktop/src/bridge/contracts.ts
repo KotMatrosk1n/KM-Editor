@@ -8,6 +8,7 @@ export const kmCommandNameValues = [
   'project.fileGraph.refresh',
   'workflow.list',
   'items.load',
+  'items.buyPrice.update',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -29,6 +30,7 @@ export const kmCommandNames = {
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
+  updateItemBuyPrice: 'items.buyPrice.update',
   validateEditSession: 'editSession.validate',
   validateProject: 'project.validate'
 } as const satisfies Record<string, KmCommandName>;
@@ -76,6 +78,10 @@ export const loadItemsWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
+export const startEditSessionRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
 export const projectHealthStateSchema = z.enum([
   'needsPaths',
   'readOnlyReady',
@@ -113,6 +119,26 @@ export const projectFileLayerSchema = z.enum(['base', 'layered', 'pending', 'gen
 export const projectFileReferenceSchema = z.strictObject({
   layer: projectFileLayerSchema,
   relativePath: z.string()
+});
+
+export const pendingEditSchema = z.strictObject({
+  domain: z.string(),
+  field: z.string().nullable().optional(),
+  newValue: z.string().nullable().optional(),
+  recordId: z.string().nullable().optional(),
+  sources: z.array(projectFileReferenceSchema),
+  summary: z.string()
+});
+
+export const editSessionSchema = z.strictObject({
+  hasPendingChanges: z.boolean(),
+  pendingEdits: z.array(pendingEditSchema),
+  sessionId: z.string()
+});
+
+export const validateEditSessionRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema
 });
 
 export const projectFileGraphEntrySchema = z.strictObject({
@@ -195,6 +221,29 @@ export const loadItemsWorkflowResponseSchema = z.strictObject({
   workflow: itemsWorkflowSchema
 });
 
+export const updateItemBuyPriceRequestSchema = z.strictObject({
+  buyPrice: z.number().int().nonnegative(),
+  itemId: z.number().int().nonnegative(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const updateItemBuyPriceResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: itemsWorkflowSchema
+});
+
+export const startEditSessionResponseSchema = z.strictObject({
+  session: editSessionSchema
+});
+
+export const validateEditSessionResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  isValid: z.boolean(),
+  session: editSessionSchema
+});
+
 export function createBridgeRequestSchema<TPayloadSchema extends ZodTypeAny>(
   payloadSchema: TPayloadSchema
 ) {
@@ -230,6 +279,7 @@ export function createBridgeResponseSchema<TPayloadSchema extends ZodTypeAny>(
 
 export type ApiDiagnostic = z.infer<typeof apiDiagnosticSchema>;
 export type ApiError = z.infer<typeof apiErrorSchema>;
+export type EditSession = z.infer<typeof editSessionSchema>;
 export type ItemRecord = z.infer<typeof itemRecordSchema>;
 export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
@@ -244,6 +294,12 @@ export type ProjectPathRole = z.infer<typeof projectPathRoleSchema>;
 export type ProjectPathValidation = z.infer<typeof projectPathValidationSchema>;
 export type RefreshFileGraphRequest = z.infer<typeof refreshFileGraphRequestSchema>;
 export type RefreshFileGraphResponse = z.infer<typeof refreshFileGraphResponseSchema>;
+export type StartEditSessionRequest = z.infer<typeof startEditSessionRequestSchema>;
+export type StartEditSessionResponse = z.infer<typeof startEditSessionResponseSchema>;
+export type UpdateItemBuyPriceRequest = z.infer<typeof updateItemBuyPriceRequestSchema>;
+export type UpdateItemBuyPriceResponse = z.infer<typeof updateItemBuyPriceResponseSchema>;
+export type ValidateEditSessionRequest = z.infer<typeof validateEditSessionRequestSchema>;
+export type ValidateEditSessionResponse = z.infer<typeof validateEditSessionResponseSchema>;
 export type ValidateProjectRequest = z.infer<typeof validateProjectRequestSchema>;
 export type ValidateProjectResponse = z.infer<typeof validateProjectResponseSchema>;
 export type WorkflowSummary = z.infer<typeof workflowSummarySchema>;

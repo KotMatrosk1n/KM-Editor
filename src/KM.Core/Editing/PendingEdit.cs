@@ -7,4 +7,7 @@ namespace KM.Core.Editing;
 public sealed record PendingEdit(
     string Domain,
     string Summary,
-    IReadOnlyList<ProjectFileReference> Sources);
+    IReadOnlyList<ProjectFileReference> Sources,
+    string? RecordId = null,
+    string? Field = null,
+    string? NewValue = null);

@@ -12,6 +12,7 @@ public static class KmCommandNames
     public const string RefreshFileGraph = "project.fileGraph.refresh";
     public const string ListWorkflows = "workflow.list";
     public const string LoadItemsWorkflow = "items.load";
+    public const string UpdateItemBuyPrice = "items.buyPrice.update";
     public const string StartEditSession = "editSession.start";
     public const string GetEditSession = "editSession.get";
     public const string DiscardEditSession = "editSession.discard";
