@@ -13,6 +13,7 @@ import {
   type ProjectHealth,
   type RaidRewardsWorkflow,
   type ShopsWorkflow,
+  type SpreadsheetImportWorkflow,
   type TextWorkflow,
   type TrainersWorkflow,
   type WorkflowSummary
@@ -49,11 +50,16 @@ describe('App', () => {
       raidRewardsWorkflow: null,
       royalCandySearchText: '',
       royalCandyWorkflow: null,
+      spreadsheetImportPreview: null,
+      spreadsheetImportSearchText: '',
+      spreadsheetImportSourcePath: '',
+      spreadsheetImportWorkflow: null,
       selectedEncounterTableId: null,
       selectedExeFsCheckId: null,
       selectedExeFsPatchId: null,
       selectedRoyalCandyCheckId: null,
       selectedRoyalCandyWorkflowId: null,
+      selectedSpreadsheetImportProfileId: null,
       selectedFlagId: null,
       selectedItemId: null,
       selectedPlacementObjectId: null,
@@ -124,7 +130,7 @@ describe('App', () => {
       screen.getByRole('heading', { level: 3, name: 'Royal Candy Workflows' })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { level: 3, name: 'Spreadsheet Import Tooling' })
+      screen.getByRole('heading', { level: 3, name: 'Spreadsheet Import' })
     ).toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
   });
@@ -148,6 +154,30 @@ describe('App', () => {
     expect(screen.queryByText('Potion')).not.toBeInTheDocument();
     expect(screen.getByText('romfs/bin/pml/item/item.dat')).toBeInTheDocument();
     expect(screen.getByText('Base only')).toBeInTheDocument();
+  });
+
+  it('previews a spreadsheet import into an Items edit session', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Import' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Spreadsheet Import' })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Items Price CSV/TSV').length).toBeGreaterThan(0);
+
+    await user.type(screen.getByLabelText('CSV or TSV source path'), 'items.csv');
+    await user.click(screen.getByRole('button', { name: 'Preview Import' }));
+
+    expect(await screen.findByText('Potion: Buy price -> 450.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+    expect(screen.getByText('Set Potion buy price to 450.')).toBeInTheDocument();
   });
 
   it('starts an Items edit session, saves a pending buy price, validates it, reviews a plan, and applies it', async () => {
@@ -1239,10 +1269,57 @@ function createMockProjectBridge(
   };
   const spreadsheetImportWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'Spreadsheet import profiles, target workflows, columns, and source provenance.',
+    description: 'CSV and TSV import profiles that execute through backend edit sessions.',
     diagnostics: [],
     id: 'spreadsheetImport',
-    label: 'Spreadsheet Import Tooling'
+    label: 'Spreadsheet Import'
+  };
+  const spreadsheetImportWorkflow: SpreadsheetImportWorkflow = {
+    diagnostics: [],
+    profiles: [
+      {
+        columns: [
+          {
+            column: 1,
+            description: 'Existing item ID.',
+            header: 'ItemId',
+            isRequired: true,
+            valueKind: 'integer'
+          },
+          {
+            column: 2,
+            description: 'New buy price.',
+            header: 'BuyPrice',
+            isRequired: false,
+            valueKind: 'integer'
+          },
+          {
+            column: 3,
+            description: 'New Watts price.',
+            header: 'WattsPrice',
+            isRequired: false,
+            valueKind: 'integer'
+          }
+        ],
+        description: 'Imports item price columns into the Items workflow for change-plan review.',
+        name: 'Items Price CSV/TSV',
+        profileId: 'items-price-csv',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/pml/item/item.dat',
+          sourceLayer: 'base'
+        },
+        sourceKind: 'csv/tsv',
+        status: canEdit ? 'available' : 'readOnly',
+        targetWorkflow: 'items'
+      }
+    ],
+    stats: {
+      sourceFileCount: 1,
+      totalColumnCount: 3,
+      totalProfileCount: 1
+    },
+    summary: spreadsheetImportWorkflowSummary
   };
 
   return {
@@ -1500,16 +1577,69 @@ function createMockProjectBridge(
       }),
     loadSpreadsheetImportWorkflow: () =>
       Promise.resolve({
-        workflow: {
-          diagnostics: [],
-          profiles: [],
-          stats: {
-            sourceFileCount: 0,
-            totalColumnCount: 0,
-            totalProfileCount: 0
-          },
-          summary: spreadsheetImportWorkflowSummary
-        }
+        workflow: spreadsheetImportWorkflow
+      }),
+    previewSpreadsheetImport: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Spreadsheet import preview accepted 1 row and rejected 0.',
+            severity: 'info'
+          }
+        ],
+        preview: {
+          acceptedRowCount: 1,
+          profileId: request.profileId,
+          rejectedRowCount: 0,
+          rows: [
+            {
+              cells: [
+                {
+                  field: 'itemId',
+                  header: 'ItemId',
+                  message: 'Potion',
+                  status: 'accepted',
+                  value: '1'
+                },
+                {
+                  field: 'buyPrice',
+                  header: 'BuyPrice',
+                  message: 'Pending edit.',
+                  status: 'accepted',
+                  value: '450'
+                }
+              ],
+              diagnostics: [],
+              recordId: '1',
+              rowNumber: 2,
+              status: 'accepted',
+              summary: 'Potion: Buy price -> 450.'
+            }
+          ],
+          skippedRowCount: 0,
+          sourcePath: request.sourcePath,
+          totalRowCount: 1
+        },
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.items',
+              field: 'buyPrice',
+              newValue: '450',
+              recordId: '1',
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/pml/item/item.dat'
+                }
+              ],
+              summary: 'Set Potion buy price to 450.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-import'
+        },
+        workflow: spreadsheetImportWorkflow
       }),
     loadPlacementWorkflow: () =>
       Promise.resolve({

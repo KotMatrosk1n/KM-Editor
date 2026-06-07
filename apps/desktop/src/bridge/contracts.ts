@@ -25,6 +25,7 @@ export const kmCommandNameValues = [
   'exefsPatches.load',
   'royalCandy.load',
   'spreadsheetImport.load',
+  'spreadsheetImport.preview',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -59,6 +60,7 @@ export const kmCommandNames = {
   loadExeFsPatchWorkflow: 'exefsPatches.load',
   loadRoyalCandyWorkflow: 'royalCandy.load',
   loadSpreadsheetImportWorkflow: 'spreadsheetImport.load',
+  previewSpreadsheetImport: 'spreadsheetImport.preview',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -222,6 +224,13 @@ export const applyChangePlanRequestSchema = z.strictObject({
   changePlan: z.lazy(() => changePlanSchema),
   paths: projectPathsSchema,
   session: editSessionSchema
+});
+
+export const previewSpreadsheetImportRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  profileId: z.string(),
+  session: editSessionSchema.nullable(),
+  sourcePath: z.string()
 });
 
 export const projectFileGraphEntrySchema = z.strictObject({
@@ -870,6 +879,40 @@ export const loadSpreadsheetImportWorkflowResponseSchema = z.strictObject({
   workflow: spreadsheetImportWorkflowSchema
 });
 
+export const spreadsheetImportCellPreviewRecordSchema = z.strictObject({
+  field: z.string(),
+  header: z.string(),
+  message: z.string(),
+  status: z.string(),
+  value: z.string()
+});
+
+export const spreadsheetImportRowPreviewRecordSchema = z.strictObject({
+  cells: z.array(spreadsheetImportCellPreviewRecordSchema),
+  diagnostics: z.array(apiDiagnosticSchema),
+  recordId: z.string(),
+  rowNumber: z.number().int().nonnegative(),
+  status: z.string(),
+  summary: z.string()
+});
+
+export const spreadsheetImportPreviewSchema = z.strictObject({
+  acceptedRowCount: z.number().int().nonnegative(),
+  profileId: z.string(),
+  rejectedRowCount: z.number().int().nonnegative(),
+  rows: z.array(spreadsheetImportRowPreviewRecordSchema),
+  skippedRowCount: z.number().int().nonnegative(),
+  sourcePath: z.string(),
+  totalRowCount: z.number().int().nonnegative()
+});
+
+export const previewSpreadsheetImportResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  preview: spreadsheetImportPreviewSchema,
+  session: editSessionSchema,
+  workflow: spreadsheetImportWorkflowSchema
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -1089,6 +1132,10 @@ export type RoyalCandyWorkflowCheckRecord = z.infer<
 >;
 export type RoyalCandyWorkflowRecord = z.infer<typeof royalCandyWorkflowRecordSchema>;
 export type RoyalCandyWorkflow = z.infer<typeof royalCandyWorkflowSchema>;
+export type SpreadsheetImportProfileRecord = z.infer<
+  typeof spreadsheetImportProfileRecordSchema
+>;
+export type SpreadsheetImportPreview = z.infer<typeof spreadsheetImportPreviewSchema>;
 export type SpreadsheetImportWorkflow = z.infer<typeof spreadsheetImportWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
@@ -1125,6 +1172,12 @@ export type LoadSpreadsheetImportWorkflowRequest = z.infer<
 >;
 export type LoadSpreadsheetImportWorkflowResponse = z.infer<
   typeof loadSpreadsheetImportWorkflowResponseSchema
+>;
+export type PreviewSpreadsheetImportRequest = z.infer<
+  typeof previewSpreadsheetImportRequestSchema
+>;
+export type PreviewSpreadsheetImportResponse = z.infer<
+  typeof previewSpreadsheetImportResponseSchema
 >;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;

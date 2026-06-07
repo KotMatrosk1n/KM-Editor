@@ -1229,6 +1229,29 @@ h2 {
   grid-template-columns: minmax(150px, 0.9fr) minmax(92px, 0.45fr) minmax(88px, 0.45fr) minmax(150px, 0.9fr) minmax(220px, 1.4fr);
 }
 
+.spreadsheet-import-toolbar {
+  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
+}
+
+.spreadsheet-profile-row {
+  grid-template-columns: minmax(180px, 1.2fr) minmax(92px, 0.45fr) minmax(96px, 0.45fr) minmax(96px, 0.45fr) minmax(72px, 0.35fr);
+}
+
+.spreadsheet-preview-row {
+  grid-template-columns: 72px minmax(92px, 0.45fr) minmax(96px, 0.45fr) minmax(240px, 1.5fr);
+}
+
+.spreadsheet-source-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  background: #f5f6f4;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
 .exefs-row:last-child {
   border-bottom: 0;
 }
@@ -1548,6 +1571,8 @@ h2 {
 
   .workflow-row,
   .items-toolbar,
+  .spreadsheet-import-toolbar,
+  .spreadsheet-source-row,
   .items-layout,
   .text-layout,
   .trainers-layout,
@@ -1630,7 +1655,9 @@ h2 {
   }
 
   .exefs-row,
-  .exefs-check-row {
+  .exefs-check-row,
+  .spreadsheet-profile-row,
+  .spreadsheet-preview-row {
     grid-template-columns: minmax(120px, 1fr) minmax(92px, 0.6fr) minmax(120px, 1fr);
   }
 

@@ -24,6 +24,6 @@ test('loads the workbench shell and switches sections', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Flagwork and Save Inspectors' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'ExeFS Patch Manager' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Royal Candy Workflows' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Spreadsheet Import Tooling' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Spreadsheet Import' })).toBeVisible();
   await expect(page.getByText('Disabled', { exact: true })).toHaveCount(11);
 });

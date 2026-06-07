@@ -195,7 +195,7 @@ describe('projectBridge', () => {
                   'Spreadsheet import profiles, target workflows, columns, and source provenance.',
                 diagnostics: [],
                 id: 'spreadsheetImport',
-                label: 'Spreadsheet Import Tooling'
+                label: 'Spreadsheet Import'
               }
             ]
           }
@@ -807,14 +807,14 @@ describe('projectBridge', () => {
                     }
                   ],
                   description: 'Import item price columns from a workbook fixture.',
-                  name: 'Items Price Sheet',
-                  profileId: 'items_price_sheet',
+                  name: 'Items Price CSV/TSV',
+                  profileId: 'items-price-csv',
                   provenance: {
                     fileState: 'baseOnly',
-                    sourceFile: 'romfs/kmeditor/spreadsheet-import.profiles.readmodel.json',
+                    sourceFile: 'romfs/bin/pml/item/item.dat',
                     sourceLayer: 'base'
                   },
-                  sourceKind: 'xlsx',
+                  sourceKind: 'csv/tsv',
                   status: 'available',
                   targetWorkflow: 'items'
                 }
@@ -827,10 +827,10 @@ describe('projectBridge', () => {
               summary: {
                 availability: 'readOnly',
                 description:
-                  'Spreadsheet import profiles, target workflows, columns, and source provenance.',
+                  'CSV and TSV import profiles that execute through backend edit sessions.',
                 diagnostics: [],
                 id: 'spreadsheetImport',
-                label: 'Spreadsheet Import Tooling'
+                label: 'Spreadsheet Import'
               }
             }
           }
@@ -945,7 +945,128 @@ describe('projectBridge', () => {
     expect(exeFsPatches.workflow.patches[0]?.targetFile).toBe('exefs/main');
     expect(royalCandy.workflow.workflows[0]?.name).toBe('Install Unlimited Royal Candy');
     expect(royalCandy.workflow.outputs[0]?.relativePath).toBe('romfs/bin/pml/item/item.dat');
-    expect(spreadsheetImport.workflow.profiles[0]?.name).toBe('Items Price Sheet');
+    expect(spreadsheetImport.workflow.profiles[0]?.name).toBe('Items Price CSV/TSV');
+  });
+
+  it('sends Spreadsheet Import previews through the configured transport', async () => {
+    let capturedRequest: unknown;
+    const spreadsheetImportWorkflow = {
+      diagnostics: [],
+      profiles: [
+        {
+          columns: [
+            {
+              column: 1,
+              description: 'Existing item ID.',
+              header: 'ItemId',
+              isRequired: true,
+              valueKind: 'integer'
+            }
+          ],
+          description: 'Imports item price columns into the Items workflow for change-plan review.',
+          name: 'Items Price CSV/TSV',
+          profileId: 'items-price-csv',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/pml/item/item.dat',
+            sourceLayer: 'base'
+          },
+          sourceKind: 'csv/tsv',
+          status: 'available',
+          targetWorkflow: 'items'
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalColumnCount: 1,
+        totalProfileCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'CSV and TSV import profiles that execute through backend edit sessions.',
+        diagnostics: [],
+        id: 'spreadsheetImport',
+        label: 'Spreadsheet Import'
+      }
+    } as const;
+    const bridge = createProjectBridge(async (requestJson) => {
+      capturedRequest = JSON.parse(requestJson);
+
+      return JSON.stringify({
+        error: null,
+        payload: {
+          diagnostics: [
+            {
+              message: 'Spreadsheet import preview accepted 1 row and rejected 0.',
+              severity: 'info'
+            }
+          ],
+          preview: {
+            acceptedRowCount: 1,
+            profileId: 'items-price-csv',
+            rejectedRowCount: 0,
+            rows: [
+              {
+                cells: [
+                  {
+                    field: 'itemId',
+                    header: 'ItemId',
+                    message: 'Potion',
+                    status: 'accepted',
+                    value: '1'
+                  }
+                ],
+                diagnostics: [],
+                recordId: '1',
+                rowNumber: 2,
+                status: 'accepted',
+                summary: 'Potion: Buy price -> 450.'
+              }
+            ],
+            skippedRowCount: 0,
+            sourcePath: 'items.csv',
+            totalRowCount: 1
+          },
+          session: {
+            hasPendingChanges: true,
+            pendingEdits: [
+              {
+                domain: 'workflow.items',
+                field: 'buyPrice',
+                newValue: '450',
+                recordId: '1',
+                sources: [
+                  {
+                    layer: 'base',
+                    relativePath: 'romfs/bin/pml/item/item.dat'
+                  }
+                ],
+                summary: 'Set Potion buy price to 450.'
+              }
+            ],
+            sessionId: 'session-1'
+          },
+          workflow: spreadsheetImportWorkflow
+        }
+      });
+    });
+
+    const response = await bridge.previewSpreadsheetImport({
+      paths: editableProjectPaths,
+      profileId: 'items-price-csv',
+      session: null,
+      sourcePath: 'items.csv'
+    });
+
+    expect(capturedRequest).toMatchObject({
+      command: 'spreadsheetImport.preview',
+      payload: {
+        profileId: 'items-price-csv',
+        sourcePath: 'items.csv'
+      }
+    });
+    expect(response.preview.acceptedRowCount).toBe(1);
+    expect(response.session.pendingEdits[0]?.domain).toBe('workflow.items');
   });
 
   it('sends Placement object updates through the configured transport', async () => {

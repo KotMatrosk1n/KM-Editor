@@ -114,6 +114,17 @@ public static class SwShBridgeMapper
         return new LoadSpreadsheetImportWorkflowResponse(ToSpreadsheetImportWorkflowDto(workflow));
     }
 
+    public static PreviewSpreadsheetImportResponse ToDto(SwShSpreadsheetImportExecutionResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new PreviewSpreadsheetImportResponse(
+            ToSpreadsheetImportWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            ToDto(result.Preview),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -824,6 +835,41 @@ public static class SwShBridgeMapper
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static SpreadsheetImportPreviewDto ToDto(SwShSpreadsheetImportPreview preview)
+    {
+        return new SpreadsheetImportPreviewDto(
+            preview.ProfileId,
+            preview.SourcePath,
+            preview.TotalRowCount,
+            preview.AcceptedRowCount,
+            preview.RejectedRowCount,
+            preview.SkippedRowCount,
+            preview.Rows.Select(ToDto).ToArray());
+    }
+
+    private static SpreadsheetImportRowPreviewRecordDto ToDto(
+        SwShSpreadsheetImportRowPreviewRecord row)
+    {
+        return new SpreadsheetImportRowPreviewRecordDto(
+            row.RowNumber,
+            row.RecordId,
+            row.Status,
+            row.Summary,
+            row.Cells.Select(ToDto).ToArray(),
+            row.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static SpreadsheetImportCellPreviewRecordDto ToDto(
+        SwShSpreadsheetImportCellPreviewRecord cell)
+    {
+        return new SpreadsheetImportCellPreviewRecordDto(
+            cell.Header,
+            cell.Field,
+            cell.Value,
+            cell.Status,
+            cell.Message);
     }
 
     private static WorkflowAvailabilityDto ToDto(SwShWorkflowAvailability availability)

@@ -15,6 +15,8 @@ import {
   type ProjectHealth,
   type RaidRewardsWorkflow,
   type RoyalCandyWorkflow,
+  type SpreadsheetImportPreview,
+  type SpreadsheetImportWorkflow,
   type ShopsWorkflow,
   type TextWorkflow,
   type TrainersWorkflow,
@@ -34,6 +36,7 @@ export type WorkbenchSection =
   | 'flagworkSave'
   | 'exefsPatches'
   | 'royalCandy'
+  | 'spreadsheetImport'
   | 'changes';
 
 export type ProjectPathDraft = {
@@ -71,6 +74,10 @@ type WorkbenchState = {
   raidRewardsWorkflow: RaidRewardsWorkflow | null;
   royalCandySearchText: string;
   royalCandyWorkflow: RoyalCandyWorkflow | null;
+  spreadsheetImportPreview: SpreadsheetImportPreview | null;
+  spreadsheetImportSearchText: string;
+  spreadsheetImportSourcePath: string;
+  spreadsheetImportWorkflow: SpreadsheetImportWorkflow | null;
   selectedRaidRewardTableId: string | null;
   selectedPlacementObjectId: string | null;
   selectedFlagId: string | null;
@@ -79,6 +86,7 @@ type WorkbenchState = {
   selectedExeFsPatchId: string | null;
   selectedRoyalCandyCheckId: string | null;
   selectedRoyalCandyWorkflowId: string | null;
+  selectedSpreadsheetImportProfileId: string | null;
   selectedItemId: number | null;
   selectedEncounterTableId: string | null;
   selectedShopId: string | null;
@@ -114,6 +122,10 @@ type WorkbenchState = {
   setRaidRewardsWorkflow: (raidRewardsWorkflow: RaidRewardsWorkflow) => void;
   setRoyalCandySearchText: (royalCandySearchText: string) => void;
   setRoyalCandyWorkflow: (royalCandyWorkflow: RoyalCandyWorkflow) => void;
+  setSpreadsheetImportPreview: (preview: SpreadsheetImportPreview | null) => void;
+  setSpreadsheetImportSearchText: (spreadsheetImportSearchText: string) => void;
+  setSpreadsheetImportSourcePath: (sourcePath: string) => void;
+  setSpreadsheetImportWorkflow: (spreadsheetImportWorkflow: SpreadsheetImportWorkflow) => void;
   setSelectedRaidRewardTableId: (selectedRaidRewardTableId: string | null) => void;
   setSelectedPlacementObjectId: (selectedPlacementObjectId: string | null) => void;
   setSelectedFlagId: (selectedFlagId: string | null) => void;
@@ -122,6 +134,9 @@ type WorkbenchState = {
   setSelectedExeFsPatchId: (selectedExeFsPatchId: string | null) => void;
   setSelectedRoyalCandyCheckId: (selectedRoyalCandyCheckId: string | null) => void;
   setSelectedRoyalCandyWorkflowId: (selectedRoyalCandyWorkflowId: string | null) => void;
+  setSelectedSpreadsheetImportProfileId: (
+    selectedSpreadsheetImportProfileId: string | null
+  ) => void;
   setSelectedItemId: (selectedItemId: number | null) => void;
   setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
   setSelectedShopId: (selectedShopId: string | null) => void;
@@ -163,6 +178,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   raidRewardsWorkflow: null,
   royalCandySearchText: '',
   royalCandyWorkflow: null,
+  spreadsheetImportPreview: null,
+  spreadsheetImportSearchText: '',
+  spreadsheetImportSourcePath: '',
+  spreadsheetImportWorkflow: null,
   selectedRaidRewardTableId: null,
   selectedPlacementObjectId: null,
   selectedFlagId: null,
@@ -170,6 +189,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedExeFsPatchId: null,
   selectedRoyalCandyCheckId: null,
   selectedRoyalCandyWorkflowId: null,
+  selectedSpreadsheetImportProfileId: null,
   selectedItemId: null,
   selectedSaveBlockId: null,
   selectedEncounterTableId: null,
@@ -201,6 +221,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setPlacementSearchText: (placementSearchText) => set({ placementSearchText }),
   setRaidRewardSearchText: (raidRewardSearchText) => set({ raidRewardSearchText }),
   setRoyalCandySearchText: (royalCandySearchText) => set({ royalCandySearchText }),
+  setSpreadsheetImportSearchText: (spreadsheetImportSearchText) =>
+    set({ spreadsheetImportSearchText }),
+  setSpreadsheetImportSourcePath: (spreadsheetImportSourcePath) =>
+    set({ spreadsheetImportSourcePath }),
+  setSpreadsheetImportPreview: (spreadsheetImportPreview) =>
+    set({ spreadsheetImportPreview }),
   setItemsWorkflow: (itemsWorkflow) =>
     set((state) => {
       const selectedItemId = itemsWorkflow.items.some(
@@ -246,11 +272,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       raidRewardsWorkflow: null,
       royalCandySearchText: '',
       royalCandyWorkflow: null,
+      spreadsheetImportPreview: null,
+      spreadsheetImportSearchText: '',
+      spreadsheetImportSourcePath: '',
+      spreadsheetImportWorkflow: null,
       selectedEncounterTableId: null,
       selectedExeFsCheckId: null,
       selectedExeFsPatchId: null,
       selectedRoyalCandyCheckId: null,
       selectedRoyalCandyWorkflowId: null,
+      selectedSpreadsheetImportProfileId: null,
       selectedFlagId: null,
       selectedItemId: null,
       selectedPlacementObjectId: null,
@@ -296,6 +327,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set({ selectedRoyalCandyCheckId }),
   setSelectedRoyalCandyWorkflowId: (selectedRoyalCandyWorkflowId) =>
     set({ selectedRoyalCandyWorkflowId }),
+  setSelectedSpreadsheetImportProfileId: (selectedSpreadsheetImportProfileId) =>
+    set({ selectedSpreadsheetImportProfileId }),
   setSelectedEncounterTableId: (selectedEncounterTableId) => set({ selectedEncounterTableId }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
   setSelectedShopId: (selectedShopId) => set({ selectedShopId }),
@@ -488,6 +521,26 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         royalCandyWorkflow,
         selectedRoyalCandyCheckId,
         selectedRoyalCandyWorkflowId
+      };
+    }),
+  setSpreadsheetImportWorkflow: (spreadsheetImportWorkflow) =>
+    set((state) => {
+      const selectedSpreadsheetImportProfileId = spreadsheetImportWorkflow.profiles.some(
+        (profile) => profile.profileId === state.selectedSpreadsheetImportProfileId
+      )
+        ? state.selectedSpreadsheetImportProfileId
+        : (spreadsheetImportWorkflow.profiles[0]?.profileId ?? null);
+
+      return {
+        activeSection: 'spreadsheetImport',
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        selectedSpreadsheetImportProfileId,
+        spreadsheetImportPreview: null,
+        spreadsheetImportSearchText: '',
+        spreadsheetImportWorkflow
       };
     }),
   setWorkflows: (workflows) => set({ workflows })

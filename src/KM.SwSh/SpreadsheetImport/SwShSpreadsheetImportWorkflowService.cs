@@ -3,16 +3,21 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Items;
 using KM.SwSh.Workflows;
-using System.Text.Json;
 
 namespace KM.SwSh.SpreadsheetImport;
 
 public sealed class SwShSpreadsheetImportWorkflowService
 {
-    public const string SpreadsheetImportReadModelPath = "romfs/kmeditor/spreadsheet-import.profiles.readmodel.json";
+    public const string ItemsPriceProfileId = "items-price-csv";
 
-    private static readonly JsonSerializerOptions ReadModelJsonOptions = new(JsonSerializerDefaults.Web);
+    private readonly SwShItemsWorkflowService itemsWorkflowService;
+
+    public SwShSpreadsheetImportWorkflowService(SwShItemsWorkflowService? itemsWorkflowService = null)
+    {
+        this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
+    }
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
@@ -24,7 +29,7 @@ public sealed class SwShSpreadsheetImportWorkflowService
                 SwShWorkflowAvailability.Disabled,
                 CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    "Spreadsheet Import Tooling requires valid base RomFS and base ExeFS paths before it can load.",
+                    "Spreadsheet Import requires valid base RomFS and base ExeFS paths before it can load.",
                     expected: "Readable project paths"));
         }
 
@@ -42,78 +47,98 @@ public sealed class SwShSpreadsheetImportWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShSpreadsheetImportProfileRecord>(), diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShSpreadsheetImportProfileRecord>(), sourceFileCount: 0, diagnostics);
         }
 
-        var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
-            string.Equals(entry.RelativePath, SpreadsheetImportReadModelPath, StringComparison.OrdinalIgnoreCase));
+        var itemsWorkflow = itemsWorkflowService.Load(project);
+        var itemDataSource = SwShItemsWorkflowService.ResolveItemDataSource(project);
+        var itemErrors = itemsWorkflow.Diagnostics
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        var itemDataAvailable = itemDataSource is not null && itemsWorkflow.Items.Count > 0 && itemErrors.Length == 0;
 
-        if (graphEntry is null)
+        if (!itemDataAvailable)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
-                "Spreadsheet Import Tooling data is not available for this project yet.",
-                expected: SpreadsheetImportReadModelPath));
-            return CreateWorkflow(summary, Array.Empty<SwShSpreadsheetImportProfileRecord>(), diagnostics);
+                "Items price import is not executable because item data is not available.",
+                expected: SwShItemsWorkflowService.ItemDataPath));
         }
 
-        var sourcePath = ResolveSourcePath(project.Paths, graphEntry);
-        if (sourcePath is null || !File.Exists(sourcePath))
+        foreach (var diagnostic in itemErrors)
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Spreadsheet Import Tooling data source could not be resolved from the project graph.",
-                file: graphEntry.RelativePath,
-                expected: "Readable Spreadsheet Import Tooling read model"));
-            return CreateWorkflow(summary, Array.Empty<SwShSpreadsheetImportProfileRecord>(), diagnostics);
+            diagnostics.Add(diagnostic);
         }
 
-        try
-        {
-            using var stream = File.OpenRead(sourcePath);
-            var readModel = JsonSerializer.Deserialize<SpreadsheetImportReadModel>(stream, ReadModelJsonOptions);
-            var provenance = CreateProvenance(graphEntry);
-            var profiles = readModel?.Profiles is null
-                ? Array.Empty<SwShSpreadsheetImportProfileRecord>()
-                : readModel.Profiles
-                    .OrderBy(profile => profile.ProfileId, StringComparer.Ordinal)
-                    .Select(profile => ToProfileRecord(profile, provenance))
-                    .ToArray();
+        var profile = CreateItemsPriceProfile(
+            summary,
+            itemDataAvailable,
+            itemDataSource?.GraphEntry);
+        var sourceFileCount = itemDataSource is null ? 0 : 1;
 
-            foreach (var duplicateGroup in profiles.GroupBy(profile => profile.ProfileId).Where(group => group.Count() > 1))
+        return CreateWorkflow(summary, [profile], sourceFileCount, diagnostics);
+    }
+
+    internal static SwShSpreadsheetImportProfileRecord CreateItemsPriceProfile(
+        SwShWorkflowSummary summary,
+        bool itemDataAvailable,
+        ProjectFileGraphEntry? itemDataEntry)
+    {
+        var status = itemDataAvailable
+            ? summary.Availability switch
             {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Warning,
-                    $"Spreadsheet import profile id '{duplicateGroup.Key}' appears more than once in the read model.",
-                    file: graphEntry.RelativePath,
-                    expected: "Unique Spreadsheet Import Tooling profile ids"));
+                SwShWorkflowAvailability.Available => "available",
+                SwShWorkflowAvailability.ReadOnly => "readOnly",
+                _ => "blocked",
             }
+            : "blocked";
 
-            return CreateWorkflow(summary, profiles, diagnostics);
-        }
-        catch (JsonException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Spreadsheet Import Tooling data source is not valid JSON: {exception.Message}",
-                file: graphEntry.RelativePath,
-                expected: "Sanitized Spreadsheet Import Tooling read model JSON"));
-            return CreateWorkflow(summary, Array.Empty<SwShSpreadsheetImportProfileRecord>(), diagnostics);
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Spreadsheet Import Tooling data source could not be read: {exception.Message}",
-                file: graphEntry.RelativePath,
-                expected: "Readable Spreadsheet Import Tooling read model"));
-            return CreateWorkflow(summary, Array.Empty<SwShSpreadsheetImportProfileRecord>(), diagnostics);
-        }
+        return new SwShSpreadsheetImportProfileRecord(
+            ItemsPriceProfileId,
+            "Items Price CSV/TSV",
+            "csv/tsv",
+            SwShWorkflowIds.Items,
+            status,
+            "Imports item price columns into the Items workflow for change-plan review.",
+            [
+                new SwShSpreadsheetImportColumnRecord(
+                    1,
+                    "ItemId",
+                    "integer",
+                    IsRequired: true,
+                    "Existing item ID."),
+                new SwShSpreadsheetImportColumnRecord(
+                    2,
+                    "BuyPrice",
+                    "integer",
+                    IsRequired: false,
+                    "New buy price. Sell price is derived from this stored value."),
+                new SwShSpreadsheetImportColumnRecord(
+                    3,
+                    "SellPrice",
+                    "integer",
+                    IsRequired: false,
+                    "New sell price. This writes the underlying buy-price row value."),
+                new SwShSpreadsheetImportColumnRecord(
+                    4,
+                    "WattsPrice",
+                    "integer",
+                    IsRequired: false,
+                    "New Watts price."),
+                new SwShSpreadsheetImportColumnRecord(
+                    5,
+                    "AlternatePrice",
+                    "integer",
+                    IsRequired: false,
+                    "New alternate price."),
+            ],
+            CreateProvenance(itemDataEntry));
     }
 
     private static SwShSpreadsheetImportWorkflow CreateWorkflow(
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShSpreadsheetImportProfileRecord> profiles,
+        int sourceFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         return new SwShSpreadsheetImportWorkflow(
@@ -122,73 +147,25 @@ public sealed class SwShSpreadsheetImportWorkflowService
             new SwShSpreadsheetImportWorkflowStats(
                 profiles.Count,
                 profiles.Sum(profile => profile.Columns.Count),
-                profiles.Count > 0 ? 1 : 0),
+                sourceFileCount),
             diagnostics);
     }
 
-    private static string? ResolveSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
+    private static SwShSpreadsheetImportProvenance CreateProvenance(ProjectFileGraphEntry? entry)
     {
-        if (entry.LayeredFile is not null && !string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        if (entry is null)
         {
-            return CombineGraphPath(paths.OutputRootPath, entry.RelativePath);
+            return new SwShSpreadsheetImportProvenance(
+                "backend:spreadsheet-import-profiles",
+                ProjectFileLayer.Generated,
+                ProjectFileGraphEntryState.BaseOnly);
         }
 
-        if (entry.BaseFile is not null && entry.RelativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase))
-        {
-            return CombineGraphPath(paths.BaseRomFsPath, entry.RelativePath["romfs/".Length..]);
-        }
-
-        return null;
-    }
-
-    private static string? CombineGraphPath(string? rootPath, string relativePath)
-    {
-        if (string.IsNullOrWhiteSpace(rootPath))
-        {
-            return null;
-        }
-
-        return Path.Combine(
-            rootPath,
-            relativePath.Replace('/', Path.DirectorySeparatorChar));
-    }
-
-    private static SwShSpreadsheetImportProvenance CreateProvenance(ProjectFileGraphEntry entry)
-    {
         var sourceLayer = entry.LayeredFile is not null
             ? ProjectFileLayer.Layered
             : ProjectFileLayer.Base;
 
         return new SwShSpreadsheetImportProvenance(entry.RelativePath, sourceLayer, entry.State);
-    }
-
-    private static SwShSpreadsheetImportProfileRecord ToProfileRecord(
-        SpreadsheetImportProfileReadModelRecord profile,
-        SwShSpreadsheetImportProvenance provenance)
-    {
-        return new SwShSpreadsheetImportProfileRecord(
-            profile.ProfileId,
-            profile.Name,
-            profile.SourceKind,
-            profile.TargetWorkflow,
-            profile.Status,
-            profile.Description,
-            (profile.Columns ?? Array.Empty<SpreadsheetImportColumnReadModelRecord>())
-                .OrderBy(column => column.Column)
-                .Select(ToColumnRecord)
-                .ToArray(),
-            provenance);
-    }
-
-    private static SwShSpreadsheetImportColumnRecord ToColumnRecord(
-        SpreadsheetImportColumnReadModelRecord column)
-    {
-        return new SwShSpreadsheetImportColumnRecord(
-            column.Column,
-            column.Header,
-            column.ValueKind,
-            column.IsRequired,
-            column.Description);
     }
 
     private static SwShWorkflowSummary CreateSummary(
@@ -197,16 +174,17 @@ public sealed class SwShSpreadsheetImportWorkflowService
     {
         return new SwShWorkflowSummary(
             SwShWorkflowIds.SpreadsheetImport,
-            "Spreadsheet Import Tooling",
-            "Spreadsheet import profiles, target workflows, columns, and source provenance.",
+            "Spreadsheet Import",
+            "CSV and TSV import profiles that execute through backend edit sessions.",
             availability,
             diagnostics);
     }
 
-    private static ValidationDiagnostic CreateDiagnostic(
+    internal static ValidationDiagnostic CreateDiagnostic(
         DiagnosticSeverity severity,
         string message,
         string? file = null,
+        string? field = null,
         string? expected = null)
     {
         return new ValidationDiagnostic(
@@ -214,26 +192,7 @@ public sealed class SwShSpreadsheetImportWorkflowService
             message,
             File: file,
             Domain: "workflow.spreadsheetImport",
+            Field: field,
             Expected: expected);
     }
-
-    private sealed record SpreadsheetImportReadModel(
-        int SchemaVersion,
-        IReadOnlyList<SpreadsheetImportProfileReadModelRecord>? Profiles);
-
-    private sealed record SpreadsheetImportProfileReadModelRecord(
-        string ProfileId,
-        string Name,
-        string SourceKind,
-        string TargetWorkflow,
-        string Status,
-        string Description,
-        IReadOnlyList<SpreadsheetImportColumnReadModelRecord>? Columns);
-
-    private sealed record SpreadsheetImportColumnReadModelRecord(
-        int Column,
-        string Header,
-        string ValueKind,
-        bool IsRequired,
-        string Description);
 }
