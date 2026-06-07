@@ -20,6 +20,7 @@ export const kmCommandNameValues = [
   'raidRewards.load',
   'raidRewards.reward.update',
   'placement.load',
+  'placement.object.update',
   'flagworkSave.load',
   'exefsPatches.load',
   'royalCandy.load',
@@ -53,6 +54,7 @@ export const kmCommandNames = {
   loadRaidRewardsWorkflow: 'raidRewards.load',
   updateRaidRewardField: 'raidRewards.reward.update',
   loadPlacementWorkflow: 'placement.load',
+  updatePlacementObjectField: 'placement.object.update',
   loadFlagworkSaveWorkflow: 'flagworkSave.load',
   loadExeFsPatchWorkflow: 'exefsPatches.load',
   loadRoyalCandyWorkflow: 'royalCandy.load',
@@ -594,25 +596,44 @@ export const placementProvenanceSchema = z.strictObject({
 });
 
 export const placedObjectRecordSchema = z.strictObject({
+  archiveMember: z.string(),
+  chance: z.number().int().nullable(),
+  chanceIndex: z.number().int().nonnegative().nullable(),
+  itemHash: z.string(),
+  itemId: z.number().int().nonnegative().nullable(),
+  itemName: z.string(),
   label: z.string(),
   map: z.string(),
   objectId: z.string(),
+  objectIndex: z.number().int().nonnegative(),
   objectType: z.string(),
   provenance: placementProvenanceSchema,
+  quantity: z.number().int().nonnegative(),
   rotationY: z.number(),
   scriptId: z.string().nullable(),
   x: z.number(),
   y: z.number(),
+  zoneIndex: z.number().int().nonnegative(),
   z: z.number()
+});
+
+export const placementEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number(),
+  minimumValue: z.number(),
+  valueKind: z.string()
 });
 
 export const placementWorkflowStatsSchema = z.strictObject({
   sourceFileCount: z.number().int().nonnegative(),
+  totalAreaCount: z.number().int().nonnegative(),
   totalObjectCount: z.number().int().nonnegative()
 });
 
 export const placementWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(placementEditableFieldSchema),
   objects: z.array(placedObjectRecordSchema),
   stats: placementWorkflowStatsSchema,
   summary: workflowSummarySchema
@@ -866,6 +887,20 @@ export const updateRaidRewardFieldResponseSchema = z.strictObject({
   workflow: raidRewardsWorkflowSchema
 });
 
+export const updatePlacementObjectFieldRequestSchema = z.strictObject({
+  field: z.string(),
+  objectId: z.string(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  value: z.string()
+});
+
+export const updatePlacementObjectFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: placementWorkflowSchema
+});
+
 export const startEditSessionResponseSchema = z.strictObject({
   session: editSessionSchema
 });
@@ -968,6 +1003,8 @@ export type RaidRewardEditableField = z.infer<typeof raidRewardEditableFieldSche
 export type RaidRewardItemRecord = z.infer<typeof raidRewardItemRecordSchema>;
 export type RaidRewardTableRecord = z.infer<typeof raidRewardTableRecordSchema>;
 export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
+export type PlacedObjectRecord = z.infer<typeof placedObjectRecordSchema>;
+export type PlacementEditableField = z.infer<typeof placementEditableFieldSchema>;
 export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
 export type FlagworkSaveWorkflow = z.infer<typeof flagworkSaveWorkflowSchema>;
 export type ExeFsPatchWorkflow = z.infer<typeof exeFsPatchWorkflowSchema>;
@@ -991,6 +1028,12 @@ export type UpdateRaidRewardFieldRequest = z.infer<typeof updateRaidRewardFieldR
 export type UpdateRaidRewardFieldResponse = z.infer<typeof updateRaidRewardFieldResponseSchema>;
 export type LoadPlacementWorkflowRequest = z.infer<typeof loadPlacementWorkflowRequestSchema>;
 export type LoadPlacementWorkflowResponse = z.infer<typeof loadPlacementWorkflowResponseSchema>;
+export type UpdatePlacementObjectFieldRequest = z.infer<
+  typeof updatePlacementObjectFieldRequestSchema
+>;
+export type UpdatePlacementObjectFieldResponse = z.infer<
+  typeof updatePlacementObjectFieldResponseSchema
+>;
 export type LoadFlagworkSaveWorkflowRequest = z.infer<typeof loadFlagworkSaveWorkflowRequestSchema>;
 export type LoadFlagworkSaveWorkflowResponse = z.infer<typeof loadFlagworkSaveWorkflowResponseSchema>;
 export type LoadExeFsPatchWorkflowRequest = z.infer<typeof loadExeFsPatchWorkflowRequestSchema>;

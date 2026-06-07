@@ -16,6 +16,15 @@ public sealed record SwShPlacedObjectRecord(
     string ObjectType,
     string Label,
     string Map,
+    string ArchiveMember,
+    int ZoneIndex,
+    int ObjectIndex,
+    int? ChanceIndex,
+    uint? ItemId,
+    string ItemName,
+    string ItemHash,
+    int Quantity,
+    int? Chance,
     double X,
     double Y,
     double Z,
@@ -23,12 +32,21 @@ public sealed record SwShPlacedObjectRecord(
     string? ScriptId,
     SwShPlacementProvenance Provenance);
 
+public sealed record SwShPlacementEditableField(
+    string Field,
+    string Label,
+    string ValueKind,
+    double MinimumValue,
+    double MaximumValue);
+
 public sealed record SwShPlacementWorkflowStats(
     int TotalObjectCount,
+    int TotalAreaCount,
     int SourceFileCount);
 
 public sealed record SwShPlacementWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShPlacedObjectRecord> Objects,
+    IReadOnlyList<SwShPlacementEditableField> EditableFields,
     SwShPlacementWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);

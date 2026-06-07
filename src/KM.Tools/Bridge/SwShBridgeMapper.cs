@@ -174,6 +174,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdatePlacementObjectFieldResponse ToDto(SwShPlacementEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePlacementObjectFieldResponse(
+            ToPlacementWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(SwShEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -267,8 +277,10 @@ public static class SwShBridgeMapper
         return new PlacementWorkflowDto(
             ToDto(workflow.Summary),
             workflow.Objects.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
             new PlacementWorkflowStatsDto(
                 workflow.Stats.TotalObjectCount,
+                workflow.Stats.TotalAreaCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -588,12 +600,31 @@ public static class SwShBridgeMapper
             placedObject.ObjectType,
             placedObject.Label,
             placedObject.Map,
+            placedObject.ArchiveMember,
+            placedObject.ZoneIndex,
+            placedObject.ObjectIndex,
+            placedObject.ChanceIndex,
+            placedObject.ItemId,
+            placedObject.ItemName,
+            placedObject.ItemHash,
+            placedObject.Quantity,
+            placedObject.Chance,
             placedObject.X,
             placedObject.Y,
             placedObject.Z,
             placedObject.RotationY,
             placedObject.ScriptId,
             ToDto(placedObject.Provenance));
+    }
+
+    private static PlacementEditableFieldDto ToDto(SwShPlacementEditableField field)
+    {
+        return new PlacementEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue);
     }
 
     private static PlacementProvenanceDto ToDto(SwShPlacementProvenance provenance)

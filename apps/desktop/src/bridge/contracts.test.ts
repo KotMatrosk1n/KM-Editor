@@ -43,6 +43,8 @@ import {
   updateItemFieldResponseSchema,
   updateEncounterSlotFieldRequestSchema,
   updateEncounterSlotFieldResponseSchema,
+  updatePlacementObjectFieldRequestSchema,
+  updatePlacementObjectFieldResponseSchema,
   updateShopInventoryItemRequestSchema,
   updateShopInventoryItemResponseSchema,
   updateTextEntryRequestSchema,
@@ -584,31 +586,50 @@ describe('bridge contracts', () => {
     } as const;
     const placementWorkflow = {
       diagnostics: [],
+      editableFields: [
+        {
+          field: 'itemId',
+          label: 'Item ID',
+          maximumValue: 65535,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
       objects: [
         {
-          label: 'Hidden Potion',
+          archiveMember: 'a_test.bin',
+          chance: 50,
+          chanceIndex: 0,
+          itemHash: '0xAABBCCDD00112233',
+          itemId: 1,
+          itemName: 'Potion',
+          label: 'Hidden item: Potion',
           map: 'Route 1',
-          objectId: 'route_1_hidden_potion',
+          objectId: 'a_test.bin|0|hiddenItem|0|0',
+          objectIndex: 0,
           objectType: 'HiddenItem',
           provenance: {
             fileState: 'baseOnly',
-            sourceFile: 'romfs/kmeditor/placement.readmodel.json',
+            sourceFile: 'romfs/bin/archive/field/resident/placement.gfpak',
             sourceLayer: 'base'
           },
+          quantity: 2,
           rotationY: 90,
-          scriptId: 'script_hidden_item_001',
+          scriptId: 'hidden_item',
           x: 10.5,
           y: 0,
+          zoneIndex: 0,
           z: -4.25
         }
       ],
       stats: {
-        sourceFileCount: 1,
+        sourceFileCount: 3,
+        totalAreaCount: 1,
         totalObjectCount: 1
       },
       summary: {
         availability: 'readOnly',
-        description: 'Placed objects, map coordinates, script links, and source provenance.',
+        description: 'Placed objects, map coordinates, item pickups, and source provenance.',
         diagnostics: [],
         id: 'placement',
         label: 'Placement'
@@ -1050,6 +1071,12 @@ describe('bridge contracts', () => {
     const updateEncounterResponseSchema = createBridgeResponseSchema(
       updateEncounterSlotFieldResponseSchema
     );
+    const updatePlacementRequestSchema = createBridgeRequestSchema(
+      updatePlacementObjectFieldRequestSchema
+    );
+    const updatePlacementResponseSchema = createBridgeResponseSchema(
+      updatePlacementObjectFieldResponseSchema
+    );
     const validateRequestSchema = createBridgeRequestSchema(validateEditSessionRequestSchema);
     const validateResponseSchema = createBridgeResponseSchema(validateEditSessionResponseSchema);
     const changePlanRequestSchema = createBridgeRequestSchema(createChangePlanRequestSchema);
@@ -1445,6 +1472,76 @@ describe('bridge contracts', () => {
         }
       ]
     } as const;
+    const placementSession = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.placement',
+          field: 'quantity',
+          newValue: '5',
+          recordId: 'a_test.bin|0|fieldItem|0|-',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/bin/archive/field/resident/placement.gfpak'
+            }
+          ],
+          summary: 'Set Field item: Potion Quantity -> 5'
+        }
+      ],
+      sessionId: 'session-1'
+    } as const;
+    const placementWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'quantity',
+          label: 'Quantity',
+          maximumValue: 999,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
+      objects: [
+        {
+          archiveMember: 'a_test.bin',
+          chance: null,
+          chanceIndex: null,
+          itemHash: '0xAABBCCDD00112233',
+          itemId: 1,
+          itemName: 'Potion',
+          label: 'Field item: Potion',
+          map: 'Route 1',
+          objectId: 'a_test.bin|0|fieldItem|0|-',
+          objectIndex: 0,
+          objectType: 'FieldItem',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/archive/field/resident/placement.gfpak',
+            sourceLayer: 'base'
+          },
+          quantity: 5,
+          rotationY: 90,
+          scriptId: 'visible_potion',
+          x: 10.5,
+          y: 0,
+          zoneIndex: 0,
+          z: -4.25
+        }
+      ],
+      stats: {
+        sourceFileCount: 3,
+        totalAreaCount: 1,
+        totalObjectCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Placed objects, map coordinates, item pickups, and source provenance.',
+        diagnostics: [],
+        id: 'placement',
+        label: 'Placement'
+      }
+    } as const;
 
     expect(
       startRequestSchema.safeParse({
@@ -1594,6 +1691,33 @@ describe('bridge contracts', () => {
           diagnostics: [],
           session: encounterSession,
           workflow: encountersWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updatePlacementRequestSchema.safeParse({
+        command: kmCommandNames.updatePlacementObjectField,
+        payload: {
+          field: 'quantity',
+          objectId: 'a_test.bin|0|fieldItem|0|-',
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output'
+          },
+          session: editSession,
+          value: '5'
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updatePlacementResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: placementSession,
+          workflow: placementWorkflow
         }
       }).success
     ).toBe(true);
