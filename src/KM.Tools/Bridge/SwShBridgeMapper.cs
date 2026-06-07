@@ -3,6 +3,7 @@
 using KM.Api.Items;
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.Placement;
 using KM.Api.Shops;
 using KM.Api.Raids;
 using KM.Api.Text;
@@ -10,6 +11,7 @@ using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
 using KM.SwSh.Encounters;
+using KM.SwSh.Placement;
 using KM.SwSh.Shops;
 using KM.SwSh.Raids;
 using KM.SwSh.Text;
@@ -67,6 +69,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadRaidRewardsWorkflowResponse(ToRaidRewardsWorkflowDto(workflow));
+    }
+
+    public static LoadPlacementWorkflowResponse ToDto(SwShPlacementWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadPlacementWorkflowResponse(ToPlacementWorkflowDto(workflow));
     }
 
     public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
@@ -158,6 +167,17 @@ public static class SwShBridgeMapper
             new RaidRewardsWorkflowStatsDto(
                 workflow.Stats.TotalTableCount,
                 workflow.Stats.TotalRewardItemCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static PlacementWorkflowDto ToPlacementWorkflowDto(SwShPlacementWorkflow workflow)
+    {
+        return new PlacementWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Objects.Select(ToDto).ToArray(),
+            new PlacementWorkflowStatsDto(
+                workflow.Stats.TotalObjectCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -340,6 +360,29 @@ public static class SwShBridgeMapper
     private static RaidRewardProvenanceDto ToDto(SwShRaidRewardProvenance provenance)
     {
         return new RaidRewardProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static PlacedObjectRecordDto ToDto(SwShPlacedObjectRecord placedObject)
+    {
+        return new PlacedObjectRecordDto(
+            placedObject.ObjectId,
+            placedObject.ObjectType,
+            placedObject.Label,
+            placedObject.Map,
+            placedObject.X,
+            placedObject.Y,
+            placedObject.Z,
+            placedObject.RotationY,
+            placedObject.ScriptId,
+            ToDto(placedObject.Provenance));
+    }
+
+    private static PlacementProvenanceDto ToDto(SwShPlacementProvenance provenance)
+    {
+        return new PlacementProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

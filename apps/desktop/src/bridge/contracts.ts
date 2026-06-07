@@ -14,6 +14,7 @@ export const kmCommandNameValues = [
   'shops.load',
   'encounters.load',
   'raidRewards.load',
+  'placement.load',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -37,6 +38,7 @@ export const kmCommandNames = {
   loadShopsWorkflow: 'shops.load',
   loadEncountersWorkflow: 'encounters.load',
   loadRaidRewardsWorkflow: 'raidRewards.load',
+  loadPlacementWorkflow: 'placement.load',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -105,6 +107,10 @@ export const loadEncountersWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadRaidRewardsWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadPlacementWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -476,6 +482,41 @@ export const loadRaidRewardsWorkflowResponseSchema = z.strictObject({
   workflow: raidRewardsWorkflowSchema
 });
 
+export const placementProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const placedObjectRecordSchema = z.strictObject({
+  label: z.string(),
+  map: z.string(),
+  objectId: z.string(),
+  objectType: z.string(),
+  provenance: placementProvenanceSchema,
+  rotationY: z.number(),
+  scriptId: z.string().nullable(),
+  x: z.number(),
+  y: z.number(),
+  z: z.number()
+});
+
+export const placementWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalObjectCount: z.number().int().nonnegative()
+});
+
+export const placementWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  objects: z.array(placedObjectRecordSchema),
+  stats: placementWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadPlacementWorkflowResponseSchema = z.strictObject({
+  workflow: placementWorkflowSchema
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -578,6 +619,7 @@ export type TrainersWorkflow = z.infer<typeof trainersWorkflowSchema>;
 export type ShopsWorkflow = z.infer<typeof shopsWorkflowSchema>;
 export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;
 export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
+export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
@@ -592,6 +634,8 @@ export type LoadEncountersWorkflowRequest = z.infer<typeof loadEncountersWorkflo
 export type LoadEncountersWorkflowResponse = z.infer<typeof loadEncountersWorkflowResponseSchema>;
 export type LoadRaidRewardsWorkflowRequest = z.infer<typeof loadRaidRewardsWorkflowRequestSchema>;
 export type LoadRaidRewardsWorkflowResponse = z.infer<typeof loadRaidRewardsWorkflowResponseSchema>;
+export type LoadPlacementWorkflowRequest = z.infer<typeof loadPlacementWorkflowRequestSchema>;
+export type LoadPlacementWorkflowResponse = z.infer<typeof loadPlacementWorkflowResponseSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;

@@ -5,6 +5,7 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.Items;
+using KM.Api.Placement;
 using KM.Api.Projects;
 using KM.Api.Raids;
 using KM.Api.Shops;
@@ -139,6 +140,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("raidRewards", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("placement", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             });
     }
@@ -447,6 +453,51 @@ public sealed class ProjectBridgeDispatcherTests
         var reward = Assert.Single(table.Rewards);
         Assert.Equal("Exp. Candy L", reward.ItemName);
         Assert.Equal(2, reward.Quantity);
+        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchLoadPlacementWorkflowReturnsSanitizedPlacedObjects()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/placement.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "objects": [
+                {
+                  "objectId": "route_1_hidden_potion",
+                  "objectType": "HiddenItem",
+                  "label": "Hidden Potion",
+                  "map": "Route 1",
+                  "x": 10.5,
+                  "y": 0,
+                  "z": -4.25,
+                  "rotationY": 90,
+                  "scriptId": "script_hidden_item_001"
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-placement");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadPlacementWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-placement", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var placedObject = Assert.Single(response.Payload.Workflow.Objects);
+        Assert.Equal("route_1_hidden_potion", placedObject.ObjectId);
+        Assert.Equal("Hidden Potion", placedObject.Label);
+        Assert.Equal("Route 1", placedObject.Map);
+        Assert.Equal(10.5, placedObject.X);
+        Assert.Equal(ProjectFileLayerDto.Base, placedObject.Provenance.SourceLayer);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

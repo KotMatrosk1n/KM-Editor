@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Layers,
   ListChecks,
+  MapPin,
   Package,
   Pencil,
   RefreshCw,
@@ -108,6 +109,12 @@ const workflowDefinitions: Array<{
     label: 'Raid Rewards',
     description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
     icon: ShieldCheck
+  },
+  {
+    id: 'placement',
+    label: 'Placement',
+    description: 'Placed objects, map coordinates, script links, and source provenance.',
+    icon: MapPin
   }
 ];
 
