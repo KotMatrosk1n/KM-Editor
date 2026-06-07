@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using KM.Api.Projects;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -17,8 +18,11 @@ public static class BridgeJson
     {
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
-        // Diagnostics cross the bridge as readable strings instead of numeric enum values.
+        // Bridge enums cross as readable strings instead of numeric enum values.
         options.Converters.Add(new JsonStringEnumConverter<ApiDiagnosticSeverity>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<ProjectHealthStateDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<ProjectPathRoleDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<ProjectPathStatusDto>(JsonNamingPolicy.CamelCase));
 
         return options;
     }
