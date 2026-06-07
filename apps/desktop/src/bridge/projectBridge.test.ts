@@ -208,28 +208,42 @@ describe('projectBridge', () => {
               diagnostics: [],
               dialogueReferences: [
                 {
-                  context: 'Intro',
-                  dialogueId: 'intro.lab.greeting',
-                  label: 'Lab greeting',
+                  context: 'common/story.dat',
+                  dialogueId: 'common/story:0',
+                  label: 'story #0',
                   preview: 'Welcome to the lab.',
                   provenance: {
                     fileState: 'baseOnly',
-                    sourceFile: 'romfs/kmeditor/text.dialogue.readmodel.json',
+                    sourceFile: 'romfs/bin/message/English/common/story.dat',
                     sourceLayer: 'base'
                   },
-                  textId: 10
+                  textId: 0
+                }
+              ],
+              editableFields: [
+                {
+                  field: 'value',
+                  label: 'Text value',
+                  maximumLength: 4096,
+                  minimumLength: 0,
+                  valueKind: 'multilineText'
                 }
               ],
               entries: [
                 {
-                  label: 'Greeting',
-                  language: 'en',
+                  canEdit: true,
+                  editBlockedReason: null,
+                  label: 'story #0',
+                  language: 'English',
+                  lineIndex: 0,
                   provenance: {
                     fileState: 'baseOnly',
-                    sourceFile: 'romfs/kmeditor/text.dialogue.readmodel.json',
+                    sourceFile: 'romfs/bin/message/English/common/story.dat',
                     sourceLayer: 'base'
                   },
-                  textId: 10,
+                  sourceFile: 'romfs/bin/message/English/common/story.dat',
+                  textId: 0,
+                  textKey: 'romfs/bin/message/English/common/story.dat#0',
                   value: 'Welcome to the lab.'
                 }
               ],
@@ -755,7 +769,8 @@ describe('projectBridge', () => {
     expect(workflows.workflows[10]?.id).toBe('spreadsheetImport');
     expect(items.workflow.editableFields).toHaveLength(4);
     expect(items.workflow.items[0]?.name).toBe('Potion');
-    expect(text.workflow.entries[0]?.label).toBe('Greeting');
+    expect(text.workflow.editableFields[0]?.field).toBe('value');
+    expect(text.workflow.entries[0]?.label).toBe('story #0');
     expect(trainers.workflow.trainers[0]?.name).toBe('Avery');
     expect(shops.workflow.shops[0]?.name).toBe('Route 1 Mart');
     expect(encounters.workflow.tables[0]?.slots[0]?.species).toBe('Skwovet');

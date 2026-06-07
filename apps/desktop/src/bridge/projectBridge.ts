@@ -41,6 +41,8 @@ import {
   type StartEditSessionResponse,
   type UpdateItemFieldRequest,
   type UpdateItemFieldResponse,
+  type UpdateTextEntryRequest,
+  type UpdateTextEntryResponse,
   type ValidateEditSessionRequest,
   type ValidateEditSessionResponse,
   type ValidateProjectRequest,
@@ -65,6 +67,7 @@ import {
   refreshFileGraphResponseSchema,
   startEditSessionResponseSchema,
   updateItemFieldResponseSchema,
+  updateTextEntryResponseSchema,
   validateEditSessionResponseSchema,
   validateProjectResponseSchema
 } from './contracts';
@@ -104,6 +107,7 @@ export type ProjectBridge = {
   refreshFileGraph: (request: RefreshFileGraphRequest) => Promise<RefreshFileGraphResponse>;
   startEditSession: (request: StartEditSessionRequest) => Promise<StartEditSessionResponse>;
   updateItemField: (request: UpdateItemFieldRequest) => Promise<UpdateItemFieldResponse>;
+  updateTextEntry: (request: UpdateTextEntryRequest) => Promise<UpdateTextEntryResponse>;
   validateEditSession: (
     request: ValidateEditSessionRequest
   ) => Promise<ValidateEditSessionResponse>;
@@ -259,6 +263,13 @@ export function createProjectBridge(
         kmCommandNames.updateItemField,
         request,
         updateItemFieldResponseSchema
+      ),
+    updateTextEntry: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateTextEntry,
+        request,
+        updateTextEntryResponseSchema
       ),
     validateEditSession: (request) =>
       sendProjectBridgeRequest(

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
 
@@ -15,9 +16,14 @@ public sealed record TextProvenanceDto(
 
 public sealed record TextEntryRecordDto(
     int TextId,
+    string TextKey,
     string Label,
     string Language,
+    string SourceFile,
+    int LineIndex,
     string Value,
+    bool CanEdit,
+    string? EditBlockedReason,
     TextProvenanceDto Provenance);
 
 public sealed record DialogueReferenceRecordDto(
@@ -33,11 +39,30 @@ public sealed record TextWorkflowStatsDto(
     int DialogueReferenceCount,
     int SourceFileCount);
 
+public sealed record TextEditableFieldDto(
+    string Field,
+    string Label,
+    string ValueKind,
+    int? MinimumLength,
+    int? MaximumLength);
+
 public sealed record TextWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<TextEntryRecordDto> Entries,
     IReadOnlyList<DialogueReferenceRecordDto> DialogueReferences,
+    IReadOnlyList<TextEditableFieldDto> EditableFields,
     TextWorkflowStatsDto Stats,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record LoadTextWorkflowResponse(TextWorkflowDto Workflow);
+
+public sealed record UpdateTextEntryRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    string TextKey,
+    string Value);
+
+public sealed record UpdateTextEntryResponse(
+    TextWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);

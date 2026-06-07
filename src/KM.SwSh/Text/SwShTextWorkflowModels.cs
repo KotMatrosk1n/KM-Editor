@@ -13,9 +13,14 @@ public sealed record SwShTextProvenance(
 
 public sealed record SwShTextEntryRecord(
     int TextId,
+    string TextKey,
     string Label,
     string Language,
+    string SourceFile,
+    int LineIndex,
     string Value,
+    bool CanEdit,
+    string? EditBlockedReason,
     SwShTextProvenance Provenance);
 
 public sealed record SwShDialogueReferenceRecord(
@@ -31,9 +36,17 @@ public sealed record SwShTextWorkflowStats(
     int DialogueReferenceCount,
     int SourceFileCount);
 
+public sealed record SwShTextEditableField(
+    string Field,
+    string Label,
+    string ValueKind,
+    int? MinimumLength,
+    int? MaximumLength);
+
 public sealed record SwShTextWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShTextEntryRecord> Entries,
     IReadOnlyList<SwShDialogueReferenceRecord> DialogueReferences,
+    IReadOnlyList<SwShTextEditableField> EditableFields,
     SwShTextWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);

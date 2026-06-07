@@ -225,33 +225,10 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadTextWorkflowReturnsSanitizedDialogueRecords()
+    public void DispatchLoadTextWorkflowReturnsRealMessageRecords()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/text.dialogue.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "language": "en",
-              "entries": [
-                {
-                  "textId": 10,
-                  "label": "Greeting",
-                  "value": "Welcome to the lab."
-                }
-              ],
-              "dialogueReferences": [
-                {
-                  "dialogueId": "intro.lab.greeting",
-                  "label": "Lab greeting",
-                  "textId": 10,
-                  "context": "Intro",
-                  "preview": "Welcome to the lab."
-                }
-              ]
-            }
-            """);
+        SwShTextBridgeFixtures.WriteBaseText(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.LoadTextWorkflow,
@@ -264,13 +241,20 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.Equal("request-text", response.RequestId);
         Assert.NotNull(response.Payload);
-        var entry = Assert.Single(response.Payload.Workflow.Entries);
-        Assert.Equal("Greeting", entry.Label);
-        Assert.Equal("en", entry.Language);
+        Assert.Equal(2, response.Payload.Workflow.Entries.Count);
+        var entry = response.Payload.Workflow.Entries[0];
+        Assert.Equal("story #0", entry.Label);
+        Assert.Equal("English", entry.Language);
+        Assert.Equal("romfs/bin/message/English/common/story.dat", entry.SourceFile);
+        Assert.Equal(0, entry.LineIndex);
+        Assert.True(entry.CanEdit);
         Assert.Equal(ProjectFileLayerDto.Base, entry.Provenance.SourceLayer);
-        var reference = Assert.Single(response.Payload.Workflow.DialogueReferences);
-        Assert.Equal("intro.lab.greeting", reference.DialogueId);
-        Assert.Equal(10, reference.TextId);
+        Assert.Equal(2, response.Payload.Workflow.DialogueReferences.Count);
+        var reference = response.Payload.Workflow.DialogueReferences[0];
+        Assert.Equal("common/story:0", reference.DialogueId);
+        Assert.Equal(0, reference.TextId);
+        var editableField = Assert.Single(response.Payload.Workflow.EditableFields);
+        Assert.Equal("value", editableField.Field);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 
@@ -775,6 +759,34 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchUpdateTextEntryReturnsPendingTextSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShTextBridgeFixtures.WriteBaseText(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdateTextEntry,
+            new UpdateTextEntryRequest(
+                temp.Paths,
+                Session: null,
+                TextKey: "romfs/bin/message/English/common/story.dat#0",
+                Value: "Hello there."),
+            requestId: "request-text-edit");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdateTextEntryResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.True(response.Payload.Session.HasPendingChanges);
+        Assert.Equal("Hello there.", response.Payload.Workflow.Entries[0].Value);
+        var edit = Assert.Single(response.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.text", edit.Domain);
+        Assert.Equal("value", edit.Field);
+        Assert.Equal("Hello there.", edit.NewValue);
+    }
+
+    [Fact]
     public void DispatchValidateEditSessionReturnsValidationPayload()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -798,6 +810,39 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotNull(response.Payload);
         Assert.True(response.Payload.IsValid);
         Assert.Contains(response.Payload.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Info);
+    }
+
+    [Fact]
+    public void DispatchValidateTextEditSessionRoutesToTextWorkflow()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShTextBridgeFixtures.WriteBaseText(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var sessionResponseJson = new ProjectBridgeDispatcher().Dispatch(SerializeRequest(
+            KmCommandNames.UpdateTextEntry,
+            new UpdateTextEntryRequest(
+                temp.Paths,
+                Session: null,
+                TextKey: "romfs/bin/message/English/common/story.dat#0",
+                Value: "Hello there."),
+            requestId: "request-text-edit"));
+        var sessionResponse = DeserializeResponse<UpdateTextEntryResponse>(sessionResponseJson);
+        Assert.NotNull(sessionResponse.Payload);
+        var requestJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, sessionResponse.Payload.Session),
+            requestId: "request-text-session-validate");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<ValidateEditSessionResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.True(response.Payload.IsValid);
+        Assert.Contains(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Info
+                && diagnostic.Message.Contains("text", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -826,6 +871,38 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.True(response.Payload.ChangePlan.CanApply);
         var write = Assert.Single(response.Payload.ChangePlan.Writes);
         Assert.Equal("romfs/bin/pml/item/item.dat", write.TargetRelativePath);
+        Assert.Equal(FileLayerDto.Base, Assert.Single(write.Sources).Layer);
+    }
+
+    [Fact]
+    public void DispatchCreateTextChangePlanReturnsMessageTableTarget()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShTextBridgeFixtures.WriteBaseText(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var sessionResponseJson = new ProjectBridgeDispatcher().Dispatch(SerializeRequest(
+            KmCommandNames.UpdateTextEntry,
+            new UpdateTextEntryRequest(
+                temp.Paths,
+                Session: null,
+                TextKey: "romfs/bin/message/English/common/story.dat#0",
+                Value: "Hello there."),
+            requestId: "request-text-edit"));
+        var sessionResponse = DeserializeResponse<UpdateTextEntryResponse>(sessionResponseJson);
+        Assert.NotNull(sessionResponse.Payload);
+        var requestJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, sessionResponse.Payload.Session),
+            requestId: "request-text-change-plan");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<CreateChangePlanResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.True(response.Payload.ChangePlan.CanApply);
+        var write = Assert.Single(response.Payload.ChangePlan.Writes);
+        Assert.Equal("romfs/bin/message/English/common/story.dat", write.TargetRelativePath);
         Assert.Equal(FileLayerDto.Base, Assert.Single(write.Sources).Layer);
     }
 
@@ -863,6 +940,56 @@ public sealed class ProjectBridgeDispatcherTests
         var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
         var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
         Assert.Equal(450u, item.BuyPrice);
+        Assert.DoesNotContain(
+            response.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchApplyTextChangePlanWritesMessageTable()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShTextBridgeFixtures.WriteBaseText(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var sessionResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateTextEntry,
+            new UpdateTextEntryRequest(
+                temp.Paths,
+                Session: null,
+                TextKey: "romfs/bin/message/English/common/story.dat#0",
+                Value: "Hello there."),
+            requestId: "request-text-edit"));
+        var sessionResponse = DeserializeResponse<UpdateTextEntryResponse>(sessionResponseJson);
+        Assert.NotNull(sessionResponse.Payload);
+        var planResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, sessionResponse.Payload.Session),
+            requestId: "request-text-change-plan"));
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(planResponseJson);
+        Assert.NotNull(planResponse.Payload);
+        var requestJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, sessionResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-text-change-plan-apply");
+
+        var responseJson = dispatcher.Dispatch(requestJson);
+        var response = DeserializeResponse<ApplyChangePlanResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Equal("romfs/bin/message/English/common/story.dat", Assert.Single(response.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "message",
+            "English",
+            "common",
+            "story.dat");
+        var output = SwShGameTextFile.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal("Hello there.", output.Lines[0].Text);
+        Assert.Equal("Second line.", output.Lines[1].Text);
         Assert.DoesNotContain(
             response.Payload.ApplyResult.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);

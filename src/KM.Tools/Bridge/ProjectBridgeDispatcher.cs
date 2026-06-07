@@ -15,8 +15,12 @@ using KM.Api.SpreadsheetImport;
 using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
+using KM.Core.Diagnostics;
+using KM.Core.Editing;
+using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.Items;
+using KM.SwSh.Text;
 using KM.SwSh.Workflows;
 using System.Text.Json;
 
@@ -26,15 +30,18 @@ public sealed class ProjectBridgeDispatcher
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShItemsEditSessionService itemsEditSessionService;
+    private readonly SwShTextEditSessionService textEditSessionService;
     private readonly SwShWorkflowService swShWorkflowService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
         SwShItemsEditSessionService? itemsEditSessionService = null,
+        SwShTextEditSessionService? textEditSessionService = null,
         SwShWorkflowService? swShWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsEditSessionService = itemsEditSessionService ?? new SwShItemsEditSessionService(this.projectWorkspaceService);
+        this.textEditSessionService = textEditSessionService ?? new SwShTextEditSessionService(this.projectWorkspaceService);
         this.swShWorkflowService = swShWorkflowService ?? new SwShWorkflowService(this.projectWorkspaceService);
     }
 
@@ -59,6 +66,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadItemsWorkflow => DispatchLoadItemsWorkflow(requestJson),
                 KmCommandNames.UpdateItemField => DispatchUpdateItemField(requestJson),
                 KmCommandNames.LoadTextWorkflow => DispatchLoadTextWorkflow(requestJson),
+                KmCommandNames.UpdateTextEntry => DispatchUpdateTextEntry(requestJson),
                 KmCommandNames.LoadTrainersWorkflow => DispatchLoadTrainersWorkflow(requestJson),
                 KmCommandNames.LoadShopsWorkflow => DispatchLoadShopsWorkflow(requestJson),
                 KmCommandNames.LoadEncountersWorkflow => DispatchLoadEncountersWorkflow(requestJson),
@@ -138,6 +146,22 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<LoadTextWorkflowRequest>(requestJson);
         var workflow = swShWorkflowService.LoadText(ProjectBridgeMapper.ToCore(request.Payload.Paths));
         var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateTextEntry(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateTextEntryRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = textEditSessionService.UpdateEntry(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            request.Payload.TextKey,
+            request.Payload.Value);
+        var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -245,7 +269,7 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<StartEditSessionRequest>(requestJson);
         _ = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var response = new StartEditSessionResponse(
-            EditSessionBridgeMapper.ToDto(itemsEditSessionService.StartSession()));
+            EditSessionBridgeMapper.ToDto(EditSession.Start()));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -253,9 +277,15 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchValidateEditSession(string requestJson)
     {
         var request = DeserializeRequest<ValidateEditSessionRequest>(requestJson);
-        var validation = itemsEditSessionService.Validate(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            EditSessionBridgeMapper.ToCore(request.Payload.Session));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var validation = GetEditSessionDomain(session) switch
+        {
+            EditSessionDomain.Text => textEditSessionService.Validate(paths, session),
+            EditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
+            EditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
+            _ => itemsEditSessionService.Validate(paths, session),
+        };
         var response = SwShBridgeMapper.ToDto(validation);
 
         return SerializeSuccess(response, request.RequestId);
@@ -264,9 +294,15 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchCreateChangePlan(string requestJson)
     {
         var request = DeserializeRequest<CreateChangePlanRequest>(requestJson);
-        var changePlan = itemsEditSessionService.CreateChangePlan(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            EditSessionBridgeMapper.ToCore(request.Payload.Session));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var changePlan = GetEditSessionDomain(session) switch
+        {
+            EditSessionDomain.Text => textEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
+            _ => itemsEditSessionService.CreateChangePlan(paths, session),
+        };
         var response = new CreateChangePlanResponse(EditSessionBridgeMapper.ToDto(changePlan));
 
         return SerializeSuccess(response, request.RequestId);
@@ -275,13 +311,74 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchApplyChangePlan(string requestJson)
     {
         var request = DeserializeRequest<ApplyChangePlanRequest>(requestJson);
-        var applyResult = itemsEditSessionService.ApplyChangePlan(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            EditSessionBridgeMapper.ToCore(request.Payload.Session),
-            EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var changePlan = EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan);
+        var applyResult = GetEditSessionDomain(session) switch
+        {
+            EditSessionDomain.Text => textEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
+            _ => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
+        };
         var response = new ApplyChangePlanResponse(EditSessionBridgeMapper.ToDto(applyResult));
 
         return SerializeSuccess(response, request.RequestId);
+    }
+
+    private static EditSessionDomain GetEditSessionDomain(EditSession session)
+    {
+        var domains = session.PendingEdits
+            .Select(edit => edit.Domain)
+            .Where(domain => !string.IsNullOrWhiteSpace(domain))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return domains switch
+        {
+            [] => EditSessionDomain.None,
+            ["workflow.items"] => EditSessionDomain.Items,
+            ["workflow.text"] => EditSessionDomain.Text,
+            _ => EditSessionDomain.Mixed,
+        };
+    }
+
+    private static SwShEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
+    {
+        var diagnostics = new[]
+        {
+            CreateMixedSessionDiagnostic(),
+        };
+
+        return new SwShEditSessionValidation(session, IsValid: false, diagnostics);
+    }
+
+    private static ChangePlan CreateUnsupportedMixedChangePlan(EditSession session)
+    {
+        return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), [CreateMixedSessionDiagnostic()]);
+    }
+
+    private static ApplyResult CreateUnsupportedMixedApplyResult(EditSession session)
+    {
+        var applyId = Guid.NewGuid().ToString("N");
+        var appliedAt = DateTimeOffset.UtcNow;
+        var emptyPlan = new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), [CreateMixedSessionDiagnostic()]);
+
+        return new ApplyResult(
+            applyId,
+            appliedAt,
+            Array.Empty<ProjectFileReference>(),
+            new WriteManifest(applyId, appliedAt, emptyPlan.Writes),
+            emptyPlan.Diagnostics);
+    }
+
+    private static ValidationDiagnostic CreateMixedSessionDiagnostic()
+    {
+        return new ValidationDiagnostic(
+            DiagnosticSeverity.Error,
+            "Edit sessions cannot mix workflow domains in one change plan yet.",
+            Domain: "workflow.editSession",
+            Expected: "Pending edits from one workflow domain");
     }
 
     private static BridgeRequest<TPayload> DeserializeRequest<TPayload>(string requestJson)
@@ -316,5 +413,13 @@ public sealed class ProjectBridgeDispatcher
     }
 
     private sealed record BridgeCommandEnvelope(string? Command, string? RequestId);
+
+    private enum EditSessionDomain
+    {
+        None,
+        Items,
+        Text,
+        Mixed,
+    }
 }
 

@@ -620,6 +620,105 @@ h2 {
   align-items: end;
 }
 
+.text-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.text-table {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.text-row {
+  display: grid;
+  grid-template-columns: 64px minmax(180px, 1.2fr) 72px minmax(220px, 1.4fr) minmax(96px, 0.7fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  color: #202420;
+  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid #e1e5df;
+  text-align: left;
+}
+
+.text-row:last-child {
+  border-bottom: 0;
+}
+
+.text-row:not(.text-row-heading) {
+  cursor: pointer;
+}
+
+.text-row:not(.text-row-heading):hover,
+.text-row-selected {
+  color: #ffffff;
+  background: #4338ca;
+}
+
+.text-row-pending:not(.text-row-selected) {
+  background: #fff8e8;
+  box-shadow: inset 4px 0 0 #b88416;
+}
+
+.text-row-heading {
+  color: #6c756a;
+  background: #f5f6f4;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: default;
+}
+
+.text-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-inspector {
+  min-width: 0;
+  padding: 14px;
+  background: #f5f6f4;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.text-inspector h3 {
+  margin: 0;
+  color: #202420;
+  font-size: 15px;
+}
+
+.text-edit-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #d7ddd5;
+}
+
+.path-field textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  padding: 10px 12px;
+  color: #202420;
+  background: #ffffff;
+  border: 1px solid #cbd3c9;
+  border-radius: 8px;
+  font: inherit;
+  line-height: 1.4;
+}
+
 .changes-summary {
   display: flex;
   flex-wrap: wrap;
@@ -793,6 +892,7 @@ h2 {
   .workflow-row,
   .items-toolbar,
   .items-layout,
+  .text-layout,
   .change-plan-list li,
   .change-plan-status {
     grid-template-columns: 1fr;
@@ -816,5 +916,14 @@ h2 {
 
   .item-price-editor-row {
     grid-template-columns: 1fr;
+  }
+
+  .text-row {
+    grid-template-columns: 56px minmax(120px, 1fr) 56px;
+  }
+
+  .text-row span:nth-child(4),
+  .text-row span:nth-child(5) {
+    display: none;
   }
 }
