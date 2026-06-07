@@ -12,6 +12,7 @@ export const kmCommandNameValues = [
   'text.load',
   'text.entry.update',
   'trainers.load',
+  'trainers.field.update',
   'shops.load',
   'encounters.load',
   'raidRewards.load',
@@ -41,6 +42,7 @@ export const kmCommandNames = {
   loadTextWorkflow: 'text.load',
   updateTextEntry: 'text.entry.update',
   loadTrainersWorkflow: 'trainers.load',
+  updateTrainerField: 'trainers.field.update',
   loadShopsWorkflow: 'shops.load',
   loadEncountersWorkflow: 'encounters.load',
   loadRaidRewardsWorkflow: 'raidRewards.load',
@@ -364,25 +366,41 @@ export const loadTextWorkflowResponseSchema = z.strictObject({
 export const trainerProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  sourceLayer: projectFileLayerSchema,
+  teamFileState: projectFileGraphEntryStateSchema,
+  teamSourceFile: z.string(),
+  teamSourceLayer: projectFileLayerSchema
 });
 
 export const trainerPokemonRecordSchema = z.strictObject({
   heldItem: z.string().nullable(),
+  heldItemId: z.number().int().nonnegative(),
   level: z.number().int().nonnegative(),
+  moveIds: z.array(z.number().int().nonnegative()),
   moves: z.array(z.string()),
   slot: z.number().int().nonnegative(),
+  speciesId: z.number().int().nonnegative(),
   species: z.string()
 });
 
 export const trainerRecordSchema = z.strictObject({
   battleType: z.string(),
+  battleTypeValue: z.number().int().nonnegative(),
   location: z.string(),
   name: z.string(),
   provenance: trainerProvenanceSchema,
   team: z.array(trainerPokemonRecordSchema),
   trainerClass: z.string(),
+  trainerClassId: z.number().int().nonnegative(),
   trainerId: z.number().int().nonnegative()
+});
+
+export const trainerEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  valueKind: z.string()
 });
 
 export const trainersWorkflowStatsSchema = z.strictObject({
@@ -393,6 +411,7 @@ export const trainersWorkflowStatsSchema = z.strictObject({
 
 export const trainersWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(trainerEditableFieldSchema),
   stats: trainersWorkflowStatsSchema,
   summary: workflowSummarySchema,
   trainers: z.array(trainerRecordSchema)
@@ -744,6 +763,21 @@ export const updateTextEntryResponseSchema = z.strictObject({
   workflow: textWorkflowSchema
 });
 
+export const updateTrainerFieldRequestSchema = z.strictObject({
+  field: z.string(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  slot: z.number().int().nonnegative().nullable(),
+  trainerId: z.number().int().nonnegative(),
+  value: z.string()
+});
+
+export const updateTrainerFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: trainersWorkflowSchema
+});
+
 export const startEditSessionResponseSchema = z.strictObject({
   session: editSessionSchema
 });
@@ -830,6 +864,9 @@ export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
 export type TextEditableField = z.infer<typeof textEditableFieldSchema>;
 export type TextEntryRecord = z.infer<typeof textEntryRecordSchema>;
 export type TextWorkflow = z.infer<typeof textWorkflowSchema>;
+export type TrainerEditableField = z.infer<typeof trainerEditableFieldSchema>;
+export type TrainerPokemonRecord = z.infer<typeof trainerPokemonRecordSchema>;
+export type TrainerRecord = z.infer<typeof trainerRecordSchema>;
 export type TrainersWorkflow = z.infer<typeof trainersWorkflowSchema>;
 export type ShopsWorkflow = z.infer<typeof shopsWorkflowSchema>;
 export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;
@@ -881,6 +918,8 @@ export type UpdateItemFieldRequest = z.infer<typeof updateItemFieldRequestSchema
 export type UpdateItemFieldResponse = z.infer<typeof updateItemFieldResponseSchema>;
 export type UpdateTextEntryRequest = z.infer<typeof updateTextEntryRequestSchema>;
 export type UpdateTextEntryResponse = z.infer<typeof updateTextEntryResponseSchema>;
+export type UpdateTrainerFieldRequest = z.infer<typeof updateTrainerFieldRequestSchema>;
+export type UpdateTrainerFieldResponse = z.infer<typeof updateTrainerFieldResponseSchema>;
 export type ValidateEditSessionRequest = z.infer<typeof validateEditSessionRequestSchema>;
 export type ValidateEditSessionResponse = z.infer<typeof validateEditSessionResponseSchema>;
 export type ValidateProjectRequest = z.infer<typeof validateProjectRequestSchema>;
