@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "pnpm --filter @km-editor/desktop dev",
     "build": "pnpm --filter @km-editor/desktop build",
+    "sidecar:publish": "pnpm --filter @km-editor/desktop sidecar:publish",
     "tauri:dev": "pnpm --filter @km-editor/desktop tauri:dev",
     "tauri:build": "pnpm --filter @km-editor/desktop tauri:build",
     "typecheck": "pnpm --filter @km-editor/desktop typecheck",

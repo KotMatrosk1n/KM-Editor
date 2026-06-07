@@ -5,6 +5,7 @@ dist/
 build/
 out/
 target/
+apps/desktop/src-tauri/binaries/
 
 ## Dependencies
 node_modules/
