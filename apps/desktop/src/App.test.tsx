@@ -47,9 +47,13 @@ describe('App', () => {
       projectStatus: 'idle',
       raidRewardSearchText: '',
       raidRewardsWorkflow: null,
+      royalCandySearchText: '',
+      royalCandyWorkflow: null,
       selectedEncounterTableId: null,
       selectedExeFsCheckId: null,
       selectedExeFsPatchId: null,
+      selectedRoyalCandyCheckId: null,
+      selectedRoyalCandyWorkflowId: null,
       selectedFlagId: null,
       selectedItemId: null,
       selectedPlacementObjectId: null,
@@ -474,6 +478,32 @@ describe('App', () => {
     expect(screen.getAllByText('Royal Candy immediate scan').length).toBeGreaterThan(0);
     expect(screen.getAllByText('.text').length).toBeGreaterThan(0);
     expect(screen.getAllByText('file+0x100').length).toBeGreaterThan(0);
+  });
+
+  it('opens Royal Candy workflows, searches checks, and shows planned outputs', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge()} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Candy' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Royal Candy Workflows'
+      })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Install Unlimited Royal Candy').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('romfs/bin/pml/item/item.dat').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('exefs/main').length).toBeGreaterThan(0);
+
+    await user.type(screen.getByLabelText('Search Royal Candy workflows'), 'code cave');
+
+    expect(screen.getAllByText('patch-code-cave').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('ExeFS').length).toBeGreaterThan(0);
   });
 
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
@@ -1202,7 +1232,7 @@ function createMockProjectBridge(
   };
   const royalCandyWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'Curated batch workflow recipes, targets, steps, and source provenance.',
+    description: 'Royal Candy source readiness, ExeFS compatibility, and LayeredFS output preview.',
     diagnostics: [],
     id: 'royalCandy',
     label: 'Royal Candy Workflows'
@@ -1366,14 +1396,106 @@ function createMockProjectBridge(
     loadRoyalCandyWorkflow: () =>
       Promise.resolve({
         workflow: {
+          checks: [
+            {
+              area: 'RomFS',
+              checkId: 'royal-candy-preflight:item-data',
+              message: 'Item data found.',
+              provenance: {
+                fileState: 'baseOnly',
+                sourceFile: 'romfs/bin/pml/item/item.dat',
+                sourceLayer: 'base'
+              },
+              status: 'Pass',
+              target: 'romfs/bin/pml/item/item.dat',
+              workflowId: 'royal-candy-preflight'
+            },
+            {
+              area: 'ExeFS',
+              checkId: 'royal-candy-preflight:exefs:exefs-main-compatibility:patch-code-cave',
+              message: 'Patch code cave: expected 0xC bytes, actual text+0x7BC338.',
+              provenance: {
+                fileState: 'baseOnly',
+                sourceFile: 'exefs/main',
+                sourceLayer: 'base'
+              },
+              status: 'Pass',
+              target: '.text text+0x7BC338',
+              workflowId: 'royal-candy-preflight'
+            }
+          ],
           diagnostics: [],
+          outputs: [
+            {
+              description: 'Royal Candy item row patch.',
+              outputId: 'royal-candy-unlimited:romfs/bin/pml/item/item.dat',
+              outputKind: 'RomFS data',
+              provenance: {
+                fileState: 'baseOnly',
+                sourceFile: 'romfs/bin/pml/item/item.dat',
+                sourceLayer: 'base'
+              },
+              relativePath: 'romfs/bin/pml/item/item.dat',
+              sourceFile: 'romfs/bin/pml/item/item.dat',
+              status: canEdit ? 'ready' : 'readOnly',
+              workflowId: 'royal-candy-unlimited'
+            },
+            {
+              description: 'Royal Candy ExeFS UI and usage patch.',
+              outputId: 'royal-candy-unlimited:exefs/main',
+              outputKind: 'ExeFS NSO',
+              provenance: {
+                fileState: 'baseOnly',
+                sourceFile: 'exefs/main',
+                sourceLayer: 'base'
+              },
+              relativePath: 'exefs/main',
+              sourceFile: 'exefs/main',
+              status: canEdit ? 'ready' : 'readOnly',
+              workflowId: 'royal-candy-unlimited'
+            }
+          ],
           stats: {
-            sourceFileCount: 0,
-            totalStepCount: 0,
-            totalWorkflowCount: 0
+            failCount: 0,
+            outputCount: 2,
+            passCount: 2,
+            sourceFileCount: 2,
+            totalCheckCount: 2,
+            totalStepCount: 2,
+            totalWorkflowCount: 1,
+            warningCount: 0
           },
           summary: royalCandyWorkflowSummary,
-          workflows: []
+          workflows: [
+            {
+              category: 'Build',
+              description: 'Prepares Royal Candy item 1128 from Rare Candy item 50.',
+              itemId: 1128,
+              mode: 'unlimited',
+              name: 'Install Unlimited Royal Candy',
+              provenance: {
+                fileState: 'baseOnly',
+                sourceFile: 'romfs/bin/pml/item/item.dat',
+                sourceLayer: 'base'
+              },
+              status: canEdit ? 'available' : 'readOnly',
+              steps: [
+                {
+                  description: 'Resolve required RomFS files and ExeFS inputs.',
+                  label: 'Validate sources',
+                  step: 1
+                },
+                {
+                  description: 'Review generated output targets before apply.',
+                  label: 'Review LayeredFS output',
+                  step: 2
+                }
+              ],
+              target: 'RomFS + ExeFS LayeredFS',
+              templateItemId: 50,
+              workflowId: 'royal-candy-unlimited'
+            }
+          ]
         }
       }),
     loadSpreadsheetImportWorkflow: () =>

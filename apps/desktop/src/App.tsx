@@ -47,6 +47,10 @@ import {
   type RaidRewardItemRecord,
   type RaidRewardTableRecord,
   type RaidRewardsWorkflow,
+  type RoyalCandyOutputRecord,
+  type RoyalCandyWorkflow,
+  type RoyalCandyWorkflowCheckRecord,
+  type RoyalCandyWorkflowRecord,
   type SaveBlockRecord,
   type ShopEditableField,
   type ShopInventoryRecord,
@@ -133,6 +137,11 @@ const sections: Array<{
     icon: Wrench
   },
   {
+    id: 'royalCandy',
+    label: 'Royal Candy',
+    icon: CheckCircle
+  },
+  {
     id: 'changes',
     label: 'Changes',
     icon: ClipboardCheck
@@ -202,7 +211,7 @@ const workflowDefinitions: Array<{
   {
     id: 'royalCandy',
     label: 'Royal Candy Workflows',
-    description: 'Curated batch workflow recipes, targets, steps, and source provenance.',
+    description: 'Royal Candy source readiness, ExeFS compatibility, and LayeredFS output preview.',
     icon: CheckCircle
   },
   {
@@ -302,6 +311,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
   const raidRewardSearchText = useWorkbenchStore((state) => state.raidRewardSearchText);
   const raidRewardsWorkflow = useWorkbenchStore((state) => state.raidRewardsWorkflow);
+  const royalCandySearchText = useWorkbenchStore((state) => state.royalCandySearchText);
+  const royalCandyWorkflow = useWorkbenchStore((state) => state.royalCandyWorkflow);
   const selectedEncounterTableId = useWorkbenchStore((state) => state.selectedEncounterTableId);
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
   const selectedRaidRewardTableId = useWorkbenchStore(
@@ -313,6 +324,12 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const selectedFlagId = useWorkbenchStore((state) => state.selectedFlagId);
   const selectedExeFsCheckId = useWorkbenchStore((state) => state.selectedExeFsCheckId);
   const selectedExeFsPatchId = useWorkbenchStore((state) => state.selectedExeFsPatchId);
+  const selectedRoyalCandyCheckId = useWorkbenchStore(
+    (state) => state.selectedRoyalCandyCheckId
+  );
+  const selectedRoyalCandyWorkflowId = useWorkbenchStore(
+    (state) => state.selectedRoyalCandyWorkflowId
+  );
   const selectedShopId = useWorkbenchStore((state) => state.selectedShopId);
   const selectedSaveBlockId = useWorkbenchStore((state) => state.selectedSaveBlockId);
   const selectedTextKey = useWorkbenchStore((state) => state.selectedTextKey);
@@ -351,6 +368,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
   const setRaidRewardSearchText = useWorkbenchStore((state) => state.setRaidRewardSearchText);
   const setRaidRewardsWorkflow = useWorkbenchStore((state) => state.setRaidRewardsWorkflow);
+  const setRoyalCandySearchText = useWorkbenchStore((state) => state.setRoyalCandySearchText);
+  const setRoyalCandyWorkflow = useWorkbenchStore((state) => state.setRoyalCandyWorkflow);
   const setSelectedRaidRewardTableId = useWorkbenchStore(
     (state) => state.setSelectedRaidRewardTableId
   );
@@ -365,6 +384,12 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   );
   const setSelectedExeFsPatchId = useWorkbenchStore(
     (state) => state.setSelectedExeFsPatchId
+  );
+  const setSelectedRoyalCandyCheckId = useWorkbenchStore(
+    (state) => state.setSelectedRoyalCandyCheckId
+  );
+  const setSelectedRoyalCandyWorkflowId = useWorkbenchStore(
+    (state) => state.setSelectedRoyalCandyWorkflowId
   );
   const setSelectedFlagId = useWorkbenchStore((state) => state.setSelectedFlagId);
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
@@ -400,6 +425,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isPlacementUpdating, setIsPlacementUpdating] = useState(false);
   const [isFlagworkSaveLoading, setIsFlagworkSaveLoading] = useState(false);
   const [isExeFsPatchLoading, setIsExeFsPatchLoading] = useState(false);
+  const [isRoyalCandyLoading, setIsRoyalCandyLoading] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -567,6 +593,22 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsExeFsPatchLoading(false);
+    }
+  };
+
+  const handleOpenRoyalCandyWorkflow = async () => {
+    setIsRoyalCandyLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadRoyalCandyWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setRoyalCandyWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRoyalCandyLoading(false);
     }
   };
 
@@ -943,12 +985,14 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               isPlacementLoading={isPlacementLoading}
               isFlagworkSaveLoading={isFlagworkSaveLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
+              isRoyalCandyLoading={isRoyalCandyLoading}
               onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
               onOpenExeFsPatchWorkflow={handleOpenExeFsPatchWorkflow}
               onOpenFlagworkSaveWorkflow={handleOpenFlagworkSaveWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenPlacementWorkflow={handleOpenPlacementWorkflow}
               onOpenRaidRewardsWorkflow={handleOpenRaidRewardsWorkflow}
+              onOpenRoyalCandyWorkflow={handleOpenRoyalCandyWorkflow}
               onOpenShopsWorkflow={handleOpenShopsWorkflow}
               onOpenTextWorkflow={handleOpenTextWorkflow}
               onOpenTrainersWorkflow={handleOpenTrainersWorkflow}
@@ -1074,6 +1118,17 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               selectedCheckId={selectedExeFsCheckId}
               selectedPatchId={selectedExeFsPatchId}
               workflow={exeFsPatchWorkflow}
+            />
+          ) : null}
+          {activeSection === 'royalCandy' ? (
+            <RoyalCandySection
+              onSearchChange={setRoyalCandySearchText}
+              onSelectCheck={setSelectedRoyalCandyCheckId}
+              onSelectWorkflow={setSelectedRoyalCandyWorkflowId}
+              searchText={royalCandySearchText}
+              selectedCheckId={selectedRoyalCandyCheckId}
+              selectedWorkflowId={selectedRoyalCandyWorkflowId}
+              workflow={royalCandyWorkflow}
             />
           ) : null}
           {activeSection === 'changes' ? (
@@ -1209,12 +1264,14 @@ function WorkflowsSection({
   isRaidRewardsLoading,
   isPlacementLoading,
   isFlagworkSaveLoading,
+  isRoyalCandyLoading,
   onOpenEncountersWorkflow,
   onOpenExeFsPatchWorkflow,
   onOpenFlagworkSaveWorkflow,
   onOpenItemsWorkflow,
   onOpenPlacementWorkflow,
   onOpenRaidRewardsWorkflow,
+  onOpenRoyalCandyWorkflow,
   onOpenShopsWorkflow,
   onOpenTextWorkflow,
   onOpenTrainersWorkflow,
@@ -1231,12 +1288,14 @@ function WorkflowsSection({
   isRaidRewardsLoading: boolean;
   isPlacementLoading: boolean;
   isFlagworkSaveLoading: boolean;
+  isRoyalCandyLoading: boolean;
   onOpenEncountersWorkflow: () => void;
   onOpenExeFsPatchWorkflow: () => void;
   onOpenFlagworkSaveWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenPlacementWorkflow: () => void;
   onOpenRaidRewardsWorkflow: () => void;
+  onOpenRoyalCandyWorkflow: () => void;
   onOpenShopsWorkflow: () => void;
   onOpenTextWorkflow: () => void;
   onOpenTrainersWorkflow: () => void;
@@ -1264,6 +1323,7 @@ function WorkflowsSection({
           const isPlacementWorkflow = definition.id === 'placement';
           const isFlagworkSaveWorkflow = definition.id === 'flagworkSave';
           const isExeFsPatchWorkflow = definition.id === 'exefsPatches';
+          const isRoyalCandyWorkflow = definition.id === 'royalCandy';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
@@ -1278,6 +1338,8 @@ function WorkflowsSection({
             isFlagworkSaveWorkflow && workflowState.availability !== 'disabled';
           const canOpenExeFsPatch =
             isExeFsPatchWorkflow && workflowState.availability !== 'disabled';
+          const canOpenRoyalCandy =
+            isRoyalCandyWorkflow && workflowState.availability !== 'disabled';
 
           return (
             <article className="workflow-row" key={definition.id}>
@@ -1389,6 +1451,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isExeFsPatchLoading ? 'Loading' : 'Open ExeFS'}</span>
+                  </button>
+                ) : null}
+                {isRoyalCandyWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenRoyalCandy || isRoyalCandyLoading}
+                    onClick={onOpenRoyalCandyWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isRoyalCandyLoading ? 'Loading' : 'Open Candy'}</span>
                   </button>
                 ) : null}
               </div>
@@ -4138,6 +4211,293 @@ function SelectedExeFsPatchPanel({
   );
 }
 
+function RoyalCandySection({
+  onSearchChange,
+  onSelectCheck,
+  onSelectWorkflow,
+  searchText,
+  selectedCheckId,
+  selectedWorkflowId,
+  workflow
+}: {
+  onSearchChange: (value: string) => void;
+  onSelectCheck: (checkId: string | null) => void;
+  onSelectWorkflow: (workflowId: string | null) => void;
+  searchText: string;
+  selectedCheckId: string | null;
+  selectedWorkflowId: string | null;
+  workflow: RoyalCandyWorkflow | null;
+}) {
+  const filteredWorkflows = filterRoyalCandyWorkflows(workflow?.workflows ?? [], searchText);
+  const filteredChecks = filterRoyalCandyChecks(workflow?.checks ?? [], searchText);
+  const filteredOutputs = filterRoyalCandyOutputs(workflow?.outputs ?? [], searchText);
+  const selectedWorkflow =
+    filteredWorkflows.find((candidate) => candidate.workflowId === selectedWorkflowId) ??
+    workflow?.workflows.find((candidate) => candidate.workflowId === selectedWorkflowId) ??
+    filteredWorkflows[0] ??
+    workflow?.workflows[0] ??
+    null;
+  const visibleChecks = filteredChecks.filter(
+    (check) =>
+      !selectedWorkflow ||
+      check.workflowId === selectedWorkflow.workflowId ||
+      check.workflowId === 'royal-candy-preflight'
+  );
+  const selectedCheck =
+    visibleChecks.find((check) => check.checkId === selectedCheckId) ??
+    workflow?.checks.find((check) => check.checkId === selectedCheckId) ??
+    visibleChecks[0] ??
+    workflow?.checks[0] ??
+    null;
+  const visibleOutputs = selectedWorkflow
+    ? filteredOutputs.filter((output) => output.workflowId === selectedWorkflow.workflowId)
+    : filteredOutputs;
+
+  useEffect(() => {
+    if (selectedWorkflow && selectedWorkflow.workflowId !== selectedWorkflowId) {
+      onSelectWorkflow(selectedWorkflow.workflowId);
+    }
+  }, [onSelectWorkflow, selectedWorkflow?.workflowId, selectedWorkflowId]);
+
+  useEffect(() => {
+    if (selectedCheck && selectedCheck.checkId !== selectedCheckId) {
+      onSelectCheck(selectedCheck.checkId);
+    }
+  }, [onSelectCheck, selectedCheck?.checkId, selectedCheckId]);
+
+  return (
+    <>
+      <section aria-labelledby="royal-candy-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <CheckCircle aria-hidden="true" size={18} />
+          <h2 id="royal-candy-heading">Royal Candy Workflows</h2>
+        </div>
+
+        <div className="items-toolbar exefs-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search Royal Candy workflows"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search Royal Candy"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Checks"
+            value={workflow ? workflow.stats.totalCheckCount.toString() : '0'}
+          />
+          <Metric label="Passing" value={workflow ? workflow.stats.passCount.toString() : '0'} />
+          <Metric
+            label="Warnings"
+            value={workflow ? workflow.stats.warningCount.toString() : '0'}
+          />
+          <Metric label="Outputs" value={workflow ? workflow.stats.outputCount.toString() : '0'} />
+        </div>
+
+        {workflow ? (
+          <div className="flagwork-layout">
+            <div className="flagwork-stack">
+              <div className="exefs-table" role="table" aria-label="Royal Candy workflows">
+                <div className="exefs-row royal-candy-workflow-row exefs-row-heading" role="row">
+                  <span role="columnheader">Workflow</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Mode</span>
+                  <span role="columnheader">Item</span>
+                  <span role="columnheader">Target</span>
+                </div>
+                {filteredWorkflows.map((candidate) => (
+                  <button
+                    className={`exefs-row royal-candy-workflow-row ${
+                      selectedWorkflow?.workflowId === candidate.workflowId
+                        ? 'exefs-row-selected'
+                        : ''
+                    }`}
+                    key={candidate.workflowId}
+                    onClick={() => onSelectWorkflow(candidate.workflowId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{candidate.name}</span>
+                    <span role="cell">
+                      <span className={`status-pill ${getExeFsStatusClassName(candidate.status)}`}>
+                        {candidate.status}
+                      </span>
+                    </span>
+                    <span role="cell">{candidate.mode}</span>
+                    <span role="cell">
+                      {candidate.itemId} from {candidate.templateItemId}
+                    </span>
+                    <span role="cell">{candidate.target}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="exefs-table" role="table" aria-label="Royal Candy preflight checks">
+                <div className="exefs-row royal-candy-check-row exefs-row-heading" role="row">
+                  <span role="columnheader">Check</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Area</span>
+                  <span role="columnheader">Target</span>
+                  <span role="columnheader">Message</span>
+                </div>
+                {visibleChecks.map((check) => (
+                  <button
+                    className={`exefs-row royal-candy-check-row ${
+                      selectedCheck?.checkId === check.checkId ? 'exefs-row-selected' : ''
+                    }`}
+                    key={check.checkId}
+                    onClick={() => onSelectCheck(check.checkId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{check.checkId.split(':').pop()}</span>
+                    <span role="cell">
+                      <span className={`status-pill ${getExeFsStatusClassName(check.status)}`}>
+                        {check.status}
+                      </span>
+                    </span>
+                    <span role="cell">{check.area}</span>
+                    <span role="cell">{check.target}</span>
+                    <span role="cell">{check.message}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <SelectedRoyalCandyPanel
+              check={selectedCheck}
+              outputs={visibleOutputs}
+              selectedWorkflow={selectedWorkflow}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">
+            Open Royal Candy from Workflows to inspect backend preflight and output targets.
+          </p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedRoyalCandyPanel({
+  check,
+  outputs,
+  selectedWorkflow
+}: {
+  check: RoyalCandyWorkflowCheckRecord | null;
+  outputs: RoyalCandyOutputRecord[];
+  selectedWorkflow: RoyalCandyWorkflowRecord | null;
+}) {
+  const provenance = check?.provenance ?? selectedWorkflow?.provenance ?? outputs[0]?.provenance ?? null;
+
+  return (
+    <aside aria-label="Selected Royal Candy workflow provenance" className="encounter-inspector">
+      <div className="panel-heading">
+        <CheckCircle aria-hidden="true" size={18} />
+        <h3>Selected Workflow</h3>
+      </div>
+
+      {selectedWorkflow ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Workflow</dt>
+              <dd>{selectedWorkflow.name}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{selectedWorkflow.status}</dd>
+            </div>
+            <div>
+              <dt>Mode</dt>
+              <dd>{selectedWorkflow.mode}</dd>
+            </div>
+            <div>
+              <dt>Item</dt>
+              <dd>
+                {selectedWorkflow.itemId} from {selectedWorkflow.templateItemId}
+              </dd>
+            </div>
+            <div>
+              <dt>Check</dt>
+              <dd>{check?.checkId.split(':').pop() ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Check status</dt>
+              <dd>{check?.status ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{provenance?.sourceFile ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{provenance ? formatSourceLayer(provenance.sourceLayer) : 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{provenance ? formatFileState(provenance.fileState) : 'n/a'}</dd>
+            </div>
+          </dl>
+
+          <div className="encounter-edit-form">
+            <dl className="encounter-slot-detail">
+              <div>
+                <dt>Description</dt>
+                <dd>{selectedWorkflow.description}</dd>
+              </div>
+              <div>
+                <dt>Check message</dt>
+                <dd>{check?.message ?? 'n/a'}</dd>
+              </div>
+            </dl>
+
+            <ol className="royal-candy-step-list">
+              {selectedWorkflow.steps.map((step) => (
+                <li key={step.step}>
+                  <strong>{step.label}</strong>
+                  <span>{step.description}</span>
+                </li>
+              ))}
+            </ol>
+
+            <div className="exefs-segment-list" aria-label="Royal Candy planned outputs">
+              {outputs.map((output) => (
+                <dl className="encounter-slot-detail" key={output.outputId}>
+                  <div>
+                    <dt>{output.outputKind}</dt>
+                    <dd>{output.status}</dd>
+                  </div>
+                  <div>
+                    <dt>Output</dt>
+                    <dd>{output.relativePath}</dd>
+                  </div>
+                  <div>
+                    <dt>Source</dt>
+                    <dd>{output.sourceFile}</dd>
+                  </div>
+                  <div>
+                    <dt>Plan</dt>
+                    <dd>{output.description}</dd>
+                  </div>
+                </dl>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No Royal Candy workflow selected.</p>
+      )}
+    </aside>
+  );
+}
+
 function ChangesSection({
   applyResult,
   changePlan,
@@ -4607,6 +4967,71 @@ function filterExeFsSegmentRecords(segments: ExeFsSegmentRecord[], searchText: s
   );
 }
 
+function filterRoyalCandyWorkflows(workflows: RoyalCandyWorkflowRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return workflows;
+  }
+
+  return workflows.filter((workflow) =>
+    [
+      workflow.workflowId,
+      workflow.name,
+      workflow.category,
+      workflow.target,
+      workflow.mode,
+      workflow.status,
+      workflow.itemId.toString(),
+      workflow.templateItemId.toString(),
+      workflow.description,
+      workflow.provenance.sourceFile,
+      ...workflow.steps.flatMap((step) => [step.label, step.description])
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
+function filterRoyalCandyChecks(checks: RoyalCandyWorkflowCheckRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return checks;
+  }
+
+  return checks.filter((check) =>
+    [
+      check.checkId,
+      check.workflowId,
+      check.status,
+      check.area,
+      check.target,
+      check.message,
+      check.provenance.sourceFile
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
+function filterRoyalCandyOutputs(outputs: RoyalCandyOutputRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return outputs;
+  }
+
+  return outputs.filter((output) =>
+    [
+      output.outputId,
+      output.workflowId,
+      output.relativePath,
+      output.sourceFile,
+      output.outputKind,
+      output.status,
+      output.description,
+      output.provenance.sourceFile
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function getEditableItemFieldValue(item: ItemRecord, field: string) {
   switch (field) {
     case buyPriceFieldName:
@@ -4849,8 +5274,12 @@ function getExeFsStatusClassName(status: string) {
     case 'pass':
     case 'info':
     case 'available':
+    case 'ready':
       return 'status-ready';
+    case 'readonly':
+    case 'read-only':
     case 'warning':
+    case 'review':
       return 'status-warning';
     case 'fail':
     case 'blocked':

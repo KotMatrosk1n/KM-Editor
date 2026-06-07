@@ -769,25 +769,56 @@ export const royalCandyWorkflowStepRecordSchema = z.strictObject({
   step: z.number().int().nonnegative()
 });
 
+export const royalCandyWorkflowCheckRecordSchema = z.strictObject({
+  area: z.string(),
+  checkId: z.string(),
+  message: z.string(),
+  provenance: royalCandyProvenanceSchema,
+  status: z.string(),
+  target: z.string(),
+  workflowId: z.string()
+});
+
+export const royalCandyOutputRecordSchema = z.strictObject({
+  description: z.string(),
+  outputId: z.string(),
+  outputKind: z.string(),
+  provenance: royalCandyProvenanceSchema,
+  relativePath: z.string(),
+  sourceFile: z.string(),
+  status: z.string(),
+  workflowId: z.string()
+});
+
 export const royalCandyWorkflowRecordSchema = z.strictObject({
   category: z.string(),
   description: z.string(),
+  itemId: z.number().int().nonnegative(),
+  mode: z.string(),
   name: z.string(),
   provenance: royalCandyProvenanceSchema,
   status: z.string(),
   steps: z.array(royalCandyWorkflowStepRecordSchema),
   target: z.string(),
+  templateItemId: z.number().int().nonnegative(),
   workflowId: z.string()
 });
 
 export const royalCandyWorkflowStatsSchema = z.strictObject({
+  failCount: z.number().int().nonnegative(),
+  outputCount: z.number().int().nonnegative(),
+  passCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
+  totalCheckCount: z.number().int().nonnegative(),
   totalStepCount: z.number().int().nonnegative(),
-  totalWorkflowCount: z.number().int().nonnegative()
+  totalWorkflowCount: z.number().int().nonnegative(),
+  warningCount: z.number().int().nonnegative()
 });
 
 export const royalCandyWorkflowSchema = z.strictObject({
+  checks: z.array(royalCandyWorkflowCheckRecordSchema),
   diagnostics: z.array(apiDiagnosticSchema),
+  outputs: z.array(royalCandyOutputRecordSchema),
   stats: royalCandyWorkflowStatsSchema,
   summary: workflowSummarySchema,
   workflows: z.array(royalCandyWorkflowRecordSchema)
@@ -1052,6 +1083,11 @@ export type ExeFsPatchCheckRecord = z.infer<typeof exeFsPatchCheckRecordSchema>;
 export type ExeFsPatchRecord = z.infer<typeof exeFsPatchRecordSchema>;
 export type ExeFsSegmentRecord = z.infer<typeof exeFsSegmentRecordSchema>;
 export type ExeFsPatchWorkflow = z.infer<typeof exeFsPatchWorkflowSchema>;
+export type RoyalCandyOutputRecord = z.infer<typeof royalCandyOutputRecordSchema>;
+export type RoyalCandyWorkflowCheckRecord = z.infer<
+  typeof royalCandyWorkflowCheckRecordSchema
+>;
+export type RoyalCandyWorkflowRecord = z.infer<typeof royalCandyWorkflowRecordSchema>;
 export type RoyalCandyWorkflow = z.infer<typeof royalCandyWorkflowSchema>;
 export type SpreadsheetImportWorkflow = z.infer<typeof spreadsheetImportWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;

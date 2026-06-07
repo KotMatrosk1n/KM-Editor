@@ -17,7 +17,9 @@ using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
+using KM.SwSh.RoyalCandy;
 using KM.Tools.Bridge;
+using System.Buffers.Binary;
 using System.Text.Json;
 using Xunit;
 
@@ -806,37 +808,34 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadRoyalCandyWorkflowReturnsSanitizedWorkflowRecipes()
+    public void DispatchLoadRoyalCandyWorkflowReturnsRealPreflightAndOutputs()
     {
         using var temp = TemporaryBridgeProject.Create();
         temp.WriteBaseRomFsFile(
-            "kmeditor/royal-candy.workflows.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "workflows": [
-                {
-                  "workflowId": "candy_reward_setup",
-                  "name": "Candy Reward Setup",
-                  "category": "Items",
-                  "target": "items",
-                  "status": "available",
-                  "description": "Prepare a safe candy reward workflow fixture.",
-                  "steps": [
-                    {
-                      "step": 1,
-                      "label": "Review target",
-                      "description": "Review target item and output preview."
-                    }
-                  ]
-                }
-              ]
-            }
-            """);
-        temp.WriteBaseExeFsFile("main", "base-main");
+            SwShRoyalCandyWorkflowService.ItemPath["romfs/".Length..],
+            new byte[(1128 + 1) * 0x30]);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ItemHashPath["romfs/".Length..],
+            [0x01]);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
+            [0x02]);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.NestDataPath["romfs/".Length..],
+            [0x03]);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.PlacementPath["romfs/".Length..],
+            [0x04]);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.BagEventScriptPath["romfs/".Length..],
+            [0x05]);
+        temp.WriteBaseRomFsFile("bin/message/English/common/iteminfo.dat", [0x06]);
+        temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", [0x07]);
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
         var requestJson = SerializeRequest(
             KmCommandNames.LoadRoyalCandyWorkflow,
-            new LoadRoyalCandyWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            new LoadRoyalCandyWorkflowRequest(temp.Paths),
             requestId: "request-royal-candy");
 
         var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
@@ -845,13 +844,29 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.Equal("request-royal-candy", response.RequestId);
         Assert.NotNull(response.Payload);
-        var workflow = Assert.Single(response.Payload.Workflow.Workflows);
-        Assert.Equal("candy_reward_setup", workflow.WorkflowId);
-        Assert.Equal("Candy Reward Setup", workflow.Name);
+        Assert.Equal(3, response.Payload.Workflow.Workflows.Count);
+        var workflow = response.Payload.Workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-unlimited");
+        Assert.Equal("Install Unlimited Royal Candy", workflow.Name);
+        Assert.Equal("available", workflow.Status);
+        Assert.Equal(1128, workflow.ItemId);
         Assert.Equal(ProjectFileLayerDto.Base, workflow.Provenance.SourceLayer);
-        var step = Assert.Single(workflow.Steps);
-        Assert.Equal(1, step.Step);
-        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+        Assert.Contains(
+            response.Payload.Workflow.Checks,
+            check => check.CheckId.EndsWith(":game-flavor", StringComparison.Ordinal)
+                && check.Status == "Pass"
+                && check.Message.Contains("Pokemon Sword", StringComparison.Ordinal));
+        Assert.Contains(
+            response.Payload.Workflow.Checks,
+            check => check.CheckId.Contains("patch-code-cave", StringComparison.Ordinal)
+                && check.Status == "Pass");
+        Assert.Contains(
+            response.Payload.Workflow.Outputs,
+            output => output.WorkflowId == workflow.WorkflowId
+                && output.RelativePath == SwShRoyalCandyWorkflowService.ExeFsMainPath
+                && output.Status == "ready");
+        Assert.True(response.Payload.Workflow.Stats.TotalCheckCount >= 40);
+        Assert.Equal(0, response.Payload.Workflow.Stats.FailCount);
+        Assert.True(response.Payload.Workflow.Stats.SourceFileCount >= 10);
     }
 
     [Fact]
@@ -1217,6 +1232,13 @@ public sealed class ProjectBridgeDispatcherTests
         return JsonSerializer.Serialize(
             new BridgeRequest<TPayload>(command, payload, RequestId: requestId),
             BridgeJson.SerializerOptions);
+    }
+
+    private static byte[] CreateNpdm(ulong titleId)
+    {
+        var data = new byte[0x298];
+        BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(0x290, 8), titleId);
+        return data;
     }
 
     private static BridgeResponse<TPayload> DeserializeResponse<TPayload>(string responseJson)

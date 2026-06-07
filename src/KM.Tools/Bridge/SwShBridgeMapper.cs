@@ -320,9 +320,16 @@ public static class SwShBridgeMapper
         return new RoyalCandyWorkflowDto(
             ToDto(workflow.Summary),
             workflow.Workflows.Select(ToDto).ToArray(),
+            workflow.Checks.Select(ToDto).ToArray(),
+            workflow.Outputs.Select(ToDto).ToArray(),
             new RoyalCandyWorkflowStatsDto(
                 workflow.Stats.TotalWorkflowCount,
                 workflow.Stats.TotalStepCount,
+                workflow.Stats.TotalCheckCount,
+                workflow.Stats.PassCount,
+                workflow.Stats.WarningCount,
+                workflow.Stats.FailCount,
+                workflow.Stats.OutputCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -736,10 +743,38 @@ public static class SwShBridgeMapper
             workflow.Name,
             workflow.Category,
             workflow.Target,
+            workflow.Mode,
+            workflow.ItemId,
+            workflow.TemplateItemId,
             workflow.Status,
             workflow.Description,
             workflow.Steps.Select(ToDto).ToArray(),
             ToDto(workflow.Provenance));
+    }
+
+    private static RoyalCandyWorkflowCheckRecordDto ToDto(SwShRoyalCandyWorkflowCheckRecord check)
+    {
+        return new RoyalCandyWorkflowCheckRecordDto(
+            check.CheckId,
+            check.WorkflowId,
+            check.Status,
+            check.Area,
+            check.Target,
+            check.Message,
+            ToDto(check.Provenance));
+    }
+
+    private static RoyalCandyOutputRecordDto ToDto(SwShRoyalCandyOutputRecord output)
+    {
+        return new RoyalCandyOutputRecordDto(
+            output.OutputId,
+            output.WorkflowId,
+            output.RelativePath,
+            output.SourceFile,
+            output.OutputKind,
+            output.Status,
+            output.Description,
+            ToDto(output.Provenance));
     }
 
     private static RoyalCandyWorkflowStepRecordDto ToDto(SwShRoyalCandyWorkflowStepRecord step)
