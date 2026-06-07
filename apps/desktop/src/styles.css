@@ -168,6 +168,14 @@ h2 {
   padding: 24px;
 }
 
+.workspace-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 16px;
+  align-content: start;
+  padding: 24px;
+}
+
 .panel {
   min-width: 0;
   padding: 16px;
@@ -176,12 +184,80 @@ h2 {
   border-radius: 8px;
 }
 
+.project-gate,
+.wide-panel {
+  grid-column: 1 / -1;
+}
+
 .panel-heading {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 24px;
   color: #315a3d;
+}
+
+.path-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.path-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #424a41;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.path-field input {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 10px;
+  color: #202420;
+  background: #f7f8f6;
+  border: 1px solid #cbd4c9;
+  border-radius: 8px;
+  outline: none;
+}
+
+.path-field input:focus {
+  border-color: #2f6f46;
+  box-shadow: 0 0 0 3px rgb(47 111 70 / 16%);
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  color: #23432e;
+  background: #eef4ee;
+  border: 1px solid #b8c9b9;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.secondary-button:hover {
+  background: #e2ece1;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.64;
 }
 
 .path-list {
@@ -209,11 +285,29 @@ h2 {
 
 .path-row dd {
   margin: 0;
-  color: #9a5d14;
   font-weight: 700;
 }
 
-.session-summary {
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.metric {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  min-height: 68px;
+  align-content: center;
+  padding: 10px;
+  background: #f5f6f4;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.empty-state {
   display: grid;
   gap: 2px;
   margin-top: 16px;
@@ -225,10 +319,144 @@ h2 {
   line-height: 1;
 }
 
+.metric-value-small {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
 .metric-label {
   color: #6c756a;
   font-size: 14px;
   font-weight: 600;
+}
+
+.path-status {
+  color: #60705f;
+  font-weight: 800;
+}
+
+.path-status-valid {
+  color: #247343;
+}
+
+.path-status-missing,
+.path-status-notSet,
+.path-status-wrongKind {
+  color: #95620e;
+}
+
+.path-status-unsafe {
+  color: #a33b2f;
+}
+
+.path-status-muted {
+  color: #758174;
+}
+
+.diagnostic-list {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diagnostic {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 10px;
+  min-height: 36px;
+  align-items: center;
+  padding: 8px 10px;
+  background: #f5f6f4;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.diagnostic strong {
+  text-transform: capitalize;
+}
+
+.diagnostic-error strong {
+  color: #a33b2f;
+}
+
+.diagnostic-warning strong {
+  color: #95620e;
+}
+
+.diagnostic-info strong {
+  color: #315a3d;
+}
+
+.empty-copy {
+  margin: 16px 0 0;
+  color: #6c756a;
+  font-weight: 600;
+}
+
+.workflow-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.workflow-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  min-height: 72px;
+  padding: 12px;
+  background: #f5f6f4;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.workflow-row h3,
+.workflow-row p {
+  margin: 0;
+}
+
+.workflow-row h3 {
+  font-size: 16px;
+}
+
+.workflow-row p {
+  color: #6c756a;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 86px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.status-ready {
+  color: #1e653a;
+  background: #e8f5eb;
+  border-color: #b9d8c1;
+}
+
+.status-warning {
+  color: #805205;
+  background: #fff5df;
+  border-color: #e4c57f;
+}
+
+.status-blocked {
+  color: #8c3028;
+  background: #fdebe8;
+  border-color: #e2aaa3;
 }
 
 @media (max-width: 760px) {
@@ -259,5 +487,19 @@ h2 {
   .content-grid {
     grid-template-columns: 1fr;
     padding: 16px;
+  }
+
+  .workspace-content {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .path-form,
+  .health-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-row {
+    grid-template-columns: 1fr;
   }
 }
