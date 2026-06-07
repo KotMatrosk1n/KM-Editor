@@ -24,6 +24,7 @@ using KM.SwSh.Items;
 using KM.SwSh.Placement;
 using KM.SwSh.Raids;
 using KM.SwSh.Shops;
+using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
@@ -39,6 +40,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShPlacementEditSessionService placementEditSessionService;
     private readonly SwShRaidRewardsEditSessionService raidRewardsEditSessionService;
     private readonly SwShShopsEditSessionService shopsEditSessionService;
+    private readonly SwShSpreadsheetImportExecutionService spreadsheetImportExecutionService;
     private readonly SwShTextEditSessionService textEditSessionService;
     private readonly SwShTrainersEditSessionService trainersEditSessionService;
     private readonly SwShWorkflowService swShWorkflowService;
@@ -50,6 +52,7 @@ public sealed class ProjectBridgeDispatcher
         SwShPlacementEditSessionService? placementEditSessionService = null,
         SwShRaidRewardsEditSessionService? raidRewardsEditSessionService = null,
         SwShShopsEditSessionService? shopsEditSessionService = null,
+        SwShSpreadsheetImportExecutionService? spreadsheetImportExecutionService = null,
         SwShTextEditSessionService? textEditSessionService = null,
         SwShTrainersEditSessionService? trainersEditSessionService = null,
         SwShWorkflowService? swShWorkflowService = null)
@@ -60,6 +63,7 @@ public sealed class ProjectBridgeDispatcher
         this.placementEditSessionService = placementEditSessionService ?? new SwShPlacementEditSessionService(this.projectWorkspaceService);
         this.raidRewardsEditSessionService = raidRewardsEditSessionService ?? new SwShRaidRewardsEditSessionService(this.projectWorkspaceService);
         this.shopsEditSessionService = shopsEditSessionService ?? new SwShShopsEditSessionService(this.projectWorkspaceService);
+        this.spreadsheetImportExecutionService = spreadsheetImportExecutionService ?? new SwShSpreadsheetImportExecutionService(this.projectWorkspaceService);
         this.textEditSessionService = textEditSessionService ?? new SwShTextEditSessionService(this.projectWorkspaceService);
         this.trainersEditSessionService = trainersEditSessionService ?? new SwShTrainersEditSessionService(this.projectWorkspaceService);
         this.swShWorkflowService = swShWorkflowService ?? new SwShWorkflowService(this.projectWorkspaceService);
@@ -101,6 +105,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadExeFsPatchWorkflow => DispatchLoadExeFsPatchWorkflow(requestJson),
                 KmCommandNames.LoadRoyalCandyWorkflow => DispatchLoadRoyalCandyWorkflow(requestJson),
                 KmCommandNames.LoadSpreadsheetImportWorkflow => DispatchLoadSpreadsheetImportWorkflow(requestJson),
+                KmCommandNames.PreviewSpreadsheetImport => DispatchPreviewSpreadsheetImport(requestJson),
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
@@ -357,6 +362,22 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<LoadSpreadsheetImportWorkflowRequest>(requestJson);
         var workflow = swShWorkflowService.LoadSpreadsheetImport(ProjectBridgeMapper.ToCore(request.Payload.Paths));
         var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchPreviewSpreadsheetImport(string requestJson)
+    {
+        var request = DeserializeRequest<PreviewSpreadsheetImportRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = spreadsheetImportExecutionService.Preview(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ProfileId,
+            request.Payload.SourcePath,
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
     }

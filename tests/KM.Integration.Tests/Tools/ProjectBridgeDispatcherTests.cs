@@ -870,35 +870,10 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadSpreadsheetImportWorkflowReturnsSanitizedImportProfiles()
+    public void DispatchLoadSpreadsheetImportWorkflowReturnsGeneratedImportProfiles()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/spreadsheet-import.profiles.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "profiles": [
-                {
-                  "profileId": "items_price_sheet",
-                  "name": "Items Price Sheet",
-                  "sourceKind": "xlsx",
-                  "targetWorkflow": "items",
-                  "status": "available",
-                  "description": "Import item price columns from a workbook fixture.",
-                  "columns": [
-                    {
-                      "column": 1,
-                      "header": "ItemId",
-                      "valueKind": "integer",
-                      "isRequired": true,
-                      "description": "Item identifier."
-                    }
-                  ]
-                }
-              ]
-            }
-            """);
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.LoadSpreadsheetImportWorkflow,
@@ -912,15 +887,56 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("request-spreadsheet-import", response.RequestId);
         Assert.NotNull(response.Payload);
         var profile = Assert.Single(response.Payload.Workflow.Profiles);
-        Assert.Equal("items_price_sheet", profile.ProfileId);
-        Assert.Equal("Items Price Sheet", profile.Name);
-        Assert.Equal("xlsx", profile.SourceKind);
+        Assert.Equal("items-price-csv", profile.ProfileId);
+        Assert.Equal("Items Price CSV/TSV", profile.Name);
+        Assert.Equal("csv/tsv", profile.SourceKind);
         Assert.Equal("items", profile.TargetWorkflow);
         Assert.Equal(ProjectFileLayerDto.Base, profile.Provenance.SourceLayer);
-        var column = Assert.Single(profile.Columns);
-        Assert.Equal("ItemId", column.Header);
-        Assert.True(column.IsRequired);
+        Assert.Equal("romfs/bin/pml/item/item.dat", profile.Provenance.SourceFile);
+        Assert.Equal(5, profile.Columns.Count);
+        Assert.Equal("ItemId", profile.Columns[0].Header);
+        Assert.True(profile.Columns[0].IsRequired);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchPreviewSpreadsheetImportReturnsItemsEditSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var sourcePath = Path.Combine(temp.RootPath, "items.csv");
+        File.WriteAllText(
+            sourcePath,
+            """
+            ItemId,BuyPrice,WattsPrice
+            1,450,21
+            """);
+        var requestJson = SerializeRequest(
+            KmCommandNames.PreviewSpreadsheetImport,
+            new PreviewSpreadsheetImportRequest(
+                temp.Paths,
+                ProfileId: "items-price-csv",
+                SourcePath: sourcePath,
+                Session: null),
+            requestId: "request-spreadsheet-preview");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<PreviewSpreadsheetImportResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-spreadsheet-preview", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Equal(1, response.Payload.Preview.AcceptedRowCount);
+        Assert.Equal(0, response.Payload.Preview.RejectedRowCount);
+        Assert.Equal(2, response.Payload.Session.PendingEdits.Count);
+        Assert.All(response.Payload.Session.PendingEdits, edit => Assert.Equal("workflow.items", edit.Domain));
+        Assert.Contains(
+            response.Payload.Session.PendingEdits,
+            edit => edit.Field == "buyPrice" && edit.NewValue == "450");
+        Assert.DoesNotContain(
+            response.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
     }
 
     [Fact]

@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
 
 namespace KM.Api.SpreadsheetImport;
 
 public sealed record LoadSpreadsheetImportWorkflowRequest(ProjectPathsDto Paths);
+
+public sealed record PreviewSpreadsheetImportRequest(
+    ProjectPathsDto Paths,
+    string ProfileId,
+    string SourcePath,
+    EditSessionDto? Session);
 
 public sealed record SpreadsheetImportProvenanceDto(
     string SourceFile,
@@ -42,3 +49,33 @@ public sealed record SpreadsheetImportWorkflowDto(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record LoadSpreadsheetImportWorkflowResponse(SpreadsheetImportWorkflowDto Workflow);
+
+public sealed record SpreadsheetImportCellPreviewRecordDto(
+    string Header,
+    string Field,
+    string Value,
+    string Status,
+    string Message);
+
+public sealed record SpreadsheetImportRowPreviewRecordDto(
+    int RowNumber,
+    string RecordId,
+    string Status,
+    string Summary,
+    IReadOnlyList<SpreadsheetImportCellPreviewRecordDto> Cells,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record SpreadsheetImportPreviewDto(
+    string ProfileId,
+    string SourcePath,
+    int TotalRowCount,
+    int AcceptedRowCount,
+    int RejectedRowCount,
+    int SkippedRowCount,
+    IReadOnlyList<SpreadsheetImportRowPreviewRecordDto> Rows);
+
+public sealed record PreviewSpreadsheetImportResponse(
+    SpreadsheetImportWorkflowDto Workflow,
+    EditSessionDto Session,
+    SpreadsheetImportPreviewDto Preview,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);

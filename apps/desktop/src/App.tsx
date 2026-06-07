@@ -56,6 +56,9 @@ import {
   type ShopInventoryRecord,
   type ShopRecord,
   type ShopsWorkflow,
+  type SpreadsheetImportPreview,
+  type SpreadsheetImportProfileRecord,
+  type SpreadsheetImportWorkflow,
   type TextEditableField,
   type TextEntryRecord,
   type TextWorkflow,
@@ -142,6 +145,11 @@ const sections: Array<{
     icon: CheckCircle
   },
   {
+    id: 'spreadsheetImport',
+    label: 'Spreadsheet Import',
+    icon: FileSpreadsheet
+  },
+  {
     id: 'changes',
     label: 'Changes',
     icon: ClipboardCheck
@@ -216,8 +224,8 @@ const workflowDefinitions: Array<{
   },
   {
     id: 'spreadsheetImport',
-    label: 'Spreadsheet Import Tooling',
-    description: 'Spreadsheet import profiles, target workflows, columns, and source provenance.',
+    label: 'Spreadsheet Import',
+    description: 'CSV and TSV import profiles that execute through backend edit sessions.',
     icon: FileSpreadsheet
   }
 ];
@@ -313,6 +321,18 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const raidRewardsWorkflow = useWorkbenchStore((state) => state.raidRewardsWorkflow);
   const royalCandySearchText = useWorkbenchStore((state) => state.royalCandySearchText);
   const royalCandyWorkflow = useWorkbenchStore((state) => state.royalCandyWorkflow);
+  const spreadsheetImportPreview = useWorkbenchStore(
+    (state) => state.spreadsheetImportPreview
+  );
+  const spreadsheetImportSearchText = useWorkbenchStore(
+    (state) => state.spreadsheetImportSearchText
+  );
+  const spreadsheetImportSourcePath = useWorkbenchStore(
+    (state) => state.spreadsheetImportSourcePath
+  );
+  const spreadsheetImportWorkflow = useWorkbenchStore(
+    (state) => state.spreadsheetImportWorkflow
+  );
   const selectedEncounterTableId = useWorkbenchStore((state) => state.selectedEncounterTableId);
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
   const selectedRaidRewardTableId = useWorkbenchStore(
@@ -329,6 +349,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   );
   const selectedRoyalCandyWorkflowId = useWorkbenchStore(
     (state) => state.selectedRoyalCandyWorkflowId
+  );
+  const selectedSpreadsheetImportProfileId = useWorkbenchStore(
+    (state) => state.selectedSpreadsheetImportProfileId
   );
   const selectedShopId = useWorkbenchStore((state) => state.selectedShopId);
   const selectedSaveBlockId = useWorkbenchStore((state) => state.selectedSaveBlockId);
@@ -370,6 +393,18 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const setRaidRewardsWorkflow = useWorkbenchStore((state) => state.setRaidRewardsWorkflow);
   const setRoyalCandySearchText = useWorkbenchStore((state) => state.setRoyalCandySearchText);
   const setRoyalCandyWorkflow = useWorkbenchStore((state) => state.setRoyalCandyWorkflow);
+  const setSpreadsheetImportPreview = useWorkbenchStore(
+    (state) => state.setSpreadsheetImportPreview
+  );
+  const setSpreadsheetImportSearchText = useWorkbenchStore(
+    (state) => state.setSpreadsheetImportSearchText
+  );
+  const setSpreadsheetImportSourcePath = useWorkbenchStore(
+    (state) => state.setSpreadsheetImportSourcePath
+  );
+  const setSpreadsheetImportWorkflow = useWorkbenchStore(
+    (state) => state.setSpreadsheetImportWorkflow
+  );
   const setSelectedRaidRewardTableId = useWorkbenchStore(
     (state) => state.setSelectedRaidRewardTableId
   );
@@ -390,6 +425,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   );
   const setSelectedRoyalCandyWorkflowId = useWorkbenchStore(
     (state) => state.setSelectedRoyalCandyWorkflowId
+  );
+  const setSelectedSpreadsheetImportProfileId = useWorkbenchStore(
+    (state) => state.setSelectedSpreadsheetImportProfileId
   );
   const setSelectedFlagId = useWorkbenchStore((state) => state.setSelectedFlagId);
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
@@ -426,6 +464,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isFlagworkSaveLoading, setIsFlagworkSaveLoading] = useState(false);
   const [isExeFsPatchLoading, setIsExeFsPatchLoading] = useState(false);
   const [isRoyalCandyLoading, setIsRoyalCandyLoading] = useState(false);
+  const [isSpreadsheetImportLoading, setIsSpreadsheetImportLoading] = useState(false);
+  const [isSpreadsheetImportPreviewing, setIsSpreadsheetImportPreviewing] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -609,6 +649,45 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsRoyalCandyLoading(false);
+    }
+  };
+
+  const handleOpenSpreadsheetImportWorkflow = async () => {
+    setIsSpreadsheetImportLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadSpreadsheetImportWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setSpreadsheetImportWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsSpreadsheetImportLoading(false);
+    }
+  };
+
+  const handlePreviewSpreadsheetImport = async (profileId: string, sourcePath: string) => {
+    setIsSpreadsheetImportPreviewing(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.previewSpreadsheetImport({
+        paths: toProjectPaths(draftPaths),
+        profileId,
+        session: editSession,
+        sourcePath
+      });
+      setSpreadsheetImportWorkflow(response.workflow);
+      setSpreadsheetImportPreview(response.preview);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsSpreadsheetImportPreviewing(false);
     }
   };
 
@@ -986,6 +1065,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               isFlagworkSaveLoading={isFlagworkSaveLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
+              isSpreadsheetImportLoading={isSpreadsheetImportLoading}
               onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
               onOpenExeFsPatchWorkflow={handleOpenExeFsPatchWorkflow}
               onOpenFlagworkSaveWorkflow={handleOpenFlagworkSaveWorkflow}
@@ -994,6 +1074,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               onOpenRaidRewardsWorkflow={handleOpenRaidRewardsWorkflow}
               onOpenRoyalCandyWorkflow={handleOpenRoyalCandyWorkflow}
               onOpenShopsWorkflow={handleOpenShopsWorkflow}
+              onOpenSpreadsheetImportWorkflow={handleOpenSpreadsheetImportWorkflow}
               onOpenTextWorkflow={handleOpenTextWorkflow}
               onOpenTrainersWorkflow={handleOpenTrainersWorkflow}
               pendingEditCount={pendingEditCount}
@@ -1131,6 +1212,21 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               workflow={royalCandyWorkflow}
             />
           ) : null}
+          {activeSection === 'spreadsheetImport' ? (
+            <SpreadsheetImportSection
+              editSession={editSession}
+              isPreviewing={isSpreadsheetImportPreviewing}
+              onPreviewImport={handlePreviewSpreadsheetImport}
+              onSearchChange={setSpreadsheetImportSearchText}
+              onSelectProfile={setSelectedSpreadsheetImportProfileId}
+              onSourcePathChange={setSpreadsheetImportSourcePath}
+              preview={spreadsheetImportPreview}
+              searchText={spreadsheetImportSearchText}
+              selectedProfileId={selectedSpreadsheetImportProfileId}
+              sourcePath={spreadsheetImportSourcePath}
+              workflow={spreadsheetImportWorkflow}
+            />
+          ) : null}
           {activeSection === 'changes' ? (
             <ChangesSection
               applyResult={applyResult}
@@ -1265,6 +1361,7 @@ function WorkflowsSection({
   isPlacementLoading,
   isFlagworkSaveLoading,
   isRoyalCandyLoading,
+  isSpreadsheetImportLoading,
   onOpenEncountersWorkflow,
   onOpenExeFsPatchWorkflow,
   onOpenFlagworkSaveWorkflow,
@@ -1273,6 +1370,7 @@ function WorkflowsSection({
   onOpenRaidRewardsWorkflow,
   onOpenRoyalCandyWorkflow,
   onOpenShopsWorkflow,
+  onOpenSpreadsheetImportWorkflow,
   onOpenTextWorkflow,
   onOpenTrainersWorkflow,
   pendingEditCount,
@@ -1289,6 +1387,7 @@ function WorkflowsSection({
   isPlacementLoading: boolean;
   isFlagworkSaveLoading: boolean;
   isRoyalCandyLoading: boolean;
+  isSpreadsheetImportLoading: boolean;
   onOpenEncountersWorkflow: () => void;
   onOpenExeFsPatchWorkflow: () => void;
   onOpenFlagworkSaveWorkflow: () => void;
@@ -1297,6 +1396,7 @@ function WorkflowsSection({
   onOpenRaidRewardsWorkflow: () => void;
   onOpenRoyalCandyWorkflow: () => void;
   onOpenShopsWorkflow: () => void;
+  onOpenSpreadsheetImportWorkflow: () => void;
   onOpenTextWorkflow: () => void;
   onOpenTrainersWorkflow: () => void;
   pendingEditCount: number;
@@ -1324,6 +1424,7 @@ function WorkflowsSection({
           const isFlagworkSaveWorkflow = definition.id === 'flagworkSave';
           const isExeFsPatchWorkflow = definition.id === 'exefsPatches';
           const isRoyalCandyWorkflow = definition.id === 'royalCandy';
+          const isSpreadsheetImportWorkflow = definition.id === 'spreadsheetImport';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
@@ -1340,6 +1441,8 @@ function WorkflowsSection({
             isExeFsPatchWorkflow && workflowState.availability !== 'disabled';
           const canOpenRoyalCandy =
             isRoyalCandyWorkflow && workflowState.availability !== 'disabled';
+          const canOpenSpreadsheetImport =
+            isSpreadsheetImportWorkflow && workflowState.availability !== 'disabled';
 
           return (
             <article className="workflow-row" key={definition.id}>
@@ -1462,6 +1565,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isRoyalCandyLoading ? 'Loading' : 'Open Candy'}</span>
+                  </button>
+                ) : null}
+                {isSpreadsheetImportWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenSpreadsheetImport || isSpreadsheetImportLoading}
+                    onClick={onOpenSpreadsheetImportWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isSpreadsheetImportLoading ? 'Loading' : 'Open Import'}</span>
                   </button>
                 ) : null}
               </div>
@@ -4498,6 +4612,268 @@ function SelectedRoyalCandyPanel({
   );
 }
 
+function SpreadsheetImportSection({
+  editSession,
+  isPreviewing,
+  onPreviewImport,
+  onSearchChange,
+  onSelectProfile,
+  onSourcePathChange,
+  preview,
+  searchText,
+  selectedProfileId,
+  sourcePath,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isPreviewing: boolean;
+  onPreviewImport: (profileId: string, sourcePath: string) => void;
+  onSearchChange: (searchText: string) => void;
+  onSelectProfile: (profileId: string | null) => void;
+  onSourcePathChange: (sourcePath: string) => void;
+  preview: SpreadsheetImportPreview | null;
+  searchText: string;
+  selectedProfileId: string | null;
+  sourcePath: string;
+  workflow: SpreadsheetImportWorkflow | null;
+}) {
+  const filteredProfiles = filterSpreadsheetImportProfiles(workflow?.profiles ?? [], searchText);
+  const selectedProfile =
+    filteredProfiles.find((profile) => profile.profileId === selectedProfileId) ??
+    workflow?.profiles.find((profile) => profile.profileId === selectedProfileId) ??
+    filteredProfiles[0] ??
+    workflow?.profiles[0] ??
+    null;
+  const canPreview =
+    workflow?.summary.availability === 'available' &&
+    selectedProfile?.status === 'available' &&
+    sourcePath.trim().length > 0;
+  const previewDiagnostics = preview?.rows.flatMap((row) => row.diagnostics) ?? [];
+
+  useEffect(() => {
+    if (selectedProfile && selectedProfile.profileId !== selectedProfileId) {
+      onSelectProfile(selectedProfile.profileId);
+    }
+  }, [onSelectProfile, selectedProfile?.profileId, selectedProfileId]);
+
+  return (
+    <>
+      <section aria-labelledby="spreadsheet-import-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <FileSpreadsheet aria-hidden="true" size={18} />
+          <h2 id="spreadsheet-import-heading">Spreadsheet Import</h2>
+        </div>
+
+        <div className="items-toolbar spreadsheet-import-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search import profiles"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search imports"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Profiles"
+            value={workflow ? workflow.stats.totalProfileCount.toString() : '0'}
+          />
+          <Metric
+            label="Accepted"
+            value={preview ? preview.acceptedRowCount.toString() : '0'}
+          />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="flagwork-layout">
+            <div className="flagwork-stack">
+              <div className="exefs-table" role="table" aria-label="Spreadsheet import profiles">
+                <div className="exefs-row spreadsheet-profile-row exefs-row-heading" role="row">
+                  <span role="columnheader">Profile</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Target</span>
+                  <span role="columnheader">Source</span>
+                  <span role="columnheader">Columns</span>
+                </div>
+                {filteredProfiles.map((profile) => (
+                  <button
+                    className={`exefs-row spreadsheet-profile-row ${
+                      selectedProfile?.profileId === profile.profileId ? 'exefs-row-selected' : ''
+                    }`}
+                    key={profile.profileId}
+                    onClick={() => onSelectProfile(profile.profileId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{profile.name}</span>
+                    <span role="cell">
+                      <span className={`status-pill ${getExeFsStatusClassName(profile.status)}`}>
+                        {profile.status}
+                      </span>
+                    </span>
+                    <span role="cell">{profile.targetWorkflow}</span>
+                    <span role="cell">{profile.sourceKind}</span>
+                    <span role="cell">{profile.columns.length}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="spreadsheet-source-row">
+                <label className="path-field">
+                  <span>CSV/TSV source path</span>
+                  <input
+                    aria-label="CSV or TSV source path"
+                    onChange={(event) => onSourcePathChange(event.target.value)}
+                    placeholder="items.csv"
+                    type="text"
+                    value={sourcePath}
+                  />
+                </label>
+                <button
+                  className="primary-button"
+                  disabled={!canPreview || isPreviewing}
+                  onClick={() => {
+                    if (selectedProfile) {
+                      onPreviewImport(selectedProfile.profileId, sourcePath);
+                    }
+                  }}
+                  type="button"
+                >
+                  <FileSpreadsheet aria-hidden="true" size={16} />
+                  <span>{isPreviewing ? 'Previewing' : 'Preview Import'}</span>
+                </button>
+              </div>
+
+              {preview ? (
+                <div className="exefs-table" role="table" aria-label="Spreadsheet import preview">
+                  <div className="exefs-row spreadsheet-preview-row exefs-row-heading" role="row">
+                    <span role="columnheader">Row</span>
+                    <span role="columnheader">Status</span>
+                    <span role="columnheader">Record</span>
+                    <span role="columnheader">Summary</span>
+                  </div>
+                  {preview.rows.map((row) => (
+                    <div className="exefs-row spreadsheet-preview-row" key={row.rowNumber} role="row">
+                      <span role="cell">{row.rowNumber}</span>
+                      <span role="cell">
+                        <span className={`status-pill ${getImportStatusClassName(row.status)}`}>
+                          {row.status}
+                        </span>
+                      </span>
+                      <span role="cell">{row.recordId || 'n/a'}</span>
+                      <span role="cell">{row.summary}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <SelectedSpreadsheetImportPanel profile={selectedProfile} preview={preview} />
+          </div>
+        ) : (
+          <p className="empty-copy">
+            Open Spreadsheet Import from Workflows to load backend import profiles.
+          </p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={[...(workflow?.diagnostics ?? []), ...previewDiagnostics]} />
+    </>
+  );
+}
+
+function SelectedSpreadsheetImportPanel({
+  preview,
+  profile
+}: {
+  preview: SpreadsheetImportPreview | null;
+  profile: SpreadsheetImportProfileRecord | null;
+}) {
+  return (
+    <aside aria-label="Selected spreadsheet import provenance" className="encounter-inspector">
+      <div className="panel-heading">
+        <FileSpreadsheet aria-hidden="true" size={18} />
+        <h3>Selected Import</h3>
+      </div>
+
+      {profile ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Profile</dt>
+              <dd>{profile.name}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{profile.status}</dd>
+            </div>
+            <div>
+              <dt>Target</dt>
+              <dd>{profile.targetWorkflow}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{profile.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(profile.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(profile.provenance.fileState)}</dd>
+            </div>
+          </dl>
+
+          <div className="encounter-edit-form">
+            <dl className="encounter-slot-detail">
+              <div>
+                <dt>Rows</dt>
+                <dd>{preview ? preview.totalRowCount : 0}</dd>
+              </div>
+              <div>
+                <dt>Accepted</dt>
+                <dd>{preview ? preview.acceptedRowCount : 0}</dd>
+              </div>
+              <div>
+                <dt>Rejected</dt>
+                <dd>{preview ? preview.rejectedRowCount : 0}</dd>
+              </div>
+            </dl>
+
+            <div className="exefs-segment-list" aria-label="Spreadsheet import columns">
+              {profile.columns.map((column) => (
+                <dl className="encounter-slot-detail" key={column.header}>
+                  <div>
+                    <dt>{column.header}</dt>
+                    <dd>{column.isRequired ? 'Required' : 'Optional'}</dd>
+                  </div>
+                  <div>
+                    <dt>Kind</dt>
+                    <dd>{column.valueKind}</dd>
+                  </div>
+                  <div>
+                    <dt>Description</dt>
+                    <dd>{column.description}</dd>
+                  </div>
+                </dl>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No import profile selected.</p>
+      )}
+    </aside>
+  );
+}
+
 function ChangesSection({
   applyResult,
   changePlan,
@@ -5032,6 +5408,34 @@ function filterRoyalCandyOutputs(outputs: RoyalCandyOutputRecord[], searchText: 
   );
 }
 
+function filterSpreadsheetImportProfiles(
+  profiles: SpreadsheetImportProfileRecord[],
+  searchText: string
+) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return profiles;
+  }
+
+  return profiles.filter((profile) =>
+    [
+      profile.profileId,
+      profile.name,
+      profile.sourceKind,
+      profile.targetWorkflow,
+      profile.status,
+      profile.description,
+      profile.provenance.sourceFile,
+      ...profile.columns.flatMap((column) => [
+        column.header,
+        column.valueKind,
+        column.description
+      ])
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function getEditableItemFieldValue(item: ItemRecord, field: string) {
   switch (field) {
     case buyPriceFieldName:
@@ -5289,6 +5693,19 @@ function getExeFsStatusClassName(status: string) {
   }
 }
 
+function getImportStatusClassName(status: string) {
+  switch (status.toLocaleLowerCase()) {
+    case 'accepted':
+      return 'status-ready';
+    case 'skipped':
+      return 'status-warning';
+    case 'rejected':
+      return 'status-blocked';
+    default:
+      return getExeFsStatusClassName(status);
+  }
+}
+
 function getEditableRaidRewardFieldValue(reward: RaidRewardItemRecord, field: string) {
   if (field === raidRewardItemIdFieldName) {
     return reward.itemId;
@@ -5411,6 +5828,7 @@ function formatSourceLayer(
     | RaidRewardTableRecord['provenance']['sourceLayer']
     | SaveBlockRecord['provenance']['sourceLayer']
     | ShopRecord['provenance']['sourceLayer']
+    | SpreadsheetImportProfileRecord['provenance']['sourceLayer']
     | TextEntryRecord['provenance']['sourceLayer']
     | TrainerRecord['provenance']['sourceLayer']
 ) {
@@ -5439,6 +5857,7 @@ function formatFileState(
     | RaidRewardTableRecord['provenance']['fileState']
     | SaveBlockRecord['provenance']['fileState']
     | ShopRecord['provenance']['fileState']
+    | SpreadsheetImportProfileRecord['provenance']['fileState']
     | TextEntryRecord['provenance']['fileState']
     | TrainerRecord['provenance']['fileState']
 ) {
