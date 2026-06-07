@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-3.0-only
+
+[package]
+name = "km-editor-desktop"
+version = "0.1.0"
+description = "KM Editor desktop shell"
+authors = []
+license = "GPL-3.0-only"
+repository = "https://github.com/KotMatrosk1n/KM-Editor"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "km_editor_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.2", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2.11.2", features = [] }
+tauri-plugin-shell = "2.3.5"
