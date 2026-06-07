@@ -42,16 +42,18 @@ public sealed class SwShWorkflowService
         SwShFlagworkSaveWorkflowService? flagworkSaveWorkflowService = null,
         SwShExeFsPatchWorkflowService? exeFsPatchWorkflowService = null,
         SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null,
-        SwShSpreadsheetImportWorkflowService? spreadsheetImportWorkflowService = null)
+        SwShSpreadsheetImportWorkflowService? spreadsheetImportWorkflowService = null,
+        SwShParsedDataCache? parsedDataCache = null)
     {
+        var sharedParsedDataCache = parsedDataCache ?? new SwShParsedDataCache();
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
         this.encountersWorkflowService = encountersWorkflowService ?? new SwShEncountersWorkflowService();
-        this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService();
+        this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService(sharedParsedDataCache);
         this.flagworkSaveWorkflowService = flagworkSaveWorkflowService ?? new SwShFlagworkSaveWorkflowService();
         this.placementWorkflowService = placementWorkflowService ?? new SwShPlacementWorkflowService();
         this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
-        this.royalCandyWorkflowService = royalCandyWorkflowService ?? new SwShRoyalCandyWorkflowService();
+        this.royalCandyWorkflowService = royalCandyWorkflowService ?? new SwShRoyalCandyWorkflowService(this.exeFsPatchWorkflowService);
         this.shopsWorkflowService = shopsWorkflowService ?? new SwShShopsWorkflowService();
         this.spreadsheetImportWorkflowService = spreadsheetImportWorkflowService ?? new SwShSpreadsheetImportWorkflowService();
         this.textWorkflowService = textWorkflowService ?? new SwShTextWorkflowService();

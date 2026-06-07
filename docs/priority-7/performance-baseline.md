@@ -13,7 +13,8 @@ Priority 7 starts with measurement rather than broad optimization. The first bas
 ## Current Bottleneck Candidates
 
 - `ProjectWorkspaceService.Open` validates paths and rebuilds the recursive file graph. Public workflow load methods call it for each workflow load, so navigation can pay repeated graph scans.
-- Several workflow services parse the same source files independently. Shops and Spreadsheet Import load Items metadata; Royal Candy loads ExeFS Patch compatibility; placement, raid rewards, and items also decode item-name sources.
+- Several workflow services parse the same source files independently. Shops and Spreadsheet Import load Items metadata; placement, raid rewards, and items also decode item-name sources.
+- ExeFS compatibility analysis now has a backend parsed-data cache spine for shared ExeFS/Royal Candy loads. Future cache work should follow the same conservative file-identity invalidation pattern.
 - Text workflow loading decodes every selected-language message table into full records and dialogue references.
 - Large desktop tables in `apps/desktop/src/App.tsx` filter and map full workflow arrays without virtualization.
 
@@ -49,6 +50,24 @@ One focused local run of `dotnet test tests/KM.SwSh.Tests/KM.SwSh.Tests.csproj -
 | Repeated opened-project Royal Candy load | 349 ms | 190.84 MiB |
 
 These numbers are environment-sensitive and should be used for direction, not as product guarantees. The first high-impact backend targets are ExeFS parse/scan reuse and conservative shared-source caching for workflows that currently reload Items or ExeFS data.
+
+## Backend Parse Cache Spine
+
+The first backend cache slice adds a shared parsed-data cache used by `SwShWorkflowService`, `SwShExeFsPatchWorkflowService`, and `SwShRoyalCandyWorkflowService`. Cache entries are keyed by source file path, file length, last-write time, and parsed value type, so changed LayeredFS or base ExeFS sources miss the cache and are decoded again.
+
+Focused cache tests cover both reuse and invalidation:
+
+- Loading ExeFS Patches and then Royal Candy through one `SwShWorkflowService` records one cache miss followed by one cache hit.
+- Replacing `exefs/main` after a successful load returns the invalid-file diagnostic instead of stale compatibility records.
+
+One focused local run after this cache slice produced these approximate measurements:
+
+| Probe | Time | Allocated |
+| --- | ---: | ---: |
+| ExeFS Patches load through public service | 299 ms | 192.16 MiB |
+| Royal Candy load after shared ExeFS cache | 9 ms | 2.00 MiB |
+| Repeated opened-project ExeFS load | 361 ms | 190.46 MiB |
+| Repeated opened-project Royal Candy with shared ExeFS service | 12 ms | 0.32 MiB |
 
 ## Next Optimization Targets
 

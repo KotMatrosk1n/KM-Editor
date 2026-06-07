@@ -19,6 +19,13 @@ public sealed class SwShExeFsPatchWorkflowService
     private const int RareCandyUiHookCodeCaveSearchStart = 0x007BC338;
     private const string MainPatchId = "exefs-main-compatibility";
 
+    private readonly SwShParsedDataCache parsedDataCache;
+
+    public SwShExeFsPatchWorkflowService(SwShParsedDataCache? parsedDataCache = null)
+    {
+        this.parsedDataCache = parsedDataCache ?? new SwShParsedDataCache();
+    }
+
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -94,13 +101,11 @@ public sealed class SwShExeFsPatchWorkflowService
         var provenance = CreateProvenance(graphEntry);
         try
         {
-            var bytes = File.ReadAllBytes(sourcePath);
-            var nso = SwShNsoFile.Parse(bytes);
-            var segments = CreateSegments(nso, provenance);
-            var checks = CreateChecks(nso, provenance);
-            var patches = new[] { CreateMainPatchRecord(bytes, nso, checks, provenance) };
+            var analysis = parsedDataCache.GetOrAdd(
+                sourcePath,
+                path => CreateCompatibilityAnalysis(path, provenance)).Value;
 
-            if (checks.Any(check => check.Status == "Fail"))
+            if (analysis.Checks.Any(check => check.Status == "Fail"))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
@@ -109,7 +114,13 @@ public sealed class SwShExeFsPatchWorkflowService
                     expected: "Known Sword/Shield 1.3.2-style patch anchors"));
             }
 
-            return CreateWorkflow(summary, patches, segments, checks, sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(
+                summary,
+                analysis.Patches,
+                analysis.Segments,
+                analysis.Checks,
+                sourceFileCount: 1,
+                diagnostics);
         }
         catch (InvalidDataException exception)
         {
@@ -135,6 +146,18 @@ public sealed class SwShExeFsPatchWorkflowService
             Array.Empty<SwShExeFsPatchCheckRecord>(),
             sourceFileCount: 0,
             diagnostics);
+    }
+
+    private static ExeFsCompatibilityAnalysis CreateCompatibilityAnalysis(
+        string sourcePath,
+        SwShExeFsPatchProvenance provenance)
+    {
+        var bytes = File.ReadAllBytes(sourcePath);
+        var nso = SwShNsoFile.Parse(bytes);
+        var segments = CreateSegments(nso, provenance);
+        var checks = CreateChecks(nso, provenance);
+        var patches = new[] { CreateMainPatchRecord(bytes, nso, checks, provenance) };
+        return new ExeFsCompatibilityAnalysis(patches, segments, checks);
     }
 
     private static SwShExeFsPatchWorkflow CreateWorkflow(
@@ -590,4 +613,9 @@ public sealed class SwShExeFsPatchWorkflowService
         string Description);
 
     private sealed record ZeroRun(int Offset, int Length);
+
+    private sealed record ExeFsCompatibilityAnalysis(
+        IReadOnlyList<SwShExeFsPatchRecord> Patches,
+        IReadOnlyList<SwShExeFsSegmentRecord> Segments,
+        IReadOnlyList<SwShExeFsPatchCheckRecord> Checks);
 }
