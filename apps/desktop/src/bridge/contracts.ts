@@ -12,6 +12,7 @@ export const kmCommandNameValues = [
   'text.load',
   'trainers.load',
   'shops.load',
+  'encounters.load',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -33,6 +34,7 @@ export const kmCommandNames = {
   loadTextWorkflow: 'text.load',
   loadTrainersWorkflow: 'trainers.load',
   loadShopsWorkflow: 'shops.load',
+  loadEncountersWorkflow: 'encounters.load',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -93,6 +95,10 @@ export const loadTrainersWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadShopsWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadEncountersWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -381,6 +387,49 @@ export const loadShopsWorkflowResponseSchema = z.strictObject({
   workflow: shopsWorkflowSchema
 });
 
+export const encounterProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const encounterSlotRecordSchema = z.strictObject({
+  levelMax: z.number().int().nonnegative(),
+  levelMin: z.number().int().nonnegative(),
+  slot: z.number().int().nonnegative(),
+  species: z.string(),
+  timeOfDay: z.string().nullable(),
+  weather: z.string(),
+  weight: z.number().int().nonnegative()
+});
+
+export const encounterTableRecordSchema = z.strictObject({
+  area: z.string(),
+  encounterType: z.string(),
+  gameVersion: z.string(),
+  location: z.string(),
+  provenance: encounterProvenanceSchema,
+  slots: z.array(encounterSlotRecordSchema),
+  tableId: z.string()
+});
+
+export const encountersWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalSlotCount: z.number().int().nonnegative(),
+  totalTableCount: z.number().int().nonnegative()
+});
+
+export const encountersWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  stats: encountersWorkflowStatsSchema,
+  summary: workflowSummarySchema,
+  tables: z.array(encounterTableRecordSchema)
+});
+
+export const loadEncountersWorkflowResponseSchema = z.strictObject({
+  workflow: encountersWorkflowSchema
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -481,6 +530,7 @@ export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
 export type TextWorkflow = z.infer<typeof textWorkflowSchema>;
 export type TrainersWorkflow = z.infer<typeof trainersWorkflowSchema>;
 export type ShopsWorkflow = z.infer<typeof shopsWorkflowSchema>;
+export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
@@ -491,6 +541,8 @@ export type LoadTrainersWorkflowRequest = z.infer<typeof loadTrainersWorkflowReq
 export type LoadTrainersWorkflowResponse = z.infer<typeof loadTrainersWorkflowResponseSchema>;
 export type LoadShopsWorkflowRequest = z.infer<typeof loadShopsWorkflowRequestSchema>;
 export type LoadShopsWorkflowResponse = z.infer<typeof loadShopsWorkflowResponseSchema>;
+export type LoadEncountersWorkflowRequest = z.infer<typeof loadEncountersWorkflowRequestSchema>;
+export type LoadEncountersWorkflowResponse = z.infer<typeof loadEncountersWorkflowResponseSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;

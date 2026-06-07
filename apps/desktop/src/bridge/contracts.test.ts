@@ -11,6 +11,8 @@ import {
   kmCommandNames,
   listWorkflowsRequestSchema,
   listWorkflowsResponseSchema,
+  loadEncountersWorkflowRequestSchema,
+  loadEncountersWorkflowResponseSchema,
   loadItemsWorkflowRequestSchema,
   loadItemsWorkflowResponseSchema,
   loadShopsWorkflowRequestSchema,
@@ -194,6 +196,12 @@ describe('bridge contracts', () => {
     const trainersResponseSchema = createBridgeResponseSchema(loadTrainersWorkflowResponseSchema);
     const shopsRequestSchema = createBridgeRequestSchema(loadShopsWorkflowRequestSchema);
     const shopsResponseSchema = createBridgeResponseSchema(loadShopsWorkflowResponseSchema);
+    const encountersRequestSchema = createBridgeRequestSchema(
+      loadEncountersWorkflowRequestSchema
+    );
+    const encountersResponseSchema = createBridgeResponseSchema(
+      loadEncountersWorkflowResponseSchema
+    );
     const itemsWorkflow = {
       diagnostics: [],
       editableFields: [
@@ -355,6 +363,46 @@ describe('bridge contracts', () => {
         label: 'Shops'
       }
     } as const;
+    const encountersWorkflow = {
+      diagnostics: [],
+      stats: {
+        sourceFileCount: 1,
+        totalSlotCount: 1,
+        totalTableCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
+        diagnostics: [],
+        id: 'encounters',
+        label: 'Encounters and Wild Data'
+      },
+      tables: [
+        {
+          area: 'Grass',
+          encounterType: 'Overworld',
+          gameVersion: 'Sword',
+          location: 'Route 1',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/encounters.wild.readmodel.json',
+            sourceLayer: 'base'
+          },
+          slots: [
+            {
+              levelMax: 5,
+              levelMin: 3,
+              slot: 1,
+              species: 'Skwovet',
+              timeOfDay: null,
+              weather: 'Any',
+              weight: 35
+            }
+          ],
+          tableId: 'route_1_grass_sword'
+        }
+      ]
+    } as const;
 
     expect(
       workflowsRequestSchema.safeParse({
@@ -376,7 +424,8 @@ describe('bridge contracts', () => {
             itemsWorkflow.summary,
             textWorkflow.summary,
             trainersWorkflow.summary,
-            shopsWorkflow.summary
+            shopsWorkflow.summary,
+            encountersWorkflow.summary
           ]
         }
       }).success
@@ -462,6 +511,27 @@ describe('bridge contracts', () => {
       shopsResponseSchema.safeParse({
         payload: {
           workflow: shopsWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      encountersRequestSchema.safeParse({
+        command: kmCommandNames.loadEncountersWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      encountersResponseSchema.safeParse({
+        payload: {
+          workflow: encountersWorkflow
         }
       }).success
     ).toBe(true);

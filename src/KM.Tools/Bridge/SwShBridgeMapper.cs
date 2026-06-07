@@ -2,11 +2,13 @@
 
 using KM.Api.Items;
 using KM.Api.Editing;
+using KM.Api.Encounters;
 using KM.Api.Shops;
 using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
+using KM.SwSh.Encounters;
 using KM.SwSh.Shops;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
@@ -49,6 +51,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadShopsWorkflowResponse(ToShopsWorkflowDto(workflow));
+    }
+
+    public static LoadEncountersWorkflowResponse ToDto(SwShEncountersWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadEncountersWorkflowResponse(ToEncountersWorkflowDto(workflow));
     }
 
     public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
@@ -116,6 +125,18 @@ public static class SwShBridgeMapper
             new ShopsWorkflowStatsDto(
                 workflow.Stats.TotalShopCount,
                 workflow.Stats.TotalInventoryItemCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static EncountersWorkflowDto ToEncountersWorkflowDto(SwShEncountersWorkflow workflow)
+    {
+        return new EncountersWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Tables.Select(ToDto).ToArray(),
+            new EncountersWorkflowStatsDto(
+                workflow.Stats.TotalTableCount,
+                workflow.Stats.TotalSlotCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -237,6 +258,38 @@ public static class SwShBridgeMapper
     private static ShopProvenanceDto ToDto(SwShShopProvenance provenance)
     {
         return new ShopProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static EncounterTableRecordDto ToDto(SwShEncounterTableRecord table)
+    {
+        return new EncounterTableRecordDto(
+            table.TableId,
+            table.Location,
+            table.Area,
+            table.EncounterType,
+            table.GameVersion,
+            table.Slots.Select(ToDto).ToArray(),
+            ToDto(table.Provenance));
+    }
+
+    private static EncounterSlotRecordDto ToDto(SwShEncounterSlotRecord slot)
+    {
+        return new EncounterSlotRecordDto(
+            slot.Slot,
+            slot.Species,
+            slot.LevelMin,
+            slot.LevelMax,
+            slot.Weight,
+            slot.TimeOfDay,
+            slot.Weather);
+    }
+
+    private static EncounterProvenanceDto ToDto(SwShEncounterProvenance provenance)
+    {
+        return new EncounterProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

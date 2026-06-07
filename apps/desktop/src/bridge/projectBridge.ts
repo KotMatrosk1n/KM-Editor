@@ -10,6 +10,8 @@ import {
   type CreateChangePlanResponse,
   type ListWorkflowsRequest,
   type ListWorkflowsResponse,
+  type LoadEncountersWorkflowRequest,
+  type LoadEncountersWorkflowResponse,
   type LoadItemsWorkflowRequest,
   type LoadItemsWorkflowResponse,
   type LoadShopsWorkflowRequest,
@@ -36,6 +38,7 @@ import {
   createChangePlanResponseSchema,
   kmCommandNames,
   listWorkflowsResponseSchema,
+  loadEncountersWorkflowResponseSchema,
   loadItemsWorkflowResponseSchema,
   loadShopsWorkflowResponseSchema,
   loadTextWorkflowResponseSchema,
@@ -52,6 +55,9 @@ export type ProjectBridge = {
   applyChangePlan: (request: ApplyChangePlanRequest) => Promise<ApplyChangePlanResponse>;
   createChangePlan: (request: CreateChangePlanRequest) => Promise<CreateChangePlanResponse>;
   listWorkflows: (request: ListWorkflowsRequest) => Promise<ListWorkflowsResponse>;
+  loadEncountersWorkflow: (
+    request: LoadEncountersWorkflowRequest
+  ) => Promise<LoadEncountersWorkflowResponse>;
   loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
   loadShopsWorkflow: (request: LoadShopsWorkflowRequest) => Promise<LoadShopsWorkflowResponse>;
   loadTextWorkflow: (request: LoadTextWorkflowRequest) => Promise<LoadTextWorkflowResponse>;
@@ -112,6 +118,13 @@ export function createProjectBridge(
         kmCommandNames.listWorkflows,
         request,
         listWorkflowsResponseSchema
+      ),
+    loadEncountersWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadEncountersWorkflow,
+        request,
+        loadEncountersWorkflowResponseSchema
       ),
     loadItemsWorkflow: (request) =>
       sendProjectBridgeRequest(

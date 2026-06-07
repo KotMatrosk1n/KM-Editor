@@ -71,6 +71,9 @@ describe('App', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Trainers' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Shops' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Encounters and Wild Data' })
+    ).toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
   });
 
@@ -270,6 +273,13 @@ function createMockProjectBridge(
     id: 'shops',
     label: 'Shops'
   };
+  const encountersWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
+    diagnostics: [],
+    id: 'encounters',
+    label: 'Encounters and Wild Data'
+  };
 
   return {
     applyChangePlan: (request) =>
@@ -317,8 +327,22 @@ function createMockProjectBridge(
           itemsWorkflow.summary,
           textWorkflowSummary,
           trainersWorkflowSummary,
-          shopsWorkflowSummary
+          shopsWorkflowSummary,
+          encountersWorkflowSummary
         ]
+      }),
+    loadEncountersWorkflow: () =>
+      Promise.resolve({
+        workflow: {
+          diagnostics: [],
+          stats: {
+            sourceFileCount: 0,
+            totalSlotCount: 0,
+            totalTableCount: 0
+          },
+          summary: encountersWorkflowSummary,
+          tables: []
+        }
       }),
     loadItemsWorkflow: () =>
       Promise.resolve({

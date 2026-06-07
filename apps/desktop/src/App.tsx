@@ -96,6 +96,12 @@ const workflowDefinitions: Array<{
     label: 'Shops',
     description: 'Shop inventories, prices, stock limits, and source provenance.',
     icon: ListChecks
+  },
+  {
+    id: 'encounters',
+    label: 'Encounters and Wild Data',
+    description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
+    icon: Layers
   }
 ];
 

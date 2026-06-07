@@ -3,6 +3,7 @@
 using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
+using KM.Api.Encounters;
 using KM.Api.Items;
 using KM.Api.Projects;
 using KM.Api.Shops;
@@ -127,6 +128,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("shops", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("encounters", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             });
     }
@@ -330,6 +336,60 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("Potion", inventoryItem.ItemName);
         Assert.Equal(300, inventoryItem.Price);
         Assert.Null(inventoryItem.StockLimit);
+        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchLoadEncountersWorkflowReturnsSanitizedEncounterTables()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/encounters.wild.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "tables": [
+                {
+                  "tableId": "route_1_grass_sword",
+                  "location": "Route 1",
+                  "area": "Grass",
+                  "encounterType": "Overworld",
+                  "gameVersion": "Sword",
+                  "slots": [
+                    {
+                      "slot": 1,
+                      "species": "Skwovet",
+                      "levelMin": 3,
+                      "levelMax": 5,
+                      "weight": 35,
+                      "timeOfDay": null,
+                      "weather": "Any"
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-encounters");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadEncountersWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-encounters", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var table = Assert.Single(response.Payload.Workflow.Tables);
+        Assert.Equal("route_1_grass_sword", table.TableId);
+        Assert.Equal("Route 1", table.Location);
+        Assert.Equal(ProjectFileLayerDto.Base, table.Provenance.SourceLayer);
+        var slot = Assert.Single(table.Slots);
+        Assert.Equal("Skwovet", slot.Species);
+        Assert.Equal(3, slot.LevelMin);
+        Assert.Equal(5, slot.LevelMax);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 
