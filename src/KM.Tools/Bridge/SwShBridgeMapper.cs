@@ -164,6 +164,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateRaidRewardFieldResponse ToDto(SwShRaidRewardsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateRaidRewardFieldResponse(
+            ToRaidRewardsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(SwShEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -244,6 +254,7 @@ public static class SwShBridgeMapper
         return new RaidRewardsWorkflowDto(
             ToDto(workflow.Summary),
             workflow.Tables.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
             new RaidRewardsWorkflowStatsDto(
                 workflow.Stats.TotalTableCount,
                 workflow.Stats.TotalRewardItemCount,
@@ -531,6 +542,11 @@ public static class SwShBridgeMapper
             table.DenId,
             table.Rank,
             table.GameVersion,
+            table.RewardKind,
+            table.RewardKindLabel,
+            table.ArchiveMember,
+            table.TableIndex,
+            table.SourceTableHash,
             table.Rewards.Select(ToDto).ToArray(),
             ToDto(table.Provenance));
     }
@@ -539,10 +555,22 @@ public static class SwShBridgeMapper
     {
         return new RaidRewardItemRecordDto(
             reward.Slot,
+            reward.EntryId,
             reward.ItemId,
             reward.ItemName,
             reward.Quantity,
-            reward.Weight);
+            reward.Weight,
+            reward.Values);
+    }
+
+    private static RaidRewardEditableFieldDto ToDto(SwShRaidRewardEditableField field)
+    {
+        return new RaidRewardEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue);
     }
 
     private static RaidRewardProvenanceDto ToDto(SwShRaidRewardProvenance provenance)

@@ -11,18 +11,32 @@ public sealed record SwShRaidRewardProvenance(
     ProjectFileLayer SourceLayer,
     ProjectFileGraphEntryState FileState);
 
+public sealed record SwShRaidRewardEditableField(
+    string Field,
+    string Label,
+    string ValueKind,
+    int? MinimumValue,
+    int? MaximumValue);
+
 public sealed record SwShRaidRewardItemRecord(
     int Slot,
+    int EntryId,
     int ItemId,
     string ItemName,
     int Quantity,
-    int Weight);
+    int Weight,
+    IReadOnlyList<int> Values);
 
 public sealed record SwShRaidRewardTableRecord(
     string TableId,
     string DenId,
     int Rank,
     string GameVersion,
+    string RewardKind,
+    string RewardKindLabel,
+    string ArchiveMember,
+    int TableIndex,
+    string SourceTableHash,
     IReadOnlyList<SwShRaidRewardItemRecord> Rewards,
     SwShRaidRewardProvenance Provenance);
 
@@ -34,5 +48,6 @@ public sealed record SwShRaidRewardsWorkflowStats(
 public sealed record SwShRaidRewardsWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShRaidRewardTableRecord> Tables,
+    IReadOnlyList<SwShRaidRewardEditableField> EditableFields,
     SwShRaidRewardsWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
