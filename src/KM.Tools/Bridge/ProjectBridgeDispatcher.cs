@@ -1,0 +1,112 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+using KM.Api.Bridge;
+using KM.Api.Projects;
+using KM.Core.Projects;
+using System.Text.Json;
+
+namespace KM.Tools.Bridge;
+
+public sealed class ProjectBridgeDispatcher
+{
+    private readonly ProjectWorkspaceService projectWorkspaceService;
+
+    public ProjectBridgeDispatcher(ProjectWorkspaceService? projectWorkspaceService = null)
+    {
+        this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
+    }
+
+    public string Dispatch(string requestJson)
+    {
+        if (string.IsNullOrWhiteSpace(requestJson))
+        {
+            return SerializeFailure("bridge.emptyRequest", "Bridge request JSON cannot be empty.", requestId: null);
+        }
+
+        try
+        {
+            // Read the minimal envelope first so the payload can be deserialized into the command-specific DTO.
+            var envelope = JsonSerializer.Deserialize<BridgeCommandEnvelope>(requestJson, BridgeJson.SerializerOptions);
+
+            return envelope?.Command switch
+            {
+                KmCommandNames.OpenProject => DispatchOpenProject(requestJson),
+                KmCommandNames.ValidateProject => DispatchValidateProject(requestJson),
+                KmCommandNames.RefreshFileGraph => DispatchRefreshFileGraph(requestJson),
+                null => SerializeFailure("bridge.missingCommand", "Bridge request is missing a command.", envelope?.RequestId),
+                _ => SerializeFailure(
+                    "bridge.unsupportedCommand",
+                    $"Bridge command '{envelope.Command}' is not supported.",
+                    envelope.RequestId),
+            };
+        }
+        catch (JsonException exception)
+        {
+            return SerializeFailure("bridge.invalidJson", $"Bridge request JSON is invalid: {exception.Message}", requestId: null);
+        }
+    }
+
+    private string DispatchOpenProject(string requestJson)
+    {
+        var request = DeserializeRequest<OpenProjectRequest>(requestJson);
+        var openedProject = projectWorkspaceService.Open(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = new OpenProjectResponse(
+            openedProject.Id.ToString(),
+            ProjectBridgeMapper.ToDto(openedProject.Health),
+            ProjectBridgeMapper.ToDto(openedProject.FileGraph));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchValidateProject(string requestJson)
+    {
+        var request = DeserializeRequest<ValidateProjectRequest>(requestJson);
+        var health = projectWorkspaceService.Validate(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = new ValidateProjectResponse(ProjectBridgeMapper.ToDto(health));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchRefreshFileGraph(string requestJson)
+    {
+        var request = DeserializeRequest<RefreshFileGraphRequest>(requestJson);
+        var fileGraph = projectWorkspaceService.RefreshFileGraph(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = new RefreshFileGraphResponse(ProjectBridgeMapper.ToDto(fileGraph));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private static BridgeRequest<TPayload> DeserializeRequest<TPayload>(string requestJson)
+    {
+        var request = JsonSerializer.Deserialize<BridgeRequest<TPayload>>(requestJson, BridgeJson.SerializerOptions);
+
+        if (request is null)
+        {
+            throw new JsonException("Bridge request could not be deserialized.");
+        }
+
+        if (request.Payload is null)
+        {
+            throw new JsonException("Bridge request payload is missing.");
+        }
+
+        return request;
+    }
+
+    private static string SerializeSuccess<TPayload>(TPayload payload, string? requestId)
+    {
+        var response = BridgeResponse<TPayload>.Success(payload, requestId);
+
+        return JsonSerializer.Serialize(response, BridgeJson.SerializerOptions);
+    }
+
+    private static string SerializeFailure(string code, string message, string? requestId)
+    {
+        var response = BridgeResponse<object>.Failure(ApiError.Create(code, message), requestId);
+
+        return JsonSerializer.Serialize(response, BridgeJson.SerializerOptions);
+    }
+
+    private sealed record BridgeCommandEnvelope(string? Command, string? RequestId);
+}
+

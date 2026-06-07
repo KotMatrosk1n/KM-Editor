@@ -2,10 +2,17 @@
 
 namespace KM.Tools;
 
+using KM.Tools.Bridge;
+
 internal static class Program
 {
-    private static int Main(string[] args)
+    private static async Task<int> Main(string[] args)
     {
+        if (args is ["bridge-once"])
+        {
+            return await new BridgeLineRunner().RunOnceAsync(Console.In, Console.Out).ConfigureAwait(false);
+        }
+
         return 0;
     }
 }
