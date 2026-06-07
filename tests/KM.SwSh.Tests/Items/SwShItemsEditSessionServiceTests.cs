@@ -43,6 +43,52 @@ public sealed class SwShItemsEditSessionServiceTests
     }
 
     [Fact]
+    public void CreateChangePlanListsItemsTargetFileForPendingBuyPrice()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+        var editResult = service.UpdateBuyPrice(temp.Paths, session: null, itemId: 1, buyPrice: 450);
+
+        var changePlan = service.CreateChangePlan(temp.Paths, editResult.Session);
+
+        Assert.True(changePlan.CanApply);
+        var write = Assert.Single(changePlan.Writes);
+        Assert.Equal(SwShItemsWorkflowService.ItemsReadModelPath, write.TargetRelativePath);
+        Assert.False(write.ReplacesExistingOutput);
+        Assert.Contains("Potion", write.Reason);
+        Assert.Equal(ProjectFileLayer.Base, Assert.Single(write.Sources).Layer);
+        Assert.Contains(changePlan.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Info);
+    }
+
+    [Fact]
+    public void CreateChangePlanMarksExistingOutputFileReplacement()
+    {
+        using var temp = CreateEditableProject();
+        temp.WriteOutputFile(
+            SwShItemsWorkflowService.ItemsReadModelPath,
+            """
+            {
+              "schemaVersion": 1,
+              "items": [
+                {
+                  "itemId": 1,
+                  "name": "Potion",
+                  "category": "Medicine",
+                  "buyPrice": 300,
+                  "sellPrice": 150
+                }
+              ]
+            }
+            """);
+        var service = new SwShItemsEditSessionService();
+        var editResult = service.UpdateBuyPrice(temp.Paths, session: null, itemId: 1, buyPrice: 450);
+
+        var write = Assert.Single(service.CreateChangePlan(temp.Paths, editResult.Session).Writes);
+
+        Assert.True(write.ReplacesExistingOutput);
+    }
+
+    [Fact]
     public void UpdateBuyPriceRequiresEditableProjectPaths()
     {
         using var temp = CreateEditableProject();

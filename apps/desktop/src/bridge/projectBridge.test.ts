@@ -247,6 +247,37 @@ describe('projectBridge', () => {
         });
       }
 
+      if (request.command === 'changePlan.create') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            changePlan: {
+              canApply: true,
+              diagnostics: [
+                {
+                  message: 'Change plan preview contains 1 target file.',
+                  severity: 'info'
+                }
+              ],
+              sessionId: 'session-1',
+              writes: [
+                {
+                  reason: 'Apply pending Items edit: Set Potion buy price to 450.',
+                  replacesExistingOutput: false,
+                  sources: [
+                    {
+                      layer: 'base',
+                      relativePath: 'romfs/kmeditor/items.readmodel.json'
+                    }
+                  ],
+                  targetRelativePath: 'romfs/kmeditor/items.readmodel.json'
+                }
+              ]
+            }
+          }
+        });
+      }
+
       return JSON.stringify({
         error: null,
         payload: {
@@ -274,14 +305,22 @@ describe('projectBridge', () => {
       paths: editableProjectPaths,
       session: updated.session
     });
+    const plan = await bridge.createChangePlan({
+      paths: editableProjectPaths,
+      session: updated.session
+    });
 
     expect(commands).toEqual([
       'editSession.start',
       'items.buyPrice.update',
-      'editSession.validate'
+      'editSession.validate',
+      'changePlan.create'
     ]);
     expect(updated.workflow.items[0]?.buyPrice).toBe(450);
     expect(validation.isValid).toBe(true);
+    expect(plan.changePlan.writes[0]?.targetRelativePath).toBe(
+      'romfs/kmeditor/items.readmodel.json'
+    );
   });
 
   it('turns bridge error envelopes into project bridge errors', async () => {

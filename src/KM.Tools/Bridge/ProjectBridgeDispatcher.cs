@@ -50,6 +50,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateItemBuyPrice => DispatchUpdateItemBuyPrice(requestJson),
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
+                KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
                 null => SerializeFailure("bridge.missingCommand", "Bridge request is missing a command.", envelope?.RequestId),
                 _ => SerializeFailure(
                     "bridge.unsupportedCommand",
@@ -144,6 +145,17 @@ public sealed class ProjectBridgeDispatcher
             ProjectBridgeMapper.ToCore(request.Payload.Paths),
             EditSessionBridgeMapper.ToCore(request.Payload.Session));
         var response = SwShBridgeMapper.ToDto(validation);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchCreateChangePlan(string requestJson)
+    {
+        var request = DeserializeRequest<CreateChangePlanRequest>(requestJson);
+        var changePlan = itemsEditSessionService.CreateChangePlan(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            EditSessionBridgeMapper.ToCore(request.Payload.Session));
+        var response = new CreateChangePlanResponse(EditSessionBridgeMapper.ToDto(changePlan));
 
         return SerializeSuccess(response, request.RequestId);
     }

@@ -646,6 +646,74 @@ h2 {
   font-weight: 700;
 }
 
+.change-plan-status {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.change-plan-list {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.change-plan-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.9fr);
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  background: #f5f6f4;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.change-plan-list strong,
+.change-plan-list span,
+.change-plan-list dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.change-plan-list strong {
+  display: block;
+}
+
+.change-plan-list span {
+  display: block;
+  margin-top: 4px;
+  color: #6c756a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.change-plan-list dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.change-plan-list div {
+  min-width: 0;
+}
+
+.change-plan-list dt {
+  color: #6c756a;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.change-plan-list dd {
+  margin: 0;
+  color: #202420;
+  font-weight: 700;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -688,7 +756,9 @@ h2 {
 
   .workflow-row,
   .items-toolbar,
-  .items-layout {
+  .items-layout,
+  .change-plan-list li,
+  .change-plan-status {
     grid-template-columns: 1fr;
   }
 

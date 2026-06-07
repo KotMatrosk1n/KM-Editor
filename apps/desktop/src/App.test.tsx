@@ -11,6 +11,7 @@ describe('App', () => {
   beforeEach(() => {
     useWorkbenchStore.setState({
       activeSection: 'health',
+      changePlan: null,
       draftPaths: {
         baseExeFsPath: '',
         baseRomFsPath: '',
@@ -83,7 +84,7 @@ describe('App', () => {
     expect(screen.getByText('Base only')).toBeInTheDocument();
   });
 
-  it('starts an Items edit session, saves a pending buy price, and validates it', async () => {
+  it('starts an Items edit session, saves a pending buy price, validates it, and reviews a plan', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -109,6 +110,11 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
 
     expect(await screen.findByText('Pending item buy price change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(screen.getAllByText('romfs/kmeditor/items.readmodel.json').length).toBeGreaterThan(0);
   });
 
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
@@ -212,6 +218,32 @@ function createMockProjectBridge(
   };
 
   return {
+    createChangePlan: (request) =>
+      Promise.resolve({
+        changePlan: {
+          canApply: true,
+          diagnostics: [
+            {
+              message: 'Change plan preview contains 1 target file.',
+              severity: 'info'
+            }
+          ],
+          sessionId: request.session.sessionId,
+          writes: [
+            {
+              reason: 'Apply pending Items edit: Set Potion buy price to 450.',
+              replacesExistingOutput: false,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/kmeditor/items.readmodel.json'
+                }
+              ],
+              targetRelativePath: 'romfs/kmeditor/items.readmodel.json'
+            }
+          ]
+        }
+      }),
     listWorkflows: () =>
       Promise.resolve({
         workflows: [itemsWorkflow.summary]
