@@ -105,6 +105,7 @@ const pathStatusLabels = {
 } as const;
 
 const buyPriceFieldName = 'buyPrice';
+const sellPriceFieldName = 'sellPrice';
 
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
@@ -652,6 +653,7 @@ function ItemsSection({
                 <span role="columnheader">Name</span>
                 <span role="columnheader">Category</span>
                 <span role="columnheader">Buy</span>
+                <span role="columnheader">Sell</span>
                 <span role="columnheader">Source</span>
               </div>
               {filteredItems.map((item) => (
@@ -668,6 +670,7 @@ function ItemsSection({
                   <span role="cell">{item.name}</span>
                   <span role="cell">{item.category}</span>
                   <span role="cell">{item.buyPrice}</span>
+                  <span role="cell">{item.sellPrice}</span>
                   <span role="cell">{formatSourceLayer(item.provenance.sourceLayer)}</span>
                 </button>
               ))}
@@ -714,25 +717,31 @@ function SelectedItemPanel({
   onUpdateItemField: (itemId: number, field: string, value: string) => void;
 }) {
   const [buyPriceDraft, setBuyPriceDraft] = useState('');
+  const [sellPriceDraft, setSellPriceDraft] = useState('');
   const buyPriceField = editableFields.find((field) => field.field === buyPriceFieldName);
-  const minimumBuyPrice = buyPriceField?.minimumValue ?? null;
-  const maximumBuyPrice = buyPriceField?.maximumValue ?? null;
+  const sellPriceField = editableFields.find((field) => field.field === sellPriceFieldName);
+  const buyPriceState = getItemPriceDraftState(buyPriceDraft, item?.buyPrice ?? null, buyPriceField);
+  const sellPriceState = getItemPriceDraftState(
+    sellPriceDraft,
+    item?.sellPrice ?? null,
+    sellPriceField
+  );
 
   useEffect(() => {
     setBuyPriceDraft(item ? item.buyPrice.toString() : '');
-  }, [item?.buyPrice, item?.itemId]);
+    setSellPriceDraft(item ? item.sellPrice.toString() : '');
+  }, [item?.buyPrice, item?.itemId, item?.sellPrice]);
 
-  const parsedBuyPrice = Number.parseInt(buyPriceDraft, 10);
-  const buyPriceInRange =
-    Number.isInteger(parsedBuyPrice) &&
-    (minimumBuyPrice === null || parsedBuyPrice >= minimumBuyPrice) &&
-    (maximumBuyPrice === null || parsedBuyPrice <= maximumBuyPrice);
   const canSubmitBuyPrice =
     item !== null &&
     editSession !== null &&
-    buyPriceField !== undefined &&
-    buyPriceInRange &&
-    parsedBuyPrice !== item.buyPrice;
+    buyPriceState.canSubmit &&
+    buyPriceState.parsedValue !== null;
+  const canSubmitSellPrice =
+    item !== null &&
+    editSession !== null &&
+    sellPriceState.canSubmit &&
+    sellPriceState.parsedValue !== null;
 
   return (
     <aside aria-label="Selected item provenance" className="item-inspector">
@@ -760,44 +769,86 @@ function SelectedItemPanel({
               <dt>File state</dt>
               <dd>{formatFileState(item.provenance.fileState)}</dd>
             </div>
-            <div>
-              <dt>Sell price</dt>
-              <dd>{item.sellPrice}</dd>
-            </div>
           </dl>
 
           <div className="item-edit-form">
-            <label className="path-field">
-              <span>{buyPriceField?.label ?? 'Buy price'}</span>
-              <input
-                aria-label="Buy price"
-                disabled={
-                  !canEditItems ||
-                  editSession === null ||
-                  buyPriceField === undefined ||
-                  isItemUpdating
-                }
-                max={maximumBuyPrice ?? undefined}
-                min={minimumBuyPrice ?? undefined}
-                onChange={(event) => setBuyPriceDraft(event.target.value)}
-                type="number"
-                value={buyPriceDraft}
-              />
-            </label>
+            <div className="item-price-editor">
+              <label className="path-field">
+                <span>{buyPriceField?.label ?? 'Buy price'}</span>
+                <input
+                  aria-label="Buy price"
+                  disabled={
+                    !canEditItems ||
+                    editSession === null ||
+                    buyPriceField === undefined ||
+                    isItemUpdating
+                  }
+                  max={buyPriceField?.maximumValue ?? undefined}
+                  min={buyPriceField?.minimumValue ?? undefined}
+                  onChange={(event) => setBuyPriceDraft(event.target.value)}
+                  type="number"
+                  value={buyPriceDraft}
+                />
+              </label>
 
-            {editSession ? (
-              <button
-                className="primary-button"
-                disabled={!canSubmitBuyPrice || isItemUpdating}
-                onClick={() =>
-                  onUpdateItemField(item.itemId, buyPriceFieldName, parsedBuyPrice.toString())
-                }
-                type="button"
-              >
-                <Save aria-hidden="true" size={16} />
-                <span>{isItemUpdating ? 'Saving' : 'Save Pending'}</span>
-              </button>
-            ) : (
+              {editSession ? (
+                <button
+                  aria-label="Save buy price"
+                  className="primary-button compact-button"
+                  disabled={!canSubmitBuyPrice || isItemUpdating}
+                  onClick={() =>
+                    onUpdateItemField(
+                      item.itemId,
+                      buyPriceFieldName,
+                      buyPriceState.parsedValue!.toString()
+                    )
+                  }
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isItemUpdating ? 'Saving' : 'Save Buy'}</span>
+                </button>
+              ) : null}
+
+              <label className="path-field">
+                <span>{sellPriceField?.label ?? 'Sell price'}</span>
+                <input
+                  aria-label="Sell price"
+                  disabled={
+                    !canEditItems ||
+                    editSession === null ||
+                    sellPriceField === undefined ||
+                    isItemUpdating
+                  }
+                  max={sellPriceField?.maximumValue ?? undefined}
+                  min={sellPriceField?.minimumValue ?? undefined}
+                  onChange={(event) => setSellPriceDraft(event.target.value)}
+                  type="number"
+                  value={sellPriceDraft}
+                />
+              </label>
+
+              {editSession ? (
+                <button
+                  aria-label="Save sell price"
+                  className="primary-button compact-button"
+                  disabled={!canSubmitSellPrice || isItemUpdating}
+                  onClick={() =>
+                    onUpdateItemField(
+                      item.itemId,
+                      sellPriceFieldName,
+                      sellPriceState.parsedValue!.toString()
+                    )
+                  }
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isItemUpdating ? 'Saving' : 'Save Sell'}</span>
+                </button>
+              ) : null}
+            </div>
+
+            {!editSession ? (
               <button
                 className="secondary-button"
                 disabled={!canEditItems || isEditStarting}
@@ -807,7 +858,7 @@ function SelectedItemPanel({
                 <Pencil aria-hidden="true" size={16} />
                 <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
               </button>
-            )}
+            ) : null}
           </div>
         </>
       ) : (
@@ -1063,10 +1114,40 @@ function filterItems(items: ItemRecord[], searchText: string) {
   }
 
   return items.filter((item) =>
-    [item.itemId.toString(), item.name, item.category].some((value) =>
-      value.toLocaleLowerCase().includes(normalizedSearch)
-    )
+    [
+      item.itemId.toString(),
+      item.name,
+      item.category,
+      item.buyPrice.toString(),
+      item.sellPrice.toString()
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
   );
+}
+
+function getItemPriceDraftState(
+  draftValue: string,
+  currentValue: number | null,
+  field: ItemEditableField | undefined
+) {
+  const normalizedValue = draftValue.trim();
+  const parsedValue = /^\d+$/.test(normalizedValue)
+    ? Number.parseInt(normalizedValue, 10)
+    : null;
+  const minimumValue = field?.minimumValue ?? null;
+  const maximumValue = field?.maximumValue ?? null;
+  const inRange =
+    parsedValue !== null &&
+    (minimumValue === null || parsedValue >= minimumValue) &&
+    (maximumValue === null || parsedValue <= maximumValue);
+
+  return {
+    canSubmit:
+      field !== undefined &&
+      currentValue !== null &&
+      inRange &&
+      parsedValue !== currentValue,
+    parsedValue
+  };
 }
 
 function getPendingItemIds(editSession: EditSession | null) {

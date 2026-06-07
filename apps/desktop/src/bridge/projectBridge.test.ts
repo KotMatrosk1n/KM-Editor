@@ -141,6 +141,13 @@ describe('projectBridge', () => {
                 maximumValue: 999999,
                 minimumValue: 0,
                 valueKind: 'integer'
+              },
+              {
+                field: 'sellPrice',
+                label: 'Sell price',
+                maximumValue: 999999,
+                minimumValue: 0,
+                valueKind: 'integer'
               }
             ],
             items: [
@@ -177,6 +184,7 @@ describe('projectBridge', () => {
     const items = await bridge.loadItemsWorkflow({ paths: projectPaths });
 
     expect(workflows.workflows[0]?.id).toBe('items');
+    expect(items.workflow.editableFields).toHaveLength(2);
     expect(items.workflow.items[0]?.name).toBe('Potion');
   });
 
@@ -230,6 +238,13 @@ describe('projectBridge', () => {
                 {
                   field: 'buyPrice',
                   label: 'Buy price',
+                  maximumValue: 999999,
+                  minimumValue: 0,
+                  valueKind: 'integer'
+                },
+                {
+                  field: 'sellPrice',
+                  label: 'Sell price',
                   maximumValue: 999999,
                   minimumValue: 0,
                   valueKind: 'integer'

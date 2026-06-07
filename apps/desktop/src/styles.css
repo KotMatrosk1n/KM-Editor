@@ -290,7 +290,7 @@ h2 {
 
 .health-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 12px;
   margin-top: 16px;
 }
@@ -511,7 +511,9 @@ h2 {
 
 .items-row {
   display: grid;
-  grid-template-columns: 72px minmax(140px, 1.2fr) minmax(110px, 0.9fr) 84px minmax(96px, 0.8fr);
+  grid-template-columns:
+    72px minmax(140px, 1.2fr) minmax(110px, 0.9fr) 76px 76px
+    minmax(96px, 0.8fr);
   gap: 10px;
   align-items: center;
   min-width: 0;
@@ -604,6 +606,13 @@ h2 {
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid #d7ddd5;
+}
+
+.item-price-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
 }
 
 .changes-summary {
@@ -793,7 +802,12 @@ h2 {
   }
 
   .items-row span:nth-child(4),
-  .items-row span:nth-child(5) {
+  .items-row span:nth-child(5),
+  .items-row span:nth-child(6) {
     display: none;
+  }
+
+  .item-price-editor {
+    grid-template-columns: 1fr;
   }
 }
