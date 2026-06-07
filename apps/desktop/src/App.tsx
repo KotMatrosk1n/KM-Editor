@@ -2,19 +2,23 @@
 
 import {
   Activity,
+  CheckCircle,
   ClipboardCheck,
   FolderOpen,
   Layers,
   ListChecks,
   Package,
+  Pencil,
   RefreshCw,
+  Save,
   Search,
   ShieldCheck,
   type LucideIcon
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   type ApiDiagnostic,
+  type EditSession,
   type ItemsWorkflow,
   type ItemRecord,
   type ProjectHealth,
@@ -100,6 +104,8 @@ const pathStatusLabels = {
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
   const draftPaths = useWorkbenchStore((state) => state.draftPaths);
+  const editSession = useWorkbenchStore((state) => state.editSession);
+  const editValidationDiagnostics = useWorkbenchStore((state) => state.editValidationDiagnostics);
   const itemSearchText = useWorkbenchStore((state) => state.itemSearchText);
   const itemsWorkflow = useWorkbenchStore((state) => state.itemsWorkflow);
   const openProject = useWorkbenchStore((state) => state.openProject);
@@ -108,6 +114,10 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const workflows = useWorkbenchStore((state) => state.workflows);
   const setActiveSection = useWorkbenchStore((state) => state.setActiveSection);
   const setDraftPath = useWorkbenchStore((state) => state.setDraftPath);
+  const setEditSession = useWorkbenchStore((state) => state.setEditSession);
+  const setEditValidationDiagnostics = useWorkbenchStore(
+    (state) => state.setEditValidationDiagnostics
+  );
   const setItemSearchText = useWorkbenchStore((state) => state.setItemSearchText);
   const setItemsWorkflow = useWorkbenchStore((state) => state.setItemsWorkflow);
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
@@ -119,7 +129,11 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
   const isBusy = projectStatus === 'opening' || projectStatus === 'validating';
   const [bridgeDiagnostics, setBridgeDiagnostics] = useState<ApiDiagnostic[]>([]);
+  const [isEditStarting, setIsEditStarting] = useState(false);
   const [isItemsLoading, setIsItemsLoading] = useState(false);
+  const [isItemUpdating, setIsItemUpdating] = useState(false);
+  const [isSessionValidating, setIsSessionValidating] = useState(false);
+  const pendingEditCount = editSession?.pendingEdits.length ?? 0;
 
   const handleValidateProject = async () => {
     setProjectStatus('validating');
@@ -167,6 +181,66 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsItemsLoading(false);
+    }
+  };
+
+  const handleStartEditSession = async () => {
+    setIsEditStarting(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.startEditSession({ paths: toProjectPaths(draftPaths) });
+      setEditSession(response.session);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsEditStarting(false);
+    }
+  };
+
+  const handleUpdateItemBuyPrice = async (itemId: number, buyPrice: number) => {
+    setIsItemUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateItemBuyPrice({
+        buyPrice,
+        itemId,
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setItemsWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsItemUpdating(false);
+    }
+  };
+
+  const handleValidateEditSession = async () => {
+    if (!editSession) {
+      return;
+    }
+
+    setIsSessionValidating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.validateEditSession({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsSessionValidating(false);
     }
   };
 
@@ -246,6 +320,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               onOpenProject={handleOpenProject}
               onSetDraftPath={setDraftPath}
               onValidateProject={handleValidateProject}
+              pendingEditCount={pendingEditCount}
               projectStatus={projectStatus}
             />
           ) : null}
@@ -254,6 +329,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               health={health}
               isItemsLoading={isItemsLoading}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
+              pendingEditCount={pendingEditCount}
               workflows={workflows}
             />
           ) : null}
@@ -261,12 +337,24 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
             <ItemsSection
               onSearchChange={setItemSearchText}
               onSelectItem={setSelectedItemId}
+              onStartEditSession={handleStartEditSession}
+              onUpdateItemBuyPrice={handleUpdateItemBuyPrice}
               searchText={itemSearchText}
               selectedItemId={selectedItemId}
+              editSession={editSession}
+              isEditStarting={isEditStarting}
+              isItemUpdating={isItemUpdating}
               workflow={itemsWorkflow}
             />
           ) : null}
-          {activeSection === 'changes' ? <ChangesSection /> : null}
+          {activeSection === 'changes' ? (
+            <ChangesSection
+              diagnostics={editValidationDiagnostics}
+              editSession={editSession}
+              isSessionValidating={isSessionValidating}
+              onValidateEditSession={handleValidateEditSession}
+            />
+          ) : null}
         </div>
       </section>
     </main>
@@ -281,6 +369,7 @@ function HealthSection({
   onOpenProject,
   onSetDraftPath,
   onValidateProject,
+  pendingEditCount,
   projectStatus
 }: {
   bridgeDiagnostics: ApiDiagnostic[];
@@ -290,6 +379,7 @@ function HealthSection({
   onOpenProject: () => void;
   onSetDraftPath: (field: keyof ProjectPathDraft, value: string) => void;
   onValidateProject: () => void;
+  pendingEditCount: number;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
 }) {
   return (
@@ -363,7 +453,7 @@ function HealthSection({
             label="Write workflows"
             value={health?.canOpenEditableWorkflows ? 'Enabled' : 'Disabled'}
           />
-          <Metric label="Pending changes" value="0" />
+          <Metric label="Pending changes" value={pendingEditCount.toString()} />
         </div>
       </section>
 
@@ -377,11 +467,13 @@ function WorkflowsSection({
   health,
   isItemsLoading,
   onOpenItemsWorkflow,
+  pendingEditCount,
   workflows
 }: {
   health: ProjectHealth | null;
   isItemsLoading: boolean;
   onOpenItemsWorkflow: () => void;
+  pendingEditCount: number;
   workflows: WorkflowSummary[];
 }) {
   const itemsWorkflow = workflows.find((workflow) => workflow.id === 'items');
@@ -400,6 +492,7 @@ function WorkflowsSection({
           <div>
             <h3>Items</h3>
             <p>{itemsWorkflow?.description ?? 'Item records, names, and source provenance.'}</p>
+            <span className="inline-metric">Pending changes: {pendingEditCount}</span>
           </div>
           <div className="workflow-actions">
             <span className={`status-pill ${itemsState.statusClass}`}>{itemsState.label}</span>
@@ -420,14 +513,24 @@ function WorkflowsSection({
 }
 
 function ItemsSection({
+  editSession,
+  isEditStarting,
+  isItemUpdating,
   onSearchChange,
   onSelectItem,
+  onStartEditSession,
+  onUpdateItemBuyPrice,
   searchText,
   selectedItemId,
   workflow
 }: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isItemUpdating: boolean;
   onSearchChange: (searchText: string) => void;
   onSelectItem: (itemId: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateItemBuyPrice: (itemId: number, buyPrice: number) => void;
   searchText: string;
   selectedItemId: number | null;
   workflow: ItemsWorkflow | null;
@@ -435,6 +538,8 @@ function ItemsSection({
   const filteredItems = filterItems(workflow?.items ?? [], searchText);
   const selectedItem =
     workflow?.items.find((item) => item.itemId === selectedItemId) ?? filteredItems[0] ?? null;
+  const canEditItems = workflow?.summary.availability === 'available';
+  const pendingItemIds = getPendingItemIds(editSession);
 
   return (
     <>
@@ -460,6 +565,10 @@ function ItemsSection({
             label="Loaded records"
             value={workflow ? workflow.stats.totalItemCount.toString() : '0'}
           />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
         </div>
 
         {workflow ? (
@@ -474,7 +583,9 @@ function ItemsSection({
               </div>
               {filteredItems.map((item) => (
                 <button
-                  className={`items-row ${selectedItem?.itemId === item.itemId ? 'items-row-selected' : ''}`}
+                  className={`items-row ${selectedItem?.itemId === item.itemId ? 'items-row-selected' : ''} ${
+                    pendingItemIds.has(item.itemId) ? 'items-row-pending' : ''
+                  }`}
                   key={item.itemId}
                   onClick={() => onSelectItem(item.itemId)}
                   role="row"
@@ -489,7 +600,15 @@ function ItemsSection({
               ))}
             </div>
 
-            <SelectedItemPanel item={selectedItem} />
+            <SelectedItemPanel
+              canEditItems={canEditItems}
+              editSession={editSession}
+              isEditStarting={isEditStarting}
+              isItemUpdating={isItemUpdating}
+              item={selectedItem}
+              onStartEditSession={onStartEditSession}
+              onUpdateItemBuyPrice={onUpdateItemBuyPrice}
+            />
           </div>
         ) : (
           <p className="empty-copy">Open Items from Workflows to load backend item data.</p>
@@ -501,37 +620,105 @@ function ItemsSection({
   );
 }
 
-function SelectedItemPanel({ item }: { item: ItemRecord | null }) {
+function SelectedItemPanel({
+  canEditItems,
+  editSession,
+  isEditStarting,
+  isItemUpdating,
+  item,
+  onStartEditSession,
+  onUpdateItemBuyPrice
+}: {
+  canEditItems: boolean;
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isItemUpdating: boolean;
+  item: ItemRecord | null;
+  onStartEditSession: () => void;
+  onUpdateItemBuyPrice: (itemId: number, buyPrice: number) => void;
+}) {
+  const [buyPriceDraft, setBuyPriceDraft] = useState('');
+
+  useEffect(() => {
+    setBuyPriceDraft(item ? item.buyPrice.toString() : '');
+  }, [item?.buyPrice, item?.itemId]);
+
+  const parsedBuyPrice = Number.parseInt(buyPriceDraft, 10);
+  const canSubmitBuyPrice =
+    item !== null &&
+    editSession !== null &&
+    Number.isInteger(parsedBuyPrice) &&
+    parsedBuyPrice >= 0 &&
+    parsedBuyPrice !== item.buyPrice;
+
   return (
     <aside aria-label="Selected item provenance" className="item-inspector">
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Provenance</h3>
+        <h3>Selected Item</h3>
       </div>
 
       {item ? (
-        <dl className="item-provenance-list">
-          <div>
-            <dt>Name</dt>
-            <dd>{item.name}</dd>
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Name</dt>
+              <dd>{item.name}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{item.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(item.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(item.provenance.fileState)}</dd>
+            </div>
+            <div>
+              <dt>Sell price</dt>
+              <dd>{item.sellPrice}</dd>
+            </div>
+          </dl>
+
+          <div className="item-edit-form">
+            <label className="path-field">
+              <span>Buy price</span>
+              <input
+                aria-label="Buy price"
+                disabled={!canEditItems || editSession === null || isItemUpdating}
+                min={0}
+                onChange={(event) => setBuyPriceDraft(event.target.value)}
+                type="number"
+                value={buyPriceDraft}
+              />
+            </label>
+
+            {editSession ? (
+              <button
+                className="primary-button"
+                disabled={!canSubmitBuyPrice || isItemUpdating}
+                onClick={() => onUpdateItemBuyPrice(item.itemId, parsedBuyPrice)}
+                type="button"
+              >
+                <Save aria-hidden="true" size={16} />
+                <span>{isItemUpdating ? 'Saving' : 'Save Pending'}</span>
+              </button>
+            ) : (
+              <button
+                className="secondary-button"
+                disabled={!canEditItems || isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            )}
           </div>
-          <div>
-            <dt>Source file</dt>
-            <dd>{item.provenance.sourceFile}</dd>
-          </div>
-          <div>
-            <dt>Layer</dt>
-            <dd>{formatSourceLayer(item.provenance.sourceLayer)}</dd>
-          </div>
-          <div>
-            <dt>File state</dt>
-            <dd>{formatFileState(item.provenance.fileState)}</dd>
-          </div>
-          <div>
-            <dt>Sell price</dt>
-            <dd>{item.sellPrice}</dd>
-          </div>
-        </dl>
+        </>
       ) : (
         <p className="empty-copy">No item selected.</p>
       )}
@@ -539,19 +726,56 @@ function SelectedItemPanel({ item }: { item: ItemRecord | null }) {
   );
 }
 
-function ChangesSection() {
-  return (
-    <section aria-labelledby="changes-heading" className="panel wide-panel">
-      <div className="panel-heading">
-        <ClipboardCheck aria-hidden="true" size={18} />
-        <h2 id="changes-heading">Edit Session</h2>
-      </div>
+function ChangesSection({
+  diagnostics,
+  editSession,
+  isSessionValidating,
+  onValidateEditSession
+}: {
+  diagnostics: ApiDiagnostic[];
+  editSession: EditSession | null;
+  isSessionValidating: boolean;
+  onValidateEditSession: () => void;
+}) {
+  const pendingEdits = editSession?.pendingEdits ?? [];
 
-      <div className="empty-state">
-        <span className="metric-value">0</span>
-        <span className="metric-label">Pending changes</span>
-      </div>
-    </section>
+  return (
+    <>
+      <section aria-labelledby="changes-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <ClipboardCheck aria-hidden="true" size={18} />
+          <h2 id="changes-heading">Edit Session</h2>
+        </div>
+
+        <div className="changes-summary">
+          <Metric label="Pending changes" value={pendingEdits.length.toString()} />
+          <button
+            className="secondary-button"
+            disabled={pendingEdits.length === 0 || isSessionValidating}
+            onClick={onValidateEditSession}
+            type="button"
+          >
+            <CheckCircle aria-hidden="true" size={18} />
+            <span>{isSessionValidating ? 'Validating' : 'Validate Pending Change'}</span>
+          </button>
+        </div>
+
+        {pendingEdits.length > 0 ? (
+          <ul className="pending-edit-list">
+            {pendingEdits.map((edit, index) => (
+              <li key={`${edit.domain}-${edit.recordId ?? index}-${edit.field ?? 'field'}`}>
+                <strong>{edit.summary}</strong>
+                <span>{edit.sources.map((source) => source.relativePath).join(', ')}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="empty-copy">No pending changes.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={diagnostics} />
+    </>
   );
 }
 
@@ -628,6 +852,15 @@ function filterItems(items: ItemRecord[], searchText: string) {
   );
 }
 
+function getPendingItemIds(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.items' && edit.field === 'buyPrice')
+      .map((edit) => Number.parseInt(edit.recordId ?? '', 10))
+      .filter(Number.isInteger)
+  );
+}
+
 function getItemsWorkflowState(health: ProjectHealth | null, workflow: WorkflowSummary | undefined) {
   if (!health?.canOpenReadOnlyWorkflows) {
     return {
@@ -665,7 +898,12 @@ const workflowAvailabilityClassNames = {
 } as const;
 
 function formatSourceLayer(layer: ItemRecord['provenance']['sourceLayer']) {
-  return layer === 'layered' ? 'LayeredFS' : 'Base';
+  return {
+    base: 'Base',
+    generated: 'Generated',
+    layered: 'LayeredFS',
+    pending: 'Pending'
+  }[layer];
 }
 
 function formatFileState(state: ItemRecord['provenance']['fileState']) {

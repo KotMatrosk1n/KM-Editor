@@ -8,6 +8,11 @@ const projectPaths = {
   outputRootPath: null
 };
 
+const editableProjectPaths = {
+  ...projectPaths,
+  outputRootPath: 'output'
+};
+
 const readOnlyHealth = {
   canOpenEditableWorkflows: false,
   canOpenReadOnlyWorkflows: true,
@@ -164,6 +169,119 @@ describe('projectBridge', () => {
 
     expect(workflows.workflows[0]?.id).toBe('items');
     expect(items.workflow.items[0]?.name).toBe('Potion');
+  });
+
+  it('starts, updates, and validates an Items edit session', async () => {
+    const commands: string[] = [];
+    const session = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.items',
+          field: 'buyPrice',
+          newValue: '450',
+          recordId: '1',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/kmeditor/items.readmodel.json'
+            }
+          ],
+          summary: 'Set Potion buy price to 450.'
+        }
+      ],
+      sessionId: 'session-1'
+    };
+    const bridge = createProjectBridge(async (requestJson) => {
+      const request = JSON.parse(requestJson) as { command: string };
+      commands.push(request.command);
+
+      if (request.command === 'editSession.start') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            session: {
+              hasPendingChanges: false,
+              pendingEdits: [],
+              sessionId: 'session-1'
+            }
+          }
+        });
+      }
+
+      if (request.command === 'items.buyPrice.update') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            diagnostics: [],
+            session,
+            workflow: {
+              diagnostics: [],
+              items: [
+                {
+                  buyPrice: 450,
+                  category: 'Medicine',
+                  itemId: 1,
+                  name: 'Potion',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/kmeditor/items.readmodel.json',
+                    sourceLayer: 'base'
+                  },
+                  sellPrice: 150
+                }
+              ],
+              stats: {
+                sourceFileCount: 1,
+                totalItemCount: 1
+              },
+              summary: {
+                availability: 'available',
+                description: 'Item records, names, and source provenance.',
+                diagnostics: [],
+                id: 'items',
+                label: 'Items'
+              }
+            }
+          }
+        });
+      }
+
+      return JSON.stringify({
+        error: null,
+        payload: {
+          diagnostics: [
+            {
+              field: 'buyPrice',
+              message: 'Pending item buy price change is valid.',
+              severity: 'info'
+            }
+          ],
+          isValid: true,
+          session
+        }
+      });
+    });
+
+    const started = await bridge.startEditSession({ paths: editableProjectPaths });
+    const updated = await bridge.updateItemBuyPrice({
+      buyPrice: 450,
+      itemId: 1,
+      paths: editableProjectPaths,
+      session: started.session
+    });
+    const validation = await bridge.validateEditSession({
+      paths: editableProjectPaths,
+      session: updated.session
+    });
+
+    expect(commands).toEqual([
+      'editSession.start',
+      'items.buyPrice.update',
+      'editSession.validate'
+    ]);
+    expect(updated.workflow.items[0]?.buyPrice).toBe(450);
+    expect(validation.isValid).toBe(true);
   });
 
   it('turns bridge error envelopes into project bridge errors', async () => {

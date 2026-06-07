@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Items;
+using KM.Api.Editing;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
@@ -20,14 +21,38 @@ public static class SwShBridgeMapper
     {
         ArgumentNullException.ThrowIfNull(workflow);
 
-        return new LoadItemsWorkflowResponse(
-            new ItemsWorkflowDto(
-                ToDto(workflow.Summary),
-                workflow.Items.Select(ToDto).ToArray(),
-                new ItemsWorkflowStatsDto(
-                    workflow.Stats.TotalItemCount,
-                    workflow.Stats.SourceFileCount),
-                workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()));
+        return new LoadItemsWorkflowResponse(ToItemsWorkflowDto(workflow));
+    }
+
+    public static UpdateItemBuyPriceResponse ToDto(SwShItemsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateItemBuyPriceResponse(
+            ToItemsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static ValidateEditSessionResponse ToDto(SwShEditSessionValidation validation)
+    {
+        ArgumentNullException.ThrowIfNull(validation);
+
+        return new ValidateEditSessionResponse(
+            EditSessionBridgeMapper.ToDto(validation.Session),
+            validation.IsValid,
+            validation.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ItemsWorkflowDto ToItemsWorkflowDto(SwShItemsWorkflow workflow)
+    {
+        return new ItemsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Items.Select(ToDto).ToArray(),
+            new ItemsWorkflowStatsDto(
+                workflow.Stats.TotalItemCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
     private static WorkflowSummaryDto ToDto(SwShWorkflowSummary summary)

@@ -428,6 +428,14 @@ h2 {
   font-weight: 600;
 }
 
+.inline-metric {
+  display: inline-flex;
+  margin-top: 8px;
+  color: #4338ca;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .workflow-actions {
   display: flex;
   flex-wrap: wrap;
@@ -474,7 +482,7 @@ h2 {
 
 .items-toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(140px, 180px);
+  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(140px, 180px));
   gap: 12px;
   align-items: center;
   margin-top: 16px;
@@ -526,6 +534,11 @@ h2 {
 .items-row-selected {
   color: #ffffff;
   background: #4338ca;
+}
+
+.items-row-pending:not(.items-row-selected) {
+  background: #fff8e8;
+  box-shadow: inset 4px 0 0 #b88416;
 }
 
 .items-row-heading {
@@ -580,6 +593,56 @@ h2 {
   margin: 0;
   overflow-wrap: anywhere;
   color: #202420;
+  font-weight: 700;
+}
+
+.item-edit-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #d7ddd5;
+}
+
+.changes-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.changes-summary .metric {
+  min-width: 180px;
+}
+
+.pending-edit-list {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pending-edit-list li {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  background: #f5f6f4;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.pending-edit-list strong,
+.pending-edit-list span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pending-edit-list span {
+  color: #6c756a;
+  font-size: 13px;
   font-weight: 700;
 }
 

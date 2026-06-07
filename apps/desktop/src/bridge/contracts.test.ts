@@ -13,6 +13,12 @@ import {
   openProjectResponseSchema,
   refreshFileGraphRequestSchema,
   refreshFileGraphResponseSchema,
+  startEditSessionRequestSchema,
+  startEditSessionResponseSchema,
+  updateItemBuyPriceRequestSchema,
+  updateItemBuyPriceResponseSchema,
+  validateEditSessionRequestSchema,
+  validateEditSessionResponseSchema,
   validateProjectRequestSchema,
   validateProjectResponseSchema
 } from './contracts';
@@ -239,6 +245,133 @@ describe('bridge contracts', () => {
       itemsResponseSchema.safeParse({
         payload: {
           workflow: itemsWorkflow
+        }
+      }).success
+    ).toBe(true);
+  });
+
+  it('validates edit session and Items buy price update envelopes', () => {
+    const startRequestSchema = createBridgeRequestSchema(startEditSessionRequestSchema);
+    const startResponseSchema = createBridgeResponseSchema(startEditSessionResponseSchema);
+    const updateRequestSchema = createBridgeRequestSchema(updateItemBuyPriceRequestSchema);
+    const updateResponseSchema = createBridgeResponseSchema(updateItemBuyPriceResponseSchema);
+    const validateRequestSchema = createBridgeRequestSchema(validateEditSessionRequestSchema);
+    const validateResponseSchema = createBridgeResponseSchema(validateEditSessionResponseSchema);
+    const editSession = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.items',
+          field: 'buyPrice',
+          newValue: '450',
+          recordId: '1',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/kmeditor/items.readmodel.json'
+            }
+          ],
+          summary: 'Set Potion buy price to 450.'
+        }
+      ],
+      sessionId: 'session-1'
+    } as const;
+    const itemsWorkflow = {
+      diagnostics: [],
+      items: [
+        {
+          buyPrice: 450,
+          category: 'Medicine',
+          itemId: 1,
+          name: 'Potion',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/items.readmodel.json',
+            sourceLayer: 'base'
+          },
+          sellPrice: 150
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalItemCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Item records, names, and source provenance.',
+        diagnostics: [],
+        id: 'items',
+        label: 'Items'
+      }
+    } as const;
+
+    expect(
+      startRequestSchema.safeParse({
+        command: kmCommandNames.startEditSession,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output'
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(startResponseSchema.safeParse({ payload: { session: editSession } }).success).toBe(true);
+
+    expect(
+      updateRequestSchema.safeParse({
+        command: kmCommandNames.updateItemBuyPrice,
+        payload: {
+          buyPrice: 450,
+          itemId: 1,
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output'
+          },
+          session: editSession
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: editSession,
+          workflow: itemsWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      validateRequestSchema.safeParse({
+        command: kmCommandNames.validateEditSession,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output'
+          },
+          session: editSession
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      validateResponseSchema.safeParse({
+        payload: {
+          diagnostics: [
+            {
+              field: 'buyPrice',
+              message: 'Pending item buy price change is valid.',
+              severity: 'info'
+            }
+          ],
+          isValid: true,
+          session: editSession
         }
       }).success
     ).toBe(true);

@@ -13,6 +13,12 @@ import {
   type OpenProjectResponse,
   type RefreshFileGraphRequest,
   type RefreshFileGraphResponse,
+  type StartEditSessionRequest,
+  type StartEditSessionResponse,
+  type UpdateItemBuyPriceRequest,
+  type UpdateItemBuyPriceResponse,
+  type ValidateEditSessionRequest,
+  type ValidateEditSessionResponse,
   type ValidateProjectRequest,
   type ValidateProjectResponse,
   createBridgeResponseSchema,
@@ -21,6 +27,9 @@ import {
   loadItemsWorkflowResponseSchema,
   openProjectResponseSchema,
   refreshFileGraphResponseSchema,
+  startEditSessionResponseSchema,
+  updateItemBuyPriceResponseSchema,
+  validateEditSessionResponseSchema,
   validateProjectResponseSchema
 } from './contracts';
 
@@ -29,6 +38,13 @@ export type ProjectBridge = {
   loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
   openProject: (request: OpenProjectRequest) => Promise<OpenProjectResponse>;
   refreshFileGraph: (request: RefreshFileGraphRequest) => Promise<RefreshFileGraphResponse>;
+  startEditSession: (request: StartEditSessionRequest) => Promise<StartEditSessionResponse>;
+  updateItemBuyPrice: (
+    request: UpdateItemBuyPriceRequest
+  ) => Promise<UpdateItemBuyPriceResponse>;
+  validateEditSession: (
+    request: ValidateEditSessionRequest
+  ) => Promise<ValidateEditSessionResponse>;
   validateProject: (request: ValidateProjectRequest) => Promise<ValidateProjectResponse>;
 };
 
@@ -83,6 +99,27 @@ export function createProjectBridge(
         kmCommandNames.refreshFileGraph,
         request,
         refreshFileGraphResponseSchema
+      ),
+    startEditSession: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.startEditSession,
+        request,
+        startEditSessionResponseSchema
+      ),
+    updateItemBuyPrice: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateItemBuyPrice,
+        request,
+        updateItemBuyPriceResponseSchema
+      ),
+    validateEditSession: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.validateEditSession,
+        request,
+        validateEditSessionResponseSchema
       ),
     validateProject: (request) =>
       sendProjectBridgeRequest(

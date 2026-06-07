@@ -25,7 +25,13 @@ public sealed class EditSessionTests
     public void WithPendingEditAppendsEditWithoutMutatingOriginalSession()
     {
         var source = new ProjectFileReference(ProjectFileLayer.Base, "data/items.bin");
-        var edit = new PendingEdit("items", "Update item price", [source]);
+        var edit = new PendingEdit(
+            "items",
+            "Update item price",
+            [source],
+            RecordId: "1",
+            Field: "buyPrice",
+            NewValue: "450");
         var session = EditSession.Start();
 
         var updated = session.WithPendingEdit(edit);
@@ -33,6 +39,7 @@ public sealed class EditSessionTests
         Assert.False(session.HasPendingChanges);
         Assert.True(updated.HasPendingChanges);
         Assert.Equal([edit], updated.PendingEdits);
+        Assert.Equal("buyPrice", updated.PendingEdits[0].Field);
     }
 
     [Fact]
