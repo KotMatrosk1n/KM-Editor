@@ -158,6 +158,13 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'raidRewards',
                 label: 'Raid Rewards'
+              },
+              {
+                availability: 'readOnly',
+                description: 'Placed objects, map coordinates, script links, and source provenance.',
+                diagnostics: [],
+                id: 'placement',
+                label: 'Placement'
               }
             ]
           }
@@ -400,6 +407,47 @@ describe('projectBridge', () => {
         });
       }
 
+      if (request.command === 'placement.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              objects: [
+                {
+                  label: 'Hidden Potion',
+                  map: 'Route 1',
+                  objectId: 'route_1_hidden_potion',
+                  objectType: 'HiddenItem',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/kmeditor/placement.readmodel.json',
+                    sourceLayer: 'base'
+                  },
+                  rotationY: 90,
+                  scriptId: 'script_hidden_item_001',
+                  x: 10.5,
+                  y: 0,
+                  z: -4.25
+                }
+              ],
+              stats: {
+                sourceFileCount: 1,
+                totalObjectCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description:
+                  'Placed objects, map coordinates, script links, and source provenance.',
+                diagnostics: [],
+                id: 'placement',
+                label: 'Placement'
+              }
+            }
+          }
+        });
+      }
+
       return JSON.stringify({
         error: null,
         payload: {
@@ -458,6 +506,7 @@ describe('projectBridge', () => {
     const shops = await bridge.loadShopsWorkflow({ paths: projectPaths });
     const encounters = await bridge.loadEncountersWorkflow({ paths: projectPaths });
     const raidRewards = await bridge.loadRaidRewardsWorkflow({ paths: projectPaths });
+    const placement = await bridge.loadPlacementWorkflow({ paths: projectPaths });
 
     expect(workflows.workflows[0]?.id).toBe('items');
     expect(workflows.workflows[1]?.id).toBe('text');
@@ -465,6 +514,7 @@ describe('projectBridge', () => {
     expect(workflows.workflows[3]?.id).toBe('shops');
     expect(workflows.workflows[4]?.id).toBe('encounters');
     expect(workflows.workflows[5]?.id).toBe('raidRewards');
+    expect(workflows.workflows[6]?.id).toBe('placement');
     expect(items.workflow.editableFields).toHaveLength(2);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(text.workflow.entries[0]?.label).toBe('Greeting');
@@ -472,6 +522,7 @@ describe('projectBridge', () => {
     expect(shops.workflow.shops[0]?.name).toBe('Route 1 Mart');
     expect(encounters.workflow.tables[0]?.slots[0]?.species).toBe('Skwovet');
     expect(raidRewards.workflow.tables[0]?.rewards[0]?.itemName).toBe('Exp. Candy L');
+    expect(placement.workflow.objects[0]?.label).toBe('Hidden Potion');
   });
 
   it('starts, updates, and validates an Items edit session', async () => {

@@ -15,6 +15,8 @@ import {
   loadEncountersWorkflowResponseSchema,
   loadItemsWorkflowRequestSchema,
   loadItemsWorkflowResponseSchema,
+  loadPlacementWorkflowRequestSchema,
+  loadPlacementWorkflowResponseSchema,
   loadRaidRewardsWorkflowRequestSchema,
   loadRaidRewardsWorkflowResponseSchema,
   loadShopsWorkflowRequestSchema,
@@ -209,6 +211,10 @@ describe('bridge contracts', () => {
     );
     const raidRewardsResponseSchema = createBridgeResponseSchema(
       loadRaidRewardsWorkflowResponseSchema
+    );
+    const placementRequestSchema = createBridgeRequestSchema(loadPlacementWorkflowRequestSchema);
+    const placementResponseSchema = createBridgeResponseSchema(
+      loadPlacementWorkflowResponseSchema
     );
     const itemsWorkflow = {
       diagnostics: [],
@@ -448,6 +454,38 @@ describe('bridge contracts', () => {
         }
       ]
     } as const;
+    const placementWorkflow = {
+      diagnostics: [],
+      objects: [
+        {
+          label: 'Hidden Potion',
+          map: 'Route 1',
+          objectId: 'route_1_hidden_potion',
+          objectType: 'HiddenItem',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/placement.readmodel.json',
+            sourceLayer: 'base'
+          },
+          rotationY: 90,
+          scriptId: 'script_hidden_item_001',
+          x: 10.5,
+          y: 0,
+          z: -4.25
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalObjectCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Placed objects, map coordinates, script links, and source provenance.',
+        diagnostics: [],
+        id: 'placement',
+        label: 'Placement'
+      }
+    } as const;
 
     expect(
       workflowsRequestSchema.safeParse({
@@ -471,7 +509,8 @@ describe('bridge contracts', () => {
             trainersWorkflow.summary,
             shopsWorkflow.summary,
             encountersWorkflow.summary,
-            raidRewardsWorkflow.summary
+            raidRewardsWorkflow.summary,
+            placementWorkflow.summary
           ]
         }
       }).success
@@ -599,6 +638,27 @@ describe('bridge contracts', () => {
       raidRewardsResponseSchema.safeParse({
         payload: {
           workflow: raidRewardsWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      placementRequestSchema.safeParse({
+        command: kmCommandNames.loadPlacementWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      placementResponseSchema.safeParse({
+        payload: {
+          workflow: placementWorkflow
         }
       }).success
     ).toBe(true);

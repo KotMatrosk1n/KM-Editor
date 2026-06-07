@@ -3,6 +3,7 @@
 using KM.Core.Projects;
 using KM.SwSh.Encounters;
 using KM.SwSh.Items;
+using KM.SwSh.Placement;
 using KM.SwSh.Raids;
 using KM.SwSh.Shops;
 using KM.SwSh.Text;
@@ -14,6 +15,7 @@ public sealed class SwShWorkflowService
 {
     private readonly SwShItemsWorkflowService itemsWorkflowService;
     private readonly SwShEncountersWorkflowService encountersWorkflowService;
+    private readonly SwShPlacementWorkflowService placementWorkflowService;
     private readonly SwShRaidRewardsWorkflowService raidRewardsWorkflowService;
     private readonly SwShShopsWorkflowService shopsWorkflowService;
     private readonly SwShTextWorkflowService textWorkflowService;
@@ -27,11 +29,13 @@ public sealed class SwShWorkflowService
         SwShTrainersWorkflowService? trainersWorkflowService = null,
         SwShShopsWorkflowService? shopsWorkflowService = null,
         SwShEncountersWorkflowService? encountersWorkflowService = null,
-        SwShRaidRewardsWorkflowService? raidRewardsWorkflowService = null)
+        SwShRaidRewardsWorkflowService? raidRewardsWorkflowService = null,
+        SwShPlacementWorkflowService? placementWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
         this.encountersWorkflowService = encountersWorkflowService ?? new SwShEncountersWorkflowService();
+        this.placementWorkflowService = placementWorkflowService ?? new SwShPlacementWorkflowService();
         this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
         this.shopsWorkflowService = shopsWorkflowService ?? new SwShShopsWorkflowService();
         this.textWorkflowService = textWorkflowService ?? new SwShTextWorkflowService();
@@ -52,6 +56,7 @@ public sealed class SwShWorkflowService
                 shopsWorkflowService.CreateSummary(project),
                 encountersWorkflowService.CreateSummary(project),
                 raidRewardsWorkflowService.CreateSummary(project),
+                placementWorkflowService.CreateSummary(project),
             ]);
     }
 
@@ -107,5 +112,14 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return raidRewardsWorkflowService.Load(project);
+    }
+
+    public SwShPlacementWorkflow LoadPlacement(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return placementWorkflowService.Load(project);
     }
 }

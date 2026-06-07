@@ -75,6 +75,7 @@ describe('App', () => {
       screen.getByRole('heading', { level: 3, name: 'Encounters and Wild Data' })
     ).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Raid Rewards' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Placement' })).toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
   });
 
@@ -288,6 +289,13 @@ function createMockProjectBridge(
     id: 'raidRewards',
     label: 'Raid Rewards'
   };
+  const placementWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Placed objects, map coordinates, script links, and source provenance.',
+    diagnostics: [],
+    id: 'placement',
+    label: 'Placement'
+  };
 
   return {
     applyChangePlan: (request) =>
@@ -337,7 +345,8 @@ function createMockProjectBridge(
           trainersWorkflowSummary,
           shopsWorkflowSummary,
           encountersWorkflowSummary,
-          raidRewardsWorkflowSummary
+          raidRewardsWorkflowSummary,
+          placementWorkflowSummary
         ]
       }),
     loadEncountersWorkflow: () =>
@@ -351,6 +360,18 @@ function createMockProjectBridge(
           },
           summary: encountersWorkflowSummary,
           tables: []
+        }
+      }),
+    loadPlacementWorkflow: () =>
+      Promise.resolve({
+        workflow: {
+          diagnostics: [],
+          objects: [],
+          stats: {
+            sourceFileCount: 0,
+            totalObjectCount: 0
+          },
+          summary: placementWorkflowSummary
         }
       }),
     loadRaidRewardsWorkflow: () =>
