@@ -531,6 +531,15 @@ describe('bridge contracts', () => {
     } as const;
     const raidRewardsWorkflow = {
       diagnostics: [],
+      editableFields: [
+        {
+          field: 'itemId',
+          label: 'Item ID',
+          maximumValue: 65535,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
       stats: {
         sourceFileCount: 1,
         totalRewardItemCount: 1,
@@ -545,24 +554,31 @@ describe('bridge contracts', () => {
       },
       tables: [
         {
-          denId: 'den_001',
-          gameVersion: 'Sword',
+          archiveMember: 'nest_hole_drop_rewards.bin',
+          denId: 'table_AABBCCDD00112233',
+          gameVersion: 'Sword/Shield',
           provenance: {
             fileState: 'baseOnly',
-            sourceFile: 'romfs/kmeditor/raid.rewards.readmodel.json',
+            sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
             sourceLayer: 'base'
           },
-          rank: 5,
+          rank: 0,
+          rewardKind: 'drop',
+          rewardKindLabel: 'Drop',
           rewards: [
             {
-              itemId: 1,
+              entryId: 10,
+              itemId: 3,
               itemName: 'Exp. Candy L',
-              quantity: 2,
+              quantity: 0,
               slot: 1,
+              values: [40, 30, 20, 10, 5],
               weight: 40
             }
           ],
-          tableId: 'den_001_rank_5_sword'
+          sourceTableHash: '0xAABBCCDD00112233',
+          tableId: 'drop:0:AABBCCDD00112233',
+          tableIndex: 0
         }
       ]
     } as const;

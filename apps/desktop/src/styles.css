@@ -1064,6 +1064,63 @@ h2 {
   white-space: nowrap;
 }
 
+.raid-rewards-table {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.raid-rewards-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.1fr) minmax(90px, 0.7fr) minmax(70px, 0.45fr) minmax(180px, 1.4fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  color: #202420;
+  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid #e1e5df;
+  text-align: left;
+}
+
+.raid-rewards-row:last-child {
+  border-bottom: 0;
+}
+
+.raid-rewards-row:not(.raid-rewards-row-heading) {
+  cursor: pointer;
+}
+
+.raid-rewards-row:not(.raid-rewards-row-heading):hover,
+.raid-rewards-row-selected {
+  color: #ffffff;
+  background: #4338ca;
+}
+
+.raid-rewards-row-pending:not(.raid-rewards-row-selected) {
+  background: #fff8e8;
+  box-shadow: inset 4px 0 0 #b88416;
+}
+
+.raid-rewards-row-heading {
+  color: #6c756a;
+  background: #f5f6f4;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: default;
+}
+
+.raid-rewards-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .encounter-inspector {
   min-width: 0;
   padding: 14px;

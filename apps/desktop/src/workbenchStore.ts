@@ -10,6 +10,7 @@ import {
   type ItemsWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
+  type RaidRewardsWorkflow,
   type ShopsWorkflow,
   type TextWorkflow,
   type TrainersWorkflow,
@@ -24,6 +25,7 @@ export type WorkbenchSection =
   | 'trainers'
   | 'shops'
   | 'encounters'
+  | 'raidRewards'
   | 'changes';
 
 export type ProjectPathDraft = {
@@ -51,6 +53,9 @@ type WorkbenchState = {
   itemsWorkflow: ItemsWorkflow | null;
   openProject: OpenProjectState | null;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
+  raidRewardSearchText: string;
+  raidRewardsWorkflow: RaidRewardsWorkflow | null;
+  selectedRaidRewardTableId: string | null;
   selectedItemId: number | null;
   selectedEncounterTableId: string | null;
   selectedShopId: string | null;
@@ -76,6 +81,9 @@ type WorkbenchState = {
   setOpenProject: (project: OpenProjectState) => void;
   setProjectHealth: (health: ProjectHealth) => void;
   setProjectStatus: (projectStatus: WorkbenchState['projectStatus']) => void;
+  setRaidRewardSearchText: (raidRewardSearchText: string) => void;
+  setRaidRewardsWorkflow: (raidRewardsWorkflow: RaidRewardsWorkflow) => void;
+  setSelectedRaidRewardTableId: (selectedRaidRewardTableId: string | null) => void;
   setSelectedItemId: (selectedItemId: number | null) => void;
   setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
   setSelectedShopId: (selectedShopId: string | null) => void;
@@ -107,6 +115,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   itemsWorkflow: null,
   openProject: null,
   projectStatus: 'idle',
+  raidRewardSearchText: '',
+  raidRewardsWorkflow: null,
+  selectedRaidRewardTableId: null,
   selectedItemId: null,
   selectedEncounterTableId: null,
   selectedShopId: null,
@@ -132,6 +143,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setEditSession: (editSession) => set({ applyResult: null, changePlan: null, editSession }),
   setEditValidationDiagnostics: (editValidationDiagnostics) => set({ editValidationDiagnostics }),
   setEncounterSearchText: (encounterSearchText) => set({ encounterSearchText }),
+  setRaidRewardSearchText: (raidRewardSearchText) => set({ raidRewardSearchText }),
   setItemsWorkflow: (itemsWorkflow) =>
     set((state) => {
       const selectedItemId = itemsWorkflow.items.some(
@@ -167,8 +179,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       itemsWorkflow: null,
       openProject,
       projectStatus: 'open',
+      raidRewardSearchText: '',
+      raidRewardsWorkflow: null,
       selectedEncounterTableId: null,
       selectedItemId: null,
+      selectedRaidRewardTableId: null,
       selectedShopId: null,
       selectedTextKey: null,
       selectedTrainerId: null,
@@ -197,6 +212,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       projectStatus: 'idle'
     })),
   setProjectStatus: (projectStatus) => set({ projectStatus }),
+  setSelectedRaidRewardTableId: (selectedRaidRewardTableId) =>
+    set({ selectedRaidRewardTableId }),
   setSelectedEncounterTableId: (selectedEncounterTableId) => set({ selectedEncounterTableId }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
   setSelectedShopId: (selectedShopId) => set({ selectedShopId }),
@@ -276,6 +293,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         encounterSearchText: '',
         encountersWorkflow,
         selectedEncounterTableId
+      };
+    }),
+  setRaidRewardsWorkflow: (raidRewardsWorkflow) =>
+    set((state) => {
+      const selectedRaidRewardTableId = raidRewardsWorkflow.tables.some(
+        (table) => table.tableId === state.selectedRaidRewardTableId
+      )
+        ? state.selectedRaidRewardTableId
+        : (raidRewardsWorkflow.tables[0]?.tableId ?? null);
+
+      return {
+        activeSection: 'raidRewards',
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        raidRewardSearchText: '',
+        raidRewardsWorkflow,
+        selectedRaidRewardTableId
       };
     }),
   setWorkflows: (workflows) => set({ workflows })

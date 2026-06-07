@@ -13,65 +13,36 @@ namespace KM.SwSh.Tests.Raids;
 public sealed class SwShRaidRewardsWorkflowServiceTests
 {
     [Fact]
-    public void LoadReadsRaidRewardTablesFromSanitizedBaseReadModel()
+    public void LoadReadsRaidRewardTablesFromRealNestDataPack()
     {
         using var temp = TemporarySwShProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/raid.rewards.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "tables": [
-                {
-                  "tableId": "den_001_rank_5_sword",
-                  "denId": "den_001",
-                  "rank": 5,
-                  "gameVersion": "Sword",
-                  "rewards": [
-                    {
-                      "slot": 2,
-                      "itemId": 2,
-                      "itemName": "Rare Candy",
-                      "quantity": 1,
-                      "weight": 5
-                    },
-                    {
-                      "slot": 1,
-                      "itemId": 1,
-                      "itemName": "Exp. Candy L",
-                      "quantity": 2,
-                      "weight": 40
-                    }
-                  ]
-                }
-              ]
-            }
-            """);
+        SwShRaidRewardTestFixtures.WriteBaseRaidRewards(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
 
         var workflow = new SwShRaidRewardsWorkflowService().Load(project);
 
         Assert.Equal(SwShWorkflowAvailability.ReadOnly, workflow.Summary.Availability);
-        var table = Assert.Single(workflow.Tables);
-        Assert.Equal("den_001_rank_5_sword", table.TableId);
-        Assert.Equal("den_001", table.DenId);
-        Assert.Equal(5, table.Rank);
-        Assert.Equal("Sword", table.GameVersion);
-        Assert.Equal(2, table.Rewards.Count);
-        Assert.Equal("Exp. Candy L", table.Rewards[0].ItemName);
-        Assert.Equal(2, table.Rewards[0].Quantity);
-        Assert.Equal("Rare Candy", table.Rewards[1].ItemName);
-        Assert.Equal(ProjectFileLayer.Base, table.Provenance.SourceLayer);
-        Assert.Equal(ProjectFileGraphEntryState.BaseOnly, table.Provenance.FileState);
-        Assert.Equal(1, workflow.Stats.TotalTableCount);
-        Assert.Equal(2, workflow.Stats.TotalRewardItemCount);
+        Assert.Equal(2, workflow.Tables.Count);
+        Assert.Contains(workflow.EditableFields, field => field.Field == SwShRaidRewardsWorkflowService.ItemIdField);
+        var dropTable = workflow.Tables.Single(table => table.RewardKind == "drop");
+        Assert.Equal("nest_hole_drop_rewards.bin", dropTable.ArchiveMember);
+        Assert.Equal("0xAABBCCDD00112233", dropTable.SourceTableHash);
+        Assert.Equal(ProjectFileLayer.Base, dropTable.Provenance.SourceLayer);
+        Assert.Equal(ProjectFileGraphEntryState.BaseOnly, dropTable.Provenance.FileState);
+        Assert.Equal("Exp. Candy L", dropTable.Rewards[0].ItemName);
+        Assert.Equal([40, 30, 20, 10, 5], dropTable.Rewards[0].Values);
+        var bonusTable = workflow.Tables.Single(table => table.RewardKind == "bonus");
+        Assert.Equal("Armorite Ore", bonusTable.Rewards[0].ItemName);
+        Assert.Equal([1, 2, 3, 4, 5], bonusTable.Rewards[0].Values);
+        Assert.Equal(2, workflow.Stats.TotalTableCount);
+        Assert.Equal(3, workflow.Stats.TotalRewardItemCount);
         Assert.Equal(1, workflow.Stats.SourceFileCount);
         Assert.Empty(workflow.Diagnostics);
     }
 
     [Fact]
-    public void LoadReturnsDiagnosticWhenReadModelIsMissing()
+    public void LoadReturnsDiagnosticWhenNestDataPackIsMissing()
     {
         using var temp = TemporarySwShProject.Create();
         temp.WriteBaseRomFsFile("data/raid-rewards.bin", "placeholder");
@@ -85,41 +56,19 @@ public sealed class SwShRaidRewardsWorkflowServiceTests
     }
 
     [Fact]
-    public void LoadWarnsWhenTableIdsAreDuplicated()
+    public void LoadReturnsDiagnosticWhenNestDataPackIsUnsupported()
     {
         using var temp = TemporarySwShProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/raid.rewards.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "tables": [
-                {
-                  "tableId": "den_001_rank_5_sword",
-                  "denId": "den_001",
-                  "rank": 5,
-                  "gameVersion": "Sword",
-                  "rewards": []
-                },
-                {
-                  "tableId": "den_001_rank_5_sword",
-                  "denId": "den_001",
-                  "rank": 5,
-                  "gameVersion": "Shield",
-                  "rewards": []
-                }
-              ]
-            }
-            """);
+        temp.WriteBaseRomFsFile("bin/archive/field/resident/data_table.gfpak", "not-a-pack");
         temp.WriteBaseExeFsFile("main", "base-main");
         var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
 
         var workflow = new SwShRaidRewardsWorkflowService().Load(project);
 
-        Assert.Equal(2, workflow.Tables.Count);
+        Assert.Empty(workflow.Tables);
         Assert.Contains(
             workflow.Diagnostics,
-            diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
                 && diagnostic.Domain == "workflow.raidRewards");
     }
 }

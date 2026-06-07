@@ -8,6 +8,7 @@ import {
   type ItemsWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
+  type RaidRewardsWorkflow,
   type ShopsWorkflow,
   type TextWorkflow,
   type TrainersWorkflow,
@@ -35,8 +36,11 @@ describe('App', () => {
       itemsWorkflow: null,
       openProject: null,
       projectStatus: 'idle',
+      raidRewardSearchText: '',
+      raidRewardsWorkflow: null,
       selectedEncounterTableId: null,
       selectedItemId: null,
+      selectedRaidRewardTableId: null,
       selectedShopId: null,
       selectedTextKey: null,
       selectedTrainerId: null,
@@ -354,6 +358,54 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Encounters change plan to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
+  it('opens Raid Rewards, edits a star value, reviews a reward plan, and applies it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Raid Rewards' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Raid Rewards' })).toBeInTheDocument();
+    expect(screen.getAllByText('0xAABBCCDD00112233').length).toBeGreaterThan(0);
+    expect(screen.getByRole('option', { name: 'Slot 1: Exp. Candy L' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const starValueInput = screen.getByLabelText('5-star value');
+    await user.clear(starValueInput);
+    await user.type(starValueInput, '77');
+    await user.click(screen.getByRole('button', { name: 'Save 5-star value' }));
+
+    expect(await screen.findByDisplayValue('77')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(
+      screen.getByText('Set Drop 0xAABBCCDD00112233 slot 1 5-star value to 77.')
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending raid reward change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(
+      screen.getAllByText('romfs/bin/archive/field/resident/data_table.gfpak').length
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Applied Raid Rewards change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
   });
 
@@ -814,6 +866,60 @@ function createMockProjectBridge(
     id: 'raidRewards',
     label: 'Raid Rewards'
   };
+  const raidRewardsWorkflow: RaidRewardsWorkflow = {
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'itemId',
+        label: 'Item ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'star5Value',
+        label: '5-star value',
+        maximumValue: 999,
+        minimumValue: 0,
+        valueKind: 'integer'
+      }
+    ],
+    stats: {
+      sourceFileCount: 1,
+      totalRewardItemCount: 1,
+      totalTableCount: 1
+    },
+    summary: raidRewardsWorkflowSummary,
+    tables: [
+      {
+        archiveMember: 'nest_hole_drop_rewards.bin',
+        denId: 'table_AABBCCDD00112233',
+        gameVersion: 'Sword/Shield',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+          sourceLayer: 'base'
+        },
+        rank: 0,
+        rewardKind: 'drop',
+        rewardKindLabel: 'Drop',
+        rewards: [
+          {
+            entryId: 10,
+            itemId: 3,
+            itemName: 'Exp. Candy L',
+            quantity: 0,
+            slot: 1,
+            values: [40, 30, 20, 10, 5],
+            weight: 40
+          }
+        ],
+        sourceTableHash: '0xAABBCCDD00112233',
+        tableId: 'drop:0:AABBCCDD00112233',
+        tableIndex: 0
+      }
+    ]
+  };
   const placementWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Placed objects, map coordinates, script links, and source provenance.',
@@ -857,7 +963,10 @@ function createMockProjectBridge(
           applyId: 'apply-1',
           diagnostics: [
             {
-              message: getApplyMessage(request.changePlan.writes[0]?.targetRelativePath ?? ''),
+              message: getApplyMessage(
+                request.changePlan.writes[0]?.targetRelativePath ?? '',
+                request.session.pendingEdits[0]?.domain
+              ),
               severity: 'info'
             }
           ],
@@ -935,6 +1044,23 @@ function createMockProjectBridge(
                             'romfs/bin/archive/field/resident/data_table.gfpak'
                         }
                       ]
+                    : request.session.pendingEdits[0]?.domain === 'workflow.raidRewards'
+                      ? [
+                          {
+                            reason:
+                              'Apply pending Raid Rewards edit: Set Drop 0xAABBCCDD00112233 slot 1 5-star value to 77.',
+                            replacesExistingOutput: false,
+                            sources: [
+                              {
+                                layer: 'base',
+                                relativePath:
+                                  'romfs/bin/archive/field/resident/data_table.gfpak'
+                              }
+                            ],
+                            targetRelativePath:
+                              'romfs/bin/archive/field/resident/data_table.gfpak'
+                          }
+                        ]
               : [
                   {
                     reason: 'Apply pending Items edit: Set Potion buy price to 450.',
@@ -1036,16 +1162,7 @@ function createMockProjectBridge(
       }),
     loadRaidRewardsWorkflow: () =>
       Promise.resolve({
-        workflow: {
-          diagnostics: [],
-          stats: {
-            sourceFileCount: 0,
-            totalRewardItemCount: 0,
-            totalTableCount: 0
-          },
-          summary: raidRewardsWorkflowSummary,
-          tables: []
-        }
+        workflow: raidRewardsWorkflow
       }),
     loadItemsWorkflow: () =>
       Promise.resolve({
@@ -1282,6 +1399,51 @@ function createMockProjectBridge(
           )
         }
       }),
+    updateRaidRewardField: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.raidRewards',
+              field: request.field,
+              newValue: request.value,
+              recordId: `${request.tableId}#${request.slot}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
+                }
+              ],
+              summary: `Set Drop 0xAABBCCDD00112233 slot ${request.slot} 5-star value to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...raidRewardsWorkflow,
+          tables: raidRewardsWorkflow.tables.map((table) =>
+            table.tableId === request.tableId
+              ? {
+                  ...table,
+                  rewards: table.rewards.map((reward) =>
+                    reward.slot === request.slot
+                      ? {
+                          ...reward,
+                          values: reward.values.map((value, index) =>
+                            request.field === 'star5Value' && index === 4
+                              ? Number.parseInt(request.value, 10)
+                              : value
+                          )
+                        }
+                      : reward
+                  )
+                }
+              : table
+          )
+        }
+      }),
     validateEditSession: (request) =>
       Promise.resolve({
         diagnostics: [
@@ -1299,7 +1461,7 @@ function createMockProjectBridge(
   };
 }
 
-function getApplyMessage(targetRelativePath: string) {
+function getApplyMessage(targetRelativePath: string, domain: string | undefined) {
   if (targetRelativePath.includes('/message/')) {
     return 'Applied Text change plan to the configured LayeredFS output root.';
   }
@@ -1310,6 +1472,10 @@ function getApplyMessage(targetRelativePath: string) {
 
   if (targetRelativePath.includes('/shop/')) {
     return 'Applied Shops change plan to the configured LayeredFS output root.';
+  }
+
+  if (domain === 'workflow.raidRewards') {
+    return 'Applied Raid Rewards change plan to the configured LayeredFS output root.';
   }
 
   if (targetRelativePath.includes('/archive/field/resident/')) {
@@ -1329,6 +1495,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending shop change is valid.';
     case 'workflow.encounters':
       return 'Pending encounter change is valid.';
+    case 'workflow.raidRewards':
+      return 'Pending raid reward change is valid.';
     default:
       return 'Pending item change is valid.';
   }

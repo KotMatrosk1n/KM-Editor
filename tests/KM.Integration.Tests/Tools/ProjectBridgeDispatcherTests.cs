@@ -536,33 +536,10 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadRaidRewardsWorkflowReturnsSanitizedRewardTables()
+    public void DispatchLoadRaidRewardsWorkflowReturnsRealRewardTables()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/raid.rewards.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "tables": [
-                {
-                  "tableId": "den_001_rank_5_sword",
-                  "denId": "den_001",
-                  "rank": 5,
-                  "gameVersion": "Sword",
-                  "rewards": [
-                    {
-                      "slot": 1,
-                      "itemId": 1,
-                      "itemName": "Exp. Candy L",
-                      "quantity": 2,
-                      "weight": 40
-                    }
-                  ]
-                }
-              ]
-            }
-            """);
+        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.LoadRaidRewardsWorkflow,
@@ -575,15 +552,85 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.Equal("request-raid-rewards", response.RequestId);
         Assert.NotNull(response.Payload);
-        var table = Assert.Single(response.Payload.Workflow.Tables);
-        Assert.Equal("den_001_rank_5_sword", table.TableId);
-        Assert.Equal("den_001", table.DenId);
-        Assert.Equal(5, table.Rank);
+        Assert.Equal(2, response.Payload.Workflow.Tables.Count);
+        var table = response.Payload.Workflow.Tables.Single(table => table.RewardKind == "drop");
+        Assert.Equal("nest_hole_drop_rewards.bin", table.ArchiveMember);
+        Assert.Equal("0xAABBCCDD00112233", table.SourceTableHash);
         Assert.Equal(ProjectFileLayerDto.Base, table.Provenance.SourceLayer);
-        var reward = Assert.Single(table.Rewards);
+        var reward = table.Rewards[0];
         Assert.Equal("Exp. Candy L", reward.ItemName);
-        Assert.Equal(2, reward.Quantity);
+        Assert.Equal([40, 30, 20, 10, 5], reward.Values);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchRaidRewardEditValidatePlanAndApplyWritesNestDataPack()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loadJson = SerializeRequest(
+            KmCommandNames.LoadRaidRewardsWorkflow,
+            new LoadRaidRewardsWorkflowRequest(temp.Paths),
+            requestId: "request-raid-load");
+        var loadResponse = DeserializeResponse<LoadRaidRewardsWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.NotNull(loadResponse.Payload);
+        var dropTable = loadResponse.Payload.Workflow.Tables.Single(table => table.RewardKind == "drop");
+        var startJson = SerializeRequest(
+            KmCommandNames.StartEditSession,
+            new StartEditSessionRequest(temp.Paths),
+            requestId: "request-raid-start");
+        var startResponse = DeserializeResponse<StartEditSessionResponse>(dispatcher.Dispatch(startJson));
+        Assert.NotNull(startResponse.Payload);
+
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateRaidRewardField,
+            new UpdateRaidRewardFieldRequest(
+                temp.Paths,
+                startResponse.Payload.Session,
+                dropTable.TableId,
+                Slot: 2,
+                Field: "star5Value",
+                Value: "77"),
+            requestId: "request-raid-update");
+        var updateResponse = DeserializeResponse<UpdateRaidRewardFieldResponse>(dispatcher.Dispatch(updateJson));
+
+        Assert.Null(updateResponse.Error);
+        Assert.NotNull(updateResponse.Payload);
+        Assert.Equal(77, updateResponse.Payload.Workflow.Tables.Single(table => table.TableId == dropTable.TableId).Rewards[1].Values[4]);
+        Assert.Equal("workflow.raidRewards", Assert.Single(updateResponse.Payload.Session.PendingEdits).Domain);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-raid-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-raid-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.NotNull(planResponse.Payload);
+        Assert.Equal("romfs/bin/archive/field/resident/data_table.gfpak", Assert.Single(planResponse.Payload.ChangePlan.Writes).TargetRelativePath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, updateResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-raid-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.Equal("romfs/bin/archive/field/resident/data_table.gfpak", Assert.Single(applyResponse.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "archive", "field", "resident", "data_table.gfpak");
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
+        var outputArchive = SwShNestHoleRewardArchive.Parse(outputPack.GetFileByName("nest_hole_drop_rewards.bin"));
+        Assert.Equal(77u, outputArchive.Tables[0].Rewards[1].Values[4]);
     }
 
     [Fact]

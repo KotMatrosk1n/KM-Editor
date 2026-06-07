@@ -34,6 +34,10 @@ import {
   type ProjectHealth,
   type ProjectPathRole,
   type ProjectPathValidation,
+  type RaidRewardEditableField,
+  type RaidRewardItemRecord,
+  type RaidRewardTableRecord,
+  type RaidRewardsWorkflow,
   type ShopEditableField,
   type ShopInventoryRecord,
   type ShopRecord,
@@ -97,6 +101,11 @@ const sections: Array<{
     id: 'encounters',
     label: 'Encounters',
     icon: Layers
+  },
+  {
+    id: 'raidRewards',
+    label: 'Raid Rewards',
+    icon: ShieldCheck
   },
   {
     id: 'changes',
@@ -231,6 +240,14 @@ const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
 const encounterLevelMinFieldName = 'levelMin';
 const encounterLevelMaxFieldName = 'levelMax';
+const raidRewardItemIdFieldName = 'itemId';
+const raidRewardValueFieldNames = [
+  'star1Value',
+  'star2Value',
+  'star3Value',
+  'star4Value',
+  'star5Value'
+] as const;
 
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
@@ -245,8 +262,13 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const itemsWorkflow = useWorkbenchStore((state) => state.itemsWorkflow);
   const openProject = useWorkbenchStore((state) => state.openProject);
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
+  const raidRewardSearchText = useWorkbenchStore((state) => state.raidRewardSearchText);
+  const raidRewardsWorkflow = useWorkbenchStore((state) => state.raidRewardsWorkflow);
   const selectedEncounterTableId = useWorkbenchStore((state) => state.selectedEncounterTableId);
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
+  const selectedRaidRewardTableId = useWorkbenchStore(
+    (state) => state.selectedRaidRewardTableId
+  );
   const selectedShopId = useWorkbenchStore((state) => state.selectedShopId);
   const selectedTextKey = useWorkbenchStore((state) => state.selectedTextKey);
   const selectedTrainerId = useWorkbenchStore((state) => state.selectedTrainerId);
@@ -272,6 +294,11 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
   const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
+  const setRaidRewardSearchText = useWorkbenchStore((state) => state.setRaidRewardSearchText);
+  const setRaidRewardsWorkflow = useWorkbenchStore((state) => state.setRaidRewardsWorkflow);
+  const setSelectedRaidRewardTableId = useWorkbenchStore(
+    (state) => state.setSelectedRaidRewardTableId
+  );
   const setSelectedEncounterTableId = useWorkbenchStore(
     (state) => state.setSelectedEncounterTableId
   );
@@ -301,6 +328,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isShopUpdating, setIsShopUpdating] = useState(false);
   const [isEncountersLoading, setIsEncountersLoading] = useState(false);
   const [isEncounterUpdating, setIsEncounterUpdating] = useState(false);
+  const [isRaidRewardsLoading, setIsRaidRewardsLoading] = useState(false);
+  const [isRaidRewardUpdating, setIsRaidRewardUpdating] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -408,6 +437,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsEncountersLoading(false);
+    }
+  };
+
+  const handleOpenRaidRewardsWorkflow = async () => {
+    setIsRaidRewardsLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadRaidRewardsWorkflow({ paths: toProjectPaths(draftPaths) });
+      setRaidRewardsWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRaidRewardsLoading(false);
     }
   };
 
@@ -555,6 +598,35 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsEncounterUpdating(false);
+    }
+  };
+
+  const handleUpdateRaidRewardField = async (
+    tableId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => {
+    setIsRaidRewardUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateRaidRewardField({
+        field,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        slot,
+        tableId,
+        value
+      });
+      setRaidRewardsWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRaidRewardUpdating(false);
     }
   };
 
@@ -724,8 +796,10 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               isTrainersLoading={isTrainersLoading}
               isShopsLoading={isShopsLoading}
               isEncountersLoading={isEncountersLoading}
+              isRaidRewardsLoading={isRaidRewardsLoading}
               onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
+              onOpenRaidRewardsWorkflow={handleOpenRaidRewardsWorkflow}
               onOpenShopsWorkflow={handleOpenShopsWorkflow}
               onOpenTextWorkflow={handleOpenTextWorkflow}
               onOpenTrainersWorkflow={handleOpenTrainersWorkflow}
@@ -801,6 +875,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               searchText={encounterSearchText}
               selectedTableId={selectedEncounterTableId}
               workflow={encountersWorkflow}
+            />
+          ) : null}
+          {activeSection === 'raidRewards' ? (
+            <RaidRewardsSection
+              editSession={editSession}
+              isEditStarting={isEditStarting}
+              isRaidRewardUpdating={isRaidRewardUpdating}
+              onSearchChange={setRaidRewardSearchText}
+              onSelectTable={setSelectedRaidRewardTableId}
+              onStartEditSession={handleStartEditSession}
+              onUpdateRaidRewardField={handleUpdateRaidRewardField}
+              searchText={raidRewardSearchText}
+              selectedTableId={selectedRaidRewardTableId}
+              workflow={raidRewardsWorkflow}
             />
           ) : null}
           {activeSection === 'changes' ? (
@@ -932,8 +1020,10 @@ function WorkflowsSection({
   isShopsLoading,
   isTextLoading,
   isTrainersLoading,
+  isRaidRewardsLoading,
   onOpenEncountersWorkflow,
   onOpenItemsWorkflow,
+  onOpenRaidRewardsWorkflow,
   onOpenShopsWorkflow,
   onOpenTextWorkflow,
   onOpenTrainersWorkflow,
@@ -946,8 +1036,10 @@ function WorkflowsSection({
   isShopsLoading: boolean;
   isTextLoading: boolean;
   isTrainersLoading: boolean;
+  isRaidRewardsLoading: boolean;
   onOpenEncountersWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
+  onOpenRaidRewardsWorkflow: () => void;
   onOpenShopsWorkflow: () => void;
   onOpenTextWorkflow: () => void;
   onOpenTrainersWorkflow: () => void;
@@ -971,12 +1063,15 @@ function WorkflowsSection({
           const isTrainersWorkflow = definition.id === 'trainers';
           const isShopsWorkflow = definition.id === 'shops';
           const isEncountersWorkflow = definition.id === 'encounters';
+          const isRaidRewardsWorkflow = definition.id === 'raidRewards';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
           const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
           const canOpenEncounters =
             isEncountersWorkflow && workflowState.availability !== 'disabled';
+          const canOpenRaidRewards =
+            isRaidRewardsWorkflow && workflowState.availability !== 'disabled';
 
           return (
             <article className="workflow-row" key={definition.id}>
@@ -1044,6 +1139,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isEncountersLoading ? 'Loading' : 'Open Encounters'}</span>
+                  </button>
+                ) : null}
+                {isRaidRewardsWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenRaidRewards || isRaidRewardsLoading}
+                    onClick={onOpenRaidRewardsWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isRaidRewardsLoading ? 'Loading' : 'Open Raid Rewards'}</span>
                   </button>
                 ) : null}
               </div>
@@ -2599,6 +2705,366 @@ function SelectedEncounterPanel({
   );
 }
 
+function RaidRewardsSection({
+  editSession,
+  isEditStarting,
+  isRaidRewardUpdating,
+  onSearchChange,
+  onSelectTable,
+  onStartEditSession,
+  onUpdateRaidRewardField,
+  searchText,
+  selectedTableId,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isRaidRewardUpdating: boolean;
+  onSearchChange: (value: string) => void;
+  onSelectTable: (tableId: string) => void;
+  onStartEditSession: () => void;
+  onUpdateRaidRewardField: (
+    tableId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => void;
+  searchText: string;
+  selectedTableId: string | null;
+  workflow: RaidRewardsWorkflow | null;
+}) {
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+  const filteredTables =
+    workflow?.tables.filter((table) => {
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return [
+        table.archiveMember,
+        table.denId,
+        table.rewardKindLabel,
+        table.sourceTableHash,
+        ...table.rewards.flatMap((reward) => [reward.itemName, reward.itemId.toString()])
+      ]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(normalizedSearch);
+    }) ?? [];
+  const selectedTable =
+    filteredTables.find((table) => table.tableId === selectedTableId) ??
+    workflow?.tables.find((table) => table.tableId === selectedTableId) ??
+    filteredTables[0] ??
+    workflow?.tables[0] ??
+    null;
+  const selectedReward =
+    selectedTable?.rewards.find((reward) => reward.slot === selectedSlot) ??
+    selectedTable?.rewards[0] ??
+    null;
+  const canEditRaidRewards = workflow?.summary.availability === 'available';
+  const pendingRaidRewardTableIds = getPendingRaidRewardTableIds(editSession);
+
+  useEffect(() => {
+    if (!selectedTable) {
+      setSelectedSlot(null);
+      return;
+    }
+
+    const hasSelectedSlot = selectedTable.rewards.some((reward) => reward.slot === selectedSlot);
+    if (!hasSelectedSlot) {
+      setSelectedSlot(selectedTable.rewards[0]?.slot ?? null);
+    }
+  }, [selectedSlot, selectedTable?.rewards, selectedTable?.tableId]);
+
+  return (
+    <>
+      <section aria-labelledby="raid-rewards-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <ShieldCheck aria-hidden="true" size={18} />
+          <h2 id="raid-rewards-heading">Raid Rewards</h2>
+        </div>
+
+        <div className="items-toolbar encounters-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search raid rewards"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search raid rewards"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded tables"
+            value={workflow ? workflow.stats.totalTableCount.toString() : '0'}
+          />
+          <Metric
+            label="Reward rows"
+            value={workflow ? workflow.stats.totalRewardItemCount.toString() : '0'}
+          />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="encounters-layout">
+            <div className="raid-rewards-table" role="table" aria-label="Raid reward tables">
+              <div className="raid-rewards-row raid-rewards-row-heading" role="row">
+                <span role="columnheader">Table</span>
+                <span role="columnheader">Kind</span>
+                <span role="columnheader">Rewards</span>
+                <span role="columnheader">Member</span>
+              </div>
+              {filteredTables.map((table) => (
+                <button
+                  className={`raid-rewards-row ${
+                    selectedTable?.tableId === table.tableId ? 'raid-rewards-row-selected' : ''
+                  } ${
+                    pendingRaidRewardTableIds.has(table.tableId) ? 'raid-rewards-row-pending' : ''
+                  }`}
+                  key={table.tableId}
+                  onClick={() => onSelectTable(table.tableId)}
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{table.sourceTableHash}</span>
+                  <span role="cell">{table.rewardKindLabel}</span>
+                  <span role="cell">{table.rewards.length}</span>
+                  <span role="cell">{table.archiveMember}</span>
+                </button>
+              ))}
+            </div>
+
+            <SelectedRaidRewardPanel
+              canEditRaidRewards={canEditRaidRewards}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              isEditStarting={isEditStarting}
+              isRaidRewardUpdating={isRaidRewardUpdating}
+              onSelectSlot={setSelectedSlot}
+              onStartEditSession={onStartEditSession}
+              onUpdateRaidRewardField={onUpdateRaidRewardField}
+              reward={selectedReward}
+              selectedSlot={selectedSlot}
+              table={selectedTable}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Raid Rewards from Workflows to load backend reward data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedRaidRewardPanel({
+  canEditRaidRewards,
+  editSession,
+  editableFields,
+  isEditStarting,
+  isRaidRewardUpdating,
+  onSelectSlot,
+  onStartEditSession,
+  onUpdateRaidRewardField,
+  reward,
+  selectedSlot,
+  table
+}: {
+  canEditRaidRewards: boolean;
+  editSession: EditSession | null;
+  editableFields: RaidRewardEditableField[];
+  isEditStarting: boolean;
+  isRaidRewardUpdating: boolean;
+  onSelectSlot: (slot: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateRaidRewardField: (
+    tableId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => void;
+  reward: RaidRewardItemRecord | null;
+  selectedSlot: number | null;
+  table: RaidRewardTableRecord | null;
+}) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!reward) {
+      setDrafts({});
+      return;
+    }
+
+    setDrafts(
+      Object.fromEntries(
+        editableFields.map((field) => [
+          field.field,
+          (getEditableRaidRewardFieldValue(reward, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [editableFields, reward?.itemId, reward?.slot, reward?.values.join('|'), table?.tableId]);
+
+  return (
+    <aside aria-label="Selected raid reward provenance" className="encounter-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Reward</h3>
+      </div>
+
+      {table ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Table</dt>
+              <dd>{table.sourceTableHash}</dd>
+            </div>
+            <div>
+              <dt>Kind</dt>
+              <dd>{table.rewardKindLabel}</dd>
+            </div>
+            <div>
+              <dt>Archive member</dt>
+              <dd>{table.archiveMember}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{table.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(table.provenance.fileState)}</dd>
+            </div>
+          </dl>
+
+          <div className="encounter-edit-form">
+            <div className="encounter-slot-header">
+              <strong>Rewards</strong>
+              <select
+                aria-label="Raid reward slot"
+                disabled={table.rewards.length === 0}
+                onChange={(event) => onSelectSlot(Number(event.target.value))}
+                value={selectedSlot ?? ''}
+              >
+                {table.rewards.map((candidate) => (
+                  <option key={candidate.slot} value={candidate.slot}>
+                    Slot {candidate.slot}: {candidate.itemName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {reward ? (
+              <>
+                <dl className="encounter-slot-detail">
+                  <div>
+                    <dt>Item</dt>
+                    <dd>
+                      {reward.itemName} ({reward.itemId})
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Entry ID</dt>
+                    <dd>{reward.entryId}</dd>
+                  </div>
+                  <div>
+                    <dt>Values</dt>
+                    <dd>{reward.values.slice(0, 5).join(' / ')}</dd>
+                  </div>
+                </dl>
+
+                <div className="encounter-field-grid">
+                  {editableFields.map((field) => {
+                    const currentValue = getEditableRaidRewardFieldValue(reward, field.field);
+                    const draftValue = drafts[field.field] ?? '';
+                    const draftState = getIntegerDraftState(draftValue, currentValue, field);
+                    const canSubmit =
+                      editSession !== null &&
+                      draftState.canSubmit &&
+                      draftState.parsedValue !== null;
+
+                    return (
+                      <div className="trainer-editor-row" key={field.field}>
+                        <label className="path-field">
+                          <span>{field.label}</span>
+                          <input
+                            aria-label={field.label}
+                            disabled={
+                              !canEditRaidRewards ||
+                              editSession === null ||
+                              isRaidRewardUpdating
+                            }
+                            max={field.maximumValue ?? undefined}
+                            min={field.minimumValue ?? undefined}
+                            onChange={(event) =>
+                              setDrafts((currentDrafts) => ({
+                                ...currentDrafts,
+                                [field.field]: event.target.value
+                              }))
+                            }
+                            type="number"
+                            value={draftValue}
+                          />
+                        </label>
+                        {editSession ? (
+                          <button
+                            aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                            className="primary-button compact-button"
+                            disabled={!canSubmit || isRaidRewardUpdating}
+                            onClick={() =>
+                              onUpdateRaidRewardField(
+                                table.tableId,
+                                reward.slot,
+                                field.field,
+                                draftState.parsedValue!.toString()
+                              )
+                            }
+                            type="button"
+                          >
+                            <Save aria-hidden="true" size={16} />
+                            <span>{isRaidRewardUpdating ? 'Saving' : 'Save'}</span>
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <p className="empty-copy">No raid reward selected.</p>
+            )}
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditRaidRewards || isEditStarting || table.rewards.length === 0}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No raid reward table selected.</p>
+      )}
+    </aside>
+  );
+}
+
 function ChangesSection({
   applyResult,
   changePlan,
@@ -3056,7 +3522,12 @@ function getItemPriceDraftState(
 function getIntegerDraftState(
   draftValue: string,
   currentValue: number | null,
-  field: EncounterEditableField | ShopEditableField | TrainerEditableField | undefined
+  field:
+    | EncounterEditableField
+    | RaidRewardEditableField
+    | ShopEditableField
+    | TrainerEditableField
+    | undefined
 ) {
   const normalizedValue = draftValue.trim();
   const parsedValue = /^\d+$/.test(normalizedValue)
@@ -3121,6 +3592,14 @@ function getPendingEncounterTableIds(editSession: EditSession | null) {
   );
 }
 
+function getPendingRaidRewardTableIds(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.raidRewards' && edit.recordId)
+      .map((edit) => edit.recordId!.split('#')[0])
+  );
+}
+
 function getTextDraftState(
   draftValue: string,
   entry: TextEntryRecord | null,
@@ -3175,6 +3654,15 @@ function getWorkflowState(health: ProjectHealth | null, workflow: WorkflowSummar
   } as const;
 }
 
+function getEditableRaidRewardFieldValue(reward: RaidRewardItemRecord, field: string) {
+  if (field === raidRewardItemIdFieldName) {
+    return reward.itemId;
+  }
+
+  const valueIndex = raidRewardValueFieldNames.findIndex((fieldName) => fieldName === field);
+  return valueIndex >= 0 ? (reward.values[valueIndex] ?? 0) : null;
+}
+
 const workflowAvailabilityLabels = {
   available: 'Available',
   disabled: 'Disabled',
@@ -3191,6 +3679,7 @@ function formatSourceLayer(
   layer:
     | EncounterTableRecord['provenance']['sourceLayer']
     | ItemRecord['provenance']['sourceLayer']
+    | RaidRewardTableRecord['provenance']['sourceLayer']
     | ShopRecord['provenance']['sourceLayer']
     | TextEntryRecord['provenance']['sourceLayer']
     | TrainerRecord['provenance']['sourceLayer']
@@ -3216,6 +3705,7 @@ function formatFileState(
   state:
     | EncounterTableRecord['provenance']['fileState']
     | ItemRecord['provenance']['fileState']
+    | RaidRewardTableRecord['provenance']['fileState']
     | ShopRecord['provenance']['fileState']
     | TextEntryRecord['provenance']['fileState']
     | TrainerRecord['provenance']['fileState']
