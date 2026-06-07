@@ -14,6 +14,7 @@ import {
   Save,
   Search,
   ShieldCheck,
+  Wrench,
   type LucideIcon
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -121,6 +122,12 @@ const workflowDefinitions: Array<{
     label: 'Flagwork and Save Inspectors',
     description: 'Game flags, save blocks, inspector metadata, and source provenance.',
     icon: Save
+  },
+  {
+    id: 'exefsPatches',
+    label: 'ExeFS Patch Manager',
+    description: 'ExeFS patch definitions, target files, statuses, and source provenance.',
+    icon: Wrench
   }
 ];
 

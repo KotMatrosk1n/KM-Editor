@@ -79,6 +79,9 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', { level: 3, name: 'Flagwork and Save Inspectors' })
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'ExeFS Patch Manager' })
+    ).toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
   });
 
@@ -306,6 +309,13 @@ function createMockProjectBridge(
     id: 'flagworkSave',
     label: 'Flagwork and Save Inspectors'
   };
+  const exeFsPatchWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'ExeFS patch definitions, target files, statuses, and source provenance.',
+    diagnostics: [],
+    id: 'exefsPatches',
+    label: 'ExeFS Patch Manager'
+  };
 
   return {
     applyChangePlan: (request) =>
@@ -357,7 +367,8 @@ function createMockProjectBridge(
           encountersWorkflowSummary,
           raidRewardsWorkflowSummary,
           placementWorkflowSummary,
-          flagworkSaveWorkflowSummary
+          flagworkSaveWorkflowSummary,
+          exeFsPatchWorkflowSummary
         ]
       }),
     loadEncountersWorkflow: () =>
@@ -385,6 +396,18 @@ function createMockProjectBridge(
             totalSaveBlockCount: 0
           },
           summary: flagworkSaveWorkflowSummary
+        }
+      }),
+    loadExeFsPatchWorkflow: () =>
+      Promise.resolve({
+        workflow: {
+          diagnostics: [],
+          patches: [],
+          stats: {
+            sourceFileCount: 0,
+            totalPatchCount: 0
+          },
+          summary: exeFsPatchWorkflowSummary
         }
       }),
     loadPlacementWorkflow: () =>

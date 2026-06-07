@@ -4,6 +4,7 @@ using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Items;
 using KM.Api.Placement;
@@ -151,6 +152,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("flagworkSave", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("exefsPatches", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             });
     }
@@ -556,6 +562,48 @@ public sealed class ProjectBridgeDispatcherTests
         var saveBlock = Assert.Single(response.Payload.Workflow.SaveBlocks);
         Assert.Equal("player.profile", saveBlock.BlockId);
         Assert.Equal(128, saveBlock.Offset);
+        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchLoadExeFsPatchWorkflowReturnsSanitizedPatchRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile(
+            "kmeditor/exefs.patches.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "patches": [
+                {
+                  "patchId": "sample_patch",
+                  "name": "Sample ExeFS Patch",
+                  "targetFile": "exefs/main",
+                  "patchKind": "IPS",
+                  "status": "available",
+                  "description": "Enable a safe ExeFS patch fixture."
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadExeFsPatchWorkflow,
+            new LoadExeFsPatchWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-exefs-patches");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadExeFsPatchWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-exefs-patches", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var patch = Assert.Single(response.Payload.Workflow.Patches);
+        Assert.Equal("sample_patch", patch.PatchId);
+        Assert.Equal("exefs/main", patch.TargetFile);
+        Assert.Equal(ProjectFileLayerDto.Base, patch.Provenance.SourceLayer);
+        Assert.Equal("exefs/kmeditor/exefs.patches.readmodel.json", patch.Provenance.SourceFile);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

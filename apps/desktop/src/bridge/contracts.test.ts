@@ -13,6 +13,8 @@ import {
   listWorkflowsResponseSchema,
   loadEncountersWorkflowRequestSchema,
   loadEncountersWorkflowResponseSchema,
+  loadExeFsPatchWorkflowRequestSchema,
+  loadExeFsPatchWorkflowResponseSchema,
   loadFlagworkSaveWorkflowRequestSchema,
   loadFlagworkSaveWorkflowResponseSchema,
   loadItemsWorkflowRequestSchema,
@@ -223,6 +225,10 @@ describe('bridge contracts', () => {
     );
     const flagworkSaveResponseSchema = createBridgeResponseSchema(
       loadFlagworkSaveWorkflowResponseSchema
+    );
+    const exeFsPatchRequestSchema = createBridgeRequestSchema(loadExeFsPatchWorkflowRequestSchema);
+    const exeFsPatchResponseSchema = createBridgeResponseSchema(
+      loadExeFsPatchWorkflowResponseSchema
     );
     const itemsWorkflow = {
       diagnostics: [],
@@ -538,6 +544,35 @@ describe('bridge contracts', () => {
         label: 'Flagwork and Save Inspectors'
       }
     } as const;
+    const exeFsPatchWorkflow = {
+      diagnostics: [],
+      patches: [
+        {
+          description: 'Enable a safe ExeFS patch fixture.',
+          name: 'Sample ExeFS Patch',
+          patchId: 'sample_patch',
+          patchKind: 'IPS',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'exefs/kmeditor/exefs.patches.readmodel.json',
+            sourceLayer: 'base'
+          },
+          status: 'available',
+          targetFile: 'exefs/main'
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalPatchCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'ExeFS patch definitions, target files, statuses, and source provenance.',
+        diagnostics: [],
+        id: 'exefsPatches',
+        label: 'ExeFS Patch Manager'
+      }
+    } as const;
 
     expect(
       workflowsRequestSchema.safeParse({
@@ -563,7 +598,8 @@ describe('bridge contracts', () => {
             encountersWorkflow.summary,
             raidRewardsWorkflow.summary,
             placementWorkflow.summary,
-            flagworkSaveWorkflow.summary
+            flagworkSaveWorkflow.summary,
+            exeFsPatchWorkflow.summary
           ]
         }
       }).success
@@ -733,6 +769,27 @@ describe('bridge contracts', () => {
       flagworkSaveResponseSchema.safeParse({
         payload: {
           workflow: flagworkSaveWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      exeFsPatchRequestSchema.safeParse({
+        command: kmCommandNames.loadExeFsPatchWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      exeFsPatchResponseSchema.safeParse({
+        payload: {
+          workflow: exeFsPatchWorkflow
         }
       }).success
     ).toBe(true);
