@@ -172,6 +172,13 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'flagworkSave',
                 label: 'Flagwork and Save Inspectors'
+              },
+              {
+                availability: 'readOnly',
+                description: 'ExeFS patch definitions, target files, statuses, and source provenance.',
+                diagnostics: [],
+                id: 'exefsPatches',
+                label: 'ExeFS Patch Manager'
               }
             ]
           }
@@ -507,6 +514,44 @@ describe('projectBridge', () => {
         });
       }
 
+      if (request.command === 'exefsPatches.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              patches: [
+                {
+                  description: 'Enable a safe ExeFS patch fixture.',
+                  name: 'Sample ExeFS Patch',
+                  patchId: 'sample_patch',
+                  patchKind: 'IPS',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'exefs/kmeditor/exefs.patches.readmodel.json',
+                    sourceLayer: 'base'
+                  },
+                  status: 'available',
+                  targetFile: 'exefs/main'
+                }
+              ],
+              stats: {
+                sourceFileCount: 1,
+                totalPatchCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description:
+                  'ExeFS patch definitions, target files, statuses, and source provenance.',
+                diagnostics: [],
+                id: 'exefsPatches',
+                label: 'ExeFS Patch Manager'
+              }
+            }
+          }
+        });
+      }
+
       return JSON.stringify({
         error: null,
         payload: {
@@ -567,6 +612,7 @@ describe('projectBridge', () => {
     const raidRewards = await bridge.loadRaidRewardsWorkflow({ paths: projectPaths });
     const placement = await bridge.loadPlacementWorkflow({ paths: projectPaths });
     const flagworkSave = await bridge.loadFlagworkSaveWorkflow({ paths: projectPaths });
+    const exeFsPatches = await bridge.loadExeFsPatchWorkflow({ paths: projectPaths });
 
     expect(workflows.workflows[0]?.id).toBe('items');
     expect(workflows.workflows[1]?.id).toBe('text');
@@ -576,6 +622,7 @@ describe('projectBridge', () => {
     expect(workflows.workflows[5]?.id).toBe('raidRewards');
     expect(workflows.workflows[6]?.id).toBe('placement');
     expect(workflows.workflows[7]?.id).toBe('flagworkSave');
+    expect(workflows.workflows[8]?.id).toBe('exefsPatches');
     expect(items.workflow.editableFields).toHaveLength(2);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(text.workflow.entries[0]?.label).toBe('Greeting');
@@ -585,6 +632,7 @@ describe('projectBridge', () => {
     expect(raidRewards.workflow.tables[0]?.rewards[0]?.itemName).toBe('Exp. Candy L');
     expect(placement.workflow.objects[0]?.label).toBe('Hidden Potion');
     expect(flagworkSave.workflow.flags[0]?.name).toBe('Badge 1 Obtained');
+    expect(exeFsPatches.workflow.patches[0]?.targetFile).toBe('exefs/main');
   });
 
   it('starts, updates, and validates an Items edit session', async () => {

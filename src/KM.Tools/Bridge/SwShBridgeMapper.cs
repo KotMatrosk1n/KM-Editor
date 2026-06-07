@@ -3,6 +3,7 @@
 using KM.Api.Items;
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Placement;
 using KM.Api.Shops;
@@ -12,6 +13,7 @@ using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
 using KM.SwSh.Encounters;
+using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Placement;
 using KM.SwSh.Shops;
@@ -85,6 +87,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadFlagworkSaveWorkflowResponse(ToFlagworkSaveWorkflowDto(workflow));
+    }
+
+    public static LoadExeFsPatchWorkflowResponse ToDto(SwShExeFsPatchWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadExeFsPatchWorkflowResponse(ToExeFsPatchWorkflowDto(workflow));
     }
 
     public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
@@ -200,6 +209,17 @@ public static class SwShBridgeMapper
             new FlagworkSaveWorkflowStatsDto(
                 workflow.Stats.TotalFlagCount,
                 workflow.Stats.TotalSaveBlockCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ExeFsPatchWorkflowDto ToExeFsPatchWorkflowDto(SwShExeFsPatchWorkflow workflow)
+    {
+        return new ExeFsPatchWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Patches.Select(ToDto).ToArray(),
+            new ExeFsPatchWorkflowStatsDto(
+                workflow.Stats.TotalPatchCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -436,6 +456,26 @@ public static class SwShBridgeMapper
     private static FlagworkSaveProvenanceDto ToDto(SwShFlagworkSaveProvenance provenance)
     {
         return new FlagworkSaveProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static ExeFsPatchRecordDto ToDto(SwShExeFsPatchRecord patch)
+    {
+        return new ExeFsPatchRecordDto(
+            patch.PatchId,
+            patch.Name,
+            patch.TargetFile,
+            patch.PatchKind,
+            patch.Status,
+            patch.Description,
+            ToDto(patch.Provenance));
+    }
+
+    private static ExeFsPatchProvenanceDto ToDto(SwShExeFsPatchProvenance provenance)
+    {
+        return new ExeFsPatchProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

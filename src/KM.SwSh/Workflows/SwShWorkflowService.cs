@@ -2,6 +2,7 @@
 
 using KM.Core.Projects;
 using KM.SwSh.Encounters;
+using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Items;
 using KM.SwSh.Placement;
@@ -16,6 +17,7 @@ public sealed class SwShWorkflowService
 {
     private readonly SwShItemsWorkflowService itemsWorkflowService;
     private readonly SwShEncountersWorkflowService encountersWorkflowService;
+    private readonly SwShExeFsPatchWorkflowService exeFsPatchWorkflowService;
     private readonly SwShFlagworkSaveWorkflowService flagworkSaveWorkflowService;
     private readonly SwShPlacementWorkflowService placementWorkflowService;
     private readonly SwShRaidRewardsWorkflowService raidRewardsWorkflowService;
@@ -33,11 +35,13 @@ public sealed class SwShWorkflowService
         SwShEncountersWorkflowService? encountersWorkflowService = null,
         SwShRaidRewardsWorkflowService? raidRewardsWorkflowService = null,
         SwShPlacementWorkflowService? placementWorkflowService = null,
-        SwShFlagworkSaveWorkflowService? flagworkSaveWorkflowService = null)
+        SwShFlagworkSaveWorkflowService? flagworkSaveWorkflowService = null,
+        SwShExeFsPatchWorkflowService? exeFsPatchWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
         this.encountersWorkflowService = encountersWorkflowService ?? new SwShEncountersWorkflowService();
+        this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService();
         this.flagworkSaveWorkflowService = flagworkSaveWorkflowService ?? new SwShFlagworkSaveWorkflowService();
         this.placementWorkflowService = placementWorkflowService ?? new SwShPlacementWorkflowService();
         this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
@@ -62,6 +66,7 @@ public sealed class SwShWorkflowService
                 raidRewardsWorkflowService.CreateSummary(project),
                 placementWorkflowService.CreateSummary(project),
                 flagworkSaveWorkflowService.CreateSummary(project),
+                exeFsPatchWorkflowService.CreateSummary(project),
             ]);
     }
 
@@ -135,5 +140,14 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return flagworkSaveWorkflowService.Load(project);
+    }
+
+    public SwShExeFsPatchWorkflow LoadExeFsPatches(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return exeFsPatchWorkflowService.Load(project);
     }
 }

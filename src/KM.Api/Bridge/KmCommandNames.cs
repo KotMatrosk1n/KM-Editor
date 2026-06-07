@@ -20,6 +20,7 @@ public static class KmCommandNames
     public const string LoadRaidRewardsWorkflow = "raidRewards.load";
     public const string LoadPlacementWorkflow = "placement.load";
     public const string LoadFlagworkSaveWorkflow = "flagworkSave.load";
+    public const string LoadExeFsPatchWorkflow = "exefsPatches.load";
     public const string StartEditSession = "editSession.start";
     public const string GetEditSession = "editSession.get";
     public const string DiscardEditSession = "editSession.discard";

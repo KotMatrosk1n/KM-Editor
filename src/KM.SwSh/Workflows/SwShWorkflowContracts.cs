@@ -14,6 +14,7 @@ public static class SwShWorkflowIds
     public const string RaidRewards = "raidRewards";
     public const string Placement = "placement";
     public const string FlagworkSave = "flagworkSave";
+    public const string ExeFsPatches = "exefsPatches";
 }
 
 public enum SwShWorkflowAvailability

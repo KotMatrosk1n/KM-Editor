@@ -22,5 +22,6 @@ test('loads the workbench shell and switches sections', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Raid Rewards' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Placement' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Flagwork and Save Inspectors' })).toBeVisible();
-  await expect(page.getByText('Disabled', { exact: true })).toHaveCount(8);
+  await expect(page.getByRole('heading', { name: 'ExeFS Patch Manager' })).toBeVisible();
+  await expect(page.getByText('Disabled', { exact: true })).toHaveCount(9);
 });

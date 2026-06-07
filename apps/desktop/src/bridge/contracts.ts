@@ -16,6 +16,7 @@ export const kmCommandNameValues = [
   'raidRewards.load',
   'placement.load',
   'flagworkSave.load',
+  'exefsPatches.load',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -41,6 +42,7 @@ export const kmCommandNames = {
   loadRaidRewardsWorkflow: 'raidRewards.load',
   loadPlacementWorkflow: 'placement.load',
   loadFlagworkSaveWorkflow: 'flagworkSave.load',
+  loadExeFsPatchWorkflow: 'exefsPatches.load',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -117,6 +119,10 @@ export const loadPlacementWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadFlagworkSaveWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadExeFsPatchWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -566,6 +572,38 @@ export const loadFlagworkSaveWorkflowResponseSchema = z.strictObject({
   workflow: flagworkSaveWorkflowSchema
 });
 
+export const exeFsPatchProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const exeFsPatchRecordSchema = z.strictObject({
+  description: z.string(),
+  name: z.string(),
+  patchId: z.string(),
+  patchKind: z.string(),
+  provenance: exeFsPatchProvenanceSchema,
+  status: z.string(),
+  targetFile: z.string()
+});
+
+export const exeFsPatchWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalPatchCount: z.number().int().nonnegative()
+});
+
+export const exeFsPatchWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  patches: z.array(exeFsPatchRecordSchema),
+  stats: exeFsPatchWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadExeFsPatchWorkflowResponseSchema = z.strictObject({
+  workflow: exeFsPatchWorkflowSchema
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -670,6 +708,7 @@ export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;
 export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
 export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
 export type FlagworkSaveWorkflow = z.infer<typeof flagworkSaveWorkflowSchema>;
+export type ExeFsPatchWorkflow = z.infer<typeof exeFsPatchWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
@@ -688,6 +727,8 @@ export type LoadPlacementWorkflowRequest = z.infer<typeof loadPlacementWorkflowR
 export type LoadPlacementWorkflowResponse = z.infer<typeof loadPlacementWorkflowResponseSchema>;
 export type LoadFlagworkSaveWorkflowRequest = z.infer<typeof loadFlagworkSaveWorkflowRequestSchema>;
 export type LoadFlagworkSaveWorkflowResponse = z.infer<typeof loadFlagworkSaveWorkflowResponseSchema>;
+export type LoadExeFsPatchWorkflowRequest = z.infer<typeof loadExeFsPatchWorkflowRequestSchema>;
+export type LoadExeFsPatchWorkflowResponse = z.infer<typeof loadExeFsPatchWorkflowResponseSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;
