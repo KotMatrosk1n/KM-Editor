@@ -9,6 +9,7 @@ using KM.Api.Items;
 using KM.Api.Placement;
 using KM.Api.Projects;
 using KM.Api.Raids;
+using KM.Api.RoyalCandy;
 using KM.Api.Shops;
 using KM.Api.Text;
 using KM.Api.Trainers;
@@ -64,6 +65,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadPlacementWorkflow => DispatchLoadPlacementWorkflow(requestJson),
                 KmCommandNames.LoadFlagworkSaveWorkflow => DispatchLoadFlagworkSaveWorkflow(requestJson),
                 KmCommandNames.LoadExeFsPatchWorkflow => DispatchLoadExeFsPatchWorkflow(requestJson),
+                KmCommandNames.LoadRoyalCandyWorkflow => DispatchLoadRoyalCandyWorkflow(requestJson),
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
@@ -196,6 +198,15 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadExeFsPatchWorkflowRequest>(requestJson);
         var workflow = swShWorkflowService.LoadExeFsPatches(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadRoyalCandyWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadRoyalCandyWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadRoyalCandy(ProjectBridgeMapper.ToCore(request.Payload.Paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);

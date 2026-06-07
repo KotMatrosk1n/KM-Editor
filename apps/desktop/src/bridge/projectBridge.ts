@@ -22,6 +22,8 @@ import {
   type LoadPlacementWorkflowResponse,
   type LoadRaidRewardsWorkflowRequest,
   type LoadRaidRewardsWorkflowResponse,
+  type LoadRoyalCandyWorkflowRequest,
+  type LoadRoyalCandyWorkflowResponse,
   type LoadShopsWorkflowRequest,
   type LoadShopsWorkflowResponse,
   type LoadTextWorkflowRequest,
@@ -52,6 +54,7 @@ import {
   loadItemsWorkflowResponseSchema,
   loadPlacementWorkflowResponseSchema,
   loadRaidRewardsWorkflowResponseSchema,
+  loadRoyalCandyWorkflowResponseSchema,
   loadShopsWorkflowResponseSchema,
   loadTextWorkflowResponseSchema,
   loadTrainersWorkflowResponseSchema,
@@ -83,6 +86,9 @@ export type ProjectBridge = {
   loadRaidRewardsWorkflow: (
     request: LoadRaidRewardsWorkflowRequest
   ) => Promise<LoadRaidRewardsWorkflowResponse>;
+  loadRoyalCandyWorkflow: (
+    request: LoadRoyalCandyWorkflowRequest
+  ) => Promise<LoadRoyalCandyWorkflowResponse>;
   loadShopsWorkflow: (request: LoadShopsWorkflowRequest) => Promise<LoadShopsWorkflowResponse>;
   loadTextWorkflow: (request: LoadTextWorkflowRequest) => Promise<LoadTextWorkflowResponse>;
   loadTrainersWorkflow: (
@@ -184,6 +190,13 @@ export function createProjectBridge(
         kmCommandNames.loadRaidRewardsWorkflow,
         request,
         loadRaidRewardsWorkflowResponseSchema
+      ),
+    loadRoyalCandyWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadRoyalCandyWorkflow,
+        request,
+        loadRoyalCandyWorkflowResponseSchema
       ),
     loadShopsWorkflow: (request) =>
       sendProjectBridgeRequest(

@@ -128,6 +128,12 @@ const workflowDefinitions: Array<{
     label: 'ExeFS Patch Manager',
     description: 'ExeFS patch definitions, target files, statuses, and source provenance.',
     icon: Wrench
+  },
+  {
+    id: 'royalCandy',
+    label: 'Royal Candy Workflows',
+    description: 'Curated batch workflow recipes, targets, steps, and source provenance.',
+    icon: CheckCircle
   }
 ];
 
