@@ -1,9 +1,34 @@
 # Desktop App
 
-Status: Priority 1 shell location placeholder.
+Status: Priority 2 frontend shell.
 
-The KM Editor desktop frontend shell belongs here.
+The KM Editor desktop frontend shell lives here.
 
-Priority 1 establishes the location and boundary only. React, TypeScript, Vite, Tauri, Electron, and other frontend framework setup belongs to later framework/library work.
+## Stack
+
+- React
+- TypeScript
+- Vite
+- TanStack Query
+- Zustand
+- TanStack Table
+- TanStack Virtual
+- React Hook Form
+- Zod
+- React Resizable Panels
+- lucide-react
+- Vitest and Testing Library
+
+## Commands
+
+Run these from the repository root:
+
+```powershell
+pnpm install
+pnpm dev
+pnpm typecheck
+pnpm build
+pnpm test:run
+```
 
 The desktop app should consume typed contracts from `src/KM.Api` through the chosen local bridge rather than binding directly to backend storage or binary model types.
