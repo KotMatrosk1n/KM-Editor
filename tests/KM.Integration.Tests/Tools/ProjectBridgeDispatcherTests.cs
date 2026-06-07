@@ -769,28 +769,11 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadExeFsPatchWorkflowReturnsSanitizedPatchRecords()
+    public void DispatchLoadExeFsPatchWorkflowReturnsExeFsMainCompatibilityRecords()
     {
         using var temp = TemporaryBridgeProject.Create();
         temp.WriteBaseRomFsFile("data/items.bin", "base-items");
-        temp.WriteBaseExeFsFile(
-            "kmeditor/exefs.patches.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "patches": [
-                {
-                  "patchId": "sample_patch",
-                  "name": "Sample ExeFS Patch",
-                  "targetFile": "exefs/main",
-                  "patchKind": "IPS",
-                  "status": "available",
-                  "description": "Enable a safe ExeFS patch fixture."
-                }
-              ]
-            }
-            """);
-        temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
         var requestJson = SerializeRequest(
             KmCommandNames.LoadExeFsPatchWorkflow,
             new LoadExeFsPatchWorkflowRequest(temp.Paths with { OutputRootPath = null }),
@@ -803,10 +786,22 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("request-exefs-patches", response.RequestId);
         Assert.NotNull(response.Payload);
         var patch = Assert.Single(response.Payload.Workflow.Patches);
-        Assert.Equal("sample_patch", patch.PatchId);
+        Assert.Equal("exefs-main-compatibility", patch.PatchId);
+        Assert.Equal("available", patch.Status);
         Assert.Equal("exefs/main", patch.TargetFile);
+        Assert.Contains(patch.Details, detail => detail.StartsWith("Build ID:", StringComparison.Ordinal));
+        Assert.Equal(3, response.Payload.Workflow.Segments.Count);
+        Assert.Contains(
+            response.Payload.Workflow.Checks,
+            check => check.Name == "Patch code cave" && check.Status == "Pass");
+        Assert.Contains(
+            response.Payload.Workflow.Checks,
+            check => check.Name == "Royal Candy immediate scan" && check.Status == "Info");
         Assert.Equal(ProjectFileLayerDto.Base, patch.Provenance.SourceLayer);
-        Assert.Equal("exefs/kmeditor/exefs.patches.readmodel.json", patch.Provenance.SourceFile);
+        Assert.Equal("exefs/main", patch.Provenance.SourceFile);
+        Assert.Equal(26, response.Payload.Workflow.Stats.TotalCheckCount);
+        Assert.Equal(24, response.Payload.Workflow.Stats.PassCount);
+        Assert.Equal(0, response.Payload.Workflow.Stats.FailCount);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

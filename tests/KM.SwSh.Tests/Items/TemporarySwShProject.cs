@@ -47,6 +47,11 @@ internal sealed class TemporarySwShProject : IDisposable
         WriteFile(BaseExeFsPath, relativePath, contents);
     }
 
+    public void WriteBaseExeFsFile(string relativePath, byte[] contents)
+    {
+        WriteFile(BaseExeFsPath, relativePath, contents);
+    }
+
     public void WriteOutputFile(string relativePath, string contents)
     {
         WriteFile(OutputRootPath, relativePath, contents);

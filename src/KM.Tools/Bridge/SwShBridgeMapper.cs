@@ -303,8 +303,14 @@ public static class SwShBridgeMapper
         return new ExeFsPatchWorkflowDto(
             ToDto(workflow.Summary),
             workflow.Patches.Select(ToDto).ToArray(),
+            workflow.Segments.Select(ToDto).ToArray(),
+            workflow.Checks.Select(ToDto).ToArray(),
             new ExeFsPatchWorkflowStatsDto(
                 workflow.Stats.TotalPatchCount,
+                workflow.Stats.TotalCheckCount,
+                workflow.Stats.PassCount,
+                workflow.Stats.WarningCount,
+                workflow.Stats.FailCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -682,7 +688,37 @@ public static class SwShBridgeMapper
             patch.PatchKind,
             patch.Status,
             patch.Description,
+            patch.Details,
             ToDto(patch.Provenance));
+    }
+
+    private static ExeFsSegmentRecordDto ToDto(SwShExeFsSegmentRecord segment)
+    {
+        return new ExeFsSegmentRecordDto(
+            segment.SegmentId,
+            segment.Name,
+            segment.FileOffset,
+            segment.MemoryOffset,
+            segment.DecompressedSize,
+            segment.CompressedSize,
+            segment.Sha256,
+            segment.HashStatus,
+            ToDto(segment.Provenance));
+    }
+
+    private static ExeFsPatchCheckRecordDto ToDto(SwShExeFsPatchCheckRecord check)
+    {
+        return new ExeFsPatchCheckRecordDto(
+            check.CheckId,
+            check.PatchId,
+            check.Status,
+            check.Area,
+            check.Offset,
+            check.Name,
+            check.Expected,
+            check.Actual,
+            check.Notes,
+            ToDto(check.Provenance));
     }
 
     private static ExeFsPatchProvenanceDto ToDto(SwShExeFsPatchProvenance provenance)

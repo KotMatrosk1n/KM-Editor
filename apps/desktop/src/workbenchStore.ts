@@ -7,6 +7,7 @@ import {
   type ChangePlan,
   type EditSession,
   type EncountersWorkflow,
+  type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
   type ItemsWorkflow,
   type PlacementWorkflow,
@@ -30,6 +31,7 @@ export type WorkbenchSection =
   | 'raidRewards'
   | 'placement'
   | 'flagworkSave'
+  | 'exefsPatches'
   | 'changes';
 
 export type ProjectPathDraft = {
@@ -53,6 +55,8 @@ type WorkbenchState = {
   editValidationDiagnostics: ApiDiagnostic[];
   encounterSearchText: string;
   encountersWorkflow: EncountersWorkflow | null;
+  exeFsPatchSearchText: string;
+  exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
   flagworkSaveSearchText: string;
   flagworkSaveWorkflow: FlagworkSaveWorkflow | null;
   itemSearchText: string;
@@ -67,6 +71,8 @@ type WorkbenchState = {
   selectedPlacementObjectId: string | null;
   selectedFlagId: string | null;
   selectedSaveBlockId: string | null;
+  selectedExeFsCheckId: string | null;
+  selectedExeFsPatchId: string | null;
   selectedItemId: number | null;
   selectedEncounterTableId: string | null;
   selectedShopId: string | null;
@@ -87,6 +93,8 @@ type WorkbenchState = {
   setEditValidationDiagnostics: (diagnostics: ApiDiagnostic[]) => void;
   setEncounterSearchText: (encounterSearchText: string) => void;
   setEncountersWorkflow: (encountersWorkflow: EncountersWorkflow) => void;
+  setExeFsPatchSearchText: (exeFsPatchSearchText: string) => void;
+  setExeFsPatchWorkflow: (exeFsPatchWorkflow: ExeFsPatchWorkflow) => void;
   setFlagworkSaveSearchText: (flagworkSaveSearchText: string) => void;
   setFlagworkSaveWorkflow: (flagworkSaveWorkflow: FlagworkSaveWorkflow) => void;
   setItemsWorkflow: (itemsWorkflow: ItemsWorkflow) => void;
@@ -102,6 +110,8 @@ type WorkbenchState = {
   setSelectedPlacementObjectId: (selectedPlacementObjectId: string | null) => void;
   setSelectedFlagId: (selectedFlagId: string | null) => void;
   setSelectedSaveBlockId: (selectedSaveBlockId: string | null) => void;
+  setSelectedExeFsCheckId: (selectedExeFsCheckId: string | null) => void;
+  setSelectedExeFsPatchId: (selectedExeFsPatchId: string | null) => void;
   setSelectedItemId: (selectedItemId: number | null) => void;
   setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
   setSelectedShopId: (selectedShopId: string | null) => void;
@@ -129,6 +139,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   editValidationDiagnostics: [],
   encounterSearchText: '',
   encountersWorkflow: null,
+  exeFsPatchSearchText: '',
+  exeFsPatchWorkflow: null,
   flagworkSaveSearchText: '',
   flagworkSaveWorkflow: null,
   itemSearchText: '',
@@ -142,6 +154,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedRaidRewardTableId: null,
   selectedPlacementObjectId: null,
   selectedFlagId: null,
+  selectedExeFsCheckId: null,
+  selectedExeFsPatchId: null,
   selectedItemId: null,
   selectedSaveBlockId: null,
   selectedEncounterTableId: null,
@@ -168,6 +182,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setEditSession: (editSession) => set({ applyResult: null, changePlan: null, editSession }),
   setEditValidationDiagnostics: (editValidationDiagnostics) => set({ editValidationDiagnostics }),
   setEncounterSearchText: (encounterSearchText) => set({ encounterSearchText }),
+  setExeFsPatchSearchText: (exeFsPatchSearchText) => set({ exeFsPatchSearchText }),
   setFlagworkSaveSearchText: (flagworkSaveSearchText) => set({ flagworkSaveSearchText }),
   setPlacementSearchText: (placementSearchText) => set({ placementSearchText }),
   setRaidRewardSearchText: (raidRewardSearchText) => set({ raidRewardSearchText }),
@@ -202,6 +217,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       editValidationDiagnostics: [],
       encounterSearchText: '',
       encountersWorkflow: null,
+      exeFsPatchSearchText: '',
+      exeFsPatchWorkflow: null,
       flagworkSaveSearchText: '',
       flagworkSaveWorkflow: null,
       itemSearchText: '',
@@ -213,6 +230,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       raidRewardSearchText: '',
       raidRewardsWorkflow: null,
       selectedEncounterTableId: null,
+      selectedExeFsCheckId: null,
+      selectedExeFsPatchId: null,
       selectedFlagId: null,
       selectedItemId: null,
       selectedPlacementObjectId: null,
@@ -252,6 +271,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set({ selectedPlacementObjectId }),
   setSelectedFlagId: (selectedFlagId) => set({ selectedFlagId }),
   setSelectedSaveBlockId: (selectedSaveBlockId) => set({ selectedSaveBlockId }),
+  setSelectedExeFsCheckId: (selectedExeFsCheckId) => set({ selectedExeFsCheckId }),
+  setSelectedExeFsPatchId: (selectedExeFsPatchId) => set({ selectedExeFsPatchId }),
   setSelectedEncounterTableId: (selectedEncounterTableId) => set({ selectedEncounterTableId }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
   setSelectedShopId: (selectedShopId) => set({ selectedShopId }),
@@ -394,6 +415,31 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         flagworkSaveWorkflow,
         selectedFlagId,
         selectedSaveBlockId
+      };
+    }),
+  setExeFsPatchWorkflow: (exeFsPatchWorkflow) =>
+    set((state) => {
+      const selectedExeFsPatchId = exeFsPatchWorkflow.patches.some(
+        (patch) => patch.patchId === state.selectedExeFsPatchId
+      )
+        ? state.selectedExeFsPatchId
+        : (exeFsPatchWorkflow.patches[0]?.patchId ?? null);
+      const selectedExeFsCheckId = exeFsPatchWorkflow.checks.some(
+        (check) => check.checkId === state.selectedExeFsCheckId
+      )
+        ? state.selectedExeFsCheckId
+        : (exeFsPatchWorkflow.checks[0]?.checkId ?? null);
+
+      return {
+        activeSection: 'exefsPatches',
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        exeFsPatchSearchText: '',
+        exeFsPatchWorkflow,
+        selectedExeFsCheckId,
+        selectedExeFsPatchId
       };
     }),
   setWorkflows: (workflows) => set({ workflows })

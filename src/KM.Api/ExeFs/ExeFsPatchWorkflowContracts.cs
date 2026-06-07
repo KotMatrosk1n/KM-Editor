@@ -20,15 +20,45 @@ public sealed record ExeFsPatchRecordDto(
     string PatchKind,
     string Status,
     string Description,
+    IReadOnlyList<string> Details,
+    ExeFsPatchProvenanceDto Provenance);
+
+public sealed record ExeFsSegmentRecordDto(
+    string SegmentId,
+    string Name,
+    string FileOffset,
+    string MemoryOffset,
+    string DecompressedSize,
+    string CompressedSize,
+    string Sha256,
+    string HashStatus,
+    ExeFsPatchProvenanceDto Provenance);
+
+public sealed record ExeFsPatchCheckRecordDto(
+    string CheckId,
+    string PatchId,
+    string Status,
+    string Area,
+    string Offset,
+    string Name,
+    string Expected,
+    string Actual,
+    string Notes,
     ExeFsPatchProvenanceDto Provenance);
 
 public sealed record ExeFsPatchWorkflowStatsDto(
     int TotalPatchCount,
+    int TotalCheckCount,
+    int PassCount,
+    int WarningCount,
+    int FailCount,
     int SourceFileCount);
 
 public sealed record ExeFsPatchWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<ExeFsPatchRecordDto> Patches,
+    IReadOnlyList<ExeFsSegmentRecordDto> Segments,
+    IReadOnlyList<ExeFsPatchCheckRecordDto> Checks,
     ExeFsPatchWorkflowStatsDto Stats,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
