@@ -49,6 +49,13 @@ public sealed class SwShRoyalCandyWorkflowService
         new("exefs-npdm", "ExeFS", "ExeFS NPDM", [ExeFsNpdmPath], "ExeFS metadata", "Detects whether the project is Pokemon Sword or Pokemon Shield."),
     ];
 
+    private readonly SwShExeFsPatchWorkflowService exeFsPatchWorkflowService;
+
+    public SwShRoyalCandyWorkflowService(SwShExeFsPatchWorkflowService? exeFsPatchWorkflowService = null)
+    {
+        this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService();
+    }
+
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -129,7 +136,7 @@ public sealed class SwShRoyalCandyWorkflowService
         AddMessageTextSetCheck(checks, textSets);
 
         var gameFlavor = AddNpdmFlavorCheck(project, checks, sourceMap, sourceEntries);
-        var exeFsWorkflow = new SwShExeFsPatchWorkflowService().Load(project);
+        var exeFsWorkflow = exeFsPatchWorkflowService.Load(project);
         AddExeFsCompatibilityChecks(checks, exeFsWorkflow);
 
         var outputRootReady = project.Health.CanOpenEditableWorkflows

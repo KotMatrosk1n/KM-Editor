@@ -79,7 +79,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var shops = Record(measurements, "shops.load.openedProject.includesItems", () => new SwShShopsWorkflowService(itemsService).Load(project));
         var spreadsheetImport = Record(measurements, "spreadsheetImport.load.openedProject.includesItems", () => new SwShSpreadsheetImportWorkflowService(itemsService).Load(project));
         var exeFs = Record(measurements, "exefsPatches.load.openedProject", () => exeFsService.Load(project));
-        var royalCandy = Record(measurements, "royalCandy.load.openedProject.includesExeFs", () => new SwShRoyalCandyWorkflowService().Load(project));
+        var royalCandy = Record(measurements, "royalCandy.load.openedProject.sharedExeFs", () => new SwShRoyalCandyWorkflowService(exeFsService).Load(project));
         var text = Record(measurements, "text.load.openedProject", () => new SwShTextWorkflowService().Load(project));
         var trainers = Record(measurements, "trainers.load.openedProject", () => new SwShTrainersWorkflowService().Load(project));
 

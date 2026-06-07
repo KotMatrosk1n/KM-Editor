@@ -357,7 +357,7 @@ internal static class SwShPerformanceFixtureProject
         return data;
     }
 
-    private static byte[] CreateCompatibleNso()
+    internal static byte[] CreateCompatibleNso()
     {
         return CreateNso(CreateCompatibleText(), [0x10], [0x20]);
     }
