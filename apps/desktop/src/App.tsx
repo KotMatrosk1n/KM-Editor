@@ -28,6 +28,10 @@ import {
   type EncounterSlotRecord,
   type EncounterTableRecord,
   type EncountersWorkflow,
+  type ExeFsPatchCheckRecord,
+  type ExeFsPatchRecord,
+  type ExeFsPatchWorkflow,
+  type ExeFsSegmentRecord,
   type FlagRecord,
   type FlagworkSaveWorkflow,
   type ItemEditableField,
@@ -124,6 +128,11 @@ const sections: Array<{
     icon: Save
   },
   {
+    id: 'exefsPatches',
+    label: 'ExeFS Patches',
+    icon: Wrench
+  },
+  {
     id: 'changes',
     label: 'Changes',
     icon: ClipboardCheck
@@ -187,7 +196,7 @@ const workflowDefinitions: Array<{
   {
     id: 'exefsPatches',
     label: 'ExeFS Patch Manager',
-    description: 'ExeFS patch definitions, target files, statuses, and source provenance.',
+    description: 'ExeFS main validation, patch anchors, segment hashes, and source provenance.',
     icon: Wrench
   },
   {
@@ -281,6 +290,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const editValidationDiagnostics = useWorkbenchStore((state) => state.editValidationDiagnostics);
   const encounterSearchText = useWorkbenchStore((state) => state.encounterSearchText);
   const encountersWorkflow = useWorkbenchStore((state) => state.encountersWorkflow);
+  const exeFsPatchSearchText = useWorkbenchStore((state) => state.exeFsPatchSearchText);
+  const exeFsPatchWorkflow = useWorkbenchStore((state) => state.exeFsPatchWorkflow);
   const flagworkSaveSearchText = useWorkbenchStore((state) => state.flagworkSaveSearchText);
   const flagworkSaveWorkflow = useWorkbenchStore((state) => state.flagworkSaveWorkflow);
   const itemSearchText = useWorkbenchStore((state) => state.itemSearchText);
@@ -300,6 +311,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
     (state) => state.selectedPlacementObjectId
   );
   const selectedFlagId = useWorkbenchStore((state) => state.selectedFlagId);
+  const selectedExeFsCheckId = useWorkbenchStore((state) => state.selectedExeFsCheckId);
+  const selectedExeFsPatchId = useWorkbenchStore((state) => state.selectedExeFsPatchId);
   const selectedShopId = useWorkbenchStore((state) => state.selectedShopId);
   const selectedSaveBlockId = useWorkbenchStore((state) => state.selectedSaveBlockId);
   const selectedTextKey = useWorkbenchStore((state) => state.selectedTextKey);
@@ -321,6 +334,10 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   );
   const setEncounterSearchText = useWorkbenchStore((state) => state.setEncounterSearchText);
   const setEncountersWorkflow = useWorkbenchStore((state) => state.setEncountersWorkflow);
+  const setExeFsPatchSearchText = useWorkbenchStore(
+    (state) => state.setExeFsPatchSearchText
+  );
+  const setExeFsPatchWorkflow = useWorkbenchStore((state) => state.setExeFsPatchWorkflow);
   const setFlagworkSaveSearchText = useWorkbenchStore(
     (state) => state.setFlagworkSaveSearchText
   );
@@ -342,6 +359,12 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   );
   const setSelectedEncounterTableId = useWorkbenchStore(
     (state) => state.setSelectedEncounterTableId
+  );
+  const setSelectedExeFsCheckId = useWorkbenchStore(
+    (state) => state.setSelectedExeFsCheckId
+  );
+  const setSelectedExeFsPatchId = useWorkbenchStore(
+    (state) => state.setSelectedExeFsPatchId
   );
   const setSelectedFlagId = useWorkbenchStore((state) => state.setSelectedFlagId);
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
@@ -376,6 +399,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isPlacementLoading, setIsPlacementLoading] = useState(false);
   const [isPlacementUpdating, setIsPlacementUpdating] = useState(false);
   const [isFlagworkSaveLoading, setIsFlagworkSaveLoading] = useState(false);
+  const [isExeFsPatchLoading, setIsExeFsPatchLoading] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -527,6 +551,22 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsFlagworkSaveLoading(false);
+    }
+  };
+
+  const handleOpenExeFsPatchWorkflow = async () => {
+    setIsExeFsPatchLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadExeFsPatchWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setExeFsPatchWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsExeFsPatchLoading(false);
     }
   };
 
@@ -902,7 +942,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               isRaidRewardsLoading={isRaidRewardsLoading}
               isPlacementLoading={isPlacementLoading}
               isFlagworkSaveLoading={isFlagworkSaveLoading}
+              isExeFsPatchLoading={isExeFsPatchLoading}
               onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
+              onOpenExeFsPatchWorkflow={handleOpenExeFsPatchWorkflow}
               onOpenFlagworkSaveWorkflow={handleOpenFlagworkSaveWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenPlacementWorkflow={handleOpenPlacementWorkflow}
@@ -1021,6 +1063,17 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               selectedFlagId={selectedFlagId}
               selectedSaveBlockId={selectedSaveBlockId}
               workflow={flagworkSaveWorkflow}
+            />
+          ) : null}
+          {activeSection === 'exefsPatches' ? (
+            <ExeFsPatchSection
+              onSearchChange={setExeFsPatchSearchText}
+              onSelectCheck={setSelectedExeFsCheckId}
+              onSelectPatch={setSelectedExeFsPatchId}
+              searchText={exeFsPatchSearchText}
+              selectedCheckId={selectedExeFsCheckId}
+              selectedPatchId={selectedExeFsPatchId}
+              workflow={exeFsPatchWorkflow}
             />
           ) : null}
           {activeSection === 'changes' ? (
@@ -1148,6 +1201,7 @@ function HealthSection({
 function WorkflowsSection({
   health,
   isEncountersLoading,
+  isExeFsPatchLoading,
   isItemsLoading,
   isShopsLoading,
   isTextLoading,
@@ -1156,6 +1210,7 @@ function WorkflowsSection({
   isPlacementLoading,
   isFlagworkSaveLoading,
   onOpenEncountersWorkflow,
+  onOpenExeFsPatchWorkflow,
   onOpenFlagworkSaveWorkflow,
   onOpenItemsWorkflow,
   onOpenPlacementWorkflow,
@@ -1168,6 +1223,7 @@ function WorkflowsSection({
 }: {
   health: ProjectHealth | null;
   isEncountersLoading: boolean;
+  isExeFsPatchLoading: boolean;
   isItemsLoading: boolean;
   isShopsLoading: boolean;
   isTextLoading: boolean;
@@ -1176,6 +1232,7 @@ function WorkflowsSection({
   isPlacementLoading: boolean;
   isFlagworkSaveLoading: boolean;
   onOpenEncountersWorkflow: () => void;
+  onOpenExeFsPatchWorkflow: () => void;
   onOpenFlagworkSaveWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenPlacementWorkflow: () => void;
@@ -1206,6 +1263,7 @@ function WorkflowsSection({
           const isRaidRewardsWorkflow = definition.id === 'raidRewards';
           const isPlacementWorkflow = definition.id === 'placement';
           const isFlagworkSaveWorkflow = definition.id === 'flagworkSave';
+          const isExeFsPatchWorkflow = definition.id === 'exefsPatches';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
@@ -1218,6 +1276,8 @@ function WorkflowsSection({
             isPlacementWorkflow && workflowState.availability !== 'disabled';
           const canOpenFlagworkSave =
             isFlagworkSaveWorkflow && workflowState.availability !== 'disabled';
+          const canOpenExeFsPatch =
+            isExeFsPatchWorkflow && workflowState.availability !== 'disabled';
 
           return (
             <article className="workflow-row" key={definition.id}>
@@ -1318,6 +1378,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isFlagworkSaveLoading ? 'Loading' : 'Open Flagwork'}</span>
+                  </button>
+                ) : null}
+                {isExeFsPatchWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenExeFsPatch || isExeFsPatchLoading}
+                    onClick={onOpenExeFsPatchWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isExeFsPatchLoading ? 'Loading' : 'Open ExeFS'}</span>
                   </button>
                 ) : null}
               </div>
@@ -3806,6 +3877,267 @@ function SelectedFlagworkSavePanel({
   );
 }
 
+function ExeFsPatchSection({
+  onSearchChange,
+  onSelectCheck,
+  onSelectPatch,
+  searchText,
+  selectedCheckId,
+  selectedPatchId,
+  workflow
+}: {
+  onSearchChange: (value: string) => void;
+  onSelectCheck: (checkId: string | null) => void;
+  onSelectPatch: (patchId: string | null) => void;
+  searchText: string;
+  selectedCheckId: string | null;
+  selectedPatchId: string | null;
+  workflow: ExeFsPatchWorkflow | null;
+}) {
+  const filteredPatches = filterExeFsPatchRecords(workflow?.patches ?? [], searchText);
+  const filteredChecks = filterExeFsPatchCheckRecords(workflow?.checks ?? [], searchText);
+  const filteredSegments = filterExeFsSegmentRecords(workflow?.segments ?? [], searchText);
+  const visibleSegments = filteredSegments.length > 0 ? filteredSegments : (workflow?.segments ?? []);
+  const selectedPatch =
+    filteredPatches.find((patch) => patch.patchId === selectedPatchId) ??
+    workflow?.patches.find((patch) => patch.patchId === selectedPatchId) ??
+    filteredPatches[0] ??
+    workflow?.patches[0] ??
+    null;
+  const selectedCheck =
+    filteredChecks.find((check) => check.checkId === selectedCheckId) ??
+    workflow?.checks.find((check) => check.checkId === selectedCheckId) ??
+    filteredChecks[0] ??
+    workflow?.checks[0] ??
+    null;
+
+  useEffect(() => {
+    if (selectedPatch && selectedPatch.patchId !== selectedPatchId) {
+      onSelectPatch(selectedPatch.patchId);
+    }
+  }, [onSelectPatch, selectedPatch?.patchId, selectedPatchId]);
+
+  useEffect(() => {
+    if (selectedCheck && selectedCheck.checkId !== selectedCheckId) {
+      onSelectCheck(selectedCheck.checkId);
+    }
+  }, [onSelectCheck, selectedCheck?.checkId, selectedCheckId]);
+
+  return (
+    <>
+      <section aria-labelledby="exefs-patches-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Wrench aria-hidden="true" size={18} />
+          <h2 id="exefs-patches-heading">ExeFS Patch Manager</h2>
+        </div>
+
+        <div className="items-toolbar exefs-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search ExeFS compatibility checks"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search ExeFS"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric label="Checks" value={workflow ? workflow.stats.totalCheckCount.toString() : '0'} />
+          <Metric label="Passing" value={workflow ? workflow.stats.passCount.toString() : '0'} />
+          <Metric label="Warnings" value={workflow ? workflow.stats.warningCount.toString() : '0'} />
+          <Metric label="Failing" value={workflow ? workflow.stats.failCount.toString() : '0'} />
+        </div>
+
+        {workflow ? (
+          <div className="flagwork-layout">
+            <div className="flagwork-stack">
+              <div className="exefs-table" role="table" aria-label="ExeFS patch records">
+                <div className="exefs-row exefs-row-heading" role="row">
+                  <span role="columnheader">Patch</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Target</span>
+                  <span role="columnheader">Kind</span>
+                  <span role="columnheader">Details</span>
+                </div>
+                {filteredPatches.map((patch) => (
+                  <button
+                    className={`exefs-row ${
+                      selectedPatch?.patchId === patch.patchId ? 'exefs-row-selected' : ''
+                    }`}
+                    key={patch.patchId}
+                    onClick={() => onSelectPatch(patch.patchId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{patch.name}</span>
+                    <span role="cell">
+                      <span className={`status-pill ${getExeFsStatusClassName(patch.status)}`}>
+                        {patch.status}
+                      </span>
+                    </span>
+                    <span role="cell">{patch.targetFile}</span>
+                    <span role="cell">{patch.patchKind}</span>
+                    <span role="cell">{patch.details[0] ?? patch.description}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="exefs-table" role="table" aria-label="ExeFS compatibility checks">
+                <div className="exefs-row exefs-check-row exefs-row-heading" role="row">
+                  <span role="columnheader">Check</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Area</span>
+                  <span role="columnheader">Offset</span>
+                  <span role="columnheader">Actual</span>
+                </div>
+                {filteredChecks.map((check) => (
+                  <button
+                    className={`exefs-row exefs-check-row ${
+                      selectedCheck?.checkId === check.checkId ? 'exefs-row-selected' : ''
+                    }`}
+                    key={check.checkId}
+                    onClick={() => {
+                      onSelectCheck(check.checkId);
+                      onSelectPatch(check.patchId);
+                    }}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{check.name}</span>
+                    <span role="cell">
+                      <span className={`status-pill ${getExeFsStatusClassName(check.status)}`}>
+                        {check.status}
+                      </span>
+                    </span>
+                    <span role="cell">{check.area}</span>
+                    <span role="cell">{check.offset || 'n/a'}</span>
+                    <span role="cell">{check.actual}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <SelectedExeFsPatchPanel
+              check={selectedCheck}
+              patch={selectedPatch}
+              segments={visibleSegments}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">
+            Open ExeFS from Workflows to inspect backend patch compatibility.
+          </p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedExeFsPatchPanel({
+  check,
+  patch,
+  segments
+}: {
+  check: ExeFsPatchCheckRecord | null;
+  patch: ExeFsPatchRecord | null;
+  segments: ExeFsSegmentRecord[];
+}) {
+  const provenance = check?.provenance ?? patch?.provenance ?? segments[0]?.provenance ?? null;
+
+  return (
+    <aside aria-label="Selected ExeFS provenance" className="encounter-inspector">
+      <div className="panel-heading">
+        <Wrench aria-hidden="true" size={18} />
+        <h3>Selected Check</h3>
+      </div>
+
+      {patch || check ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Patch</dt>
+              <dd>{patch?.name ?? check?.patchId ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{check?.status ?? patch?.status ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Check</dt>
+              <dd>{check?.name ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Area</dt>
+              <dd>{check ? `${check.area} ${check.offset}`.trim() : 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Expected</dt>
+              <dd>{check?.expected ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Actual</dt>
+              <dd>{check?.actual ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{provenance?.sourceFile ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{provenance ? formatSourceLayer(provenance.sourceLayer) : 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{provenance ? formatFileState(provenance.fileState) : 'n/a'}</dd>
+            </div>
+          </dl>
+
+          <div className="encounter-edit-form">
+            <dl className="encounter-slot-detail">
+              <div>
+                <dt>Notes</dt>
+                <dd>{check?.notes ?? patch?.description ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>Patch details</dt>
+                <dd>{patch?.details.join(' | ') ?? 'n/a'}</dd>
+              </div>
+            </dl>
+
+            <div className="exefs-segment-list" aria-label="ExeFS segments">
+              {segments.map((segment) => (
+                <dl className="encounter-slot-detail" key={segment.segmentId}>
+                  <div>
+                    <dt>{segment.name}</dt>
+                    <dd>{segment.hashStatus}</dd>
+                  </div>
+                  <div>
+                    <dt>File</dt>
+                    <dd>{segment.fileOffset}</dd>
+                  </div>
+                  <div>
+                    <dt>Memory</dt>
+                    <dd>{segment.memoryOffset}</dd>
+                  </div>
+                  <div>
+                    <dt>Size</dt>
+                    <dd>{segment.decompressedSize}</dd>
+                  </div>
+                </dl>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No ExeFS check selected.</p>
+      )}
+    </aside>
+  );
+}
+
 function ChangesSection({
   applyResult,
   changePlan,
@@ -4209,6 +4541,72 @@ function filterSaveBlockRecords(saveBlocks: SaveBlockRecord[], searchText: strin
   );
 }
 
+function filterExeFsPatchRecords(patches: ExeFsPatchRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return patches;
+  }
+
+  return patches.filter((patch) =>
+    [
+      patch.patchId,
+      patch.name,
+      patch.targetFile,
+      patch.patchKind,
+      patch.status,
+      patch.description,
+      patch.provenance.sourceFile,
+      ...patch.details
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
+function filterExeFsPatchCheckRecords(checks: ExeFsPatchCheckRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return checks;
+  }
+
+  return checks.filter((check) =>
+    [
+      check.checkId,
+      check.patchId,
+      check.status,
+      check.area,
+      check.offset,
+      check.name,
+      check.expected,
+      check.actual,
+      check.notes,
+      check.provenance.sourceFile
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
+function filterExeFsSegmentRecords(segments: ExeFsSegmentRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return segments;
+  }
+
+  return segments.filter((segment) =>
+    [
+      segment.segmentId,
+      segment.name,
+      segment.fileOffset,
+      segment.memoryOffset,
+      segment.decompressedSize,
+      segment.compressedSize,
+      segment.sha256,
+      segment.hashStatus,
+      segment.provenance.sourceFile
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function getEditableItemFieldValue(item: ItemRecord, field: string) {
   switch (field) {
     case buyPriceFieldName:
@@ -4444,6 +4842,22 @@ function getWorkflowState(health: ProjectHealth | null, workflow: WorkflowSummar
     label: 'Read-only',
     statusClass: 'status-warning'
   } as const;
+}
+
+function getExeFsStatusClassName(status: string) {
+  switch (status.toLocaleLowerCase()) {
+    case 'pass':
+    case 'info':
+    case 'available':
+      return 'status-ready';
+    case 'warning':
+      return 'status-warning';
+    case 'fail':
+    case 'blocked':
+      return 'status-blocked';
+    default:
+      return 'status-warning';
+  }
 }
 
 function getEditableRaidRewardFieldValue(reward: RaidRewardItemRecord, field: string) {

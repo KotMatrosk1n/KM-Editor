@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import {
   type EncountersWorkflow,
+  type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
   type ItemsWorkflow,
   type PlacementWorkflow,
@@ -34,6 +35,8 @@ describe('App', () => {
       editValidationDiagnostics: [],
       encounterSearchText: '',
       encountersWorkflow: null,
+      exeFsPatchSearchText: '',
+      exeFsPatchWorkflow: null,
       flagworkSaveSearchText: '',
       flagworkSaveWorkflow: null,
       itemSearchText: '',
@@ -45,6 +48,8 @@ describe('App', () => {
       raidRewardSearchText: '',
       raidRewardsWorkflow: null,
       selectedEncounterTableId: null,
+      selectedExeFsCheckId: null,
+      selectedExeFsPatchId: null,
       selectedFlagId: null,
       selectedItemId: null,
       selectedPlacementObjectId: null,
@@ -442,6 +447,33 @@ describe('App', () => {
     expect(screen.getAllByText('WK_SCENE_MAIN').length).toBeGreaterThan(0);
     expect(screen.getAllByText('0xDDEEFF00').length).toBeGreaterThan(0);
     expect(screen.getAllByText('romfs/bin/flagwork/scene_work.tbl').length).toBeGreaterThan(0);
+  });
+
+  it('opens ExeFS Patch Manager, searches compatibility checks, and shows provenance', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge()} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open ExeFS' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'ExeFS Patch Manager'
+      })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('ExeFS main compatibility').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Patch code cave').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('exefs/main').length).toBeGreaterThan(0);
+
+    await user.type(screen.getByLabelText('Search ExeFS compatibility checks'), 'royal');
+
+    expect(screen.getAllByText('Royal Candy immediate scan').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('.text').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('file+0x100').length).toBeGreaterThan(0);
   });
 
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
@@ -1079,10 +1111,94 @@ function createMockProjectBridge(
   };
   const exeFsPatchWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'ExeFS patch definitions, target files, statuses, and source provenance.',
+    description: 'ExeFS main validation, patch anchors, segment hashes, and source provenance.',
     diagnostics: [],
     id: 'exefsPatches',
     label: 'ExeFS Patch Manager'
+  };
+  const exeFsPatchWorkflow: ExeFsPatchWorkflow = {
+    checks: [
+      {
+        actual: 'text+0x7BC338',
+        area: '.text',
+        checkId: 'exefs-main-compatibility:patch-code-cave',
+        expected: '12 zero bytes after text+0x7BC338',
+        name: 'Patch code cave',
+        notes: 'A code cave is available for small stubs.',
+        offset: 'text+0x7BC338',
+        patchId: 'exefs-main-compatibility',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'exefs/main',
+          sourceLayer: 'base'
+        },
+        status: 'Pass'
+      },
+      {
+        actual: '0',
+        area: '.text',
+        checkId: 'exefs-main-compatibility:royal-candy-immediate-scan',
+        expected: '0 patched CMP immediates in vanilla main',
+        name: 'Royal Candy immediate scan',
+        notes: 'No obvious item-id 1128 CMP immediates were found in the known route registers.',
+        offset: '',
+        patchId: 'exefs-main-compatibility',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'exefs/main',
+          sourceLayer: 'base'
+        },
+        status: 'Info'
+      }
+    ],
+    diagnostics: [],
+    patches: [
+      {
+        description:
+          'Validates Sword/Shield ExeFS main structure, segment hashes, code-cave availability, and known patch anchors.',
+        details: [
+          'Build ID: ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB',
+          'File size: 0x7DDAB0 bytes',
+          'Checks: 26 total, 0 failing, 0 warnings'
+        ],
+        name: 'ExeFS main compatibility',
+        patchId: 'exefs-main-compatibility',
+        patchKind: 'NSO signature scan',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'exefs/main',
+          sourceLayer: 'base'
+        },
+        status: 'available',
+        targetFile: 'exefs/main'
+      }
+    ],
+    segments: [
+      {
+        compressedSize: '0x7DDA90',
+        decompressedSize: '0x7DDA90',
+        fileOffset: 'file+0x100',
+        hashStatus: 'Pass',
+        memoryOffset: '0x0',
+        name: '.text',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'exefs/main',
+          sourceLayer: 'base'
+        },
+        segmentId: 'text',
+        sha256: 'ABCD'
+      }
+    ],
+    stats: {
+      failCount: 0,
+      passCount: 24,
+      sourceFileCount: 1,
+      totalCheckCount: 26,
+      totalPatchCount: 1,
+      warningCount: 0
+    },
+    summary: exeFsPatchWorkflowSummary
   };
   const royalCandyWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
@@ -1245,15 +1361,7 @@ function createMockProjectBridge(
       }),
     loadExeFsPatchWorkflow: () =>
       Promise.resolve({
-        workflow: {
-          diagnostics: [],
-          patches: [],
-          stats: {
-            sourceFileCount: 0,
-            totalPatchCount: 0
-          },
-          summary: exeFsPatchWorkflowSummary
-        }
+        workflow: exeFsPatchWorkflow
       }),
     loadRoyalCandyWorkflow: () =>
       Promise.resolve({

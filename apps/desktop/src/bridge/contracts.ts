@@ -701,6 +701,7 @@ export const exeFsPatchProvenanceSchema = z.strictObject({
 
 export const exeFsPatchRecordSchema = z.strictObject({
   description: z.string(),
+  details: z.array(z.string()),
   name: z.string(),
   patchId: z.string(),
   patchKind: z.string(),
@@ -709,14 +710,45 @@ export const exeFsPatchRecordSchema = z.strictObject({
   targetFile: z.string()
 });
 
+export const exeFsSegmentRecordSchema = z.strictObject({
+  compressedSize: z.string(),
+  decompressedSize: z.string(),
+  fileOffset: z.string(),
+  hashStatus: z.string(),
+  memoryOffset: z.string(),
+  name: z.string(),
+  provenance: exeFsPatchProvenanceSchema,
+  segmentId: z.string(),
+  sha256: z.string()
+});
+
+export const exeFsPatchCheckRecordSchema = z.strictObject({
+  actual: z.string(),
+  area: z.string(),
+  checkId: z.string(),
+  expected: z.string(),
+  name: z.string(),
+  notes: z.string(),
+  offset: z.string(),
+  patchId: z.string(),
+  provenance: exeFsPatchProvenanceSchema,
+  status: z.string()
+});
+
 export const exeFsPatchWorkflowStatsSchema = z.strictObject({
+  failCount: z.number().int().nonnegative(),
+  passCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
-  totalPatchCount: z.number().int().nonnegative()
+  totalCheckCount: z.number().int().nonnegative(),
+  totalPatchCount: z.number().int().nonnegative(),
+  warningCount: z.number().int().nonnegative()
 });
 
 export const exeFsPatchWorkflowSchema = z.strictObject({
+  checks: z.array(exeFsPatchCheckRecordSchema),
   diagnostics: z.array(apiDiagnosticSchema),
   patches: z.array(exeFsPatchRecordSchema),
+  segments: z.array(exeFsSegmentRecordSchema),
   stats: exeFsPatchWorkflowStatsSchema,
   summary: workflowSummarySchema
 });
@@ -1016,6 +1048,9 @@ export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
 export type FlagRecord = z.infer<typeof flagRecordSchema>;
 export type SaveBlockRecord = z.infer<typeof saveBlockRecordSchema>;
 export type FlagworkSaveWorkflow = z.infer<typeof flagworkSaveWorkflowSchema>;
+export type ExeFsPatchCheckRecord = z.infer<typeof exeFsPatchCheckRecordSchema>;
+export type ExeFsPatchRecord = z.infer<typeof exeFsPatchRecordSchema>;
+export type ExeFsSegmentRecord = z.infer<typeof exeFsSegmentRecordSchema>;
 export type ExeFsPatchWorkflow = z.infer<typeof exeFsPatchWorkflowSchema>;
 export type RoyalCandyWorkflow = z.infer<typeof royalCandyWorkflowSchema>;
 export type SpreadsheetImportWorkflow = z.infer<typeof spreadsheetImportWorkflowSchema>;

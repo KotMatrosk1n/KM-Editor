@@ -688,28 +688,69 @@ describe('bridge contracts', () => {
     } as const;
     const exeFsPatchWorkflow = {
       diagnostics: [],
-      patches: [
+      checks: [
         {
-          description: 'Enable a safe ExeFS patch fixture.',
-          name: 'Sample ExeFS Patch',
-          patchId: 'sample_patch',
-          patchKind: 'IPS',
+          actual: 'text+0x7BC338',
+          area: '.text',
+          checkId: 'exefs-main-compatibility:patch-code-cave',
+          expected: '12 zero bytes after text+0x7BC338',
+          name: 'Patch code cave',
+          notes: 'A code cave is available for small stubs.',
+          offset: 'text+0x7BC338',
+          patchId: 'exefs-main-compatibility',
           provenance: {
             fileState: 'baseOnly',
-            sourceFile: 'exefs/kmeditor/exefs.patches.readmodel.json',
+            sourceFile: 'exefs/main',
+            sourceLayer: 'base'
+          },
+          status: 'Pass'
+        }
+      ],
+      patches: [
+        {
+          description:
+            'Validates Sword/Shield ExeFS main structure, segment hashes, code-cave availability, and known patch anchors.',
+          details: ['Build ID: ABAB', 'Checks: 26 total, 0 failing, 0 warnings'],
+          name: 'ExeFS main compatibility',
+          patchId: 'exefs-main-compatibility',
+          patchKind: 'NSO signature scan',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'exefs/main',
             sourceLayer: 'base'
           },
           status: 'available',
           targetFile: 'exefs/main'
         }
       ],
+      segments: [
+        {
+          compressedSize: '0x7DDA90',
+          decompressedSize: '0x7DDA90',
+          fileOffset: 'file+0x100',
+          hashStatus: 'Pass',
+          memoryOffset: '0x0',
+          name: '.text',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'exefs/main',
+            sourceLayer: 'base'
+          },
+          segmentId: 'text',
+          sha256: 'ABCD'
+        }
+      ],
       stats: {
+        failCount: 0,
+        passCount: 24,
         sourceFileCount: 1,
-        totalPatchCount: 1
+        totalCheckCount: 26,
+        totalPatchCount: 1,
+        warningCount: 0
       },
       summary: {
         availability: 'readOnly',
-        description: 'ExeFS patch definitions, target files, statuses, and source provenance.',
+        description: 'ExeFS main validation, patch anchors, segment hashes, and source provenance.',
         diagnostics: [],
         id: 'exefsPatches',
         label: 'ExeFS Patch Manager'
