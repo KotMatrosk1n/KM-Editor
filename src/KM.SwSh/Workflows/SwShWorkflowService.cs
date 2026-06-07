@@ -2,6 +2,7 @@
 
 using KM.Core.Projects;
 using KM.SwSh.Items;
+using KM.SwSh.Shops;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
 
@@ -10,6 +11,7 @@ namespace KM.SwSh.Workflows;
 public sealed class SwShWorkflowService
 {
     private readonly SwShItemsWorkflowService itemsWorkflowService;
+    private readonly SwShShopsWorkflowService shopsWorkflowService;
     private readonly SwShTextWorkflowService textWorkflowService;
     private readonly SwShTrainersWorkflowService trainersWorkflowService;
     private readonly ProjectWorkspaceService projectWorkspaceService;
@@ -18,10 +20,12 @@ public sealed class SwShWorkflowService
         ProjectWorkspaceService? projectWorkspaceService = null,
         SwShItemsWorkflowService? itemsWorkflowService = null,
         SwShTextWorkflowService? textWorkflowService = null,
-        SwShTrainersWorkflowService? trainersWorkflowService = null)
+        SwShTrainersWorkflowService? trainersWorkflowService = null,
+        SwShShopsWorkflowService? shopsWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
+        this.shopsWorkflowService = shopsWorkflowService ?? new SwShShopsWorkflowService();
         this.textWorkflowService = textWorkflowService ?? new SwShTextWorkflowService();
         this.trainersWorkflowService = trainersWorkflowService ?? new SwShTrainersWorkflowService();
     }
@@ -37,6 +41,7 @@ public sealed class SwShWorkflowService
                 itemsWorkflowService.CreateSummary(project),
                 textWorkflowService.CreateSummary(project),
                 trainersWorkflowService.CreateSummary(project),
+                shopsWorkflowService.CreateSummary(project),
             ]);
     }
 
@@ -65,5 +70,14 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return trainersWorkflowService.Load(project);
+    }
+
+    public SwShShopsWorkflow LoadShops(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return shopsWorkflowService.Load(project);
     }
 }

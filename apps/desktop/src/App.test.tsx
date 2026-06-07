@@ -70,6 +70,7 @@ describe('App', () => {
       screen.getByRole('heading', { level: 3, name: 'Text and Dialogue Map' })
     ).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Trainers' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Shops' })).toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
   });
 
@@ -262,6 +263,13 @@ function createMockProjectBridge(
     id: 'trainers',
     label: 'Trainers'
   };
+  const shopsWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Shop inventories, prices, stock limits, and source provenance.',
+    diagnostics: [],
+    id: 'shops',
+    label: 'Shops'
+  };
 
   return {
     applyChangePlan: (request) =>
@@ -305,7 +313,12 @@ function createMockProjectBridge(
       }),
     listWorkflows: () =>
       Promise.resolve({
-        workflows: [itemsWorkflow.summary, textWorkflowSummary, trainersWorkflowSummary]
+        workflows: [
+          itemsWorkflow.summary,
+          textWorkflowSummary,
+          trainersWorkflowSummary,
+          shopsWorkflowSummary
+        ]
       }),
     loadItemsWorkflow: () =>
       Promise.resolve({
@@ -336,6 +349,19 @@ function createMockProjectBridge(
           },
           summary: trainersWorkflowSummary,
           trainers: []
+        }
+      }),
+    loadShopsWorkflow: () =>
+      Promise.resolve({
+        workflow: {
+          diagnostics: [],
+          shops: [],
+          stats: {
+            sourceFileCount: 0,
+            totalInventoryItemCount: 0,
+            totalShopCount: 0
+          },
+          summary: shopsWorkflowSummary
         }
       }),
     openProject: () =>

@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+using KM.Api.Diagnostics;
+using KM.Api.Projects;
+using KM.Api.Workflows;
+
+namespace KM.Api.Shops;
+
+public sealed record LoadShopsWorkflowRequest(ProjectPathsDto Paths);
+
+public sealed record ShopProvenanceDto(
+    string SourceFile,
+    ProjectFileLayerDto SourceLayer,
+    ProjectFileGraphEntryStateDto FileState);
+
+public sealed record ShopInventoryRecordDto(
+    int Slot,
+    int ItemId,
+    string ItemName,
+    int Price,
+    int? StockLimit);
+
+public sealed record ShopRecordDto(
+    string ShopId,
+    string Name,
+    string Location,
+    string Currency,
+    IReadOnlyList<ShopInventoryRecordDto> Inventory,
+    ShopProvenanceDto Provenance);
+
+public sealed record ShopsWorkflowStatsDto(
+    int TotalShopCount,
+    int TotalInventoryItemCount,
+    int SourceFileCount);
+
+public sealed record ShopsWorkflowDto(
+    WorkflowSummaryDto Summary,
+    IReadOnlyList<ShopRecordDto> Shops,
+    ShopsWorkflowStatsDto Stats,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record LoadShopsWorkflowResponse(ShopsWorkflowDto Workflow);

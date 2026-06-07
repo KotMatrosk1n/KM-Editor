@@ -2,10 +2,12 @@
 
 using KM.Api.Items;
 using KM.Api.Editing;
+using KM.Api.Shops;
 using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
+using KM.SwSh.Shops;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
@@ -40,6 +42,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow));
+    }
+
+    public static LoadShopsWorkflowResponse ToDto(SwShShopsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadShopsWorkflowResponse(ToShopsWorkflowDto(workflow));
     }
 
     public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
@@ -95,6 +104,18 @@ public static class SwShBridgeMapper
             new TrainersWorkflowStatsDto(
                 workflow.Stats.TotalTrainerCount,
                 workflow.Stats.TotalPokemonCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ShopsWorkflowDto ToShopsWorkflowDto(SwShShopsWorkflow workflow)
+    {
+        return new ShopsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Shops.Select(ToDto).ToArray(),
+            new ShopsWorkflowStatsDto(
+                workflow.Stats.TotalShopCount,
+                workflow.Stats.TotalInventoryItemCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -187,6 +208,35 @@ public static class SwShBridgeMapper
     private static TrainerProvenanceDto ToDto(SwShTrainerProvenance provenance)
     {
         return new TrainerProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static ShopRecordDto ToDto(SwShShopRecord shop)
+    {
+        return new ShopRecordDto(
+            shop.ShopId,
+            shop.Name,
+            shop.Location,
+            shop.Currency,
+            shop.Inventory.Select(ToDto).ToArray(),
+            ToDto(shop.Provenance));
+    }
+
+    private static ShopInventoryRecordDto ToDto(SwShShopInventoryRecord inventoryItem)
+    {
+        return new ShopInventoryRecordDto(
+            inventoryItem.Slot,
+            inventoryItem.ItemId,
+            inventoryItem.ItemName,
+            inventoryItem.Price,
+            inventoryItem.StockLimit);
+    }
+
+    private static ShopProvenanceDto ToDto(SwShShopProvenance provenance)
+    {
+        return new ShopProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));
