@@ -351,33 +351,67 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadShopsWorkflowReturnsSanitizedShopRecords()
+    public void DispatchShopUpdateValidatePlanAndApplyWritesLayeredOutput()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/shops.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "shops": [
-                {
-                  "shopId": "route_1_mart",
-                  "name": "Route 1 Mart",
-                  "location": "Route 1",
-                  "currency": "Money",
-                  "inventory": [
-                    {
-                      "slot": 1,
-                      "itemId": 1,
-                      "itemName": "Potion",
-                      "price": 300,
-                      "stockLimit": null
-                    }
-                  ]
-                }
-              ]
-            }
-            """);
+        SwShShopBridgeFixtures.WriteBaseShops(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var shopId = $"single:{SwShShopBridgeFixtures.SingleShopHash:X16}";
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateShopInventoryItem,
+            new UpdateShopInventoryItemRequest(
+                temp.Paths,
+                Session: null,
+                shopId,
+                Slot: 1,
+                Field: "itemId",
+                Value: "2"),
+            requestId: "request-shop-update");
+
+        var updateResponse = DeserializeResponse<UpdateShopInventoryItemResponse>(dispatcher.Dispatch(updateJson));
+        Assert.Null(updateResponse.Error);
+        Assert.NotNull(updateResponse.Payload);
+        Assert.Equal(2, updateResponse.Payload.Workflow.Shops[0].Inventory[0].ItemId);
+        Assert.Single(updateResponse.Payload.Session.PendingEdits);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-shop-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-shop-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.Equal("romfs/bin/app/shop/shop_data.bin", Assert.Single(planResponse.Payload.ChangePlan.Writes).TargetRelativePath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, updateResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-shop-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.Equal("romfs/bin/app/shop/shop_data.bin", Assert.Single(applyResponse.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "app", "shop", "shop_data.bin");
+        var output = SwShShopDataFile.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal(2, output.SingleShops[0].Inventory.Items[0]);
+    }
+
+    [Fact]
+    public void DispatchLoadShopsWorkflowReturnsRealShopRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShShopBridgeFixtures.WriteBaseShops(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.LoadShopsWorkflow,
@@ -390,14 +424,16 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.Equal("request-shops", response.RequestId);
         Assert.NotNull(response.Payload);
-        var shop = Assert.Single(response.Payload.Workflow.Shops);
-        Assert.Equal("route_1_mart", shop.ShopId);
-        Assert.Equal("Route 1 Mart", shop.Name);
+        Assert.Equal(2, response.Payload.Workflow.Shops.Count);
+        var shop = response.Payload.Workflow.Shops[0];
+        Assert.Equal($"single:{SwShShopBridgeFixtures.SingleShopHash:X16}", shop.ShopId);
+        Assert.Equal("Poke Mart", shop.Location);
         Assert.Equal(ProjectFileLayerDto.Base, shop.Provenance.SourceLayer);
-        var inventoryItem = Assert.Single(shop.Inventory);
+        var inventoryItem = shop.Inventory[0];
         Assert.Equal("Potion", inventoryItem.ItemName);
         Assert.Equal(300, inventoryItem.Price);
         Assert.Null(inventoryItem.StockLimit);
+        Assert.Equal(1, response.Payload.Workflow.EditableFields.Count);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

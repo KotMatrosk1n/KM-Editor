@@ -26,6 +26,13 @@ public sealed record SwShShopRecord(
     IReadOnlyList<SwShShopInventoryRecord> Inventory,
     SwShShopProvenance Provenance);
 
+public sealed record SwShShopEditableField(
+    string Field,
+    string Label,
+    string ValueKind,
+    int? MinimumValue,
+    int? MaximumValue);
+
 public sealed record SwShShopsWorkflowStats(
     int TotalShopCount,
     int TotalInventoryItemCount,
@@ -34,5 +41,6 @@ public sealed record SwShShopsWorkflowStats(
 public sealed record SwShShopsWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShShopRecord> Shops,
+    IReadOnlyList<SwShShopEditableField> EditableFields,
     SwShShopsWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);

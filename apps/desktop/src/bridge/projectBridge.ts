@@ -41,6 +41,8 @@ import {
   type StartEditSessionResponse,
   type UpdateItemFieldRequest,
   type UpdateItemFieldResponse,
+  type UpdateShopInventoryItemRequest,
+  type UpdateShopInventoryItemResponse,
   type UpdateTextEntryRequest,
   type UpdateTextEntryResponse,
   type UpdateTrainerFieldRequest,
@@ -69,6 +71,7 @@ import {
   refreshFileGraphResponseSchema,
   startEditSessionResponseSchema,
   updateItemFieldResponseSchema,
+  updateShopInventoryItemResponseSchema,
   updateTextEntryResponseSchema,
   updateTrainerFieldResponseSchema,
   validateEditSessionResponseSchema,
@@ -110,6 +113,9 @@ export type ProjectBridge = {
   refreshFileGraph: (request: RefreshFileGraphRequest) => Promise<RefreshFileGraphResponse>;
   startEditSession: (request: StartEditSessionRequest) => Promise<StartEditSessionResponse>;
   updateItemField: (request: UpdateItemFieldRequest) => Promise<UpdateItemFieldResponse>;
+  updateShopInventoryItem: (
+    request: UpdateShopInventoryItemRequest
+  ) => Promise<UpdateShopInventoryItemResponse>;
   updateTextEntry: (request: UpdateTextEntryRequest) => Promise<UpdateTextEntryResponse>;
   updateTrainerField: (
     request: UpdateTrainerFieldRequest
@@ -269,6 +275,13 @@ export function createProjectBridge(
         kmCommandNames.updateItemField,
         request,
         updateItemFieldResponseSchema
+      ),
+    updateShopInventoryItem: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateShopInventoryItem,
+        request,
+        updateShopInventoryItemResponseSchema
       ),
     updateTextEntry: (request) =>
       sendProjectBridgeRequest(
