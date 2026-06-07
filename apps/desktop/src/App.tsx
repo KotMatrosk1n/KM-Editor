@@ -18,7 +18,17 @@ import {
   Wrench,
   type LucideIcon
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import {
+  type ReactVirtualizerOptions,
+  useVirtualizer
+} from '@tanstack/react-virtual';
+import {
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import {
   type ApiDiagnostic,
   type ApplyResult,
@@ -297,6 +307,18 @@ const placementRotationYFieldName = 'rotationY';
 const placementItemIdFieldName = 'itemId';
 const placementQuantityFieldName = 'quantity';
 const placementChanceFieldName = 'chance';
+const virtualTableInitialRect = { height: 480, width: 800 };
+const virtualTableOverscan = 8;
+const virtualTableRowHeight = 40;
+const observeVirtualTableElementRect:
+  | ReactVirtualizerOptions<HTMLDivElement, HTMLDivElement>['observeElementRect']
+  | undefined =
+  typeof ResizeObserver === 'undefined'
+    ? (_instance, callback) => {
+        callback(virtualTableInitialRect);
+        return () => undefined;
+      }
+    : undefined;
 
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
@@ -1428,6 +1450,60 @@ function WorkflowLoadingPanel({ label }: { label: string }) {
   );
 }
 
+function VirtualTableBody<T>({
+  getKey,
+  items,
+  renderRow
+}: {
+  getKey: (item: T, index: number) => string | number;
+  items: T[];
+  renderRow: (item: T) => ReactNode;
+}) {
+  const scrollParentRef = useRef<HTMLDivElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: items.length,
+    estimateSize: () => virtualTableRowHeight,
+    getItemKey: (index) => getKey(items[index]!, index),
+    getScrollElement: () => scrollParentRef.current,
+    initialRect: virtualTableInitialRect,
+    overscan: virtualTableOverscan,
+    ...(observeVirtualTableElementRect
+      ? { observeElementRect: observeVirtualTableElementRect }
+      : {})
+  });
+
+  return (
+    <div className="virtual-table-body" ref={scrollParentRef} role="rowgroup">
+      <div
+        className="virtual-table-spacer"
+        style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+      >
+        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          const item = items[virtualRow.index];
+
+          if (item === undefined) {
+            return null;
+          }
+
+          return (
+            <div
+              className="virtual-table-row"
+              key={virtualRow.key}
+              role="presentation"
+              style={{
+                height: `${virtualRow.size}px`,
+                transform: `translateY(${virtualRow.start}px)`
+              }}
+            >
+              {renderRow(item)}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function HealthSection({
   bridgeDiagnostics,
   draftPaths,
@@ -1791,11 +1867,14 @@ function ItemsSection({
   selectedItemId: number | null;
   workflow: ItemsWorkflow | null;
 }) {
-  const filteredItems = filterItems(workflow?.items ?? [], searchText);
-  const selectedItem =
-    workflow?.items.find((item) => item.itemId === selectedItemId) ?? filteredItems[0] ?? null;
+  const items = workflow?.items ?? [];
+  const filteredItems = useMemo(() => filterItems(items, searchText), [items, searchText]);
+  const selectedItem = useMemo(
+    () => items.find((item) => item.itemId === selectedItemId) ?? filteredItems[0] ?? null,
+    [filteredItems, items, selectedItemId]
+  );
   const canEditItems = workflow?.summary.availability === 'available';
-  const pendingItemIds = getPendingItemIds(editSession);
+  const pendingItemIds = useMemo(() => getPendingItemIds(editSession), [editSession]);
 
   return (
     <>
@@ -1829,7 +1908,13 @@ function ItemsSection({
 
         {workflow ? (
           <div className="items-layout">
-            <div className="items-table" role="table" aria-label="Items">
+            <div
+              aria-colcount={8}
+              aria-label="Items"
+              aria-rowcount={filteredItems.length + 1}
+              className="items-table"
+              role="table"
+            >
               <div className="items-row items-row-heading" role="row">
                 <span role="columnheader">ID</span>
                 <span role="columnheader">Name</span>
@@ -1840,26 +1925,29 @@ function ItemsSection({
                 <span role="columnheader">Alt</span>
                 <span role="columnheader">Source</span>
               </div>
-              {filteredItems.map((item) => (
-                <button
-                  className={`items-row ${selectedItem?.itemId === item.itemId ? 'items-row-selected' : ''} ${
-                    pendingItemIds.has(item.itemId) ? 'items-row-pending' : ''
-                  }`}
-                  key={item.itemId}
-                  onClick={() => onSelectItem(item.itemId)}
-                  role="row"
-                  type="button"
-                >
-                  <span role="cell">{item.itemId}</span>
-                  <span role="cell">{item.name}</span>
-                  <span role="cell">{item.category}</span>
-                  <span role="cell">{item.buyPrice}</span>
-                  <span role="cell">{item.sellPrice}</span>
-                  <span role="cell">{item.wattsPrice}</span>
-                  <span role="cell">{item.alternatePrice}</span>
-                  <span role="cell">{formatSourceLayer(item.provenance.sourceLayer)}</span>
-                </button>
-              ))}
+              <VirtualTableBody
+                getKey={(item) => item.itemId}
+                items={filteredItems}
+                renderRow={(item) => (
+                  <button
+                    className={`items-row ${selectedItem?.itemId === item.itemId ? 'items-row-selected' : ''} ${
+                      pendingItemIds.has(item.itemId) ? 'items-row-pending' : ''
+                    }`}
+                    onClick={() => onSelectItem(item.itemId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{item.itemId}</span>
+                    <span role="cell">{item.name}</span>
+                    <span role="cell">{item.category}</span>
+                    <span role="cell">{item.buyPrice}</span>
+                    <span role="cell">{item.sellPrice}</span>
+                    <span role="cell">{item.wattsPrice}</span>
+                    <span role="cell">{item.alternatePrice}</span>
+                    <span role="cell">{formatSourceLayer(item.provenance.sourceLayer)}</span>
+                  </button>
+                )}
+              />
             </div>
 
             <SelectedItemPanel
@@ -2054,13 +2142,18 @@ function TextSection({
   selectedTextKey: string | null;
   workflow: TextWorkflow | null;
 }) {
-  const filteredEntries = filterTextEntries(workflow?.entries ?? [], searchText);
-  const selectedEntry =
-    workflow?.entries.find((entry) => entry.textKey === selectedTextKey) ??
-    filteredEntries[0] ??
-    null;
+  const entries = workflow?.entries ?? [];
+  const filteredEntries = useMemo(
+    () => filterTextEntries(entries, searchText),
+    [entries, searchText]
+  );
+  const selectedEntry = useMemo(
+    () =>
+      entries.find((entry) => entry.textKey === selectedTextKey) ?? filteredEntries[0] ?? null,
+    [entries, filteredEntries, selectedTextKey]
+  );
   const canEditText = workflow?.summary.availability === 'available';
-  const pendingTextKeys = getPendingTextKeys(editSession);
+  const pendingTextKeys = useMemo(() => getPendingTextKeys(editSession), [editSession]);
 
   return (
     <>
@@ -2098,7 +2191,13 @@ function TextSection({
 
         {workflow ? (
           <div className="text-layout">
-            <div className="text-table" role="table" aria-label="Text entries">
+            <div
+              aria-colcount={5}
+              aria-label="Text entries"
+              aria-rowcount={filteredEntries.length + 1}
+              className="text-table"
+              role="table"
+            >
               <div className="text-row text-row-heading" role="row">
                 <span role="columnheader">ID</span>
                 <span role="columnheader">File</span>
@@ -2106,23 +2205,26 @@ function TextSection({
                 <span role="columnheader">Value</span>
                 <span role="columnheader">Source</span>
               </div>
-              {filteredEntries.map((entry) => (
-                <button
-                  className={`text-row ${selectedEntry?.textKey === entry.textKey ? 'text-row-selected' : ''} ${
-                    pendingTextKeys.has(entry.textKey) ? 'text-row-pending' : ''
-                  }`}
-                  key={entry.textKey}
-                  onClick={() => onSelectTextEntry(entry.textKey)}
-                  role="row"
-                  type="button"
-                >
-                  <span role="cell">{entry.textId}</span>
-                  <span role="cell">{entry.sourceFile}</span>
-                  <span role="cell">{entry.lineIndex}</span>
-                  <span role="cell">{entry.value}</span>
-                  <span role="cell">{formatSourceLayer(entry.provenance.sourceLayer)}</span>
-                </button>
-              ))}
+              <VirtualTableBody
+                getKey={(entry) => entry.textKey}
+                items={filteredEntries}
+                renderRow={(entry) => (
+                  <button
+                    className={`text-row ${selectedEntry?.textKey === entry.textKey ? 'text-row-selected' : ''} ${
+                      pendingTextKeys.has(entry.textKey) ? 'text-row-pending' : ''
+                    }`}
+                    onClick={() => onSelectTextEntry(entry.textKey)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{entry.textId}</span>
+                    <span role="cell">{entry.sourceFile}</span>
+                    <span role="cell">{entry.lineIndex}</span>
+                    <span role="cell">{entry.value}</span>
+                    <span role="cell">{formatSourceLayer(entry.provenance.sourceLayer)}</span>
+                  </button>
+                )}
+              />
             </div>
 
             <SelectedTextPanel
@@ -2283,17 +2385,24 @@ function TrainersSection({
   workflow: TrainersWorkflow | null;
 }) {
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
-  const filteredTrainers = filterTrainers(workflow?.trainers ?? [], searchText);
-  const selectedTrainer =
-    workflow?.trainers.find((trainer) => trainer.trainerId === selectedTrainerId) ??
-    filteredTrainers[0] ??
-    null;
+  const trainers = workflow?.trainers ?? [];
+  const filteredTrainers = useMemo(
+    () => filterTrainers(trainers, searchText),
+    [searchText, trainers]
+  );
+  const selectedTrainer = useMemo(
+    () =>
+      trainers.find((trainer) => trainer.trainerId === selectedTrainerId) ??
+      filteredTrainers[0] ??
+      null,
+    [filteredTrainers, selectedTrainerId, trainers]
+  );
   const selectedPokemon =
     selectedTrainer?.team.find((pokemon) => pokemon.slot === selectedSlot) ??
     selectedTrainer?.team[0] ??
     null;
   const canEditTrainers = workflow?.summary.availability === 'available';
-  const pendingTrainerIds = getPendingTrainerIds(editSession);
+  const pendingTrainerIds = useMemo(() => getPendingTrainerIds(editSession), [editSession]);
 
   useEffect(() => {
     if (!selectedTrainer) {
@@ -2343,7 +2452,13 @@ function TrainersSection({
 
         {workflow ? (
           <div className="trainers-layout">
-            <div className="trainers-table" role="table" aria-label="Trainers">
+            <div
+              aria-colcount={6}
+              aria-label="Trainers"
+              aria-rowcount={filteredTrainers.length + 1}
+              className="trainers-table"
+              role="table"
+            >
               <div className="trainers-row trainers-row-heading" role="row">
                 <span role="columnheader">ID</span>
                 <span role="columnheader">Name</span>
@@ -2352,24 +2467,27 @@ function TrainersSection({
                 <span role="columnheader">Team</span>
                 <span role="columnheader">Source</span>
               </div>
-              {filteredTrainers.map((trainer) => (
-                <button
-                  className={`trainers-row ${
-                    selectedTrainer?.trainerId === trainer.trainerId ? 'trainers-row-selected' : ''
-                  } ${pendingTrainerIds.has(trainer.trainerId) ? 'trainers-row-pending' : ''}`}
-                  key={trainer.trainerId}
-                  onClick={() => onSelectTrainer(trainer.trainerId)}
-                  role="row"
-                  type="button"
-                >
-                  <span role="cell">{trainer.trainerId}</span>
-                  <span role="cell">{trainer.name}</span>
-                  <span role="cell">{trainer.trainerClass}</span>
-                  <span role="cell">{trainer.battleType}</span>
-                  <span role="cell">{trainer.team.length}</span>
-                  <span role="cell">{formatSourceLayer(trainer.provenance.sourceLayer)}</span>
-                </button>
-              ))}
+              <VirtualTableBody
+                getKey={(trainer) => trainer.trainerId}
+                items={filteredTrainers}
+                renderRow={(trainer) => (
+                  <button
+                    className={`trainers-row ${
+                      selectedTrainer?.trainerId === trainer.trainerId ? 'trainers-row-selected' : ''
+                    } ${pendingTrainerIds.has(trainer.trainerId) ? 'trainers-row-pending' : ''}`}
+                    onClick={() => onSelectTrainer(trainer.trainerId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{trainer.trainerId}</span>
+                    <span role="cell">{trainer.name}</span>
+                    <span role="cell">{trainer.trainerClass}</span>
+                    <span role="cell">{trainer.battleType}</span>
+                    <span role="cell">{trainer.team.length}</span>
+                    <span role="cell">{formatSourceLayer(trainer.provenance.sourceLayer)}</span>
+                  </button>
+                )}
+              />
             </div>
 
             <SelectedTrainerPanel

@@ -503,6 +503,7 @@ h2 {
 
 .items-table {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   overflow: hidden;
   border: 1px solid #e1e5df;
@@ -523,7 +524,9 @@ h2 {
   background: #ffffff;
   border: 0;
   border-bottom: 1px solid #e1e5df;
+  box-sizing: border-box;
   text-align: left;
+  width: 100%;
 }
 
 .items-row:last-child {
@@ -558,6 +561,32 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.virtual-table-body {
+  max-height: min(560px, calc(100vh - 320px));
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.virtual-table-spacer {
+  position: relative;
+  min-width: 100%;
+}
+
+.virtual-table-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+.virtual-table-row > .items-row,
+.virtual-table-row > .text-row,
+.virtual-table-row > .trainers-row {
+  height: 100%;
 }
 
 .item-inspector {
@@ -629,6 +658,7 @@ h2 {
 
 .text-table {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   overflow: hidden;
   border: 1px solid #e1e5df;
@@ -647,7 +677,9 @@ h2 {
   background: #ffffff;
   border: 0;
   border-bottom: 1px solid #e1e5df;
+  box-sizing: border-box;
   text-align: left;
+  width: 100%;
 }
 
 .text-row:last-child {
@@ -732,6 +764,7 @@ h2 {
 
 .trainers-table {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   overflow: hidden;
   border: 1px solid #e1e5df;
@@ -750,7 +783,9 @@ h2 {
   background: #ffffff;
   border: 0;
   border-bottom: 1px solid #e1e5df;
+  box-sizing: border-box;
   text-align: left;
+  width: 100%;
 }
 
 .trainers-row:last-child {
