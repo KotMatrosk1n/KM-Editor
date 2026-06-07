@@ -17,16 +17,23 @@ public sealed record FlagRecordDto(
     string FlagId,
     string Name,
     string Category,
+    string Kind,
     string ValueKind,
     string DefaultValue,
     string Description,
+    string Table,
+    int Index,
+    string Hash,
+    string Low32Key,
     FlagworkSaveProvenanceDto Provenance);
 
 public sealed record SaveBlockRecordDto(
     string BlockId,
     string Name,
-    int Offset,
-    int Length,
+    string Key,
+    string Hash,
+    string Kind,
+    string ValueKind,
     string Description,
     FlagworkSaveProvenanceDto Provenance);
 

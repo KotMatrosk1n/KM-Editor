@@ -28,6 +28,8 @@ import {
   type EncounterSlotRecord,
   type EncounterTableRecord,
   type EncountersWorkflow,
+  type FlagRecord,
+  type FlagworkSaveWorkflow,
   type ItemEditableField,
   type ItemsWorkflow,
   type ItemRecord,
@@ -41,6 +43,7 @@ import {
   type RaidRewardItemRecord,
   type RaidRewardTableRecord,
   type RaidRewardsWorkflow,
+  type SaveBlockRecord,
   type ShopEditableField,
   type ShopInventoryRecord,
   type ShopRecord,
@@ -114,6 +117,11 @@ const sections: Array<{
     id: 'placement',
     label: 'Placement',
     icon: MapPin
+  },
+  {
+    id: 'flagworkSave',
+    label: 'Flagwork / Save',
+    icon: Save
   },
   {
     id: 'changes',
@@ -273,6 +281,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const editValidationDiagnostics = useWorkbenchStore((state) => state.editValidationDiagnostics);
   const encounterSearchText = useWorkbenchStore((state) => state.encounterSearchText);
   const encountersWorkflow = useWorkbenchStore((state) => state.encountersWorkflow);
+  const flagworkSaveSearchText = useWorkbenchStore((state) => state.flagworkSaveSearchText);
+  const flagworkSaveWorkflow = useWorkbenchStore((state) => state.flagworkSaveWorkflow);
   const itemSearchText = useWorkbenchStore((state) => state.itemSearchText);
   const itemsWorkflow = useWorkbenchStore((state) => state.itemsWorkflow);
   const openProject = useWorkbenchStore((state) => state.openProject);
@@ -289,7 +299,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const selectedPlacementObjectId = useWorkbenchStore(
     (state) => state.selectedPlacementObjectId
   );
+  const selectedFlagId = useWorkbenchStore((state) => state.selectedFlagId);
   const selectedShopId = useWorkbenchStore((state) => state.selectedShopId);
+  const selectedSaveBlockId = useWorkbenchStore((state) => state.selectedSaveBlockId);
   const selectedTextKey = useWorkbenchStore((state) => state.selectedTextKey);
   const selectedTrainerId = useWorkbenchStore((state) => state.selectedTrainerId);
   const shopSearchText = useWorkbenchStore((state) => state.shopSearchText);
@@ -309,6 +321,10 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   );
   const setEncounterSearchText = useWorkbenchStore((state) => state.setEncounterSearchText);
   const setEncountersWorkflow = useWorkbenchStore((state) => state.setEncountersWorkflow);
+  const setFlagworkSaveSearchText = useWorkbenchStore(
+    (state) => state.setFlagworkSaveSearchText
+  );
+  const setFlagworkSaveWorkflow = useWorkbenchStore((state) => state.setFlagworkSaveWorkflow);
   const setItemSearchText = useWorkbenchStore((state) => state.setItemSearchText);
   const setItemsWorkflow = useWorkbenchStore((state) => state.setItemsWorkflow);
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
@@ -327,7 +343,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const setSelectedEncounterTableId = useWorkbenchStore(
     (state) => state.setSelectedEncounterTableId
   );
+  const setSelectedFlagId = useWorkbenchStore((state) => state.setSelectedFlagId);
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
+  const setSelectedSaveBlockId = useWorkbenchStore((state) => state.setSelectedSaveBlockId);
   const setSelectedShopId = useWorkbenchStore((state) => state.setSelectedShopId);
   const setSelectedTextKey = useWorkbenchStore((state) => state.setSelectedTextKey);
   const setSelectedTrainerId = useWorkbenchStore((state) => state.setSelectedTrainerId);
@@ -357,6 +375,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isRaidRewardUpdating, setIsRaidRewardUpdating] = useState(false);
   const [isPlacementLoading, setIsPlacementLoading] = useState(false);
   const [isPlacementUpdating, setIsPlacementUpdating] = useState(false);
+  const [isFlagworkSaveLoading, setIsFlagworkSaveLoading] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -492,6 +511,22 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsPlacementLoading(false);
+    }
+  };
+
+  const handleOpenFlagworkSaveWorkflow = async () => {
+    setIsFlagworkSaveLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadFlagworkSaveWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setFlagworkSaveWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsFlagworkSaveLoading(false);
     }
   };
 
@@ -866,7 +901,9 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               isEncountersLoading={isEncountersLoading}
               isRaidRewardsLoading={isRaidRewardsLoading}
               isPlacementLoading={isPlacementLoading}
+              isFlagworkSaveLoading={isFlagworkSaveLoading}
               onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
+              onOpenFlagworkSaveWorkflow={handleOpenFlagworkSaveWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenPlacementWorkflow={handleOpenPlacementWorkflow}
               onOpenRaidRewardsWorkflow={handleOpenRaidRewardsWorkflow}
@@ -973,6 +1010,17 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               searchText={placementSearchText}
               selectedObjectId={selectedPlacementObjectId}
               workflow={placementWorkflow}
+            />
+          ) : null}
+          {activeSection === 'flagworkSave' ? (
+            <FlagworkSaveSection
+              onSearchChange={setFlagworkSaveSearchText}
+              onSelectFlag={setSelectedFlagId}
+              onSelectSaveBlock={setSelectedSaveBlockId}
+              searchText={flagworkSaveSearchText}
+              selectedFlagId={selectedFlagId}
+              selectedSaveBlockId={selectedSaveBlockId}
+              workflow={flagworkSaveWorkflow}
             />
           ) : null}
           {activeSection === 'changes' ? (
@@ -1106,7 +1154,9 @@ function WorkflowsSection({
   isTrainersLoading,
   isRaidRewardsLoading,
   isPlacementLoading,
+  isFlagworkSaveLoading,
   onOpenEncountersWorkflow,
+  onOpenFlagworkSaveWorkflow,
   onOpenItemsWorkflow,
   onOpenPlacementWorkflow,
   onOpenRaidRewardsWorkflow,
@@ -1124,7 +1174,9 @@ function WorkflowsSection({
   isTrainersLoading: boolean;
   isRaidRewardsLoading: boolean;
   isPlacementLoading: boolean;
+  isFlagworkSaveLoading: boolean;
   onOpenEncountersWorkflow: () => void;
+  onOpenFlagworkSaveWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenPlacementWorkflow: () => void;
   onOpenRaidRewardsWorkflow: () => void;
@@ -1153,6 +1205,7 @@ function WorkflowsSection({
           const isEncountersWorkflow = definition.id === 'encounters';
           const isRaidRewardsWorkflow = definition.id === 'raidRewards';
           const isPlacementWorkflow = definition.id === 'placement';
+          const isFlagworkSaveWorkflow = definition.id === 'flagworkSave';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
@@ -1163,6 +1216,8 @@ function WorkflowsSection({
             isRaidRewardsWorkflow && workflowState.availability !== 'disabled';
           const canOpenPlacement =
             isPlacementWorkflow && workflowState.availability !== 'disabled';
+          const canOpenFlagworkSave =
+            isFlagworkSaveWorkflow && workflowState.availability !== 'disabled';
 
           return (
             <article className="workflow-row" key={definition.id}>
@@ -1252,6 +1307,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isPlacementLoading ? 'Loading' : 'Open Placement'}</span>
+                  </button>
+                ) : null}
+                {isFlagworkSaveWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenFlagworkSave || isFlagworkSaveLoading}
+                    onClick={onOpenFlagworkSaveWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isFlagworkSaveLoading ? 'Loading' : 'Open Flagwork'}</span>
                   </button>
                 ) : null}
               </div>
@@ -3503,6 +3569,243 @@ function SelectedPlacementPanel({
   );
 }
 
+function FlagworkSaveSection({
+  onSearchChange,
+  onSelectFlag,
+  onSelectSaveBlock,
+  searchText,
+  selectedFlagId,
+  selectedSaveBlockId,
+  workflow
+}: {
+  onSearchChange: (value: string) => void;
+  onSelectFlag: (flagId: string | null) => void;
+  onSelectSaveBlock: (blockId: string | null) => void;
+  searchText: string;
+  selectedFlagId: string | null;
+  selectedSaveBlockId: string | null;
+  workflow: FlagworkSaveWorkflow | null;
+}) {
+  const filteredFlags = filterFlagRecords(workflow?.flags ?? [], searchText);
+  const filteredSaveBlocks = filterSaveBlockRecords(workflow?.saveBlocks ?? [], searchText);
+  const selectedFlag =
+    filteredFlags.find((flag) => flag.flagId === selectedFlagId) ??
+    workflow?.flags.find((flag) => flag.flagId === selectedFlagId) ??
+    filteredFlags[0] ??
+    workflow?.flags[0] ??
+    null;
+  const selectedSaveBlock =
+    filteredSaveBlocks.find((saveBlock) => saveBlock.blockId === selectedSaveBlockId) ??
+    workflow?.saveBlocks.find((saveBlock) => saveBlock.blockId === selectedSaveBlockId) ??
+    filteredSaveBlocks[0] ??
+    workflow?.saveBlocks[0] ??
+    null;
+
+  useEffect(() => {
+    if (selectedFlag && selectedFlag.flagId !== selectedFlagId) {
+      onSelectFlag(selectedFlag.flagId);
+    }
+  }, [onSelectFlag, selectedFlag?.flagId, selectedFlagId]);
+
+  useEffect(() => {
+    if (selectedSaveBlock && selectedSaveBlock.blockId !== selectedSaveBlockId) {
+      onSelectSaveBlock(selectedSaveBlock.blockId);
+    }
+  }, [onSelectSaveBlock, selectedSaveBlock?.blockId, selectedSaveBlockId]);
+
+  return (
+    <>
+      <section aria-labelledby="flagwork-save-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Save aria-hidden="true" size={18} />
+          <h2 id="flagwork-save-heading">Flagwork and Save Inspectors</h2>
+        </div>
+
+        <div className="items-toolbar flagwork-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search flagwork and save keys"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search flagwork"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Flags and works"
+            value={workflow ? workflow.stats.totalFlagCount.toString() : '0'}
+          />
+          <Metric
+            label="Save keys"
+            value={workflow ? workflow.stats.totalSaveBlockCount.toString() : '0'}
+          />
+          <Metric
+            label="Source files"
+            value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="flagwork-layout">
+            <div className="flagwork-stack">
+              <div className="flagwork-table" role="table" aria-label="Flagwork records">
+                <div className="flagwork-row flagwork-row-heading" role="row">
+                  <span role="columnheader">Table</span>
+                  <span role="columnheader">Index</span>
+                  <span role="columnheader">Kind</span>
+                  <span role="columnheader">Name</span>
+                  <span role="columnheader">Save key</span>
+                </div>
+                {filteredFlags.map((flag) => (
+                  <button
+                    className={`flagwork-row ${
+                      selectedFlag?.flagId === flag.flagId ? 'flagwork-row-selected' : ''
+                    }`}
+                    key={flag.flagId}
+                    onClick={() => onSelectFlag(flag.flagId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{flag.table}</span>
+                    <span role="cell">{flag.index}</span>
+                    <span role="cell">{flag.kind}</span>
+                    <span role="cell">{flag.name}</span>
+                    <span role="cell">{flag.low32Key}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="flagwork-table" role="table" aria-label="Save key records">
+                <div className="flagwork-row flagwork-row-heading" role="row">
+                  <span role="columnheader">Key</span>
+                  <span role="columnheader">Kind</span>
+                  <span role="columnheader">Value</span>
+                  <span role="columnheader">Name</span>
+                  <span role="columnheader">Hash</span>
+                </div>
+                {filteredSaveBlocks.map((saveBlock) => (
+                  <button
+                    className={`flagwork-row ${
+                      selectedSaveBlock?.blockId === saveBlock.blockId
+                        ? 'flagwork-row-selected'
+                        : ''
+                    }`}
+                    key={saveBlock.blockId}
+                    onClick={() => onSelectSaveBlock(saveBlock.blockId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{saveBlock.key}</span>
+                    <span role="cell">{saveBlock.kind}</span>
+                    <span role="cell">{saveBlock.valueKind}</span>
+                    <span role="cell">{saveBlock.name}</span>
+                    <span role="cell">{saveBlock.hash}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <SelectedFlagworkSavePanel flag={selectedFlag} saveBlock={selectedSaveBlock} />
+          </div>
+        ) : (
+          <p className="empty-copy">
+            Open Flagwork from Workflows to inspect backend flagwork tables.
+          </p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedFlagworkSavePanel({
+  flag,
+  saveBlock
+}: {
+  flag: FlagRecord | null;
+  saveBlock: SaveBlockRecord | null;
+}) {
+  const provenance = saveBlock?.provenance ?? flag?.provenance ?? null;
+
+  return (
+    <aside aria-label="Selected flagwork provenance" className="encounter-inspector">
+      <div className="panel-heading">
+        <Save aria-hidden="true" size={18} />
+        <h3>Selected Save Key</h3>
+      </div>
+
+      {flag || saveBlock ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Flagwork name</dt>
+              <dd>{flag?.name ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Table</dt>
+              <dd>{flag ? `${flag.table} #${flag.index}` : 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Kind</dt>
+              <dd>{flag?.kind ?? saveBlock?.kind ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Hash</dt>
+              <dd>{flag?.hash ?? saveBlock?.hash ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Low32 key</dt>
+              <dd>{flag?.low32Key ?? saveBlock?.key ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Save key name</dt>
+              <dd>{saveBlock?.name ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Value kind</dt>
+              <dd>{saveBlock?.valueKind ?? flag?.valueKind ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{provenance?.sourceFile ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{provenance ? formatSourceLayer(provenance.sourceLayer) : 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{provenance ? formatFileState(provenance.fileState) : 'n/a'}</dd>
+            </div>
+          </dl>
+
+          <div className="encounter-edit-form">
+            <dl className="encounter-slot-detail">
+              <div>
+                <dt>Flag ID</dt>
+                <dd>{flag?.flagId ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>Save ID</dt>
+                <dd>{saveBlock?.blockId ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>Default</dt>
+                <dd>{flag?.defaultValue ?? 'n/a'}</dd>
+              </div>
+            </dl>
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No flagwork record selected.</p>
+      )}
+    </aside>
+  );
+}
+
 function ChangesSection({
   applyResult,
   changePlan,
@@ -3863,6 +4166,49 @@ function filterEncounterTables(tables: EncounterTableRecord[], searchText: strin
   );
 }
 
+function filterFlagRecords(flags: FlagRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return flags;
+  }
+
+  return flags.filter((flag) =>
+    [
+      flag.flagId,
+      flag.name,
+      flag.category,
+      flag.kind,
+      flag.valueKind,
+      flag.table,
+      flag.index.toString(),
+      flag.hash,
+      flag.low32Key,
+      flag.provenance.sourceFile
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
+function filterSaveBlockRecords(saveBlocks: SaveBlockRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return saveBlocks;
+  }
+
+  return saveBlocks.filter((saveBlock) =>
+    [
+      saveBlock.blockId,
+      saveBlock.name,
+      saveBlock.key,
+      saveBlock.hash,
+      saveBlock.kind,
+      saveBlock.valueKind,
+      saveBlock.provenance.sourceFile
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function getEditableItemFieldValue(item: ItemRecord, field: string) {
   switch (field) {
     case buyPriceFieldName:
@@ -4217,8 +4563,10 @@ const workflowAvailabilityClassNames = {
 function formatSourceLayer(
   layer:
     | EncounterTableRecord['provenance']['sourceLayer']
+    | FlagRecord['provenance']['sourceLayer']
     | ItemRecord['provenance']['sourceLayer']
     | RaidRewardTableRecord['provenance']['sourceLayer']
+    | SaveBlockRecord['provenance']['sourceLayer']
     | ShopRecord['provenance']['sourceLayer']
     | TextEntryRecord['provenance']['sourceLayer']
     | TrainerRecord['provenance']['sourceLayer']
@@ -4243,8 +4591,10 @@ function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][n
 function formatFileState(
   state:
     | EncounterTableRecord['provenance']['fileState']
+    | FlagRecord['provenance']['fileState']
     | ItemRecord['provenance']['fileState']
     | RaidRewardTableRecord['provenance']['fileState']
+    | SaveBlockRecord['provenance']['fileState']
     | ShopRecord['provenance']['fileState']
     | TextEntryRecord['provenance']['fileState']
     | TrainerRecord['provenance']['fileState']

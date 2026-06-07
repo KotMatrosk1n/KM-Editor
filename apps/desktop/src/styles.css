@@ -1000,6 +1000,10 @@ h2 {
   grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
 }
 
+.flagwork-toolbar {
+  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
+}
+
 .encounters-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
@@ -1115,6 +1119,71 @@ h2 {
 }
 
 .raid-rewards-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flagwork-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.flagwork-stack {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.flagwork-table {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.flagwork-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.9fr) 64px minmax(72px, 0.5fr) minmax(160px, 1.2fr) minmax(132px, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  color: #202420;
+  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid #e1e5df;
+  text-align: left;
+}
+
+.flagwork-row:last-child {
+  border-bottom: 0;
+}
+
+.flagwork-row:not(.flagwork-row-heading) {
+  cursor: pointer;
+}
+
+.flagwork-row:not(.flagwork-row-heading):hover,
+.flagwork-row-selected {
+  color: #ffffff;
+  background: #4338ca;
+}
+
+.flagwork-row-heading {
+  color: #6c756a;
+  background: #f5f6f4;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: default;
+}
+
+.flagwork-row span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1377,6 +1446,7 @@ h2 {
   .trainers-layout,
   .shops-layout,
   .encounters-layout,
+  .flagwork-layout,
   .change-plan-list li,
   .change-plan-status {
     grid-template-columns: 1fr;
@@ -1440,6 +1510,15 @@ h2 {
   .encounters-row span:nth-child(3),
   .encounters-row span:nth-child(5),
   .encounters-row span:nth-child(6) {
+    display: none;
+  }
+
+  .flagwork-row {
+    grid-template-columns: minmax(112px, 1fr) minmax(72px, 0.6fr) minmax(120px, 1fr);
+  }
+
+  .flagwork-row span:nth-child(2),
+  .flagwork-row span:nth-child(5) {
     display: none;
   }
 

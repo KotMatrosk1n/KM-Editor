@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.Workflows;
@@ -13,62 +14,53 @@ namespace KM.SwSh.Tests.Flagwork;
 public sealed class SwShFlagworkSaveWorkflowServiceTests
 {
     [Fact]
-    public void LoadReadsFlagAndSaveInspectorRecordsFromSanitizedBaseReadModel()
+    public void LoadReadsFlagworkAndSaveInspectorRecordsFromRealTables()
     {
         using var temp = TemporarySwShProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/flagwork.save.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "flags": [
-                {
-                  "flagId": "story.badge_1",
-                  "name": "Badge 1 Obtained",
-                  "category": "Story",
-                  "valueKind": "boolean",
-                  "defaultValue": "false",
-                  "description": "First gym badge story flag."
-                }
-              ],
-              "saveBlocks": [
-                {
-                  "blockId": "player.profile",
-                  "name": "Player Profile",
-                  "offset": 128,
-                  "length": 64,
-                  "description": "Player profile save block."
-                }
-              ]
-            }
-            """);
+        WriteFlagworkTables(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
 
         var workflow = new SwShFlagworkSaveWorkflowService().Load(project);
 
         Assert.Equal(SwShWorkflowAvailability.ReadOnly, workflow.Summary.Availability);
-        var flag = Assert.Single(workflow.Flags);
-        Assert.Equal("story.badge_1", flag.FlagId);
-        Assert.Equal("Badge 1 Obtained", flag.Name);
-        Assert.Equal("Story", flag.Category);
+        Assert.Equal(2, workflow.Flags.Count);
+        var flag = workflow.Flags.Single(record => record.Name == "FE_TEST_FLAG");
+        Assert.Equal("system_flags:0000", flag.FlagId);
+        Assert.Equal("system_flags", flag.Table);
+        Assert.Equal(0, flag.Index);
+        Assert.Equal("system_flags", flag.Category);
+        Assert.Equal("Flag", flag.Kind);
         Assert.Equal("boolean", flag.ValueKind);
         Assert.Equal("false", flag.DefaultValue);
+        Assert.Equal("0x1122334455667788", flag.Hash);
+        Assert.Equal("0x55667788", flag.Low32Key);
         Assert.Equal(ProjectFileLayer.Base, flag.Provenance.SourceLayer);
-        var saveBlock = Assert.Single(workflow.SaveBlocks);
-        Assert.Equal("player.profile", saveBlock.BlockId);
-        Assert.Equal("Player Profile", saveBlock.Name);
-        Assert.Equal(128, saveBlock.Offset);
-        Assert.Equal(64, saveBlock.Length);
-        Assert.Equal(ProjectFileGraphEntryState.BaseOnly, saveBlock.Provenance.FileState);
-        Assert.Equal(1, workflow.Stats.TotalFlagCount);
-        Assert.Equal(1, workflow.Stats.TotalSaveBlockCount);
-        Assert.Equal(1, workflow.Stats.SourceFileCount);
+        Assert.Equal(ProjectFileGraphEntryState.BaseOnly, flag.Provenance.FileState);
+        Assert.Equal("romfs/bin/flagwork/system_flags.tbl", flag.Provenance.SourceFile);
+
+        var work = workflow.Flags.Single(record => record.Name == "WK_SCENE_MAIN");
+        Assert.Equal("scene_work", work.Category);
+        Assert.Equal("Work", work.Kind);
+        Assert.Equal("integer", work.ValueKind);
+        Assert.Equal("0", work.DefaultValue);
+        Assert.Equal("0x99AABBCCDDEEFF00", work.Hash);
+        Assert.Equal("0xDDEEFF00", work.Low32Key);
+
+        var saveBlock = workflow.SaveBlocks.Single(block => block.Name == "WK_SCENE_MAIN");
+        Assert.Equal("scene_work:0000:0xDDEEFF00", saveBlock.BlockId);
+        Assert.Equal("0xDDEEFF00", saveBlock.Key);
+        Assert.Equal("0x99AABBCCDDEEFF00", saveBlock.Hash);
+        Assert.Equal("Work", saveBlock.Kind);
+        Assert.Equal("integer", saveBlock.ValueKind);
+        Assert.Equal(2, workflow.Stats.TotalFlagCount);
+        Assert.Equal(2, workflow.Stats.TotalSaveBlockCount);
+        Assert.Equal(2, workflow.Stats.SourceFileCount);
         Assert.Empty(workflow.Diagnostics);
     }
 
     [Fact]
-    public void LoadReturnsDiagnosticWhenReadModelIsMissing()
+    public void LoadReturnsDiagnosticWhenFlagworkTablesAreMissing()
     {
         using var temp = TemporarySwShProject.Create();
         temp.WriteBaseRomFsFile("data/flags.bin", "placeholder");
@@ -79,39 +71,21 @@ public sealed class SwShFlagworkSaveWorkflowServiceTests
 
         Assert.Empty(workflow.Flags);
         Assert.Empty(workflow.SaveBlocks);
+        Assert.Equal(0, workflow.Stats.SourceFileCount);
         Assert.Contains(workflow.Diagnostics, diagnostic => diagnostic.Domain == "workflow.flagworkSave");
     }
 
     [Fact]
-    public void LoadWarnsWhenFlagIdsAreDuplicated()
+    public void LoadWarnsWhenFlagworkHashesAreDuplicated()
     {
         using var temp = TemporarySwShProject.Create();
         temp.WriteBaseRomFsFile(
-            "kmeditor/flagwork.save.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "flags": [
-                {
-                  "flagId": "story.badge_1",
-                  "name": "Badge 1 Obtained",
-                  "category": "Story",
-                  "valueKind": "boolean",
-                  "defaultValue": "false",
-                  "description": "First gym badge story flag."
-                },
-                {
-                  "flagId": "story.badge_1",
-                  "name": "Duplicate Badge 1",
-                  "category": "Story",
-                  "valueKind": "boolean",
-                  "defaultValue": "false",
-                  "description": "Duplicate flag fixture."
-                }
-              ],
-              "saveBlocks": []
-            }
-            """);
+            "bin/flagwork/system_flags.tbl",
+            new SwShAhtbFile(
+            [
+                new SwShAhtbEntry(0x1122334455667788, "FE_TEST_FLAG"),
+                new SwShAhtbEntry(0x1122334455667788, "FE_TEST_FLAG_DUPLICATE"),
+            ]).Write());
         temp.WriteBaseExeFsFile("main", "base-main");
         var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
 
@@ -122,5 +96,21 @@ public sealed class SwShFlagworkSaveWorkflowServiceTests
             workflow.Diagnostics,
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
                 && diagnostic.Domain == "workflow.flagworkSave");
+    }
+
+    private static void WriteFlagworkTables(TemporarySwShProject temp)
+    {
+        temp.WriteBaseRomFsFile(
+            "bin/flagwork/system_flags.tbl",
+            new SwShAhtbFile(
+            [
+                new SwShAhtbEntry(0x1122334455667788, "FE_TEST_FLAG"),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/flagwork/scene_work.tbl",
+            new SwShAhtbFile(
+            [
+                new SwShAhtbEntry(0x99AABBCCDDEEFF00, "WK_SCENE_MAIN"),
+            ]).Write());
     }
 }
