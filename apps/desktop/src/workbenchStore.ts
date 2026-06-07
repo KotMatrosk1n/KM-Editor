@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import {
   type ApiDiagnostic,
+  type ApplyResult,
   type ChangePlan,
   type EditSession,
   type ItemsWorkflow,
@@ -27,6 +28,7 @@ export type OpenProjectState = {
 
 type WorkbenchState = {
   activeSection: WorkbenchSection;
+  applyResult: ApplyResult | null;
   changePlan: ChangePlan | null;
   draftPaths: ProjectPathDraft;
   editSession: EditSession | null;
@@ -39,6 +41,7 @@ type WorkbenchState = {
   workflows: WorkflowSummary[];
   setDraftPath: (field: keyof ProjectPathDraft, value: string) => void;
   setActiveSection: (activeSection: WorkbenchSection) => void;
+  setApplyResult: (applyResult: ApplyResult | null) => void;
   setChangePlan: (changePlan: ChangePlan | null) => void;
   setEditSession: (editSession: EditSession | null) => void;
   setEditValidationDiagnostics: (diagnostics: ApiDiagnostic[]) => void;
@@ -53,6 +56,7 @@ type WorkbenchState = {
 
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   activeSection: 'health',
+  applyResult: null,
   changePlan: null,
   draftPaths: {
     baseExeFsPath: '',
@@ -68,6 +72,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedItemId: null,
   workflows: [],
   setActiveSection: (activeSection) => set({ activeSection }),
+  setApplyResult: (applyResult) => set({ applyResult }),
   setChangePlan: (changePlan) => set({ changePlan }),
   setDraftPath: (field, value) =>
     set((state) => ({
@@ -76,7 +81,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         [field]: value
       }
     })),
-  setEditSession: (editSession) => set({ changePlan: null, editSession }),
+  setEditSession: (editSession) => set({ applyResult: null, changePlan: null, editSession }),
   setEditValidationDiagnostics: (editValidationDiagnostics) => set({ editValidationDiagnostics }),
   setItemsWorkflow: (itemsWorkflow) =>
     set((state) => {
@@ -88,6 +93,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: 'items',
+        applyResult: null,
         changePlan: null,
         editSession: null,
         editValidationDiagnostics: [],
@@ -99,6 +105,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setItemSearchText: (itemSearchText) => set({ itemSearchText }),
   setOpenProject: (openProject) =>
     set({
+      applyResult: null,
       changePlan: null,
       editSession: null,
       editValidationDiagnostics: [],

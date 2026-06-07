@@ -18,6 +18,7 @@ import {
 import { useEffect, useState } from 'react';
 import {
   type ApiDiagnostic,
+  type ApplyResult,
   type ChangePlan,
   type EditSession,
   type ItemsWorkflow,
@@ -104,6 +105,7 @@ const pathStatusLabels = {
 
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
+  const applyResult = useWorkbenchStore((state) => state.applyResult);
   const changePlan = useWorkbenchStore((state) => state.changePlan);
   const draftPaths = useWorkbenchStore((state) => state.draftPaths);
   const editSession = useWorkbenchStore((state) => state.editSession);
@@ -115,6 +117,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
   const workflows = useWorkbenchStore((state) => state.workflows);
   const setActiveSection = useWorkbenchStore((state) => state.setActiveSection);
+  const setApplyResult = useWorkbenchStore((state) => state.setApplyResult);
   const setChangePlan = useWorkbenchStore((state) => state.setChangePlan);
   const setDraftPath = useWorkbenchStore((state) => state.setDraftPath);
   const setEditSession = useWorkbenchStore((state) => state.setEditSession);
@@ -135,6 +138,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isEditStarting, setIsEditStarting] = useState(false);
   const [isItemsLoading, setIsItemsLoading] = useState(false);
   const [isItemUpdating, setIsItemUpdating] = useState(false);
+  const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
   const pendingEditCount = editSession?.pendingEdits.length ?? 0;
@@ -256,6 +260,7 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
     setIsChangePlanCreating(true);
     setBridgeDiagnostics([]);
     setChangePlan(null);
+    setApplyResult(null);
 
     try {
       const response = await bridge.createChangePlan({
@@ -267,6 +272,38 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsChangePlanCreating(false);
+    }
+  };
+
+  const handleApplyChangePlan = async () => {
+    if (!editSession || !changePlan) {
+      return;
+    }
+
+    setIsChangePlanApplying(true);
+    setBridgeDiagnostics([]);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.applyChangePlan({
+        changePlan,
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      const hasApplyErrors = response.applyResult.diagnostics.some(
+        (diagnostic) => diagnostic.severity === 'error'
+      );
+
+      if (!hasApplyErrors) {
+        setEditSession(null);
+        setChangePlan(null);
+      }
+
+      setApplyResult(response.applyResult);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsChangePlanApplying(false);
     }
   };
 
@@ -375,11 +412,14 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
           ) : null}
           {activeSection === 'changes' ? (
             <ChangesSection
+              applyResult={applyResult}
               changePlan={changePlan}
               diagnostics={editValidationDiagnostics}
               editSession={editSession}
+              isChangePlanApplying={isChangePlanApplying}
               isChangePlanCreating={isChangePlanCreating}
               isSessionValidating={isSessionValidating}
+              onApplyChangePlan={handleApplyChangePlan}
               onCreateChangePlan={handleCreateChangePlan}
               onValidateEditSession={handleValidateEditSession}
             />
@@ -756,24 +796,34 @@ function SelectedItemPanel({
 }
 
 function ChangesSection({
+  applyResult,
   changePlan,
   diagnostics,
   editSession,
+  isChangePlanApplying,
   isChangePlanCreating,
   isSessionValidating,
+  onApplyChangePlan,
   onCreateChangePlan,
   onValidateEditSession
 }: {
+  applyResult: ApplyResult | null;
   changePlan: ChangePlan | null;
   diagnostics: ApiDiagnostic[];
   editSession: EditSession | null;
+  isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
   isSessionValidating: boolean;
+  onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
   onValidateEditSession: () => void;
 }) {
   const pendingEdits = editSession?.pendingEdits ?? [];
-  const combinedDiagnostics = [...diagnostics, ...(changePlan?.diagnostics ?? [])];
+  const combinedDiagnostics = [
+    ...diagnostics,
+    ...(changePlan?.diagnostics ?? []),
+    ...(applyResult?.diagnostics ?? [])
+  ];
 
   return (
     <>
@@ -786,6 +836,7 @@ function ChangesSection({
         <div className="changes-summary">
           <Metric label="Pending changes" value={pendingEdits.length.toString()} />
           <Metric label="Target files" value={(changePlan?.writes.length ?? 0).toString()} />
+          <Metric label="Written files" value={(applyResult?.writtenFiles.length ?? 0).toString()} />
           <button
             className="secondary-button"
             disabled={pendingEdits.length === 0 || isSessionValidating}
@@ -820,13 +871,30 @@ function ChangesSection({
         )}
       </section>
 
-      {changePlan ? <ChangePlanSection changePlan={changePlan} /> : null}
+      {changePlan ? (
+        <ChangePlanSection
+          changePlan={changePlan}
+          isApplying={isChangePlanApplying}
+          onApplyChangePlan={onApplyChangePlan}
+        />
+      ) : null}
+      {applyResult ? <ApplyResultSection applyResult={applyResult} /> : null}
       <DiagnosticsSection diagnostics={combinedDiagnostics} />
     </>
   );
 }
 
-function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
+function ChangePlanSection({
+  changePlan,
+  isApplying,
+  onApplyChangePlan
+}: {
+  changePlan: ChangePlan;
+  isApplying: boolean;
+  onApplyChangePlan: () => void;
+}) {
+  const canApply = changePlan.canApply && changePlan.writes.length > 0;
+
   return (
     <section aria-labelledby="change-plan-heading" className="panel wide-panel">
       <div className="panel-heading">
@@ -837,6 +905,15 @@ function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
       <div className="change-plan-status">
         <Metric label="Plan status" value={changePlan.canApply ? 'Ready' : 'Needs fixes'} />
         <Metric label="Session" value={changePlan.sessionId} />
+        <button
+          className="primary-button"
+          disabled={!canApply || isApplying}
+          onClick={onApplyChangePlan}
+          type="button"
+        >
+          <Save aria-hidden="true" size={18} />
+          <span>{isApplying ? 'Applying' : 'Apply Plan'}</span>
+        </button>
       </div>
 
       {changePlan.writes.length > 0 ? (
@@ -866,6 +943,32 @@ function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
         </ul>
       ) : (
         <p className="empty-copy">No target files in this plan.</p>
+      )}
+    </section>
+  );
+}
+
+function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }) {
+  return (
+    <section aria-labelledby="apply-result-heading" className="panel wide-panel">
+      <div className="panel-heading">
+        <CheckCircle aria-hidden="true" size={18} />
+        <h2 id="apply-result-heading">Apply Result</h2>
+      </div>
+
+      <div className="change-plan-status">
+        <Metric label="Apply ID" value={applyResult.applyId} />
+        <Metric label="Written files" value={applyResult.writtenFiles.length.toString()} />
+      </div>
+
+      {applyResult.writtenFiles.length > 0 ? (
+        <ul className="written-file-list">
+          {applyResult.writtenFiles.map((writtenFile) => (
+            <li key={writtenFile}>{writtenFile}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="empty-copy">No files were written.</p>
       )}
     </section>
   );

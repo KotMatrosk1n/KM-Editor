@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Diagnostics;
+using KM.Core.Editing;
 using KM.Core.Files;
 using KM.SwSh.Items;
 using Xunit;
@@ -86,6 +87,42 @@ public sealed class SwShItemsEditSessionServiceTests
         var write = Assert.Single(service.CreateChangePlan(temp.Paths, editResult.Session).Writes);
 
         Assert.True(write.ReplacesExistingOutput);
+    }
+
+    [Fact]
+    public void ApplyChangePlanWritesItemsReadModelToOutputRoot()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+        var editResult = service.UpdateBuyPrice(temp.Paths, session: null, itemId: 1, buyPrice: 450);
+        var changePlan = service.CreateChangePlan(temp.Paths, editResult.Session);
+
+        var applyResult = service.ApplyChangePlan(temp.Paths, editResult.Session, changePlan);
+
+        var writtenFile = Assert.Single(applyResult.WrittenFiles);
+        Assert.Equal(ProjectFileLayer.Generated, writtenFile.Layer);
+        Assert.Equal(SwShItemsWorkflowService.ItemsReadModelPath, writtenFile.RelativePath);
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "kmeditor", "items.readmodel.json");
+        Assert.True(File.Exists(outputPath));
+        Assert.Contains("\"buyPrice\": 450", File.ReadAllText(outputPath));
+        Assert.DoesNotContain(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ApplyChangePlanRejectsStaleReviewedTargets()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+        var editResult = service.UpdateBuyPrice(temp.Paths, session: null, itemId: 1, buyPrice: 450);
+        var changePlan = service.CreateChangePlan(temp.Paths, editResult.Session);
+        var staleWrite = Assert.Single(changePlan.Writes) with { TargetRelativePath = "romfs/kmeditor/stale.json" };
+        var stalePlan = new ChangePlan(changePlan.SessionId, [staleWrite], changePlan.Diagnostics);
+
+        var applyResult = service.ApplyChangePlan(temp.Paths, editResult.Session, stalePlan);
+
+        Assert.Empty(applyResult.WrittenFiles);
+        Assert.Contains(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "kmeditor", "items.readmodel.json")));
     }
 
     [Fact]

@@ -6,6 +6,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Text.Json;
 
 namespace KM.SwSh.Items;
 
@@ -15,6 +16,11 @@ public sealed class SwShItemsEditSessionService
 
     private const string ItemsEditDomain = "workflow.items";
     private const int MaximumBuyPrice = 999_999;
+
+    private static readonly JsonSerializerOptions WriteModelJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+    };
 
     private readonly SwShItemsWorkflowService itemsWorkflowService;
     private readonly ProjectWorkspaceService projectWorkspaceService;
@@ -146,6 +152,64 @@ public sealed class SwShItemsEditSessionService
         return new ChangePlan(session.Id, writes, diagnostics);
     }
 
+    public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(reviewedPlan);
+
+        var applyId = Guid.NewGuid().ToString("N");
+        var appliedAt = DateTimeOffset.UtcNow;
+        var currentPlan = CreateChangePlan(paths, session);
+        var diagnostics = currentPlan.Diagnostics.ToList();
+        var writtenFiles = new List<ProjectFileReference>();
+
+        // The reviewed plan is treated as an approval token only; target paths still come from the current backend plan.
+        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Reviewed change plan is stale. Review the change plan again before applying.",
+                expected: "Current reviewed Items change plan"));
+        }
+
+        var targetPath = ResolveOutputPath(paths.OutputRootPath, SwShItemsWorkflowService.ItemsReadModelPath, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) || targetPath is null)
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+
+        var project = projectWorkspaceService.Open(paths);
+        var workflow = OverlayPendingEdits(itemsWorkflowService.Load(project), session.PendingEdits);
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+            using var stream = File.Create(targetPath);
+            JsonSerializer.Serialize(stream, ToWriteModel(workflow), WriteModelJsonOptions);
+            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShItemsWorkflowService.ItemsReadModelPath));
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Applied Items change plan to the configured output root."));
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Items output file could not be written: {exception.Message}",
+                expected: "Writable output root"));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Items output file could not be written: {exception.Message}",
+                expected: "Writable output root"));
+        }
+
+        return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+    }
+
     private static bool CanEditItems(
         OpenedProject project,
         SwShItemsWorkflow workflow,
@@ -226,6 +290,25 @@ public sealed class SwShItemsEditSessionService
         return workflow with { Items = items };
     }
 
+    private static SwShItemsWorkflow OverlayPendingEdits(
+        SwShItemsWorkflow workflow,
+        IEnumerable<PendingEdit> edits)
+    {
+        var updatedWorkflow = workflow;
+
+        foreach (var edit in edits)
+        {
+            if (string.Equals(edit.Field, BuyPriceField, StringComparison.Ordinal)
+                && int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
+                && int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var buyPrice))
+            {
+                updatedWorkflow = OverlayPendingBuyPrice(updatedWorkflow, itemId, buyPrice);
+            }
+        }
+
+        return updatedWorkflow;
+    }
+
     private static PlannedFileWrite CreatePlannedWrite(ProjectPaths paths, PendingEdit edit)
     {
         var targetRelativePath = SwShItemsWorkflowService.ItemsReadModelPath;
@@ -250,6 +333,100 @@ public sealed class SwShItemsEditSessionService
             relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
+    private static string? ResolveOutputPath(
+        string? outputRootPath,
+        string targetRelativePath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (string.IsNullOrWhiteSpace(outputRootPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Items apply requires a configured output root.",
+                expected: "Valid output root"));
+            return null;
+        }
+
+        if (Path.IsPathRooted(targetRelativePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Items apply target must be relative to the output root.",
+                expected: "Relative output target"));
+            return null;
+        }
+
+        var outputRoot = Path.GetFullPath(outputRootPath);
+        var targetPath = Path.GetFullPath(Path.Combine(
+            outputRoot,
+            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var outputRootWithSeparator = outputRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? outputRoot
+            : outputRoot + Path.DirectorySeparatorChar;
+
+        if (!targetPath.StartsWith(outputRootWithSeparator, StringComparison.OrdinalIgnoreCase))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Items apply target must stay inside the configured output root.",
+                expected: "Output-root-contained target"));
+            return null;
+        }
+
+        return targetPath;
+    }
+
+    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
+    {
+        if (!reviewedPlan.CanApply
+            || reviewedPlan.SessionId != currentPlan.SessionId
+            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
+        {
+            return false;
+        }
+
+        var reviewedTargets = reviewedPlan.Writes
+            .Select(write => write.TargetRelativePath)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var currentTargets = currentPlan.Writes
+            .Select(write => write.TargetRelativePath)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
+    }
+
+    private static ApplyResult CreateApplyResult(
+        string applyId,
+        DateTimeOffset appliedAt,
+        ChangePlan currentPlan,
+        IReadOnlyList<ProjectFileReference> writtenFiles,
+        IReadOnlyList<ValidationDiagnostic> diagnostics)
+    {
+        return new ApplyResult(
+            applyId,
+            appliedAt,
+            writtenFiles,
+            new WriteManifest(applyId, appliedAt, currentPlan.Writes),
+            diagnostics);
+    }
+
+    private static ItemsWriteModel ToWriteModel(SwShItemsWorkflow workflow)
+    {
+        return new ItemsWriteModel(
+            SchemaVersion: 1,
+            workflow.Items
+                .OrderBy(item => item.ItemId)
+                .Select(item => new ItemsWriteModelRecord(
+                    item.ItemId,
+                    item.Name,
+                    item.Category,
+                    item.BuyPrice,
+                    item.SellPrice))
+                .ToArray());
+    }
+
     private static ValidationDiagnostic CreateBuyPriceRangeDiagnostic()
     {
         return CreateDiagnostic(
@@ -272,4 +449,15 @@ public sealed class SwShItemsEditSessionService
             Field: field,
             Expected: expected);
     }
+
+    private sealed record ItemsWriteModel(
+        int SchemaVersion,
+        IReadOnlyList<ItemsWriteModelRecord> Items);
+
+    private sealed record ItemsWriteModelRecord(
+        int ItemId,
+        string Name,
+        string Category,
+        int BuyPrice,
+        int SellPrice);
 }

@@ -268,6 +268,59 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchApplyChangePlanReturnsWrittenFiles()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/items.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "items": [
+                {
+                  "itemId": 1,
+                  "name": "Potion",
+                  "category": "Medicine",
+                  "buyPrice": 300,
+                  "sellPrice": 150
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var sessionResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateItemBuyPrice,
+            new UpdateItemBuyPriceRequest(temp.Paths, Session: null, ItemId: 1, BuyPrice: 450),
+            requestId: "request-items-edit"));
+        var sessionResponse = DeserializeResponse<UpdateItemBuyPriceResponse>(sessionResponseJson);
+        Assert.NotNull(sessionResponse.Payload);
+        var planResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, sessionResponse.Payload.Session),
+            requestId: "request-change-plan"));
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(planResponseJson);
+        Assert.NotNull(planResponse.Payload);
+        var requestJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, sessionResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-change-plan-apply");
+
+        var responseJson = dispatcher.Dispatch(requestJson);
+        var response = DeserializeResponse<ApplyChangePlanResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-change-plan-apply", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Equal("romfs/kmeditor/items.readmodel.json", Assert.Single(response.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "kmeditor", "items.readmodel.json");
+        Assert.Contains("\"buyPrice\": 450", File.ReadAllText(outputPath));
+        Assert.DoesNotContain(
+            response.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public void DispatchUnsupportedCommandReturnsBridgeError()
     {
         var requestJson = JsonSerializer.Serialize(
