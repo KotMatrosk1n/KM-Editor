@@ -512,8 +512,8 @@ h2 {
 .items-row {
   display: grid;
   grid-template-columns:
-    72px minmax(140px, 1.2fr) minmax(110px, 0.9fr) 76px 76px
-    minmax(96px, 0.8fr);
+    64px minmax(140px, 1.2fr) minmax(110px, 0.9fr) 72px 72px
+    72px 72px minmax(96px, 0.8fr);
   gap: 10px;
   align-items: center;
   min-width: 0;
@@ -609,6 +609,11 @@ h2 {
 }
 
 .item-price-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.item-price-editor-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
@@ -803,11 +808,13 @@ h2 {
 
   .items-row span:nth-child(4),
   .items-row span:nth-child(5),
-  .items-row span:nth-child(6) {
+  .items-row span:nth-child(6),
+  .items-row span:nth-child(7),
+  .items-row span:nth-child(8) {
     display: none;
   }
 
-  .item-price-editor {
+  .item-price-editor-row {
     grid-template-columns: 1fr;
   }
 }

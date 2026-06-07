@@ -4,9 +4,9 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
 using KM.SwSh.Workflows;
 using System.Globalization;
-using System.Text.Json;
 
 namespace KM.SwSh.Items;
 
@@ -14,13 +14,10 @@ public sealed class SwShItemsEditSessionService
 {
     public const string BuyPriceField = SwShItemsWorkflowService.BuyPriceField;
     public const string SellPriceField = SwShItemsWorkflowService.SellPriceField;
+    public const string WattsPriceField = SwShItemsWorkflowService.WattsPriceField;
+    public const string AlternatePriceField = SwShItemsWorkflowService.AlternatePriceField;
 
     private const string ItemsEditDomain = "workflow.items";
-
-    private static readonly JsonSerializerOptions WriteModelJsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true,
-    };
 
     private readonly SwShItemsWorkflowService itemsWorkflowService;
     private readonly ProjectWorkspaceService projectWorkspaceService;
@@ -118,7 +115,6 @@ public sealed class SwShItemsEditSessionService
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
-        // Plan review reuses edit-session validation so invalid pending edits cannot produce write targets.
         var validation = Validate(paths, session);
         var diagnostics = validation.Diagnostics.ToList();
 
@@ -158,7 +154,6 @@ public sealed class SwShItemsEditSessionService
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
-        // The reviewed plan is treated as an approval token only; target paths still come from the current backend plan.
         if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -167,24 +162,51 @@ public sealed class SwShItemsEditSessionService
                 expected: "Current reviewed Items change plan"));
         }
 
-        var targetPath = ResolveOutputPath(paths.OutputRootPath, SwShItemsWorkflowService.ItemsReadModelPath, diagnostics);
+        var targetPath = ResolveOutputPath(paths, SwShItemsWorkflowService.ItemDataPath, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) || targetPath is null)
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = OverlayPendingEdits(itemsWorkflowService.Load(project), session.PendingEdits);
+        var itemDataSource = SwShItemsWorkflowService.ResolveItemDataSource(project);
+        if (itemDataSource is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Items apply could not resolve the source item table.",
+                expected: SwShItemsWorkflowService.ItemDataPath));
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
 
         try
         {
+            var itemTable = SwShItemTable.Parse(File.ReadAllBytes(itemDataSource.AbsolutePath));
+            var itemTableEdits = session.PendingEdits
+                .Select(edit => ToItemTableEdit(edit, diagnostics))
+                .Where(edit => edit is not null)
+                .Select(edit => edit!)
+                .ToArray();
+
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+            }
+
+            var output = itemTable.WriteEdits(itemTableEdits);
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-            using var stream = File.Create(targetPath);
-            JsonSerializer.Serialize(stream, ToWriteModel(workflow), WriteModelJsonOptions);
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShItemsWorkflowService.ItemsReadModelPath));
+            File.WriteAllBytes(targetPath, output);
+            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShItemsWorkflowService.ItemDataPath));
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                "Applied Items change plan to the configured output root."));
+                "Applied Items change plan to the configured LayeredFS output root."));
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Items source file could not be decoded: {exception.Message}",
+                expected: "Sword/Shield item.dat"));
         }
         catch (IOException exception)
         {
@@ -264,123 +286,146 @@ public sealed class SwShItemsEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
-
-        var priceField = GetPriceField(normalizedField);
-        if (priceField is null)
+        var itemField = GetEditableField(normalizedField);
+        if (itemField is null)
         {
             diagnostics.Add(CreateUnsupportedFieldDiagnostic(normalizedField));
             return null;
         }
 
-        if (!TryParseItemPrice(value, priceField.MaximumValue, out var itemPrice))
+        if (!TryParseItemValue(value, itemField.MaximumValue, out var itemValue))
         {
-            diagnostics.Add(CreateItemPriceRangeDiagnostic(priceField));
+            diagnostics.Add(CreateItemValueRangeDiagnostic(itemField));
             return null;
         }
 
         return new PendingEdit(
             ItemsEditDomain,
-            $"Set {selectedItem.Name} {priceField.DisplayName} to {itemPrice}.",
+            CreatePendingEditSummary(selectedItem, itemField, itemValue),
             [new ProjectFileReference(selectedItem.Provenance.SourceLayer, selectedItem.Provenance.SourceFile)],
             RecordId: selectedItem.ItemId.ToString(CultureInfo.InvariantCulture),
-            Field: priceField.Field,
-            NewValue: itemPrice.ToString(CultureInfo.InvariantCulture));
+            Field: itemField.Field,
+            NewValue: itemValue.ToString(CultureInfo.InvariantCulture));
     }
 
     private static int? TryParsePendingEditValue(
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var priceField = GetPriceField(edit.Field);
-        if (priceField is null)
+        var itemField = GetEditableField(edit.Field);
+        if (itemField is null)
         {
             diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
             return null;
         }
 
-        if (!TryParseItemPrice(edit.NewValue, priceField.MaximumValue, out var itemPrice))
+        if (!TryParseItemValue(edit.NewValue, itemField.MaximumValue, out var itemValue))
         {
-            diagnostics.Add(CreateItemPriceRangeDiagnostic(priceField));
+            diagnostics.Add(CreateItemValueRangeDiagnostic(itemField));
             return null;
         }
 
-        return itemPrice;
+        return itemValue;
     }
 
-    private static bool TryParseItemPrice(string? value, int maximumValue, out int itemPrice)
+    private static bool TryParseItemValue(string? value, int maximumValue, out int itemValue)
     {
-        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out itemPrice)
-            && itemPrice >= 0
-            && itemPrice <= maximumValue;
+        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out itemValue)
+            && itemValue >= 0
+            && itemValue <= maximumValue;
     }
 
-    private static ItemPriceField? GetPriceField(string? field)
+    private static ItemField? GetEditableField(string? field)
     {
         return field switch
         {
-            BuyPriceField => new ItemPriceField(BuyPriceField, "buy price", SwShItemsWorkflowService.MaximumBuyPrice),
-            SellPriceField => new ItemPriceField(SellPriceField, "sell price", SwShItemsWorkflowService.MaximumSellPrice),
+            BuyPriceField => new ItemField(
+                BuyPriceField,
+                "buy price",
+                SwShItemsWorkflowService.MaximumBuyPrice,
+                SwShItemTableField.BuyPrice,
+                ActualValueMultiplier: 1),
+            SellPriceField => new ItemField(
+                SellPriceField,
+                "sell price",
+                SwShItemsWorkflowService.MaximumSellPrice,
+                SwShItemTableField.BuyPrice,
+                ActualValueMultiplier: 2),
+            WattsPriceField => new ItemField(
+                WattsPriceField,
+                "Watts price",
+                SwShItemsWorkflowService.MaximumWattsPrice,
+                SwShItemTableField.WattsPrice,
+                ActualValueMultiplier: 1),
+            AlternatePriceField => new ItemField(
+                AlternatePriceField,
+                "alternate price",
+                SwShItemsWorkflowService.MaximumAlternatePrice,
+                SwShItemTableField.AlternatePrice,
+                ActualValueMultiplier: 1),
             _ => null,
         };
     }
 
     private static EditSession ReplacePendingItemEdit(EditSession session, PendingEdit pendingEdit)
     {
-        // Keep one draft per item field so repeated inspector saves update the pending change.
         var pendingEdits = session.PendingEdits
-            .Where(edit => !IsSameItemFieldEdit(edit, pendingEdit))
+            .Where(edit => !IsSameItemTableFieldEdit(edit, pendingEdit))
             .Append(pendingEdit)
             .ToArray();
 
         return session with { PendingEdits = pendingEdits };
     }
 
-    private static bool IsSameItemFieldEdit(PendingEdit candidate, PendingEdit pendingEdit)
+    private static bool IsSameItemTableFieldEdit(PendingEdit candidate, PendingEdit pendingEdit)
     {
+        var candidateField = GetEditableField(candidate.Field);
+        var pendingField = GetEditableField(pendingEdit.Field);
+
         return string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal)
             && string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
-            && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal);
+            && candidateField is not null
+            && pendingField is not null
+            && candidateField.TableField == pendingField.TableField;
     }
 
     private static SwShItemsWorkflow OverlayPendingEdit(
         SwShItemsWorkflow workflow,
         PendingEdit edit)
     {
-        var priceField = GetPriceField(edit.Field);
+        var itemField = GetEditableField(edit.Field);
         if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
-            || priceField is null
-            || !TryParseItemPrice(edit.NewValue, priceField.MaximumValue, out var itemPrice))
+            || itemField is null
+            || !TryParseItemValue(edit.NewValue, itemField.MaximumValue, out var itemValue))
         {
             return workflow;
         }
 
-        return priceField.Field switch
+        return itemField.Field switch
         {
-            BuyPriceField => OverlayPendingBuyPrice(workflow, itemId, itemPrice),
-            SellPriceField => OverlayPendingSellPrice(workflow, itemId, itemPrice),
+            BuyPriceField => OverlayItem(workflow, itemId, item => item with
+            {
+                BuyPrice = itemValue,
+                SellPrice = itemValue / 2,
+            }),
+            SellPriceField => OverlayItem(workflow, itemId, item => item with
+            {
+                BuyPrice = itemValue * itemField.ActualValueMultiplier,
+                SellPrice = itemValue,
+            }),
+            WattsPriceField => OverlayItem(workflow, itemId, item => item with { WattsPrice = itemValue }),
+            AlternatePriceField => OverlayItem(workflow, itemId, item => item with { AlternatePrice = itemValue }),
             _ => workflow,
         };
     }
 
-    private static SwShItemsWorkflow OverlayPendingBuyPrice(
+    private static SwShItemsWorkflow OverlayItem(
         SwShItemsWorkflow workflow,
         int itemId,
-        int buyPrice)
+        Func<SwShItemRecord, SwShItemRecord> update)
     {
         var items = workflow.Items
-            .Select(item => item.ItemId == itemId ? item with { BuyPrice = buyPrice } : item)
-            .ToArray();
-
-        return workflow with { Items = items };
-    }
-
-    private static SwShItemsWorkflow OverlayPendingSellPrice(
-        SwShItemsWorkflow workflow,
-        int itemId,
-        int sellPrice)
-    {
-        var items = workflow.Items
-            .Select(item => item.ItemId == itemId ? item with { SellPrice = sellPrice } : item)
+            .Select(item => item.ItemId == itemId ? update(item) : item)
             .ToArray();
 
         return workflow with { Items = items };
@@ -402,8 +447,8 @@ public sealed class SwShItemsEditSessionService
 
     private static PlannedFileWrite CreatePlannedWrite(ProjectPaths paths, IReadOnlyList<PendingEdit> edits)
     {
-        var targetRelativePath = SwShItemsWorkflowService.ItemsReadModelPath;
-        var targetPath = CombineGraphPath(paths.OutputRootPath, targetRelativePath);
+        var targetRelativePath = SwShItemsWorkflowService.ItemDataPath;
+        var targetPath = SwShItemsWorkflowService.ResolveOutputPath(paths, targetRelativePath);
         var sources = edits
             .SelectMany(edit => edit.Sources)
             .Distinct()
@@ -419,24 +464,12 @@ public sealed class SwShItemsEditSessionService
             reason);
     }
 
-    private static string? CombineGraphPath(string? rootPath, string relativePath)
-    {
-        if (string.IsNullOrWhiteSpace(rootPath))
-        {
-            return null;
-        }
-
-        return Path.Combine(
-            rootPath,
-            relativePath.Replace('/', Path.DirectorySeparatorChar));
-    }
-
     private static string? ResolveOutputPath(
-        string? outputRootPath,
+        ProjectPaths paths,
         string targetRelativePath,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (string.IsNullOrWhiteSpace(outputRootPath))
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -454,24 +487,44 @@ public sealed class SwShItemsEditSessionService
             return null;
         }
 
-        var outputRoot = Path.GetFullPath(outputRootPath);
-        var targetPath = Path.GetFullPath(Path.Combine(
-            outputRoot,
-            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
-        var outputRootWithSeparator = outputRoot.EndsWith(Path.DirectorySeparatorChar)
-            ? outputRoot
-            : outputRoot + Path.DirectorySeparatorChar;
-
-        if (!targetPath.StartsWith(outputRootWithSeparator, StringComparison.OrdinalIgnoreCase))
+        var targetPath = SwShItemsWorkflowService.ResolveOutputPath(paths, targetRelativePath);
+        if (targetPath is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Items apply target must stay inside the configured output root.",
                 expected: "Output-root-contained target"));
-            return null;
         }
 
         return targetPath;
+    }
+
+    private static SwShItemTableEdit? ToItemTableEdit(
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var itemField = GetEditableField(edit.Field);
+        var itemValue = TryParsePendingEditValue(edit, diagnostics);
+
+        if (itemField is null || itemValue is null)
+        {
+            return null;
+        }
+
+        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending item edit does not include a valid item ID.",
+                field: "itemId",
+                expected: "Existing item record"));
+            return null;
+        }
+
+        return new SwShItemTableEdit(
+            itemId,
+            itemField.TableField,
+            checked((uint)(itemValue.Value * itemField.ActualValueMultiplier)));
     }
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
@@ -510,28 +563,28 @@ public sealed class SwShItemsEditSessionService
             diagnostics);
     }
 
-    private static ItemsWriteModel ToWriteModel(SwShItemsWorkflow workflow)
+    private static string CreatePendingEditSummary(
+        SwShItemRecord item,
+        ItemField itemField,
+        int itemValue)
     {
-        return new ItemsWriteModel(
-            SchemaVersion: 1,
-            workflow.Items
-                .OrderBy(item => item.ItemId)
-                .Select(item => new ItemsWriteModelRecord(
-                    item.ItemId,
-                    item.Name,
-                    item.Category,
-                    item.BuyPrice,
-                    item.SellPrice))
-                .ToArray());
+        var sharedRowSuffix = item.SharedItemIds.Count > 1
+            ? $" Shared row also affects item IDs {string.Join(", ", item.SharedItemIds.Where(id => id != item.ItemId))}."
+            : string.Empty;
+        var derivedSuffix = itemField.Field == SellPriceField
+            ? $" Stored buy price will become {itemValue * itemField.ActualValueMultiplier}."
+            : string.Empty;
+
+        return $"Set {item.Name} {itemField.DisplayName} to {itemValue}.{derivedSuffix}{sharedRowSuffix}";
     }
 
-    private static ValidationDiagnostic CreateItemPriceRangeDiagnostic(ItemPriceField priceField)
+    private static ValidationDiagnostic CreateItemValueRangeDiagnostic(ItemField itemField)
     {
         return CreateDiagnostic(
             DiagnosticSeverity.Error,
-            $"Item {priceField.DisplayName} must be between 0 and {priceField.MaximumValue}.",
-            field: priceField.Field,
-            expected: $"Safe item {priceField.DisplayName}");
+            $"Item {itemField.DisplayName} must be between 0 and {itemField.MaximumValue}.",
+            field: itemField.Field,
+            expected: $"Safe item {itemField.DisplayName}");
     }
 
     private static ValidationDiagnostic CreateUnsupportedFieldDiagnostic(string field)
@@ -540,7 +593,7 @@ public sealed class SwShItemsEditSessionService
             DiagnosticSeverity.Error,
             $"Item field '{field}' is not supported by the Items workflow yet.",
             field: "field",
-            expected: $"{BuyPriceField} or {SellPriceField}");
+            expected: $"{BuyPriceField}, {SellPriceField}, {WattsPriceField}, or {AlternatePriceField}");
     }
 
     private static ValidationDiagnostic CreateDiagnostic(
@@ -557,19 +610,10 @@ public sealed class SwShItemsEditSessionService
             Expected: expected);
     }
 
-    private sealed record ItemsWriteModel(
-        int SchemaVersion,
-        IReadOnlyList<ItemsWriteModelRecord> Items);
-
-    private sealed record ItemsWriteModelRecord(
-        int ItemId,
-        string Name,
-        string Category,
-        int BuyPrice,
-        int SellPrice);
-
-    private sealed record ItemPriceField(
+    private sealed record ItemField(
         string Field,
         string DisplayName,
-        int MaximumValue);
+        int MaximumValue,
+        SwShItemTableField TableField,
+        int ActualValueMultiplier);
 }

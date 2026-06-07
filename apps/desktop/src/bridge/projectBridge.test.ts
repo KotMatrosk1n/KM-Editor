@@ -677,6 +677,20 @@ describe('projectBridge', () => {
               {
                 field: 'sellPrice',
                 label: 'Sell price',
+                maximumValue: 499999,
+                minimumValue: 0,
+                valueKind: 'integer'
+              },
+              {
+                field: 'wattsPrice',
+                label: 'Watts price',
+                maximumValue: 999999,
+                minimumValue: 0,
+                valueKind: 'integer'
+              },
+              {
+                field: 'alternatePrice',
+                label: 'Alternate price',
                 maximumValue: 999999,
                 minimumValue: 0,
                 valueKind: 'integer'
@@ -684,20 +698,23 @@ describe('projectBridge', () => {
             ],
             items: [
               {
+                alternatePrice: 3,
                 buyPrice: 300,
                 category: 'Medicine',
                 itemId: 1,
                 name: 'Potion',
                 provenance: {
                   fileState: 'baseOnly',
-                  sourceFile: 'romfs/kmeditor/items.readmodel.json',
+                  sourceFile: 'romfs/bin/pml/item/item.dat',
                   sourceLayer: 'base'
                 },
-                sellPrice: 150
+                sellPrice: 150,
+                sharedItemIds: [1],
+                wattsPrice: 15
               }
             ],
             stats: {
-              sourceFileCount: 1,
+              sourceFileCount: 2,
               totalItemCount: 1
             },
             summary: {
@@ -736,7 +753,7 @@ describe('projectBridge', () => {
     expect(workflows.workflows[8]?.id).toBe('exefsPatches');
     expect(workflows.workflows[9]?.id).toBe('royalCandy');
     expect(workflows.workflows[10]?.id).toBe('spreadsheetImport');
-    expect(items.workflow.editableFields).toHaveLength(2);
+    expect(items.workflow.editableFields).toHaveLength(4);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(text.workflow.entries[0]?.label).toBe('Greeting');
     expect(trainers.workflow.trainers[0]?.name).toBe('Avery');
@@ -763,7 +780,7 @@ describe('projectBridge', () => {
           sources: [
             {
               layer: 'base',
-              relativePath: 'romfs/kmeditor/items.readmodel.json'
+              relativePath: 'romfs/bin/pml/item/item.dat'
             }
           ],
           summary: 'Set Potion buy price to 450.'
@@ -807,6 +824,20 @@ describe('projectBridge', () => {
                 {
                   field: 'sellPrice',
                   label: 'Sell price',
+                  maximumValue: 499999,
+                  minimumValue: 0,
+                  valueKind: 'integer'
+                },
+                {
+                  field: 'wattsPrice',
+                  label: 'Watts price',
+                  maximumValue: 999999,
+                  minimumValue: 0,
+                  valueKind: 'integer'
+                },
+                {
+                  field: 'alternatePrice',
+                  label: 'Alternate price',
                   maximumValue: 999999,
                   minimumValue: 0,
                   valueKind: 'integer'
@@ -814,20 +845,23 @@ describe('projectBridge', () => {
               ],
               items: [
                 {
+                  alternatePrice: 3,
                   buyPrice: 450,
                   category: 'Medicine',
                   itemId: 1,
                   name: 'Potion',
                   provenance: {
                     fileState: 'baseOnly',
-                    sourceFile: 'romfs/kmeditor/items.readmodel.json',
+                    sourceFile: 'romfs/bin/pml/item/item.dat',
                     sourceLayer: 'base'
                   },
-                  sellPrice: 150
+                  sellPrice: 225,
+                  sharedItemIds: [1],
+                  wattsPrice: 15
                 }
               ],
               stats: {
-                sourceFileCount: 1,
+                sourceFileCount: 2,
                 totalItemCount: 1
               },
               summary: {
@@ -862,10 +896,10 @@ describe('projectBridge', () => {
                   sources: [
                     {
                       layer: 'base',
-                      relativePath: 'romfs/kmeditor/items.readmodel.json'
+                      relativePath: 'romfs/bin/pml/item/item.dat'
                     }
                   ],
-                  targetRelativePath: 'romfs/kmeditor/items.readmodel.json'
+                  targetRelativePath: 'romfs/bin/pml/item/item.dat'
                 }
               ]
             }
@@ -881,11 +915,11 @@ describe('projectBridge', () => {
               applyId: 'apply-1',
               diagnostics: [
                 {
-                  message: 'Applied Items change plan to the configured output root.',
+                  message: 'Applied Items change plan to the configured LayeredFS output root.',
                   severity: 'info'
                 }
               ],
-              writtenFiles: ['romfs/kmeditor/items.readmodel.json']
+              writtenFiles: ['romfs/bin/pml/item/item.dat']
             }
           }
         });
@@ -939,9 +973,9 @@ describe('projectBridge', () => {
     expect(updated.workflow.items[0]?.buyPrice).toBe(450);
     expect(validation.isValid).toBe(true);
     expect(plan.changePlan.writes[0]?.targetRelativePath).toBe(
-      'romfs/kmeditor/items.readmodel.json'
+      'romfs/bin/pml/item/item.dat'
     );
-    expect(apply.applyResult.writtenFiles).toEqual(['romfs/kmeditor/items.readmodel.json']);
+    expect(apply.applyResult.writtenFiles).toEqual(['romfs/bin/pml/item/item.dat']);
   });
 
   it('turns bridge error envelopes into project bridge errors', async () => {

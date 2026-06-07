@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Formats.SwSh;
 using KM.SwSh.Items;
 using Xunit;
 
@@ -31,11 +32,13 @@ public sealed class SwShItemsEditSessionServiceTests
         Assert.Equal("1", edit.RecordId);
         Assert.Equal("450", edit.NewValue);
         Assert.Equal(ProjectFileLayer.Base, Assert.Single(edit.Sources).Layer);
-        Assert.Equal(450, Assert.Single(result.Workflow.Items).BuyPrice);
+        var item = result.Workflow.Items[1];
+        Assert.Equal(450, item.BuyPrice);
+        Assert.Equal(225, item.SellPrice);
     }
 
     [Fact]
-    public void UpdateFieldAddsPendingSellPriceAndPreviewsWorkflowValue()
+    public void UpdateFieldAddsPendingSellPriceAndPreviewsDerivedBuyPrice()
     {
         using var temp = CreateEditableProject();
         var service = new SwShItemsEditSessionService();
@@ -52,13 +55,13 @@ public sealed class SwShItemsEditSessionServiceTests
         var edit = Assert.Single(result.Session.PendingEdits);
         Assert.Equal(SwShItemsEditSessionService.SellPriceField, edit.Field);
         Assert.Equal("175", edit.NewValue);
-        var item = Assert.Single(result.Workflow.Items);
-        Assert.Equal(300, item.BuyPrice);
+        var item = result.Workflow.Items[1];
+        Assert.Equal(350, item.BuyPrice);
         Assert.Equal(175, item.SellPrice);
     }
 
     [Fact]
-    public void UpdateFieldReplacesExistingPendingEditForSameItemField()
+    public void UpdateFieldReplacesExistingPendingEditForSameStoredItemField()
     {
         using var temp = CreateEditableProject();
         var service = new SwShItemsEditSessionService();
@@ -73,16 +76,19 @@ public sealed class SwShItemsEditSessionServiceTests
             temp.Paths,
             firstResult.Session,
             itemId: 1,
-            field: SwShItemsWorkflowService.BuyPriceField,
-            value: "600");
+            field: SwShItemsWorkflowService.SellPriceField,
+            value: "300");
 
         var edit = Assert.Single(secondResult.Session.PendingEdits);
-        Assert.Equal("600", edit.NewValue);
-        Assert.Equal(600, Assert.Single(secondResult.Workflow.Items).BuyPrice);
+        Assert.Equal(SwShItemsEditSessionService.SellPriceField, edit.Field);
+        Assert.Equal("300", edit.NewValue);
+        var item = secondResult.Workflow.Items[1];
+        Assert.Equal(600, item.BuyPrice);
+        Assert.Equal(300, item.SellPrice);
     }
 
     [Fact]
-    public void UpdateFieldKeepsSeparatePendingEditsForDifferentItemFields()
+    public void UpdateFieldKeepsSeparatePendingEditsForDifferentStoredItemFields()
     {
         using var temp = CreateEditableProject();
         var service = new SwShItemsEditSessionService();
@@ -93,23 +99,24 @@ public sealed class SwShItemsEditSessionServiceTests
             field: SwShItemsWorkflowService.BuyPriceField,
             value: "450");
 
-        var sellResult = service.UpdateField(
+        var wattsResult = service.UpdateField(
             temp.Paths,
             buyResult.Session,
             itemId: 1,
-            field: SwShItemsWorkflowService.SellPriceField,
-            value: "175");
+            field: SwShItemsWorkflowService.WattsPriceField,
+            value: "40");
 
-        Assert.Equal(2, sellResult.Session.PendingEdits.Count);
+        Assert.Equal(2, wattsResult.Session.PendingEdits.Count);
         Assert.Contains(
-            sellResult.Session.PendingEdits,
+            wattsResult.Session.PendingEdits,
             edit => edit.Field == SwShItemsEditSessionService.BuyPriceField);
         Assert.Contains(
-            sellResult.Session.PendingEdits,
-            edit => edit.Field == SwShItemsEditSessionService.SellPriceField);
-        var item = Assert.Single(sellResult.Workflow.Items);
+            wattsResult.Session.PendingEdits,
+            edit => edit.Field == SwShItemsEditSessionService.WattsPriceField);
+        var item = wattsResult.Workflow.Items[1];
         Assert.Equal(450, item.BuyPrice);
-        Assert.Equal(175, item.SellPrice);
+        Assert.Equal(225, item.SellPrice);
+        Assert.Equal(40, item.WattsPrice);
     }
 
     [Fact]
@@ -149,7 +156,7 @@ public sealed class SwShItemsEditSessionServiceTests
     }
 
     [Fact]
-    public void CreateChangePlanListsItemsTargetFileForPendingBuyPrice()
+    public void CreateChangePlanListsRealItemsTargetFileForPendingBuyPrice()
     {
         using var temp = CreateEditableProject();
         var service = new SwShItemsEditSessionService();
@@ -164,7 +171,7 @@ public sealed class SwShItemsEditSessionServiceTests
 
         Assert.True(changePlan.CanApply);
         var write = Assert.Single(changePlan.Writes);
-        Assert.Equal(SwShItemsWorkflowService.ItemsReadModelPath, write.TargetRelativePath);
+        Assert.Equal(SwShItemsWorkflowService.ItemDataPath, write.TargetRelativePath);
         Assert.False(write.ReplacesExistingOutput);
         Assert.Contains("Potion", write.Reason);
         Assert.Equal(ProjectFileLayer.Base, Assert.Single(write.Sources).Layer);
@@ -176,21 +183,11 @@ public sealed class SwShItemsEditSessionServiceTests
     {
         using var temp = CreateEditableProject();
         temp.WriteOutputFile(
-            SwShItemsWorkflowService.ItemsReadModelPath,
-            """
-            {
-              "schemaVersion": 1,
-              "items": [
-                {
-                  "itemId": 1,
-                  "name": "Potion",
-                  "category": "Medicine",
-                  "buyPrice": 300,
-                  "sellPrice": 150
-                }
-              ]
-            }
-            """);
+            SwShItemsWorkflowService.ItemDataPath,
+            SwShItemTestFixtures.CreateItemTable(
+                new ItemFixtureRecord(0, 0, 0, 0, 0, SwShItemPouch.Items),
+                new ItemFixtureRecord(1, 1, 500, 25, 7, SwShItemPouch.Medicine),
+                new ItemFixtureRecord(2, 2, 200, 10, 5, SwShItemPouch.Medicine)));
         var service = new SwShItemsEditSessionService();
         var editResult = service.UpdateField(
             temp.Paths,
@@ -205,7 +202,7 @@ public sealed class SwShItemsEditSessionServiceTests
     }
 
     [Fact]
-    public void ApplyChangePlanWritesItemsReadModelToOutputRoot()
+    public void ApplyChangePlanWritesItemDataToOutputRoot()
     {
         using var temp = CreateEditableProject();
         var service = new SwShItemsEditSessionService();
@@ -221,10 +218,33 @@ public sealed class SwShItemsEditSessionServiceTests
 
         var writtenFile = Assert.Single(applyResult.WrittenFiles);
         Assert.Equal(ProjectFileLayer.Generated, writtenFile.Layer);
-        Assert.Equal(SwShItemsWorkflowService.ItemsReadModelPath, writtenFile.RelativePath);
-        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "kmeditor", "items.readmodel.json");
+        Assert.Equal(SwShItemsWorkflowService.ItemDataPath, writtenFile.RelativePath);
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
         Assert.True(File.Exists(outputPath));
-        Assert.Contains("\"buyPrice\": 450", File.ReadAllText(outputPath));
+        var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
+        Assert.Equal(450u, item.BuyPrice);
+        Assert.Equal(15u, item.WattsPrice);
+        Assert.DoesNotContain(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ApplyChangePlanWritesDerivedSellPriceToStoredBuyPrice()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+        var editResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.SellPriceField,
+            value: "175");
+        var changePlan = service.CreateChangePlan(temp.Paths, editResult.Session);
+
+        var applyResult = service.ApplyChangePlan(temp.Paths, editResult.Session, changePlan);
+
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
+        Assert.Equal(350u, item.BuyPrice);
         Assert.DoesNotContain(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
@@ -239,21 +259,21 @@ public sealed class SwShItemsEditSessionServiceTests
             itemId: 1,
             field: SwShItemsWorkflowService.BuyPriceField,
             value: "450");
-        var sellResult = service.UpdateField(
+        var wattsResult = service.UpdateField(
             temp.Paths,
             buyResult.Session,
             itemId: 1,
-            field: SwShItemsWorkflowService.SellPriceField,
-            value: "175");
-        var changePlan = service.CreateChangePlan(temp.Paths, sellResult.Session);
+            field: SwShItemsWorkflowService.WattsPriceField,
+            value: "40");
+        var changePlan = service.CreateChangePlan(temp.Paths, wattsResult.Session);
 
-        var applyResult = service.ApplyChangePlan(temp.Paths, sellResult.Session, changePlan);
+        var applyResult = service.ApplyChangePlan(temp.Paths, wattsResult.Session, changePlan);
 
-        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "kmeditor", "items.readmodel.json");
-        var outputJson = File.ReadAllText(outputPath);
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
         Assert.Single(changePlan.Writes);
-        Assert.Contains("\"buyPrice\": 450", outputJson);
-        Assert.Contains("\"sellPrice\": 175", outputJson);
+        Assert.Equal(450u, item.BuyPrice);
+        Assert.Equal(40u, item.WattsPrice);
         Assert.DoesNotContain(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
@@ -269,14 +289,14 @@ public sealed class SwShItemsEditSessionServiceTests
             field: SwShItemsWorkflowService.BuyPriceField,
             value: "450");
         var changePlan = service.CreateChangePlan(temp.Paths, editResult.Session);
-        var staleWrite = Assert.Single(changePlan.Writes) with { TargetRelativePath = "romfs/kmeditor/stale.json" };
+        var staleWrite = Assert.Single(changePlan.Writes) with { TargetRelativePath = "romfs/bin/pml/item/stale.dat" };
         var stalePlan = new ChangePlan(changePlan.SessionId, [staleWrite], changePlan.Diagnostics);
 
         var applyResult = service.ApplyChangePlan(temp.Paths, editResult.Session, stalePlan);
 
         Assert.Empty(applyResult.WrittenFiles);
         Assert.Contains(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "kmeditor", "items.readmodel.json")));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat")));
     }
 
     [Fact]
@@ -299,22 +319,7 @@ public sealed class SwShItemsEditSessionServiceTests
     private static TemporarySwShProject CreateEditableProject()
     {
         var temp = TemporarySwShProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/items.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "items": [
-                {
-                  "itemId": 1,
-                  "name": "Potion",
-                  "category": "Medicine",
-                  "buyPrice": 300,
-                  "sellPrice": 150
-                }
-              ]
-            }
-            """);
+        SwShItemsWorkflowServiceTests.WriteBaseItems(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
 
         return temp;

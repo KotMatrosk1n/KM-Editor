@@ -108,7 +108,7 @@ describe('App', () => {
     await user.click(screen.getByText('Antidote'));
 
     expect(screen.queryByText('Potion')).not.toBeInTheDocument();
-    expect(screen.getByText('romfs/kmeditor/items.readmodel.json')).toBeInTheDocument();
+    expect(screen.getByText('romfs/bin/pml/item/item.dat')).toBeInTheDocument();
     expect(screen.getByText('Base only')).toBeInTheDocument();
   });
 
@@ -143,12 +143,12 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
 
     expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
-    expect(screen.getAllByText('romfs/kmeditor/items.readmodel.json').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('romfs/bin/pml/item/item.dat').length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
-    expect(screen.getByText('Applied Items change plan to the configured output root.')).toBeInTheDocument();
+    expect(screen.getByText('Applied Items change plan to the configured LayeredFS output root.')).toBeInTheDocument();
   });
 
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
@@ -223,6 +223,20 @@ function createMockProjectBridge(
       {
         field: 'sellPrice',
         label: 'Sell price',
+        maximumValue: 499_999,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'wattsPrice',
+        label: 'Watts price',
+        maximumValue: 999_999,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'alternatePrice',
+        label: 'Alternate price',
         maximumValue: 999_999,
         minimumValue: 0,
         valueKind: 'integer'
@@ -230,32 +244,38 @@ function createMockProjectBridge(
     ],
     items: [
       {
+        alternatePrice: 3,
         buyPrice: 300,
         category: 'Medicine',
         itemId: 1,
         name: 'Potion',
         provenance: {
           fileState: 'baseOnly',
-          sourceFile: 'romfs/kmeditor/items.readmodel.json',
+          sourceFile: 'romfs/bin/pml/item/item.dat',
           sourceLayer: 'base'
         },
-        sellPrice: 150
+        sellPrice: 150,
+        sharedItemIds: [1],
+        wattsPrice: 15
       },
       {
+        alternatePrice: 5,
         buyPrice: 200,
         category: 'Medicine',
         itemId: 2,
         name: 'Antidote',
         provenance: {
           fileState: 'baseOnly',
-          sourceFile: 'romfs/kmeditor/items.readmodel.json',
+          sourceFile: 'romfs/bin/pml/item/item.dat',
           sourceLayer: 'base'
         },
-        sellPrice: 100
+        sellPrice: 100,
+        sharedItemIds: [2],
+        wattsPrice: 10
       }
     ],
     stats: {
-      sourceFileCount: 1,
+      sourceFileCount: 2,
       totalItemCount: 2
     },
     summary: {
@@ -344,7 +364,7 @@ function createMockProjectBridge(
           applyId: 'apply-1',
           diagnostics: [
             {
-              message: 'Applied Items change plan to the configured output root.',
+              message: 'Applied Items change plan to the configured LayeredFS output root.',
               severity: 'info'
             }
           ],
@@ -369,10 +389,10 @@ function createMockProjectBridge(
               sources: [
                 {
                   layer: 'base',
-                  relativePath: 'romfs/kmeditor/items.readmodel.json'
+                  relativePath: 'romfs/bin/pml/item/item.dat'
                 }
               ],
-              targetRelativePath: 'romfs/kmeditor/items.readmodel.json'
+              targetRelativePath: 'romfs/bin/pml/item/item.dat'
             }
           ]
         }
@@ -558,7 +578,7 @@ function createMockProjectBridge(
               sources: [
                 {
                   layer: 'base',
-                  relativePath: 'romfs/kmeditor/items.readmodel.json'
+                  relativePath: 'romfs/bin/pml/item/item.dat'
                 }
               ],
               summary: `Set Potion ${fieldLabel} to ${request.value}.`
@@ -573,9 +593,17 @@ function createMockProjectBridge(
               return item;
             }
 
-            return request.field === 'sellPrice'
-              ? { ...item, sellPrice: Number.parseInt(request.value, 10) }
-              : { ...item, buyPrice: Number.parseInt(request.value, 10) };
+            const value = Number.parseInt(request.value, 10);
+            switch (request.field) {
+              case 'sellPrice':
+                return { ...item, buyPrice: value * 2, sellPrice: value };
+              case 'wattsPrice':
+                return { ...item, wattsPrice: value };
+              case 'alternatePrice':
+                return { ...item, alternatePrice: value };
+              default:
+                return { ...item, buyPrice: value, sellPrice: Math.floor(value / 2) };
+            }
           })
         }
       });
