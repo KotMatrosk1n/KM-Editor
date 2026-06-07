@@ -13,6 +13,8 @@ import {
   listWorkflowsResponseSchema,
   loadEncountersWorkflowRequestSchema,
   loadEncountersWorkflowResponseSchema,
+  loadFlagworkSaveWorkflowRequestSchema,
+  loadFlagworkSaveWorkflowResponseSchema,
   loadItemsWorkflowRequestSchema,
   loadItemsWorkflowResponseSchema,
   loadPlacementWorkflowRequestSchema,
@@ -215,6 +217,12 @@ describe('bridge contracts', () => {
     const placementRequestSchema = createBridgeRequestSchema(loadPlacementWorkflowRequestSchema);
     const placementResponseSchema = createBridgeResponseSchema(
       loadPlacementWorkflowResponseSchema
+    );
+    const flagworkSaveRequestSchema = createBridgeRequestSchema(
+      loadFlagworkSaveWorkflowRequestSchema
+    );
+    const flagworkSaveResponseSchema = createBridgeResponseSchema(
+      loadFlagworkSaveWorkflowResponseSchema
     );
     const itemsWorkflow = {
       diagnostics: [],
@@ -486,6 +494,50 @@ describe('bridge contracts', () => {
         label: 'Placement'
       }
     } as const;
+    const flagworkSaveWorkflow = {
+      diagnostics: [],
+      flags: [
+        {
+          category: 'Story',
+          defaultValue: 'false',
+          description: 'First gym badge story flag.',
+          flagId: 'story.badge_1',
+          name: 'Badge 1 Obtained',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/flagwork.save.readmodel.json',
+            sourceLayer: 'base'
+          },
+          valueKind: 'boolean'
+        }
+      ],
+      saveBlocks: [
+        {
+          blockId: 'player.profile',
+          description: 'Player profile save block.',
+          length: 64,
+          name: 'Player Profile',
+          offset: 128,
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/flagwork.save.readmodel.json',
+            sourceLayer: 'base'
+          }
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalFlagCount: 1,
+        totalSaveBlockCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Game flags, save blocks, inspector metadata, and source provenance.',
+        diagnostics: [],
+        id: 'flagworkSave',
+        label: 'Flagwork and Save Inspectors'
+      }
+    } as const;
 
     expect(
       workflowsRequestSchema.safeParse({
@@ -510,7 +562,8 @@ describe('bridge contracts', () => {
             shopsWorkflow.summary,
             encountersWorkflow.summary,
             raidRewardsWorkflow.summary,
-            placementWorkflow.summary
+            placementWorkflow.summary,
+            flagworkSaveWorkflow.summary
           ]
         }
       }).success
@@ -659,6 +712,27 @@ describe('bridge contracts', () => {
       placementResponseSchema.safeParse({
         payload: {
           workflow: placementWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      flagworkSaveRequestSchema.safeParse({
+        command: kmCommandNames.loadFlagworkSaveWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      flagworkSaveResponseSchema.safeParse({
+        payload: {
+          workflow: flagworkSaveWorkflow
         }
       }).success
     ).toBe(true);

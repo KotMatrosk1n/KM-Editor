@@ -4,6 +4,7 @@ using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.Flagwork;
 using KM.Api.Items;
 using KM.Api.Placement;
 using KM.Api.Projects;
@@ -145,6 +146,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("placement", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("flagworkSave", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             });
     }
@@ -498,6 +504,58 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("Route 1", placedObject.Map);
         Assert.Equal(10.5, placedObject.X);
         Assert.Equal(ProjectFileLayerDto.Base, placedObject.Provenance.SourceLayer);
+        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchLoadFlagworkSaveWorkflowReturnsSanitizedInspectorRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/flagwork.save.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "flags": [
+                {
+                  "flagId": "story.badge_1",
+                  "name": "Badge 1 Obtained",
+                  "category": "Story",
+                  "valueKind": "boolean",
+                  "defaultValue": "false",
+                  "description": "First gym badge story flag."
+                }
+              ],
+              "saveBlocks": [
+                {
+                  "blockId": "player.profile",
+                  "name": "Player Profile",
+                  "offset": 128,
+                  "length": 64,
+                  "description": "Player profile save block."
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadFlagworkSaveWorkflow,
+            new LoadFlagworkSaveWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-flagwork-save");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadFlagworkSaveWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-flagwork-save", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var flag = Assert.Single(response.Payload.Workflow.Flags);
+        Assert.Equal("story.badge_1", flag.FlagId);
+        Assert.Equal("Badge 1 Obtained", flag.Name);
+        Assert.Equal(ProjectFileLayerDto.Base, flag.Provenance.SourceLayer);
+        var saveBlock = Assert.Single(response.Payload.Workflow.SaveBlocks);
+        Assert.Equal("player.profile", saveBlock.BlockId);
+        Assert.Equal(128, saveBlock.Offset);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

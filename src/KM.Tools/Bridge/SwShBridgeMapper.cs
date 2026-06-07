@@ -3,6 +3,7 @@
 using KM.Api.Items;
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.Flagwork;
 using KM.Api.Placement;
 using KM.Api.Shops;
 using KM.Api.Raids;
@@ -11,6 +12,7 @@ using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
 using KM.SwSh.Encounters;
+using KM.SwSh.Flagwork;
 using KM.SwSh.Placement;
 using KM.SwSh.Shops;
 using KM.SwSh.Raids;
@@ -76,6 +78,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadPlacementWorkflowResponse(ToPlacementWorkflowDto(workflow));
+    }
+
+    public static LoadFlagworkSaveWorkflowResponse ToDto(SwShFlagworkSaveWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadFlagworkSaveWorkflowResponse(ToFlagworkSaveWorkflowDto(workflow));
     }
 
     public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
@@ -178,6 +187,19 @@ public static class SwShBridgeMapper
             workflow.Objects.Select(ToDto).ToArray(),
             new PlacementWorkflowStatsDto(
                 workflow.Stats.TotalObjectCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static FlagworkSaveWorkflowDto ToFlagworkSaveWorkflowDto(SwShFlagworkSaveWorkflow workflow)
+    {
+        return new FlagworkSaveWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Flags.Select(ToDto).ToArray(),
+            workflow.SaveBlocks.Select(ToDto).ToArray(),
+            new FlagworkSaveWorkflowStatsDto(
+                workflow.Stats.TotalFlagCount,
+                workflow.Stats.TotalSaveBlockCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -383,6 +405,37 @@ public static class SwShBridgeMapper
     private static PlacementProvenanceDto ToDto(SwShPlacementProvenance provenance)
     {
         return new PlacementProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static FlagRecordDto ToDto(SwShFlagRecord flag)
+    {
+        return new FlagRecordDto(
+            flag.FlagId,
+            flag.Name,
+            flag.Category,
+            flag.ValueKind,
+            flag.DefaultValue,
+            flag.Description,
+            ToDto(flag.Provenance));
+    }
+
+    private static SaveBlockRecordDto ToDto(SwShSaveBlockRecord saveBlock)
+    {
+        return new SaveBlockRecordDto(
+            saveBlock.BlockId,
+            saveBlock.Name,
+            saveBlock.Offset,
+            saveBlock.Length,
+            saveBlock.Description,
+            ToDto(saveBlock.Provenance));
+    }
+
+    private static FlagworkSaveProvenanceDto ToDto(SwShFlagworkSaveProvenance provenance)
+    {
+        return new FlagworkSaveProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));
