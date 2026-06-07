@@ -1,0 +1,18 @@
+{
+  "name": "km-editor",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.5.2",
+  "engines": {
+    "node": ">=24.16.0",
+    "pnpm": ">=11.5.2"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @km-editor/desktop dev",
+    "build": "pnpm --filter @km-editor/desktop build",
+    "typecheck": "pnpm --filter @km-editor/desktop typecheck",
+    "test": "pnpm --filter @km-editor/desktop test",
+    "test:run": "pnpm --filter @km-editor/desktop test:run",
+    "check": "pnpm run typecheck && pnpm run build && pnpm run test:run"
+  }
+}
