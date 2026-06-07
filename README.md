@@ -1,3 +1,3 @@
 # KM Editor
 
-KM Editor is a clean, modern editor project.
+KM Editor is a project for a modern Pokemon Sword/Shield editor.
