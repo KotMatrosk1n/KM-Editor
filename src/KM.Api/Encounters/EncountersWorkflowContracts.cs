@@ -1,12 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
 
 namespace KM.Api.Encounters;
 
 public sealed record LoadEncountersWorkflowRequest(ProjectPathsDto Paths);
+
+public sealed record UpdateEncounterSlotFieldRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    string TableId,
+    int Slot,
+    string Field,
+    string Value);
 
 public sealed record EncounterProvenanceDto(
     string SourceFile,
@@ -15,7 +24,9 @@ public sealed record EncounterProvenanceDto(
 
 public sealed record EncounterSlotRecordDto(
     int Slot,
+    int SpeciesId,
     string Species,
+    int Form,
     int LevelMin,
     int LevelMax,
     int Weight,
@@ -28,8 +39,16 @@ public sealed record EncounterTableRecordDto(
     string Area,
     string EncounterType,
     string GameVersion,
+    string ArchiveMember,
     IReadOnlyList<EncounterSlotRecordDto> Slots,
     EncounterProvenanceDto Provenance);
+
+public sealed record EncounterEditableFieldDto(
+    string Field,
+    string Label,
+    string ValueKind,
+    int? MinimumValue,
+    int? MaximumValue);
 
 public sealed record EncountersWorkflowStatsDto(
     int TotalTableCount,
@@ -39,7 +58,13 @@ public sealed record EncountersWorkflowStatsDto(
 public sealed record EncountersWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<EncounterTableRecordDto> Tables,
+    IReadOnlyList<EncounterEditableFieldDto> EditableFields,
     EncountersWorkflowStatsDto Stats,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record LoadEncountersWorkflowResponse(EncountersWorkflowDto Workflow);
+
+public sealed record UpdateEncounterSlotFieldResponse(
+    EncountersWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);

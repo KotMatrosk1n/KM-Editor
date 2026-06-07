@@ -438,36 +438,10 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadEncountersWorkflowReturnsSanitizedEncounterTables()
+    public void DispatchLoadEncountersWorkflowReturnsRealEncounterTables()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/encounters.wild.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "tables": [
-                {
-                  "tableId": "route_1_grass_sword",
-                  "location": "Route 1",
-                  "area": "Grass",
-                  "encounterType": "Overworld",
-                  "gameVersion": "Sword",
-                  "slots": [
-                    {
-                      "slot": 1,
-                      "species": "Skwovet",
-                      "levelMin": 3,
-                      "levelMax": 5,
-                      "weight": 35,
-                      "timeOfDay": null,
-                      "weather": "Any"
-                    }
-                  ]
-                }
-              ]
-            }
-            """);
+        SwShEncounterBridgeFixtures.WriteBaseEncounters(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.LoadEncountersWorkflow,
@@ -480,15 +454,85 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.Equal("request-encounters", response.RequestId);
         Assert.NotNull(response.Payload);
-        var table = Assert.Single(response.Payload.Workflow.Tables);
-        Assert.Equal("route_1_grass_sword", table.TableId);
-        Assert.Equal("Route 1", table.Location);
+        Assert.Equal(2, response.Payload.Workflow.Tables.Count);
+        var table = response.Payload.Workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
+        Assert.StartsWith("sword:symbol:0:", table.TableId, StringComparison.Ordinal);
+        Assert.Equal($"Zone 0x{SwShEncounterBridgeFixtures.ZoneId:X16}", table.Location);
+        Assert.Equal("Symbol", table.Area);
+        Assert.Equal("Normal", table.EncounterType);
         Assert.Equal(ProjectFileLayerDto.Base, table.Provenance.SourceLayer);
-        var slot = Assert.Single(table.Slots);
-        Assert.Equal("Skwovet", slot.Species);
+        Assert.Equal("romfs/bin/archive/field/resident/data_table.gfpak", table.Provenance.SourceFile);
+        var slot = table.Slots[0];
+        Assert.Equal(1, slot.SpeciesId);
+        Assert.Equal("Bulbasaur", slot.Species);
         Assert.Equal(3, slot.LevelMin);
-        Assert.Equal(5, slot.LevelMax);
+        Assert.Equal(8, slot.LevelMax);
+        Assert.Equal(5, response.Payload.Workflow.EditableFields.Count);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchEncounterUpdateValidatePlanAndApplyWritesLayeredOutput()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShEncounterBridgeFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var loadJson = SerializeRequest(
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(temp.Paths),
+            requestId: "request-encounter-load");
+        var loadResponse = DeserializeResponse<LoadEncountersWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.NotNull(loadResponse.Payload);
+        var table = loadResponse.Payload.Workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                temp.Paths,
+                Session: null,
+                table.TableId,
+                Slot: 2,
+                Field: "probability",
+                Value: "40"),
+            requestId: "request-encounter-update");
+
+        var updateResponse = DeserializeResponse<UpdateEncounterSlotFieldResponse>(dispatcher.Dispatch(updateJson));
+        Assert.Null(updateResponse.Error);
+        Assert.NotNull(updateResponse.Payload);
+        Assert.Equal(40, updateResponse.Payload.Workflow.Tables.First(candidate => candidate.TableId == table.TableId).Slots[1].Weight);
+        Assert.Single(updateResponse.Payload.Session.PendingEdits);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-encounter-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-encounter-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.Equal("romfs/bin/archive/field/resident/data_table.gfpak", Assert.Single(planResponse.Payload.ChangePlan.Writes).TargetRelativePath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, updateResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-encounter-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.Equal("romfs/bin/archive/field/resident/data_table.gfpak", Assert.Single(applyResponse.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "archive", "field", "resident", "data_table.gfpak");
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
+        var outputArchive = SwShWildEncounterArchive.Parse(outputPack.GetFileByName("encount_symbol_k.bin"));
+        Assert.Equal(40, outputArchive.Tables[0].SubTables[0].Slots[1].Probability);
     }
 
     [Fact]

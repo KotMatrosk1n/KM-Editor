@@ -385,11 +385,20 @@ describe('projectBridge', () => {
         return JSON.stringify({
           error: null,
           payload: {
-            workflow: {
-              diagnostics: [],
-              stats: {
-                sourceFileCount: 1,
-                totalSlotCount: 1,
+              workflow: {
+                diagnostics: [],
+                editableFields: [
+                  {
+                    field: 'probability',
+                    label: 'Probability',
+                    maximumValue: 100,
+                    minimumValue: 0,
+                    valueKind: 'integer'
+                  }
+                ],
+                stats: {
+                  sourceFileCount: 1,
+                  totalSlotCount: 1,
                 totalTableCount: 1
               },
               summary: {
@@ -399,33 +408,36 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'encounters',
                 label: 'Encounters and Wild Data'
-              },
-              tables: [
-                {
-                  area: 'Grass',
-                  encounterType: 'Overworld',
-                  gameVersion: 'Sword',
-                  location: 'Route 1',
-                  provenance: {
-                    fileState: 'baseOnly',
-                    sourceFile: 'romfs/kmeditor/encounters.wild.readmodel.json',
-                    sourceLayer: 'base'
-                  },
-                  slots: [
-                    {
-                      levelMax: 5,
-                      levelMin: 3,
-                      slot: 1,
-                      species: 'Skwovet',
-                      timeOfDay: null,
-                      weather: 'Any',
-                      weight: 35
-                    }
-                  ],
-                  tableId: 'route_1_grass_sword'
-                }
-              ]
-            }
+                },
+                tables: [
+                  {
+                    archiveMember: 'encount_symbol_k.bin',
+                    area: 'Symbol',
+                    encounterType: 'Normal',
+                    gameVersion: 'Sword',
+                    location: 'Zone 0x1122334455667788',
+                    provenance: {
+                      fileState: 'baseOnly',
+                      sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+                      sourceLayer: 'base'
+                    },
+                    slots: [
+                      {
+                        form: 0,
+                        levelMax: 8,
+                        levelMin: 3,
+                        slot: 1,
+                        speciesId: 1,
+                        species: 'Bulbasaur',
+                        timeOfDay: null,
+                        weather: 'Normal',
+                        weight: 35
+                      }
+                    ],
+                    tableId: 'sword:symbol:0:1122334455667788:0'
+                  }
+                ]
+              }
           }
         });
       }
@@ -800,7 +812,8 @@ describe('projectBridge', () => {
     expect(trainers.workflow.trainers[0]?.name).toBe('Avery');
     expect(shops.workflow.editableFields[0]?.field).toBe('itemId');
     expect(shops.workflow.shops[0]?.name).toBe('Route 1 Mart');
-    expect(encounters.workflow.tables[0]?.slots[0]?.species).toBe('Skwovet');
+    expect(encounters.workflow.editableFields[0]?.field).toBe('probability');
+    expect(encounters.workflow.tables[0]?.slots[0]?.species).toBe('Bulbasaur');
     expect(raidRewards.workflow.tables[0]?.rewards[0]?.itemName).toBe('Exp. Candy L');
     expect(placement.workflow.objects[0]?.label).toBe('Hidden Potion');
     expect(flagworkSave.workflow.flags[0]?.name).toBe('Badge 1 Obtained');

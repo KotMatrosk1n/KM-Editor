@@ -24,6 +24,10 @@ import {
   type ApplyResult,
   type ChangePlan,
   type EditSession,
+  type EncounterEditableField,
+  type EncounterSlotRecord,
+  type EncounterTableRecord,
+  type EncountersWorkflow,
   type ItemEditableField,
   type ItemsWorkflow,
   type ItemRecord,
@@ -88,6 +92,11 @@ const sections: Array<{
     id: 'shops',
     label: 'Shops',
     icon: ListChecks
+  },
+  {
+    id: 'encounters',
+    label: 'Encounters',
+    icon: Layers
   },
   {
     id: 'changes',
@@ -218,6 +227,10 @@ const levelFieldName = 'level';
 const heldItemIdFieldName = 'heldItemId';
 const moveFieldNames = ['move1Id', 'move2Id', 'move3Id', 'move4Id'] as const;
 const shopItemIdFieldName = 'itemId';
+const encounterFormFieldName = 'form';
+const encounterProbabilityFieldName = 'probability';
+const encounterLevelMinFieldName = 'levelMin';
+const encounterLevelMaxFieldName = 'levelMax';
 
 export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
@@ -226,10 +239,13 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const draftPaths = useWorkbenchStore((state) => state.draftPaths);
   const editSession = useWorkbenchStore((state) => state.editSession);
   const editValidationDiagnostics = useWorkbenchStore((state) => state.editValidationDiagnostics);
+  const encounterSearchText = useWorkbenchStore((state) => state.encounterSearchText);
+  const encountersWorkflow = useWorkbenchStore((state) => state.encountersWorkflow);
   const itemSearchText = useWorkbenchStore((state) => state.itemSearchText);
   const itemsWorkflow = useWorkbenchStore((state) => state.itemsWorkflow);
   const openProject = useWorkbenchStore((state) => state.openProject);
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
+  const selectedEncounterTableId = useWorkbenchStore((state) => state.selectedEncounterTableId);
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
   const selectedShopId = useWorkbenchStore((state) => state.selectedShopId);
   const selectedTextKey = useWorkbenchStore((state) => state.selectedTextKey);
@@ -249,11 +265,16 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const setEditValidationDiagnostics = useWorkbenchStore(
     (state) => state.setEditValidationDiagnostics
   );
+  const setEncounterSearchText = useWorkbenchStore((state) => state.setEncounterSearchText);
+  const setEncountersWorkflow = useWorkbenchStore((state) => state.setEncountersWorkflow);
   const setItemSearchText = useWorkbenchStore((state) => state.setItemSearchText);
   const setItemsWorkflow = useWorkbenchStore((state) => state.setItemsWorkflow);
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
   const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
+  const setSelectedEncounterTableId = useWorkbenchStore(
+    (state) => state.setSelectedEncounterTableId
+  );
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
   const setSelectedShopId = useWorkbenchStore((state) => state.setSelectedShopId);
   const setSelectedTextKey = useWorkbenchStore((state) => state.setSelectedTextKey);
@@ -278,6 +299,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
   const [isTrainerUpdating, setIsTrainerUpdating] = useState(false);
   const [isShopsLoading, setIsShopsLoading] = useState(false);
   const [isShopUpdating, setIsShopUpdating] = useState(false);
+  const [isEncountersLoading, setIsEncountersLoading] = useState(false);
+  const [isEncounterUpdating, setIsEncounterUpdating] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -371,6 +394,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsShopsLoading(false);
+    }
+  };
+
+  const handleOpenEncountersWorkflow = async () => {
+    setIsEncountersLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadEncountersWorkflow({ paths: toProjectPaths(draftPaths) });
+      setEncountersWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsEncountersLoading(false);
     }
   };
 
@@ -489,6 +526,35 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsShopUpdating(false);
+    }
+  };
+
+  const handleUpdateEncounterSlotField = async (
+    tableId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => {
+    setIsEncounterUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateEncounterSlotField({
+        field,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        slot,
+        tableId,
+        value
+      });
+      setEncountersWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsEncounterUpdating(false);
     }
   };
 
@@ -657,6 +723,8 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               isTextLoading={isTextLoading}
               isTrainersLoading={isTrainersLoading}
               isShopsLoading={isShopsLoading}
+              isEncountersLoading={isEncountersLoading}
+              onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenShopsWorkflow={handleOpenShopsWorkflow}
               onOpenTextWorkflow={handleOpenTextWorkflow}
@@ -719,6 +787,20 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
               searchText={shopSearchText}
               selectedShopId={selectedShopId}
               workflow={shopsWorkflow}
+            />
+          ) : null}
+          {activeSection === 'encounters' ? (
+            <EncountersSection
+              editSession={editSession}
+              isEditStarting={isEditStarting}
+              isEncounterUpdating={isEncounterUpdating}
+              onSearchChange={setEncounterSearchText}
+              onSelectTable={setSelectedEncounterTableId}
+              onStartEditSession={handleStartEditSession}
+              onUpdateEncounterSlotField={handleUpdateEncounterSlotField}
+              searchText={encounterSearchText}
+              selectedTableId={selectedEncounterTableId}
+              workflow={encountersWorkflow}
             />
           ) : null}
           {activeSection === 'changes' ? (
@@ -845,10 +927,12 @@ function HealthSection({
 
 function WorkflowsSection({
   health,
+  isEncountersLoading,
   isItemsLoading,
   isShopsLoading,
   isTextLoading,
   isTrainersLoading,
+  onOpenEncountersWorkflow,
   onOpenItemsWorkflow,
   onOpenShopsWorkflow,
   onOpenTextWorkflow,
@@ -857,10 +941,12 @@ function WorkflowsSection({
   workflows
 }: {
   health: ProjectHealth | null;
+  isEncountersLoading: boolean;
   isItemsLoading: boolean;
   isShopsLoading: boolean;
   isTextLoading: boolean;
   isTrainersLoading: boolean;
+  onOpenEncountersWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenShopsWorkflow: () => void;
   onOpenTextWorkflow: () => void;
@@ -884,10 +970,13 @@ function WorkflowsSection({
           const isTextWorkflow = definition.id === 'text';
           const isTrainersWorkflow = definition.id === 'trainers';
           const isShopsWorkflow = definition.id === 'shops';
+          const isEncountersWorkflow = definition.id === 'encounters';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
           const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
+          const canOpenEncounters =
+            isEncountersWorkflow && workflowState.availability !== 'disabled';
 
           return (
             <article className="workflow-row" key={definition.id}>
@@ -944,6 +1033,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isShopsLoading ? 'Loading' : 'Open Shops'}</span>
+                  </button>
+                ) : null}
+                {isEncountersWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenEncounters || isEncountersLoading}
+                    onClick={onOpenEncountersWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isEncountersLoading ? 'Loading' : 'Open Encounters'}</span>
                   </button>
                 ) : null}
               </div>
@@ -2142,6 +2242,363 @@ function SelectedShopPanel({
   );
 }
 
+function EncountersSection({
+  editSession,
+  isEditStarting,
+  isEncounterUpdating,
+  onSearchChange,
+  onSelectTable,
+  onStartEditSession,
+  onUpdateEncounterSlotField,
+  searchText,
+  selectedTableId,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isEncounterUpdating: boolean;
+  onSearchChange: (searchText: string) => void;
+  onSelectTable: (tableId: string | null) => void;
+  onStartEditSession: () => void;
+  onUpdateEncounterSlotField: (
+    tableId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => void;
+  searchText: string;
+  selectedTableId: string | null;
+  workflow: EncountersWorkflow | null;
+}) {
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const filteredTables = filterEncounterTables(workflow?.tables ?? [], searchText);
+  const selectedTable =
+    workflow?.tables.find((table) => table.tableId === selectedTableId) ??
+    filteredTables[0] ??
+    null;
+  const selectedEncounterSlot =
+    selectedTable?.slots.find((slot) => slot.slot === selectedSlot) ??
+    selectedTable?.slots[0] ??
+    null;
+  const canEditEncounters = workflow?.summary.availability === 'available';
+  const pendingEncounterTableIds = getPendingEncounterTableIds(editSession);
+
+  useEffect(() => {
+    if (!selectedTable) {
+      setSelectedSlot(null);
+      return;
+    }
+
+    const hasSelectedSlot = selectedTable.slots.some((slot) => slot.slot === selectedSlot);
+    if (!hasSelectedSlot) {
+      setSelectedSlot(selectedTable.slots[0]?.slot ?? null);
+    }
+  }, [selectedSlot, selectedTable?.slots, selectedTable?.tableId]);
+
+  return (
+    <>
+      <section aria-labelledby="encounters-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Layers aria-hidden="true" size={18} />
+          <h2 id="encounters-heading">Encounters and Wild Data</h2>
+        </div>
+
+        <div className="items-toolbar encounters-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search encounters"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search encounters"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded tables"
+            value={workflow ? workflow.stats.totalTableCount.toString() : '0'}
+          />
+          <Metric
+            label="Encounter slots"
+            value={workflow ? workflow.stats.totalSlotCount.toString() : '0'}
+          />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="encounters-layout">
+            <div className="encounters-table" role="table" aria-label="Encounter tables">
+              <div className="encounters-row encounters-row-heading" role="row">
+                <span role="columnheader">Location</span>
+                <span role="columnheader">Game</span>
+                <span role="columnheader">Area</span>
+                <span role="columnheader">Weather</span>
+                <span role="columnheader">Slots</span>
+                <span role="columnheader">Member</span>
+              </div>
+              {filteredTables.map((table) => (
+                <button
+                  className={`encounters-row ${
+                    selectedTable?.tableId === table.tableId ? 'encounters-row-selected' : ''
+                  } ${
+                    pendingEncounterTableIds.has(table.tableId) ? 'encounters-row-pending' : ''
+                  }`}
+                  key={table.tableId}
+                  onClick={() => onSelectTable(table.tableId)}
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{table.location}</span>
+                  <span role="cell">{table.gameVersion}</span>
+                  <span role="cell">{table.area}</span>
+                  <span role="cell">{table.encounterType}</span>
+                  <span role="cell">{table.slots.length}</span>
+                  <span role="cell">{table.archiveMember}</span>
+                </button>
+              ))}
+            </div>
+
+            <SelectedEncounterPanel
+              canEditEncounters={canEditEncounters}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              encounterSlot={selectedEncounterSlot}
+              isEditStarting={isEditStarting}
+              isEncounterUpdating={isEncounterUpdating}
+              onSelectSlot={setSelectedSlot}
+              onStartEditSession={onStartEditSession}
+              onUpdateEncounterSlotField={onUpdateEncounterSlotField}
+              selectedSlot={selectedSlot}
+              table={selectedTable}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Encounters from Workflows to load backend wild data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedEncounterPanel({
+  canEditEncounters,
+  editSession,
+  editableFields,
+  encounterSlot,
+  isEditStarting,
+  isEncounterUpdating,
+  onSelectSlot,
+  onStartEditSession,
+  onUpdateEncounterSlotField,
+  selectedSlot,
+  table
+}: {
+  canEditEncounters: boolean;
+  editSession: EditSession | null;
+  editableFields: EncounterEditableField[];
+  encounterSlot: EncounterSlotRecord | null;
+  isEditStarting: boolean;
+  isEncounterUpdating: boolean;
+  onSelectSlot: (slot: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateEncounterSlotField: (
+    tableId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => void;
+  selectedSlot: number | null;
+  table: EncounterTableRecord | null;
+}) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!encounterSlot) {
+      setDrafts({});
+      return;
+    }
+
+    setDrafts(
+      Object.fromEntries(
+        editableFields.map((field) => [
+          field.field,
+          (getEditableEncounterFieldValue(encounterSlot, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [
+    editableFields,
+    encounterSlot?.form,
+    encounterSlot?.levelMax,
+    encounterSlot?.levelMin,
+    encounterSlot?.slot,
+    encounterSlot?.speciesId,
+    encounterSlot?.weight,
+    table?.tableId
+  ]);
+
+  return (
+    <aside aria-label="Selected encounter provenance" className="encounter-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Encounter</h3>
+      </div>
+
+      {table ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Location</dt>
+              <dd>{table.location}</dd>
+            </div>
+            <div>
+              <dt>Table</dt>
+              <dd>{table.tableId}</dd>
+            </div>
+            <div>
+              <dt>Archive member</dt>
+              <dd>{table.archiveMember}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{table.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(table.provenance.fileState)}</dd>
+            </div>
+          </dl>
+
+          <div className="encounter-edit-form">
+            <div className="encounter-slot-header">
+              <strong>Slots</strong>
+              <select
+                aria-label="Encounter slot"
+                disabled={table.slots.length === 0}
+                onChange={(event) => onSelectSlot(Number(event.target.value))}
+                value={selectedSlot ?? ''}
+              >
+                {table.slots.map((slot) => (
+                  <option key={slot.slot} value={slot.slot}>
+                    Slot {slot.slot}: {slot.species}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {encounterSlot ? (
+              <>
+                <dl className="encounter-slot-detail">
+                  <div>
+                    <dt>Species</dt>
+                    <dd>{encounterSlot.species}</dd>
+                  </div>
+                  <div>
+                    <dt>Levels</dt>
+                    <dd>
+                      {encounterSlot.levelMin}-{encounterSlot.levelMax}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Probability</dt>
+                    <dd>{encounterSlot.weight}</dd>
+                  </div>
+                </dl>
+
+                <div className="encounter-field-grid">
+                  {editableFields.map((field) => {
+                    const currentValue = getEditableEncounterFieldValue(
+                      encounterSlot,
+                      field.field
+                    );
+                    const draftValue = drafts[field.field] ?? '';
+                    const draftState = getIntegerDraftState(draftValue, currentValue, field);
+                    const canSubmit =
+                      editSession !== null &&
+                      draftState.canSubmit &&
+                      draftState.parsedValue !== null;
+
+                    return (
+                      <div className="trainer-editor-row" key={field.field}>
+                        <label className="path-field">
+                          <span>{field.label}</span>
+                          <input
+                            aria-label={field.label}
+                            disabled={
+                              !canEditEncounters ||
+                              editSession === null ||
+                              isEncounterUpdating
+                            }
+                            max={field.maximumValue ?? undefined}
+                            min={field.minimumValue ?? undefined}
+                            onChange={(event) =>
+                              setDrafts((currentDrafts) => ({
+                                ...currentDrafts,
+                                [field.field]: event.target.value
+                              }))
+                            }
+                            type="number"
+                            value={draftValue}
+                          />
+                        </label>
+                        {editSession ? (
+                          <button
+                            aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                            className="primary-button compact-button"
+                            disabled={!canSubmit || isEncounterUpdating}
+                            onClick={() =>
+                              onUpdateEncounterSlotField(
+                                table.tableId,
+                                encounterSlot.slot,
+                                field.field,
+                                draftState.parsedValue!.toString()
+                              )
+                            }
+                            type="button"
+                          >
+                            <Save aria-hidden="true" size={16} />
+                            <span>{isEncounterUpdating ? 'Saving' : 'Save'}</span>
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <p className="empty-copy">No encounter slot selected.</p>
+            )}
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditEncounters || isEditStarting || table.slots.length === 0}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No encounter table selected.</p>
+      )}
+    </aside>
+  );
+}
+
 function ChangesSection({
   applyResult,
   changePlan,
@@ -2472,6 +2929,36 @@ function filterShops(shops: ShopRecord[], searchText: string) {
   );
 }
 
+function filterEncounterTables(tables: EncounterTableRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return tables;
+  }
+
+  return tables.filter((table) =>
+    [
+      table.tableId,
+      table.location,
+      table.area,
+      table.encounterType,
+      table.gameVersion,
+      table.archiveMember,
+      table.provenance.sourceFile,
+      ...table.slots.flatMap((slot) => [
+        slot.slot.toString(),
+        slot.species,
+        slot.speciesId.toString(),
+        slot.form.toString(),
+        slot.levelMin.toString(),
+        slot.levelMax.toString(),
+        slot.weight.toString(),
+        slot.weather
+      ])
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function getEditableItemFieldValue(item: ItemRecord, field: string) {
   switch (field) {
     case buyPriceFieldName:
@@ -2482,6 +2969,23 @@ function getEditableItemFieldValue(item: ItemRecord, field: string) {
       return item.wattsPrice;
     case alternatePriceFieldName:
       return item.alternatePrice;
+    default:
+      return null;
+  }
+}
+
+function getEditableEncounterFieldValue(encounterSlot: EncounterSlotRecord, field: string) {
+  switch (field) {
+    case speciesIdFieldName:
+      return encounterSlot.speciesId;
+    case encounterFormFieldName:
+      return encounterSlot.form;
+    case encounterProbabilityFieldName:
+      return encounterSlot.weight;
+    case encounterLevelMinFieldName:
+      return encounterSlot.levelMin;
+    case encounterLevelMaxFieldName:
+      return encounterSlot.levelMax;
     default:
       return null;
   }
@@ -2552,7 +3056,7 @@ function getItemPriceDraftState(
 function getIntegerDraftState(
   draftValue: string,
   currentValue: number | null,
-  field: ShopEditableField | TrainerEditableField | undefined
+  field: EncounterEditableField | ShopEditableField | TrainerEditableField | undefined
 ) {
   const normalizedValue = draftValue.trim();
   const parsedValue = /^\d+$/.test(normalizedValue)
@@ -2605,6 +3109,14 @@ function getPendingShopIds(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
       .filter((edit) => edit.domain === 'workflow.shops' && edit.recordId)
+      .map((edit) => edit.recordId!.split('#')[0])
+  );
+}
+
+function getPendingEncounterTableIds(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.encounters' && edit.recordId)
       .map((edit) => edit.recordId!.split('#')[0])
   );
 }
@@ -2677,6 +3189,7 @@ const workflowAvailabilityClassNames = {
 
 function formatSourceLayer(
   layer:
+    | EncounterTableRecord['provenance']['sourceLayer']
     | ItemRecord['provenance']['sourceLayer']
     | ShopRecord['provenance']['sourceLayer']
     | TextEntryRecord['provenance']['sourceLayer']
@@ -2701,6 +3214,7 @@ function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][n
 
 function formatFileState(
   state:
+    | EncounterTableRecord['provenance']['fileState']
     | ItemRecord['provenance']['fileState']
     | ShopRecord['provenance']['fileState']
     | TextEntryRecord['provenance']['fileState']

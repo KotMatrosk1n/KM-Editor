@@ -154,6 +154,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateEncounterSlotFieldResponse ToDto(SwShEncountersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateEncounterSlotFieldResponse(
+            ToEncountersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(SwShEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -221,6 +231,7 @@ public static class SwShBridgeMapper
         return new EncountersWorkflowDto(
             ToDto(workflow.Summary),
             workflow.Tables.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
             new EncountersWorkflowStatsDto(
                 workflow.Stats.TotalTableCount,
                 workflow.Stats.TotalSlotCount,
@@ -476,6 +487,7 @@ public static class SwShBridgeMapper
             table.Area,
             table.EncounterType,
             table.GameVersion,
+            table.ArchiveMember,
             table.Slots.Select(ToDto).ToArray(),
             ToDto(table.Provenance));
     }
@@ -484,12 +496,24 @@ public static class SwShBridgeMapper
     {
         return new EncounterSlotRecordDto(
             slot.Slot,
+            slot.SpeciesId,
             slot.Species,
+            slot.Form,
             slot.LevelMin,
             slot.LevelMax,
             slot.Weight,
             slot.TimeOfDay,
             slot.Weather);
+    }
+
+    private static EncounterEditableFieldDto ToDto(SwShEncounterEditableField field)
+    {
+        return new EncounterEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue);
     }
 
     private static EncounterProvenanceDto ToDto(SwShEncounterProvenance provenance)

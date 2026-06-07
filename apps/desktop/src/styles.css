@@ -996,6 +996,153 @@ h2 {
   align-items: end;
 }
 
+.encounters-toolbar {
+  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
+}
+
+.encounters-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.encounters-table {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.encounters-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.3fr) minmax(70px, 0.5fr) minmax(84px, 0.6fr) minmax(110px, 0.8fr) 60px minmax(132px, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  color: #202420;
+  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid #e1e5df;
+  text-align: left;
+}
+
+.encounters-row:last-child {
+  border-bottom: 0;
+}
+
+.encounters-row:not(.encounters-row-heading) {
+  cursor: pointer;
+}
+
+.encounters-row:not(.encounters-row-heading):hover,
+.encounters-row-selected {
+  color: #ffffff;
+  background: #4338ca;
+}
+
+.encounters-row-pending:not(.encounters-row-selected) {
+  background: #fff8e8;
+  box-shadow: inset 4px 0 0 #b88416;
+}
+
+.encounters-row-heading {
+  color: #6c756a;
+  background: #f5f6f4;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: default;
+}
+
+.encounters-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.encounter-inspector {
+  min-width: 0;
+  padding: 14px;
+  background: #f5f6f4;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.encounter-inspector h3 {
+  margin: 0;
+  color: #202420;
+  font-size: 15px;
+}
+
+.encounter-edit-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #d7ddd5;
+}
+
+.encounter-slot-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.encounter-slot-header strong {
+  color: #202420;
+  font-size: 14px;
+}
+
+.encounter-slot-header select {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 10px;
+  color: #202420;
+  background: #ffffff;
+  border: 1px solid #cfd6cd;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 700;
+}
+
+.encounter-slot-detail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.encounter-slot-detail div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.encounter-slot-detail dt {
+  color: #6c756a;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.encounter-slot-detail dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #202420;
+  font-weight: 700;
+}
+
+.encounter-field-grid {
+  display: grid;
+  gap: 10px;
+}
+
 .changes-summary {
   display: flex;
   flex-wrap: wrap;
@@ -1172,6 +1319,7 @@ h2 {
   .text-layout,
   .trainers-layout,
   .shops-layout,
+  .encounters-layout,
   .change-plan-list li,
   .change-plan-status {
     grid-template-columns: 1fr;
@@ -1225,6 +1373,22 @@ h2 {
   .shop-editor-row,
   .shop-inventory-header,
   .shop-inventory-detail {
+    grid-template-columns: 1fr;
+  }
+
+  .encounters-row {
+    grid-template-columns: minmax(120px, 1fr) minmax(70px, 0.6fr) minmax(84px, 0.7fr);
+  }
+
+  .encounters-row span:nth-child(3),
+  .encounters-row span:nth-child(5),
+  .encounters-row span:nth-child(6) {
+    display: none;
+  }
+
+  .encounter-slot-header,
+  .encounter-slot-detail,
+  .trainer-editor-row {
     grid-template-columns: 1fr;
   }
 
