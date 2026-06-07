@@ -80,6 +80,6 @@ On Windows, Tauri/Rust builds require Visual Studio Build Tools with the Microso
 
 The UI should call the backend through typed request and response contracts. The preferred transport direction is JSON-RPC-style messages over a desktop-safe channel, starting with stdio for a backend sidecar if Tauri integration is smooth.
 
-Contract validation should use generated or mirrored TypeScript types plus Zod validation at the bridge boundary.
+Bridge envelopes use camel-case JSON and string diagnostics across the wire. Backend serialization should use `BridgeJson.SerializerOptions`; frontend bridge boundary validation starts with mirrored Zod schemas in `apps/desktop/src/bridge`.
 
-The Tauri shell includes the shell plugin needed for future sidecar launch work. The actual backend sidecar binary, command allowlist, JSON-RPC framing, and contract generation belong in the bridge setup branch.
+The Tauri shell includes the shell plugin needed for future sidecar launch work. The actual backend sidecar binary, command allowlist, JSON-RPC framing, and generated contract pipeline belong in later transport implementation work.
