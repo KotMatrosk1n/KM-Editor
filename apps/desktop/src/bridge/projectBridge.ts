@@ -14,6 +14,8 @@ import {
   type LoadItemsWorkflowResponse,
   type LoadTextWorkflowRequest,
   type LoadTextWorkflowResponse,
+  type LoadTrainersWorkflowRequest,
+  type LoadTrainersWorkflowResponse,
   type KmCommandName,
   type OpenProjectRequest,
   type OpenProjectResponse,
@@ -34,6 +36,7 @@ import {
   listWorkflowsResponseSchema,
   loadItemsWorkflowResponseSchema,
   loadTextWorkflowResponseSchema,
+  loadTrainersWorkflowResponseSchema,
   openProjectResponseSchema,
   refreshFileGraphResponseSchema,
   startEditSessionResponseSchema,
@@ -48,6 +51,9 @@ export type ProjectBridge = {
   listWorkflows: (request: ListWorkflowsRequest) => Promise<ListWorkflowsResponse>;
   loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
   loadTextWorkflow: (request: LoadTextWorkflowRequest) => Promise<LoadTextWorkflowResponse>;
+  loadTrainersWorkflow: (
+    request: LoadTrainersWorkflowRequest
+  ) => Promise<LoadTrainersWorkflowResponse>;
   openProject: (request: OpenProjectRequest) => Promise<OpenProjectResponse>;
   refreshFileGraph: (request: RefreshFileGraphRequest) => Promise<RefreshFileGraphResponse>;
   startEditSession: (request: StartEditSessionRequest) => Promise<StartEditSessionResponse>;
@@ -116,6 +122,13 @@ export function createProjectBridge(
         kmCommandNames.loadTextWorkflow,
         request,
         loadTextWorkflowResponseSchema
+      ),
+    loadTrainersWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadTrainersWorkflow,
+        request,
+        loadTrainersWorkflowResponseSchema
       ),
     openProject: (request) =>
       sendProjectBridgeRequest(

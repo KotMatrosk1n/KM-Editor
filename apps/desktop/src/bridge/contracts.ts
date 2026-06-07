@@ -10,6 +10,7 @@ export const kmCommandNameValues = [
   'items.load',
   'items.field.update',
   'text.load',
+  'trainers.load',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -29,6 +30,7 @@ export const kmCommandNames = {
   listWorkflows: 'workflow.list',
   loadItemsWorkflow: 'items.load',
   loadTextWorkflow: 'text.load',
+  loadTrainersWorkflow: 'trainers.load',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -81,6 +83,10 @@ export const loadItemsWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadTextWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadTrainersWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -288,6 +294,47 @@ export const loadTextWorkflowResponseSchema = z.strictObject({
   workflow: textWorkflowSchema
 });
 
+export const trainerProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const trainerPokemonRecordSchema = z.strictObject({
+  heldItem: z.string().nullable(),
+  level: z.number().int().nonnegative(),
+  moves: z.array(z.string()),
+  slot: z.number().int().nonnegative(),
+  species: z.string()
+});
+
+export const trainerRecordSchema = z.strictObject({
+  battleType: z.string(),
+  location: z.string(),
+  name: z.string(),
+  provenance: trainerProvenanceSchema,
+  team: z.array(trainerPokemonRecordSchema),
+  trainerClass: z.string(),
+  trainerId: z.number().int().nonnegative()
+});
+
+export const trainersWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalPokemonCount: z.number().int().nonnegative(),
+  totalTrainerCount: z.number().int().nonnegative()
+});
+
+export const trainersWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  stats: trainersWorkflowStatsSchema,
+  summary: workflowSummarySchema,
+  trainers: z.array(trainerRecordSchema)
+});
+
+export const loadTrainersWorkflowResponseSchema = z.strictObject({
+  workflow: trainersWorkflowSchema
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -386,12 +433,15 @@ export type ItemEditableField = z.infer<typeof itemEditableFieldSchema>;
 export type ItemRecord = z.infer<typeof itemRecordSchema>;
 export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
 export type TextWorkflow = z.infer<typeof textWorkflowSchema>;
+export type TrainersWorkflow = z.infer<typeof trainersWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
 export type LoadItemsWorkflowResponse = z.infer<typeof loadItemsWorkflowResponseSchema>;
 export type LoadTextWorkflowRequest = z.infer<typeof loadTextWorkflowRequestSchema>;
 export type LoadTextWorkflowResponse = z.infer<typeof loadTextWorkflowResponseSchema>;
+export type LoadTrainersWorkflowRequest = z.infer<typeof loadTrainersWorkflowRequestSchema>;
+export type LoadTrainersWorkflowResponse = z.infer<typeof loadTrainersWorkflowResponseSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;

@@ -6,6 +6,7 @@ using KM.Api.Editing;
 using KM.Api.Items;
 using KM.Api.Projects;
 using KM.Api.Text;
+using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.Tools.Bridge;
 using System.Text.Json;
@@ -116,6 +117,11 @@ public sealed class ProjectBridgeDispatcherTests
             {
                 Assert.Equal("text", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("trainers", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             });
     }
 
@@ -216,6 +222,57 @@ public sealed class ProjectBridgeDispatcherTests
         var reference = Assert.Single(response.Payload.Workflow.DialogueReferences);
         Assert.Equal("intro.lab.greeting", reference.DialogueId);
         Assert.Equal(10, reference.TextId);
+        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchLoadTrainersWorkflowReturnsSanitizedTrainerRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/trainers.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "trainers": [
+                {
+                  "trainerId": 10,
+                  "name": "Avery",
+                  "trainerClass": "Pokemon Trainer",
+                  "location": "Route 1",
+                  "battleType": "Single",
+                  "team": [
+                    {
+                      "slot": 1,
+                      "species": "Grookey",
+                      "level": 12,
+                      "heldItem": null,
+                      "moves": ["Scratch", "Growl"]
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadTrainersWorkflow,
+            new LoadTrainersWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-trainers");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadTrainersWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-trainers", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var trainer = Assert.Single(response.Payload.Workflow.Trainers);
+        Assert.Equal("Avery", trainer.Name);
+        Assert.Equal("Pokemon Trainer", trainer.TrainerClass);
+        Assert.Equal(ProjectFileLayerDto.Base, trainer.Provenance.SourceLayer);
+        var pokemon = Assert.Single(trainer.Team);
+        Assert.Equal("Grookey", pokemon.Species);
+        Assert.Equal(12, pokemon.Level);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

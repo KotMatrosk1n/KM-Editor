@@ -3,9 +3,11 @@
 using KM.Api.Items;
 using KM.Api.Editing;
 using KM.Api.Text;
+using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
 using KM.SwSh.Text;
+using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
 
 namespace KM.Tools.Bridge;
@@ -31,6 +33,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadTextWorkflowResponse(ToTextWorkflowDto(workflow));
+    }
+
+    public static LoadTrainersWorkflowResponse ToDto(SwShTrainersWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow));
     }
 
     public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
@@ -74,6 +83,18 @@ public static class SwShBridgeMapper
             new TextWorkflowStatsDto(
                 workflow.Stats.TotalTextEntryCount,
                 workflow.Stats.DialogueReferenceCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TrainersWorkflowDto ToTrainersWorkflowDto(SwShTrainersWorkflow workflow)
+    {
+        return new TrainersWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Trainers.Select(ToDto).ToArray(),
+            new TrainersWorkflowStatsDto(
+                workflow.Stats.TotalTrainerCount,
+                workflow.Stats.TotalPokemonCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -136,6 +157,36 @@ public static class SwShBridgeMapper
     private static TextProvenanceDto ToDto(SwShTextProvenance provenance)
     {
         return new TextProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static TrainerRecordDto ToDto(SwShTrainerRecord trainer)
+    {
+        return new TrainerRecordDto(
+            trainer.TrainerId,
+            trainer.Name,
+            trainer.TrainerClass,
+            trainer.Location,
+            trainer.BattleType,
+            trainer.Team.Select(ToDto).ToArray(),
+            ToDto(trainer.Provenance));
+    }
+
+    private static TrainerPokemonRecordDto ToDto(SwShTrainerPokemonRecord pokemon)
+    {
+        return new TrainerPokemonRecordDto(
+            pokemon.Slot,
+            pokemon.Species,
+            pokemon.Level,
+            pokemon.HeldItem,
+            pokemon.Moves);
+    }
+
+    private static TrainerProvenanceDto ToDto(SwShTrainerProvenance provenance)
+    {
+        return new TrainerProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

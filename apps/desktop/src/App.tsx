@@ -84,6 +84,12 @@ const workflowDefinitions: Array<{
     label: 'Text and Dialogue Map',
     description: 'Text entries, dialogue references, and source provenance.',
     icon: ListChecks
+  },
+  {
+    id: 'trainers',
+    label: 'Trainers',
+    description: 'Trainer parties, classes, battle types, and source provenance.',
+    icon: Activity
   }
 ];
 

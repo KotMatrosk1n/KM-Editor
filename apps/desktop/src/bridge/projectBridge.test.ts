@@ -130,6 +130,13 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'text',
                 label: 'Text and Dialogue Map'
+              },
+              {
+                availability: 'readOnly',
+                description: 'Trainer parties, classes, battle types, and source provenance.',
+                diagnostics: [],
+                id: 'trainers',
+                label: 'Trainers'
               }
             ]
           }
@@ -181,6 +188,52 @@ describe('projectBridge', () => {
                 id: 'text',
                 label: 'Text and Dialogue Map'
               }
+            }
+          }
+        });
+      }
+
+      if (request.command === 'trainers.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              stats: {
+                sourceFileCount: 1,
+                totalPokemonCount: 1,
+                totalTrainerCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description: 'Trainer parties, classes, battle types, and source provenance.',
+                diagnostics: [],
+                id: 'trainers',
+                label: 'Trainers'
+              },
+              trainers: [
+                {
+                  battleType: 'Single',
+                  location: 'Route 1',
+                  name: 'Avery',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/kmeditor/trainers.readmodel.json',
+                    sourceLayer: 'base'
+                  },
+                  team: [
+                    {
+                      heldItem: null,
+                      level: 12,
+                      moves: ['Scratch', 'Growl'],
+                      slot: 1,
+                      species: 'Grookey'
+                    }
+                  ],
+                  trainerClass: 'Pokemon Trainer',
+                  trainerId: 10
+                }
+              ]
             }
           }
         });
@@ -240,12 +293,15 @@ describe('projectBridge', () => {
     const workflows = await bridge.listWorkflows({ paths: projectPaths });
     const items = await bridge.loadItemsWorkflow({ paths: projectPaths });
     const text = await bridge.loadTextWorkflow({ paths: projectPaths });
+    const trainers = await bridge.loadTrainersWorkflow({ paths: projectPaths });
 
     expect(workflows.workflows[0]?.id).toBe('items');
     expect(workflows.workflows[1]?.id).toBe('text');
+    expect(workflows.workflows[2]?.id).toBe('trainers');
     expect(items.workflow.editableFields).toHaveLength(2);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(text.workflow.entries[0]?.label).toBe('Greeting');
+    expect(trainers.workflow.trainers[0]?.name).toBe('Avery');
   });
 
   it('starts, updates, and validates an Items edit session', async () => {
