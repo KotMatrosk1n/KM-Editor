@@ -1,0 +1,156 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+using KM.Api.Diagnostics;
+using KM.Api.Projects;
+using KM.Core.Diagnostics;
+using KM.Core.Files;
+using KM.Core.Projects;
+
+namespace KM.Tools.Bridge;
+
+public static class ProjectBridgeMapper
+{
+    public static ProjectPaths ToCore(ProjectPathsDto paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        return new ProjectPaths(paths.BaseRomFsPath, paths.BaseExeFsPath, paths.OutputRootPath);
+    }
+
+    public static ProjectHealthDto ToDto(ProjectHealth health)
+    {
+        ArgumentNullException.ThrowIfNull(health);
+
+        return new ProjectHealthDto(
+            ToDto(health.State),
+            health.CanOpenReadOnlyWorkflows,
+            health.CanOpenEditableWorkflows,
+            health.Paths.Select(ToDto).ToArray(),
+            ToDto(health.FileGraph),
+            health.Diagnostics.Select(ToDto).ToArray());
+    }
+
+    public static ProjectFileGraphDto ToDto(ProjectFileGraph fileGraph)
+    {
+        ArgumentNullException.ThrowIfNull(fileGraph);
+
+        return new ProjectFileGraphDto(
+            fileGraph.Entries.Select(ToDto).ToArray(),
+            ToDto(fileGraph.ToSummary()));
+    }
+
+    private static ProjectPathValidationDto ToDto(ProjectPathValidation path)
+    {
+        return new ProjectPathValidationDto(
+            ToDto(path.Role),
+            path.Path,
+            ToDto(path.Status),
+            path.IsRequired,
+            path.Diagnostics.Select(ToDto).ToArray());
+    }
+
+    private static ApiDiagnostic ToDto(ValidationDiagnostic diagnostic)
+    {
+        return new ApiDiagnostic(
+            ToDto(diagnostic.Severity),
+            diagnostic.Message,
+            diagnostic.File,
+            diagnostic.Domain,
+            diagnostic.Field,
+            diagnostic.Expected);
+    }
+
+    private static ProjectFileGraphEntryDto ToDto(ProjectFileGraphEntry entry)
+    {
+        return new ProjectFileGraphEntryDto(
+            entry.RelativePath,
+            entry.BaseFile is null ? null : ToDto(entry.BaseFile),
+            entry.LayeredFile is null ? null : ToDto(entry.LayeredFile),
+            ToDto(entry.State));
+    }
+
+    private static ProjectFileReferenceDto ToDto(ProjectFileReference reference)
+    {
+        return new ProjectFileReferenceDto(ToDto(reference.Layer), reference.RelativePath);
+    }
+
+    private static ProjectFileGraphSummaryDto ToDto(ProjectFileGraphSummary summary)
+    {
+        return new ProjectFileGraphSummaryDto(
+            summary.BaseFileCount,
+            summary.LayeredFileCount,
+            summary.OverrideCount,
+            summary.LayeredOnlyCount);
+    }
+
+    private static ApiDiagnosticSeverity ToDto(DiagnosticSeverity severity)
+    {
+        return severity switch
+        {
+            DiagnosticSeverity.Info => ApiDiagnosticSeverity.Info,
+            DiagnosticSeverity.Warning => ApiDiagnosticSeverity.Warning,
+            DiagnosticSeverity.Error => ApiDiagnosticSeverity.Error,
+            _ => throw new ArgumentOutOfRangeException(nameof(severity), severity, null),
+        };
+    }
+
+    private static ProjectFileGraphEntryStateDto ToDto(ProjectFileGraphEntryState state)
+    {
+        return state switch
+        {
+            ProjectFileGraphEntryState.BaseOnly => ProjectFileGraphEntryStateDto.BaseOnly,
+            ProjectFileGraphEntryState.LayeredOverride => ProjectFileGraphEntryStateDto.LayeredOverride,
+            ProjectFileGraphEntryState.LayeredOnly => ProjectFileGraphEntryStateDto.LayeredOnly,
+            _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
+        };
+    }
+
+    private static ProjectFileLayerDto ToDto(ProjectFileLayer layer)
+    {
+        return layer switch
+        {
+            ProjectFileLayer.Base => ProjectFileLayerDto.Base,
+            ProjectFileLayer.Layered => ProjectFileLayerDto.Layered,
+            ProjectFileLayer.Pending => ProjectFileLayerDto.Pending,
+            ProjectFileLayer.Generated => ProjectFileLayerDto.Generated,
+            _ => throw new ArgumentOutOfRangeException(nameof(layer), layer, null),
+        };
+    }
+
+    private static ProjectHealthStateDto ToDto(ProjectHealthState state)
+    {
+        return state switch
+        {
+            ProjectHealthState.NeedsPaths => ProjectHealthStateDto.NeedsPaths,
+            ProjectHealthState.ReadOnlyReady => ProjectHealthStateDto.ReadOnlyReady,
+            ProjectHealthState.EditableReady => ProjectHealthStateDto.EditableReady,
+            ProjectHealthState.Blocked => ProjectHealthStateDto.Blocked,
+            _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
+        };
+    }
+
+    private static ProjectPathRoleDto ToDto(ProjectPathRole role)
+    {
+        return role switch
+        {
+            ProjectPathRole.BaseRomFs => ProjectPathRoleDto.BaseRomFs,
+            ProjectPathRole.BaseExeFs => ProjectPathRoleDto.BaseExeFs,
+            ProjectPathRole.OutputRoot => ProjectPathRoleDto.OutputRoot,
+            _ => throw new ArgumentOutOfRangeException(nameof(role), role, null),
+        };
+    }
+
+    private static ProjectPathStatusDto ToDto(ProjectPathStatus status)
+    {
+        return status switch
+        {
+            ProjectPathStatus.NotSet => ProjectPathStatusDto.NotSet,
+            ProjectPathStatus.Missing => ProjectPathStatusDto.Missing,
+            ProjectPathStatus.WrongKind => ProjectPathStatusDto.WrongKind,
+            ProjectPathStatus.Valid => ProjectPathStatusDto.Valid,
+            ProjectPathStatus.Unsafe => ProjectPathStatusDto.Unsafe,
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, null),
+        };
+    }
+}
+
