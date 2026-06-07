@@ -17,6 +17,7 @@ export const kmCommandNameValues = [
   'placement.load',
   'flagworkSave.load',
   'exefsPatches.load',
+  'royalCandy.load',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -43,6 +44,7 @@ export const kmCommandNames = {
   loadPlacementWorkflow: 'placement.load',
   loadFlagworkSaveWorkflow: 'flagworkSave.load',
   loadExeFsPatchWorkflow: 'exefsPatches.load',
+  loadRoyalCandyWorkflow: 'royalCandy.load',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -123,6 +125,10 @@ export const loadFlagworkSaveWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadExeFsPatchWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadRoyalCandyWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -604,6 +610,46 @@ export const loadExeFsPatchWorkflowResponseSchema = z.strictObject({
   workflow: exeFsPatchWorkflowSchema
 });
 
+export const royalCandyProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const royalCandyWorkflowStepRecordSchema = z.strictObject({
+  description: z.string(),
+  label: z.string(),
+  step: z.number().int().nonnegative()
+});
+
+export const royalCandyWorkflowRecordSchema = z.strictObject({
+  category: z.string(),
+  description: z.string(),
+  name: z.string(),
+  provenance: royalCandyProvenanceSchema,
+  status: z.string(),
+  steps: z.array(royalCandyWorkflowStepRecordSchema),
+  target: z.string(),
+  workflowId: z.string()
+});
+
+export const royalCandyWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalStepCount: z.number().int().nonnegative(),
+  totalWorkflowCount: z.number().int().nonnegative()
+});
+
+export const royalCandyWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  stats: royalCandyWorkflowStatsSchema,
+  summary: workflowSummarySchema,
+  workflows: z.array(royalCandyWorkflowRecordSchema)
+});
+
+export const loadRoyalCandyWorkflowResponseSchema = z.strictObject({
+  workflow: royalCandyWorkflowSchema
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -709,6 +755,7 @@ export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
 export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
 export type FlagworkSaveWorkflow = z.infer<typeof flagworkSaveWorkflowSchema>;
 export type ExeFsPatchWorkflow = z.infer<typeof exeFsPatchWorkflowSchema>;
+export type RoyalCandyWorkflow = z.infer<typeof royalCandyWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
@@ -729,6 +776,8 @@ export type LoadFlagworkSaveWorkflowRequest = z.infer<typeof loadFlagworkSaveWor
 export type LoadFlagworkSaveWorkflowResponse = z.infer<typeof loadFlagworkSaveWorkflowResponseSchema>;
 export type LoadExeFsPatchWorkflowRequest = z.infer<typeof loadExeFsPatchWorkflowRequestSchema>;
 export type LoadExeFsPatchWorkflowResponse = z.infer<typeof loadExeFsPatchWorkflowResponseSchema>;
+export type LoadRoyalCandyWorkflowRequest = z.infer<typeof loadRoyalCandyWorkflowRequestSchema>;
+export type LoadRoyalCandyWorkflowResponse = z.infer<typeof loadRoyalCandyWorkflowResponseSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;

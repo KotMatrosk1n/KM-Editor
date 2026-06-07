@@ -10,6 +10,7 @@ using KM.Api.Items;
 using KM.Api.Placement;
 using KM.Api.Projects;
 using KM.Api.Raids;
+using KM.Api.RoyalCandy;
 using KM.Api.Shops;
 using KM.Api.Text;
 using KM.Api.Trainers;
@@ -157,6 +158,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("exefsPatches", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("royalCandy", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             });
     }
@@ -604,6 +610,55 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("exefs/main", patch.TargetFile);
         Assert.Equal(ProjectFileLayerDto.Base, patch.Provenance.SourceLayer);
         Assert.Equal("exefs/kmeditor/exefs.patches.readmodel.json", patch.Provenance.SourceFile);
+        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchLoadRoyalCandyWorkflowReturnsSanitizedWorkflowRecipes()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile(
+            "kmeditor/royal-candy.workflows.readmodel.json",
+            """
+            {
+              "schemaVersion": 1,
+              "workflows": [
+                {
+                  "workflowId": "candy_reward_setup",
+                  "name": "Candy Reward Setup",
+                  "category": "Items",
+                  "target": "items",
+                  "status": "available",
+                  "description": "Prepare a safe candy reward workflow fixture.",
+                  "steps": [
+                    {
+                      "step": 1,
+                      "label": "Review target",
+                      "description": "Review target item and output preview."
+                    }
+                  ]
+                }
+              ]
+            }
+            """);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadRoyalCandyWorkflow,
+            new LoadRoyalCandyWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-royal-candy");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadRoyalCandyWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-royal-candy", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var workflow = Assert.Single(response.Payload.Workflow.Workflows);
+        Assert.Equal("candy_reward_setup", workflow.WorkflowId);
+        Assert.Equal("Candy Reward Setup", workflow.Name);
+        Assert.Equal(ProjectFileLayerDto.Base, workflow.Provenance.SourceLayer);
+        var step = Assert.Single(workflow.Steps);
+        Assert.Equal(1, step.Step);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

@@ -82,6 +82,9 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', { level: 3, name: 'ExeFS Patch Manager' })
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Royal Candy Workflows' })
+    ).toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
   });
 
@@ -316,6 +319,13 @@ function createMockProjectBridge(
     id: 'exefsPatches',
     label: 'ExeFS Patch Manager'
   };
+  const royalCandyWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Curated batch workflow recipes, targets, steps, and source provenance.',
+    diagnostics: [],
+    id: 'royalCandy',
+    label: 'Royal Candy Workflows'
+  };
 
   return {
     applyChangePlan: (request) =>
@@ -368,7 +378,8 @@ function createMockProjectBridge(
           raidRewardsWorkflowSummary,
           placementWorkflowSummary,
           flagworkSaveWorkflowSummary,
-          exeFsPatchWorkflowSummary
+          exeFsPatchWorkflowSummary,
+          royalCandyWorkflowSummary
         ]
       }),
     loadEncountersWorkflow: () =>
@@ -408,6 +419,19 @@ function createMockProjectBridge(
             totalPatchCount: 0
           },
           summary: exeFsPatchWorkflowSummary
+        }
+      }),
+    loadRoyalCandyWorkflow: () =>
+      Promise.resolve({
+        workflow: {
+          diagnostics: [],
+          stats: {
+            sourceFileCount: 0,
+            totalStepCount: 0,
+            totalWorkflowCount: 0
+          },
+          summary: royalCandyWorkflowSummary,
+          workflows: []
         }
       }),
     loadPlacementWorkflow: () =>

@@ -179,6 +179,13 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'exefsPatches',
                 label: 'ExeFS Patch Manager'
+              },
+              {
+                availability: 'readOnly',
+                description: 'Curated batch workflow recipes, targets, steps, and source provenance.',
+                diagnostics: [],
+                id: 'royalCandy',
+                label: 'Royal Candy Workflows'
               }
             ]
           }
@@ -552,6 +559,52 @@ describe('projectBridge', () => {
         });
       }
 
+      if (request.command === 'royalCandy.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              stats: {
+                sourceFileCount: 1,
+                totalStepCount: 1,
+                totalWorkflowCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description:
+                  'Curated batch workflow recipes, targets, steps, and source provenance.',
+                diagnostics: [],
+                id: 'royalCandy',
+                label: 'Royal Candy Workflows'
+              },
+              workflows: [
+                {
+                  category: 'Items',
+                  description: 'Prepare a safe candy reward workflow fixture.',
+                  name: 'Candy Reward Setup',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/kmeditor/royal-candy.workflows.readmodel.json',
+                    sourceLayer: 'base'
+                  },
+                  status: 'available',
+                  steps: [
+                    {
+                      description: 'Review target item and output preview.',
+                      label: 'Review target',
+                      step: 1
+                    }
+                  ],
+                  target: 'items',
+                  workflowId: 'candy_reward_setup'
+                }
+              ]
+            }
+          }
+        });
+      }
+
       return JSON.stringify({
         error: null,
         payload: {
@@ -613,6 +666,7 @@ describe('projectBridge', () => {
     const placement = await bridge.loadPlacementWorkflow({ paths: projectPaths });
     const flagworkSave = await bridge.loadFlagworkSaveWorkflow({ paths: projectPaths });
     const exeFsPatches = await bridge.loadExeFsPatchWorkflow({ paths: projectPaths });
+    const royalCandy = await bridge.loadRoyalCandyWorkflow({ paths: projectPaths });
 
     expect(workflows.workflows[0]?.id).toBe('items');
     expect(workflows.workflows[1]?.id).toBe('text');
@@ -623,6 +677,7 @@ describe('projectBridge', () => {
     expect(workflows.workflows[6]?.id).toBe('placement');
     expect(workflows.workflows[7]?.id).toBe('flagworkSave');
     expect(workflows.workflows[8]?.id).toBe('exefsPatches');
+    expect(workflows.workflows[9]?.id).toBe('royalCandy');
     expect(items.workflow.editableFields).toHaveLength(2);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(text.workflow.entries[0]?.label).toBe('Greeting');
@@ -633,6 +688,7 @@ describe('projectBridge', () => {
     expect(placement.workflow.objects[0]?.label).toBe('Hidden Potion');
     expect(flagworkSave.workflow.flags[0]?.name).toBe('Badge 1 Obtained');
     expect(exeFsPatches.workflow.patches[0]?.targetFile).toBe('exefs/main');
+    expect(royalCandy.workflow.workflows[0]?.name).toBe('Candy Reward Setup');
   });
 
   it('starts, updates, and validates an Items edit session', async () => {

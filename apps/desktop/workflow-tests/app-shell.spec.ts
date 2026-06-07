@@ -12,7 +12,7 @@ test('loads the workbench shell and switches sections', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Workflows' }).click();
 
-  await expect(page.getByRole('heading', { name: 'Workflows' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Workflows', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Workflows' })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByRole('heading', { name: 'Items' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Text and Dialogue Map' })).toBeVisible();
@@ -23,5 +23,6 @@ test('loads the workbench shell and switches sections', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Placement' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Flagwork and Save Inspectors' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'ExeFS Patch Manager' })).toBeVisible();
-  await expect(page.getByText('Disabled', { exact: true })).toHaveCount(9);
+  await expect(page.getByRole('heading', { name: 'Royal Candy Workflows' })).toBeVisible();
+  await expect(page.getByText('Disabled', { exact: true })).toHaveCount(10);
 });

@@ -8,6 +8,7 @@ using KM.Api.Flagwork;
 using KM.Api.Placement;
 using KM.Api.Shops;
 using KM.Api.Raids;
+using KM.Api.RoyalCandy;
 using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
@@ -18,6 +19,7 @@ using KM.SwSh.Flagwork;
 using KM.SwSh.Placement;
 using KM.SwSh.Shops;
 using KM.SwSh.Raids;
+using KM.SwSh.RoyalCandy;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
@@ -94,6 +96,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadExeFsPatchWorkflowResponse(ToExeFsPatchWorkflowDto(workflow));
+    }
+
+    public static LoadRoyalCandyWorkflowResponse ToDto(SwShRoyalCandyWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadRoyalCandyWorkflowResponse(ToRoyalCandyWorkflowDto(workflow));
     }
 
     public static UpdateItemFieldResponse ToDto(SwShItemsEditResult result)
@@ -220,6 +229,18 @@ public static class SwShBridgeMapper
             workflow.Patches.Select(ToDto).ToArray(),
             new ExeFsPatchWorkflowStatsDto(
                 workflow.Stats.TotalPatchCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static RoyalCandyWorkflowDto ToRoyalCandyWorkflowDto(SwShRoyalCandyWorkflow workflow)
+    {
+        return new RoyalCandyWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Workflows.Select(ToDto).ToArray(),
+            new RoyalCandyWorkflowStatsDto(
+                workflow.Stats.TotalWorkflowCount,
+                workflow.Stats.TotalStepCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -476,6 +497,35 @@ public static class SwShBridgeMapper
     private static ExeFsPatchProvenanceDto ToDto(SwShExeFsPatchProvenance provenance)
     {
         return new ExeFsPatchProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static RoyalCandyWorkflowRecordDto ToDto(SwShRoyalCandyWorkflowRecord workflow)
+    {
+        return new RoyalCandyWorkflowRecordDto(
+            workflow.WorkflowId,
+            workflow.Name,
+            workflow.Category,
+            workflow.Target,
+            workflow.Status,
+            workflow.Description,
+            workflow.Steps.Select(ToDto).ToArray(),
+            ToDto(workflow.Provenance));
+    }
+
+    private static RoyalCandyWorkflowStepRecordDto ToDto(SwShRoyalCandyWorkflowStepRecord step)
+    {
+        return new RoyalCandyWorkflowStepRecordDto(
+            step.Step,
+            step.Label,
+            step.Description);
+    }
+
+    private static RoyalCandyProvenanceDto ToDto(SwShRoyalCandyProvenance provenance)
+    {
+        return new RoyalCandyProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

@@ -23,6 +23,8 @@ import {
   loadPlacementWorkflowResponseSchema,
   loadRaidRewardsWorkflowRequestSchema,
   loadRaidRewardsWorkflowResponseSchema,
+  loadRoyalCandyWorkflowRequestSchema,
+  loadRoyalCandyWorkflowResponseSchema,
   loadShopsWorkflowRequestSchema,
   loadShopsWorkflowResponseSchema,
   loadTextWorkflowRequestSchema,
@@ -229,6 +231,10 @@ describe('bridge contracts', () => {
     const exeFsPatchRequestSchema = createBridgeRequestSchema(loadExeFsPatchWorkflowRequestSchema);
     const exeFsPatchResponseSchema = createBridgeResponseSchema(
       loadExeFsPatchWorkflowResponseSchema
+    );
+    const royalCandyRequestSchema = createBridgeRequestSchema(loadRoyalCandyWorkflowRequestSchema);
+    const royalCandyResponseSchema = createBridgeResponseSchema(
+      loadRoyalCandyWorkflowResponseSchema
     );
     const itemsWorkflow = {
       diagnostics: [],
@@ -573,6 +579,43 @@ describe('bridge contracts', () => {
         label: 'ExeFS Patch Manager'
       }
     } as const;
+    const royalCandyWorkflow = {
+      diagnostics: [],
+      stats: {
+        sourceFileCount: 1,
+        totalStepCount: 1,
+        totalWorkflowCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Curated batch workflow recipes, targets, steps, and source provenance.',
+        diagnostics: [],
+        id: 'royalCandy',
+        label: 'Royal Candy Workflows'
+      },
+      workflows: [
+        {
+          category: 'Items',
+          description: 'Prepare a safe candy reward workflow fixture.',
+          name: 'Candy Reward Setup',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/royal-candy.workflows.readmodel.json',
+            sourceLayer: 'base'
+          },
+          status: 'available',
+          steps: [
+            {
+              description: 'Review target item and output preview.',
+              label: 'Review target',
+              step: 1
+            }
+          ],
+          target: 'items',
+          workflowId: 'candy_reward_setup'
+        }
+      ]
+    } as const;
 
     expect(
       workflowsRequestSchema.safeParse({
@@ -599,7 +642,8 @@ describe('bridge contracts', () => {
             raidRewardsWorkflow.summary,
             placementWorkflow.summary,
             flagworkSaveWorkflow.summary,
-            exeFsPatchWorkflow.summary
+            exeFsPatchWorkflow.summary,
+            royalCandyWorkflow.summary
           ]
         }
       }).success
@@ -790,6 +834,27 @@ describe('bridge contracts', () => {
       exeFsPatchResponseSchema.safeParse({
         payload: {
           workflow: exeFsPatchWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      royalCandyRequestSchema.safeParse({
+        command: kmCommandNames.loadRoyalCandyWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      royalCandyResponseSchema.safeParse({
+        payload: {
+          workflow: royalCandyWorkflow
         }
       }).success
     ).toBe(true);
