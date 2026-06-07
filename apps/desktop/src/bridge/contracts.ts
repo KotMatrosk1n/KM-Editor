@@ -6,6 +6,8 @@ export const kmCommandNameValues = [
   'project.open',
   'project.validate',
   'project.fileGraph.refresh',
+  'workflow.list',
+  'items.load',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -22,6 +24,8 @@ export const kmCommandNames = {
   createChangePlan: 'changePlan.create',
   discardEditSession: 'editSession.discard',
   getEditSession: 'editSession.get',
+  listWorkflows: 'workflow.list',
+  loadItemsWorkflow: 'items.load',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -61,6 +65,14 @@ export const validateProjectRequestSchema = z.strictObject({
 });
 
 export const refreshFileGraphRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const listWorkflowsRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadItemsWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -138,6 +150,51 @@ export const refreshFileGraphResponseSchema = z.strictObject({
   fileGraph: projectFileGraphSchema
 });
 
+export const workflowAvailabilitySchema = z.enum(['disabled', 'readOnly', 'available']);
+
+export const workflowSummarySchema = z.strictObject({
+  availability: workflowAvailabilitySchema,
+  description: z.string(),
+  diagnostics: z.array(apiDiagnosticSchema),
+  id: z.string(),
+  label: z.string()
+});
+
+export const listWorkflowsResponseSchema = z.strictObject({
+  workflows: z.array(workflowSummarySchema)
+});
+
+export const itemProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const itemRecordSchema = z.strictObject({
+  buyPrice: z.number().int().nonnegative(),
+  category: z.string(),
+  itemId: z.number().int().nonnegative(),
+  name: z.string(),
+  provenance: itemProvenanceSchema,
+  sellPrice: z.number().int().nonnegative()
+});
+
+export const itemsWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalItemCount: z.number().int().nonnegative()
+});
+
+export const itemsWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  items: z.array(itemRecordSchema),
+  stats: itemsWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadItemsWorkflowResponseSchema = z.strictObject({
+  workflow: itemsWorkflowSchema
+});
+
 export function createBridgeRequestSchema<TPayloadSchema extends ZodTypeAny>(
   payloadSchema: TPayloadSchema
 ) {
@@ -173,6 +230,12 @@ export function createBridgeResponseSchema<TPayloadSchema extends ZodTypeAny>(
 
 export type ApiDiagnostic = z.infer<typeof apiDiagnosticSchema>;
 export type ApiError = z.infer<typeof apiErrorSchema>;
+export type ItemRecord = z.infer<typeof itemRecordSchema>;
+export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
+export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
+export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
+export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
+export type LoadItemsWorkflowResponse = z.infer<typeof loadItemsWorkflowResponseSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;
@@ -183,3 +246,4 @@ export type RefreshFileGraphRequest = z.infer<typeof refreshFileGraphRequestSche
 export type RefreshFileGraphResponse = z.infer<typeof refreshFileGraphResponseSchema>;
 export type ValidateProjectRequest = z.infer<typeof validateProjectRequestSchema>;
 export type ValidateProjectResponse = z.infer<typeof validateProjectResponseSchema>;
+export type WorkflowSummary = z.infer<typeof workflowSummarySchema>;

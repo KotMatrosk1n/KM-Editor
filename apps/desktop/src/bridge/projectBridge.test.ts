@@ -103,6 +103,69 @@ describe('projectBridge', () => {
     expect(response.health.canOpenReadOnlyWorkflows).toBe(true);
   });
 
+  it('loads workflow summaries and Items workflow payloads', async () => {
+    const bridge = createProjectBridge(async (requestJson) => {
+      const request = JSON.parse(requestJson) as { command: string };
+
+      if (request.command === 'workflow.list') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflows: [
+              {
+                availability: 'readOnly',
+                description: 'Item records, names, and source provenance.',
+                diagnostics: [],
+                id: 'items',
+                label: 'Items'
+              }
+            ]
+          }
+        });
+      }
+
+      return JSON.stringify({
+        error: null,
+        payload: {
+          workflow: {
+            diagnostics: [],
+            items: [
+              {
+                buyPrice: 300,
+                category: 'Medicine',
+                itemId: 1,
+                name: 'Potion',
+                provenance: {
+                  fileState: 'baseOnly',
+                  sourceFile: 'romfs/kmeditor/items.readmodel.json',
+                  sourceLayer: 'base'
+                },
+                sellPrice: 150
+              }
+            ],
+            stats: {
+              sourceFileCount: 1,
+              totalItemCount: 1
+            },
+            summary: {
+              availability: 'readOnly',
+              description: 'Item records, names, and source provenance.',
+              diagnostics: [],
+              id: 'items',
+              label: 'Items'
+            }
+          }
+        }
+      });
+    });
+
+    const workflows = await bridge.listWorkflows({ paths: projectPaths });
+    const items = await bridge.loadItemsWorkflow({ paths: projectPaths });
+
+    expect(workflows.workflows[0]?.id).toBe('items');
+    expect(items.workflow.items[0]?.name).toBe('Potion');
+  });
+
   it('turns bridge error envelopes into project bridge errors', async () => {
     const bridge = createProjectBridge(async () =>
       JSON.stringify({

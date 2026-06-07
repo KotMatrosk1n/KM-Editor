@@ -49,7 +49,7 @@ public static class ProjectBridgeMapper
             path.Diagnostics.Select(ToDto).ToArray());
     }
 
-    private static ApiDiagnostic ToDto(ValidationDiagnostic diagnostic)
+    public static ApiDiagnostic ToDto(ValidationDiagnostic diagnostic)
     {
         return new ApiDiagnostic(
             ToDto(diagnostic.Severity),
@@ -94,7 +94,7 @@ public static class ProjectBridgeMapper
         };
     }
 
-    private static ProjectFileGraphEntryStateDto ToDto(ProjectFileGraphEntryState state)
+    public static ProjectFileGraphEntryStateDto ToDto(ProjectFileGraphEntryState state)
     {
         return state switch
         {
@@ -105,7 +105,7 @@ public static class ProjectBridgeMapper
         };
     }
 
-    private static ProjectFileLayerDto ToDto(ProjectFileLayer layer)
+    public static ProjectFileLayerDto ToDto(ProjectFileLayer layer)
     {
         return layer switch
         {

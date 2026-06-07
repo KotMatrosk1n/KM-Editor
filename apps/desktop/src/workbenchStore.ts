@@ -1,9 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { create } from 'zustand';
-import { type ProjectFileGraph, type ProjectHealth } from './bridge/contracts';
+import {
+  type ItemsWorkflow,
+  type ProjectFileGraph,
+  type ProjectHealth,
+  type WorkflowSummary
+} from './bridge/contracts';
 
-export type WorkbenchSection = 'health' | 'workflows' | 'changes';
+export type WorkbenchSection = 'health' | 'workflows' | 'items' | 'changes';
 
 export type ProjectPathDraft = {
   baseExeFsPath: string;
@@ -20,13 +25,21 @@ export type OpenProjectState = {
 type WorkbenchState = {
   activeSection: WorkbenchSection;
   draftPaths: ProjectPathDraft;
+  itemSearchText: string;
+  itemsWorkflow: ItemsWorkflow | null;
   openProject: OpenProjectState | null;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
+  selectedItemId: number | null;
+  workflows: WorkflowSummary[];
   setDraftPath: (field: keyof ProjectPathDraft, value: string) => void;
   setActiveSection: (activeSection: WorkbenchSection) => void;
+  setItemsWorkflow: (itemsWorkflow: ItemsWorkflow) => void;
+  setItemSearchText: (itemSearchText: string) => void;
   setOpenProject: (project: OpenProjectState) => void;
   setProjectHealth: (health: ProjectHealth) => void;
   setProjectStatus: (projectStatus: WorkbenchState['projectStatus']) => void;
+  setSelectedItemId: (selectedItemId: number | null) => void;
+  setWorkflows: (workflows: WorkflowSummary[]) => void;
 };
 
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
@@ -36,8 +49,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     baseRomFsPath: '',
     outputRootPath: ''
   },
+  itemSearchText: '',
+  itemsWorkflow: null,
   openProject: null,
   projectStatus: 'idle',
+  selectedItemId: null,
+  workflows: [],
   setActiveSection: (activeSection) => set({ activeSection }),
   setDraftPath: (field, value) =>
     set((state) => ({
@@ -46,6 +63,14 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         [field]: value
       }
     })),
+  setItemsWorkflow: (itemsWorkflow) =>
+    set({
+      activeSection: 'items',
+      itemSearchText: '',
+      itemsWorkflow,
+      selectedItemId: itemsWorkflow.items[0]?.itemId ?? null
+    }),
+  setItemSearchText: (itemSearchText) => set({ itemSearchText }),
   setOpenProject: (openProject) => set({ openProject, projectStatus: 'open' }),
   setProjectHealth: (health) =>
     set((state) => ({
@@ -64,5 +89,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
           },
       projectStatus: 'idle'
     })),
-  setProjectStatus: (projectStatus) => set({ projectStatus })
+  setProjectStatus: (projectStatus) => set({ projectStatus }),
+  setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
+  setWorkflows: (workflows) => set({ workflows })
 }));

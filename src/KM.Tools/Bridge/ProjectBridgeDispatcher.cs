@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Bridge;
+using KM.Api.Items;
 using KM.Api.Projects;
+using KM.Api.Workflows;
 using KM.Core.Projects;
+using KM.SwSh.Workflows;
 using System.Text.Json;
 
 namespace KM.Tools.Bridge;
@@ -10,10 +13,14 @@ namespace KM.Tools.Bridge;
 public sealed class ProjectBridgeDispatcher
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
+    private readonly SwShWorkflowService swShWorkflowService;
 
-    public ProjectBridgeDispatcher(ProjectWorkspaceService? projectWorkspaceService = null)
+    public ProjectBridgeDispatcher(
+        ProjectWorkspaceService? projectWorkspaceService = null,
+        SwShWorkflowService? swShWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
+        this.swShWorkflowService = swShWorkflowService ?? new SwShWorkflowService(this.projectWorkspaceService);
     }
 
     public string Dispatch(string requestJson)
@@ -33,6 +40,8 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.OpenProject => DispatchOpenProject(requestJson),
                 KmCommandNames.ValidateProject => DispatchValidateProject(requestJson),
                 KmCommandNames.RefreshFileGraph => DispatchRefreshFileGraph(requestJson),
+                KmCommandNames.ListWorkflows => DispatchListWorkflows(requestJson),
+                KmCommandNames.LoadItemsWorkflow => DispatchLoadItemsWorkflow(requestJson),
                 null => SerializeFailure("bridge.missingCommand", "Bridge request is missing a command.", envelope?.RequestId),
                 _ => SerializeFailure(
                     "bridge.unsupportedCommand",
@@ -72,6 +81,24 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<RefreshFileGraphRequest>(requestJson);
         var fileGraph = projectWorkspaceService.RefreshFileGraph(ProjectBridgeMapper.ToCore(request.Payload.Paths));
         var response = new RefreshFileGraphResponse(ProjectBridgeMapper.ToDto(fileGraph));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchListWorkflows(string requestJson)
+    {
+        var request = DeserializeRequest<ListWorkflowsRequest>(requestJson);
+        var workflowList = swShWorkflowService.List(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflowList);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadItemsWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadItemsWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadItems(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
     }
