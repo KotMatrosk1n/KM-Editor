@@ -1,0 +1,17 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\KM.Api\KM.Api.csproj" />
+    <ProjectReference Include="..\..\src\KM.Core\KM.Core.csproj" />
+    <ProjectReference Include="..\..\src\KM.Formats\KM.Formats.csproj" />
+    <ProjectReference Include="..\..\src\KM.SwSh\KM.SwSh.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
