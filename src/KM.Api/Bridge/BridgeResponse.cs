@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using System.Text.Json.Serialization;
 
 namespace KM.Api.Bridge;
 
@@ -13,6 +14,7 @@ public sealed record BridgeResponse<TPayload>(
     ApiError? Error,
     string? RequestId = null)
 {
+    [JsonIgnore]
     public bool Succeeded => Error is null;
 
     public static BridgeResponse<TPayload> Success(TPayload payload, string? requestId = null)
