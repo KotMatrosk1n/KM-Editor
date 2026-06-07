@@ -16,6 +16,7 @@ public static class SwShWorkflowIds
     public const string FlagworkSave = "flagworkSave";
     public const string ExeFsPatches = "exefsPatches";
     public const string RoyalCandy = "royalCandy";
+    public const string SpreadsheetImport = "spreadsheetImport";
 }
 
 public enum SwShWorkflowAvailability

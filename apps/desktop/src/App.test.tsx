@@ -85,6 +85,9 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', { level: 3, name: 'Royal Candy Workflows' })
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Spreadsheet Import Tooling' })
+    ).toBeInTheDocument();
     expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
   });
 
@@ -326,6 +329,13 @@ function createMockProjectBridge(
     id: 'royalCandy',
     label: 'Royal Candy Workflows'
   };
+  const spreadsheetImportWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Spreadsheet import profiles, target workflows, columns, and source provenance.',
+    diagnostics: [],
+    id: 'spreadsheetImport',
+    label: 'Spreadsheet Import Tooling'
+  };
 
   return {
     applyChangePlan: (request) =>
@@ -379,7 +389,8 @@ function createMockProjectBridge(
           placementWorkflowSummary,
           flagworkSaveWorkflowSummary,
           exeFsPatchWorkflowSummary,
-          royalCandyWorkflowSummary
+          royalCandyWorkflowSummary,
+          spreadsheetImportWorkflowSummary
         ]
       }),
     loadEncountersWorkflow: () =>
@@ -432,6 +443,19 @@ function createMockProjectBridge(
           },
           summary: royalCandyWorkflowSummary,
           workflows: []
+        }
+      }),
+    loadSpreadsheetImportWorkflow: () =>
+      Promise.resolve({
+        workflow: {
+          diagnostics: [],
+          profiles: [],
+          stats: {
+            sourceFileCount: 0,
+            totalColumnCount: 0,
+            totalProfileCount: 0
+          },
+          summary: spreadsheetImportWorkflowSummary
         }
       }),
     loadPlacementWorkflow: () =>

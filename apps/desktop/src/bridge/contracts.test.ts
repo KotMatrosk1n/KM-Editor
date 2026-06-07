@@ -25,6 +25,8 @@ import {
   loadRaidRewardsWorkflowResponseSchema,
   loadRoyalCandyWorkflowRequestSchema,
   loadRoyalCandyWorkflowResponseSchema,
+  loadSpreadsheetImportWorkflowRequestSchema,
+  loadSpreadsheetImportWorkflowResponseSchema,
   loadShopsWorkflowRequestSchema,
   loadShopsWorkflowResponseSchema,
   loadTextWorkflowRequestSchema,
@@ -235,6 +237,12 @@ describe('bridge contracts', () => {
     const royalCandyRequestSchema = createBridgeRequestSchema(loadRoyalCandyWorkflowRequestSchema);
     const royalCandyResponseSchema = createBridgeResponseSchema(
       loadRoyalCandyWorkflowResponseSchema
+    );
+    const spreadsheetImportRequestSchema = createBridgeRequestSchema(
+      loadSpreadsheetImportWorkflowRequestSchema
+    );
+    const spreadsheetImportResponseSchema = createBridgeResponseSchema(
+      loadSpreadsheetImportWorkflowResponseSchema
     );
     const itemsWorkflow = {
       diagnostics: [],
@@ -616,6 +624,45 @@ describe('bridge contracts', () => {
         }
       ]
     } as const;
+    const spreadsheetImportWorkflow = {
+      diagnostics: [],
+      profiles: [
+        {
+          columns: [
+            {
+              column: 1,
+              description: 'Item identifier.',
+              header: 'ItemId',
+              isRequired: true,
+              valueKind: 'integer'
+            }
+          ],
+          description: 'Import item price columns from a workbook fixture.',
+          name: 'Items Price Sheet',
+          profileId: 'items_price_sheet',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/kmeditor/spreadsheet-import.profiles.readmodel.json',
+            sourceLayer: 'base'
+          },
+          sourceKind: 'xlsx',
+          status: 'available',
+          targetWorkflow: 'items'
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalColumnCount: 1,
+        totalProfileCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Spreadsheet import profiles, target workflows, columns, and source provenance.',
+        diagnostics: [],
+        id: 'spreadsheetImport',
+        label: 'Spreadsheet Import Tooling'
+      }
+    } as const;
 
     expect(
       workflowsRequestSchema.safeParse({
@@ -643,7 +690,8 @@ describe('bridge contracts', () => {
             placementWorkflow.summary,
             flagworkSaveWorkflow.summary,
             exeFsPatchWorkflow.summary,
-            royalCandyWorkflow.summary
+            royalCandyWorkflow.summary,
+            spreadsheetImportWorkflow.summary
           ]
         }
       }).success
@@ -855,6 +903,27 @@ describe('bridge contracts', () => {
       royalCandyResponseSchema.safeParse({
         payload: {
           workflow: royalCandyWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      spreadsheetImportRequestSchema.safeParse({
+        command: kmCommandNames.loadSpreadsheetImportWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      spreadsheetImportResponseSchema.safeParse({
+        payload: {
+          workflow: spreadsheetImportWorkflow
         }
       }).success
     ).toBe(true);

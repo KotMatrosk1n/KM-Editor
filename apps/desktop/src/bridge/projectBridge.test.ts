@@ -186,6 +186,14 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'royalCandy',
                 label: 'Royal Candy Workflows'
+              },
+              {
+                availability: 'readOnly',
+                description:
+                  'Spreadsheet import profiles, target workflows, columns, and source provenance.',
+                diagnostics: [],
+                id: 'spreadsheetImport',
+                label: 'Spreadsheet Import Tooling'
               }
             ]
           }
@@ -605,6 +613,54 @@ describe('projectBridge', () => {
         });
       }
 
+      if (request.command === 'spreadsheetImport.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              profiles: [
+                {
+                  columns: [
+                    {
+                      column: 1,
+                      description: 'Item identifier.',
+                      header: 'ItemId',
+                      isRequired: true,
+                      valueKind: 'integer'
+                    }
+                  ],
+                  description: 'Import item price columns from a workbook fixture.',
+                  name: 'Items Price Sheet',
+                  profileId: 'items_price_sheet',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/kmeditor/spreadsheet-import.profiles.readmodel.json',
+                    sourceLayer: 'base'
+                  },
+                  sourceKind: 'xlsx',
+                  status: 'available',
+                  targetWorkflow: 'items'
+                }
+              ],
+              stats: {
+                sourceFileCount: 1,
+                totalColumnCount: 1,
+                totalProfileCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description:
+                  'Spreadsheet import profiles, target workflows, columns, and source provenance.',
+                diagnostics: [],
+                id: 'spreadsheetImport',
+                label: 'Spreadsheet Import Tooling'
+              }
+            }
+          }
+        });
+      }
+
       return JSON.stringify({
         error: null,
         payload: {
@@ -667,6 +723,7 @@ describe('projectBridge', () => {
     const flagworkSave = await bridge.loadFlagworkSaveWorkflow({ paths: projectPaths });
     const exeFsPatches = await bridge.loadExeFsPatchWorkflow({ paths: projectPaths });
     const royalCandy = await bridge.loadRoyalCandyWorkflow({ paths: projectPaths });
+    const spreadsheetImport = await bridge.loadSpreadsheetImportWorkflow({ paths: projectPaths });
 
     expect(workflows.workflows[0]?.id).toBe('items');
     expect(workflows.workflows[1]?.id).toBe('text');
@@ -678,6 +735,7 @@ describe('projectBridge', () => {
     expect(workflows.workflows[7]?.id).toBe('flagworkSave');
     expect(workflows.workflows[8]?.id).toBe('exefsPatches');
     expect(workflows.workflows[9]?.id).toBe('royalCandy');
+    expect(workflows.workflows[10]?.id).toBe('spreadsheetImport');
     expect(items.workflow.editableFields).toHaveLength(2);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(text.workflow.entries[0]?.label).toBe('Greeting');
@@ -689,6 +747,7 @@ describe('projectBridge', () => {
     expect(flagworkSave.workflow.flags[0]?.name).toBe('Badge 1 Obtained');
     expect(exeFsPatches.workflow.patches[0]?.targetFile).toBe('exefs/main');
     expect(royalCandy.workflow.workflows[0]?.name).toBe('Candy Reward Setup');
+    expect(spreadsheetImport.workflow.profiles[0]?.name).toBe('Items Price Sheet');
   });
 
   it('starts, updates, and validates an Items edit session', async () => {
