@@ -737,35 +737,10 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchLoadFlagworkSaveWorkflowReturnsSanitizedInspectorRecords()
+    public void DispatchLoadFlagworkSaveWorkflowReturnsRealFlagworkRecords()
     {
         using var temp = TemporaryBridgeProject.Create();
-        temp.WriteBaseRomFsFile(
-            "kmeditor/flagwork.save.readmodel.json",
-            """
-            {
-              "schemaVersion": 1,
-              "flags": [
-                {
-                  "flagId": "story.badge_1",
-                  "name": "Badge 1 Obtained",
-                  "category": "Story",
-                  "valueKind": "boolean",
-                  "defaultValue": "false",
-                  "description": "First gym badge story flag."
-                }
-              ],
-              "saveBlocks": [
-                {
-                  "blockId": "player.profile",
-                  "name": "Player Profile",
-                  "offset": 128,
-                  "length": 64,
-                  "description": "Player profile save block."
-                }
-              ]
-            }
-            """);
+        SwShFlagworkBridgeFixtures.WriteBaseFlagwork(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.LoadFlagworkSaveWorkflow,
@@ -778,14 +753,19 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.Equal("request-flagwork-save", response.RequestId);
         Assert.NotNull(response.Payload);
-        var flag = Assert.Single(response.Payload.Workflow.Flags);
-        Assert.Equal("story.badge_1", flag.FlagId);
-        Assert.Equal("Badge 1 Obtained", flag.Name);
+        Assert.Equal(2, response.Payload.Workflow.Flags.Count);
+        var flag = response.Payload.Workflow.Flags.Single(flag => flag.Name == "FE_TEST_FLAG");
+        Assert.Equal("system_flags:0000", flag.FlagId);
+        Assert.Equal("system_flags", flag.Table);
+        Assert.Equal("Flag", flag.Kind);
+        Assert.Equal("0x1122334455667788", flag.Hash);
+        Assert.Equal("0x55667788", flag.Low32Key);
         Assert.Equal(ProjectFileLayerDto.Base, flag.Provenance.SourceLayer);
-        var saveBlock = Assert.Single(response.Payload.Workflow.SaveBlocks);
-        Assert.Equal("player.profile", saveBlock.BlockId);
-        Assert.Equal(128, saveBlock.Offset);
-        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+        var saveBlock = response.Payload.Workflow.SaveBlocks.Single(block => block.Name == "WK_SCENE_MAIN");
+        Assert.Equal("scene_work:0000:0xDDEEFF00", saveBlock.BlockId);
+        Assert.Equal("0xDDEEFF00", saveBlock.Key);
+        Assert.Equal("Work", saveBlock.Kind);
+        Assert.Equal(2, response.Payload.Workflow.Stats.SourceFileCount);
     }
 
     [Fact]

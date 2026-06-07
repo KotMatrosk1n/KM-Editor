@@ -7,6 +7,7 @@ import {
   type ChangePlan,
   type EditSession,
   type EncountersWorkflow,
+  type FlagworkSaveWorkflow,
   type ItemsWorkflow,
   type PlacementWorkflow,
   type ProjectFileGraph,
@@ -28,6 +29,7 @@ export type WorkbenchSection =
   | 'encounters'
   | 'raidRewards'
   | 'placement'
+  | 'flagworkSave'
   | 'changes';
 
 export type ProjectPathDraft = {
@@ -51,6 +53,8 @@ type WorkbenchState = {
   editValidationDiagnostics: ApiDiagnostic[];
   encounterSearchText: string;
   encountersWorkflow: EncountersWorkflow | null;
+  flagworkSaveSearchText: string;
+  flagworkSaveWorkflow: FlagworkSaveWorkflow | null;
   itemSearchText: string;
   itemsWorkflow: ItemsWorkflow | null;
   openProject: OpenProjectState | null;
@@ -61,6 +65,8 @@ type WorkbenchState = {
   raidRewardsWorkflow: RaidRewardsWorkflow | null;
   selectedRaidRewardTableId: string | null;
   selectedPlacementObjectId: string | null;
+  selectedFlagId: string | null;
+  selectedSaveBlockId: string | null;
   selectedItemId: number | null;
   selectedEncounterTableId: string | null;
   selectedShopId: string | null;
@@ -81,6 +87,8 @@ type WorkbenchState = {
   setEditValidationDiagnostics: (diagnostics: ApiDiagnostic[]) => void;
   setEncounterSearchText: (encounterSearchText: string) => void;
   setEncountersWorkflow: (encountersWorkflow: EncountersWorkflow) => void;
+  setFlagworkSaveSearchText: (flagworkSaveSearchText: string) => void;
+  setFlagworkSaveWorkflow: (flagworkSaveWorkflow: FlagworkSaveWorkflow) => void;
   setItemsWorkflow: (itemsWorkflow: ItemsWorkflow) => void;
   setItemSearchText: (itemSearchText: string) => void;
   setOpenProject: (project: OpenProjectState) => void;
@@ -92,6 +100,8 @@ type WorkbenchState = {
   setRaidRewardsWorkflow: (raidRewardsWorkflow: RaidRewardsWorkflow) => void;
   setSelectedRaidRewardTableId: (selectedRaidRewardTableId: string | null) => void;
   setSelectedPlacementObjectId: (selectedPlacementObjectId: string | null) => void;
+  setSelectedFlagId: (selectedFlagId: string | null) => void;
+  setSelectedSaveBlockId: (selectedSaveBlockId: string | null) => void;
   setSelectedItemId: (selectedItemId: number | null) => void;
   setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
   setSelectedShopId: (selectedShopId: string | null) => void;
@@ -119,6 +129,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   editValidationDiagnostics: [],
   encounterSearchText: '',
   encountersWorkflow: null,
+  flagworkSaveSearchText: '',
+  flagworkSaveWorkflow: null,
   itemSearchText: '',
   itemsWorkflow: null,
   openProject: null,
@@ -129,7 +141,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   raidRewardsWorkflow: null,
   selectedRaidRewardTableId: null,
   selectedPlacementObjectId: null,
+  selectedFlagId: null,
   selectedItemId: null,
+  selectedSaveBlockId: null,
   selectedEncounterTableId: null,
   selectedShopId: null,
   selectedTextKey: null,
@@ -154,6 +168,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setEditSession: (editSession) => set({ applyResult: null, changePlan: null, editSession }),
   setEditValidationDiagnostics: (editValidationDiagnostics) => set({ editValidationDiagnostics }),
   setEncounterSearchText: (encounterSearchText) => set({ encounterSearchText }),
+  setFlagworkSaveSearchText: (flagworkSaveSearchText) => set({ flagworkSaveSearchText }),
   setPlacementSearchText: (placementSearchText) => set({ placementSearchText }),
   setRaidRewardSearchText: (raidRewardSearchText) => set({ raidRewardSearchText }),
   setItemsWorkflow: (itemsWorkflow) =>
@@ -187,6 +202,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       editValidationDiagnostics: [],
       encounterSearchText: '',
       encountersWorkflow: null,
+      flagworkSaveSearchText: '',
+      flagworkSaveWorkflow: null,
       itemSearchText: '',
       itemsWorkflow: null,
       openProject,
@@ -196,9 +213,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       raidRewardSearchText: '',
       raidRewardsWorkflow: null,
       selectedEncounterTableId: null,
+      selectedFlagId: null,
       selectedItemId: null,
       selectedPlacementObjectId: null,
       selectedRaidRewardTableId: null,
+      selectedSaveBlockId: null,
       selectedShopId: null,
       selectedTextKey: null,
       selectedTrainerId: null,
@@ -231,6 +250,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set({ selectedRaidRewardTableId }),
   setSelectedPlacementObjectId: (selectedPlacementObjectId) =>
     set({ selectedPlacementObjectId }),
+  setSelectedFlagId: (selectedFlagId) => set({ selectedFlagId }),
+  setSelectedSaveBlockId: (selectedSaveBlockId) => set({ selectedSaveBlockId }),
   setSelectedEncounterTableId: (selectedEncounterTableId) => set({ selectedEncounterTableId }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
   setSelectedShopId: (selectedShopId) => set({ selectedShopId }),
@@ -348,6 +369,31 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         placementSearchText: '',
         placementWorkflow,
         selectedPlacementObjectId
+      };
+    }),
+  setFlagworkSaveWorkflow: (flagworkSaveWorkflow) =>
+    set((state) => {
+      const selectedFlagId = flagworkSaveWorkflow.flags.some(
+        (flag) => flag.flagId === state.selectedFlagId
+      )
+        ? state.selectedFlagId
+        : (flagworkSaveWorkflow.flags[0]?.flagId ?? null);
+      const selectedSaveBlockId = flagworkSaveWorkflow.saveBlocks.some(
+        (saveBlock) => saveBlock.blockId === state.selectedSaveBlockId
+      )
+        ? state.selectedSaveBlockId
+        : (flagworkSaveWorkflow.saveBlocks[0]?.blockId ?? null);
+
+      return {
+        activeSection: 'flagworkSave',
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        flagworkSaveSearchText: '',
+        flagworkSaveWorkflow,
+        selectedFlagId,
+        selectedSaveBlockId
       };
     }),
   setWorkflows: (workflows) => set({ workflows })

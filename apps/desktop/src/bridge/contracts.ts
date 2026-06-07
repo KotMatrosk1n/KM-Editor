@@ -654,18 +654,25 @@ export const flagRecordSchema = z.strictObject({
   defaultValue: z.string(),
   description: z.string(),
   flagId: z.string(),
+  hash: z.string(),
+  index: z.number().int().nonnegative(),
+  kind: z.string(),
+  low32Key: z.string(),
   name: z.string(),
   provenance: flagworkSaveProvenanceSchema,
+  table: z.string(),
   valueKind: z.string()
 });
 
 export const saveBlockRecordSchema = z.strictObject({
   blockId: z.string(),
   description: z.string(),
-  length: z.number().int().nonnegative(),
+  hash: z.string(),
+  key: z.string(),
+  kind: z.string(),
   name: z.string(),
-  offset: z.number().int().nonnegative(),
-  provenance: flagworkSaveProvenanceSchema
+  provenance: flagworkSaveProvenanceSchema,
+  valueKind: z.string()
 });
 
 export const flagworkSaveWorkflowStatsSchema = z.strictObject({
@@ -1006,6 +1013,8 @@ export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
 export type PlacedObjectRecord = z.infer<typeof placedObjectRecordSchema>;
 export type PlacementEditableField = z.infer<typeof placementEditableFieldSchema>;
 export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
+export type FlagRecord = z.infer<typeof flagRecordSchema>;
+export type SaveBlockRecord = z.infer<typeof saveBlockRecordSchema>;
 export type FlagworkSaveWorkflow = z.infer<typeof flagworkSaveWorkflowSchema>;
 export type ExeFsPatchWorkflow = z.infer<typeof exeFsPatchWorkflowSchema>;
 export type RoyalCandyWorkflow = z.infer<typeof royalCandyWorkflowSchema>;

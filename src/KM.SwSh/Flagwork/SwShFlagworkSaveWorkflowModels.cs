@@ -15,16 +15,23 @@ public sealed record SwShFlagRecord(
     string FlagId,
     string Name,
     string Category,
+    string Kind,
     string ValueKind,
     string DefaultValue,
     string Description,
+    string Table,
+    int Index,
+    string Hash,
+    string Low32Key,
     SwShFlagworkSaveProvenance Provenance);
 
 public sealed record SwShSaveBlockRecord(
     string BlockId,
     string Name,
-    int Offset,
-    int Length,
+    string Key,
+    string Hash,
+    string Kind,
+    string ValueKind,
     string Description,
     SwShFlagworkSaveProvenance Provenance);
 

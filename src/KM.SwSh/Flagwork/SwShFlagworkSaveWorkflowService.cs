@@ -3,16 +3,15 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
 using KM.SwSh.Workflows;
-using System.Text.Json;
+using System.Globalization;
 
 namespace KM.SwSh.Flagwork;
 
 public sealed class SwShFlagworkSaveWorkflowService
 {
-    public const string FlagworkSaveReadModelPath = "romfs/kmeditor/flagwork.save.readmodel.json";
-
-    private static readonly JsonSerializerOptions ReadModelJsonOptions = new(JsonSerializerDefaults.Web);
+    public const string FlagworkRootPath = "romfs/bin/flagwork";
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
@@ -42,87 +41,127 @@ public sealed class SwShFlagworkSaveWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShFlagRecord>(), Array.Empty<SwShSaveBlockRecord>(), diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShFlagRecord>(), Array.Empty<SwShSaveBlockRecord>(), sourceFileCount: 0, diagnostics);
         }
 
-        var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
-            string.Equals(entry.RelativePath, FlagworkSaveReadModelPath, StringComparison.OrdinalIgnoreCase));
-
-        if (graphEntry is null)
+        var sources = ResolveFlagworkSources(project).ToArray();
+        if (sources.Length == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
-                "Flagwork and Save Inspectors data is not available for this project yet.",
-                expected: FlagworkSaveReadModelPath));
-            return CreateWorkflow(summary, Array.Empty<SwShFlagRecord>(), Array.Empty<SwShSaveBlockRecord>(), diagnostics);
+                "Flagwork tables are not available for this project.",
+                expected: $"{FlagworkRootPath}/*.tbl"));
+            return CreateWorkflow(summary, Array.Empty<SwShFlagRecord>(), Array.Empty<SwShSaveBlockRecord>(), sourceFileCount: 0, diagnostics);
         }
 
-        var sourcePath = ResolveSourcePath(project.Paths, graphEntry);
-        if (sourcePath is null || !File.Exists(sourcePath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Flagwork and Save Inspectors data source could not be resolved from the project graph.",
-                file: graphEntry.RelativePath,
-                expected: "Readable Flagwork and Save Inspectors read model"));
-            return CreateWorkflow(summary, Array.Empty<SwShFlagRecord>(), Array.Empty<SwShSaveBlockRecord>(), diagnostics);
-        }
+        var flags = new List<SwShFlagRecord>();
+        var saveBlocks = new List<SwShSaveBlockRecord>();
 
-        try
+        foreach (var source in sources)
         {
-            using var stream = File.OpenRead(sourcePath);
-            var readModel = JsonSerializer.Deserialize<FlagworkSaveReadModel>(stream, ReadModelJsonOptions);
-            var provenance = CreateProvenance(graphEntry);
-            var flags = readModel?.Flags is null
-                ? Array.Empty<SwShFlagRecord>()
-                : readModel.Flags
-                    .OrderBy(flag => flag.FlagId, StringComparer.Ordinal)
-                    .Select(flag => ToFlagRecord(flag, provenance))
-                    .ToArray();
-            var saveBlocks = readModel?.SaveBlocks is null
-                ? Array.Empty<SwShSaveBlockRecord>()
-                : readModel.SaveBlocks
-                    .OrderBy(saveBlock => saveBlock.BlockId, StringComparer.Ordinal)
-                    .Select(saveBlock => ToSaveBlockRecord(saveBlock, provenance))
-                    .ToArray();
+            try
+            {
+                var table = SwShAhtbFile.Parse(File.ReadAllBytes(source.AbsolutePath));
+                var tableName = Path.GetFileNameWithoutExtension(source.GraphEntry.RelativePath);
+                var provenance = CreateProvenance(source.GraphEntry);
 
-            foreach (var duplicateGroup in flags.GroupBy(flag => flag.FlagId).Where(group => group.Count() > 1))
+                for (var index = 0; index < table.Entries.Count; index++)
+                {
+                    var entry = table.Entries[index];
+                    var kind = InferKind(tableName, entry.Name);
+                    var valueKind = kind == "Work" ? "integer" : "boolean";
+                    var fullHash = FormatHash(entry.Hash);
+                    var low32 = FormatLow32(entry.Hash);
+                    var flag = new SwShFlagRecord(
+                        string.Create(CultureInfo.InvariantCulture, $"{tableName}:{index:D4}"),
+                        entry.Name,
+                        tableName,
+                        kind,
+                        valueKind,
+                        kind == "Work" ? "0" : "false",
+                        string.Create(CultureInfo.InvariantCulture, $"{kind} hash {fullHash} uses save key {low32}."),
+                        tableName,
+                        index,
+                        fullHash,
+                        low32,
+                        provenance);
+
+                    flags.Add(flag);
+                    saveBlocks.Add(new SwShSaveBlockRecord(
+                        string.Create(CultureInfo.InvariantCulture, $"{tableName}:{index:D4}:{low32}"),
+                        entry.Name,
+                        low32,
+                        fullHash,
+                        kind,
+                        valueKind,
+                        kind == "Work"
+                            ? string.Create(CultureInfo.InvariantCulture, $"Save work key {low32} is derived from {entry.Name}.")
+                            : string.Create(CultureInfo.InvariantCulture, $"Save flag key {low32} is derived from {entry.Name}."),
+                        provenance));
+                }
+            }
+            catch (InvalidDataException exception)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
-                    $"Flag id '{duplicateGroup.Key}' appears more than once in the Flagwork and Save Inspectors read model.",
-                    file: graphEntry.RelativePath,
-                    expected: "Unique flag ids"));
+                    $"Flagwork table '{source.GraphEntry.RelativePath}' could not be decoded: {exception.Message}",
+                    file: source.GraphEntry.RelativePath,
+                    expected: "Sword/Shield AHTB flagwork table"));
             }
-
-            foreach (var duplicateGroup in saveBlocks.GroupBy(saveBlock => saveBlock.BlockId).Where(group => group.Count() > 1))
+            catch (IOException exception)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
-                    $"Save block id '{duplicateGroup.Key}' appears more than once in the Flagwork and Save Inspectors read model.",
-                    file: graphEntry.RelativePath,
-                    expected: "Unique save block ids"));
+                    $"Flagwork table '{source.GraphEntry.RelativePath}' could not be read: {exception.Message}",
+                    file: source.GraphEntry.RelativePath,
+                    expected: "Readable Sword/Shield flagwork table"));
             }
+        }
 
-            return CreateWorkflow(summary, flags, saveBlocks, diagnostics);
-        }
-        catch (JsonException exception)
+        foreach (var duplicateGroup in flags.GroupBy(flag => flag.Hash).Where(group => group.Count() > 1))
         {
             diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Flagwork and Save Inspectors data source is not valid JSON: {exception.Message}",
-                file: graphEntry.RelativePath,
-                expected: "Sanitized Flagwork and Save Inspectors read model JSON"));
-            return CreateWorkflow(summary, Array.Empty<SwShFlagRecord>(), Array.Empty<SwShSaveBlockRecord>(), diagnostics);
+                DiagnosticSeverity.Warning,
+                $"Flagwork hash '{duplicateGroup.Key}' appears more than once.",
+                expected: "Unique flagwork hashes when possible"));
         }
-        catch (IOException exception)
+
+        foreach (var duplicateGroup in saveBlocks.GroupBy(saveBlock => saveBlock.Key).Where(group => group.Count() > 1))
         {
             diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Flagwork and Save Inspectors data source could not be read: {exception.Message}",
-                file: graphEntry.RelativePath,
-                expected: "Readable Flagwork and Save Inspectors read model"));
-            return CreateWorkflow(summary, Array.Empty<SwShFlagRecord>(), Array.Empty<SwShSaveBlockRecord>(), diagnostics);
+                DiagnosticSeverity.Warning,
+                $"Save key '{duplicateGroup.Key}' appears more than once across flagwork tables.",
+                expected: "Review possible low32 save-key collision"));
+        }
+
+        return CreateWorkflow(
+            summary,
+            flags
+                .OrderBy(flag => flag.Table, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(flag => flag.Index)
+                .ToArray(),
+            saveBlocks
+                .OrderBy(saveBlock => saveBlock.Kind, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(saveBlock => saveBlock.Key, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(saveBlock => saveBlock.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            sources.Length,
+            diagnostics);
+    }
+
+    private static IEnumerable<WorkflowFileSource> ResolveFlagworkSources(OpenedProject project)
+    {
+        foreach (var entry in project.FileGraph.Entries
+            .Where(entry =>
+                entry.RelativePath.StartsWith(FlagworkRootPath + "/", StringComparison.OrdinalIgnoreCase)
+                && entry.RelativePath.EndsWith(".tbl", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase))
+        {
+            var sourcePath = ResolveSourcePath(project.Paths, entry);
+            if (sourcePath is not null && File.Exists(sourcePath))
+            {
+                yield return new WorkflowFileSource(entry, sourcePath);
+            }
         }
     }
 
@@ -130,6 +169,7 @@ public sealed class SwShFlagworkSaveWorkflowService
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShFlagRecord> flags,
         IReadOnlyList<SwShSaveBlockRecord> saveBlocks,
+        int sourceFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         return new SwShFlagworkSaveWorkflow(
@@ -139,7 +179,7 @@ public sealed class SwShFlagworkSaveWorkflowService
             new SwShFlagworkSaveWorkflowStats(
                 flags.Count,
                 saveBlocks.Count,
-                flags.Count > 0 || saveBlocks.Count > 0 ? 1 : 0),
+                sourceFileCount),
             diagnostics);
     }
 
@@ -179,31 +219,22 @@ public sealed class SwShFlagworkSaveWorkflowService
         return new SwShFlagworkSaveProvenance(entry.RelativePath, sourceLayer, entry.State);
     }
 
-    private static SwShFlagRecord ToFlagRecord(
-        FlagReadModelRecord flag,
-        SwShFlagworkSaveProvenance provenance)
+    private static string InferKind(string table, string name)
     {
-        return new SwShFlagRecord(
-            flag.FlagId,
-            flag.Name,
-            flag.Category,
-            flag.ValueKind,
-            flag.DefaultValue,
-            flag.Description,
-            provenance);
+        return name.StartsWith("WK_", StringComparison.OrdinalIgnoreCase)
+            || table.Contains("work", StringComparison.OrdinalIgnoreCase)
+            ? "Work"
+            : "Flag";
     }
 
-    private static SwShSaveBlockRecord ToSaveBlockRecord(
-        SaveBlockReadModelRecord saveBlock,
-        SwShFlagworkSaveProvenance provenance)
+    private static string FormatHash(ulong hash)
     {
-        return new SwShSaveBlockRecord(
-            saveBlock.BlockId,
-            saveBlock.Name,
-            saveBlock.Offset,
-            saveBlock.Length,
-            saveBlock.Description,
-            provenance);
+        return string.Create(CultureInfo.InvariantCulture, $"0x{hash:X16}");
+    }
+
+    private static string FormatLow32(ulong hash)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"0x{(uint)hash:X8}");
     }
 
     private static SwShWorkflowSummary CreateSummary(
@@ -213,7 +244,7 @@ public sealed class SwShFlagworkSaveWorkflowService
         return new SwShWorkflowSummary(
             SwShWorkflowIds.FlagworkSave,
             "Flagwork and Save Inspectors",
-            "Game flags, save blocks, inspector metadata, and source provenance.",
+            "Flagwork hash tables, save keys, and source provenance.",
             availability,
             diagnostics);
     }
@@ -232,23 +263,7 @@ public sealed class SwShFlagworkSaveWorkflowService
             Expected: expected);
     }
 
-    private sealed record FlagworkSaveReadModel(
-        int SchemaVersion,
-        IReadOnlyList<FlagReadModelRecord>? Flags,
-        IReadOnlyList<SaveBlockReadModelRecord>? SaveBlocks);
-
-    private sealed record FlagReadModelRecord(
-        string FlagId,
-        string Name,
-        string Category,
-        string ValueKind,
-        string DefaultValue,
-        string Description);
-
-    private sealed record SaveBlockReadModelRecord(
-        string BlockId,
-        string Name,
-        int Offset,
-        int Length,
-        string Description);
+    private sealed record WorkflowFileSource(
+        ProjectFileGraphEntry GraphEntry,
+        string AbsolutePath);
 }

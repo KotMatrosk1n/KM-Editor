@@ -639,41 +639,48 @@ describe('bridge contracts', () => {
       diagnostics: [],
       flags: [
         {
-          category: 'Story',
+          category: 'system_flags',
           defaultValue: 'false',
-          description: 'First gym badge story flag.',
-          flagId: 'story.badge_1',
-          name: 'Badge 1 Obtained',
+          description: 'Flag hash 0x1122334455667788 uses save key 0x55667788.',
+          flagId: 'system_flags:0000',
+          hash: '0x1122334455667788',
+          index: 0,
+          kind: 'Flag',
+          low32Key: '0x55667788',
+          name: 'FE_TEST_FLAG',
           provenance: {
             fileState: 'baseOnly',
-            sourceFile: 'romfs/kmeditor/flagwork.save.readmodel.json',
+            sourceFile: 'romfs/bin/flagwork/system_flags.tbl',
             sourceLayer: 'base'
           },
+          table: 'system_flags',
           valueKind: 'boolean'
         }
       ],
       saveBlocks: [
         {
-          blockId: 'player.profile',
-          description: 'Player profile save block.',
-          length: 64,
-          name: 'Player Profile',
-          offset: 128,
+          blockId: 'scene_work:0000:0xDDEEFF00',
+          description: 'Save work key 0xDDEEFF00 is derived from WK_SCENE_MAIN.',
+          hash: '0x99AABBCCDDEEFF00',
+          key: '0xDDEEFF00',
+          kind: 'Work',
+          name: 'WK_SCENE_MAIN',
           provenance: {
             fileState: 'baseOnly',
-            sourceFile: 'romfs/kmeditor/flagwork.save.readmodel.json',
+            sourceFile: 'romfs/bin/flagwork/scene_work.tbl',
             sourceLayer: 'base'
-          }
+          },
+          valueKind: 'integer'
         }
       ],
       stats: {
-        sourceFileCount: 1,
+        sourceFileCount: 2,
         totalFlagCount: 1,
         totalSaveBlockCount: 1
       },
       summary: {
         availability: 'readOnly',
-        description: 'Game flags, save blocks, inspector metadata, and source provenance.',
+        description: 'Flagwork hash tables, save keys, and source provenance.',
         diagnostics: [],
         id: 'flagworkSave',
         label: 'Flagwork and Save Inspectors'

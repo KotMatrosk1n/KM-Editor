@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import {
   type EncountersWorkflow,
+  type FlagworkSaveWorkflow,
   type ItemsWorkflow,
   type PlacementWorkflow,
   type ProjectFileGraph,
@@ -33,6 +34,8 @@ describe('App', () => {
       editValidationDiagnostics: [],
       encounterSearchText: '',
       encountersWorkflow: null,
+      flagworkSaveSearchText: '',
+      flagworkSaveWorkflow: null,
       itemSearchText: '',
       itemsWorkflow: null,
       openProject: null,
@@ -42,9 +45,11 @@ describe('App', () => {
       raidRewardSearchText: '',
       raidRewardsWorkflow: null,
       selectedEncounterTableId: null,
+      selectedFlagId: null,
       selectedItemId: null,
       selectedPlacementObjectId: null,
       selectedRaidRewardTableId: null,
+      selectedSaveBlockId: null,
       selectedShopId: null,
       selectedTextKey: null,
       selectedTrainerId: null,
@@ -411,6 +416,32 @@ describe('App', () => {
     expect(
       screen.getByText('Applied Raid Rewards change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
+  });
+
+  it('opens Flagwork and Save Inspectors, searches real keys, and shows provenance', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge()} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Flagwork' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Flagwork and Save Inspectors'
+      })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('FE_TEST_FLAG').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('0x55667788').length).toBeGreaterThan(0);
+
+    await user.type(screen.getByLabelText('Search flagwork and save keys'), 'scene');
+
+    expect(screen.getAllByText('WK_SCENE_MAIN').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('0xDDEEFF00').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('romfs/bin/flagwork/scene_work.tbl').length).toBeGreaterThan(0);
   });
 
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
@@ -978,10 +1009,73 @@ function createMockProjectBridge(
   };
   const flagworkSaveWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'Game flags, save blocks, inspector metadata, and source provenance.',
+    description: 'Flagwork hash tables, save keys, and source provenance.',
     diagnostics: [],
     id: 'flagworkSave',
     label: 'Flagwork and Save Inspectors'
+  };
+  const flagworkSaveWorkflow: FlagworkSaveWorkflow = {
+    diagnostics: [],
+    flags: [
+      {
+        category: 'system_flags',
+        defaultValue: 'false',
+        description: 'Flag hash 0x1122334455667788 uses save key 0x55667788.',
+        flagId: 'system_flags:0000',
+        hash: '0x1122334455667788',
+        index: 0,
+        kind: 'Flag',
+        low32Key: '0x55667788',
+        name: 'FE_TEST_FLAG',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/flagwork/system_flags.tbl',
+          sourceLayer: 'base'
+        },
+        table: 'system_flags',
+        valueKind: 'boolean'
+      },
+      {
+        category: 'scene_work',
+        defaultValue: '0',
+        description: 'Work hash 0x99AABBCCDDEEFF00 uses save key 0xDDEEFF00.',
+        flagId: 'scene_work:0000',
+        hash: '0x99AABBCCDDEEFF00',
+        index: 0,
+        kind: 'Work',
+        low32Key: '0xDDEEFF00',
+        name: 'WK_SCENE_MAIN',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/flagwork/scene_work.tbl',
+          sourceLayer: 'base'
+        },
+        table: 'scene_work',
+        valueKind: 'integer'
+      }
+    ],
+    saveBlocks: [
+      {
+        blockId: 'scene_work:0000:0xDDEEFF00',
+        description: 'Save work key 0xDDEEFF00 is derived from WK_SCENE_MAIN.',
+        hash: '0x99AABBCCDDEEFF00',
+        key: '0xDDEEFF00',
+        kind: 'Work',
+        name: 'WK_SCENE_MAIN',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/flagwork/scene_work.tbl',
+          sourceLayer: 'base'
+        },
+        valueKind: 'integer'
+      }
+    ],
+    stats: {
+      sourceFileCount: 2,
+      totalFlagCount: 2,
+      totalSaveBlockCount: 1
+    },
+    summary: flagworkSaveWorkflowSummary
   };
   const exeFsPatchWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
@@ -1147,17 +1241,7 @@ function createMockProjectBridge(
       }),
     loadFlagworkSaveWorkflow: () =>
       Promise.resolve({
-        workflow: {
-          diagnostics: [],
-          flags: [],
-          saveBlocks: [],
-          stats: {
-            sourceFileCount: 0,
-            totalFlagCount: 0,
-            totalSaveBlockCount: 0
-          },
-          summary: flagworkSaveWorkflowSummary
-        }
+        workflow: flagworkSaveWorkflow
       }),
     loadExeFsPatchWorkflow: () =>
       Promise.resolve({

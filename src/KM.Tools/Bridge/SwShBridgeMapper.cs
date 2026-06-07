@@ -641,9 +641,14 @@ public static class SwShBridgeMapper
             flag.FlagId,
             flag.Name,
             flag.Category,
+            flag.Kind,
             flag.ValueKind,
             flag.DefaultValue,
             flag.Description,
+            flag.Table,
+            flag.Index,
+            flag.Hash,
+            flag.Low32Key,
             ToDto(flag.Provenance));
     }
 
@@ -652,8 +657,10 @@ public static class SwShBridgeMapper
         return new SaveBlockRecordDto(
             saveBlock.BlockId,
             saveBlock.Name,
-            saveBlock.Offset,
-            saveBlock.Length,
+            saveBlock.Key,
+            saveBlock.Hash,
+            saveBlock.Kind,
+            saveBlock.ValueKind,
             saveBlock.Description,
             ToDto(saveBlock.Provenance));
     }
