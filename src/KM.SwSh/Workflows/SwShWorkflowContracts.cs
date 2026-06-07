@@ -7,6 +7,7 @@ namespace KM.SwSh.Workflows;
 public static class SwShWorkflowIds
 {
     public const string Items = "items";
+    public const string Text = "text";
 }
 
 public enum SwShWorkflowAvailability

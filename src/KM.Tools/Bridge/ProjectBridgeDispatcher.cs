@@ -4,6 +4,7 @@ using KM.Api.Bridge;
 using KM.Api.Editing;
 using KM.Api.Items;
 using KM.Api.Projects;
+using KM.Api.Text;
 using KM.Api.Workflows;
 using KM.Core.Projects;
 using KM.SwSh.Items;
@@ -48,6 +49,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.ListWorkflows => DispatchListWorkflows(requestJson),
                 KmCommandNames.LoadItemsWorkflow => DispatchLoadItemsWorkflow(requestJson),
                 KmCommandNames.UpdateItemField => DispatchUpdateItemField(requestJson),
+                KmCommandNames.LoadTextWorkflow => DispatchLoadTextWorkflow(requestJson),
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
@@ -108,6 +110,15 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadItemsWorkflowRequest>(requestJson);
         var workflow = swShWorkflowService.LoadItems(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadTextWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadTextWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadText(ProjectBridgeMapper.ToCore(request.Payload.Paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);

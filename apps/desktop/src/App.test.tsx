@@ -3,7 +3,12 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
-import { type ItemsWorkflow, type ProjectFileGraph, type ProjectHealth } from './bridge/contracts';
+import {
+  type ItemsWorkflow,
+  type ProjectFileGraph,
+  type ProjectHealth,
+  type WorkflowSummary
+} from './bridge/contracts';
 import { type ProjectBridge } from './bridge/projectBridge';
 import { useWorkbenchStore } from './workbenchStore';
 
@@ -61,7 +66,10 @@ describe('App', () => {
 
     expect(screen.getByRole('heading', { name: 'Workflow List' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Items' })).toBeInTheDocument();
-    expect(screen.getByText('Read-only')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Text and Dialogue Map' })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
   });
 
   it('opens Items, searches records, and shows selected provenance', async () => {
@@ -239,6 +247,13 @@ function createMockProjectBridge(
       label: 'Items'
     }
   };
+  const textWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Text entries, dialogue references, and source provenance.',
+    diagnostics: [],
+    id: 'text',
+    label: 'Text and Dialogue Map'
+  };
 
   return {
     applyChangePlan: (request) =>
@@ -282,11 +297,25 @@ function createMockProjectBridge(
       }),
     listWorkflows: () =>
       Promise.resolve({
-        workflows: [itemsWorkflow.summary]
+        workflows: [itemsWorkflow.summary, textWorkflowSummary]
       }),
     loadItemsWorkflow: () =>
       Promise.resolve({
         workflow: itemsWorkflow
+      }),
+    loadTextWorkflow: () =>
+      Promise.resolve({
+        workflow: {
+          diagnostics: [],
+          dialogueReferences: [],
+          entries: [],
+          stats: {
+            dialogueReferenceCount: 0,
+            sourceFileCount: 0,
+            totalTextEntryCount: 0
+          },
+          summary: textWorkflowSummary
+        }
       }),
     openProject: () =>
       Promise.resolve({

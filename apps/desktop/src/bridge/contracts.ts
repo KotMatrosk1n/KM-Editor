@@ -9,6 +9,7 @@ export const kmCommandNameValues = [
   'workflow.list',
   'items.load',
   'items.field.update',
+  'text.load',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -27,6 +28,7 @@ export const kmCommandNames = {
   getEditSession: 'editSession.get',
   listWorkflows: 'workflow.list',
   loadItemsWorkflow: 'items.load',
+  loadTextWorkflow: 'text.load',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -75,6 +77,10 @@ export const listWorkflowsRequestSchema = z.strictObject({
 });
 
 export const loadItemsWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadTextWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -241,6 +247,47 @@ export const loadItemsWorkflowResponseSchema = z.strictObject({
   workflow: itemsWorkflowSchema
 });
 
+export const textProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const textEntryRecordSchema = z.strictObject({
+  label: z.string(),
+  language: z.string(),
+  provenance: textProvenanceSchema,
+  textId: z.number().int().nonnegative(),
+  value: z.string()
+});
+
+export const dialogueReferenceRecordSchema = z.strictObject({
+  context: z.string(),
+  dialogueId: z.string(),
+  label: z.string(),
+  preview: z.string(),
+  provenance: textProvenanceSchema,
+  textId: z.number().int().nonnegative()
+});
+
+export const textWorkflowStatsSchema = z.strictObject({
+  dialogueReferenceCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative(),
+  totalTextEntryCount: z.number().int().nonnegative()
+});
+
+export const textWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  dialogueReferences: z.array(dialogueReferenceRecordSchema),
+  entries: z.array(textEntryRecordSchema),
+  stats: textWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadTextWorkflowResponseSchema = z.strictObject({
+  workflow: textWorkflowSchema
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -338,10 +385,13 @@ export type EditSession = z.infer<typeof editSessionSchema>;
 export type ItemEditableField = z.infer<typeof itemEditableFieldSchema>;
 export type ItemRecord = z.infer<typeof itemRecordSchema>;
 export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
+export type TextWorkflow = z.infer<typeof textWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
 export type LoadItemsWorkflowResponse = z.infer<typeof loadItemsWorkflowResponseSchema>;
+export type LoadTextWorkflowRequest = z.infer<typeof loadTextWorkflowRequestSchema>;
+export type LoadTextWorkflowResponse = z.infer<typeof loadTextWorkflowResponseSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;
