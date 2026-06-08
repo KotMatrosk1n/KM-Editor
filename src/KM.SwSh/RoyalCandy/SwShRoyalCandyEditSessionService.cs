@@ -287,9 +287,13 @@ public sealed class SwShRoyalCandyEditSessionService
             return false;
         }
 
-        foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        var isCleanup = string.Equals(selectedWorkflow.WorkflowId, UninstallWorkflowId, StringComparison.Ordinal);
+        if (!isCleanup)
         {
-            diagnostics.Add(diagnostic);
+            foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                diagnostics.Add(diagnostic);
+            }
         }
 
         return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
