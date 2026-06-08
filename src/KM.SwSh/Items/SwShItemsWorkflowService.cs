@@ -27,8 +27,42 @@ public sealed class SwShItemsWorkflowService
     public const string GroupTypeField = "groupType";
     public const string GroupIndexField = "groupIndex";
     public const string CureStatusFlagsField = "cureStatusFlags";
+    public const string CureSleepField = "cureSleep";
+    public const string CurePoisonField = "curePoison";
+    public const string CureBurnField = "cureBurn";
+    public const string CureFreezeField = "cureFreeze";
+    public const string CureParalysisField = "cureParalysis";
+    public const string CureConfusionField = "cureConfusion";
+    public const string CureInfatuationField = "cureInfatuation";
+    public const string GuardSpecField = "guardSpec";
+    public const string CanTargetFaintedPokemonField = "canTargetFaintedPokemon";
+    public const string RevivesWholePartyField = "revivesWholeParty";
+    public const string LevelUpItemField = "levelUpItem";
+    public const string EvolutionItemField = "evolutionItem";
+    public const string AttackBoostField = "attackBoost";
+    public const string DefenseBoostField = "defenseBoost";
+    public const string SpecialAttackBoostField = "specialAttackBoost";
+    public const string SpecialDefenseBoostField = "specialDefenseBoost";
+    public const string SpeedBoostField = "speedBoost";
+    public const string AccuracyBoostField = "accuracyBoost";
+    public const string CriticalHitBoostField = "criticalHitBoost";
+    public const string PpUpFlagField = "ppUpFlag";
+    public const string PpMaxFlagField = "ppMaxFlag";
     public const string UseFlags1Field = "useFlags1";
     public const string UseFlags2Field = "useFlags2";
+    public const string RestorePpFlagField = "restorePpFlag";
+    public const string RestoreAllPpFlagField = "restoreAllPpFlag";
+    public const string RestoreHpFlagField = "restoreHpFlag";
+    public const string HpEvFlagField = "hpEvFlag";
+    public const string AttackEvFlagField = "attackEvFlag";
+    public const string DefenseEvFlagField = "defenseEvFlag";
+    public const string SpeedEvFlagField = "speedEvFlag";
+    public const string SpecialAttackEvFlagField = "specialAttackEvFlag";
+    public const string SpecialDefenseEvFlagField = "specialDefenseEvFlag";
+    public const string EvAbove100FlagField = "evAbove100Flag";
+    public const string Friendship1FlagField = "friendship1Flag";
+    public const string Friendship2FlagField = "friendship2Flag";
+    public const string Friendship3FlagField = "friendship3Flag";
     public const string EvHpField = "evHp";
     public const string EvAttackField = "evAttack";
     public const string EvDefenseField = "evDefense";
@@ -48,6 +82,8 @@ public sealed class SwShItemsWorkflowService
     public const int MaximumByteValue = byte.MaxValue;
     public const int MaximumPouchValue = 8;
     public const int MaximumPouchFlagsValue = 0x0F;
+    public const int MaximumBoostValue = 0x0F;
+    public const int MaximumCriticalHitBoostValue = 0x03;
     public const int MinimumSignedByteValue = sbyte.MinValue;
     public const int MaximumSignedByteValue = sbyte.MaxValue;
     public const int MaximumMoveId = ushort.MaxValue;
@@ -197,6 +233,33 @@ public sealed class SwShItemsWorkflowService
             MinimumValue: 0,
             MaximumValue: MaximumByteValue,
             Options: []),
+        CreateBooleanEditableField(CureSleepField, "Cures sleep"),
+        CreateBooleanEditableField(CurePoisonField, "Cures poison"),
+        CreateBooleanEditableField(CureBurnField, "Cures burn"),
+        CreateBooleanEditableField(CureFreezeField, "Cures freeze"),
+        CreateBooleanEditableField(CureParalysisField, "Cures paralysis"),
+        CreateBooleanEditableField(CureConfusionField, "Cures confusion"),
+        CreateBooleanEditableField(CureInfatuationField, "Cures infatuation"),
+        CreateBooleanEditableField(GuardSpecField, "Guard Spec. effect"),
+        CreateBooleanEditableField(CanTargetFaintedPokemonField, "Can target fainted Pokemon"),
+        CreateBooleanEditableField(RevivesWholePartyField, "Revives whole party"),
+        CreateBooleanEditableField(LevelUpItemField, "Level up item"),
+        CreateBooleanEditableField(EvolutionItemField, "Evolution item"),
+        CreateBoostEditableField(AttackBoostField, "Attack boost"),
+        CreateBoostEditableField(DefenseBoostField, "Defense boost"),
+        CreateBoostEditableField(SpecialAttackBoostField, "Sp. Atk boost"),
+        CreateBoostEditableField(SpecialDefenseBoostField, "Sp. Def boost"),
+        CreateBoostEditableField(SpeedBoostField, "Speed boost"),
+        CreateBoostEditableField(AccuracyBoostField, "Accuracy boost"),
+        new SwShItemEditableField(
+            CriticalHitBoostField,
+            "Critical hit boost",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumCriticalHitBoostValue,
+            Options: []),
+        CreateBooleanEditableField(PpUpFlagField, "PP Up flag"),
+        CreateBooleanEditableField(PpMaxFlagField, "PP Max flag"),
         new SwShItemEditableField(
             UseFlags1Field,
             "Use flags 1",
@@ -211,6 +274,19 @@ public sealed class SwShItemsWorkflowService
             MinimumValue: 0,
             MaximumValue: MaximumByteValue,
             Options: []),
+        CreateBooleanEditableField(RestorePpFlagField, "Restore PP flag"),
+        CreateBooleanEditableField(RestoreAllPpFlagField, "Restore all PP flag"),
+        CreateBooleanEditableField(RestoreHpFlagField, "Restore HP flag"),
+        CreateBooleanEditableField(HpEvFlagField, "HP EV flag"),
+        CreateBooleanEditableField(AttackEvFlagField, "Attack EV flag"),
+        CreateBooleanEditableField(DefenseEvFlagField, "Defense EV flag"),
+        CreateBooleanEditableField(SpeedEvFlagField, "Speed EV flag"),
+        CreateBooleanEditableField(SpecialAttackEvFlagField, "Sp. Atk EV flag"),
+        CreateBooleanEditableField(SpecialDefenseEvFlagField, "Sp. Def EV flag"),
+        CreateBooleanEditableField(EvAbove100FlagField, "EV above 100 flag"),
+        CreateBooleanEditableField(Friendship1FlagField, "Friendship 1 flag"),
+        CreateBooleanEditableField(Friendship2FlagField, "Friendship 2 flag"),
+        CreateBooleanEditableField(Friendship3FlagField, "Friendship 3 flag"),
         new SwShItemEditableField(
             EvHpField,
             "HP EV gain",
@@ -289,6 +365,12 @@ public sealed class SwShItemsWorkflowService
             MaximumValue: MaximumSignedByteValue,
             Options: []),
     ];
+
+    private static SwShItemEditableField CreateBooleanEditableField(string field, string label) =>
+        new(field, label, "boolean", MinimumValue: 0, MaximumValue: 1, Options: BooleanOptions);
+
+    private static SwShItemEditableField CreateBoostEditableField(string field, string label) =>
+        new(field, label, "integer", MinimumValue: 0, MaximumValue: MaximumBoostValue, Options: []);
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {

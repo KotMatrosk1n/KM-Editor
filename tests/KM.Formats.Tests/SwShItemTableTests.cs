@@ -59,6 +59,37 @@ public sealed class SwShItemTableTests
         Assert.Equal(10, item.GroupIndex);
     }
 
+    [Fact]
+    public void WriteEditsPatchesNamedBehaviorFlagsAndBoosts()
+    {
+        var data = CreateItemTable();
+        var rowOffset = 0x44 + (2 * sizeof(ushort)) + 0x30;
+        data[rowOffset + 0x1E] = 0x02;
+        var table = SwShItemTable.Parse(data);
+
+        var output = table.WriteEdits(
+        [
+            new SwShItemTableEdit(1, SwShItemTableField.CurePoison, 0),
+            new SwShItemTableEdit(1, SwShItemTableField.CureBurn, 1),
+            new SwShItemTableEdit(1, SwShItemTableField.LevelUpItem, 1),
+            new SwShItemTableEdit(1, SwShItemTableField.AttackBoost, 6),
+            new SwShItemTableEdit(1, SwShItemTableField.DefenseBoost, 3),
+            new SwShItemTableEdit(1, SwShItemTableField.CriticalHitBoost, 2),
+            new SwShItemTableEdit(1, SwShItemTableField.PpMaxFlag, 1),
+            new SwShItemTableEdit(1, SwShItemTableField.RestoreHpFlag, 1),
+            new SwShItemTableEdit(1, SwShItemTableField.SpecialAttackEvFlag, 1),
+            new SwShItemTableEdit(1, SwShItemTableField.Friendship2Flag, 1),
+        ]);
+        var item = SwShItemTable.Parse(output).Records[1];
+
+        Assert.Equal(0x04, item.CureStatusFlags);
+        Assert.Equal(0x64, item.Boost0);
+        Assert.Equal(0x03, item.Boost1);
+        Assert.Equal(0xA0, item.Boost3);
+        Assert.Equal(0x84, item.UseFlags1);
+        Assert.Equal(0x08, item.UseFlags2);
+    }
+
     private static byte[] CreateItemTable(bool includeMachineTable = false)
     {
         const int headerSize = 0x44;

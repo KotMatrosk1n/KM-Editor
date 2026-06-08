@@ -69,8 +69,42 @@ public enum SwShItemTableField
     GroupType,
     GroupIndex,
     CureStatusFlags,
+    CureSleep,
+    CurePoison,
+    CureBurn,
+    CureFreeze,
+    CureParalysis,
+    CureConfusion,
+    CureInfatuation,
+    GuardSpec,
+    CanTargetFaintedPokemon,
+    RevivesWholeParty,
+    LevelUpItem,
+    EvolutionItem,
+    AttackBoost,
+    DefenseBoost,
+    SpecialAttackBoost,
+    SpecialDefenseBoost,
+    SpeedBoost,
+    AccuracyBoost,
+    CriticalHitBoost,
+    PpUpFlag,
+    PpMaxFlag,
     UseFlags1,
     UseFlags2,
+    RestorePpFlag,
+    RestoreAllPpFlag,
+    RestoreHpFlag,
+    HpEvFlag,
+    AttackEvFlag,
+    DefenseEvFlag,
+    SpeedEvFlag,
+    SpecialAttackEvFlag,
+    SpecialDefenseEvFlag,
+    EvAbove100Flag,
+    Friendship1Flag,
+    Friendship2Flag,
+    Friendship3Flag,
     EvHp,
     EvAttack,
     EvDefense,
@@ -289,11 +323,113 @@ public sealed class SwShItemTable
                 case SwShItemTableField.CureStatusFlags:
                     WriteByte(result, rowOffset + CureStatusFlagsOffset, edit.Value);
                     break;
+                case SwShItemTableField.CureSleep:
+                    WritePackedBit(result, rowOffset + CureStatusFlagsOffset, 0, edit.Value);
+                    break;
+                case SwShItemTableField.CurePoison:
+                    WritePackedBit(result, rowOffset + CureStatusFlagsOffset, 1, edit.Value);
+                    break;
+                case SwShItemTableField.CureBurn:
+                    WritePackedBit(result, rowOffset + CureStatusFlagsOffset, 2, edit.Value);
+                    break;
+                case SwShItemTableField.CureFreeze:
+                    WritePackedBit(result, rowOffset + CureStatusFlagsOffset, 3, edit.Value);
+                    break;
+                case SwShItemTableField.CureParalysis:
+                    WritePackedBit(result, rowOffset + CureStatusFlagsOffset, 4, edit.Value);
+                    break;
+                case SwShItemTableField.CureConfusion:
+                    WritePackedBit(result, rowOffset + CureStatusFlagsOffset, 5, edit.Value);
+                    break;
+                case SwShItemTableField.CureInfatuation:
+                    WritePackedBit(result, rowOffset + CureStatusFlagsOffset, 6, edit.Value);
+                    break;
+                case SwShItemTableField.GuardSpec:
+                    WritePackedBit(result, rowOffset + CureStatusFlagsOffset, 7, edit.Value);
+                    break;
+                case SwShItemTableField.CanTargetFaintedPokemon:
+                    WritePackedBit(result, rowOffset + Boost0Offset, 0, edit.Value);
+                    break;
+                case SwShItemTableField.RevivesWholeParty:
+                    WritePackedBit(result, rowOffset + Boost0Offset, 1, edit.Value);
+                    break;
+                case SwShItemTableField.LevelUpItem:
+                    WritePackedBit(result, rowOffset + Boost0Offset, 2, edit.Value);
+                    break;
+                case SwShItemTableField.EvolutionItem:
+                    WritePackedBit(result, rowOffset + Boost0Offset, 3, edit.Value);
+                    break;
+                case SwShItemTableField.AttackBoost:
+                    WritePackedNibble(result, rowOffset + Boost0Offset, edit.Value, writeHighNibble: true);
+                    break;
+                case SwShItemTableField.DefenseBoost:
+                    WritePackedNibble(result, rowOffset + Boost1Offset, edit.Value, writeHighNibble: false);
+                    break;
+                case SwShItemTableField.SpecialAttackBoost:
+                    WritePackedNibble(result, rowOffset + Boost1Offset, edit.Value, writeHighNibble: true);
+                    break;
+                case SwShItemTableField.SpecialDefenseBoost:
+                    WritePackedNibble(result, rowOffset + Boost2Offset, edit.Value, writeHighNibble: false);
+                    break;
+                case SwShItemTableField.SpeedBoost:
+                    WritePackedNibble(result, rowOffset + Boost2Offset, edit.Value, writeHighNibble: true);
+                    break;
+                case SwShItemTableField.AccuracyBoost:
+                    WritePackedNibble(result, rowOffset + Boost3Offset, edit.Value, writeHighNibble: false);
+                    break;
+                case SwShItemTableField.CriticalHitBoost:
+                    WritePackedBits(result, rowOffset + Boost3Offset, bitOffset: 4, bitCount: 2, edit.Value);
+                    break;
+                case SwShItemTableField.PpUpFlag:
+                    WritePackedBit(result, rowOffset + Boost3Offset, 6, edit.Value);
+                    break;
+                case SwShItemTableField.PpMaxFlag:
+                    WritePackedBit(result, rowOffset + Boost3Offset, 7, edit.Value);
+                    break;
                 case SwShItemTableField.UseFlags1:
                     WriteByte(result, rowOffset + UseFlags1Offset, edit.Value);
                     break;
                 case SwShItemTableField.UseFlags2:
                     WriteByte(result, rowOffset + UseFlags2Offset, edit.Value);
+                    break;
+                case SwShItemTableField.RestorePpFlag:
+                    WritePackedBit(result, rowOffset + UseFlags1Offset, 0, edit.Value);
+                    break;
+                case SwShItemTableField.RestoreAllPpFlag:
+                    WritePackedBit(result, rowOffset + UseFlags1Offset, 1, edit.Value);
+                    break;
+                case SwShItemTableField.RestoreHpFlag:
+                    WritePackedBit(result, rowOffset + UseFlags1Offset, 2, edit.Value);
+                    break;
+                case SwShItemTableField.HpEvFlag:
+                    WritePackedBit(result, rowOffset + UseFlags1Offset, 3, edit.Value);
+                    break;
+                case SwShItemTableField.AttackEvFlag:
+                    WritePackedBit(result, rowOffset + UseFlags1Offset, 4, edit.Value);
+                    break;
+                case SwShItemTableField.DefenseEvFlag:
+                    WritePackedBit(result, rowOffset + UseFlags1Offset, 5, edit.Value);
+                    break;
+                case SwShItemTableField.SpeedEvFlag:
+                    WritePackedBit(result, rowOffset + UseFlags1Offset, 6, edit.Value);
+                    break;
+                case SwShItemTableField.SpecialAttackEvFlag:
+                    WritePackedBit(result, rowOffset + UseFlags1Offset, 7, edit.Value);
+                    break;
+                case SwShItemTableField.SpecialDefenseEvFlag:
+                    WritePackedBit(result, rowOffset + UseFlags2Offset, 0, edit.Value);
+                    break;
+                case SwShItemTableField.EvAbove100Flag:
+                    WritePackedBit(result, rowOffset + UseFlags2Offset, 1, edit.Value);
+                    break;
+                case SwShItemTableField.Friendship1Flag:
+                    WritePackedBit(result, rowOffset + UseFlags2Offset, 2, edit.Value);
+                    break;
+                case SwShItemTableField.Friendship2Flag:
+                    WritePackedBit(result, rowOffset + UseFlags2Offset, 3, edit.Value);
+                    break;
+                case SwShItemTableField.Friendship3Flag:
+                    WritePackedBit(result, rowOffset + UseFlags2Offset, 4, edit.Value);
                     break;
                 case SwShItemTableField.EvHp:
                     WriteSignedByte(result, rowOffset + EvHpOffset, edit.Value);
@@ -370,6 +506,34 @@ public sealed class SwShItemTable
         }
 
         data[offset] = checked((byte)value);
+    }
+
+    private static void WritePackedBit(byte[] data, int offset, int bitOffset, int value)
+    {
+        if (value is not 0 and not 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), "Packed item flag fields must be 0 or 1.");
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegative(bitOffset);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(bitOffset, 7);
+
+        var mask = 1 << bitOffset;
+        data[offset] = value == 0
+            ? (byte)(data[offset] & ~mask)
+            : (byte)(data[offset] | mask);
+    }
+
+    private static void WritePackedBits(byte[] data, int offset, int bitOffset, int bitCount, int value)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(bitOffset);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(bitCount);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(bitOffset + bitCount, 8);
+        ArgumentOutOfRangeException.ThrowIfNegative(value);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(value, (1 << bitCount) - 1);
+
+        var valueMask = ((1 << bitCount) - 1) << bitOffset;
+        data[offset] = (byte)((data[offset] & ~valueMask) | (value << bitOffset));
     }
 
     private static void WritePackedNibble(byte[] data, int offset, int value, bool writeHighNibble)

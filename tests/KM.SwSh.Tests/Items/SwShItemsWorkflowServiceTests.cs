@@ -76,6 +76,15 @@ public sealed class SwShItemsWorkflowServiceTests
             editableField => editableField.Field == SwShItemsWorkflowService.EvHpField
                 && editableField.MinimumValue == SwShItemsWorkflowService.MinimumSignedByteValue
                 && editableField.MaximumValue == SwShItemsWorkflowService.MaximumSignedByteValue);
+        Assert.Contains(
+            workflow.EditableFields,
+            editableField => editableField.Field == SwShItemsWorkflowService.CureBurnField
+                && editableField.ValueKind == "boolean"
+                && editableField.Options.Any(option => option.Value == 1 && option.Label == "Yes"));
+        Assert.Contains(
+            workflow.EditableFields,
+            editableField => editableField.Field == SwShItemsWorkflowService.AttackBoostField
+                && editableField.MaximumValue == SwShItemsWorkflowService.MaximumBoostValue);
         Assert.Empty(workflow.Diagnostics);
     }
 
