@@ -23,6 +23,8 @@ public static class KmCommandNames
     public const string UpdateTextEntry = "text.entry.update";
     public const string LoadTrainersWorkflow = "trainers.load";
     public const string UpdateTrainerField = "trainers.field.update";
+    public const string LoadGiftPokemonWorkflow = "giftPokemon.load";
+    public const string UpdateGiftPokemonField = "giftPokemon.field.update";
     public const string LoadShopsWorkflow = "shops.load";
     public const string UpdateShopInventoryItem = "shops.inventory.update";
     public const string LoadEncountersWorkflow = "encounters.load";

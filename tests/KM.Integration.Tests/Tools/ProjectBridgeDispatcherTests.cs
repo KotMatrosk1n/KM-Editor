@@ -149,6 +149,11 @@ public sealed class ProjectBridgeDispatcherTests
             },
             workflow =>
             {
+                Assert.Equal("giftPokemon", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
                 Assert.Equal("shops", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             },

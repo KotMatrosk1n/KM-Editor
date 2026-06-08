@@ -16,6 +16,8 @@ import {
   type LoadExeFsPatchWorkflowResponse,
   type LoadFlagworkSaveWorkflowRequest,
   type LoadFlagworkSaveWorkflowResponse,
+  type LoadGiftPokemonWorkflowRequest,
+  type LoadGiftPokemonWorkflowResponse,
   type LoadItemsWorkflowRequest,
   type LoadItemsWorkflowResponse,
   type LoadMovesWorkflowRequest,
@@ -57,6 +59,8 @@ import {
   type StartEditSessionResponse,
   type UpdateItemFieldRequest,
   type UpdateItemFieldResponse,
+  type UpdateGiftPokemonFieldRequest,
+  type UpdateGiftPokemonFieldResponse,
   type UpdateMoveFieldRequest,
   type UpdateMoveFieldResponse,
   type UpdateEncounterSlotFieldRequest,
@@ -83,6 +87,7 @@ import {
   loadEncountersWorkflowResponseSchema,
   loadExeFsPatchWorkflowResponseSchema,
   loadFlagworkSaveWorkflowResponseSchema,
+  loadGiftPokemonWorkflowResponseSchema,
   loadItemsWorkflowResponseSchema,
   loadMovesWorkflowResponseSchema,
   loadPokemonWorkflowResponseSchema,
@@ -100,6 +105,7 @@ import {
   refreshFileGraphResponseSchema,
   startEditSessionResponseSchema,
   updateItemFieldResponseSchema,
+  updateGiftPokemonFieldResponseSchema,
   updateMoveFieldResponseSchema,
   updatePokemonFieldResponseSchema,
   updatePokemonEvolutionResponseSchema,
@@ -128,6 +134,9 @@ export type ProjectBridge = {
   loadFlagworkSaveWorkflow: (
     request: LoadFlagworkSaveWorkflowRequest
   ) => Promise<LoadFlagworkSaveWorkflowResponse>;
+  loadGiftPokemonWorkflow: (
+    request: LoadGiftPokemonWorkflowRequest
+  ) => Promise<LoadGiftPokemonWorkflowResponse>;
   loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
   loadMovesWorkflow: (request: LoadMovesWorkflowRequest) => Promise<LoadMovesWorkflowResponse>;
   loadPokemonWorkflow: (
@@ -169,6 +178,9 @@ export type ProjectBridge = {
   refreshFileGraph: (request: RefreshFileGraphRequest) => Promise<RefreshFileGraphResponse>;
   startEditSession: (request: StartEditSessionRequest) => Promise<StartEditSessionResponse>;
   updateItemField: (request: UpdateItemFieldRequest) => Promise<UpdateItemFieldResponse>;
+  updateGiftPokemonField: (
+    request: UpdateGiftPokemonFieldRequest
+  ) => Promise<UpdateGiftPokemonFieldResponse>;
   updateMoveField: (request: UpdateMoveFieldRequest) => Promise<UpdateMoveFieldResponse>;
   updateEncounterSlotField: (
     request: UpdateEncounterSlotFieldRequest
@@ -264,6 +276,13 @@ export function createProjectBridge(
         kmCommandNames.loadFlagworkSaveWorkflow,
         request,
         loadFlagworkSaveWorkflowResponseSchema
+      ),
+    loadGiftPokemonWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadGiftPokemonWorkflow,
+        request,
+        loadGiftPokemonWorkflowResponseSchema
       ),
     loadItemsWorkflow: (request) =>
       sendProjectBridgeRequest(
@@ -376,6 +395,13 @@ export function createProjectBridge(
         kmCommandNames.updateItemField,
         request,
         updateItemFieldResponseSchema
+      ),
+    updateGiftPokemonField: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateGiftPokemonField,
+        request,
+        updateGiftPokemonFieldResponseSchema
       ),
     updateMoveField: (request) =>
       sendProjectBridgeRequest(
