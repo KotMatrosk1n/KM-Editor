@@ -10417,8 +10417,10 @@ function SelectedRoyalCandyPanel({
   const canStage =
     selectedWorkflow !== null &&
     (selectedWorkflow.workflowId === 'royal-candy-unlimited' ||
-      selectedWorkflow.workflowId === 'royal-candy-story-limits') &&
+      selectedWorkflow.workflowId === 'royal-candy-story-limits' ||
+      selectedWorkflow.workflowId === 'royal-candy-uninstall') &&
     (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning');
+  const isCleanupWorkflow = selectedWorkflow?.workflowId === 'royal-candy-uninstall';
   const stagedRoyalCandyEdit = editSession?.pendingEdits.find(
     (edit) => edit.domain === 'workflow.royalCandy'
   );
@@ -10495,7 +10497,7 @@ function SelectedRoyalCandyPanel({
                 type="button"
               >
                 <ClipboardCheck aria-hidden="true" size={16} />
-                <span>{isStaging ? 'Staging' : 'Stage Workflow'}</span>
+                <span>{isStaging ? 'Staging' : isCleanupWorkflow ? 'Stage Cleanup' : 'Stage Workflow'}</span>
               </button>
               <button
                 className="secondary-button"
@@ -10513,7 +10515,7 @@ function SelectedRoyalCandyPanel({
                 type="button"
               >
                 <Save aria-hidden="true" size={16} />
-                <span>{isChangePlanApplying ? 'Applying' : 'Apply Plan'}</span>
+                <span>{isChangePlanApplying ? 'Applying' : isCleanupWorkflow ? 'Apply Cleanup' : 'Apply Plan'}</span>
               </button>
             </div>
 

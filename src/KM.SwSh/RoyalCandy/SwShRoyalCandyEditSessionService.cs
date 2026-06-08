@@ -19,6 +19,7 @@ public sealed class SwShRoyalCandyEditSessionService
     private const string WorkflowField = "workflowId";
     private const string UnlimitedWorkflowId = "royal-candy-unlimited";
     private const string StoryLimitsWorkflowId = "royal-candy-story-limits";
+    private const string UninstallWorkflowId = "royal-candy-uninstall";
     private const string RoyalCandyName = "Royal Candy";
     private const string UnlimitedDescription = "A candy packed with strange energy. It can be used repeatedly by compatible Pokemon.";
     private const string StoryLimitsDescription = "A candy packed with strange energy. Its full power follows the current story limit.";
@@ -56,7 +57,7 @@ public sealed class SwShRoyalCandyEditSessionService
             return new SwShRoyalCandyEditResult(workflow, currentSession, diagnostics);
         }
 
-        var selectedWorkflow = GetInstallWorkflow(workflow, workflowId, diagnostics);
+        var selectedWorkflow = GetApplicableWorkflow(workflow, workflowId, diagnostics);
         if (selectedWorkflow is null || !CanStage(project, workflow, selectedWorkflow, diagnostics))
         {
             return new SwShRoyalCandyEditResult(workflow, currentSession, diagnostics);
@@ -129,7 +130,7 @@ public sealed class SwShRoyalCandyEditSessionService
         var project = projectWorkspaceService.Open(paths);
         var workflow = royalCandyWorkflowService.Load(project);
         var edit = session.PendingEdits.Single();
-        var selectedWorkflow = GetInstallWorkflow(workflow, edit.RecordId ?? string.Empty, diagnostics);
+        var selectedWorkflow = GetApplicableWorkflow(workflow, edit.RecordId ?? string.Empty, diagnostics);
         if (selectedWorkflow is null)
         {
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
@@ -185,6 +186,7 @@ public sealed class SwShRoyalCandyEditSessionService
         var project = projectWorkspaceService.Open(paths);
         var edit = session.PendingEdits.Single();
         var workflowId = edit.RecordId ?? string.Empty;
+        var isCleanup = string.Equals(workflowId, UninstallWorkflowId, StringComparison.Ordinal);
 
         foreach (var write in currentPlan.Writes)
         {
@@ -196,6 +198,23 @@ public sealed class SwShRoyalCandyEditSessionService
 
             try
             {
+                if (isCleanup)
+                {
+                    if (!File.Exists(targetPath))
+                    {
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Error,
+                            $"Royal Candy cleanup target '{write.TargetRelativePath}' no longer exists. Review the change plan again before applying.",
+                            file: write.TargetRelativePath,
+                            expected: "Existing reviewed LayeredFS output file"));
+                        continue;
+                    }
+
+                    File.Delete(targetPath);
+                    writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, write.TargetRelativePath));
+                    continue;
+                }
+
                 var output = CreateOutputBytes(project, workflowId, write.TargetRelativePath, diagnostics);
                 if (output is null)
                 {
@@ -236,7 +255,9 @@ public sealed class SwShRoyalCandyEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                "Applied Royal Candy change plan to the configured LayeredFS output root."));
+                isCleanup
+                    ? "Removed reviewed Royal Candy LayeredFS output files from the configured output root."
+                    : "Applied Royal Candy change plan to the configured LayeredFS output root."));
         }
 
         return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
@@ -289,7 +310,7 @@ public sealed class SwShRoyalCandyEditSessionService
             return;
         }
 
-        var selectedWorkflow = GetInstallWorkflow(workflow, edit.RecordId ?? string.Empty, diagnostics);
+        var selectedWorkflow = GetApplicableWorkflow(workflow, edit.RecordId ?? string.Empty, diagnostics);
         if (selectedWorkflow is null)
         {
             return;
@@ -298,7 +319,7 @@ public sealed class SwShRoyalCandyEditSessionService
         CanStage(project, workflow, selectedWorkflow, diagnostics);
     }
 
-    private static SwShRoyalCandyWorkflowRecord? GetInstallWorkflow(
+    private static SwShRoyalCandyWorkflowRecord? GetApplicableWorkflow(
         SwShRoyalCandyWorkflow workflow,
         string workflowId,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -311,19 +332,22 @@ public sealed class SwShRoyalCandyEditSessionService
                 DiagnosticSeverity.Error,
                 $"Royal Candy workflow '{workflowId}' is not available.",
                 field: WorkflowField,
-                expected: $"{UnlimitedWorkflowId} or {StoryLimitsWorkflowId}"));
+                expected: $"{UnlimitedWorkflowId}, {StoryLimitsWorkflowId}, or {UninstallWorkflowId}"));
             return null;
         }
 
         if (!string.Equals(selectedWorkflow.WorkflowId, UnlimitedWorkflowId, StringComparison.Ordinal)
             && !string.Equals(selectedWorkflow.WorkflowId, StoryLimitsWorkflowId, StringComparison.Ordinal))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Royal Candy workflow '{selectedWorkflow.Name}' cannot be applied yet.",
-                field: WorkflowField,
-                expected: "Install workflow"));
-            return null;
+            if (!string.Equals(selectedWorkflow.WorkflowId, UninstallWorkflowId, StringComparison.Ordinal))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Royal Candy workflow '{selectedWorkflow.Name}' cannot be applied yet.",
+                    field: WorkflowField,
+                    expected: "Install or cleanup workflow"));
+                return null;
+            }
         }
 
         return selectedWorkflow;
@@ -347,9 +371,10 @@ public sealed class SwShRoyalCandyEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var writes = new List<PlannedFileWrite>();
+        var isCleanup = string.Equals(selectedWorkflow.WorkflowId, UninstallWorkflowId, StringComparison.Ordinal);
         var outputs = workflow.Outputs
             .Where(output => string.Equals(output.WorkflowId, selectedWorkflow.WorkflowId, StringComparison.Ordinal))
-            .Where(output => IsConcreteApplyOutput(output.RelativePath))
+            .Where(output => isCleanup || IsConcreteApplyOutput(output.RelativePath))
             .OrderBy(output => output.RelativePath, StringComparer.Ordinal)
             .ToArray();
 
@@ -365,7 +390,9 @@ public sealed class SwShRoyalCandyEditSessionService
                 output.RelativePath,
                 [new ProjectFileReference(output.Provenance.SourceLayer, output.Provenance.SourceFile)],
                 File.Exists(targetPath),
-                $"Apply Royal Candy workflow '{selectedWorkflow.Name}': {output.Description}"));
+                isCleanup
+                    ? $"Remove Royal Candy LayeredFS output: {output.Description}"
+                    : $"Apply Royal Candy workflow '{selectedWorkflow.Name}': {output.Description}"));
         }
 
         return writes;
@@ -387,6 +414,15 @@ public sealed class SwShRoyalCandyEditSessionService
 
         if (deferredOutputs.Length == 0)
         {
+            return;
+        }
+
+        if (string.Equals(selectedWorkflow.WorkflowId, UninstallWorkflowId, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "Royal Candy cleanup will remove only the reviewed known LayeredFS output targets.",
+                expected: "Reviewed Royal Candy cleanup targets"));
             return;
         }
 
