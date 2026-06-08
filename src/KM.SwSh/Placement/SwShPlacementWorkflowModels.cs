@@ -37,7 +37,23 @@ public sealed record SwShPlacementEditableField(
     string Label,
     string ValueKind,
     double MinimumValue,
-    double MaximumValue);
+    double MaximumValue,
+    IReadOnlyList<SwShPlacementEditableFieldOption> Options)
+{
+    public SwShPlacementEditableField(
+        string Field,
+        string Label,
+        string ValueKind,
+        double MinimumValue,
+        double MaximumValue)
+        : this(Field, Label, ValueKind, MinimumValue, MaximumValue, Array.Empty<SwShPlacementEditableFieldOption>())
+    {
+    }
+}
+
+public sealed record SwShPlacementEditableFieldOption(
+    int Value,
+    string Label);
 
 public sealed record SwShPlacementWorkflowStats(
     int TotalObjectCount,

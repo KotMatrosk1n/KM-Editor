@@ -37,7 +37,23 @@ public sealed record SwShEncounterEditableField(
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<SwShEncounterEditableFieldOption> Options)
+{
+    public SwShEncounterEditableField(
+        string Field,
+        string Label,
+        string ValueKind,
+        int? MinimumValue,
+        int? MaximumValue)
+        : this(Field, Label, ValueKind, MinimumValue, MaximumValue, Array.Empty<SwShEncounterEditableFieldOption>())
+    {
+    }
+}
+
+public sealed record SwShEncounterEditableFieldOption(
+    int Value,
+    string Label);
 
 public sealed record SwShEncountersWorkflowStats(
     int TotalTableCount,

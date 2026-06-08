@@ -825,6 +825,7 @@ public static class SwShBridgeMapper
             encounter.IsStoryProgressGated,
             encounter.UiMessageId,
             encounter.OtGender,
+            encounter.OtGenderLabel,
             encounter.Moves.Select(ToDto).ToArray(),
             ToDto(encounter.Ivs),
             encounter.GuaranteedPerfectIvs,
@@ -1551,7 +1552,13 @@ public static class SwShBridgeMapper
             field.Label,
             field.ValueKind,
             field.MinimumValue,
-            field.MaximumValue);
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static EncounterEditableFieldOptionDto ToDto(SwShEncounterEditableFieldOption option)
+    {
+        return new EncounterEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static EncounterProvenanceDto ToDto(SwShEncounterProvenance provenance)
@@ -1668,7 +1675,13 @@ public static class SwShBridgeMapper
             field.Label,
             field.ValueKind,
             field.MinimumValue,
-            field.MaximumValue);
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static RaidRewardEditableFieldOptionDto ToDto(SwShRaidRewardEditableFieldOption option)
+    {
+        return new RaidRewardEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static RaidRewardProvenanceDto ToDto(SwShRaidRewardProvenance provenance)
@@ -1710,7 +1723,13 @@ public static class SwShBridgeMapper
             field.Label,
             field.ValueKind,
             field.MinimumValue,
-            field.MaximumValue);
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static PlacementEditableFieldOptionDto ToDto(SwShPlacementEditableFieldOption option)
+    {
+        return new PlacementEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static PlacementProvenanceDto ToDto(SwShPlacementProvenance provenance)

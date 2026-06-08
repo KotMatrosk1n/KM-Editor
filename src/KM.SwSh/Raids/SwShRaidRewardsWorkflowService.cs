@@ -28,7 +28,7 @@ public sealed class SwShRaidRewardsWorkflowService
 
     private static readonly IReadOnlyList<SwShRaidRewardEditableField> EditableFields =
     [
-        new SwShRaidRewardEditableField(ItemIdField, "Item ID", "integer", MinimumItemId, MaximumItemId),
+        new SwShRaidRewardEditableField(ItemIdField, "Item", "integer", MinimumItemId, MaximumItemId),
         new SwShRaidRewardEditableField(Star1ValueField, "1-star value", "integer", MinimumRewardValue, MaximumRewardValue),
         new SwShRaidRewardEditableField(Star2ValueField, "2-star value", "integer", MinimumRewardValue, MaximumRewardValue),
         new SwShRaidRewardEditableField(Star3ValueField, "3-star value", "integer", MinimumRewardValue, MaximumRewardValue),
@@ -70,7 +70,7 @@ public sealed class SwShRaidRewardsWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 0, [], diagnostics);
         }
 
         var dataSource = ResolveNestDataSource(project);
@@ -80,7 +80,7 @@ public sealed class SwShRaidRewardsWorkflowService
                 DiagnosticSeverity.Warning,
                 "Raid Rewards data is not available for this project.",
                 expected: NestDataPath));
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 0, [], diagnostics);
         }
 
         var itemNames = LoadItemNames(project, diagnostics);
@@ -116,7 +116,7 @@ public sealed class SwShRaidRewardsWorkflowService
                     expected: "nest_hole_drop_rewards.bin or nest_hole_bonus_rewards.bin inside data_table.gfpak"));
             }
 
-            return CreateWorkflow(summary, tables, sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, tables, sourceFileCount: 1, itemNames, diagnostics);
         }
         catch (InvalidDataException exception)
         {
@@ -125,7 +125,7 @@ public sealed class SwShRaidRewardsWorkflowService
                 $"Raid Rewards source is not supported: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield data_table.gfpak with nest-hole reward members"));
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemNames, diagnostics);
         }
         catch (IOException exception)
         {
@@ -134,7 +134,7 @@ public sealed class SwShRaidRewardsWorkflowService
                 $"Raid Rewards source could not be read: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield data_table.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemNames, diagnostics);
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -143,7 +143,7 @@ public sealed class SwShRaidRewardsWorkflowService
                 $"Raid Rewards source could not be read: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield data_table.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemNames, diagnostics);
         }
     }
 
@@ -447,17 +447,36 @@ public sealed class SwShRaidRewardsWorkflowService
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShRaidRewardTableRecord> tables,
         int sourceFileCount,
+        IReadOnlyList<string> itemNames,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         return new SwShRaidRewardsWorkflow(
             summary,
             tables,
-            EditableFields,
+            CreateEditableFields(itemNames),
             new SwShRaidRewardsWorkflowStats(
                 tables.Count,
                 tables.Sum(table => table.Rewards.Count),
                 sourceFileCount),
             diagnostics);
+    }
+
+    private static IReadOnlyList<SwShRaidRewardEditableField> CreateEditableFields(
+        IReadOnlyList<string> itemNames)
+    {
+        var itemOptions = itemNames
+            .Select((name, index) => new SwShRaidRewardEditableFieldOption(
+                index,
+                string.IsNullOrWhiteSpace(name)
+                    ? $"{index.ToString("000", CultureInfo.InvariantCulture)} Item {index}"
+                    : $"{index.ToString("000", CultureInfo.InvariantCulture)} {name}"))
+            .ToArray();
+
+        return EditableFields
+            .Select(field => field.Field == ItemIdField
+                ? field with { Options = itemOptions }
+                : field)
+            .ToArray();
     }
 
     private static SwShRaidRewardProvenance CreateProvenance(ProjectFileGraphEntry entry)

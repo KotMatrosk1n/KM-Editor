@@ -83,6 +83,19 @@ public sealed class SwShStaticEncountersWorkflowService
         new(6, "6 Perfect IVs"),
     ];
 
+    private static readonly IReadOnlyList<SwShStaticEncounterEditableFieldOption> FormOptions =
+    [
+        new(0, "Base"),
+        ..Enumerable.Range(1, 31).Select(value => new SwShStaticEncounterEditableFieldOption(value, $"Form {value}")),
+    ];
+
+    private static readonly IReadOnlyList<SwShStaticEncounterEditableFieldOption> DynamaxLevelOptions =
+    [
+        ..Enumerable.Range(0, 11).Select(value => new SwShStaticEncounterEditableFieldOption(
+            value,
+            value == 0 ? "0 Off" : $"Level {value}")),
+    ];
+
     private static readonly IReadOnlyList<SwShStaticEncounterEditableFieldOption> NatureOptions =
     [
         new(0, "Hardy"),
@@ -140,7 +153,7 @@ public sealed class SwShStaticEncountersWorkflowService
     private static readonly IReadOnlyList<SwShStaticEncounterEditableField> BaseEditableFields =
     [
         CreateField(SpeciesField, "Species", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),
-        CreateField(FormField, "Form", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue),
+        CreateField(FormField, "Form", "integer", 0, 31, FormOptions),
         CreateField(LevelField, "Level", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue),
         CreateField(HeldItemIdField, "Held item", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),
         CreateField(AbilityField, "Ability slot", "integer", 0, 3, AbilityOptions),
@@ -148,7 +161,7 @@ public sealed class SwShStaticEncountersWorkflowService
         CreateField(GenderField, "Gender", "integer", 0, 2, GenderOptions),
         CreateField(ShinyLockField, "Shiny lock", "integer", 0, 2, ShinyLockOptions),
         CreateField(EncounterScenarioField, "Scenario", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue, EncounterScenarioOptions),
-        CreateField(DynamaxLevelField, "Dynamax level", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue),
+        CreateField(DynamaxLevelField, "Dynamax level", "integer", 0, 10, DynamaxLevelOptions),
         CreateField(CanGigantamaxField, "Can Gigantamax", "boolean", 0, 1, BooleanOptions),
         CreateField(Move0Field, "Move 1", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),
         CreateField(Move1Field, "Move 2", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),

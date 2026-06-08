@@ -48,7 +48,12 @@ public sealed record EncounterEditableFieldDto(
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<EncounterEditableFieldOptionDto> Options);
+
+public sealed record EncounterEditableFieldOptionDto(
+    int Value,
+    string Label);
 
 public sealed record EncountersWorkflowStatsDto(
     int TotalTableCount,

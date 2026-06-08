@@ -16,7 +16,23 @@ public sealed record SwShRaidRewardEditableField(
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<SwShRaidRewardEditableFieldOption> Options)
+{
+    public SwShRaidRewardEditableField(
+        string Field,
+        string Label,
+        string ValueKind,
+        int? MinimumValue,
+        int? MaximumValue)
+        : this(Field, Label, ValueKind, MinimumValue, MaximumValue, Array.Empty<SwShRaidRewardEditableFieldOption>())
+    {
+    }
+}
+
+public sealed record SwShRaidRewardEditableFieldOption(
+    int Value,
+    string Label);
 
 public sealed record SwShRaidRewardItemRecord(
     int Slot,

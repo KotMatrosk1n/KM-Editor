@@ -54,7 +54,12 @@ public sealed record RaidRewardEditableFieldDto(
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<RaidRewardEditableFieldOptionDto> Options);
+
+public sealed record RaidRewardEditableFieldOptionDto(
+    int Value,
+    string Label);
 
 public sealed record RaidRewardsWorkflowStatsDto(
     int TotalTableCount,

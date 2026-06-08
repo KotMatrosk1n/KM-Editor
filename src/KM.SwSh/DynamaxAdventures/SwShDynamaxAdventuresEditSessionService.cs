@@ -521,7 +521,11 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             SwShDynamaxAdventuresWorkflowService.IvSpecialDefenseField => encounter with { Ivs = encounter.Ivs with { SpecialDefense = value } },
             SwShDynamaxAdventuresWorkflowService.IsSingleCaptureField => encounter with { IsSingleCapture = value != 0 },
             SwShDynamaxAdventuresWorkflowService.IsStoryProgressGatedField => encounter with { IsStoryProgressGated = value != 0 },
-            SwShDynamaxAdventuresWorkflowService.OtGenderField => encounter with { OtGender = value },
+            SwShDynamaxAdventuresWorkflowService.OtGenderField => encounter with
+            {
+                OtGender = value,
+                OtGenderLabel = GetOptionLabel(workflow, field, value, "OT gender"),
+            },
             _ => encounter,
         };
 

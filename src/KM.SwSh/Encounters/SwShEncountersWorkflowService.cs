@@ -32,7 +32,7 @@ public sealed class SwShEncountersWorkflowService
 
     private static readonly IReadOnlyList<SwShEncounterEditableField> EditableFields =
     [
-        new SwShEncounterEditableField(SpeciesIdField, "Species ID", "integer", MinimumSpeciesId, MaximumSpeciesId),
+        new SwShEncounterEditableField(SpeciesIdField, "Species", "integer", MinimumSpeciesId, MaximumSpeciesId),
         new SwShEncounterEditableField(FormField, "Form", "integer", MinimumForm, MaximumForm),
         new SwShEncounterEditableField(ProbabilityField, "Probability", "integer", MinimumProbability, MaximumProbability),
         new SwShEncounterEditableField(LevelMinField, "Min Level", "integer", MinimumLevel, MaximumLevel),
@@ -90,7 +90,7 @@ public sealed class SwShEncountersWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShEncounterTableRecord>(), sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShEncounterTableRecord>(), sourceFileCount: 0, [], diagnostics);
         }
 
         var dataSource = ResolveWildDataSource(project);
@@ -100,7 +100,7 @@ public sealed class SwShEncountersWorkflowService
                 DiagnosticSeverity.Warning,
                 "Encounters and Wild Data is not available for this project.",
                 expected: WildDataPath));
-            return CreateWorkflow(summary, Array.Empty<SwShEncounterTableRecord>(), sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShEncounterTableRecord>(), sourceFileCount: 0, [], diagnostics);
         }
 
         var speciesNames = LoadSpeciesNames(project, diagnostics);
@@ -131,7 +131,7 @@ public sealed class SwShEncountersWorkflowService
                     expected: "encount_symbol_k/t.bin or encount_k/t.bin inside data_table.gfpak"));
             }
 
-            return CreateWorkflow(summary, tables, sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, tables, sourceFileCount: 1, speciesNames, diagnostics);
         }
         catch (InvalidDataException exception)
         {
@@ -140,7 +140,7 @@ public sealed class SwShEncountersWorkflowService
                 $"Encounters and Wild Data source is not supported: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield data_table.gfpak with EncounterArchive members"));
-            return CreateWorkflow(summary, Array.Empty<SwShEncounterTableRecord>(), sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShEncounterTableRecord>(), sourceFileCount: 1, speciesNames, diagnostics);
         }
         catch (IOException exception)
         {
@@ -149,7 +149,7 @@ public sealed class SwShEncountersWorkflowService
                 $"Encounters and Wild Data source could not be read: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield data_table.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShEncounterTableRecord>(), sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShEncounterTableRecord>(), sourceFileCount: 1, speciesNames, diagnostics);
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -158,7 +158,7 @@ public sealed class SwShEncountersWorkflowService
                 $"Encounters and Wild Data source could not be read: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield data_table.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShEncounterTableRecord>(), sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShEncounterTableRecord>(), sourceFileCount: 1, speciesNames, diagnostics);
         }
     }
 
@@ -289,6 +289,7 @@ public sealed class SwShEncountersWorkflowService
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShEncounterTableRecord> tables,
         int sourceFileCount,
+        IReadOnlyList<string> speciesNames,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         return new SwShEncountersWorkflow(
@@ -298,12 +299,30 @@ public sealed class SwShEncountersWorkflowService
                 .ThenBy(table => table.Area, StringComparer.Ordinal)
                 .ThenBy(table => table.TableId, StringComparer.Ordinal)
                 .ToArray(),
-            EditableFields,
+            CreateEditableFields(speciesNames),
             new SwShEncountersWorkflowStats(
                 tables.Count,
                 tables.Sum(table => table.Slots.Count),
                 sourceFileCount),
             diagnostics);
+    }
+
+    private static IReadOnlyList<SwShEncounterEditableField> CreateEditableFields(
+        IReadOnlyList<string> speciesNames)
+    {
+        var speciesOptions = speciesNames
+            .Select((name, index) => new SwShEncounterEditableFieldOption(
+                index,
+                string.IsNullOrWhiteSpace(name)
+                    ? $"{index.ToString("000", CultureInfo.InvariantCulture)} Species {index}"
+                    : $"{index.ToString("000", CultureInfo.InvariantCulture)} {name}"))
+            .ToArray();
+
+        return EditableFields
+            .Select(field => field.Field == SpeciesIdField
+                ? field with { Options = speciesOptions }
+                : field)
+            .ToArray();
     }
 
     private static IEnumerable<SwShEncounterTableRecord> FlattenArchive(
