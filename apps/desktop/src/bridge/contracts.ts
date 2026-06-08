@@ -21,6 +21,8 @@ export const kmCommandNameValues = [
   'trainers.field.update',
   'giftPokemon.load',
   'giftPokemon.field.update',
+  'staticEncounters.load',
+  'staticEncounters.field.update',
   'shops.load',
   'shops.inventory.update',
   'encounters.load',
@@ -66,6 +68,8 @@ export const kmCommandNames = {
   updateTrainerField: 'trainers.field.update',
   loadGiftPokemonWorkflow: 'giftPokemon.load',
   updateGiftPokemonField: 'giftPokemon.field.update',
+  loadStaticEncountersWorkflow: 'staticEncounters.load',
+  updateStaticEncounterField: 'staticEncounters.field.update',
   loadShopsWorkflow: 'shops.load',
   updateShopInventoryItem: 'shops.inventory.update',
   loadEncountersWorkflow: 'encounters.load',
@@ -150,6 +154,10 @@ export const loadTrainersWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadGiftPokemonWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadStaticEncountersWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -894,6 +902,90 @@ export const loadGiftPokemonWorkflowResponseSchema = z.strictObject({
   workflow: giftPokemonWorkflowSchema
 });
 
+export const staticEncounterProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const staticEncounterStatsSchema = z.strictObject({
+  attack: z.number().int(),
+  defense: z.number().int(),
+  hp: z.number().int(),
+  specialAttack: z.number().int(),
+  specialDefense: z.number().int(),
+  speed: z.number().int()
+});
+
+export const staticEncounterMoveSchema = z.strictObject({
+  move: z.string().nullable(),
+  moveId: z.number().int().nonnegative(),
+  slot: z.number().int().nonnegative()
+});
+
+export const staticEncounterEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
+export const staticEncounterEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  options: z.array(staticEncounterEditableFieldOptionSchema),
+  valueKind: z.string()
+});
+
+export const staticEncounterRecordSchema = z.strictObject({
+  ability: z.number().int().nonnegative(),
+  abilityLabel: z.string(),
+  canGigantamax: z.boolean(),
+  dynamaxLevel: z.number().int().nonnegative(),
+  encounterId: z.string(),
+  encounterIndex: z.number().int().nonnegative(),
+  encounterScenario: z.number().int().nonnegative(),
+  encounterScenarioLabel: z.string(),
+  evs: staticEncounterStatsSchema,
+  flawlessIvCount: z.number().int().nullable(),
+  form: z.number().int().nonnegative(),
+  gender: z.number().int().nonnegative(),
+  genderLabel: z.string(),
+  heldItem: z.string().nullable(),
+  heldItemId: z.number().int().nonnegative(),
+  ivs: staticEncounterStatsSchema,
+  ivSummary: z.string(),
+  label: z.string(),
+  level: z.number().int().nonnegative(),
+  moves: z.array(staticEncounterMoveSchema),
+  nature: z.number().int().nonnegative(),
+  natureLabel: z.string(),
+  provenance: staticEncounterProvenanceSchema,
+  shinyLock: z.number().int().nonnegative(),
+  shinyLockLabel: z.string(),
+  species: z.string(),
+  speciesId: z.number().int().nonnegative()
+});
+
+export const staticEncountersWorkflowStatsSchema = z.strictObject({
+  fixedIvEncounterCount: z.number().int().nonnegative(),
+  gigantamaxEncounterCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative(),
+  totalEncounterCount: z.number().int().nonnegative()
+});
+
+export const staticEncountersWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(staticEncounterEditableFieldSchema),
+  encounters: z.array(staticEncounterRecordSchema),
+  stats: staticEncountersWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadStaticEncountersWorkflowResponseSchema = z.strictObject({
+  workflow: staticEncountersWorkflowSchema
+});
+
 export const shopProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -1473,6 +1565,20 @@ export const updateGiftPokemonFieldResponseSchema = z.strictObject({
   workflow: giftPokemonWorkflowSchema
 });
 
+export const updateStaticEncounterFieldRequestSchema = z.strictObject({
+  encounterIndex: z.number().int().nonnegative(),
+  field: z.string(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  value: z.string()
+});
+
+export const updateStaticEncounterFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: staticEncountersWorkflowSchema
+});
+
 export const updateShopInventoryItemRequestSchema = z.strictObject({
   field: z.string(),
   paths: projectPathsSchema,
@@ -1644,6 +1750,13 @@ export type GiftPokemonEditableFieldOption = z.infer<
 >;
 export type GiftPokemonRecord = z.infer<typeof giftPokemonRecordSchema>;
 export type GiftPokemonWorkflow = z.infer<typeof giftPokemonWorkflowSchema>;
+export type StaticEncounterEditableField = z.infer<typeof staticEncounterEditableFieldSchema>;
+export type StaticEncounterEditableFieldOption = z.infer<
+  typeof staticEncounterEditableFieldOptionSchema
+>;
+export type StaticEncounterMoveRecord = z.infer<typeof staticEncounterMoveSchema>;
+export type StaticEncounterRecord = z.infer<typeof staticEncounterRecordSchema>;
+export type StaticEncountersWorkflow = z.infer<typeof staticEncountersWorkflowSchema>;
 export type ShopEditableField = z.infer<typeof shopEditableFieldSchema>;
 export type ShopInventoryRecord = z.infer<typeof shopInventoryRecordSchema>;
 export type ShopRecord = z.infer<typeof shopRecordSchema>;
@@ -1703,6 +1816,12 @@ export type LoadGiftPokemonWorkflowRequest = z.infer<
 >;
 export type LoadGiftPokemonWorkflowResponse = z.infer<
   typeof loadGiftPokemonWorkflowResponseSchema
+>;
+export type LoadStaticEncountersWorkflowRequest = z.infer<
+  typeof loadStaticEncountersWorkflowRequestSchema
+>;
+export type LoadStaticEncountersWorkflowResponse = z.infer<
+  typeof loadStaticEncountersWorkflowResponseSchema
 >;
 export type LoadShopsWorkflowRequest = z.infer<typeof loadShopsWorkflowRequestSchema>;
 export type LoadShopsWorkflowResponse = z.infer<typeof loadShopsWorkflowResponseSchema>;
@@ -1767,6 +1886,12 @@ export type UpdateGiftPokemonFieldRequest = z.infer<
 >;
 export type UpdateGiftPokemonFieldResponse = z.infer<
   typeof updateGiftPokemonFieldResponseSchema
+>;
+export type UpdateStaticEncounterFieldRequest = z.infer<
+  typeof updateStaticEncounterFieldRequestSchema
+>;
+export type UpdateStaticEncounterFieldResponse = z.infer<
+  typeof updateStaticEncounterFieldResponseSchema
 >;
 export type UpdateShopInventoryItemRequest = z.infer<
   typeof updateShopInventoryItemRequestSchema

@@ -1076,6 +1076,10 @@ h2 {
   width: 100%;
 }
 
+.static-encounters-row {
+  grid-template-columns: 64px minmax(160px, 1.35fr) minmax(110px, 0.9fr) 64px minmax(112px, 0.85fr) minmax(132px, 1fr) minmax(92px, 0.7fr);
+}
+
 .trainers-row:last-child {
   border-bottom: 0;
 }
@@ -1952,9 +1956,14 @@ h2 {
     grid-template-columns: 56px minmax(120px, 1fr) minmax(90px, 0.8fr);
   }
 
+  .static-encounters-row {
+    grid-template-columns: 56px minmax(120px, 1fr) minmax(90px, 0.8fr);
+  }
+
   .trainers-row span:nth-child(4),
   .trainers-row span:nth-child(5),
-  .trainers-row span:nth-child(6) {
+  .trainers-row span:nth-child(6),
+  .static-encounters-row span:nth-child(7) {
     display: none;
   }
 

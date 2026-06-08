@@ -90,6 +90,9 @@ import {
   type SpreadsheetImportPreview,
   type SpreadsheetImportProfileRecord,
   type SpreadsheetImportWorkflow,
+  type StaticEncounterEditableField,
+  type StaticEncounterRecord,
+  type StaticEncountersWorkflow,
   type TextEditableField,
   type TextEntryRecord,
   type TextWorkflow,
@@ -158,6 +161,11 @@ const sections: Array<{
     id: 'giftPokemon',
     label: 'Gift Pokemon',
     icon: Dna
+  },
+  {
+    id: 'staticEncounters',
+    label: 'Static Encounters',
+    icon: MapPin
   },
   {
     id: 'shops',
@@ -247,6 +255,12 @@ const workflowDefinitions: Array<{
     label: 'Gift Pokemon',
     description: 'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
     icon: Dna
+  },
+  {
+    id: 'staticEncounters',
+    label: 'Static Encounters',
+    description: 'Scripted overworld and story encounter records, IV modes, moves, rules, and source provenance.',
+    icon: MapPin
   },
   {
     id: 'shops',
@@ -438,6 +452,25 @@ const giftPokemonFieldNames = [
   ...ivFieldNames,
   giftFlawlessIvCountFieldName
 ] as const;
+const staticEncounterScenarioFieldName = 'encounterScenario';
+const staticEncounterMoveFieldNames = ['move0Id', 'move1Id', 'move2Id', 'move3Id'] as const;
+const staticEncounterFieldNames = [
+  giftSpeciesFieldName,
+  formFieldName,
+  levelFieldName,
+  heldItemIdFieldName,
+  abilityFieldName,
+  natureFieldName,
+  genderFieldName,
+  giftShinyLockFieldName,
+  staticEncounterScenarioFieldName,
+  dynamaxLevelFieldName,
+  canGigantamaxFieldName,
+  ...staticEncounterMoveFieldNames,
+  ...evFieldNames,
+  ...ivFieldNames,
+  giftFlawlessIvCountFieldName
+] as const;
 const shopItemIdFieldName = 'itemId';
 const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
@@ -492,6 +525,12 @@ export function App({
   const flagworkSaveWorkflow = useWorkbenchStore((state) => state.flagworkSaveWorkflow);
   const giftPokemonSearchText = useWorkbenchStore((state) => state.giftPokemonSearchText);
   const giftPokemonWorkflow = useWorkbenchStore((state) => state.giftPokemonWorkflow);
+  const staticEncounterSearchText = useWorkbenchStore(
+    (state) => state.staticEncounterSearchText
+  );
+  const staticEncountersWorkflow = useWorkbenchStore(
+    (state) => state.staticEncountersWorkflow
+  );
   const itemSearchText = useWorkbenchStore((state) => state.itemSearchText);
   const itemsWorkflow = useWorkbenchStore((state) => state.itemsWorkflow);
   const movesSearchText = useWorkbenchStore((state) => state.movesSearchText);
@@ -536,6 +575,9 @@ export function App({
   const selectedGiftPokemonIndex = useWorkbenchStore(
     (state) => state.selectedGiftPokemonIndex
   );
+  const selectedStaticEncounterIndex = useWorkbenchStore(
+    (state) => state.selectedStaticEncounterIndex
+  );
   const selectedRoyalCandyCheckId = useWorkbenchStore(
     (state) => state.selectedRoyalCandyCheckId
   );
@@ -578,6 +620,12 @@ export function App({
     (state) => state.setGiftPokemonSearchText
   );
   const setGiftPokemonWorkflow = useWorkbenchStore((state) => state.setGiftPokemonWorkflow);
+  const setStaticEncounterSearchText = useWorkbenchStore(
+    (state) => state.setStaticEncounterSearchText
+  );
+  const setStaticEncountersWorkflow = useWorkbenchStore(
+    (state) => state.setStaticEncountersWorkflow
+  );
   const setItemSearchText = useWorkbenchStore((state) => state.setItemSearchText);
   const setItemsWorkflow = useWorkbenchStore((state) => state.setItemsWorkflow);
   const setMovesSearchText = useWorkbenchStore((state) => state.setMovesSearchText);
@@ -623,6 +671,9 @@ export function App({
   const setSelectedGiftPokemonIndex = useWorkbenchStore(
     (state) => state.setSelectedGiftPokemonIndex
   );
+  const setSelectedStaticEncounterIndex = useWorkbenchStore(
+    (state) => state.setSelectedStaticEncounterIndex
+  );
   const setSelectedRoyalCandyCheckId = useWorkbenchStore(
     (state) => state.setSelectedRoyalCandyCheckId
   );
@@ -666,6 +717,8 @@ export function App({
   const [isTrainerUpdating, setIsTrainerUpdating] = useState(false);
   const [isGiftPokemonLoading, setIsGiftPokemonLoading] = useState(false);
   const [isGiftPokemonUpdating, setIsGiftPokemonUpdating] = useState(false);
+  const [isStaticEncountersLoading, setIsStaticEncountersLoading] = useState(false);
+  const [isStaticEncounterUpdating, setIsStaticEncounterUpdating] = useState(false);
   const [isShopsLoading, setIsShopsLoading] = useState(false);
   const [isShopUpdating, setIsShopUpdating] = useState(false);
   const [isEncountersLoading, setIsEncountersLoading] = useState(false);
@@ -845,6 +898,22 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsGiftPokemonLoading(false);
+    }
+  };
+
+  const handleOpenStaticEncountersWorkflow = async () => {
+    setIsStaticEncountersLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadStaticEncountersWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setStaticEncountersWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsStaticEncountersLoading(false);
     }
   };
 
@@ -1068,6 +1137,12 @@ export function App({
           void handleOpenGiftPokemonWorkflow();
         }
         break;
+      case 'staticEncounters':
+        if (!staticEncountersWorkflow && !isStaticEncountersLoading) {
+          markLazyLoadStarted();
+          void handleOpenStaticEncountersWorkflow();
+        }
+        break;
       case 'shops':
         if (!shopsWorkflow && !isShopsLoading) {
           markLazyLoadStarted();
@@ -1130,6 +1205,7 @@ export function App({
     isExeFsPatchLoading,
     isFlagworkSaveLoading,
     isGiftPokemonLoading,
+    isStaticEncountersLoading,
     isItemsLoading,
     isMovesLoading,
     isPlacementLoading,
@@ -1149,6 +1225,7 @@ export function App({
     royalCandyWorkflow,
     shopsWorkflow,
     spreadsheetImportWorkflow,
+    staticEncountersWorkflow,
     textWorkflow,
     trainersWorkflow,
     workflows
@@ -1404,6 +1481,33 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsGiftPokemonUpdating(false);
+    }
+  };
+
+  const handleUpdateStaticEncounterField = async (
+    encounterIndex: number,
+    field: string,
+    value: string
+  ) => {
+    setIsStaticEncounterUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateStaticEncounterField({
+        encounterIndex,
+        field,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        value
+      });
+      setStaticEncountersWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsStaticEncounterUpdating(false);
     }
   };
 
@@ -1696,6 +1800,7 @@ export function App({
               isPlacementLoading={isPlacementLoading}
               isFlagworkSaveLoading={isFlagworkSaveLoading}
               isGiftPokemonLoading={isGiftPokemonLoading}
+              isStaticEncountersLoading={isStaticEncountersLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
               isSpreadsheetImportLoading={isSpreadsheetImportLoading}
@@ -1703,6 +1808,7 @@ export function App({
               onOpenExeFsPatchWorkflow={handleOpenExeFsPatchWorkflow}
               onOpenFlagworkSaveWorkflow={handleOpenFlagworkSaveWorkflow}
               onOpenGiftPokemonWorkflow={handleOpenGiftPokemonWorkflow}
+              onOpenStaticEncountersWorkflow={handleOpenStaticEncountersWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
               onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
@@ -1824,6 +1930,24 @@ export function App({
                 searchText={giftPokemonSearchText}
                 selectedGiftIndex={selectedGiftPokemonIndex}
                 workflow={giftPokemonWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'staticEncounters' ? (
+            isStaticEncountersLoading && !staticEncountersWorkflow ? (
+              <WorkflowLoadingPanel label="Static Encounters" />
+            ) : (
+              <StaticEncountersSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isStaticEncounterUpdating={isStaticEncounterUpdating}
+                onSearchChange={setStaticEncounterSearchText}
+                onSelectEncounter={setSelectedStaticEncounterIndex}
+                onStartEditSession={handleStartEditSession}
+                onUpdateStaticEncounterField={handleUpdateStaticEncounterField}
+                searchText={staticEncounterSearchText}
+                selectedEncounterIndex={selectedStaticEncounterIndex}
+                workflow={staticEncountersWorkflow}
               />
             )
           ) : null}
@@ -2207,12 +2331,14 @@ function WorkflowsSection({
   isPlacementLoading,
   isFlagworkSaveLoading,
   isGiftPokemonLoading,
+  isStaticEncountersLoading,
   isRoyalCandyLoading,
   isSpreadsheetImportLoading,
   onOpenEncountersWorkflow,
   onOpenExeFsPatchWorkflow,
   onOpenFlagworkSaveWorkflow,
   onOpenGiftPokemonWorkflow,
+  onOpenStaticEncountersWorkflow,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
@@ -2239,12 +2365,14 @@ function WorkflowsSection({
   isPlacementLoading: boolean;
   isFlagworkSaveLoading: boolean;
   isGiftPokemonLoading: boolean;
+  isStaticEncountersLoading: boolean;
   isRoyalCandyLoading: boolean;
   isSpreadsheetImportLoading: boolean;
   onOpenEncountersWorkflow: () => void;
   onOpenExeFsPatchWorkflow: () => void;
   onOpenFlagworkSaveWorkflow: () => void;
   onOpenGiftPokemonWorkflow: () => void;
+  onOpenStaticEncountersWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
@@ -2276,6 +2404,7 @@ function WorkflowsSection({
           const isTextWorkflow = definition.id === 'text';
           const isTrainersWorkflow = definition.id === 'trainers';
           const isGiftPokemonWorkflow = definition.id === 'giftPokemon';
+          const isStaticEncountersWorkflow = definition.id === 'staticEncounters';
           const isShopsWorkflow = definition.id === 'shops';
           const isEncountersWorkflow = definition.id === 'encounters';
           const isRaidRewardsWorkflow = definition.id === 'raidRewards';
@@ -2291,6 +2420,8 @@ function WorkflowsSection({
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
           const canOpenGiftPokemon =
             isGiftPokemonWorkflow && workflowState.availability !== 'disabled';
+          const canOpenStaticEncounters =
+            isStaticEncountersWorkflow && workflowState.availability !== 'disabled';
           const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
           const canOpenEncounters =
             isEncountersWorkflow && workflowState.availability !== 'disabled';
@@ -2384,6 +2515,19 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isGiftPokemonLoading ? 'Loading' : 'Open Gifts'}</span>
+                  </button>
+                ) : null}
+                {isStaticEncountersWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenStaticEncounters || isStaticEncountersLoading}
+                    onClick={onOpenStaticEncountersWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>
+                      {isStaticEncountersLoading ? 'Loading' : 'Open Static Encounters'}
+                    </span>
                   </button>
                 ) : null}
                 {isShopsWorkflow ? (
@@ -5437,6 +5581,369 @@ function GiftPokemonFieldInput({
   disabled: boolean;
   draftValue: string;
   field: GiftPokemonEditableField;
+  onChange: (value: string) => void;
+}) {
+  if (field.options.length > 0) {
+    const hasDraftOption = field.options.some((option) => option.value.toString() === draftValue);
+
+    return (
+      <select
+        aria-label={field.label}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        value={draftValue}
+      >
+        {!hasDraftOption ? (
+          <option value={draftValue}>{draftValue === '' ? 'Custom fixed IVs' : draftValue}</option>
+        ) : null}
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value.toString()}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <input
+      aria-label={field.label}
+      disabled={disabled}
+      max={field.maximumValue ?? undefined}
+      min={field.minimumValue ?? undefined}
+      onChange={(event) => onChange(event.target.value)}
+      type="number"
+      value={draftValue}
+    />
+  );
+}
+
+function StaticEncountersSection({
+  editSession,
+  isEditStarting,
+  isStaticEncounterUpdating,
+  onSearchChange,
+  onSelectEncounter,
+  onStartEditSession,
+  onUpdateStaticEncounterField,
+  searchText,
+  selectedEncounterIndex,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isStaticEncounterUpdating: boolean;
+  onSearchChange: (searchText: string) => void;
+  onSelectEncounter: (encounterIndex: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateStaticEncounterField: (encounterIndex: number, field: string, value: string) => void;
+  searchText: string;
+  selectedEncounterIndex: number | null;
+  workflow: StaticEncountersWorkflow | null;
+}) {
+  const encounters = workflow?.encounters ?? [];
+  const filteredEncounters = useMemo(
+    () => filterStaticEncounters(encounters, searchText),
+    [encounters, searchText]
+  );
+  const selectedEncounter = useMemo(
+    () =>
+      encounters.find((encounter) => encounter.encounterIndex === selectedEncounterIndex) ??
+      filteredEncounters[0] ??
+      null,
+    [encounters, filteredEncounters, selectedEncounterIndex]
+  );
+  const canEditStaticEncounters = workflow?.summary.availability === 'available';
+  const pendingEncounterIndexes = useMemo(
+    () => getPendingStaticEncounterIndexes(editSession),
+    [editSession]
+  );
+
+  return (
+    <>
+      <section aria-labelledby="static-encounters-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <MapPin aria-hidden="true" size={18} />
+          <h2 id="static-encounters-heading">Static Encounters</h2>
+        </div>
+
+        <div className="items-toolbar trainers-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search static encounters"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search static encounters"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded encounters"
+            value={workflow ? workflow.stats.totalEncounterCount.toString() : '0'}
+          />
+          <Metric
+            label="Gigantamax"
+            value={workflow ? workflow.stats.gigantamaxEncounterCount.toString() : '0'}
+          />
+          <Metric
+            label="Fixed IV rows"
+            value={workflow ? workflow.stats.fixedIvEncounterCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="trainers-layout">
+            <div
+              aria-colcount={7}
+              aria-label="Static Encounters"
+              aria-rowcount={filteredEncounters.length + 1}
+              className="trainers-table"
+              role="table"
+            >
+              <div className="trainers-row static-encounters-row trainers-row-heading" role="row">
+                <span role="columnheader">Index</span>
+                <span role="columnheader">Encounter</span>
+                <span role="columnheader">Species</span>
+                <span role="columnheader">Level</span>
+                <span role="columnheader">Scenario</span>
+                <span role="columnheader">IVs</span>
+                <span role="columnheader">Source</span>
+              </div>
+              <VirtualTableBody
+                getKey={(encounter) => encounter.encounterIndex}
+                items={filteredEncounters}
+                renderRow={(encounter) => (
+                  <button
+                    className={`trainers-row static-encounters-row ${
+                      selectedEncounter?.encounterIndex === encounter.encounterIndex
+                        ? 'trainers-row-selected'
+                        : ''
+                    } ${
+                      pendingEncounterIndexes.has(encounter.encounterIndex)
+                        ? 'trainers-row-pending'
+                        : ''
+                    }`}
+                    onClick={() => onSelectEncounter(encounter.encounterIndex)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{encounter.encounterIndex + 1}</span>
+                    <span role="cell">{encounter.label}</span>
+                    <span role="cell">{encounter.species}</span>
+                    <span role="cell">{encounter.level}</span>
+                    <span role="cell">{encounter.encounterScenarioLabel}</span>
+                    <span role="cell">{encounter.ivSummary}</span>
+                    <span role="cell">{formatSourceLayer(encounter.provenance.sourceLayer)}</span>
+                  </button>
+                )}
+              />
+            </div>
+
+            <SelectedStaticEncounterPanel
+              canEditStaticEncounters={canEditStaticEncounters}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              encounter={selectedEncounter}
+              isEditStarting={isEditStarting}
+              isStaticEncounterUpdating={isStaticEncounterUpdating}
+              onStartEditSession={onStartEditSession}
+              onUpdateStaticEncounterField={onUpdateStaticEncounterField}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Static Encounters from Workflows to load backend encounter data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedStaticEncounterPanel({
+  canEditStaticEncounters,
+  editSession,
+  editableFields,
+  encounter,
+  isEditStarting,
+  isStaticEncounterUpdating,
+  onStartEditSession,
+  onUpdateStaticEncounterField
+}: {
+  canEditStaticEncounters: boolean;
+  editSession: EditSession | null;
+  editableFields: StaticEncounterEditableField[];
+  encounter: StaticEncounterRecord | null;
+  isEditStarting: boolean;
+  isStaticEncounterUpdating: boolean;
+  onStartEditSession: () => void;
+  onUpdateStaticEncounterField: (encounterIndex: number, field: string, value: string) => void;
+}) {
+  const [encounterDrafts, setEncounterDrafts] = useState<Record<string, string>>({});
+  const encounterFields = editableFields.filter((field) =>
+    staticEncounterFieldNames.includes(
+      field.field as (typeof staticEncounterFieldNames)[number]
+    )
+  );
+
+  useEffect(() => {
+    if (!encounter) {
+      setEncounterDrafts({});
+      return;
+    }
+
+    setEncounterDrafts(
+      Object.fromEntries(
+        encounterFields.map((field) => [
+          field.field,
+          (getEditableStaticEncounterFieldValue(encounter, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [editableFields, encounter]);
+
+  return (
+    <aside aria-label="Selected static encounter provenance" className="trainer-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Static Encounter</h3>
+      </div>
+
+      {encounter ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Encounter</dt>
+              <dd>{encounter.label}</dd>
+            </div>
+            <div>
+              <dt>Encounter ID</dt>
+              <dd>{encounter.encounterId}</dd>
+            </div>
+            <div>
+              <dt>Data file</dt>
+              <dd>{encounter.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(encounter.provenance.fileState)}</dd>
+            </div>
+            <div>
+              <dt>Scenario</dt>
+              <dd>{encounter.encounterScenarioLabel}</dd>
+            </div>
+            <div>
+              <dt>Held item</dt>
+              <dd>{encounter.heldItem ?? 'None'}</dd>
+            </div>
+            <div>
+              <dt>Moves</dt>
+              <dd>{formatStaticEncounterMoves(encounter)}</dd>
+            </div>
+            <div>
+              <dt>EV detail</dt>
+              <dd>{formatStaticEncounterStats(encounter.evs)}</dd>
+            </div>
+            <div>
+              <dt>IV detail</dt>
+              <dd>{formatStaticEncounterIvs(encounter)}</dd>
+            </div>
+          </dl>
+
+          <div className="trainer-edit-form">
+            <div className="trainer-field-grid">
+              {encounterFields.map((field) => {
+                const currentValue = getEditableStaticEncounterFieldValue(
+                  encounter,
+                  field.field
+                );
+                const draftValue = encounterDrafts[field.field] ?? '';
+                const draftState = getStaticEncounterDraftState(
+                  draftValue,
+                  currentValue,
+                  field
+                );
+                const canSubmit =
+                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+
+                return (
+                  <div className="trainer-editor-row" key={field.field}>
+                    <label className="path-field">
+                      <span>{field.label}</span>
+                      <StaticEncounterFieldInput
+                        disabled={
+                          !canEditStaticEncounters ||
+                          editSession === null ||
+                          isStaticEncounterUpdating
+                        }
+                        draftValue={draftValue}
+                        field={field}
+                        onChange={(value) =>
+                          setEncounterDrafts((currentDrafts) => ({
+                            ...currentDrafts,
+                            [field.field]: value
+                          }))
+                        }
+                      />
+                    </label>
+                    {editSession ? (
+                      <button
+                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                        className="primary-button compact-button"
+                        disabled={!canSubmit || isStaticEncounterUpdating}
+                        onClick={() =>
+                          onUpdateStaticEncounterField(
+                            encounter.encounterIndex,
+                            field.field,
+                            draftState.parsedValue!.toString()
+                          )
+                        }
+                        type="button"
+                      >
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isStaticEncounterUpdating ? 'Saving' : 'Save'}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditStaticEncounters || isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No static encounter selected.</p>
+      )}
+    </aside>
+  );
+}
+
+function StaticEncounterFieldInput({
+  disabled,
+  draftValue,
+  field,
+  onChange
+}: {
+  disabled: boolean;
+  draftValue: string;
+  field: StaticEncounterEditableField;
   onChange: (value: string) => void;
 }) {
   if (field.options.length > 0) {
@@ -8543,6 +9050,46 @@ function filterGiftPokemon(gifts: GiftPokemonRecord[], searchText: string) {
   );
 }
 
+function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return encounters;
+  }
+
+  return encounters.filter((encounter) =>
+    [
+      encounter.encounterIndex.toString(),
+      (encounter.encounterIndex + 1).toString(),
+      encounter.label,
+      encounter.encounterId,
+      encounter.species,
+      encounter.speciesId.toString(),
+      encounter.form.toString(),
+      encounter.level.toString(),
+      encounter.heldItem ?? 'None',
+      encounter.heldItemId.toString(),
+      encounter.abilityLabel,
+      encounter.ability.toString(),
+      encounter.natureLabel,
+      encounter.nature.toString(),
+      encounter.genderLabel,
+      encounter.gender.toString(),
+      encounter.shinyLockLabel,
+      encounter.shinyLock.toString(),
+      encounter.encounterScenarioLabel,
+      encounter.encounterScenario.toString(),
+      encounter.dynamaxLevel.toString(),
+      encounter.canGigantamax ? 'gigantamax' : '',
+      encounter.ivSummary,
+      formatStaticEncounterIvs(encounter),
+      formatStaticEncounterStats(encounter.evs),
+      formatStaticEncounterMoves(encounter),
+      encounter.provenance.sourceFile
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function filterShops(shops: ShopRecord[], searchText: string) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -9135,6 +9682,69 @@ function getEditableGiftPokemonFieldValue(gift: GiftPokemonRecord, field: string
   }
 }
 
+function getEditableStaticEncounterFieldValue(encounter: StaticEncounterRecord, field: string) {
+  switch (field) {
+    case giftSpeciesFieldName:
+      return encounter.speciesId;
+    case formFieldName:
+      return encounter.form;
+    case levelFieldName:
+      return encounter.level;
+    case heldItemIdFieldName:
+      return encounter.heldItemId;
+    case abilityFieldName:
+      return encounter.ability;
+    case natureFieldName:
+      return encounter.nature;
+    case genderFieldName:
+      return encounter.gender;
+    case giftShinyLockFieldName:
+      return encounter.shinyLock;
+    case staticEncounterScenarioFieldName:
+      return encounter.encounterScenario;
+    case dynamaxLevelFieldName:
+      return encounter.dynamaxLevel;
+    case canGigantamaxFieldName:
+      return encounter.canGigantamax ? 1 : 0;
+    case staticEncounterMoveFieldNames[0]:
+      return encounter.moves[0]?.moveId ?? null;
+    case staticEncounterMoveFieldNames[1]:
+      return encounter.moves[1]?.moveId ?? null;
+    case staticEncounterMoveFieldNames[2]:
+      return encounter.moves[2]?.moveId ?? null;
+    case staticEncounterMoveFieldNames[3]:
+      return encounter.moves[3]?.moveId ?? null;
+    case evFieldNames[0]:
+      return encounter.evs.hp;
+    case evFieldNames[1]:
+      return encounter.evs.attack;
+    case evFieldNames[2]:
+      return encounter.evs.defense;
+    case evFieldNames[3]:
+      return encounter.evs.specialAttack;
+    case evFieldNames[4]:
+      return encounter.evs.specialDefense;
+    case evFieldNames[5]:
+      return encounter.evs.speed;
+    case ivFieldNames[0]:
+      return encounter.ivs.hp;
+    case ivFieldNames[1]:
+      return encounter.ivs.attack;
+    case ivFieldNames[2]:
+      return encounter.ivs.defense;
+    case ivFieldNames[3]:
+      return encounter.ivs.specialAttack;
+    case ivFieldNames[4]:
+      return encounter.ivs.specialDefense;
+    case ivFieldNames[5]:
+      return encounter.ivs.speed;
+    case giftFlawlessIvCountFieldName:
+      return encounter.flawlessIvCount;
+    default:
+      return null;
+  }
+}
+
 function getItemFieldSaveLabel(field: ItemEditableField) {
   return `Save ${field.label.replace(/\s+price$/i, '')}`;
 }
@@ -9269,6 +9879,31 @@ function getGiftPokemonDraftState(
   };
 }
 
+function getStaticEncounterDraftState(
+  draftValue: string,
+  currentValue: number | null,
+  field: StaticEncounterEditableField | undefined
+) {
+  const normalizedValue = draftValue.trim();
+  const parsedValue = /^-?\d+$/.test(normalizedValue)
+    ? Number.parseInt(normalizedValue, 10)
+    : null;
+  const minimumValue = field?.minimumValue ?? null;
+  const maximumValue = field?.maximumValue ?? null;
+  const inRange =
+    parsedValue !== null &&
+    (minimumValue === null || parsedValue >= minimumValue) &&
+    (maximumValue === null || parsedValue <= maximumValue);
+
+  return {
+    canSubmit:
+      field !== undefined &&
+      inRange &&
+      (currentValue === null || parsedValue !== currentValue),
+    parsedValue
+  };
+}
+
 function getPendingItemIds(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
@@ -9320,6 +9955,21 @@ function getPendingGiftPokemonIndexes(editSession: EditSession | null) {
       .map((edit) => {
         const recordId = edit.recordId ?? '';
         const normalizedRecordId = recordId.startsWith('gift:') ? recordId.slice(5) : recordId;
+        return Number.parseInt(normalizedRecordId, 10);
+      })
+      .filter(Number.isInteger)
+  );
+}
+
+function getPendingStaticEncounterIndexes(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.staticEncounters')
+      .map((edit) => {
+        const recordId = edit.recordId ?? '';
+        const normalizedRecordId = recordId.startsWith('static:')
+          ? recordId.slice(7)
+          : recordId;
         return Number.parseInt(normalizedRecordId, 10);
       })
       .filter(Number.isInteger)
@@ -9595,6 +10245,36 @@ function formatGiftPokemonIvValue(value: number) {
   }
 }
 
+function formatStaticEncounterIvs(encounter: StaticEncounterRecord) {
+  return [
+    `HP ${formatGiftPokemonIvValue(encounter.ivs.hp)}`,
+    `Atk ${formatGiftPokemonIvValue(encounter.ivs.attack)}`,
+    `Def ${formatGiftPokemonIvValue(encounter.ivs.defense)}`,
+    `SpA ${formatGiftPokemonIvValue(encounter.ivs.specialAttack)}`,
+    `SpD ${formatGiftPokemonIvValue(encounter.ivs.specialDefense)}`,
+    `Spe ${formatGiftPokemonIvValue(encounter.ivs.speed)}`
+  ].join(' / ');
+}
+
+function formatStaticEncounterStats(stats: StaticEncounterRecord['evs']) {
+  return [
+    `HP ${stats.hp}`,
+    `Atk ${stats.attack}`,
+    `Def ${stats.defense}`,
+    `SpA ${stats.specialAttack}`,
+    `SpD ${stats.specialDefense}`,
+    `Spe ${stats.speed}`
+  ].join(' / ');
+}
+
+function formatStaticEncounterMoves(encounter: StaticEncounterRecord) {
+  const moves = encounter.moves
+    .filter((move) => move.moveId > 0)
+    .map((move) => move.move ?? `Move ${move.moveId}`);
+
+  return moves.length > 0 ? moves.join(' / ') : 'None';
+}
+
 function formatMovePower(power: number) {
   return power === 0 ? '-' : power.toString();
 }
@@ -9640,6 +10320,7 @@ function formatSourceLayer(
     | SaveBlockRecord['provenance']['sourceLayer']
     | ShopRecord['provenance']['sourceLayer']
     | SpreadsheetImportProfileRecord['provenance']['sourceLayer']
+    | StaticEncounterRecord['provenance']['sourceLayer']
     | TextEntryRecord['provenance']['sourceLayer']
     | TrainerRecord['provenance']['sourceLayer']
 ) {
@@ -9672,6 +10353,7 @@ function formatFileState(
     | SaveBlockRecord['provenance']['fileState']
     | ShopRecord['provenance']['fileState']
     | SpreadsheetImportProfileRecord['provenance']['fileState']
+    | StaticEncounterRecord['provenance']['fileState']
     | TextEntryRecord['provenance']['fileState']
     | TrainerRecord['provenance']['fileState']
 ) {
