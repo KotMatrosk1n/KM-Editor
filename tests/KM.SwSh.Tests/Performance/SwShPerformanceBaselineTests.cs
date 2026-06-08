@@ -38,7 +38,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
             "The synthetic baseline must include enough files to exercise project graph enumeration.");
 
         var workflowList = Record(measurements, "workflows.list", () => workflowService.List(temp.Paths));
-        Assert.Equal(18, workflowList.Workflows.Count);
+        Assert.Equal(19, workflowList.Workflows.Count);
 
         var items = Record(measurements, "items.load", () => workflowService.LoadItems(temp.Paths));
         var pokemon = Record(measurements, "pokemon.load", () => workflowService.LoadPokemon(temp.Paths));
@@ -49,6 +49,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var tradePokemon = Record(measurements, "tradePokemon.load", () => workflowService.LoadTradePokemon(temp.Paths));
         var staticEncounters = Record(measurements, "staticEncounters.load", () => workflowService.LoadStaticEncounters(temp.Paths));
         var rentalPokemon = Record(measurements, "rentalPokemon.load", () => workflowService.LoadRentalPokemon(temp.Paths));
+        var dynamaxAdventures = Record(measurements, "dynamaxAdventures.load", () => workflowService.LoadDynamaxAdventures(temp.Paths));
         var shops = Record(measurements, "shops.load", () => workflowService.LoadShops(temp.Paths));
         var encounters = Record(measurements, "encounters.load", () => workflowService.LoadEncounters(temp.Paths));
         var raidBattles = Record(measurements, "raidBattles.load", () => workflowService.LoadRaidBattles(temp.Paths));
@@ -68,6 +69,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         Assert.Equal(2, tradePokemon.Stats.TotalTradeCount);
         Assert.Equal(2, staticEncounters.Stats.TotalEncounterCount);
         Assert.Equal(2, rentalPokemon.Stats.TotalRentalCount);
+        Assert.Equal(SwShPerformanceFixtureProject.DynamaxAdventureCount, dynamaxAdventures.Stats.TotalEncounterCount);
         Assert.True(shops.Stats.TotalInventoryItemCount > 0);
         Assert.Equal(SwShPerformanceFixtureProject.EncounterTableCount * 3 * 2, encounters.Stats.TotalTableCount);
         Assert.Equal(SwShPerformanceFixtureProject.RaidBattleTableCount, raidBattles.Stats.TotalTableCount);

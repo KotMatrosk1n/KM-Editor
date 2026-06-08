@@ -2,6 +2,7 @@
 
 using KM.Api.Items;
 using KM.Api.Editing;
+using KM.Api.DynamaxAdventures;
 using KM.Api.Encounters;
 using KM.Api.ExeFs;
 using KM.Api.Flagwork;
@@ -20,6 +21,7 @@ using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
+using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
@@ -157,6 +159,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadRentalPokemonWorkflowResponse(ToRentalPokemonWorkflowDto(workflow));
+    }
+
+    public static LoadDynamaxAdventuresWorkflowResponse ToDto(SwShDynamaxAdventuresWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadDynamaxAdventuresWorkflowResponse(ToDynamaxAdventuresWorkflowDto(workflow));
     }
 
     public static LoadEncountersWorkflowResponse ToDto(SwShEncountersWorkflow workflow)
@@ -322,6 +331,16 @@ public static class SwShBridgeMapper
 
         return new UpdateRentalPokemonFieldResponse(
             ToRentalPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateDynamaxAdventureFieldResponse ToDto(SwShDynamaxAdventuresEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateDynamaxAdventureFieldResponse(
+            ToDynamaxAdventuresWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -764,6 +783,91 @@ public static class SwShBridgeMapper
     private static RentalPokemonEditableFieldOptionDto ToDto(SwShRentalPokemonEditableFieldOption option)
     {
         return new RentalPokemonEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static DynamaxAdventuresWorkflowDto ToDynamaxAdventuresWorkflowDto(SwShDynamaxAdventuresWorkflow workflow)
+    {
+        return new DynamaxAdventuresWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Encounters.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new DynamaxAdventuresWorkflowStatsDto(
+                workflow.Stats.TotalEncounterCount,
+                workflow.Stats.SingleCaptureCount,
+                workflow.Stats.StoryGatedCount,
+                workflow.Stats.GuaranteedPerfectIvEncounterCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static DynamaxAdventureRecordDto ToDto(SwShDynamaxAdventureEntry encounter)
+    {
+        return new DynamaxAdventureRecordDto(
+            encounter.EntryIndex,
+            encounter.Label,
+            encounter.AdventureIndex,
+            encounter.SpeciesId,
+            encounter.Species,
+            encounter.Form,
+            encounter.Level,
+            encounter.BallItemId,
+            encounter.BallItem,
+            encounter.Ability,
+            encounter.AbilityLabel,
+            encounter.GigantamaxState,
+            encounter.GigantamaxLabel,
+            encounter.Version,
+            encounter.VersionLabel,
+            encounter.ShinyRoll,
+            encounter.ShinyRollLabel,
+            encounter.IsSingleCapture,
+            encounter.SingleCaptureFlagBlock,
+            encounter.IsStoryProgressGated,
+            encounter.UiMessageId,
+            encounter.OtGender,
+            encounter.Moves.Select(ToDto).ToArray(),
+            ToDto(encounter.Ivs),
+            encounter.GuaranteedPerfectIvs,
+            encounter.IvSummary,
+            new DynamaxAdventureProvenanceDto(
+                encounter.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(encounter.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(encounter.Provenance.FileState)));
+    }
+
+    private static DynamaxAdventureMoveRecordDto ToDto(SwShDynamaxAdventureMoveRecord move)
+    {
+        return new DynamaxAdventureMoveRecordDto(
+            move.Slot,
+            move.MoveId,
+            move.Move);
+    }
+
+    private static DynamaxAdventureIvsDto ToDto(SwShDynamaxAdventureIvsRecord ivs)
+    {
+        return new DynamaxAdventureIvsDto(
+            ivs.Hp,
+            ivs.Attack,
+            ivs.Defense,
+            ivs.Speed,
+            ivs.SpecialAttack,
+            ivs.SpecialDefense);
+    }
+
+    private static DynamaxAdventureEditableFieldDto ToDto(SwShDynamaxAdventureEditableField field)
+    {
+        return new DynamaxAdventureEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static DynamaxAdventureEditableFieldOptionDto ToDto(SwShDynamaxAdventureEditableFieldOption option)
+    {
+        return new DynamaxAdventureEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static TrainersWorkflowDto ToTrainersWorkflowDto(SwShTrainersWorkflow workflow)

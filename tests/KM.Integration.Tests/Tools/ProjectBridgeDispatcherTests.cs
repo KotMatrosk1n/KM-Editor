@@ -2,6 +2,7 @@
 
 using KM.Api.Bridge;
 using KM.Api.Diagnostics;
+using KM.Api.DynamaxAdventures;
 using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.ExeFs;
@@ -169,6 +170,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("rentalPokemon", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("dynamaxAdventures", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             },
             workflow =>
@@ -686,6 +692,74 @@ public sealed class ProjectBridgeDispatcherTests
             "romfs/bin/script_event_data/rental.bin".Replace('/', Path.DirectorySeparatorChar));
         var output = SwShRentalPokemonArchive.Parse(File.ReadAllBytes(outputPath));
         Assert.Equal(12, output.Rentals[0].Ivs.Attack);
+    }
+
+    [Fact]
+    public void DispatchLoadDynamaxAdventuresWorkflowReturnsRealAdventureRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadDynamaxAdventuresWorkflow,
+            new LoadDynamaxAdventuresWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-dynamax-adventures");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadDynamaxAdventuresWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-dynamax-adventures", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Equal(2, response.Payload.Workflow.Encounters.Count);
+        var encounter = response.Payload.Workflow.Encounters[0];
+        Assert.Equal(0, encounter.EntryIndex);
+        Assert.Equal("Eevee", encounter.Species);
+        Assert.Equal("Ability 2", encounter.AbilityLabel);
+        Assert.Equal(4, encounter.GuaranteedPerfectIvs);
+        Assert.Equal("0x1122334455667788", encounter.SingleCaptureFlagBlock);
+        Assert.Equal("romfs/bin/appli/chika/data_table/underground_exploration_poke.bin", encounter.Provenance.SourceFile);
+        Assert.Equal(ProjectFileLayerDto.Base, encounter.Provenance.SourceLayer);
+        Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "guaranteedPerfectIvs");
+        Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "ivAttack");
+    }
+
+    [Fact]
+    public void DispatchApplyDynamaxAdventureChangePlanWritesAdventureTable()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateDynamaxAdventureField,
+            new UpdateDynamaxAdventureFieldRequest(
+                temp.Paths,
+                Session: null,
+                EntryIndex: 0,
+                Field: "guaranteedPerfectIvs",
+                Value: "6"),
+            requestId: "request-dynamax-adventure-update");
+        var update = DeserializeResponse<UpdateDynamaxAdventureFieldResponse>(dispatcher.Dispatch(updateJson)).Payload!;
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, update.Session),
+            requestId: "request-dynamax-adventure-plan");
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson)).Payload!.ChangePlan;
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, update.Session, plan),
+            requestId: "request-dynamax-adventure-apply");
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson)).Payload!.ApplyResult;
+
+        Assert.Contains("romfs/bin/appli/chika/data_table/underground_exploration_poke.bin", apply.WrittenFiles);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs/bin/appli/chika/data_table/underground_exploration_poke.bin".Replace('/', Path.DirectorySeparatorChar));
+        var output = SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal(-6, output.Entries[0].Ivs.Hp);
+        Assert.Equal(0x1122334455667788UL, output.Entries[0].SingleCaptureFlagBlock);
     }
 
     [Fact]

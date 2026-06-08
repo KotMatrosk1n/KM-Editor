@@ -4,6 +4,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import {
+  type DynamaxAdventuresWorkflow,
   type EncountersWorkflow,
   type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
@@ -56,6 +57,8 @@ describe('App', () => {
       tradePokemonWorkflow: null,
       rentalPokemonSearchText: '',
       rentalPokemonWorkflow: null,
+      dynamaxAdventureSearchText: '',
+      dynamaxAdventuresWorkflow: null,
       staticEncounterSearchText: '',
       staticEncountersWorkflow: null,
       itemSearchText: '',
@@ -84,6 +87,7 @@ describe('App', () => {
       selectedGiftPokemonIndex: null,
       selectedTradePokemonIndex: null,
       selectedRentalPokemonIndex: null,
+      selectedDynamaxAdventureEntryIndex: null,
       selectedStaticEncounterIndex: null,
       selectedRoyalCandyCheckId: null,
       selectedRoyalCandyWorkflowId: null,
@@ -151,6 +155,9 @@ describe('App', () => {
     expect(screen.getByRole('heading', { level: 3, name: 'Trade Pokemon' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Static Encounters' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Rental Pokemon' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Dynamax Adventures' })
+    ).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Shops' })).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { level: 3, name: 'Encounters and Wild Data' })
@@ -842,6 +849,61 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Rental Pokemon change plan to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
+  it('opens Dynamax Adventures, edits IV rules, reviews a plan, and applies it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Adventures' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Dynamax Adventures' })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Grookey').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/5 guaranteed perfect/).length).toBeGreaterThan(0);
+    expect(screen.getByText('0x0000000000000010 / 0x0000000000000020')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const guaranteedIvsSelect = screen.getByLabelText('Guaranteed perfect IVs');
+    expect(guaranteedIvsSelect).toHaveDisplayValue('5 Guaranteed Perfect IVs');
+    await user.selectOptions(guaranteedIvsSelect, '6');
+    await user.click(screen.getByRole('button', { name: 'Save guaranteed perfect ivs' }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Guaranteed perfect IVs')).toHaveDisplayValue('6 Perfect IVs')
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Adventure 001 guaranteedPerfectIvs to 6.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending Dynamax Adventure change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(
+      screen.getAllByText(
+        'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+      ).length
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Applied Dynamax Adventures change plan to the configured LayeredFS output root.'
+      )
     ).toBeInTheDocument();
   });
 
@@ -3288,6 +3350,205 @@ function createMockProjectBridge(
     },
     summary: rentalPokemonWorkflowSummary
   };
+  const dynamaxAdventuresWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description:
+      'Adventure encounter Pokemon, ability rolls, moves, IV overrides, capture rules, and source provenance.',
+    diagnostics: [],
+    id: 'dynamaxAdventures',
+    label: 'Dynamax Adventures'
+  };
+  const dynamaxAdventuresWorkflow: DynamaxAdventuresWorkflow = {
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'species',
+        label: 'Species',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '001 Bulbasaur', value: 1 },
+          { label: '810 Grookey', value: 810 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'form',
+        label: 'Form',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'level',
+        label: 'Level',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ballItemId',
+        label: 'Ball item',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '004 Poke Ball', value: 4 },
+          { label: '005 Great Ball', value: 5 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ability',
+        label: 'Ability roll',
+        maximumValue: 4,
+        minimumValue: 0,
+        options: [
+          { label: 'Ability 1', value: 0 },
+          { label: 'Hidden Ability', value: 2 },
+          { label: 'Any Ability', value: 4 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'gigantamaxState',
+        label: 'Gigantamax state',
+        maximumValue: 2,
+        minimumValue: 0,
+        options: [
+          { label: 'Normal', value: 1 },
+          { label: 'Gigantamax', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'version',
+        label: 'Game version',
+        maximumValue: 2,
+        minimumValue: 0,
+        options: [
+          { label: 'Both', value: 0 },
+          { label: 'Sword', value: 1 },
+          { label: 'Shield', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'shinyRoll',
+        label: 'Shiny roll',
+        maximumValue: 2,
+        minimumValue: 0,
+        options: [
+          { label: 'Enabled', value: 1 },
+          { label: 'Disabled', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'move0Id',
+        label: 'Move 1',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 },
+          { label: '002 Growl', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'guaranteedPerfectIvs',
+        label: 'Guaranteed perfect IVs',
+        maximumValue: 6,
+        minimumValue: 0,
+        options: [
+          { label: 'Random IVs', value: 0 },
+          { label: '5 Guaranteed Perfect IVs', value: 5 },
+          { label: '6 Perfect IVs', value: 6 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivAttack',
+        label: 'Attack IV override',
+        maximumValue: 31,
+        minimumValue: -1,
+        options: [
+          { label: 'Random', value: -1 },
+          { label: '0 IV', value: 0 },
+          { label: '31 IV', value: 31 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'isSingleCapture',
+        label: 'Single-capture Pokemon',
+        maximumValue: 1,
+        minimumValue: 0,
+        options: [
+          { label: 'No', value: 0 },
+          { label: 'Yes', value: 1 }
+        ],
+        valueKind: 'integer'
+      }
+    ],
+    encounters: [
+      {
+        ability: 0,
+        abilityLabel: 'Ability 1',
+        adventureIndex: 0,
+        ballItem: 'Poke Ball',
+        ballItemId: 4,
+        entryIndex: 0,
+        form: 0,
+        gigantamaxLabel: 'Normal',
+        gigantamaxState: 1,
+        guaranteedPerfectIvs: 5,
+        isSingleCapture: true,
+        isStoryProgressGated: false,
+        ivs: {
+          attack: -1,
+          defense: -1,
+          hp: -5,
+          specialAttack: -1,
+          specialDefense: -1,
+          speed: -1
+        },
+        ivSummary: '5 guaranteed perfect / Atk Random / Def Random / SpA Random / SpD Random / Spe Random',
+        label: 'Adventure 001: Grookey Lv. 65',
+        level: 65,
+        moves: [
+          { move: 'Scratch', moveId: 1, slot: 0 },
+          { move: 'Growl', moveId: 2, slot: 1 },
+          { move: 'None', moveId: 0, slot: 2 },
+          { move: 'None', moveId: 0, slot: 3 }
+        ],
+        otGender: 0,
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin',
+          sourceLayer: 'base'
+        },
+        shinyRoll: 1,
+        shinyRollLabel: 'Enabled',
+        singleCaptureFlagBlock: '0x0000000000000010',
+        species: 'Grookey',
+        speciesId: 810,
+        uiMessageId: '0x0000000000000020',
+        version: 0,
+        versionLabel: 'Both'
+      }
+    ],
+    stats: {
+      guaranteedPerfectIvEncounterCount: 1,
+      singleCaptureCount: 1,
+      sourceFileCount: 1,
+      storyGatedCount: 0,
+      totalEncounterCount: 1
+    },
+    summary: dynamaxAdventuresWorkflowSummary
+  };
   const shopsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Shop inventories, item metadata, and source provenance.',
@@ -4023,6 +4284,23 @@ function createMockProjectBridge(
                         targetRelativePath: 'romfs/bin/script_event_data/rental.bin'
                       }
                     ]
+                : request.session.pendingEdits[0]?.domain === 'workflow.dynamaxAdventures'
+                  ? [
+                      {
+                        reason:
+                          'Apply pending Dynamax Adventures edit: Set Adventure 001 guaranteed perfect IVs to 6.',
+                        replacesExistingOutput: false,
+                        sources: [
+                          {
+                            layer: 'base',
+                            relativePath:
+                              'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+                          }
+                        ],
+                        targetRelativePath:
+                          'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+                      }
+                    ]
                 : request.session.pendingEdits[0]?.domain === 'workflow.shops'
                   ? [
                       {
@@ -4145,6 +4423,7 @@ function createMockProjectBridge(
           tradePokemonWorkflowSummary,
           staticEncountersWorkflowSummary,
           rentalPokemonWorkflowSummary,
+          dynamaxAdventuresWorkflowSummary,
           shopsWorkflowSummary,
           encountersWorkflowSummary,
           raidBattlesWorkflowSummary,
@@ -4518,6 +4797,10 @@ function createMockProjectBridge(
     loadRentalPokemonWorkflow: () =>
       Promise.resolve({
         workflow: rentalPokemonWorkflow
+      }),
+    loadDynamaxAdventuresWorkflow: () =>
+      Promise.resolve({
+        workflow: dynamaxAdventuresWorkflow
       }),
     loadShopsWorkflow: () =>
       Promise.resolve({
@@ -5206,6 +5489,58 @@ function createMockProjectBridge(
         }
       });
     },
+    updateDynamaxAdventureField: (request) => {
+      const value = Number.parseInt(request.value, 10);
+
+      return Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.dynamaxAdventures',
+              field: request.field,
+              newValue: request.value,
+              recordId: `dynamaxAdventure:${request.entryIndex}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath:
+                    'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+                }
+              ],
+              summary: `Set Adventure 001 ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...dynamaxAdventuresWorkflow,
+          encounters: dynamaxAdventuresWorkflow.encounters.map((encounter) =>
+            encounter.entryIndex === request.entryIndex
+              ? {
+                  ...encounter,
+                  guaranteedPerfectIvs:
+                    request.field === 'guaranteedPerfectIvs'
+                      ? value
+                      : encounter.guaranteedPerfectIvs,
+                  ivs:
+                    request.field === 'ivAttack'
+                      ? {
+                          ...encounter.ivs,
+                          attack: value
+                        }
+                      : encounter.ivs,
+                  ivSummary:
+                    request.field === 'guaranteedPerfectIvs'
+                      ? `${value} guaranteed perfect / Atk Random / Def Random / SpA Random / SpD Random / Spe Random`
+                      : encounter.ivSummary
+                }
+              : encounter
+          )
+        }
+      });
+    },
     updateShopInventoryItem: (request) =>
       Promise.resolve({
         diagnostics: [],
@@ -5454,6 +5789,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Rental Pokemon change plan to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.dynamaxAdventures') {
+    return 'Applied Dynamax Adventures change plan to the configured LayeredFS output root.';
+  }
+
   if (targetRelativePath.includes('/shop/')) {
     return 'Applied Shops change plan to the configured LayeredFS output root.';
   }
@@ -5519,6 +5858,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending static encounter change is valid.';
     case 'workflow.rentalPokemon':
       return 'Pending rental Pokemon change is valid.';
+    case 'workflow.dynamaxAdventures':
+      return 'Pending Dynamax Adventure change is valid.';
     case 'workflow.shops':
       return 'Pending shop change is valid.';
     case 'workflow.encounters':

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Bridge;
+using KM.Api.DynamaxAdventures;
 using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.ExeFs;
@@ -25,6 +26,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Gifts;
@@ -49,6 +51,7 @@ namespace KM.Tools.Bridge;
 public sealed class ProjectBridgeDispatcher
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
+    private readonly SwShDynamaxAdventuresEditSessionService dynamaxAdventuresEditSessionService;
     private readonly SwShEncountersEditSessionService encountersEditSessionService;
     private readonly SwShExeFsPatchEditSessionService exeFsPatchEditSessionService;
     private readonly SwShGiftPokemonEditSessionService giftPokemonEditSessionService;
@@ -70,6 +73,7 @@ public sealed class ProjectBridgeDispatcher
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
+        SwShDynamaxAdventuresEditSessionService? dynamaxAdventuresEditSessionService = null,
         SwShEncountersEditSessionService? encountersEditSessionService = null,
         SwShExeFsPatchEditSessionService? exeFsPatchEditSessionService = null,
         SwShGiftPokemonEditSessionService? giftPokemonEditSessionService = null,
@@ -90,6 +94,7 @@ public sealed class ProjectBridgeDispatcher
         SwShWorkflowService? swShWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
+        this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
         this.encountersEditSessionService = encountersEditSessionService ?? new SwShEncountersEditSessionService(this.projectWorkspaceService);
         this.exeFsPatchEditSessionService = exeFsPatchEditSessionService ?? new SwShExeFsPatchEditSessionService(this.projectWorkspaceService);
         this.giftPokemonEditSessionService = giftPokemonEditSessionService ?? new SwShGiftPokemonEditSessionService(this.projectWorkspaceService);
@@ -148,6 +153,8 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateStaticEncounterField => DispatchUpdateStaticEncounterField(requestJson),
                 KmCommandNames.LoadRentalPokemonWorkflow => DispatchLoadRentalPokemonWorkflow(requestJson),
                 KmCommandNames.UpdateRentalPokemonField => DispatchUpdateRentalPokemonField(requestJson),
+                KmCommandNames.LoadDynamaxAdventuresWorkflow => DispatchLoadDynamaxAdventuresWorkflow(requestJson),
+                KmCommandNames.UpdateDynamaxAdventureField => DispatchUpdateDynamaxAdventureField(requestJson),
                 KmCommandNames.LoadShopsWorkflow => DispatchLoadShopsWorkflow(requestJson),
                 KmCommandNames.UpdateShopInventoryItem => DispatchUpdateShopInventoryItem(requestJson),
                 KmCommandNames.LoadEncountersWorkflow => DispatchLoadEncountersWorkflow(requestJson),
@@ -488,6 +495,32 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadDynamaxAdventuresWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadDynamaxAdventuresWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadDynamaxAdventures(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateDynamaxAdventureField(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateDynamaxAdventureFieldRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = dynamaxAdventuresEditSessionService.UpdateField(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            request.Payload.EntryIndex,
+            request.Payload.Field,
+            request.Payload.Value);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchUpdateShopInventoryItem(string requestJson)
     {
         var request = DeserializeRequest<UpdateShopInventoryItemRequest>(requestJson);
@@ -729,6 +762,7 @@ public sealed class ProjectBridgeDispatcher
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var validation = GetEditSessionDomain(session) switch
         {
+            EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.Validate(paths, session),
             EditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.Validate(paths, session),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
@@ -760,6 +794,7 @@ public sealed class ProjectBridgeDispatcher
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var changePlan = GetEditSessionDomain(session) switch
         {
+            EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session),
@@ -792,6 +827,7 @@ public sealed class ProjectBridgeDispatcher
         var changePlan = EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan);
         var applyResult = GetEditSessionDomain(session) switch
         {
+            EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
@@ -838,6 +874,7 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.giftPokemon"] => EditSessionDomain.GiftPokemon,
             ["workflow.tradePokemon"] => EditSessionDomain.TradePokemon,
             ["workflow.rentalPokemon"] => EditSessionDomain.RentalPokemon,
+            ["workflow.dynamaxAdventures"] => EditSessionDomain.DynamaxAdventures,
             ["workflow.staticEncounters"] => EditSessionDomain.StaticEncounters,
             ["workflow.placement"] => EditSessionDomain.Placement,
             ["workflow.raidBattles"] => EditSessionDomain.RaidBattles,
@@ -932,6 +969,7 @@ public sealed class ProjectBridgeDispatcher
         GiftPokemon,
         TradePokemon,
         RentalPokemon,
+        DynamaxAdventures,
         StaticEncounters,
         Placement,
         RaidBattles,
