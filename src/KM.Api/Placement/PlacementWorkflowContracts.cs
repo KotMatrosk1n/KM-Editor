@@ -40,7 +40,12 @@ public sealed record PlacementEditableFieldDto(
     string Label,
     string ValueKind,
     double MinimumValue,
-    double MaximumValue);
+    double MaximumValue,
+    IReadOnlyList<PlacementEditableFieldOptionDto> Options);
+
+public sealed record PlacementEditableFieldOptionDto(
+    int Value,
+    string Label);
 
 public sealed record PlacementWorkflowStatsDto(
     int TotalObjectCount,

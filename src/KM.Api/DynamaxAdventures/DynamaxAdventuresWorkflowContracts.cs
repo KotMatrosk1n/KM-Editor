@@ -57,6 +57,7 @@ public sealed record DynamaxAdventureRecordDto(
     bool IsStoryProgressGated,
     string UiMessageId,
     int OtGender,
+    string OtGenderLabel,
     IReadOnlyList<DynamaxAdventureMoveRecordDto> Moves,
     DynamaxAdventureIvsDto Ivs,
     int GuaranteedPerfectIvs,

@@ -41,7 +41,7 @@ public sealed class SwShPlacementWorkflowService
         new SwShPlacementEditableField(LocationYField, "Y", "number", MinimumCoordinate, MaximumCoordinate),
         new SwShPlacementEditableField(LocationZField, "Z", "number", MinimumCoordinate, MaximumCoordinate),
         new SwShPlacementEditableField(RotationYField, "Rotation Y", "number", MinimumRotation, MaximumRotation),
-        new SwShPlacementEditableField(ItemIdField, "Item ID", "integer", 0, MaximumItemId),
+        new SwShPlacementEditableField(ItemIdField, "Item", "integer", 0, MaximumItemId),
         new SwShPlacementEditableField(QuantityField, "Quantity", "integer", 0, MaximumQuantity),
         new SwShPlacementEditableField(ChanceField, "Chance", "integer", 0, MaximumChance),
     ];
@@ -74,7 +74,7 @@ public sealed class SwShPlacementWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 0, [], diagnostics);
         }
 
         var placementSource = ResolvePlacementDataSource(project);
@@ -84,7 +84,7 @@ public sealed class SwShPlacementWorkflowService
                 DiagnosticSeverity.Warning,
                 "Placement data is not available for this project.",
                 expected: PlacementDataPath));
-            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 0, [], diagnostics);
         }
 
         var itemNames = LoadItemNames(project, diagnostics, out var itemNameSourceCount);
@@ -150,6 +150,7 @@ public sealed class SwShPlacementWorkflowService
                     .ToArray(),
                 areaCount,
                 sourceFileCount: 1 + itemNameSourceCount + itemHashSourceCount,
+                itemNames,
                 diagnostics);
         }
         catch (InvalidDataException exception)
@@ -159,7 +160,7 @@ public sealed class SwShPlacementWorkflowService
                 $"Placement data source is not a supported Sword/Shield placement pack: {exception.Message}",
                 file: placementSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield placement.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, itemNames, diagnostics);
         }
         catch (IOException exception)
         {
@@ -168,7 +169,7 @@ public sealed class SwShPlacementWorkflowService
                 $"Placement data source could not be read: {exception.Message}",
                 file: placementSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield placement.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, itemNames, diagnostics);
         }
     }
 
@@ -577,14 +578,33 @@ public sealed class SwShPlacementWorkflowService
         IReadOnlyList<SwShPlacedObjectRecord> objects,
         int areaCount,
         int sourceFileCount,
+        IReadOnlyList<string> itemNames,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         return new SwShPlacementWorkflow(
             summary,
             objects,
-            EditableFields,
+            CreateEditableFields(itemNames),
             new SwShPlacementWorkflowStats(objects.Count, areaCount, sourceFileCount),
             diagnostics);
+    }
+
+    private static IReadOnlyList<SwShPlacementEditableField> CreateEditableFields(
+        IReadOnlyList<string> itemNames)
+    {
+        var itemOptions = itemNames
+            .Select((name, index) => new SwShPlacementEditableFieldOption(
+                index,
+                string.IsNullOrWhiteSpace(name)
+                    ? $"{index.ToString("000", CultureInfo.InvariantCulture)} Item {index}"
+                    : $"{index.ToString("000", CultureInfo.InvariantCulture)} {name}"))
+            .ToArray();
+
+        return EditableFields
+            .Select(field => field.Field == ItemIdField
+                ? field with { Options = itemOptions }
+                : field)
+            .ToArray();
     }
 
     private static WorkflowFileSource? ResolveWorkflowFile(OpenedProject project, string relativePath)

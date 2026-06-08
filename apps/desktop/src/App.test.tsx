@@ -240,7 +240,7 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const tm00 = screen.getByRole('checkbox', { name: /TM00 Mega Punch/ });
     expect(tm00).not.toBeChecked();
     await user.click(tm00);
@@ -276,7 +276,7 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     await user.click(screen.getByRole('button', { name: /Growl/ }));
     await user.clear(screen.getByLabelText('Move ID'));
     await user.type(screen.getByLabelText('Move ID'), '345');
@@ -308,7 +308,7 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     await user.click(screen.getByRole('button', { name: /002 Ivysaur/ }));
     await user.selectOptions(screen.getByLabelText('Method'), '8');
     await user.selectOptions(screen.getByLabelText('Item'), '25');
@@ -363,7 +363,7 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: 'Open Moves' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Moves Data' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const powerInput = screen.getByLabelText('Power');
     await user.clear(powerInput);
     await user.type(powerInput, '80');
@@ -375,16 +375,16 @@ describe('App', () => {
 
     expect(screen.getByText('Set Tackle power to 80.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending move change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(screen.getAllByText('romfs/bin/pml/waza/waza_033.bin').length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
@@ -437,7 +437,8 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Workflows' }));
     await user.click(await screen.findByRole('button', { name: 'Open Items' }));
 
-    expect((await screen.findAllByText('Item 0000')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Item 0001')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Item 0000')).not.toBeInTheDocument();
     expect(screen.queryByText('Item 0999')).not.toBeInTheDocument();
     expect(screen.getAllByRole('row').length).toBeLessThan(100);
 
@@ -527,7 +528,7 @@ describe('App', () => {
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
     await user.click(screen.getByRole('button', { name: 'Workflows' }));
     await user.click(await screen.findByRole('button', { name: 'Open Items' }));
-    await user.click(await screen.findByRole('button', { name: 'Start Edit Session' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
 
     const buyPriceInput = screen.getByLabelText('Buy price');
     expect(screen.getByLabelText('Sell price')).toBeInTheDocument();
@@ -541,16 +542,16 @@ describe('App', () => {
 
     expect(screen.getByText('Set Potion buy price to 450.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending item change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(screen.getAllByText('romfs/bin/pml/item/item.dat').length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(screen.getByText('Applied Items change plan to the configured LayeredFS output root.')).toBeInTheDocument();
@@ -566,7 +567,7 @@ describe('App', () => {
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
     await user.click(screen.getByRole('button', { name: 'Workflows' }));
     await user.click(await screen.findByRole('button', { name: 'Open Items' }));
-    await user.click(await screen.findByRole('button', { name: 'Start Edit Session' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
 
     await user.selectOptions(screen.getByLabelText('Pouch'), '4');
     await user.click(screen.getByRole('button', { name: 'Save pouch' }));
@@ -594,7 +595,7 @@ describe('App', () => {
       screen.getAllByText('romfs/bin/message/English/common/story.dat').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const textValue = screen.getByLabelText('Text value');
     await user.clear(textValue);
     await user.type(textValue, 'Hello there.');
@@ -606,18 +607,18 @@ describe('App', () => {
 
     expect(screen.getByText('Set story #0 to "Hello there.".')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending text change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/message/English/common/story.dat').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(screen.getByText('Applied Text change plan to the configured LayeredFS output root.')).toBeInTheDocument();
@@ -638,7 +639,7 @@ describe('App', () => {
     expect(screen.getAllByText('Avery').length).toBeGreaterThan(0);
     expect(screen.getByRole('option', { name: 'Slot 1: Grookey' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     expect(screen.getByLabelText('Trainer class ID')).toHaveDisplayValue('005 Pokemon Trainer');
     expect(screen.getByLabelText('Class ball')).toHaveDisplayValue('4 Poke Ball');
     expect(screen.getByLabelText('Battle type')).toHaveDisplayValue('1 Doubles');
@@ -669,18 +670,18 @@ describe('App', () => {
 
     expect(screen.getByText('Set Avery slot 1 level to 25.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending trainer change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/trainer/trainer_poke/trainer_010.bin').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
@@ -705,7 +706,7 @@ describe('App', () => {
     expect(screen.getAllByText('Bulbasaur').length).toBeGreaterThan(0);
     expect(screen.getByText('3 guaranteed perfect IVs')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('-4');
     await user.clear(hpIvInput);
@@ -718,18 +719,18 @@ describe('App', () => {
 
     expect(screen.getByText('Set Gift 001 ivHp to 31.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending gift Pokemon change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/script_event_data/add_poke.bin').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
@@ -757,7 +758,7 @@ describe('App', () => {
     expect(screen.queryByText('Farfetch’d-1')).not.toBeInTheDocument();
     expect(screen.getByText('3 guaranteed perfect IVs')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('-4');
     await user.clear(hpIvInput);
@@ -770,18 +771,18 @@ describe('App', () => {
 
     expect(screen.getByText('Set Trade 001 ivHp to 31.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending trade Pokemon change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/script_event_data/field_trade.bin').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
@@ -806,7 +807,7 @@ describe('App', () => {
     expect(screen.getAllByText('Grookey').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Calyrex').length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('31');
     await user.clear(hpIvInput);
@@ -819,18 +820,18 @@ describe('App', () => {
 
     expect(screen.getByText('Set Static 001 ivHp to 0.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending static encounter change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/script_event_data/event_encount_data.bin').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
@@ -859,7 +860,7 @@ describe('App', () => {
       screen.getAllByText('HP 31 / Atk 31 / Def 31 / SpA 31 / SpD 31 / Spe 31').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('31');
     await user.clear(hpIvInput);
@@ -872,16 +873,16 @@ describe('App', () => {
 
     expect(screen.getByText('Set Rental 001 ivHp to 0.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending rental Pokemon change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(screen.getAllByText('romfs/bin/script_event_data/rental.bin').length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
@@ -907,7 +908,7 @@ describe('App', () => {
     expect(screen.getAllByText(/5 guaranteed perfect/).length).toBeGreaterThan(0);
     expect(screen.getByText('0x0000000000000010 / 0x0000000000000020')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const guaranteedIvsSelect = screen.getByLabelText('Guaranteed perfect IVs');
     expect(guaranteedIvsSelect).toHaveDisplayValue('5 Guaranteed Perfect IVs');
     await user.selectOptions(guaranteedIvsSelect, '6');
@@ -921,20 +922,20 @@ describe('App', () => {
 
     expect(screen.getByText('Set Adventure 001 guaranteedPerfectIvs to 6.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending Dynamax Adventure change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(
       screen.getAllByText(
         'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
       ).length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
@@ -960,7 +961,7 @@ describe('App', () => {
     expect(screen.getAllByText('Potion, Antidote').length).toBeGreaterThan(0);
     expect(screen.getByRole('option', { name: 'Slot 1: Potion' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const itemSelect = screen.getByLabelText('Item');
     await user.selectOptions(itemSelect, '2');
     await user.click(screen.getByRole('button', { name: 'Save Item' }));
@@ -971,16 +972,16 @@ describe('App', () => {
 
     expect(screen.getByText('Set Poke Mart slot 1 item ID to 2.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending shop change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(screen.getAllByText('romfs/bin/app/shop/shop_data.bin').length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
@@ -1023,7 +1024,7 @@ describe('App', () => {
     expect(screen.getByRole('option', { name: 'Slot 1: Bulbasaur' })).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Encounter slot'), '2');
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const probabilityInput = screen.getByLabelText('Probability');
     await user.clear(probabilityInput);
     await user.type(probabilityInput, '40');
@@ -1039,18 +1040,18 @@ describe('App', () => {
       )
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending encounter change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/archive/field/resident/data_table.gfpak').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
@@ -1073,7 +1074,7 @@ describe('App', () => {
     expect(screen.getAllByText('0xAABBCCDD00112233').length).toBeGreaterThan(0);
     expect(screen.getByRole('option', { name: 'Slot 1: Exp. Candy L' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     const starValueInput = screen.getByLabelText('5-star value');
     await user.clear(starValueInput);
     await user.type(starValueInput, '77');
@@ -1087,18 +1088,18 @@ describe('App', () => {
       screen.getByText('Set Drop 0xAABBCCDD00112233 slot 1 5-star value to 77.')
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending raid reward change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/archive/field/resident/data_table.gfpak').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
@@ -1119,7 +1120,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Raid Battles' })).toBeInTheDocument();
     expect(screen.getAllByText('0xAABBCCDD00112233').length).toBeGreaterThan(0);
-    expect(screen.getByRole('option', { name: 'Slot 1: Eevee' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Slot 1: Eevee (Form 1)' })).toBeInTheDocument();
     expect(screen.getByText('Any Ability')).toBeInTheDocument();
     expect(
       screen.getByText('Matched: 2 rewards: Exp. Candy L, Rare Candy (drop:0:AABBCCDD00112233)')
@@ -1128,7 +1129,7 @@ describe('App', () => {
       screen.getByText('Matched: 1 reward: Armorite Ore (bonus:0:1020304050607080)')
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
     await user.selectOptions(screen.getByLabelText('Guaranteed perfect IVs'), '6');
     await user.click(screen.getByRole('button', { name: 'Save guaranteed perfect ivs' }));
 
@@ -1138,18 +1139,18 @@ describe('App', () => {
       screen.getByText('Set Raid Battles 0xAABBCCDD00112233 slot 1 flawlessIvs to 6.')
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending raid battle change is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/archive/field/resident/data_table.gfpak').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
@@ -1229,15 +1230,15 @@ describe('App', () => {
 
     expect(await screen.findByText('Stage ExeFS patch: ExeFS main compatibility.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending ExeFS patch is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect((await screen.findAllByText('exefs/main')).length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(
       await screen.findByText('Applied ExeFS patch to the configured LayeredFS output root.')
@@ -1288,15 +1289,15 @@ describe('App', () => {
       await screen.findByText('Stage Royal Candy workflow: Install Unlimited Royal Candy.')
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
     expect(await screen.findByText('Pending Royal Candy workflow is valid.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect((await screen.findAllByText('romfs/bin/pml/item/item.dat')).length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(
       await screen.findByText('Applied Royal Candy change plan to the configured LayeredFS output root.')
@@ -3807,6 +3808,7 @@ function createMockProjectBridge(
           { move: 'None', moveId: 0, slot: 3 }
         ],
         otGender: 0,
+        otGenderLabel: 'Male',
         provenance: {
           fileState: 'baseOnly',
           sourceFile: 'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin',

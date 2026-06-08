@@ -24,8 +24,8 @@
   --color-danger: #ff6b6b;
   --shadow-panel: 0 20px 70px rgb(0 0 0 / 34%);
   --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 6%);
-  --editor-list-column: minmax(820px, 0.82fr);
-  --editor-detail-column: minmax(560px, 1.18fr);
+  --editor-list-column: minmax(360px, 0.68fr);
+  --editor-detail-column: minmax(720px, 1.32fr);
   --inspector-section-column: minmax(320px, 1fr);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -322,6 +322,25 @@ h2 {
   background: #202c48;
 }
 
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  color: var(--color-danger);
+  background: #32181b;
+  border: 1px solid #8a3438;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: var(--shadow-inset);
+}
+
+.danger-button:hover {
+  background: #431c20;
+}
+
 .icon-button {
   width: 40px;
   min-width: 40px;
@@ -329,7 +348,8 @@ h2 {
 }
 
 .primary-button:disabled,
-.secondary-button:disabled {
+.secondary-button:disabled,
+.danger-button:disabled {
   cursor: not-allowed;
   opacity: 0.64;
 }
@@ -638,7 +658,7 @@ h2 {
 }
 
 .virtual-table-body {
-  max-height: min(560px, calc(100vh - 320px));
+  max-height: 200px;
   min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -1370,9 +1390,12 @@ h2 {
 .shops-table {
   display: grid;
   min-width: 0;
-  overflow: hidden;
+  max-height: 240px;
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid #26344d;
   border-radius: 8px;
+  scrollbar-gutter: stable;
 }
 
 .shops-row {
@@ -1410,6 +1433,9 @@ h2 {
 }
 
 .shops-row-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   color: #9aa7bd;
   background: #0b1120;
   font-size: 13px;
@@ -1550,9 +1576,12 @@ h2 {
 .encounters-table {
   display: grid;
   min-width: 0;
-  overflow: hidden;
+  max-height: 240px;
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid #26344d;
   border-radius: 8px;
+  scrollbar-gutter: stable;
 }
 
 .encounters-row {
@@ -1590,6 +1619,9 @@ h2 {
 }
 
 .encounters-row-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   color: #9aa7bd;
   background: #0b1120;
   font-size: 13px;
@@ -1607,9 +1639,12 @@ h2 {
 .raid-rewards-table {
   display: grid;
   min-width: 0;
-  overflow: hidden;
+  max-height: 240px;
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid #26344d;
   border-radius: 8px;
+  scrollbar-gutter: stable;
 }
 
 .raid-rewards-row {
@@ -1647,6 +1682,9 @@ h2 {
 }
 
 .raid-rewards-row-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   color: #9aa7bd;
   background: #0b1120;
   font-size: 13px;
@@ -1680,9 +1718,12 @@ h2 {
 .flagwork-table {
   display: grid;
   min-width: 0;
-  overflow: hidden;
+  max-height: 240px;
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid #26344d;
   border-radius: 8px;
+  scrollbar-gutter: stable;
 }
 
 .flagwork-row {
@@ -1715,6 +1756,9 @@ h2 {
 }
 
 .flagwork-row-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   color: #9aa7bd;
   background: #0b1120;
   font-size: 13px;
@@ -1734,9 +1778,12 @@ h2 {
   align-content: start;
   grid-auto-rows: minmax(44px, max-content);
   min-width: 0;
-  overflow: hidden;
+  max-height: 264px;
+  overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid #26344d;
   border-radius: 8px;
+  scrollbar-gutter: stable;
 }
 
 .exefs-row {
@@ -1805,6 +1852,9 @@ h2 {
 }
 
 .exefs-row-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   color: #9aa7bd;
   background: #0b1120;
   font-size: 13px;
@@ -1948,6 +1998,66 @@ h2 {
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid #26344d;
+}
+
+.encounter-condition-tabs,
+.encounter-slot-tabs {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-gutter: stable;
+}
+
+.condition-tab-button,
+.slot-tab-button {
+  color: var(--color-text-soft);
+  background: #111a2c;
+  border: 1px solid #34435f;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.condition-tab-button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.condition-tab-button[aria-selected="true"],
+.slot-tab-button[aria-pressed="true"] {
+  color: var(--color-text);
+  background: linear-gradient(135deg, #2f2a90, var(--color-accent));
+  border-color: rgb(109 115 255 / 72%);
+  box-shadow: inset 3px 0 0 var(--color-gold);
+}
+
+.slot-tab-button {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 2px;
+  flex: 0 0 150px;
+  min-height: 82px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.slot-tab-button strong,
+.slot-tab-button span,
+.slot-tab-button small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-tab-button small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .form-actions {

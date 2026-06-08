@@ -1320,6 +1320,7 @@ export const dynamaxAdventureRecordSchema = z.strictObject({
   level: z.number().int().nonnegative(),
   moves: z.array(dynamaxAdventureMoveSchema),
   otGender: z.number().int().nonnegative(),
+  otGenderLabel: z.string(),
   provenance: dynamaxAdventureProvenanceSchema,
   shinyRoll: z.number().int().nonnegative(),
   shinyRollLabel: z.string(),
@@ -1444,11 +1445,17 @@ export const encounterTableRecordSchema = z.strictObject({
   tableId: z.string()
 });
 
+export const encounterEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
 export const encounterEditableFieldSchema = z.strictObject({
   field: z.string(),
   label: z.string(),
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
+  options: z.array(encounterEditableFieldOptionSchema).optional(),
   valueKind: z.string()
 });
 
@@ -1580,11 +1587,17 @@ export const raidRewardTableRecordSchema = z.strictObject({
   tableId: z.string()
 });
 
+export const raidRewardEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
 export const raidRewardEditableFieldSchema = z.strictObject({
   field: z.string(),
   label: z.string(),
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
+  options: z.array(raidRewardEditableFieldOptionSchema).optional(),
   valueKind: z.string()
 });
 
@@ -1634,11 +1647,17 @@ export const placedObjectRecordSchema = z.strictObject({
   z: z.number()
 });
 
+export const placementEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
 export const placementEditableFieldSchema = z.strictObject({
   field: z.string(),
   label: z.string(),
   maximumValue: z.number(),
   minimumValue: z.number(),
+  options: z.array(placementEditableFieldOptionSchema).optional(),
   valueKind: z.string()
 });
 

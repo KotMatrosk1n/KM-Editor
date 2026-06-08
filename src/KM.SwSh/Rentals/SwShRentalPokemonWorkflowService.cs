@@ -65,6 +65,12 @@ public sealed class SwShRentalPokemonWorkflowService
         new(31, "6 Perfect IVs"),
     ];
 
+    private static readonly IReadOnlyList<SwShRentalPokemonEditableFieldOption> FormOptions =
+    [
+        new(0, "Base"),
+        ..Enumerable.Range(1, 31).Select(value => new SwShRentalPokemonEditableFieldOption(value, $"Form {value}")),
+    ];
+
     private static readonly IReadOnlyList<SwShRentalPokemonEditableFieldOption> NatureOptions =
     [
         new(0, "Hardy"),
@@ -97,7 +103,7 @@ public sealed class SwShRentalPokemonWorkflowService
     private static readonly IReadOnlyList<SwShRentalPokemonEditableField> BaseEditableFields =
     [
         CreateField(SpeciesField, "Species", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
-        CreateField(FormField, "Form", "integer", 0, SwShRentalPokemonArchive.MaximumByteValue),
+        CreateField(FormField, "Form", "integer", 0, 31, FormOptions),
         CreateField(LevelField, "Level", "integer", 0, SwShRentalPokemonArchive.MaximumByteValue),
         CreateField(HeldItemIdField, "Held item", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
         CreateField(BallItemIdField, "Ball item", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),

@@ -59,6 +59,7 @@ public sealed record SwShDynamaxAdventureEntry(
     bool IsStoryProgressGated,
     string UiMessageId,
     int OtGender,
+    string OtGenderLabel,
     IReadOnlyList<SwShDynamaxAdventureMoveRecord> Moves,
     SwShDynamaxAdventureIvsRecord Ivs,
     int GuaranteedPerfectIvs,

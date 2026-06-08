@@ -76,6 +76,18 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         new(1, "Yes"),
     ];
 
+    private static readonly IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> OtGenderOptions =
+    [
+        new(0, "Male"),
+        new(1, "Female"),
+    ];
+
+    private static readonly IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> FormOptions =
+    [
+        new(0, "Base"),
+        ..Enumerable.Range(1, 31).Select(value => new SwShDynamaxAdventureEditableFieldOption(value, $"Form {value}")),
+    ];
+
     private static readonly IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> GuaranteedPerfectIvOptions =
     [
         new(0, "Random IVs"),
@@ -95,7 +107,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
     private static readonly IReadOnlyList<SwShDynamaxAdventureEditableField> BaseEditableFields =
     [
         CreateField(SpeciesField, "Species", "integer", 0, SwShDynamaxAdventureArchive.MaximumIdValue),
-        CreateField(FormField, "Form", "integer", 0, SwShDynamaxAdventureArchive.MaximumByteValue),
+        CreateField(FormField, "Form", "integer", 0, 31, FormOptions),
         CreateField(LevelField, "Level", "integer", 0, SwShDynamaxAdventureArchive.MaximumByteValue),
         CreateField(BallItemIdField, "Ball item", "integer", 0, SwShDynamaxAdventureArchive.MaximumIdValue),
         CreateField(AbilityField, "Ability roll", "integer", 0, SwShDynamaxAdventureArchive.MaximumAbilityRoll, AbilityOptions),
@@ -114,7 +126,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         CreateField(IvSpeedField, "Speed IV override", "integer", SwShDynamaxAdventureArchive.RandomIvValue, SwShDynamaxAdventureArchive.MaximumFixedIvValue, IvOverrideOptions),
         CreateField(IsSingleCaptureField, "Single-capture Pokemon", "integer", 0, 1, BooleanOptions),
         CreateField(IsStoryProgressGatedField, "Requires story progress", "integer", 0, 1, BooleanOptions),
-        CreateField(OtGenderField, "OT gender value", "integer", 0, SwShDynamaxAdventureArchive.MaximumIdValue),
+        CreateField(OtGenderField, "OT gender", "integer", 0, 1, OtGenderOptions),
     ];
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -358,6 +370,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             entry.IsStoryProgressGated,
             FormatHash(entry.UiMessageId),
             entry.OtGender,
+            GetOptionLabel(OtGenderOptions, entry.OtGender, "OT gender"),
             moves,
             new SwShDynamaxAdventureIvsRecord(
                 entry.Ivs.Hp,

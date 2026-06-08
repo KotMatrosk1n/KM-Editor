@@ -76,6 +76,19 @@ public sealed class SwShGiftPokemonWorkflowService
         new(6, "6 Perfect IVs"),
     ];
 
+    private static readonly IReadOnlyList<SwShGiftPokemonEditableFieldOption> FormOptions =
+    [
+        new(0, "Base"),
+        ..Enumerable.Range(1, 31).Select(value => new SwShGiftPokemonEditableFieldOption(value, $"Form {value}")),
+    ];
+
+    private static readonly IReadOnlyList<SwShGiftPokemonEditableFieldOption> DynamaxLevelOptions =
+    [
+        ..Enumerable.Range(0, 11).Select(value => new SwShGiftPokemonEditableFieldOption(
+            value,
+            value == 0 ? "0 Off" : $"Level {value}")),
+    ];
+
     private static readonly IReadOnlyList<SwShGiftPokemonEditableFieldOption> NatureOptions =
     [
         new(0, "Hardy"),
@@ -109,7 +122,7 @@ public sealed class SwShGiftPokemonWorkflowService
     private static readonly IReadOnlyList<SwShGiftPokemonEditableField> BaseEditableFields =
     [
         CreateField(SpeciesField, "Species", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),
-        CreateField(FormField, "Form", "integer", 0, SwShGiftPokemonArchive.MaximumByteValue),
+        CreateField(FormField, "Form", "integer", 0, 31, FormOptions),
         CreateField(LevelField, "Level", "integer", 0, SwShGiftPokemonArchive.MaximumByteValue),
         CreateField(HeldItemIdField, "Held item", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),
         CreateField(BallItemIdField, "Ball item", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),
@@ -117,7 +130,7 @@ public sealed class SwShGiftPokemonWorkflowService
         CreateField(NatureField, "Nature", "integer", 0, 25, NatureOptions),
         CreateField(GenderField, "Gender", "integer", 0, SwShGiftPokemonArchive.MaximumByteValue, GenderOptions),
         CreateField(ShinyLockField, "Shiny lock", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue, ShinyLockOptions),
-        CreateField(DynamaxLevelField, "Dynamax level", "integer", 0, SwShGiftPokemonArchive.MaximumByteValue),
+        CreateField(DynamaxLevelField, "Dynamax level", "integer", 0, 10, DynamaxLevelOptions),
         CreateField(CanGigantamaxField, "Can Gigantamax", "boolean", 0, 1, BooleanOptions),
         CreateField(SpecialMoveIdField, "Special move", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),
         CreateField(IvHpField, "HP IV", "integer", SwShGiftPokemonArchive.ThreePerfectIvSentinel, SwShGiftPokemonArchive.MaximumFixedIvValue),

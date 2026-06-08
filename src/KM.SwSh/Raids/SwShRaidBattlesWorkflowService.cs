@@ -64,10 +64,16 @@ public sealed class SwShRaidBattlesWorkflowService
         new(6, "6 Perfect IVs"),
     ];
 
+    private static readonly IReadOnlyList<SwShRaidBattleEditableFieldOption> FormOptions =
+    [
+        new(0, "Base"),
+        ..Enumerable.Range(1, 31).Select(value => new SwShRaidBattleEditableFieldOption(value, $"Form {value}")),
+    ];
+
     private static readonly IReadOnlyList<SwShRaidBattleEditableField> BaseEditableFields =
     [
         CreateField(SpeciesField, "Species", "integer", MinimumValue, SwShEncounterNestArchive.MaximumSpeciesId),
-        CreateField(FormField, "Form", "integer", MinimumValue, SwShEncounterNestArchive.MaximumForm),
+        CreateField(FormField, "Form", "integer", MinimumValue, 31, FormOptions),
         CreateField(AbilityField, "Ability roll", "integer", MinimumValue, SwShEncounterNestArchive.MaximumAbility, AbilityOptions),
         CreateField(IsGigantamaxField, "Gigantamax", "boolean", MinimumValue, 1, BooleanOptions),
         CreateField(GenderField, "Gender", "integer", MinimumValue, SwShEncounterNestArchive.MaximumGender, GenderOptions),
