@@ -32,7 +32,8 @@ describe('App', () => {
       draftPaths: {
         baseExeFsPath: '',
         baseRomFsPath: '',
-        outputRootPath: ''
+        outputRootPath: '',
+        saveFilePath: ''
       },
       editSession: null,
       editValidationDiagnostics: [],
@@ -165,7 +166,8 @@ describe('App', () => {
       paths: {
         baseExeFsPath: 'base-exefs',
         baseRomFsPath: 'base-romfs',
-        outputRootPath: null
+        outputRootPath: null,
+        saveFilePath: null
       }
     });
     const seedItem = baseItemsResponse.workflow.items[0]!;
@@ -583,6 +585,9 @@ describe('App', () => {
     expect(screen.getAllByText('WK_SCENE_MAIN').length).toBeGreaterThan(0);
     expect(screen.getAllByText('0xDDEEFF00').length).toBeGreaterThan(0);
     expect(screen.getAllByText('romfs/bin/flagwork/scene_work.tbl').length).toBeGreaterThan(0);
+    expect(screen.getByText('main')).toBeInTheDocument();
+    expect(screen.getByText('4 bytes')).toBeInTheDocument();
+    expect(screen.getByText('01020304')).toBeInTheDocument();
   });
 
   it('opens ExeFS Patch Manager, searches compatibility checks, and shows provenance', async () => {
@@ -724,6 +729,7 @@ describe('App', () => {
       openPath: async (path) => {
         openedPaths.push(path);
       },
+      pickFile: async ({ title }) => (title === 'Select Save File' ? 'picked-save-main' : null),
       pickFolder: async ({ title }) =>
         ({
           'Select Base ExeFS': 'picked-exefs',
@@ -736,10 +742,12 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Browse for Base RomFS' }));
     await user.click(screen.getByRole('button', { name: 'Browse for Base ExeFS' }));
     await user.click(screen.getByRole('button', { name: 'Browse for Output Root' }));
+    await user.click(screen.getByRole('button', { name: 'Browse for Save File' }));
 
     expect(screen.getByLabelText('Base RomFS')).toHaveValue('picked-romfs');
     expect(screen.getByLabelText('Base ExeFS')).toHaveValue('picked-exefs');
     expect(screen.getByLabelText('Output Root')).toHaveValue('picked-output');
+    expect(screen.getByLabelText('Save File')).toHaveValue('picked-save-main');
 
     await user.click(screen.getByRole('button', { name: 'Open Output Root' }));
 
@@ -769,6 +777,7 @@ function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): De
   return {
     isAvailable: true,
     openPath: async () => undefined,
+    pickFile: async () => null,
     pickFolder: async () => null,
     ...overrides
   };
@@ -809,6 +818,13 @@ function createMockProjectBridge(
         path: canEdit ? 'output' : null,
         role: 'outputRoot',
         status: canEdit ? 'valid' : 'notSet'
+      },
+      {
+        diagnostics: [],
+        isRequired: false,
+        path: null,
+        role: 'saveFile',
+        status: 'notSet'
       }
     ],
     state: canEdit ? 'editableReady' : 'readOnlyReady'
@@ -1384,7 +1400,15 @@ function createMockProjectBridge(
         valueKind: 'integer'
       }
     ],
+    saveFile: {
+      description: 'Save file is configured for read-only inspection.',
+      fileName: 'main',
+      sha256: '01020304',
+      sizeBytes: 4,
+      status: 'available'
+    },
     stats: {
+      hasSaveFile: true,
       sourceFileCount: 2,
       totalFlagCount: 2,
       totalSaveBlockCount: 1

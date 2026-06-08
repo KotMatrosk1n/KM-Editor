@@ -1,13 +1,41 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Text.Json.Serialization;
 using KM.Api.Diagnostics;
 
 namespace KM.Api.Projects;
 
-public sealed record ProjectPathsDto(
-    string? BaseRomFsPath,
-    string? BaseExeFsPath,
-    string? OutputRootPath);
+public sealed record ProjectPathsDto
+{
+    [JsonConstructor]
+    public ProjectPathsDto(
+        string? BaseRomFsPath,
+        string? BaseExeFsPath,
+        string? OutputRootPath,
+        string? SaveFilePath)
+    {
+        this.BaseRomFsPath = BaseRomFsPath;
+        this.BaseExeFsPath = BaseExeFsPath;
+        this.OutputRootPath = OutputRootPath;
+        this.SaveFilePath = SaveFilePath;
+    }
+
+    public ProjectPathsDto(
+        string? BaseRomFsPath,
+        string? BaseExeFsPath,
+        string? OutputRootPath)
+        : this(BaseRomFsPath, BaseExeFsPath, OutputRootPath, SaveFilePath: null)
+    {
+    }
+
+    public string? BaseRomFsPath { get; init; }
+
+    public string? BaseExeFsPath { get; init; }
+
+    public string? OutputRootPath { get; init; }
+
+    public string? SaveFilePath { get; init; }
+}
 
 public sealed record OpenProjectRequest(ProjectPathsDto Paths);
 
@@ -28,6 +56,7 @@ public enum ProjectPathRoleDto
     BaseRomFs,
     BaseExeFs,
     OutputRoot,
+    SaveFile,
 }
 
 public enum ProjectPathStatusDto

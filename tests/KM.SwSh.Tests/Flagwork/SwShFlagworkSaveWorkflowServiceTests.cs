@@ -7,6 +7,7 @@ using KM.Formats.SwSh;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.Workflows;
+using System.Security.Cryptography;
 using Xunit;
 
 namespace KM.SwSh.Tests.Flagwork;
@@ -57,6 +58,29 @@ public sealed class SwShFlagworkSaveWorkflowServiceTests
         Assert.Equal(2, workflow.Stats.TotalSaveBlockCount);
         Assert.Equal(2, workflow.Stats.SourceFileCount);
         Assert.Empty(workflow.Diagnostics);
+    }
+
+    [Fact]
+    public void LoadReportsConfiguredSaveFileMetadata()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteFlagworkTables(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var saveFileBytes = new byte[] { 0x01, 0x02, 0x03, 0x04 };
+        var saveFilePath = Path.Combine(temp.RootPath, "main");
+        File.WriteAllBytes(saveFilePath, saveFileBytes);
+        var project = new ProjectWorkspaceService().Open(
+            temp.Paths with { OutputRootPath = null, SaveFilePath = saveFilePath });
+
+        var workflow = new SwShFlagworkSaveWorkflowService().Load(project);
+
+        Assert.NotNull(workflow.SaveFile);
+        var saveFile = workflow.SaveFile!;
+        Assert.True(workflow.Stats.HasSaveFile);
+        Assert.Equal("main", saveFile.FileName);
+        Assert.Equal(saveFileBytes.Length, saveFile.SizeBytes);
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(saveFileBytes)), saveFile.Sha256);
+        Assert.Equal("available", saveFile.Status);
     }
 
     [Fact]

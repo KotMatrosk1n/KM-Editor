@@ -5,5 +5,15 @@ namespace KM.Core.Projects;
 public sealed record ProjectPaths(
     string? BaseRomFsPath,
     string? BaseExeFsPath,
-    string? OutputRootPath);
+    string? OutputRootPath,
+    string? SaveFilePath)
+{
+    public ProjectPaths(
+        string? BaseRomFsPath,
+        string? BaseExeFsPath,
+        string? OutputRootPath)
+        : this(BaseRomFsPath, BaseExeFsPath, OutputRootPath, SaveFilePath: null)
+    {
+    }
+}
 

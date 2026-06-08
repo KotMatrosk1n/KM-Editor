@@ -63,6 +63,7 @@ import {
   type RoyalCandyWorkflowCheckRecord,
   type RoyalCandyWorkflowRecord,
   type SaveBlockRecord,
+  type SaveFileRecord,
   type ShopEditableField,
   type ShopInventoryRecord,
   type ShopRecord,
@@ -247,23 +248,33 @@ const workflowDefinitions: Array<{
 
 const pathFields: Array<{
   field: keyof ProjectPathDraft;
+  kind: 'directory' | 'file';
   label: string;
   role: ProjectPathRole;
 }> = [
   {
     field: 'baseRomFsPath',
+    kind: 'directory',
     label: 'Base RomFS',
     role: 'baseRomFs'
   },
   {
     field: 'baseExeFsPath',
+    kind: 'directory',
     label: 'Base ExeFS',
     role: 'baseExeFs'
   },
   {
     field: 'outputRootPath',
+    kind: 'directory',
     label: 'Output Root',
     role: 'outputRoot'
+  },
+  {
+    field: 'saveFilePath',
+    kind: 'file',
+    label: 'Save File',
+    role: 'saveFile'
   }
 ];
 type ProjectPathField = (typeof pathFields)[number];
@@ -549,7 +560,9 @@ export function App({
 
   const handlePickProjectPath = async (pathField: ProjectPathField) => {
     try {
-      const selectedPath = await desktopServices.pickFolder({
+      const pickPath =
+        pathField.kind === 'file' ? desktopServices.pickFile : desktopServices.pickFolder;
+      const selectedPath = await pickPath({
         defaultPath: draftPaths[pathField.field] || undefined,
         title: `Select ${pathField.label}`
       });
@@ -1668,7 +1681,11 @@ function HealthSection({
                     title={`Browse for ${pathField.label}`}
                     type="button"
                   >
-                    <FolderOpen aria-hidden="true" size={18} />
+                    {pathField.kind === 'file' ? (
+                      <Save aria-hidden="true" size={18} />
+                    ) : (
+                      <FolderOpen aria-hidden="true" size={18} />
+                    )}
                   </button>
                 </div>
                 <small
@@ -4335,6 +4352,10 @@ function FlagworkSaveSection({
             label="Source files"
             value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
           />
+          <Metric
+            label="Save file"
+            value={workflow?.stats.hasSaveFile ? 'Configured' : 'Not set'}
+          />
         </div>
 
         {workflow ? (
@@ -4397,7 +4418,11 @@ function FlagworkSaveSection({
               </div>
             </div>
 
-            <SelectedFlagworkSavePanel flag={selectedFlag} saveBlock={selectedSaveBlock} />
+            <SelectedFlagworkSavePanel
+              flag={selectedFlag}
+              saveBlock={selectedSaveBlock}
+              saveFile={workflow.saveFile}
+            />
           </div>
         ) : (
           <p className="empty-copy">
@@ -4413,10 +4438,12 @@ function FlagworkSaveSection({
 
 function SelectedFlagworkSavePanel({
   flag,
-  saveBlock
+  saveBlock,
+  saveFile
 }: {
   flag: FlagRecord | null;
   saveBlock: SaveBlockRecord | null;
+  saveFile: SaveFileRecord | null;
 }) {
   const provenance = saveBlock?.provenance ?? flag?.provenance ?? null;
 
@@ -4427,7 +4454,7 @@ function SelectedFlagworkSavePanel({
         <h3>Selected Save Key</h3>
       </div>
 
-      {flag || saveBlock ? (
+      {flag || saveBlock || saveFile ? (
         <>
           <dl className="item-provenance-list">
             <div>
@@ -4470,6 +4497,18 @@ function SelectedFlagworkSavePanel({
               <dt>File state</dt>
               <dd>{provenance ? formatFileState(provenance.fileState) : 'n/a'}</dd>
             </div>
+            <div>
+              <dt>Save file</dt>
+              <dd>{saveFile?.fileName ?? 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Save size</dt>
+              <dd>{saveFile ? formatByteCount(saveFile.sizeBytes) : 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Save status</dt>
+              <dd>{saveFile?.status ?? 'n/a'}</dd>
+            </div>
           </dl>
 
           <div className="encounter-edit-form">
@@ -4485,6 +4524,10 @@ function SelectedFlagworkSavePanel({
               <div>
                 <dt>Default</dt>
                 <dd>{flag?.defaultValue ?? 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>Save SHA-256</dt>
+                <dd>{saveFile?.sha256 ?? 'n/a'}</dd>
               </div>
             </dl>
           </div>
@@ -6383,8 +6426,13 @@ function toProjectPaths(draftPaths: ProjectPathDraft) {
   return {
     baseExeFsPath: normalizeDraftPath(draftPaths.baseExeFsPath),
     baseRomFsPath: normalizeDraftPath(draftPaths.baseRomFsPath),
-    outputRootPath: normalizeDraftPath(draftPaths.outputRootPath)
+    outputRootPath: normalizeDraftPath(draftPaths.outputRootPath),
+    saveFilePath: normalizeDraftPath(draftPaths.saveFilePath)
   };
+}
+
+function formatByteCount(value: number) {
+  return `${value.toLocaleString()} bytes`;
 }
 
 function normalizeDraftPath(path: string) {

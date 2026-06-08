@@ -6,6 +6,7 @@ using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
 
 namespace KM.SwSh.Flagwork;
 
@@ -41,17 +42,30 @@ public sealed class SwShFlagworkSaveWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShFlagRecord>(), Array.Empty<SwShSaveBlockRecord>(), sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShFlagRecord>(),
+                Array.Empty<SwShSaveBlockRecord>(),
+                saveFile: null,
+                sourceFileCount: 0,
+                diagnostics);
         }
 
         var sources = ResolveFlagworkSources(project).ToArray();
+        var saveFile = ResolveSaveFile(project.Paths, diagnostics);
         if (sources.Length == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
                 "Flagwork tables are not available for this project.",
                 expected: $"{FlagworkRootPath}/*.tbl"));
-            return CreateWorkflow(summary, Array.Empty<SwShFlagRecord>(), Array.Empty<SwShSaveBlockRecord>(), sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShFlagRecord>(),
+                Array.Empty<SwShSaveBlockRecord>(),
+                saveFile,
+                sourceFileCount: 0,
+                diagnostics);
         }
 
         var flags = new List<SwShFlagRecord>();
@@ -145,6 +159,7 @@ public sealed class SwShFlagworkSaveWorkflowService
                 .ThenBy(saveBlock => saveBlock.Key, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(saveBlock => saveBlock.Name, StringComparer.OrdinalIgnoreCase)
                 .ToArray(),
+            saveFile,
             sources.Length,
             diagnostics);
     }
@@ -169,6 +184,7 @@ public sealed class SwShFlagworkSaveWorkflowService
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShFlagRecord> flags,
         IReadOnlyList<SwShSaveBlockRecord> saveBlocks,
+        SwShSaveFileRecord? saveFile,
         int sourceFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
@@ -176,11 +192,75 @@ public sealed class SwShFlagworkSaveWorkflowService
             summary,
             flags,
             saveBlocks,
+            saveFile,
             new SwShFlagworkSaveWorkflowStats(
                 flags.Count,
                 saveBlocks.Count,
-                sourceFileCount),
+                sourceFileCount,
+                saveFile is not null),
             diagnostics);
+    }
+
+    private static SwShSaveFileRecord? ResolveSaveFile(
+        ProjectPaths paths,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (string.IsNullOrWhiteSpace(paths.SaveFilePath))
+        {
+            return null;
+        }
+
+        if (Directory.Exists(paths.SaveFilePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Save file path points to a directory.",
+                file: paths.SaveFilePath,
+                expected: "Readable save file"));
+            return null;
+        }
+
+        if (!File.Exists(paths.SaveFilePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Save file is configured but could not be found.",
+                file: paths.SaveFilePath,
+                expected: "Readable save file"));
+            return null;
+        }
+
+        try
+        {
+            var fileInfo = new FileInfo(paths.SaveFilePath);
+            using var stream = File.OpenRead(paths.SaveFilePath);
+            var hash = Convert.ToHexString(SHA256.HashData(stream));
+            var fileName = Path.GetFileName(paths.SaveFilePath);
+            return new SwShSaveFileRecord(
+                fileName,
+                fileInfo.Length,
+                hash,
+                "available",
+                "Save file is configured for read-only inspection.");
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Save file could not be read: {exception.Message}",
+                file: paths.SaveFilePath,
+                expected: "Readable save file"));
+            return null;
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Save file could not be read: {exception.Message}",
+                file: paths.SaveFilePath,
+                expected: "Readable save file"));
+            return null;
+        }
     }
 
     private static string? ResolveSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)

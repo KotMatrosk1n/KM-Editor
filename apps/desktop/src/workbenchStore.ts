@@ -43,6 +43,7 @@ export type ProjectPathDraft = {
   baseExeFsPath: string;
   baseRomFsPath: string;
   outputRootPath: string;
+  saveFilePath: string;
 };
 
 const projectPathDraftStorageKey = 'km-editor.project-path-draft.v1';
@@ -575,7 +576,8 @@ function loadProjectPathDraft(): ProjectPathDraft {
       baseRomFsPath:
         typeof parsedValue.baseRomFsPath === 'string' ? parsedValue.baseRomFsPath : '',
       outputRootPath:
-        typeof parsedValue.outputRootPath === 'string' ? parsedValue.outputRootPath : ''
+        typeof parsedValue.outputRootPath === 'string' ? parsedValue.outputRootPath : '',
+      saveFilePath: typeof parsedValue.saveFilePath === 'string' ? parsedValue.saveFilePath : ''
     };
   } catch {
     return emptyDraft;
@@ -598,6 +600,7 @@ function createEmptyProjectPathDraft(): ProjectPathDraft {
   return {
     baseExeFsPath: '',
     baseRomFsPath: '',
-    outputRootPath: ''
+    outputRootPath: '',
+    saveFilePath: ''
   };
 }

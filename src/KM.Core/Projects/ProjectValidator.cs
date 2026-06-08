@@ -29,6 +29,7 @@ public sealed class ProjectValidator
         var baseRomFs = ValidateRequiredDirectory(ProjectPathRole.BaseRomFs, paths.BaseRomFsPath, "Base RomFS");
         var baseExeFs = ValidateRequiredDirectory(ProjectPathRole.BaseExeFs, paths.BaseExeFsPath, "Base ExeFS");
         var outputRoot = ValidateOptionalOutputRoot(paths.OutputRootPath);
+        var saveFile = ValidateOptionalSaveFile(paths.SaveFilePath);
 
         AddBasePathSafetyDiagnostics(baseRomFs, baseExeFs);
         AddOutputRootSafetyDiagnostics(outputRoot, baseRomFs, baseExeFs);
@@ -38,6 +39,7 @@ public sealed class ProjectValidator
             baseRomFs.ToResult(),
             baseExeFs.ToResult(),
             outputRoot.ToResult(),
+            saveFile.ToResult(),
         };
         var diagnostics = pathResults.SelectMany(result => result.Diagnostics).ToArray();
         var state = ResolveHealthState(baseRomFs, baseExeFs, outputRoot);
@@ -81,7 +83,9 @@ public sealed class ProjectValidator
             return ProjectHealthState.NeedsPaths;
         }
 
-        if (baseRomFs.HasBlockingError || baseExeFs.HasBlockingError || outputRoot.HasBlockingError)
+        if (baseRomFs.HasBlockingError
+            || baseExeFs.HasBlockingError
+            || outputRoot.HasBlockingError)
         {
             return ProjectHealthState.Blocked;
         }
@@ -125,6 +129,40 @@ public sealed class ProjectValidator
                 DiagnosticSeverity.Error,
                 $"{label} path does not exist.",
                 expected: "Existing directory");
+            return draft;
+        }
+
+        draft.Status = ProjectPathStatus.Valid;
+        return draft;
+    }
+
+    private static PathValidationDraft ValidateOptionalSaveFile(string? path)
+    {
+        var draft = new PathValidationDraft(ProjectPathRole.SaveFile, path, isRequired: false);
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            draft.Status = ProjectPathStatus.NotSet;
+            return draft;
+        }
+
+        if (Directory.Exists(path))
+        {
+            draft.Status = ProjectPathStatus.WrongKind;
+            draft.AddDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Save file path must be a file.",
+                expected: "Readable save file");
+            return draft;
+        }
+
+        if (!File.Exists(path))
+        {
+            draft.Status = ProjectPathStatus.Missing;
+            draft.AddDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Save file does not exist; save-file inspection is disabled until it is created or changed.",
+                expected: "Readable save file");
             return draft;
         }
 

@@ -109,7 +109,8 @@ describe('bridge contracts', () => {
         paths: {
           baseExeFsPath: 'base-exefs',
           baseRomFsPath: 'base-romfs',
-          outputRootPath: null
+          outputRootPath: null,
+          saveFilePath: null
         }
       },
       requestId: 'request-1'
@@ -173,7 +174,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -194,7 +196,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           }
         }
       }).success
@@ -681,7 +684,15 @@ describe('bridge contracts', () => {
           valueKind: 'integer'
         }
       ],
+      saveFile: {
+        description: 'Save file is configured for read-only inspection.',
+        fileName: 'main',
+        sha256: '01020304',
+        sizeBytes: 4,
+        status: 'available'
+      },
       stats: {
+        hasSaveFile: true,
         sourceFileCount: 2,
         totalFlagCount: 1,
         totalSaveBlockCount: 1
@@ -887,7 +898,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -920,7 +932,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -941,7 +954,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -962,7 +976,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -983,7 +998,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -1004,7 +1020,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -1025,7 +1042,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -1046,7 +1064,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -1067,7 +1086,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -1088,7 +1108,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -1109,7 +1130,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -1130,7 +1152,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: null
+            outputRootPath: null,
+            saveFilePath: null
           }
         }
       }).success
@@ -1151,7 +1174,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           },
           profileId: 'items-price-csv',
           session: null,
@@ -1715,7 +1739,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           }
         }
       }).success
@@ -1732,7 +1757,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           },
           session: editSession,
           value: '450'
@@ -1757,7 +1783,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           },
           session: editSession,
           textKey: 'romfs/bin/message/English/common/story.dat#0',
@@ -1784,7 +1811,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           },
           session: editSession,
           slot: 1,
@@ -1812,7 +1840,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           },
           session: editSession,
           shopId: 'single:1F3FF031A3A24490',
@@ -1840,7 +1869,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           },
           session: editSession,
           slot: 2,
@@ -1869,7 +1899,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           },
           session: editSession,
           value: '5'
@@ -1894,7 +1925,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           },
           session: editSession
         }
@@ -1924,7 +1956,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           },
           session: editSession
         }
@@ -1947,7 +1980,8 @@ describe('bridge contracts', () => {
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
-            outputRootPath: 'output'
+            outputRootPath: 'output',
+            saveFilePath: null
           },
           session: editSession
         }
