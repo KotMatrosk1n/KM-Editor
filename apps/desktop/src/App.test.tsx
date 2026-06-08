@@ -9,6 +9,7 @@ import {
   type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
+  type ItemRecord,
   type ItemsWorkflow,
   type MovesWorkflow,
   type PlacementWorkflow,
@@ -1391,7 +1392,7 @@ function createItemDetailGroups(metadata = createItemMetadata()) {
   ];
 }
 
-function createItemMetadata() {
+function createItemMetadata(): ItemRecord['metadata'] {
   return {
     boost0: 0,
     boost1: 0,
@@ -1416,6 +1417,9 @@ function createItemMetadata() {
     healAmount: 20,
     itemSprite: 12,
     itemType: 9,
+    machineMoveId: null,
+    machineMoveName: null,
+    machineSlot: null,
     pouch: 0,
     pouchFlags: 0,
     ppGain: 0,

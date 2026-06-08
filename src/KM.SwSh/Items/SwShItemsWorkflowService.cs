@@ -40,6 +40,7 @@ public sealed class SwShItemsWorkflowService
     public const string FriendshipGain1Field = "friendshipGain1";
     public const string FriendshipGain2Field = "friendshipGain2";
     public const string FriendshipGain3Field = "friendshipGain3";
+    public const string MachineMoveIdField = "machineMoveId";
     public const int MaximumBuyPrice = 999_999;
     public const int MaximumSellPrice = MaximumBuyPrice / 2;
     public const int MaximumWattsPrice = 999_999;
@@ -49,8 +50,10 @@ public sealed class SwShItemsWorkflowService
     public const int MaximumPouchFlagsValue = 0x0F;
     public const int MinimumSignedByteValue = sbyte.MinValue;
     public const int MaximumSignedByteValue = sbyte.MaxValue;
+    public const int MaximumMoveId = ushort.MaxValue;
     public const string ItemDataPath = SwShItemTable.ItemDataRelativePath;
     public const string EnglishItemNamePath = "romfs/bin/message/English/common/itemname.dat";
+    public const string EnglishMoveNamePath = "romfs/bin/message/English/common/wazaname.dat";
 
     private const int TechnicalRecordMachineGroup = 4;
     private const int TechnicalRecordFieldUseType = 2;
@@ -80,7 +83,7 @@ public sealed class SwShItemsWorkflowService
         new SwShItemEditableFieldOption(15, "Form Change"),
     ];
 
-    private static readonly IReadOnlyList<SwShItemEditableField> EditableFields =
+    private static readonly IReadOnlyList<SwShItemEditableField> BaseEditableFields =
     [
         new SwShItemEditableField(
             BuyPriceField,
@@ -315,7 +318,12 @@ public sealed class SwShItemsWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShItemRecord>(),
+                CreateEditableFields(Array.Empty<string>()),
+                sourceFileCount: 0,
+                diagnostics);
         }
 
         var itemDataSource = ResolveWorkflowFile(project, ItemDataPath);
@@ -325,13 +333,23 @@ public sealed class SwShItemsWorkflowService
                 DiagnosticSeverity.Warning,
                 "Items data is not available for this project.",
                 expected: ItemDataPath));
-            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShItemRecord>(),
+                CreateEditableFields(Array.Empty<string>()),
+                sourceFileCount: 0,
+                diagnostics);
         }
 
         var itemNamesSource = ResolveItemNamesSource(project, diagnostics);
         var itemNames = itemNamesSource is null
             ? Array.Empty<string>()
             : LoadItemNames(itemNamesSource, diagnostics);
+        var moveNamesSource = ResolveMoveNamesSource(project);
+        var moveNames = moveNamesSource is null
+            ? Array.Empty<string>()
+            : LoadMoveNames(moveNamesSource, diagnostics);
+        var editableFields = CreateEditableFields(moveNames);
 
         try
         {
@@ -339,11 +357,13 @@ public sealed class SwShItemsWorkflowService
             var provenance = CreateProvenance(itemDataSource.GraphEntry);
             var items = itemTable.Records
                 .OrderBy(item => item.ItemId)
-                .Select(item => ToItemRecord(item, itemNames, provenance))
+                .Select(item => ToItemRecord(item, itemNames, moveNames, provenance))
                 .ToArray();
-            var sourceFileCount = itemNamesSource is null ? 1 : 2;
+            var sourceFileCount = 1
+                + (itemNamesSource is null ? 0 : 1)
+                + (moveNamesSource is null ? 0 : 1);
 
-            return CreateWorkflow(summary, items, sourceFileCount, diagnostics);
+            return CreateWorkflow(summary, items, editableFields, sourceFileCount, diagnostics);
         }
         catch (InvalidDataException exception)
         {
@@ -352,7 +372,7 @@ public sealed class SwShItemsWorkflowService
                 $"Items data source is not a supported Sword/Shield item table: {exception.Message}",
                 file: itemDataSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield item.dat"));
-            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), editableFields, sourceFileCount: 1, diagnostics);
         }
         catch (IOException exception)
         {
@@ -361,7 +381,7 @@ public sealed class SwShItemsWorkflowService
                 $"Items data source could not be read: {exception.Message}",
                 file: itemDataSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield item.dat"));
-            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShItemRecord>(), editableFields, sourceFileCount: 1, diagnostics);
         }
     }
 
@@ -398,13 +418,14 @@ public sealed class SwShItemsWorkflowService
     private static SwShItemsWorkflow CreateWorkflow(
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShItemRecord> items,
+        IReadOnlyList<SwShItemEditableField> editableFields,
         int sourceFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         return new SwShItemsWorkflow(
             summary,
             items,
-            EditableFields,
+            editableFields,
             new SwShItemsWorkflowStats(items.Count, sourceFileCount),
             diagnostics);
     }
@@ -476,6 +497,71 @@ public sealed class SwShItemsWorkflowService
         }
     }
 
+    private static WorkflowFileSource? ResolveMoveNamesSource(OpenedProject project)
+    {
+        return ResolveWorkflowFile(project, EnglishMoveNamePath);
+    }
+
+    private static string[] LoadMoveNames(
+        WorkflowFileSource moveNamesSource,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        try
+        {
+            return SwShGameTextFile.Parse(File.ReadAllBytes(moveNamesSource.AbsolutePath))
+                .Lines
+                .Select(line => line.Text)
+                .ToArray();
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Move name table could not be decoded: {exception.Message}",
+                file: moveNamesSource.GraphEntry.RelativePath,
+                expected: "Sword/Shield wazaname.dat"));
+            return Array.Empty<string>();
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Move name table could not be read: {exception.Message}",
+                file: moveNamesSource.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield wazaname.dat"));
+            return Array.Empty<string>();
+        }
+    }
+
+    private static IReadOnlyList<SwShItemEditableField> CreateEditableFields(IReadOnlyList<string> moveNames)
+    {
+        return BaseEditableFields
+            .Append(new SwShItemEditableField(
+                MachineMoveIdField,
+                "Taught move",
+                "integer",
+                MinimumValue: 0,
+                MaximumValue: MaximumMoveId,
+                Options: CreateMoveOptions(moveNames)))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SwShItemEditableFieldOption> CreateMoveOptions(IReadOnlyList<string> moveNames)
+    {
+        if (moveNames.Count == 0)
+        {
+            return [];
+        }
+
+        return moveNames
+            .Select((name, moveId) => new { name, moveId })
+            .Where(move => move.moveId == 0 || !string.IsNullOrWhiteSpace(move.name))
+            .Select(move => new SwShItemEditableFieldOption(
+                move.moveId,
+                FormatMoveOptionLabel(move.moveId, GetMoveName(move.moveId, moveNames))))
+            .ToArray();
+    }
+
     private static WorkflowFileSource? ResolveWorkflowFile(OpenedProject project, string relativePath)
     {
         var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
@@ -532,9 +618,10 @@ public sealed class SwShItemsWorkflowService
     private static SwShItemRecord ToItemRecord(
         SwShItemTableRecord item,
         IReadOnlyList<string> itemNames,
+        IReadOnlyList<string> moveNames,
         SwShItemProvenance provenance)
     {
-        var metadata = CreateMetadata(item);
+        var metadata = CreateMetadata(item, moveNames);
 
         return new SwShItemRecord(
             item.ItemId,
@@ -550,7 +637,9 @@ public sealed class SwShItemsWorkflowService
             provenance);
     }
 
-    private static SwShItemMetadata CreateMetadata(SwShItemTableRecord item)
+    private static SwShItemMetadata CreateMetadata(
+        SwShItemTableRecord item,
+        IReadOnlyList<string> moveNames)
     {
         return new SwShItemMetadata(
             (int)item.Pouch,
@@ -581,7 +670,10 @@ public sealed class SwShItemsWorkflowService
             item.PpGain,
             item.FriendshipGain1,
             item.FriendshipGain2,
-            item.FriendshipGain3);
+            item.FriendshipGain3,
+            item.MachineSlot,
+            item.MachineMoveId,
+            item.MachineMoveId is null ? null : GetMoveName(item.MachineMoveId.Value, moveNames));
     }
 
     private static string GetItemName(int itemId, IReadOnlyList<string> itemNames)
@@ -592,6 +684,21 @@ public sealed class SwShItemsWorkflowService
         }
 
         return $"Item {itemId}";
+    }
+
+    internal static string GetMoveName(int moveId, IReadOnlyList<string> moveNames)
+    {
+        if ((uint)moveId < (uint)moveNames.Count && !string.IsNullOrWhiteSpace(moveNames[moveId]))
+        {
+            return moveNames[moveId];
+        }
+
+        return $"Move {moveId.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    internal static string FormatMoveOptionLabel(int moveId, string moveName)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{moveId:000} {moveName}");
     }
 
     internal static string FormatPouch(int pouch)
@@ -728,9 +835,18 @@ public sealed class SwShItemsWorkflowService
 
         var isTr = item.GroupIndex >= TechnicalRecordTrSlotStart;
         var number = isTr ? item.GroupIndex - TechnicalRecordTrSlotStart : item.GroupIndex;
-        return string.Create(
+        var machineLabel = string.Create(
             CultureInfo.InvariantCulture,
             $"{(isTr ? "TR" : "TM")}{number:00} (slot {item.GroupIndex})");
+
+        if (item.MachineMoveId is null)
+        {
+            return $"{machineLabel}, move table unavailable";
+        }
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{machineLabel} -> {item.MachineMoveName ?? GetMoveName(item.MachineMoveId.Value, Array.Empty<string>())} ({item.MachineMoveId.Value})");
     }
 
     private static string FormatFlags(int value, params (int Flag, string Label)[] flags)

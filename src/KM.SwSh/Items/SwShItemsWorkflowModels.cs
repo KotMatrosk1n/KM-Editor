@@ -48,7 +48,10 @@ public sealed record SwShItemMetadata(
     int PpGain,
     int FriendshipGain1,
     int FriendshipGain2,
-    int FriendshipGain3);
+    int FriendshipGain3,
+    int? MachineSlot,
+    int? MachineMoveId,
+    string? MachineMoveName);
 
 public sealed record SwShItemRecord(
     int ItemId,

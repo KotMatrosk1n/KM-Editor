@@ -146,6 +146,49 @@ public sealed class SwShItemsEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateFieldAddsPendingMachineMoveEditAndPreviewsInspectorDetails()
+    {
+        using var temp = CreateEditableMachineProject();
+        var service = new SwShItemsEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.MachineMoveIdField,
+            value: "85");
+
+        Assert.Empty(result.Diagnostics);
+        Assert.True(result.Session.HasPendingChanges);
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal(SwShItemsEditSessionService.MachineMoveIdField, edit.Field);
+        Assert.Equal("85", edit.NewValue);
+        var item = result.Workflow.Items[1];
+        Assert.Equal(85, item.Metadata.MachineMoveId);
+        Assert.Equal("Thunderbolt", item.Metadata.MachineMoveName);
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Inventory").Details,
+            detail => detail.Label == "Machine" && detail.Value == "TM10 (slot 10) -> Thunderbolt (85)");
+    }
+
+    [Fact]
+    public void UpdateFieldRejectsMachineMoveForNonMachineItem()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.MachineMoveIdField,
+            value: "85");
+
+        Assert.False(result.Session.HasPendingChanges);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public void UpdateFieldRejectsUnsupportedItemField()
     {
         using var temp = CreateEditableProject();
@@ -348,6 +391,30 @@ public sealed class SwShItemsEditSessionServiceTests
     }
 
     [Fact]
+    public void ApplyChangePlanWritesMachineMoveToOutputRoot()
+    {
+        using var temp = CreateEditableMachineProject();
+        var service = new SwShItemsEditSessionService();
+        var editResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.MachineMoveIdField,
+            value: "85");
+        var changePlan = service.CreateChangePlan(temp.Paths, editResult.Session);
+
+        var applyResult = service.ApplyChangePlan(temp.Paths, editResult.Session, changePlan);
+
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
+        Assert.Single(changePlan.Writes);
+        Assert.Equal(10, item.MachineSlot);
+        Assert.Equal((ushort)85, item.MachineMoveId);
+        Assert.Equal(SwShItemPouch.TMs, item.Pouch);
+        Assert.DoesNotContain(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public void ApplyChangePlanRejectsStaleReviewedTargets()
     {
         using var temp = CreateEditableProject();
@@ -393,5 +460,45 @@ public sealed class SwShItemsEditSessionServiceTests
         temp.WriteBaseExeFsFile("main", "base-main");
 
         return temp;
+    }
+
+    private static TemporarySwShProject CreateEditableMachineProject()
+    {
+        var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/pml/item/item.dat",
+            SwShItemTestFixtures.CreateItemTableWithMachineMoves(
+                new Dictionary<int, int> { [10] = 345 },
+                new ItemFixtureRecord(0, 0, 0, 0, 0, SwShItemPouch.Items),
+                new ItemFixtureRecord(
+                    1,
+                    1,
+                    0,
+                    0,
+                    0,
+                    SwShItemPouch.TMs,
+                    FieldUseType: 2,
+                    GroupType: 4,
+                    GroupIndex: 10)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            SwShItemTestFixtures.CreateItemNames("None", "TM10 Magical Leaf"));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            CreateIndexedText(346, (85, "Thunderbolt"), (345, "Magical Leaf")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+
+        return temp;
+    }
+
+    private static byte[] CreateIndexedText(int count, params (int Index, string Text)[] entries)
+    {
+        var values = Enumerable.Repeat(string.Empty, count).ToArray();
+        foreach (var (index, text) in entries)
+        {
+            values[index] = text;
+        }
+
+        return SwShItemTestFixtures.CreateItemNames(values);
     }
 }
