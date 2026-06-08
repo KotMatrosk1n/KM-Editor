@@ -269,6 +269,12 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(65, pokemon.Abilities.Ability1);
         Assert.Equal(11, pokemon.Personal.Type1);
         Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "hp" && field.Group == "Base Stats");
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "ability1").Options,
+            option => option.Value == 65 && option.Label == "065 Overgrow");
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "hatchedSpecies").Options,
+            option => option.Value == 2 && option.Label == "002 Ivysaur");
         var tmGroup = pokemon.Compatibility.Single(group => group.GroupId == "tm");
         Assert.Equal(1, tmGroup.EnabledCount);
         var tm10 = tmGroup.Entries.Single(entry => entry.Slot == 10);
