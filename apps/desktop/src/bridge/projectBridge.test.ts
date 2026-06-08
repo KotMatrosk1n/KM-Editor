@@ -255,6 +255,22 @@ describe('projectBridge', () => {
                     total: 318
                   },
                   catchRate: 45,
+                  compatibility: [
+                    {
+                      enabledCount: 1,
+                      entries: [
+                        {
+                          canLearn: true,
+                          label: 'TM10 Magical Leaf',
+                          moveId: 345,
+                          moveName: 'Magical Leaf',
+                          slot: 10
+                        }
+                      ],
+                      groupId: 'tm',
+                      label: 'TMs'
+                    }
+                  ],
                   dexPresence: {
                     armorDexIndex: 0,
                     crownDexIndex: 0,

@@ -5,6 +5,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Workflows;
+using System.Globalization;
 
 namespace KM.SwSh.Pokemon;
 
@@ -61,6 +62,11 @@ public sealed class SwShPokemonWorkflowService
     public const string FormField = "form";
     public const string ArmorDexIndexField = "armorDexIndex";
     public const string CrownDexIndexField = "crownDexIndex";
+    public const string CompatibilityFieldPrefix = "compatibility";
+    public const string TechnicalMachineCompatibilityGroupId = "tm";
+    public const string TechnicalRecordCompatibilityGroupId = "tr";
+    public const string TypeTutorCompatibilityGroupId = "typeTutor";
+    public const string ArmorTutorCompatibilityGroupId = "armorTutor";
 
     private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> TypeOptions =
     [
@@ -126,6 +132,45 @@ public sealed class SwShPokemonWorkflowService
         CreateOption(7, "Gray"),
         CreateOption(8, "White"),
         CreateOption(9, "Pink"),
+    ];
+
+    private static readonly IReadOnlyList<int> TechnicalMachineMoveIds =
+    [
+        5, 25, 6, 7, 8, 9, 19, 42, 63, 416,
+        345, 76, 669, 83, 86, 91, 103, 113, 115, 219,
+        120, 156, 157, 168, 173, 182, 184, 196, 202, 204,
+        211, 213, 201, 240, 241, 258, 250, 251, 261, 263,
+        129, 270, 279, 280, 286, 291, 311, 313, 317, 328,
+        331, 333, 340, 341, 350, 362, 369, 371, 372, 374,
+        384, 385, 683, 409, 419, 421, 422, 423, 424, 427,
+        433, 472, 478, 440, 474, 490, 496, 506, 512, 514,
+        521, 523, 527, 534, 541, 555, 566, 577, 580, 581,
+        604, 678, 595, 598, 206, 403, 684, 693, 707, 784,
+    ];
+
+    private static readonly IReadOnlyList<int> TechnicalRecordMoveIds =
+    [
+        14, 34, 53, 56, 57, 58, 59, 67, 85, 87,
+        89, 94, 97, 116, 118, 126, 127, 133, 141, 161,
+        164, 179, 188, 191, 200, 473, 203, 214, 224, 226,
+        227, 231, 242, 247, 248, 253, 257, 269, 271, 276,
+        285, 299, 304, 315, 322, 330, 334, 337, 339, 347,
+        348, 349, 360, 370, 390, 394, 396, 398, 399, 402,
+        404, 405, 406, 408, 411, 412, 413, 414, 417, 428,
+        430, 437, 438, 441, 442, 444, 446, 447, 482, 484,
+        486, 492, 500, 502, 503, 526, 528, 529, 535, 542,
+        583, 599, 605, 663, 667, 675, 676, 706, 710, 776,
+    ];
+
+    private static readonly IReadOnlyList<int> TypeTutorMoveIds =
+    [
+        520, 519, 518, 338, 307, 308, 434, 796,
+    ];
+
+    private static readonly IReadOnlyList<int> ArmorTutorMoveIds =
+    [
+        805, 807, 812, 804, 803, 813, 811, 810, 815,
+        814, 797, 806, 800, 809, 799, 808, 798, 802,
     ];
 
     public static readonly IReadOnlyList<SwShPokemonEditableField> EditableFields =
@@ -477,6 +522,7 @@ public sealed class SwShPokemonWorkflowService
                     evolution.Level))
                 .ToArray()
             : [];
+        var compatibility = CreateCompatibilityGroups(personal, moveNames);
 
         return new SwShPokemonRecord(
             personal.PersonalId,
@@ -546,7 +592,74 @@ public sealed class SwShPokemonWorkflowService
             personal.Weight,
             evolutionRecords,
             learnset,
+            compatibility,
             provenance);
+    }
+
+    private static IReadOnlyList<SwShPokemonCompatibilityGroup> CreateCompatibilityGroups(
+        SwShPersonalRecord personal,
+        IReadOnlyList<string> moveNames)
+    {
+        return
+        [
+            CreateCompatibilityGroup(
+                TechnicalMachineCompatibilityGroupId,
+                "TMs",
+                TechnicalMachineMoveIds,
+                personal.TechnicalMachines,
+                moveNames,
+                slot => $"TM{slot:00}"),
+            CreateCompatibilityGroup(
+                TechnicalRecordCompatibilityGroupId,
+                "TRs",
+                TechnicalRecordMoveIds,
+                personal.TechnicalRecords,
+                moveNames,
+                slot => $"TR{slot:00}"),
+            CreateCompatibilityGroup(
+                TypeTutorCompatibilityGroupId,
+                "Type Tutors",
+                TypeTutorMoveIds,
+                personal.TypeTutors,
+                moveNames),
+            CreateCompatibilityGroup(
+                ArmorTutorCompatibilityGroupId,
+                "Armor Tutors",
+                ArmorTutorMoveIds,
+                personal.ArmorTutors,
+                moveNames),
+        ];
+    }
+
+    private static SwShPokemonCompatibilityGroup CreateCompatibilityGroup(
+        string groupId,
+        string label,
+        IReadOnlyList<int> moveIds,
+        IReadOnlyList<bool> flags,
+        IReadOnlyList<string> moveNames,
+        Func<int, string>? slotLabelFactory = null)
+    {
+        var entries = moveIds
+            .Select((moveId, slot) =>
+            {
+                var moveName = GetIndexedName(moveId, moveNames, "Move");
+                var slotLabel = slotLabelFactory?.Invoke(slot);
+                var entryLabel = slotLabel is null ? moveName : $"{slotLabel} {moveName}";
+
+                return new SwShPokemonCompatibilityEntry(
+                    slot,
+                    moveId,
+                    moveName,
+                    entryLabel,
+                    flags[slot]);
+            })
+            .ToArray();
+
+        return new SwShPokemonCompatibilityGroup(
+            groupId,
+            label,
+            entries.Count(entry => entry.CanLearn),
+            entries);
     }
 
     private static int ResolveSpeciesId(SwShPersonalRecord personal)
@@ -577,6 +690,50 @@ public sealed class SwShPokemonWorkflowService
     {
         return EditableFields.FirstOrDefault(editableField =>
             string.Equals(editableField.Field, field, StringComparison.Ordinal));
+    }
+
+    public static string CreateCompatibilityFieldId(string groupId, int slot)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{CompatibilityFieldPrefix}:{groupId}:{slot}");
+    }
+
+    public static bool TryParseCompatibilityField(
+        string? field,
+        out string groupId,
+        out int slot)
+    {
+        groupId = string.Empty;
+        slot = -1;
+
+        if (string.IsNullOrWhiteSpace(field))
+        {
+            return false;
+        }
+
+        var parts = field.Split(':');
+        if (parts.Length != 3
+            || !string.Equals(parts[0], CompatibilityFieldPrefix, StringComparison.Ordinal)
+            || !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out slot))
+        {
+            return false;
+        }
+
+        groupId = parts[1];
+        return IsValidCompatibilitySlot(groupId, slot);
+    }
+
+    public static bool IsValidCompatibilitySlot(string groupId, int slot)
+    {
+        return groupId switch
+        {
+            TechnicalMachineCompatibilityGroupId => (uint)slot < (uint)TechnicalMachineMoveIds.Count,
+            TechnicalRecordCompatibilityGroupId => (uint)slot < (uint)TechnicalRecordMoveIds.Count,
+            TypeTutorCompatibilityGroupId => (uint)slot < (uint)TypeTutorMoveIds.Count,
+            ArmorTutorCompatibilityGroupId => (uint)slot < (uint)ArmorTutorMoveIds.Count,
+            _ => false,
+        };
     }
 
     internal static WorkflowFileSource? ResolvePersonalDataSource(OpenedProject project)

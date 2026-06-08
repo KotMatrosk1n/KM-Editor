@@ -369,6 +369,22 @@ describe('bridge contracts', () => {
             total: 318
           },
           catchRate: 45,
+          compatibility: [
+            {
+              enabledCount: 1,
+              entries: [
+                {
+                  canLearn: true,
+                  label: 'TM10 Magical Leaf',
+                  moveId: 345,
+                  moveName: 'Magical Leaf',
+                  slot: 10
+                }
+              ],
+              groupId: 'tm',
+              label: 'TMs'
+            }
+          ],
           dexPresence: {
             armorDexIndex: 0,
             crownDexIndex: 0,
@@ -1729,6 +1745,22 @@ describe('bridge contracts', () => {
             total: 372
           },
           catchRate: 45,
+          compatibility: [
+            {
+              enabledCount: 0,
+              entries: [
+                {
+                  canLearn: false,
+                  label: 'TR00 Swords Dance',
+                  moveId: 14,
+                  moveName: 'Swords Dance',
+                  slot: 0
+                }
+              ],
+              groupId: 'tr',
+              label: 'TRs'
+            }
+          ],
           dexPresence: {
             armorDexIndex: 0,
             crownDexIndex: 0,

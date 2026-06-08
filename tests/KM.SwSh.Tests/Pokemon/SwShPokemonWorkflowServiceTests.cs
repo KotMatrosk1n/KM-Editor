@@ -42,6 +42,13 @@ public sealed class SwShPokemonWorkflowServiceTests
         Assert.Equal(ProjectFileLayer.Base, pokemon.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.BaseOnly, pokemon.Provenance.FileState);
         Assert.Equal(SwShPokemonWorkflowService.PersonalDataPath, pokemon.Provenance.SourceFile);
+        var tmGroup = pokemon.Compatibility.Single(group => group.GroupId == SwShPokemonWorkflowService.TechnicalMachineCompatibilityGroupId);
+        Assert.Equal(1, tmGroup.EnabledCount);
+        var tm10 = tmGroup.Entries.Single(entry => entry.Slot == 10);
+        Assert.Equal("TM10 Magical Leaf", tm10.Label);
+        Assert.True(tm10.CanLearn);
+        var typeTutorGroup = pokemon.Compatibility.Single(group => group.GroupId == SwShPokemonWorkflowService.TypeTutorCompatibilityGroupId);
+        Assert.True(typeTutorGroup.Entries[0].CanLearn);
         var evolution = Assert.Single(pokemon.Evolutions);
         Assert.Equal(4, evolution.Method);
         Assert.Equal(2, evolution.Species);
@@ -160,10 +167,18 @@ public sealed class SwShPokemonWorkflowServiceTests
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x22), 64);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x24), 7);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x26), 69);
+        SetFlag(record, 0x28, 10);
+        SetFlag(record, 0x38, 0);
+        SetFlag(record, 0xA8, 1);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x56), 1);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5C), 1);
 
         return record;
+    }
+
+    internal static void SetFlag(byte[] data, int offset, int bitIndex)
+    {
+        data[offset + (bitIndex / 8)] |= (byte)(1 << (bitIndex % 8));
     }
 
     internal static byte[] CreateLearnsetTable(params (ushort MoveId, ushort Level)[][] learnsets)
@@ -207,11 +222,15 @@ public sealed class SwShPokemonWorkflowServiceTests
 
     private static byte[] CreateIndexedMoveNames()
     {
-        var names = Enumerable.Range(0, 46)
+        var names = Enumerable.Range(0, 521)
             .Select(index => $"Move {index}")
             .ToArray();
+        names[5] = "Mega Punch";
+        names[14] = "Swords Dance";
         names[33] = "Tackle";
         names[45] = "Growl";
+        names[345] = "Magical Leaf";
+        names[520] = "Grass Pledge";
 
         return CreateTextTable(names);
     }

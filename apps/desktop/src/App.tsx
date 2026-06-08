@@ -53,6 +53,7 @@ import {
   type MoveEditableField,
   type MoveRecord,
   type MovesWorkflow,
+  type PokemonCompatibilityGroup,
   type PokemonEditableField,
   type PokemonRecord,
   type PokemonWorkflow,
@@ -2689,6 +2690,10 @@ function SelectedPokemonPanel({
   const draftState =
     pokemon && selectedField ? getPokemonDraftState(pokemon, selectedField) : null;
   const [draftValue, setDraftValue] = useState(draftState?.value ?? '');
+  const [selectedCompatibilityGroupId, setSelectedCompatibilityGroupId] = useState(
+    pokemon?.compatibility[0]?.groupId ?? ''
+  );
+  const [compatibilitySearchText, setCompatibilitySearchText] = useState('');
 
   useEffect(() => {
     if (!selectedField && editableFields[0]) {
@@ -2700,11 +2705,37 @@ function SelectedPokemonPanel({
     setDraftValue(draftState?.value ?? '');
   }, [draftState?.field, draftState?.recordId, draftState?.value]);
 
+  useEffect(() => {
+    if (!pokemon) {
+      setSelectedCompatibilityGroupId('');
+      return;
+    }
+
+    if (
+      pokemon.compatibility.length > 0 &&
+      !pokemon.compatibility.some((group) => group.groupId === selectedCompatibilityGroupId)
+    ) {
+      setSelectedCompatibilityGroupId(pokemon.compatibility[0].groupId);
+    }
+  }, [pokemon, selectedCompatibilityGroupId]);
+
   const isBooleanField = selectedField?.valueKind === 'boolean';
   const isOptionField = Boolean(selectedField && selectedField.options.length > 0);
   const canSubmit =
     Boolean(pokemon && selectedField && editSession && canEditPokemon) &&
     (isBooleanField || draftValue.trim().length > 0);
+  const selectedCompatibilityGroup =
+    pokemon?.compatibility.find((group) => group.groupId === selectedCompatibilityGroupId) ??
+    pokemon?.compatibility[0] ??
+    null;
+  const filteredCompatibilityEntries = useMemo(
+    () =>
+      selectedCompatibilityGroup
+        ? filterPokemonCompatibilityEntries(selectedCompatibilityGroup, compatibilitySearchText)
+        : [],
+    [compatibilitySearchText, selectedCompatibilityGroup]
+  );
+  const canToggleCompatibility = canEditPokemon && editSession !== null && !isPokemonUpdating;
 
   return (
     <aside aria-label="Selected Pokemon provenance" className="item-inspector">
@@ -2908,6 +2939,71 @@ function SelectedPokemonPanel({
                 <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
               </button>
             ) : null}
+          </div>
+
+          <div className="inspector-block">
+            <h4>Compatibility</h4>
+            {pokemon.compatibility.length > 0 ? (
+              <div className="compatibility-editor">
+                <div className="compatibility-controls">
+                  <label className="path-field">
+                    <span>Compatibility group</span>
+                    <select
+                      onChange={(event) => setSelectedCompatibilityGroupId(event.target.value)}
+                      value={selectedCompatibilityGroup?.groupId ?? ''}
+                    >
+                      {pokemon.compatibility.map((group) => (
+                        <option key={group.groupId} value={group.groupId}>
+                          {group.label} ({group.enabledCount}/{group.entries.length})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="search-box compatibility-search">
+                    <Search aria-hidden="true" size={16} />
+                    <input
+                      aria-label="Search compatibility"
+                      onChange={(event) => setCompatibilitySearchText(event.target.value)}
+                      placeholder="Search compatibility"
+                      type="search"
+                      value={compatibilitySearchText}
+                    />
+                  </label>
+                </div>
+                <ul className="compatibility-list">
+                  {filteredCompatibilityEntries.map((entry) => (
+                    <li key={`${selectedCompatibilityGroup?.groupId}-${entry.slot}`}>
+                      <label className="compatibility-toggle">
+                        <input
+                          checked={entry.canLearn}
+                          disabled={!canToggleCompatibility}
+                          onChange={(event) => {
+                            if (pokemon && selectedCompatibilityGroup) {
+                              onUpdatePokemonField(
+                                pokemon.personalId,
+                                createPokemonCompatibilityFieldName(
+                                  selectedCompatibilityGroup.groupId,
+                                  entry.slot
+                                ),
+                                event.target.checked ? '1' : '0'
+                              );
+                            }
+                          }}
+                          type="checkbox"
+                        />
+                        <span>{entry.label}</span>
+                        <small>{entry.moveId}</small>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                {filteredCompatibilityEntries.length === 0 ? (
+                  <p className="empty-copy">No compatibility entries matched.</p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="empty-copy">No compatibility data.</p>
+            )}
           </div>
 
           <div className="inspector-block">
@@ -6808,6 +6904,18 @@ function filterPokemon(pokemon: PokemonRecord[], searchText: string) {
       record.abilities.ability2.toString(),
       record.abilities.hiddenAbility.toString(),
       record.provenance.sourceFile,
+      ...record.compatibility.flatMap((group) => [
+        group.groupId,
+        group.label,
+        group.enabledCount.toString(),
+        ...group.entries.flatMap((entry) => [
+          entry.slot.toString(),
+          entry.moveId.toString(),
+          entry.moveName,
+          entry.label,
+          entry.canLearn ? 'enabled' : 'disabled'
+        ])
+      ]),
       ...record.evolutions.flatMap((evolution) => [
         evolution.method.toString(),
         evolution.argument.toString(),
@@ -6822,6 +6930,31 @@ function filterPokemon(pokemon: PokemonRecord[], searchText: string) {
       ])
     ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
   );
+}
+
+function filterPokemonCompatibilityEntries(
+  group: PokemonCompatibilityGroup,
+  searchText: string
+) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return group.entries;
+  }
+
+  return group.entries.filter((entry) =>
+    [
+      entry.slot.toString(),
+      entry.moveId.toString(),
+      entry.moveName,
+      entry.label,
+      entry.canLearn ? 'enabled' : 'disabled'
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
+function createPokemonCompatibilityFieldName(groupId: string, slot: number) {
+  return `compatibility:${groupId}:${slot}`;
 }
 
 function filterMoves(moves: MoveRecord[], searchText: string) {

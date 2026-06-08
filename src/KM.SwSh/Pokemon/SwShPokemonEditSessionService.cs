@@ -223,7 +223,7 @@ public sealed class SwShPokemonEditSessionService
                     continue;
                 }
 
-                if (TryParseEditableValue(edit.Field, edit.NewValue, diagnostics) is not { } value)
+                if (TryParseEditableValue(null, edit.Field, edit.NewValue, diagnostics) is not { } value)
                 {
                     continue;
                 }
@@ -308,8 +308,7 @@ public sealed class SwShPokemonEditSessionService
             return;
         }
 
-        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId)
-            || workflow.Pokemon.All(pokemon => pokemon.PersonalId != personalId))
+        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -319,7 +318,18 @@ public sealed class SwShPokemonEditSessionService
             return;
         }
 
-        TryParseEditableValue(edit.Field, edit.NewValue, diagnostics);
+        var pokemon = workflow.Pokemon.FirstOrDefault(pokemon => pokemon.PersonalId == personalId);
+        if (pokemon is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon Data edit targets a record that is not loaded.",
+                field: "personalId",
+                expected: "Existing Pokemon personal record"));
+            return;
+        }
+
+        TryParseEditableValue(pokemon, edit.Field, edit.NewValue, diagnostics);
     }
 
     private static PendingEdit? CreatePendingEdit(
@@ -329,7 +339,7 @@ public sealed class SwShPokemonEditSessionService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
-        var parsedValue = TryParseEditableValue(normalizedField, value, diagnostics);
+        var parsedValue = TryParseEditableValue(selectedPokemon, normalizedField, value, diagnostics);
         if (parsedValue is null)
         {
             return null;
@@ -345,10 +355,33 @@ public sealed class SwShPokemonEditSessionService
     }
 
     private static int? TryParseEditableValue(
+        SwShPokemonRecord? pokemon,
         string? field,
         string? value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        if (SwShPokemonWorkflowService.TryParseCompatibilityField(field, out var groupId, out var slot))
+        {
+            var entry = pokemon is null ? null : GetCompatibilityEntry(pokemon, groupId, slot);
+            if (pokemon is not null && entry is null)
+            {
+                diagnostics.Add(CreateUnsupportedFieldDiagnostic(field ?? "(missing)"));
+                return null;
+            }
+
+            if (!TryParseBooleanValue(value, out var compatibilityBooleanValue))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"{entry?.Label ?? "Compatibility flag"} must be enabled or disabled.",
+                    field: field,
+                    expected: "Safe Pokemon compatibility flag"));
+                return null;
+            }
+
+            return compatibilityBooleanValue;
+        }
+
         var editableField = SwShPokemonWorkflowService.GetEditableField(field);
         if (editableField is null)
         {
@@ -456,6 +489,14 @@ public sealed class SwShPokemonEditSessionService
 
     private static SwShPokemonRecord ApplyPokemonViewField(SwShPokemonRecord pokemon, string field, int value)
     {
+        if (SwShPokemonWorkflowService.TryParseCompatibilityField(field, out var groupId, out var slot))
+        {
+            return pokemon with
+            {
+                Compatibility = UpdateCompatibilityGroups(pokemon.Compatibility, groupId, slot, value != 0),
+            };
+        }
+
         return field switch
         {
             SwShPokemonWorkflowService.HPField => pokemon with { BaseStats = UpdateStats(pokemon.BaseStats, hp: value) },
@@ -550,6 +591,11 @@ public sealed class SwShPokemonEditSessionService
 
     private static SwShPersonalRecord ApplyPersonalDataField(SwShPersonalRecord record, string field, int value)
     {
+        if (SwShPokemonWorkflowService.TryParseCompatibilityField(field, out var groupId, out var slot))
+        {
+            return UpdatePersonalCompatibility(record, groupId, slot, value != 0);
+        }
+
         return field switch
         {
             SwShPokemonWorkflowService.HPField => record with { HP = value },
@@ -599,6 +645,68 @@ public sealed class SwShPokemonEditSessionService
             SwShPokemonWorkflowService.CrownDexIndexField => record with { CrownDexIndex = value },
             _ => record,
         };
+    }
+
+    private static IReadOnlyList<SwShPokemonCompatibilityGroup> UpdateCompatibilityGroups(
+        IReadOnlyList<SwShPokemonCompatibilityGroup> groups,
+        string groupId,
+        int slot,
+        bool enabled)
+    {
+        return groups
+            .Select(group =>
+            {
+                if (!string.Equals(group.GroupId, groupId, StringComparison.Ordinal))
+                {
+                    return group;
+                }
+
+                var entries = group.Entries
+                    .Select(entry => entry.Slot == slot ? entry with { CanLearn = enabled } : entry)
+                    .ToArray();
+
+                return group with
+                {
+                    EnabledCount = entries.Count(entry => entry.CanLearn),
+                    Entries = entries,
+                };
+            })
+            .ToArray();
+    }
+
+    private static SwShPersonalRecord UpdatePersonalCompatibility(
+        SwShPersonalRecord record,
+        string groupId,
+        int slot,
+        bool enabled)
+    {
+        return groupId switch
+        {
+            SwShPokemonWorkflowService.TechnicalMachineCompatibilityGroupId => record with
+            {
+                TechnicalMachines = SetFlag(record.TechnicalMachines, slot, enabled),
+            },
+            SwShPokemonWorkflowService.TechnicalRecordCompatibilityGroupId => record with
+            {
+                TechnicalRecords = SetFlag(record.TechnicalRecords, slot, enabled),
+            },
+            SwShPokemonWorkflowService.TypeTutorCompatibilityGroupId => record with
+            {
+                TypeTutors = SetFlag(record.TypeTutors, slot, enabled),
+            },
+            SwShPokemonWorkflowService.ArmorTutorCompatibilityGroupId => record with
+            {
+                ArmorTutors = SetFlag(record.ArmorTutors, slot, enabled),
+            },
+            _ => record,
+        };
+    }
+
+    private static IReadOnlyList<bool> SetFlag(IReadOnlyList<bool> flags, int slot, bool enabled)
+    {
+        var updated = flags.ToArray();
+        updated[slot] = enabled;
+        return updated;
     }
 
     private static ProjectFileReference? GetSourceReference(SwShPokemonWorkflow workflow, PendingEdit edit)
@@ -678,6 +786,15 @@ public sealed class SwShPokemonEditSessionService
 
     private static string CreatePendingEditSummary(SwShPokemonRecord pokemon, string field, int value)
     {
+        if (SwShPokemonWorkflowService.TryParseCompatibilityField(field, out var groupId, out var slot))
+        {
+            var entry = GetCompatibilityEntry(pokemon, groupId, slot);
+            var compatibilityLabel = entry?.Label ?? field;
+            return value == 0
+                ? $"Disable {pokemon.Name} {compatibilityLabel} compatibility."
+                : $"Enable {pokemon.Name} {compatibilityLabel} compatibility.";
+        }
+
         var editableField = SwShPokemonWorkflowService.GetEditableField(field);
         var label = editableField?.Label ?? field;
         var displayValue = editableField?.ValueKind == "boolean"
@@ -685,6 +802,17 @@ public sealed class SwShPokemonEditSessionService
             : value.ToString(CultureInfo.InvariantCulture);
 
         return $"Set {pokemon.Name} {label.ToLowerInvariant()} to {displayValue}.";
+    }
+
+    private static SwShPokemonCompatibilityEntry? GetCompatibilityEntry(
+        SwShPokemonRecord pokemon,
+        string groupId,
+        int slot)
+    {
+        return pokemon.Compatibility
+            .FirstOrDefault(group => string.Equals(group.GroupId, groupId, StringComparison.Ordinal))
+            ?.Entries
+            .FirstOrDefault(entry => entry.Slot == slot);
     }
 
     private static string FormatType(int value)
@@ -719,7 +847,7 @@ public sealed class SwShPokemonEditSessionService
             DiagnosticSeverity.Error,
             $"Pokemon field '{field}' is not supported by the Pokemon Data workflow yet.",
             field: "field",
-            expected: "Supported Pokemon personal data field");
+            expected: "Supported Pokemon personal data or compatibility field");
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import {
@@ -206,6 +206,10 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const tm00 = screen.getByRole('checkbox', { name: /TM00 Mega Punch/ });
+    expect(tm00).not.toBeChecked();
+    await user.click(tm00);
+    await waitFor(() => expect(tm00).toBeChecked());
     await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'type1');
     expect(screen.getByLabelText('Type 1')).toHaveDisplayValue('Grass');
     await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'hp');
@@ -1097,6 +1101,43 @@ function createMockProjectBridge(
           total: 318
         },
         catchRate: 45,
+        compatibility: [
+          {
+            enabledCount: 1,
+            entries: [
+              {
+                canLearn: false,
+                label: 'TM00 Mega Punch',
+                moveId: 5,
+                moveName: 'Mega Punch',
+                slot: 0
+              },
+              {
+                canLearn: true,
+                label: 'TM10 Magical Leaf',
+                moveId: 345,
+                moveName: 'Magical Leaf',
+                slot: 10
+              }
+            ],
+            groupId: 'tm',
+            label: 'TMs'
+          },
+          {
+            enabledCount: 0,
+            entries: [
+              {
+                canLearn: false,
+                label: 'TR00 Swords Dance',
+                moveId: 14,
+                moveName: 'Swords Dance',
+                slot: 0
+              }
+            ],
+            groupId: 'tr',
+            label: 'TRs'
+          }
+        ],
         dexPresence: {
           armorDexIndex: 0,
           crownDexIndex: 0,
@@ -1191,6 +1232,22 @@ function createMockProjectBridge(
           total: 309
         },
         catchRate: 45,
+        compatibility: [
+          {
+            enabledCount: 1,
+            entries: [
+              {
+                canLearn: true,
+                label: 'TM00 Mega Punch',
+                moveId: 5,
+                moveName: 'Mega Punch',
+                slot: 0
+              }
+            ],
+            groupId: 'tm',
+            label: 'TMs'
+          }
+        ],
         dexPresence: {
           armorDexIndex: 0,
           crownDexIndex: 0,
@@ -2754,7 +2811,15 @@ function createMockProjectBridge(
                 }
               ],
               summary:
-                request.field === 'canNotDynamax'
+                request.field.startsWith('compatibility:')
+                  ? `${request.value === '1' ? 'Enable' : 'Disable'} Bulbasaur ${
+                      getMockPokemonCompatibilityLabel(
+                        pokemonWorkflow,
+                        request.personalId,
+                        request.field
+                      ) ?? request.field
+                    } compatibility.`
+                  : request.field === 'canNotDynamax'
                   ? `Set Bulbasaur cannot dynamax to ${
                       request.value === '1' ? 'enabled' : 'disabled'
                     }.`
@@ -2799,6 +2864,31 @@ function createMockProjectBridge(
                   ...pokemon.personal,
                   canNotDynamax: value !== 0
                 }
+              };
+            }
+
+            if (request.field.startsWith('compatibility:')) {
+              const [, groupId, slotText] = request.field.split(':');
+              const slot = Number.parseInt(slotText ?? '', 10);
+              const compatibility = pokemon.compatibility.map((group) => {
+                if (group.groupId !== groupId) {
+                  return group;
+                }
+
+                const entries = group.entries.map((entry) =>
+                  entry.slot === slot ? { ...entry, canLearn: value !== 0 } : entry
+                );
+
+                return {
+                  ...group,
+                  enabledCount: entries.filter((entry) => entry.canLearn).length,
+                  entries
+                };
+              });
+
+              return {
+                ...pokemon,
+                compatibility
               };
             }
 
@@ -3145,6 +3235,22 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
   }
 
   return 'Applied Items change plan to the configured LayeredFS output root.';
+}
+
+function getMockPokemonCompatibilityLabel(
+  workflow: PokemonWorkflow,
+  personalId: number,
+  field: string
+) {
+  const [, groupId, slotText] = field.split(':');
+  const slot = Number.parseInt(slotText ?? '', 10);
+  const pokemon = workflow.pokemon.find((record) => record.personalId === personalId);
+
+  return pokemon?.compatibility
+    .find((group) => group.groupId === groupId)
+    ?.entries
+    .find((entry) => entry.slot === slot)
+    ?.label;
 }
 
 function getValidationMessage(domain: string | undefined) {

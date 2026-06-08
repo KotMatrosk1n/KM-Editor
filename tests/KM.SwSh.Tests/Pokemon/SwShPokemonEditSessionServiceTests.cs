@@ -55,6 +55,32 @@ public sealed class SwShPokemonEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateFieldOverlaysCompatibilityFlag()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var field = SwShPokemonWorkflowService.CreateCompatibilityFieldId(
+            SwShPokemonWorkflowService.TechnicalMachineCompatibilityGroupId,
+            0);
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            field,
+            "true");
+
+        var pokemon = result.Workflow.Pokemon.Single(record => record.PersonalId == 1);
+        var tmGroup = pokemon.Compatibility.Single(group => group.GroupId == SwShPokemonWorkflowService.TechnicalMachineCompatibilityGroupId);
+        Assert.True(tmGroup.Entries.Single(entry => entry.Slot == 0).CanLearn);
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal(field, edit.Field);
+        Assert.Equal("1", edit.NewValue);
+        Assert.Equal("Enable Bulbasaur TM00 Mega Punch compatibility.", edit.Summary);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
     public void UpdateFieldReplacesPendingEditForSamePokemonAndField()
     {
         using var temp = CreateEditableProject();
@@ -115,9 +141,17 @@ public sealed class SwShPokemonEditSessionServiceTests
             personalId: 1,
             SwShPokemonWorkflowService.CanNotDynamaxField,
             "true");
-        var plan = service.CreateChangePlan(temp.Paths, flagUpdate.Session);
+        var compatibilityUpdate = service.UpdateField(
+            temp.Paths,
+            flagUpdate.Session,
+            personalId: 1,
+            SwShPokemonWorkflowService.CreateCompatibilityFieldId(
+                SwShPokemonWorkflowService.TechnicalMachineCompatibilityGroupId,
+                0),
+            "true");
+        var plan = service.CreateChangePlan(temp.Paths, compatibilityUpdate.Session);
 
-        var apply = service.ApplyChangePlan(temp.Paths, flagUpdate.Session, plan);
+        var apply = service.ApplyChangePlan(temp.Paths, compatibilityUpdate.Session, plan);
 
         Assert.Contains(apply.WrittenFiles, file => file.RelativePath == SwShPokemonWorkflowService.PersonalDataPath);
         Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
@@ -127,10 +161,12 @@ public sealed class SwShPokemonEditSessionServiceTests
         var outputRecord = SwShPersonalTable.Parse(outputBytes).Records[1];
         Assert.Equal(100, outputRecord.HP);
         Assert.True(outputRecord.CanNotDynamax);
+        Assert.True(outputRecord.TechnicalMachines[0]);
         var baseBytes = File.ReadAllBytes(Path.Combine(
             temp.BaseRomFsPath,
             "bin/pml/personal/personal_total.bin"));
         Assert.Equal(45, SwShPersonalTable.Parse(baseBytes).Records[1].HP);
+        Assert.False(SwShPersonalTable.Parse(baseBytes).Records[1].TechnicalMachines[0]);
     }
 
     [Fact]
