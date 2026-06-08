@@ -1665,11 +1665,14 @@ h2 {
   display: grid;
   grid-template-columns: var(--editor-list-column) var(--editor-detail-column);
   gap: 16px;
+  align-items: start;
   margin-top: 16px;
 }
 
 .flagwork-stack {
   display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: 14px;
   min-width: 0;
 }
@@ -1852,6 +1855,60 @@ h2 {
 .royal-candy-step-list span {
   color: #9aa7bd;
   font-size: 13px;
+  font-weight: 700;
+}
+
+.royal-candy-output-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.royal-candy-output-list li {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--color-text);
+  background: #101828;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.royal-candy-output-main {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.28fr) minmax(74px, max-content) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.royal-candy-output-kind,
+.royal-candy-output-list small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.royal-candy-output-main strong,
+.royal-candy-output-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.royal-candy-output-main strong {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.royal-candy-output-list li > span {
+  color: var(--color-text-soft);
+  font-size: 12px;
   font-weight: 700;
 }
 

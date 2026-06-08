@@ -10471,28 +10471,23 @@ function SelectedRoyalCandyPanel({
               ))}
             </ol>
 
-            <div className="exefs-segment-list" aria-label="Royal Candy planned outputs">
+            <ul className="royal-candy-output-list" aria-label="Royal Candy planned outputs">
               {outputs.map((output) => (
-                <dl className="encounter-slot-detail" key={output.outputId}>
-                  <div>
-                    <dt>{output.outputKind}</dt>
-                    <dd>{output.status}</dd>
+                <li key={output.outputId}>
+                  <div className="royal-candy-output-main">
+                    <span className="royal-candy-output-kind">{output.outputKind}</span>
+                    <span className={`status-pill ${getExeFsStatusClassName(output.status)}`}>
+                      {output.status}
+                    </span>
+                    <strong>{output.relativePath}</strong>
                   </div>
-                  <div>
-                    <dt>Output</dt>
-                    <dd>{output.relativePath}</dd>
-                  </div>
-                  <div>
-                    <dt>Source</dt>
-                    <dd>{output.sourceFile}</dd>
-                  </div>
-                  <div>
-                    <dt>Plan</dt>
-                    <dd>{output.description}</dd>
-                  </div>
-                </dl>
+                  <span>{output.description}</span>
+                  {output.sourceFile !== output.relativePath ? (
+                    <small>Source: {output.sourceFile}</small>
+                  ) : null}
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         </>
       ) : (
