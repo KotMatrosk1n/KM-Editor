@@ -1349,11 +1349,19 @@ export const shopInventoryRecordSchema = z.strictObject({
   stockLimit: z.number().int().nonnegative().nullable()
 });
 
+export const shopEditableFieldOptionSchema = z.strictObject({
+  itemName: z.string(),
+  label: z.string(),
+  price: z.number().int().nonnegative(),
+  value: z.number().int()
+});
+
 export const shopEditableFieldSchema = z.strictObject({
   field: z.string(),
   label: z.string(),
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
+  options: z.array(shopEditableFieldOptionSchema).default([]),
   valueKind: z.string()
 });
 
@@ -2267,6 +2275,7 @@ export type DynamaxAdventureMoveRecord = z.infer<typeof dynamaxAdventureMoveSche
 export type DynamaxAdventureRecord = z.infer<typeof dynamaxAdventureRecordSchema>;
 export type DynamaxAdventuresWorkflow = z.infer<typeof dynamaxAdventuresWorkflowSchema>;
 export type ShopEditableField = z.infer<typeof shopEditableFieldSchema>;
+export type ShopEditableFieldOption = z.infer<typeof shopEditableFieldOptionSchema>;
 export type ShopInventoryRecord = z.infer<typeof shopInventoryRecordSchema>;
 export type ShopRecord = z.infer<typeof shopRecordSchema>;
 export type ShopsWorkflow = z.infer<typeof shopsWorkflowSchema>;

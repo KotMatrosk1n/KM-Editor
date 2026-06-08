@@ -34,7 +34,14 @@ public sealed record ShopEditableFieldDto(
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<ShopEditableFieldOptionDto> Options);
+
+public sealed record ShopEditableFieldOptionDto(
+    int Value,
+    string Label,
+    string ItemName,
+    int Price);
 
 public sealed record ShopsWorkflowStatsDto(
     int TotalShopCount,

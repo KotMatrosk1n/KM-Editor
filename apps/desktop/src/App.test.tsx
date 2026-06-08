@@ -947,12 +947,11 @@ describe('App', () => {
     expect(screen.getByRole('option', { name: 'Slot 1: Potion' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
-    const itemIdInput = screen.getByLabelText('Item ID');
-    await user.clear(itemIdInput);
-    await user.type(itemIdInput, '2');
+    const itemSelect = screen.getByLabelText('Item');
+    await user.selectOptions(itemSelect, '2');
     await user.click(screen.getByRole('button', { name: 'Save Item' }));
 
-    expect(await screen.findByDisplayValue('2')).toBeInTheDocument();
+    expect(await screen.findByRole('combobox', { name: 'Item' })).toHaveValue('2');
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
@@ -3717,9 +3716,13 @@ function createMockProjectBridge(
     editableFields: [
       {
         field: 'itemId',
-        label: 'Item ID',
+        label: 'Item',
         maximumValue: 65535,
         minimumValue: 0,
+        options: [
+          { itemName: 'Potion', label: '0001 Potion (Medicine)', price: 300, value: 1 },
+          { itemName: 'Antidote', label: '0002 Antidote (Medicine)', price: 200, value: 2 }
+        ],
         valueKind: 'integer'
       }
     ],

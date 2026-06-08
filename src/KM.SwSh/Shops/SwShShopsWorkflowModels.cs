@@ -31,7 +31,14 @@ public sealed record SwShShopEditableField(
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<SwShShopEditableFieldOption> Options);
+
+public sealed record SwShShopEditableFieldOption(
+    int Value,
+    string Label,
+    string ItemName,
+    int Price);
 
 public sealed record SwShShopsWorkflowStats(
     int TotalShopCount,

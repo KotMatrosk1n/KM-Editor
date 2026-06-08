@@ -422,6 +422,7 @@ public sealed class SwShShopsEditSessionService
             return workflow;
         }
 
+        var itemOption = ResolveItemOption(workflow, itemId);
         return workflow with
         {
             Shops = workflow.Shops
@@ -433,8 +434,8 @@ public sealed class SwShShopsEditSessionService
                                 ? item with
                                 {
                                     ItemId = itemId,
-                                    ItemName = $"Item {itemId}",
-                                    Price = 0,
+                                    ItemName = itemOption?.ItemName ?? $"Item {itemId}",
+                                    Price = itemOption?.Price ?? 0,
                                 }
                                 : item)
                             .ToArray(),
@@ -442,6 +443,14 @@ public sealed class SwShShopsEditSessionService
                     : shop)
                 .ToArray(),
         };
+    }
+
+    private static SwShShopEditableFieldOption? ResolveItemOption(SwShShopsWorkflow workflow, int itemId)
+    {
+        return workflow.EditableFields
+            .FirstOrDefault(field => string.Equals(field.Field, SwShShopsWorkflowService.ItemIdField, StringComparison.Ordinal))
+            ?.Options
+            .FirstOrDefault(option => option.Value == itemId);
     }
 
     private static string? ResolveOutputPath(

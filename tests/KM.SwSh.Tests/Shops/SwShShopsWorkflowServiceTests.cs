@@ -36,6 +36,12 @@ public sealed class SwShShopsWorkflowServiceTests
             {
                 Assert.Equal(SwShShopsWorkflowService.ItemIdField, editableField.Field);
                 Assert.Equal(SwShShopsWorkflowService.MaximumItemId, editableField.MaximumValue);
+                Assert.Contains(
+                    editableField.Options,
+                    option => option.Value == 2
+                        && option.Label == "0002 Antidote (Medicine)"
+                        && option.ItemName == "Antidote"
+                        && option.Price == 200);
             });
 
         var singleShop = workflow.Shops[0];
