@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -343,7 +344,7 @@ public sealed class SwShGiftPokemonWorkflowService
 
         return new SwShGiftPokemonEntry(
             gift.Index,
-            FormatGiftLabel(gift.Index, species, gift.Form, gift.Level, gift.IsEgg != 0),
+            FormatGiftLabel(gift.Index, species, gift.Species, gift.Form, gift.Level, gift.IsEgg != 0),
             gift.Species,
             species,
             gift.Form,
@@ -371,10 +372,11 @@ public sealed class SwShGiftPokemonWorkflowService
             provenance);
     }
 
-    private static string FormatGiftLabel(int giftIndex, string species, int form, int level, bool isEgg)
+    internal static string FormatGiftLabel(int giftIndex, string species, int speciesId, int form, int level, bool isEgg)
     {
+        var speciesLabel = SwShSpeciesFormLabels.FormatSpeciesFormLabel(species, speciesId, form);
         var eggSuffix = isEgg ? " Egg" : string.Empty;
-        return $"Gift {(giftIndex + 1).ToString("000", CultureInfo.InvariantCulture)}: {species}{eggSuffix} Lv. {level} Form {form}";
+        return $"Gift {(giftIndex + 1).ToString("000", CultureInfo.InvariantCulture)}: {speciesLabel}{eggSuffix} Lv. {level}";
     }
 
     internal static string FormatIvSummary(SwShGiftPokemonIvsRecord ivs, int? flawlessIvCount)

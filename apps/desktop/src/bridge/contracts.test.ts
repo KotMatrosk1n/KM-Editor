@@ -858,7 +858,7 @@ describe('bridge contracts', () => {
             speed: -1
           },
           ivSummary: 'Random IVs',
-          label: 'Gift 001: Grookey Lv. 50 Form 0',
+          label: 'Gift 001: Grookey Lv. 50',
           level: 50,
           nature: 25,
           natureLabel: 'Random',
@@ -2566,7 +2566,7 @@ describe('bridge contracts', () => {
               relativePath: 'romfs/bin/script_event_data/add_poke.bin'
             }
           ],
-          summary: 'Set Gift 001: Grookey Lv. 50 Form 0 HP IV to -4.'
+          summary: 'Set Gift 001: Grookey Lv. 50 HP IV to -4.'
         }
       ],
       sessionId: 'session-1'
@@ -2608,7 +2608,7 @@ describe('bridge contracts', () => {
             speed: -1
           },
           ivSummary: '3 guaranteed perfect IVs',
-          label: 'Gift 001: Grookey Lv. 50 Form 0',
+          label: 'Gift 001: Grookey Lv. 50',
           level: 50,
           nature: 25,
           natureLabel: 'Random',
@@ -2710,7 +2710,7 @@ describe('bridge contracts', () => {
             speed: 28
           },
           ivSummary: 'HP 31 / Atk 30 / Def 29 / SpA 27 / SpD 26 / Spe 28',
-          label: 'Trade 001: Eevee -> Grookey-1 Lv. 50',
+          label: 'Trade 001: Eevee -> Grookey (Form 1) Lv. 50',
           level: 50,
           memoryCode: 11,
           memoryFeel: 12,

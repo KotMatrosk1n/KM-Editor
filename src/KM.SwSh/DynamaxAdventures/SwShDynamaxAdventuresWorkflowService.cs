@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -336,7 +337,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
         return new SwShDynamaxAdventureEntry(
             entry.EntryIndex,
-            CreateLabel(entry.EntryIndex, entry.AdventureIndex, species, entry.Form, versionLabel),
+            CreateLabel(entry.EntryIndex, entry.AdventureIndex, species, entry.Species, entry.Form, versionLabel),
             entry.AdventureIndex,
             entry.Species,
             species,
@@ -370,13 +371,13 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             provenance);
     }
 
-    private static string CreateLabel(int entryIndex, int adventureIndex, string species, int form, string versionLabel)
+    private static string CreateLabel(int entryIndex, int adventureIndex, string species, int speciesId, int form, string versionLabel)
     {
-        var formLabel = form == 0 ? string.Empty : $"-{form.ToString(CultureInfo.InvariantCulture)}";
+        var speciesLabel = SwShSpeciesFormLabels.FormatSpeciesFormLabel(species, speciesId, form);
         var versionSuffix = string.Equals(versionLabel, "Both", StringComparison.Ordinal)
             ? string.Empty
             : $" [{versionLabel}]";
-        return $"{entryIndex.ToString("000", CultureInfo.InvariantCulture)} / {adventureIndex.ToString("000", CultureInfo.InvariantCulture)} - {species}{formLabel}{versionSuffix}";
+        return $"{entryIndex.ToString("000", CultureInfo.InvariantCulture)} / {adventureIndex.ToString("000", CultureInfo.InvariantCulture)} - {speciesLabel}{versionSuffix}";
     }
 
     private static string FormatIvSummary(SwShDynamaxAdventureIvs ivs, int guaranteedPerfectIvs)

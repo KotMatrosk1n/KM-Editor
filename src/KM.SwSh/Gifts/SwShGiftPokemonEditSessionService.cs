@@ -559,7 +559,13 @@ public sealed class SwShGiftPokemonEditSessionService
         {
             FlawlessIvCount = flawlessIvCount,
             IvSummary = SwShGiftPokemonWorkflowService.FormatIvSummary(updatedGift.Ivs, flawlessIvCount),
-            Label = $"Gift {(updatedGift.GiftIndex + 1).ToString("000", CultureInfo.InvariantCulture)}: {updatedGift.Species}{(updatedGift.IsEgg ? " Egg" : string.Empty)} Lv. {updatedGift.Level} Form {updatedGift.Form}",
+            Label = SwShGiftPokemonWorkflowService.FormatGiftLabel(
+                updatedGift.GiftIndex,
+                updatedGift.Species,
+                updatedGift.SpeciesId,
+                updatedGift.Form,
+                updatedGift.Level,
+                updatedGift.IsEgg),
         };
 
         return updatedGift;

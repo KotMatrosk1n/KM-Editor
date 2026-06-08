@@ -6,6 +6,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -624,14 +625,16 @@ public sealed class SwShTradePokemonEditSessionService
 
     private static string FormatTradeLabel(SwShTradePokemonEntry trade)
     {
-        var requiredFormSuffix = trade.RequiredForm == 0
-            ? string.Empty
-            : $"-{trade.RequiredForm.ToString(CultureInfo.InvariantCulture)}";
-        var formSuffix = trade.Form == 0
-            ? string.Empty
-            : $"-{trade.Form.ToString(CultureInfo.InvariantCulture)}";
+        var requested = SwShSpeciesFormLabels.FormatSpeciesFormLabel(
+            trade.RequiredSpecies,
+            trade.RequiredSpeciesId,
+            trade.RequiredForm);
+        var received = SwShSpeciesFormLabels.FormatSpeciesFormLabel(
+            trade.Species,
+            trade.SpeciesId,
+            trade.Form);
 
-        return $"Trade {(trade.TradeIndex + 1).ToString("000", CultureInfo.InvariantCulture)}: {trade.RequiredSpecies}{requiredFormSuffix} -> {trade.Species}{formSuffix} Lv. {trade.Level}";
+        return $"Trade {(trade.TradeIndex + 1).ToString("000", CultureInfo.InvariantCulture)}: {requested} -> {received} Lv. {trade.Level}";
     }
 
     private static SwShTradePokemonIvsRecord CreateIvPreset(int flawlessIvCount)

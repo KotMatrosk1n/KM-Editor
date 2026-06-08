@@ -27,7 +27,7 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
 
         var first = workflow.Encounters[0];
         Assert.Equal(0, first.EntryIndex);
-        Assert.Equal("000 / 100 - Eevee-1 [Sword]", first.Label);
+        Assert.Equal("000 / 100 - Eevee (Form 1) [Sword]", first.Label);
         Assert.Equal(100, first.AdventureIndex);
         Assert.Equal(133, first.SpeciesId);
         Assert.Equal("Eevee", first.Species);

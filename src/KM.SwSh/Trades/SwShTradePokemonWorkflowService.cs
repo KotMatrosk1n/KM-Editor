@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -380,7 +381,15 @@ public sealed class SwShTradePokemonWorkflowService
 
         return new SwShTradePokemonEntry(
             trade.Index,
-            FormatTradeLabel(trade.Index, requiredSpecies, trade.RequiredForm, species, trade.Form, trade.Level),
+            FormatTradeLabel(
+                trade.Index,
+                requiredSpecies,
+                trade.RequiredSpecies,
+                trade.RequiredForm,
+                species,
+                trade.Species,
+                trade.Form,
+                trade.Level),
             trade.Species,
             species,
             trade.Form,
@@ -426,14 +435,17 @@ public sealed class SwShTradePokemonWorkflowService
     private static string FormatTradeLabel(
         int tradeIndex,
         string requiredSpecies,
+        int requiredSpeciesId,
         int requiredForm,
         string species,
+        int speciesId,
         int form,
         int level)
     {
-        var requiredFormSuffix = requiredForm == 0 ? string.Empty : $"-{requiredForm.ToString(CultureInfo.InvariantCulture)}";
-        var formSuffix = form == 0 ? string.Empty : $"-{form.ToString(CultureInfo.InvariantCulture)}";
-        return $"Trade {(tradeIndex + 1).ToString("000", CultureInfo.InvariantCulture)}: {requiredSpecies}{requiredFormSuffix} -> {species}{formSuffix} Lv. {level}";
+        var requested = SwShSpeciesFormLabels.FormatSpeciesFormLabel(requiredSpecies, requiredSpeciesId, requiredForm);
+        var received = SwShSpeciesFormLabels.FormatSpeciesFormLabel(species, speciesId, form);
+
+        return $"Trade {(tradeIndex + 1).ToString("000", CultureInfo.InvariantCulture)}: {requested} -> {received} Lv. {level}";
     }
 
     internal static string FormatIvSummary(SwShTradePokemonIvsRecord ivs, int? flawlessIvCount)

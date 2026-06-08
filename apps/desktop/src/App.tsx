@@ -6393,8 +6393,16 @@ function TradePokemonSection({
                     type="button"
                   >
                     <span role="cell">{trade.tradeIndex + 1}</span>
-                    <span role="cell">{formatSpeciesFormLabel(trade.requiredSpecies, trade.requiredForm)}</span>
-                    <span role="cell">{formatSpeciesFormLabel(trade.species, trade.form)}</span>
+                    <span role="cell">
+                      {formatSpeciesFormLabel(
+                        trade.requiredSpecies,
+                        trade.requiredForm,
+                        trade.requiredSpeciesId
+                      )}
+                    </span>
+                    <span role="cell">
+                      {formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId)}
+                    </span>
                     <span role="cell">{trade.level}</span>
                     <span role="cell">{trade.ivSummary}</span>
                     <span role="cell">{formatTradePokemonRelearnMoves(trade)}</span>
@@ -6493,11 +6501,17 @@ function SelectedTradePokemonPanel({
             </div>
             <div>
               <dt>Requested</dt>
-              <dd>{formatSpeciesFormLabel(trade.requiredSpecies, trade.requiredForm)}</dd>
+              <dd>
+                {formatSpeciesFormLabel(
+                  trade.requiredSpecies,
+                  trade.requiredForm,
+                  trade.requiredSpeciesId
+                )}
+              </dd>
             </div>
             <div>
               <dt>Received</dt>
-              <dd>{`${formatSpeciesFormLabel(trade.species, trade.form)} Lv. ${trade.level}`}</dd>
+              <dd>{`${formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId)} Lv. ${trade.level}`}</dd>
             </div>
             <div>
               <dt>Ball</dt>
@@ -6749,7 +6763,9 @@ function RentalPokemonSection({
                     type="button"
                   >
                     <span role="cell">{rental.rentalIndex + 1}</span>
-                    <span role="cell">{formatSpeciesFormLabel(rental.species, rental.form)}</span>
+                    <span role="cell">
+                      {formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)}
+                    </span>
                     <span role="cell">{rental.level}</span>
                     <span role="cell">{rental.ivSummary}</span>
                     <span role="cell">{formatRentalPokemonStats(rental.evs)}</span>
@@ -6849,7 +6865,7 @@ function SelectedRentalPokemonPanel({
             </div>
             <div>
               <dt>Pokemon</dt>
-              <dd>{`${formatSpeciesFormLabel(rental.species, rental.form)} Lv. ${rental.level}`}</dd>
+              <dd>{`${formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)} Lv. ${rental.level}`}</dd>
             </div>
             <div>
               <dt>Ball</dt>
@@ -7125,7 +7141,11 @@ function DynamaxAdventuresSection({
                     <span role="cell">{encounter.entryIndex + 1}</span>
                     <span role="cell">{encounter.label}</span>
                     <span role="cell">
-                      {formatSpeciesFormLabel(encounter.species, encounter.form)}
+                      {formatSpeciesFormLabel(
+                        encounter.species,
+                        encounter.form,
+                        encounter.speciesId
+                      )}
                     </span>
                     <span role="cell">{encounter.versionLabel}</span>
                     <span role="cell">{encounter.ivSummary}</span>
@@ -7229,7 +7249,7 @@ function SelectedDynamaxAdventurePanel({
             </div>
             <div>
               <dt>Pokemon</dt>
-              <dd>{`${formatSpeciesFormLabel(encounter.species, encounter.form)} Lv. ${encounter.level}`}</dd>
+              <dd>{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
             </div>
             <div>
               <dt>Ball</dt>
@@ -13185,8 +13205,109 @@ function formatTradePokemonMemory(trade: TradePokemonRecord) {
   ].join(' / ');
 }
 
-function formatSpeciesFormLabel(species: string, form: number) {
-  return form === 0 ? species : `${species}-${form}`;
+const regionalFormLabelsBySpeciesId = new Map<string, string>([
+  ['19:1', 'Alolan'],
+  ['20:1', 'Alolan'],
+  ['26:1', 'Alolan'],
+  ['27:1', 'Alolan'],
+  ['28:1', 'Alolan'],
+  ['37:1', 'Alolan'],
+  ['38:1', 'Alolan'],
+  ['50:1', 'Alolan'],
+  ['51:1', 'Alolan'],
+  ['52:1', 'Alolan'],
+  ['52:2', 'Galarian'],
+  ['53:1', 'Alolan'],
+  ['74:1', 'Alolan'],
+  ['75:1', 'Alolan'],
+  ['76:1', 'Alolan'],
+  ['77:1', 'Galarian'],
+  ['78:1', 'Galarian'],
+  ['79:1', 'Galarian'],
+  ['80:1', 'Galarian'],
+  ['83:1', 'Galarian'],
+  ['88:1', 'Alolan'],
+  ['89:1', 'Alolan'],
+  ['103:1', 'Alolan'],
+  ['105:1', 'Alolan'],
+  ['110:1', 'Galarian'],
+  ['122:1', 'Galarian'],
+  ['144:1', 'Galarian'],
+  ['145:1', 'Galarian'],
+  ['146:1', 'Galarian'],
+  ['199:1', 'Galarian'],
+  ['222:1', 'Galarian'],
+  ['263:1', 'Galarian'],
+  ['264:1', 'Galarian'],
+  ['554:1', 'Galarian'],
+  ['555:1', 'Galarian'],
+  ['562:1', 'Galarian'],
+  ['618:1', 'Galarian']
+]);
+
+const regionalFormLabelsBySpeciesName = new Map<string, string>([
+  ['rattata:1', 'Alolan'],
+  ['raticate:1', 'Alolan'],
+  ['raichu:1', 'Alolan'],
+  ['sandshrew:1', 'Alolan'],
+  ['sandslash:1', 'Alolan'],
+  ['vulpix:1', 'Alolan'],
+  ['ninetales:1', 'Alolan'],
+  ['diglett:1', 'Alolan'],
+  ['dugtrio:1', 'Alolan'],
+  ['meowth:1', 'Alolan'],
+  ['meowth:2', 'Galarian'],
+  ['persian:1', 'Alolan'],
+  ['geodude:1', 'Alolan'],
+  ['graveler:1', 'Alolan'],
+  ['golem:1', 'Alolan'],
+  ['ponyta:1', 'Galarian'],
+  ['rapidash:1', 'Galarian'],
+  ['slowpoke:1', 'Galarian'],
+  ['slowbro:1', 'Galarian'],
+  ['farfetchd:1', 'Galarian'],
+  ['grimer:1', 'Alolan'],
+  ['muk:1', 'Alolan'],
+  ['exeggutor:1', 'Alolan'],
+  ['marowak:1', 'Alolan'],
+  ['weezing:1', 'Galarian'],
+  ['mrmime:1', 'Galarian'],
+  ['articuno:1', 'Galarian'],
+  ['zapdos:1', 'Galarian'],
+  ['moltres:1', 'Galarian'],
+  ['slowking:1', 'Galarian'],
+  ['corsola:1', 'Galarian'],
+  ['zigzagoon:1', 'Galarian'],
+  ['linoone:1', 'Galarian'],
+  ['darumaka:1', 'Galarian'],
+  ['darmanitan:1', 'Galarian'],
+  ['yamask:1', 'Galarian'],
+  ['stunfisk:1', 'Galarian']
+]);
+
+function formatSpeciesFormLabel(species: string, form: number, speciesId?: number) {
+  if (form === 0) {
+    return species;
+  }
+
+  const speciesIdFormLabel =
+    speciesId !== undefined
+      ? regionalFormLabelsBySpeciesId.get(`${speciesId}:${form}`)
+      : undefined;
+  const formLabel =
+    speciesIdFormLabel ??
+    regionalFormLabelsBySpeciesName.get(`${normalizeSpeciesName(species)}:${form}`) ??
+    `Form ${form}`;
+
+  return `${species} (${formLabel})`;
+}
+
+function normalizeSpeciesName(species: string) {
+  return species
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toLocaleLowerCase();
 }
 
 function formatStaticEncounterIvs(encounter: StaticEncounterRecord) {
