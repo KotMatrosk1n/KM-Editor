@@ -34,6 +34,8 @@ public sealed class SwShShopsEditSessionServiceTests
         Assert.Equal($"{shopId}#1", edit.RecordId);
         Assert.Equal("2", edit.NewValue);
         Assert.Equal(2, result.Workflow.Shops[0].Inventory[0].ItemId);
+        Assert.Equal("Antidote", result.Workflow.Shops[0].Inventory[0].ItemName);
+        Assert.Equal(200, result.Workflow.Shops[0].Inventory[0].Price);
         Assert.Empty(result.Diagnostics);
     }
 

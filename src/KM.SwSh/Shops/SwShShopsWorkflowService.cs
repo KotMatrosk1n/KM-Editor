@@ -19,16 +19,6 @@ public sealed class SwShShopsWorkflowService
 
     private const string ShopsEditDomain = "workflow.shops";
 
-    private static readonly IReadOnlyList<SwShShopEditableField> EditableFields =
-    [
-        new SwShShopEditableField(
-            ItemIdField,
-            "Item ID",
-            "integer",
-            MinimumItemId,
-            MaximumItemId),
-    ];
-
     private static readonly IReadOnlyDictionary<ulong, string> KnownSingleShopNames = new Dictionary<ulong, string>
     {
         [0x1F3FF031A3A24490] = "Poke Mart [0 Badges, Before Catching Tutorial]",
@@ -81,7 +71,12 @@ public sealed class SwShShopsWorkflowService
 
         if (summary.Availability == SwShWorkflowAvailability.Disabled)
         {
-            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShShopRecord>(),
+                CreateEditableFields(Array.Empty<SwShItemRecord>()),
+                sourceFileCount: 0,
+                diagnostics);
         }
 
         var shopDataSource = ResolveShopDataSource(project);
@@ -91,10 +86,16 @@ public sealed class SwShShopsWorkflowService
                 DiagnosticSeverity.Warning,
                 "Shops data is not available for this project.",
                 expected: ShopDataPath));
-            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), sourceFileCount: 0, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShShopRecord>(),
+                CreateEditableFields(Array.Empty<SwShItemRecord>()),
+                sourceFileCount: 0,
+                diagnostics);
         }
 
         var itemLookup = CreateItemLookup(project, diagnostics);
+        var editableFields = CreateEditableFields(itemLookup.Values);
 
         try
         {
@@ -102,7 +103,7 @@ public sealed class SwShShopsWorkflowService
             var provenance = CreateProvenance(shopDataSource.GraphEntry);
             var shops = FlattenShops(shopData, itemLookup, provenance);
 
-            return CreateWorkflow(summary, shops, sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(summary, shops, editableFields, sourceFileCount: 1, diagnostics);
         }
         catch (InvalidDataException exception)
         {
@@ -111,7 +112,12 @@ public sealed class SwShShopsWorkflowService
                 $"Shops data source is not a supported Sword/Shield shop table: {exception.Message}",
                 file: shopDataSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield shop_data.bin"));
-            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShShopRecord>(),
+                editableFields,
+                sourceFileCount: 1,
+                diagnostics);
         }
         catch (IOException exception)
         {
@@ -120,7 +126,12 @@ public sealed class SwShShopsWorkflowService
                 $"Shops data source could not be read: {exception.Message}",
                 file: shopDataSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield shop_data.bin"));
-            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShShopRecord>(),
+                editableFields,
+                sourceFileCount: 1,
+                diagnostics);
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -129,7 +140,12 @@ public sealed class SwShShopsWorkflowService
                 $"Shops data source could not be read: {exception.Message}",
                 file: shopDataSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield shop_data.bin"));
-            return CreateWorkflow(summary, Array.Empty<SwShShopRecord>(), sourceFileCount: 1, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShShopRecord>(),
+                editableFields,
+                sourceFileCount: 1,
+                diagnostics);
         }
     }
 
@@ -247,18 +263,49 @@ public sealed class SwShShopsWorkflowService
     private SwShShopsWorkflow CreateWorkflow(
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShShopRecord> shops,
+        IReadOnlyList<SwShShopEditableField> editableFields,
         int sourceFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         return new SwShShopsWorkflow(
             summary,
             shops,
-            EditableFields,
+            editableFields,
             new SwShShopsWorkflowStats(
                 shops.Count,
                 shops.Sum(shop => shop.Inventory.Count),
                 sourceFileCount),
             diagnostics);
+    }
+
+    private static IReadOnlyList<SwShShopEditableField> CreateEditableFields(IEnumerable<SwShItemRecord> items)
+    {
+        var options = items
+            .OrderBy(item => item.ItemId)
+            .Select(item => new SwShShopEditableFieldOption(
+                item.ItemId,
+                FormatItemOptionLabel(item),
+                item.Name,
+                item.BuyPrice))
+            .ToArray();
+
+        return
+        [
+            new SwShShopEditableField(
+                ItemIdField,
+                "Item",
+                "integer",
+                MinimumItemId,
+                MaximumItemId,
+                options),
+        ];
+    }
+
+    internal static string FormatItemOptionLabel(SwShItemRecord item)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{item.ItemId:0000} {item.Name} ({item.Category})");
     }
 
     private IReadOnlyDictionary<int, SwShItemRecord> CreateItemLookup(

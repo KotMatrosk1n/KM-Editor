@@ -1483,7 +1483,13 @@ public static class SwShBridgeMapper
             field.Label,
             field.ValueKind,
             field.MinimumValue,
-            field.MaximumValue);
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static ShopEditableFieldOptionDto ToDto(SwShShopEditableFieldOption option)
+    {
+        return new ShopEditableFieldOptionDto(option.Value, option.Label, option.ItemName, option.Price);
     }
 
     private static EncounterTableRecordDto ToDto(SwShEncounterTableRecord table)

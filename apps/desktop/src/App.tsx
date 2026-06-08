@@ -7895,6 +7895,9 @@ function SelectedShopPanel({
     inventoryItem?.itemId ?? null,
     itemIdField
   );
+  const itemIdOptions = itemIdField?.options ?? [];
+  const hasItemIdOptions = itemIdOptions.length > 0;
+  const hasDraftOption = itemIdOptions.some((option) => option.value.toString() === itemIdDraft);
   const canSubmit =
     editSession !== null && inventoryItem !== null && draftState.canSubmit && draftState.parsedValue !== null;
 
@@ -7963,15 +7966,33 @@ function SelectedShopPanel({
                 <div className="shop-editor-row">
                   <label className="path-field">
                     <span>{itemIdField?.label ?? 'Item ID'}</span>
-                    <input
-                      aria-label={itemIdField?.label ?? 'Item ID'}
-                      disabled={!canEditShops || editSession === null || isShopUpdating}
-                      max={itemIdField?.maximumValue ?? undefined}
-                      min={itemIdField?.minimumValue ?? undefined}
-                      onChange={(event) => setItemIdDraft(event.target.value)}
-                      type="number"
-                      value={itemIdDraft}
-                    />
+                    {hasItemIdOptions ? (
+                      <select
+                        aria-label={itemIdField?.label ?? 'Item ID'}
+                        disabled={!canEditShops || editSession === null || isShopUpdating}
+                        onChange={(event) => setItemIdDraft(event.target.value)}
+                        value={itemIdDraft}
+                      >
+                        {!hasDraftOption && itemIdDraft !== '' ? (
+                          <option value={itemIdDraft}>{`Current ${itemIdDraft}`}</option>
+                        ) : null}
+                        {itemIdOptions.map((option) => (
+                          <option key={`shop-item:${option.value}`} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        aria-label={itemIdField?.label ?? 'Item ID'}
+                        disabled={!canEditShops || editSession === null || isShopUpdating}
+                        max={itemIdField?.maximumValue ?? undefined}
+                        min={itemIdField?.minimumValue ?? undefined}
+                        onChange={(event) => setItemIdDraft(event.target.value)}
+                        type="number"
+                        value={itemIdDraft}
+                      />
+                    )}
                   </label>
                   {editSession ? (
                     <button

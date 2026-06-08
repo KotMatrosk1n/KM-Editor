@@ -1154,6 +1154,12 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(300, inventoryItem.Price);
         Assert.Null(inventoryItem.StockLimit);
         Assert.Equal(1, response.Payload.Workflow.EditableFields.Count);
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single().Options,
+            option => option.Value == 2
+                && option.Label == "0002 Antidote (Medicine)"
+                && option.ItemName == "Antidote"
+                && option.Price == 200);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 
