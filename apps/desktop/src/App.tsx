@@ -498,6 +498,7 @@ export function App({
   const [isFlagworkSaveLoading, setIsFlagworkSaveLoading] = useState(false);
   const [isExeFsPatchLoading, setIsExeFsPatchLoading] = useState(false);
   const [isRoyalCandyLoading, setIsRoyalCandyLoading] = useState(false);
+  const [isRoyalCandyStaging, setIsRoyalCandyStaging] = useState(false);
   const [isSpreadsheetImportLoading, setIsSpreadsheetImportLoading] = useState(false);
   const [isSpreadsheetImportPreviewing, setIsSpreadsheetImportPreviewing] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
@@ -724,6 +725,29 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsRoyalCandyLoading(false);
+    }
+  };
+
+  const handleStageRoyalCandyWorkflow = async (workflowId: string) => {
+    setIsRoyalCandyStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageRoyalCandyWorkflow({
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        workflowId
+      });
+      setRoyalCandyWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRoyalCandyStaging(false);
     }
   };
 
@@ -1436,9 +1460,11 @@ export function App({
               <WorkflowLoadingPanel label="Royal Candy Workflows" />
             ) : (
               <RoyalCandySection
+                isStaging={isRoyalCandyStaging}
                 onSearchChange={setRoyalCandySearchText}
                 onSelectCheck={setSelectedRoyalCandyCheckId}
                 onSelectWorkflow={setSelectedRoyalCandyWorkflowId}
+                onStageWorkflow={handleStageRoyalCandyWorkflow}
                 searchText={royalCandySearchText}
                 selectedCheckId={selectedRoyalCandyCheckId}
                 selectedWorkflowId={selectedRoyalCandyWorkflowId}
@@ -4706,17 +4732,21 @@ function SelectedExeFsPatchPanel({
 }
 
 function RoyalCandySection({
+  isStaging,
   onSearchChange,
   onSelectCheck,
   onSelectWorkflow,
+  onStageWorkflow,
   searchText,
   selectedCheckId,
   selectedWorkflowId,
   workflow
 }: {
+  isStaging: boolean;
   onSearchChange: (value: string) => void;
   onSelectCheck: (checkId: string | null) => void;
   onSelectWorkflow: (workflowId: string | null) => void;
+  onStageWorkflow: (workflowId: string) => void;
   searchText: string;
   selectedCheckId: string | null;
   selectedWorkflowId: string | null;
@@ -4863,6 +4893,8 @@ function RoyalCandySection({
 
             <SelectedRoyalCandyPanel
               check={selectedCheck}
+              isStaging={isStaging}
+              onStageWorkflow={onStageWorkflow}
               outputs={visibleOutputs}
               selectedWorkflow={selectedWorkflow}
             />
@@ -4881,14 +4913,23 @@ function RoyalCandySection({
 
 function SelectedRoyalCandyPanel({
   check,
+  isStaging,
+  onStageWorkflow,
   outputs,
   selectedWorkflow
 }: {
   check: RoyalCandyWorkflowCheckRecord | null;
+  isStaging: boolean;
+  onStageWorkflow: (workflowId: string) => void;
   outputs: RoyalCandyOutputRecord[];
   selectedWorkflow: RoyalCandyWorkflowRecord | null;
 }) {
   const provenance = check?.provenance ?? selectedWorkflow?.provenance ?? outputs[0]?.provenance ?? null;
+  const canStage =
+    selectedWorkflow !== null &&
+    (selectedWorkflow.workflowId === 'royal-candy-unlimited' ||
+      selectedWorkflow.workflowId === 'royal-candy-story-limits') &&
+    (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning');
 
   return (
     <aside aria-label="Selected Royal Candy workflow provenance" className="encounter-inspector">
@@ -4941,6 +4982,22 @@ function SelectedRoyalCandyPanel({
           </dl>
 
           <div className="encounter-edit-form">
+            <div className="form-actions">
+              <button
+                className="primary-button"
+                disabled={!canStage || isStaging}
+                onClick={() => {
+                  if (selectedWorkflow) {
+                    onStageWorkflow(selectedWorkflow.workflowId);
+                  }
+                }}
+                type="button"
+              >
+                <ClipboardCheck aria-hidden="true" size={16} />
+                <span>{isStaging ? 'Staging' : 'Stage Workflow'}</span>
+              </button>
+            </div>
+
             <dl className="encounter-slot-detail">
               <div>
                 <dt>Description</dt>

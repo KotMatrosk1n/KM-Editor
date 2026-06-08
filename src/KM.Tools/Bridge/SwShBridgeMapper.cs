@@ -107,6 +107,16 @@ public static class SwShBridgeMapper
         return new LoadRoyalCandyWorkflowResponse(ToRoyalCandyWorkflowDto(workflow));
     }
 
+    public static StageRoyalCandyWorkflowResponse ToDto(SwShRoyalCandyEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageRoyalCandyWorkflowResponse(
+            ToRoyalCandyWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadSpreadsheetImportWorkflowResponse ToDto(SwShSpreadsheetImportWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);

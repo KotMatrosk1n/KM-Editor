@@ -28,6 +28,7 @@ public static class KmCommandNames
     public const string LoadFlagworkSaveWorkflow = "flagworkSave.load";
     public const string LoadExeFsPatchWorkflow = "exefsPatches.load";
     public const string LoadRoyalCandyWorkflow = "royalCandy.load";
+    public const string StageRoyalCandyWorkflow = "royalCandy.workflow.stage";
     public const string LoadSpreadsheetImportWorkflow = "spreadsheetImport.load";
     public const string PreviewSpreadsheetImport = "spreadsheetImport.preview";
     public const string StartEditSession = "editSession.start";

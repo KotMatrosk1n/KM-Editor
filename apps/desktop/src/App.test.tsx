@@ -638,6 +638,39 @@ describe('App', () => {
     expect(screen.getAllByText('ExeFS').length).toBeGreaterThan(0);
   });
 
+  it('stages a Royal Candy workflow for review and apply', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Candy' }));
+    await user.click(await screen.findByRole('button', { name: 'Stage Workflow' }));
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(
+      await screen.findByText('Stage Royal Candy workflow: Install Unlimited Royal Candy.')
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending Royal Candy workflow is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect((await screen.findAllByText('romfs/bin/pml/item/item.dat')).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(
+      await screen.findByText('Applied Royal Candy change plan to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
     const user = userEvent.setup();
     render(
@@ -1585,19 +1618,34 @@ function createMockProjectBridge(
                               'romfs/bin/archive/field/resident/data_table.gfpak'
                           }
                         ]
-              : [
-                  {
-                    reason: 'Apply pending Items edit: Set Potion buy price to 450.',
-                    replacesExistingOutput: false,
-                    sources: [
-                      {
-                        layer: 'base',
-                        relativePath: 'romfs/bin/pml/item/item.dat'
-                      }
-                    ],
-                    targetRelativePath: 'romfs/bin/pml/item/item.dat'
-                  }
-                ]
+                      : request.session.pendingEdits[0]?.domain === 'workflow.royalCandy'
+                        ? [
+                            {
+                              reason:
+                                'Apply Royal Candy workflow: Royal Candy item row patch.',
+                              replacesExistingOutput: false,
+                              sources: [
+                                {
+                                  layer: 'base',
+                                  relativePath: 'romfs/bin/pml/item/item.dat'
+                                }
+                              ],
+                              targetRelativePath: 'romfs/bin/pml/item/item.dat'
+                            }
+                          ]
+                        : [
+                            {
+                              reason: 'Apply pending Items edit: Set Potion buy price to 450.',
+                              replacesExistingOutput: false,
+                              sources: [
+                                {
+                                  layer: 'base',
+                                  relativePath: 'romfs/bin/pml/item/item.dat'
+                                }
+                              ],
+                              targetRelativePath: 'romfs/bin/pml/item/item.dat'
+                            }
+                          ]
         }
       }),
     listWorkflows: () =>
@@ -1714,6 +1762,109 @@ function createMockProjectBridge(
                 sourceLayer: 'base'
               },
               status: canEdit ? 'available' : 'readOnly',
+              steps: [
+                {
+                  description: 'Resolve required RomFS files and ExeFS inputs.',
+                  label: 'Validate sources',
+                  step: 1
+                },
+                {
+                  description: 'Review generated output targets before apply.',
+                  label: 'Review LayeredFS output',
+                  step: 2
+                }
+              ],
+              target: 'RomFS + ExeFS LayeredFS',
+              templateItemId: 50,
+              workflowId: 'royal-candy-unlimited'
+            }
+          ]
+        }
+      }),
+    stageRoyalCandyWorkflow: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Royal Candy workflow is staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.royalCandy',
+              field: 'workflowId',
+              newValue: 'unlimited',
+              recordId: request.workflowId,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/pml/item/item.dat'
+                }
+              ],
+              summary: 'Stage Royal Candy workflow: Install Unlimited Royal Candy.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-royal-candy'
+        },
+        workflow: {
+          checks: [
+            {
+              area: 'RomFS',
+              checkId: 'royal-candy-preflight:item-data',
+              message: 'Item data found.',
+              provenance: {
+                fileState: 'baseOnly',
+                sourceFile: 'romfs/bin/pml/item/item.dat',
+                sourceLayer: 'base'
+              },
+              status: 'Pass',
+              target: 'romfs/bin/pml/item/item.dat',
+              workflowId: 'royal-candy-preflight'
+            }
+          ],
+          diagnostics: [],
+          outputs: [
+            {
+              description: 'Royal Candy item row patch.',
+              outputId: 'royal-candy-unlimited:romfs/bin/pml/item/item.dat',
+              outputKind: 'RomFS data',
+              provenance: {
+                fileState: 'baseOnly',
+                sourceFile: 'romfs/bin/pml/item/item.dat',
+                sourceLayer: 'base'
+              },
+              relativePath: 'romfs/bin/pml/item/item.dat',
+              sourceFile: 'romfs/bin/pml/item/item.dat',
+              status: 'ready',
+              workflowId: 'royal-candy-unlimited'
+            }
+          ],
+          stats: {
+            failCount: 0,
+            outputCount: 1,
+            passCount: 1,
+            sourceFileCount: 1,
+            totalCheckCount: 1,
+            totalStepCount: 2,
+            totalWorkflowCount: 1,
+            warningCount: 0
+          },
+          summary: royalCandyWorkflowSummary,
+          workflows: [
+            {
+              category: 'Build',
+              description: 'Prepares Royal Candy item 1128 from Rare Candy item 50.',
+              itemId: 1128,
+              mode: 'unlimited',
+              name: 'Install Unlimited Royal Candy',
+              provenance: {
+                fileState: 'baseOnly',
+                sourceFile: 'romfs/bin/pml/item/item.dat',
+                sourceLayer: 'base'
+              },
+              status: 'available',
               steps: [
                 {
                   description: 'Resolve required RomFS files and ExeFS inputs.',
@@ -2152,6 +2303,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Raid Rewards change plan to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.royalCandy') {
+    return 'Applied Royal Candy change plan to the configured LayeredFS output root.';
+  }
+
   if (targetRelativePath.includes('/archive/field/resident/')) {
     return 'Applied Encounters change plan to the configured LayeredFS output root.';
   }
@@ -2171,6 +2326,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending encounter change is valid.';
     case 'workflow.raidRewards':
       return 'Pending raid reward change is valid.';
+    case 'workflow.royalCandy':
+      return 'Pending Royal Candy workflow is valid.';
     default:
       return 'Pending item change is valid.';
   }
