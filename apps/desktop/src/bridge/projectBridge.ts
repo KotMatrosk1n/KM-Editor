@@ -24,6 +24,8 @@ import {
   type LoadPokemonWorkflowResponse,
   type UpdatePokemonFieldRequest,
   type UpdatePokemonFieldResponse,
+  type UpdatePokemonLearnsetRequest,
+  type UpdatePokemonLearnsetResponse,
   type LoadPlacementWorkflowRequest,
   type LoadPlacementWorkflowResponse,
   type LoadRaidRewardsWorkflowRequest,
@@ -98,6 +100,7 @@ import {
   updateItemFieldResponseSchema,
   updateMoveFieldResponseSchema,
   updatePokemonFieldResponseSchema,
+  updatePokemonLearnsetResponseSchema,
   updateEncounterSlotFieldResponseSchema,
   updatePlacementObjectFieldResponseSchema,
   updateRaidRewardFieldResponseSchema,
@@ -130,6 +133,9 @@ export type ProjectBridge = {
   updatePokemonField: (
     request: UpdatePokemonFieldRequest
   ) => Promise<UpdatePokemonFieldResponse>;
+  updatePokemonLearnset: (
+    request: UpdatePokemonLearnsetRequest
+  ) => Promise<UpdatePokemonLearnsetResponse>;
   loadPlacementWorkflow: (
     request: LoadPlacementWorkflowRequest
   ) => Promise<LoadPlacementWorkflowResponse>;
@@ -378,6 +384,13 @@ export function createProjectBridge(
         kmCommandNames.updatePokemonField,
         request,
         updatePokemonFieldResponseSchema
+      ),
+    updatePokemonLearnset: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updatePokemonLearnset,
+        request,
+        updatePokemonLearnsetResponseSchema
       ),
     updateEncounterSlotField: (request) =>
       sendProjectBridgeRequest(

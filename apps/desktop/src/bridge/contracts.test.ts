@@ -49,6 +49,8 @@ import {
   updateItemFieldResponseSchema,
   updatePokemonFieldRequestSchema,
   updatePokemonFieldResponseSchema,
+  updatePokemonLearnsetRequestSchema,
+  updatePokemonLearnsetResponseSchema,
   updateMoveFieldRequestSchema,
   updateMoveFieldResponseSchema,
   updateEncounterSlotFieldRequestSchema,
@@ -410,7 +412,8 @@ describe('bridge contracts', () => {
             {
               level: 1,
               moveId: 33,
-              moveName: 'Tackle'
+              moveName: 'Tackle',
+              slot: 0
             }
           ],
           name: 'Bulbasaur',
@@ -1562,6 +1565,12 @@ describe('bridge contracts', () => {
     const updateResponseSchema = createBridgeResponseSchema(updateItemFieldResponseSchema);
     const updatePokemonRequestSchema = createBridgeRequestSchema(updatePokemonFieldRequestSchema);
     const updatePokemonResponseSchema = createBridgeResponseSchema(updatePokemonFieldResponseSchema);
+    const updatePokemonLearnsetBridgeRequestSchema = createBridgeRequestSchema(
+      updatePokemonLearnsetRequestSchema
+    );
+    const updatePokemonLearnsetBridgeResponseSchema = createBridgeResponseSchema(
+      updatePokemonLearnsetResponseSchema
+    );
     const updateMoveRequestSchema = createBridgeRequestSchema(updateMoveFieldRequestSchema);
     const updateMoveResponseSchema = createBridgeResponseSchema(updateMoveFieldResponseSchema);
     const updateTextRequestSchema = createBridgeRequestSchema(updateTextEntryRequestSchema);
@@ -2325,6 +2334,36 @@ describe('bridge contracts', () => {
 
     expect(
       updatePokemonResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: pokemonSession,
+          workflow: pokemonWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updatePokemonLearnsetBridgeRequestSchema.safeParse({
+        command: kmCommandNames.updatePokemonLearnset,
+        payload: {
+          action: 'upsert',
+          level: 9,
+          moveId: 345,
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output',
+            saveFilePath: null
+          },
+          personalId: 1,
+          session: editSession,
+          slot: 1
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updatePokemonLearnsetBridgeResponseSchema.safeParse({
         payload: {
           diagnostics: [],
           session: pokemonSession,

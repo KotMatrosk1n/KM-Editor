@@ -172,14 +172,58 @@ public sealed class SwShPokemonDataTableTests
             learnset.Moves,
             move =>
             {
+                Assert.Equal(0, move.Slot);
                 Assert.Equal(33, move.MoveId);
                 Assert.Equal(1, move.Level);
             },
             move =>
             {
+                Assert.Equal(1, move.Slot);
                 Assert.Equal(45, move.MoveId);
                 Assert.Equal(3, move.Level);
             });
+    }
+
+    [Fact]
+    public void LearnsetTableWritesRowsAndClearsStaleEntries()
+    {
+        var original = new byte[SwShPokemonLearnsetTable.RecordSize];
+        BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x00), 33);
+        BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x02), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x04), 45);
+        BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x06), 3);
+        BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x08), 345);
+        BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x0A), 7);
+        BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x0C), ushort.MaxValue);
+        BinaryPrimitives.WriteUInt16LittleEndian(original.AsSpan(0x0E), ushort.MaxValue);
+        var edited = new SwShPokemonLearnsetRecord(
+            0,
+            [
+                new SwShPokemonLearnsetMoveRecord(0, 33, 1),
+                new SwShPokemonLearnsetMoveRecord(1, 345, 9),
+            ]);
+
+        var written = SwShPokemonLearnsetTable.Write([edited], original);
+        var reparsed = SwShPokemonLearnsetTable.Parse(written).Records[0];
+
+        Assert.Collection(
+            reparsed.Moves,
+            move =>
+            {
+                Assert.Equal(0, move.Slot);
+                Assert.Equal(33, move.MoveId);
+                Assert.Equal(1, move.Level);
+            },
+            move =>
+            {
+                Assert.Equal(1, move.Slot);
+                Assert.Equal(345, move.MoveId);
+                Assert.Equal(9, move.Level);
+            });
+        Assert.Equal(ushort.MaxValue, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(0x08)));
+        Assert.Equal(ushort.MaxValue, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(0x0A)));
+        Assert.Equal(ushort.MaxValue, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(0x0C)));
+        Assert.Equal(ushort.MaxValue, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(0x0E)));
     }
 
     [Fact]

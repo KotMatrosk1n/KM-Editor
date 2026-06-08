@@ -507,6 +507,7 @@ public sealed class SwShPokemonWorkflowService
         var speciesId = ResolveSpeciesId(personal);
         var learnset = learnsets.TryGetValue(personal.PersonalId, out var learnsetRecord)
             ? learnsetRecord.Moves.Select(move => new SwShPokemonLearnsetMove(
+                    move.Slot,
                     move.MoveId,
                     GetIndexedName(move.MoveId, moveNames, "Move"),
                     move.Level))
@@ -739,6 +740,11 @@ public sealed class SwShPokemonWorkflowService
     internal static WorkflowFileSource? ResolvePersonalDataSource(OpenedProject project)
     {
         return ResolveWorkflowFile(project, PersonalDataPath);
+    }
+
+    internal static WorkflowFileSource? ResolveLearnsetDataSource(OpenedProject project)
+    {
+        return ResolveWorkflowFile(project, LearnsetDataPath);
     }
 
     internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)

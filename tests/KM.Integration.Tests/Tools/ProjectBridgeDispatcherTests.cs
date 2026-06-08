@@ -284,11 +284,13 @@ public sealed class ProjectBridgeDispatcherTests
             pokemon.Learnset,
             move =>
             {
+                Assert.Equal(0, move.Slot);
                 Assert.Equal(33, move.MoveId);
                 Assert.Equal("Tackle", move.MoveName);
             },
             move =>
             {
+                Assert.Equal(1, move.Slot);
                 Assert.Equal(45, move.MoveId);
                 Assert.Equal("Growl", move.MoveName);
             });
@@ -322,6 +324,41 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("1", edit.RecordId);
         Assert.Equal("hp", edit.Field);
         Assert.Equal("99", edit.NewValue);
+    }
+
+    [Fact]
+    public void DispatchUpdatePokemonLearnsetReturnsPendingPokemonSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShPokemonBridgeFixtures.WriteBasePokemonData(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdatePokemonLearnset,
+            new UpdatePokemonLearnsetRequest(
+                temp.Paths,
+                Session: null,
+                PersonalId: 1,
+                Action: "upsert",
+                Slot: 1,
+                MoveId: 345,
+                Level: 9),
+            requestId: "request-pokemon-learnset-update");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdatePokemonLearnsetResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-pokemon-learnset-update", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var updatedMove = response.Payload.Workflow.Pokemon[1].Learnset[1];
+        Assert.Equal(1, updatedMove.Slot);
+        Assert.Equal(345, updatedMove.MoveId);
+        Assert.Equal(9, updatedMove.Level);
+        var edit = Assert.Single(response.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.pokemon", edit.Domain);
+        Assert.Equal("1", edit.RecordId);
+        Assert.Equal("learnset:upsert:1", edit.Field);
+        Assert.Equal("345:9", edit.NewValue);
     }
 
     [Fact]

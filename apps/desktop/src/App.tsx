@@ -2,6 +2,8 @@
 
 import {
   Activity,
+  ArrowDown,
+  ArrowUp,
   CheckCircle,
   ClipboardCheck,
   Dna,
@@ -13,10 +15,12 @@ import {
   MapPin,
   Package,
   Pencil,
+  Plus,
   RefreshCw,
   Save,
   Search,
   ShieldCheck,
+  Trash2,
   Wrench,
   Zap,
   type LucideIcon
@@ -1139,6 +1143,37 @@ export function App({
     }
   };
 
+  const handleUpdatePokemonLearnset = async (
+    personalId: number,
+    action: string,
+    slot: number | null,
+    moveId: number | null,
+    level: number | null
+  ) => {
+    setIsPokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updatePokemonLearnset({
+        action,
+        level,
+        moveId,
+        paths: toProjectPaths(draftPaths),
+        personalId,
+        session: editSession,
+        slot
+      });
+      setPokemonWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsPokemonUpdating(false);
+    }
+  };
+
   const handleUpdateMoveField = async (moveId: number, field: string, value: string) => {
     setIsMoveUpdating(true);
     setBridgeDiagnostics([]);
@@ -1551,6 +1586,7 @@ export function App({
                 onSelectPokemon={setSelectedPokemonPersonalId}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePokemonField={handleUpdatePokemonField}
+                onUpdatePokemonLearnset={handleUpdatePokemonLearnset}
                 searchText={pokemonSearchText}
                 selectedPokemonPersonalId={selectedPokemonPersonalId}
                 workflow={pokemonWorkflow}
@@ -2532,6 +2568,7 @@ function PokemonSection({
   onSelectPokemon,
   onStartEditSession,
   onUpdatePokemonField,
+  onUpdatePokemonLearnset,
   searchText,
   selectedPokemonPersonalId,
   workflow
@@ -2543,6 +2580,13 @@ function PokemonSection({
   onSelectPokemon: (personalId: number | null) => void;
   onStartEditSession: () => void;
   onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
+  onUpdatePokemonLearnset: (
+    personalId: number,
+    action: string,
+    slot: number | null,
+    moveId: number | null,
+    level: number | null
+  ) => void;
   searchText: string;
   selectedPokemonPersonalId: number | null;
   workflow: PokemonWorkflow | null;
@@ -2650,6 +2694,7 @@ function PokemonSection({
               isPokemonUpdating={isPokemonUpdating}
               onStartEditSession={onStartEditSession}
               onUpdatePokemonField={onUpdatePokemonField}
+              onUpdatePokemonLearnset={onUpdatePokemonLearnset}
               pokemon={selectedPokemon}
             />
           </div>
@@ -2671,6 +2716,7 @@ function SelectedPokemonPanel({
   isPokemonUpdating,
   onStartEditSession,
   onUpdatePokemonField,
+  onUpdatePokemonLearnset,
   pokemon
 }: {
   canEditPokemon: boolean;
@@ -2680,6 +2726,13 @@ function SelectedPokemonPanel({
   isPokemonUpdating: boolean;
   onStartEditSession: () => void;
   onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
+  onUpdatePokemonLearnset: (
+    personalId: number,
+    action: string,
+    slot: number | null,
+    moveId: number | null,
+    level: number | null
+  ) => void;
   pokemon: PokemonRecord | null;
 }) {
   const [selectedFieldName, setSelectedFieldName] = useState<string>(
@@ -2694,6 +2747,21 @@ function SelectedPokemonPanel({
     pokemon?.compatibility[0]?.groupId ?? ''
   );
   const [compatibilitySearchText, setCompatibilitySearchText] = useState('');
+  const [selectedLearnsetSlot, setSelectedLearnsetSlot] = useState(
+    pokemon?.learnset[0]?.slot ?? 0
+  );
+  const selectedLearnsetMove =
+    pokemon?.learnset.find((move) => move.slot === selectedLearnsetSlot) ??
+    pokemon?.learnset[0] ??
+    null;
+  const [learnsetMoveIdDraft, setLearnsetMoveIdDraft] = useState(
+    selectedLearnsetMove?.moveId.toString() ?? ''
+  );
+  const [learnsetLevelDraft, setLearnsetLevelDraft] = useState(
+    selectedLearnsetMove?.level.toString() ?? ''
+  );
+  const [newLearnsetMoveIdDraft, setNewLearnsetMoveIdDraft] = useState('');
+  const [newLearnsetLevelDraft, setNewLearnsetLevelDraft] = useState('');
 
   useEffect(() => {
     if (!selectedField && editableFields[0]) {
@@ -2719,6 +2787,26 @@ function SelectedPokemonPanel({
     }
   }, [pokemon, selectedCompatibilityGroupId]);
 
+  useEffect(() => {
+    if (!pokemon || pokemon.learnset.length === 0) {
+      setSelectedLearnsetSlot(0);
+      return;
+    }
+
+    if (!pokemon.learnset.some((move) => move.slot === selectedLearnsetSlot)) {
+      setSelectedLearnsetSlot(pokemon.learnset[0].slot);
+    }
+  }, [pokemon, selectedLearnsetSlot]);
+
+  useEffect(() => {
+    setLearnsetMoveIdDraft(selectedLearnsetMove?.moveId.toString() ?? '');
+    setLearnsetLevelDraft(selectedLearnsetMove?.level.toString() ?? '');
+  }, [
+    selectedLearnsetMove?.level,
+    selectedLearnsetMove?.moveId,
+    selectedLearnsetMove?.slot
+  ]);
+
   const isBooleanField = selectedField?.valueKind === 'boolean';
   const isOptionField = Boolean(selectedField && selectedField.options.length > 0);
   const canSubmit =
@@ -2736,6 +2824,20 @@ function SelectedPokemonPanel({
     [compatibilitySearchText, selectedCompatibilityGroup]
   );
   const canToggleCompatibility = canEditPokemon && editSession !== null && !isPokemonUpdating;
+  const canEditLearnset = canEditPokemon && editSession !== null && !isPokemonUpdating;
+  const parsedLearnsetMoveId = Number.parseInt(learnsetMoveIdDraft, 10);
+  const parsedLearnsetLevel = Number.parseInt(learnsetLevelDraft, 10);
+  const parsedNewLearnsetMoveId = Number.parseInt(newLearnsetMoveIdDraft, 10);
+  const parsedNewLearnsetLevel = Number.parseInt(newLearnsetLevelDraft, 10);
+  const canSaveLearnsetMove =
+    canEditLearnset &&
+    selectedLearnsetMove !== null &&
+    Number.isInteger(parsedLearnsetMoveId) &&
+    Number.isInteger(parsedLearnsetLevel);
+  const canAddLearnsetMove =
+    canEditLearnset &&
+    Number.isInteger(parsedNewLearnsetMoveId) &&
+    Number.isInteger(parsedNewLearnsetLevel);
 
   return (
     <aside aria-label="Selected Pokemon provenance" className="item-inspector">
@@ -3024,17 +3126,174 @@ function SelectedPokemonPanel({
 
           <div className="inspector-block">
             <h4>Learnset</h4>
-            {pokemon.learnset.length > 0 ? (
-              <ul className="inspector-list">
-                {pokemon.learnset.slice(0, 12).map((move) => (
-                  <li key={`${move.level}-${move.moveId}`}>
-                    Lv. {move.level}: {move.moveName} ({move.moveId})
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="empty-copy">No level-up moves.</p>
-            )}
+            <div className="learnset-editor">
+              {pokemon.learnset.length > 0 ? (
+                <ul className="learnset-list">
+                  {pokemon.learnset.map((move) => (
+                    <li key={move.slot}>
+                      <button
+                        className={`learnset-row ${
+                          selectedLearnsetMove?.slot === move.slot ? 'learnset-row-selected' : ''
+                        }`}
+                        onClick={() => setSelectedLearnsetSlot(move.slot)}
+                        type="button"
+                      >
+                        <span>#{move.slot + 1}</span>
+                        <span>Lv. {move.level}</span>
+                        <strong>{move.moveName}</strong>
+                        <span>{move.moveId}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="empty-copy">No level-up moves.</p>
+              )}
+
+              {selectedLearnsetMove ? (
+                <div className="learnset-edit-grid">
+                  <label className="path-field">
+                    <span>Move ID</span>
+                    <input
+                      disabled={!canEditLearnset}
+                      min={0}
+                      onChange={(event) => setLearnsetMoveIdDraft(event.target.value)}
+                      type="number"
+                      value={learnsetMoveIdDraft}
+                    />
+                  </label>
+                  <label className="path-field">
+                    <span>Level</span>
+                    <input
+                      disabled={!canEditLearnset}
+                      min={0}
+                      onChange={(event) => setLearnsetLevelDraft(event.target.value)}
+                      type="number"
+                      value={learnsetLevelDraft}
+                    />
+                  </label>
+                  <div className="learnset-button-row">
+                    <button
+                      aria-label="Save learnset row"
+                      className="secondary-button icon-button"
+                      disabled={!canSaveLearnsetMove}
+                      onClick={() =>
+                        onUpdatePokemonLearnset(
+                          pokemon.personalId,
+                          'upsert',
+                          selectedLearnsetMove.slot,
+                          parsedLearnsetMoveId,
+                          parsedLearnsetLevel
+                        )
+                      }
+                      title="Save learnset row"
+                      type="button"
+                    >
+                      <Save aria-hidden="true" size={16} />
+                    </button>
+                    <button
+                      aria-label="Move learnset row up"
+                      className="secondary-button icon-button"
+                      disabled={!canEditLearnset || selectedLearnsetMove.slot === 0}
+                      onClick={() =>
+                        onUpdatePokemonLearnset(
+                          pokemon.personalId,
+                          'moveUp',
+                          selectedLearnsetMove.slot,
+                          null,
+                          null
+                        )
+                      }
+                      title="Move learnset row up"
+                      type="button"
+                    >
+                      <ArrowUp aria-hidden="true" size={16} />
+                    </button>
+                    <button
+                      aria-label="Move learnset row down"
+                      className="secondary-button icon-button"
+                      disabled={
+                        !canEditLearnset || selectedLearnsetMove.slot >= pokemon.learnset.length - 1
+                      }
+                      onClick={() =>
+                        onUpdatePokemonLearnset(
+                          pokemon.personalId,
+                          'moveDown',
+                          selectedLearnsetMove.slot,
+                          null,
+                          null
+                        )
+                      }
+                      title="Move learnset row down"
+                      type="button"
+                    >
+                      <ArrowDown aria-hidden="true" size={16} />
+                    </button>
+                    <button
+                      aria-label="Remove learnset row"
+                      className="secondary-button icon-button danger-icon-button"
+                      disabled={!canEditLearnset}
+                      onClick={() =>
+                        onUpdatePokemonLearnset(
+                          pokemon.personalId,
+                          'remove',
+                          selectedLearnsetMove.slot,
+                          null,
+                          null
+                        )
+                      }
+                      title="Remove learnset row"
+                      type="button"
+                    >
+                      <Trash2 aria-hidden="true" size={16} />
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="learnset-edit-grid">
+                <label className="path-field">
+                  <span>New move ID</span>
+                  <input
+                    disabled={!canEditLearnset}
+                    min={0}
+                    onChange={(event) => setNewLearnsetMoveIdDraft(event.target.value)}
+                    type="number"
+                    value={newLearnsetMoveIdDraft}
+                  />
+                </label>
+                <label className="path-field">
+                  <span>New level</span>
+                  <input
+                    disabled={!canEditLearnset}
+                    min={0}
+                    onChange={(event) => setNewLearnsetLevelDraft(event.target.value)}
+                    type="number"
+                    value={newLearnsetLevelDraft}
+                  />
+                </label>
+                <button
+                  aria-label="Add learnset row"
+                  className="secondary-button learnset-add-button"
+                  disabled={!canAddLearnsetMove}
+                  onClick={() => {
+                    onUpdatePokemonLearnset(
+                      pokemon.personalId,
+                      'add',
+                      null,
+                      parsedNewLearnsetMoveId,
+                      parsedNewLearnsetLevel
+                    );
+                    setNewLearnsetMoveIdDraft('');
+                    setNewLearnsetLevelDraft('');
+                  }}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={16} />
+                  <span>Add Row</span>
+                </button>
+              </div>
+            </div>
           </div>
         </>
       ) : (
@@ -6924,6 +7183,7 @@ function filterPokemon(pokemon: PokemonRecord[], searchText: string) {
         evolution.level.toString()
       ]),
       ...record.learnset.flatMap((move) => [
+        move.slot.toString(),
         move.moveId.toString(),
         move.moveName,
         move.level.toString()

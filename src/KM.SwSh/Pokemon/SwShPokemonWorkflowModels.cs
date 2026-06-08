@@ -78,6 +78,7 @@ public sealed record SwShPokemonEvolutionRecord(
     int Level);
 
 public sealed record SwShPokemonLearnsetMove(
+    int Slot,
     int MoveId,
     string MoveName,
     int Level);

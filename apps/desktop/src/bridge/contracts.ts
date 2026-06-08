@@ -11,6 +11,7 @@ export const kmCommandNameValues = [
   'items.field.update',
   'pokemon.load',
   'pokemon.field.update',
+  'pokemon.learnset.update',
   'moves.load',
   'moves.field.update',
   'text.load',
@@ -52,6 +53,7 @@ export const kmCommandNames = {
   loadItemsWorkflow: 'items.load',
   loadPokemonWorkflow: 'pokemon.load',
   updatePokemonField: 'pokemon.field.update',
+  updatePokemonLearnset: 'pokemon.learnset.update',
   loadMovesWorkflow: 'moves.load',
   updateMoveField: 'moves.field.update',
   loadTextWorkflow: 'text.load',
@@ -429,7 +431,8 @@ export const pokemonEvolutionRecordSchema = z.strictObject({
 export const pokemonLearnsetMoveSchema = z.strictObject({
   level: z.number().int().nonnegative(),
   moveId: z.number().int().nonnegative(),
-  moveName: z.string()
+  moveName: z.string(),
+  slot: z.number().int().nonnegative()
 });
 
 export const pokemonCompatibilityEntrySchema = z.strictObject({
@@ -515,6 +518,22 @@ export const updatePokemonFieldRequestSchema = z.strictObject({
 });
 
 export const updatePokemonFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: pokemonWorkflowSchema
+});
+
+export const updatePokemonLearnsetRequestSchema = z.strictObject({
+  action: z.string(),
+  level: z.number().int().nonnegative().nullable(),
+  moveId: z.number().int().nonnegative().nullable(),
+  paths: projectPathsSchema,
+  personalId: z.number().int().nonnegative(),
+  session: editSessionSchema.nullable(),
+  slot: z.number().int().nonnegative().nullable()
+});
+
+export const updatePokemonLearnsetResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
   workflow: pokemonWorkflowSchema
@@ -1503,6 +1522,8 @@ export type LoadPokemonWorkflowRequest = z.infer<typeof loadPokemonWorkflowReque
 export type LoadPokemonWorkflowResponse = z.infer<typeof loadPokemonWorkflowResponseSchema>;
 export type UpdatePokemonFieldRequest = z.infer<typeof updatePokemonFieldRequestSchema>;
 export type UpdatePokemonFieldResponse = z.infer<typeof updatePokemonFieldResponseSchema>;
+export type UpdatePokemonLearnsetRequest = z.infer<typeof updatePokemonLearnsetRequestSchema>;
+export type UpdatePokemonLearnsetResponse = z.infer<typeof updatePokemonLearnsetResponseSchema>;
 export type LoadMovesWorkflowRequest = z.infer<typeof loadMovesWorkflowRequestSchema>;
 export type LoadMovesWorkflowResponse = z.infer<typeof loadMovesWorkflowResponseSchema>;
 export type UpdateMoveFieldRequest = z.infer<typeof updateMoveFieldRequestSchema>;

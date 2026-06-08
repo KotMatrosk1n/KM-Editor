@@ -296,7 +296,8 @@ describe('projectBridge', () => {
                     {
                       level: 1,
                       moveId: 33,
-                      moveName: 'Tackle'
+                      moveName: 'Tackle',
+                      slot: 0
                     }
                   ],
                   name: 'Bulbasaur',
@@ -1749,6 +1750,73 @@ describe('projectBridge', () => {
 
     expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.pokemon');
     expect(updated.session.pendingEdits[0]?.field).toBe('hp');
+  });
+
+  it('runs pokemon learnset update command', async () => {
+    const bridge = createProjectBridge(async (requestJson) => {
+      const request = JSON.parse(requestJson) as { command: string };
+
+      expect(request.command).toBe('pokemon.learnset.update');
+
+      return JSON.stringify({
+        error: null,
+        payload: {
+          diagnostics: [],
+          session: {
+            hasPendingChanges: true,
+            pendingEdits: [
+              {
+                domain: 'workflow.pokemon',
+                field: 'learnset:upsert:1',
+                newValue: '345:9',
+                recordId: '1',
+                sources: [
+                  {
+                    layer: 'base',
+                    relativePath: 'romfs/bin/pml/waza_oboe/wazaoboe_total.bin'
+                  }
+                ],
+                summary: 'Set Bulbasaur learnset slot 1 to Lv. 9 Magical Leaf.'
+              }
+            ],
+            sessionId: 'session-1'
+          },
+          workflow: {
+            diagnostics: [],
+            editableFields: [],
+            pokemon: [],
+            stats: {
+              presentPokemonCount: 0,
+              sourceFileCount: 1,
+              totalEvolutionCount: 0,
+              totalLearnsetMoveCount: 0,
+              totalPokemonCount: 0
+            },
+            summary: {
+              availability: 'available',
+              description:
+                'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
+              diagnostics: [],
+              id: 'pokemon',
+              label: 'Pokemon Data'
+            }
+          }
+        }
+      });
+    });
+
+    const updated = await bridge.updatePokemonLearnset({
+      action: 'upsert',
+      level: 9,
+      moveId: 345,
+      paths: editableProjectPaths,
+      personalId: 1,
+      session: null,
+      slot: 1
+    });
+
+    expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.pokemon');
+    expect(updated.session.pendingEdits[0]?.field).toBe('learnset:upsert:1');
   });
 
   it('runs move field update command', async () => {
