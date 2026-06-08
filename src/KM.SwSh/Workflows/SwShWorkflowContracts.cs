@@ -17,6 +17,7 @@ public static class SwShWorkflowIds
     public const string RentalPokemon = "rentalPokemon";
     public const string Shops = "shops";
     public const string Encounters = "encounters";
+    public const string RaidBattles = "raidBattles";
     public const string RaidRewards = "raidRewards";
     public const string Placement = "placement";
     public const string FlagworkSave = "flagworkSave";

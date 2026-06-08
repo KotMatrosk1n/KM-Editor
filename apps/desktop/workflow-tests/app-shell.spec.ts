@@ -25,11 +25,12 @@ test('loads the workbench shell and switches sections', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Rental Pokemon' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Shops' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Encounters and Wild Data' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Raid Battles' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Raid Rewards' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Placement' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Flagwork and Save Inspectors' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'ExeFS Patch Manager' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Royal Candy Workflows' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Spreadsheet Import' })).toBeVisible();
-  await expect(page.getByText('Disabled', { exact: true })).toHaveCount(17);
+  await expect(page.getByText('Disabled', { exact: true })).toHaveCount(18);
 });

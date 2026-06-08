@@ -14,6 +14,7 @@ import {
   type PokemonWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
+  type RaidBattlesWorkflow,
   type RaidRewardsWorkflow,
   type RentalPokemonWorkflow,
   type ShopsWorkflow,
@@ -67,6 +68,8 @@ describe('App', () => {
       pokemonSearchText: '',
       pokemonWorkflow: null,
       projectStatus: 'idle',
+      raidBattleSearchText: '',
+      raidBattlesWorkflow: null,
       raidRewardSearchText: '',
       raidRewardsWorkflow: null,
       royalCandySearchText: '',
@@ -90,6 +93,7 @@ describe('App', () => {
       selectedMoveId: null,
       selectedPlacementObjectId: null,
       selectedPokemonPersonalId: null,
+      selectedRaidBattleTableId: null,
       selectedRaidRewardTableId: null,
       selectedSaveBlockId: null,
       selectedShopId: null,
@@ -983,6 +987,51 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Raid Rewards change plan to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
+  it('opens Raid Battles, edits guaranteed perfect IVs, reviews a battle plan, and applies it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Raid Battles' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Raid Battles' })).toBeInTheDocument();
+    expect(screen.getAllByText('0xAABBCCDD00112233').length).toBeGreaterThan(0);
+    expect(screen.getByRole('option', { name: 'Slot 1: Eevee' })).toBeInTheDocument();
+    expect(screen.getByText('Any Ability')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.selectOptions(screen.getByLabelText('Guaranteed perfect IVs'), '6');
+    await user.click(screen.getByRole('button', { name: 'Save guaranteed perfect ivs' }));
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(
+      screen.getByText('Set Raid Battles 0xAABBCCDD00112233 slot 1 flawlessIvs to 6.')
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending raid battle change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(
+      screen.getAllByText('romfs/bin/archive/field/resident/data_table.gfpak').length
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Applied Raid Battles change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
   });
 
@@ -3392,6 +3441,108 @@ function createMockProjectBridge(
     id: 'raidRewards',
     label: 'Raid Rewards'
   };
+  const raidBattlesWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Raid Pokemon slots, star probabilities, ability rolls, guaranteed perfect IVs, and source provenance.',
+    diagnostics: [],
+    id: 'raidBattles',
+    label: 'Raid Battles'
+  };
+  const raidBattlesWorkflow: RaidBattlesWorkflow = {
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'species',
+        label: 'Species',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '025 Pikachu', value: 25 },
+          { label: '133 Eevee', value: 133 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'flawlessIvs',
+        label: 'Guaranteed perfect IVs',
+        maximumValue: 6,
+        minimumValue: 0,
+        options: [
+          { label: 'Random IVs', value: 0 },
+          { label: '4 Guaranteed Perfect IVs', value: 4 },
+          { label: '6 Perfect IVs', value: 6 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'star5Probability',
+        label: '5-star probability',
+        maximumValue: 100,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      }
+    ],
+    stats: {
+      gigantamaxSlotCount: 1,
+      sourceFileCount: 2,
+      totalSlotCount: 2,
+      totalTableCount: 1
+    },
+    summary: raidBattlesWorkflowSummary,
+    tables: [
+      {
+        denId: 'table_AABBCCDD00112233',
+        gameVersion: 'Sword',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+          sourceLayer: 'base'
+        },
+        slots: [
+          {
+            ability: 4,
+            abilityLabel: 'Any Ability',
+            bonusTableHash: '0x1020304050607080',
+            dropTableHash: '0xAABBCCDD00112233',
+            entryIndex: 0,
+            flawlessIvs: 4,
+            form: 1,
+            gender: 1,
+            genderLabel: 'Male',
+            isGigantamax: true,
+            levelTableHash: '0x1122334455667788',
+            probabilities: [100, 20, 30, 40, 50],
+            probabilitySummary: '1-star 100% / 2-star 20% / 3-star 30% / 4-star 40% / 5-star 50%',
+            slot: 1,
+            species: 'Eevee',
+            speciesId: 133
+          },
+          {
+            ability: 0,
+            abilityLabel: 'Ability 1',
+            bonusTableHash: '0x0807060504030201',
+            dropTableHash: '0xAABBCCDD00112233',
+            entryIndex: 1,
+            flawlessIvs: 0,
+            form: 0,
+            gender: 0,
+            genderLabel: 'Random',
+            isGigantamax: false,
+            levelTableHash: '0x2233445566778899',
+            probabilities: [5, 10, 15, 20, 25],
+            probabilitySummary: '1-star 5% / 2-star 10% / 3-star 15% / 4-star 20% / 5-star 25%',
+            slot: 2,
+            species: 'Pikachu',
+            speciesId: 25
+          }
+        ],
+        sourceTableHash: '0xAABBCCDD00112233',
+        tableId: 'raid:0:AABBCCDD00112233',
+        tableIndex: 0
+      }
+    ]
+  };
   const raidRewardsWorkflow: RaidRewardsWorkflow = {
     diagnostics: [],
     editableFields: [
@@ -3903,11 +4054,11 @@ function createMockProjectBridge(
                             'romfs/bin/archive/field/resident/data_table.gfpak'
                         }
                       ]
-                    : request.session.pendingEdits[0]?.domain === 'workflow.raidRewards'
+                    : request.session.pendingEdits[0]?.domain === 'workflow.raidBattles'
                       ? [
                           {
                             reason:
-                              'Apply pending Raid Rewards edit: Set Drop 0xAABBCCDD00112233 slot 1 5-star value to 77.',
+                              'Apply pending Raid Battles edit: Set Raid Battles 0xAABBCCDD00112233 slot 2 guaranteed perfect IVs to 6.',
                             replacesExistingOutput: false,
                             sources: [
                               {
@@ -3920,7 +4071,24 @@ function createMockProjectBridge(
                               'romfs/bin/archive/field/resident/data_table.gfpak'
                           }
                         ]
-                      : request.session.pendingEdits[0]?.domain === 'workflow.royalCandy'
+                      : request.session.pendingEdits[0]?.domain === 'workflow.raidRewards'
+                        ? [
+                            {
+                              reason:
+                                'Apply pending Raid Rewards edit: Set Drop 0xAABBCCDD00112233 slot 1 5-star value to 77.',
+                              replacesExistingOutput: false,
+                              sources: [
+                                {
+                                  layer: 'base',
+                                  relativePath:
+                                    'romfs/bin/archive/field/resident/data_table.gfpak'
+                                }
+                              ],
+                              targetRelativePath:
+                                'romfs/bin/archive/field/resident/data_table.gfpak'
+                            }
+                          ]
+                        : request.session.pendingEdits[0]?.domain === 'workflow.royalCandy'
                         ? [
                             {
                               reason:
@@ -3979,6 +4147,7 @@ function createMockProjectBridge(
           rentalPokemonWorkflowSummary,
           shopsWorkflowSummary,
           encountersWorkflowSummary,
+          raidBattlesWorkflowSummary,
           raidRewardsWorkflowSummary,
           placementWorkflowSummary,
           flagworkSaveWorkflowSummary,
@@ -4305,6 +4474,10 @@ function createMockProjectBridge(
     loadPlacementWorkflow: () =>
       Promise.resolve({
         workflow: placementWorkflow
+      }),
+    loadRaidBattlesWorkflow: () =>
+      Promise.resolve({
+        workflow: raidBattlesWorkflow
       }),
     loadRaidRewardsWorkflow: () =>
       Promise.resolve({
@@ -5114,6 +5287,55 @@ function createMockProjectBridge(
           )
         }
       }),
+    updateRaidBattleSlotField: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.raidBattles',
+              field: request.field,
+              newValue: request.value,
+              recordId: `${request.tableId}#${request.slot}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
+                }
+              ],
+              summary: `Set Raid Battles 0xAABBCCDD00112233 slot ${request.slot} ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...raidBattlesWorkflow,
+          tables: raidBattlesWorkflow.tables.map((table) =>
+            table.tableId === request.tableId
+              ? {
+                  ...table,
+                  slots: table.slots.map((slot) =>
+                    slot.slot === request.slot
+                      ? {
+                          ...slot,
+                          flawlessIvs:
+                            request.field === 'flawlessIvs'
+                              ? Number.parseInt(request.value, 10)
+                              : slot.flawlessIvs,
+                          probabilities: slot.probabilities.map((value, index) =>
+                            request.field === 'star5Probability' && index === 4
+                              ? Number.parseInt(request.value, 10)
+                              : value
+                          )
+                        }
+                      : slot
+                  )
+                }
+              : table
+          )
+        }
+      }),
     updateRaidRewardField: (request) =>
       Promise.resolve({
         diagnostics: [],
@@ -5236,6 +5458,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Shops change plan to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.raidBattles') {
+    return 'Applied Raid Battles change plan to the configured LayeredFS output root.';
+  }
+
   if (domain === 'workflow.raidRewards') {
     return 'Applied Raid Rewards change plan to the configured LayeredFS output root.';
   }
@@ -5297,6 +5523,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending shop change is valid.';
     case 'workflow.encounters':
       return 'Pending encounter change is valid.';
+    case 'workflow.raidBattles':
+      return 'Pending raid battle change is valid.';
     case 'workflow.raidRewards':
       return 'Pending raid reward change is valid.';
     case 'workflow.moves':

@@ -35,6 +35,8 @@ public static class KmCommandNames
     public const string UpdateShopInventoryItem = "shops.inventory.update";
     public const string LoadEncountersWorkflow = "encounters.load";
     public const string UpdateEncounterSlotField = "encounters.slot.update";
+    public const string LoadRaidBattlesWorkflow = "raidBattles.load";
+    public const string UpdateRaidBattleSlotField = "raidBattles.slot.update";
     public const string LoadRaidRewardsWorkflow = "raidRewards.load";
     public const string UpdateRaidRewardField = "raidRewards.reward.update";
     public const string LoadPlacementWorkflow = "placement.load";
