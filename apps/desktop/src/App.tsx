@@ -51,6 +51,9 @@ import {
   type ExeFsSegmentRecord,
   type FlagRecord,
   type FlagworkSaveWorkflow,
+  type GiftPokemonEditableField,
+  type GiftPokemonRecord,
+  type GiftPokemonWorkflow,
   type ItemEditableField,
   type ItemsWorkflow,
   type ItemRecord,
@@ -152,6 +155,11 @@ const sections: Array<{
     icon: Activity
   },
   {
+    id: 'giftPokemon',
+    label: 'Gift Pokemon',
+    icon: Dna
+  },
+  {
     id: 'shops',
     label: 'Shops',
     icon: ListChecks
@@ -233,6 +241,12 @@ const workflowDefinitions: Array<{
     label: 'Trainers',
     description: 'Trainer parties, classes, battle types, and source provenance.',
     icon: Activity
+  },
+  {
+    id: 'giftPokemon',
+    label: 'Gift Pokemon',
+    description: 'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
+    icon: Dna
   },
   {
     id: 'shops',
@@ -403,6 +417,27 @@ const trainerPokemonFieldNames = [
   shinyFieldName,
   canDynamaxFieldName
 ] as const;
+const giftSpeciesFieldName = 'species';
+const giftBallItemIdFieldName = 'ballItemId';
+const giftShinyLockFieldName = 'shinyLock';
+const giftSpecialMoveIdFieldName = 'specialMoveId';
+const giftFlawlessIvCountFieldName = 'flawlessIvCount';
+const giftPokemonFieldNames = [
+  giftSpeciesFieldName,
+  formFieldName,
+  levelFieldName,
+  heldItemIdFieldName,
+  giftBallItemIdFieldName,
+  abilityFieldName,
+  natureFieldName,
+  genderFieldName,
+  giftShinyLockFieldName,
+  dynamaxLevelFieldName,
+  canGigantamaxFieldName,
+  giftSpecialMoveIdFieldName,
+  ...ivFieldNames,
+  giftFlawlessIvCountFieldName
+] as const;
 const shopItemIdFieldName = 'itemId';
 const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
@@ -455,6 +490,8 @@ export function App({
   const exeFsPatchWorkflow = useWorkbenchStore((state) => state.exeFsPatchWorkflow);
   const flagworkSaveSearchText = useWorkbenchStore((state) => state.flagworkSaveSearchText);
   const flagworkSaveWorkflow = useWorkbenchStore((state) => state.flagworkSaveWorkflow);
+  const giftPokemonSearchText = useWorkbenchStore((state) => state.giftPokemonSearchText);
+  const giftPokemonWorkflow = useWorkbenchStore((state) => state.giftPokemonWorkflow);
   const itemSearchText = useWorkbenchStore((state) => state.itemSearchText);
   const itemsWorkflow = useWorkbenchStore((state) => state.itemsWorkflow);
   const movesSearchText = useWorkbenchStore((state) => state.movesSearchText);
@@ -496,6 +533,9 @@ export function App({
   const selectedFlagId = useWorkbenchStore((state) => state.selectedFlagId);
   const selectedExeFsCheckId = useWorkbenchStore((state) => state.selectedExeFsCheckId);
   const selectedExeFsPatchId = useWorkbenchStore((state) => state.selectedExeFsPatchId);
+  const selectedGiftPokemonIndex = useWorkbenchStore(
+    (state) => state.selectedGiftPokemonIndex
+  );
   const selectedRoyalCandyCheckId = useWorkbenchStore(
     (state) => state.selectedRoyalCandyCheckId
   );
@@ -534,6 +574,10 @@ export function App({
     (state) => state.setFlagworkSaveSearchText
   );
   const setFlagworkSaveWorkflow = useWorkbenchStore((state) => state.setFlagworkSaveWorkflow);
+  const setGiftPokemonSearchText = useWorkbenchStore(
+    (state) => state.setGiftPokemonSearchText
+  );
+  const setGiftPokemonWorkflow = useWorkbenchStore((state) => state.setGiftPokemonWorkflow);
   const setItemSearchText = useWorkbenchStore((state) => state.setItemSearchText);
   const setItemsWorkflow = useWorkbenchStore((state) => state.setItemsWorkflow);
   const setMovesSearchText = useWorkbenchStore((state) => state.setMovesSearchText);
@@ -576,6 +620,9 @@ export function App({
   const setSelectedExeFsPatchId = useWorkbenchStore(
     (state) => state.setSelectedExeFsPatchId
   );
+  const setSelectedGiftPokemonIndex = useWorkbenchStore(
+    (state) => state.setSelectedGiftPokemonIndex
+  );
   const setSelectedRoyalCandyCheckId = useWorkbenchStore(
     (state) => state.setSelectedRoyalCandyCheckId
   );
@@ -617,6 +664,8 @@ export function App({
   const [isTextUpdating, setIsTextUpdating] = useState(false);
   const [isTrainersLoading, setIsTrainersLoading] = useState(false);
   const [isTrainerUpdating, setIsTrainerUpdating] = useState(false);
+  const [isGiftPokemonLoading, setIsGiftPokemonLoading] = useState(false);
+  const [isGiftPokemonUpdating, setIsGiftPokemonUpdating] = useState(false);
   const [isShopsLoading, setIsShopsLoading] = useState(false);
   const [isShopUpdating, setIsShopUpdating] = useState(false);
   const [isEncountersLoading, setIsEncountersLoading] = useState(false);
@@ -782,6 +831,20 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsTrainersLoading(false);
+    }
+  };
+
+  const handleOpenGiftPokemonWorkflow = async () => {
+    setIsGiftPokemonLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadGiftPokemonWorkflow({ paths: toProjectPaths(draftPaths) });
+      setGiftPokemonWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsGiftPokemonLoading(false);
     }
   };
 
@@ -999,6 +1062,12 @@ export function App({
           void handleOpenTrainersWorkflow();
         }
         break;
+      case 'giftPokemon':
+        if (!giftPokemonWorkflow && !isGiftPokemonLoading) {
+          markLazyLoadStarted();
+          void handleOpenGiftPokemonWorkflow();
+        }
+        break;
       case 'shops':
         if (!shopsWorkflow && !isShopsLoading) {
           markLazyLoadStarted();
@@ -1055,10 +1124,12 @@ export function App({
     encountersWorkflow,
     exeFsPatchWorkflow,
     flagworkSaveWorkflow,
+    giftPokemonWorkflow,
     health?.canOpenReadOnlyWorkflows,
     isEncountersLoading,
     isExeFsPatchLoading,
     isFlagworkSaveLoading,
+    isGiftPokemonLoading,
     isItemsLoading,
     isMovesLoading,
     isPlacementLoading,
@@ -1306,6 +1377,33 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsTrainerUpdating(false);
+    }
+  };
+
+  const handleUpdateGiftPokemonField = async (
+    giftIndex: number,
+    field: string,
+    value: string
+  ) => {
+    setIsGiftPokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateGiftPokemonField({
+        field,
+        giftIndex,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        value
+      });
+      setGiftPokemonWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsGiftPokemonUpdating(false);
     }
   };
 
@@ -1597,12 +1695,14 @@ export function App({
               isRaidRewardsLoading={isRaidRewardsLoading}
               isPlacementLoading={isPlacementLoading}
               isFlagworkSaveLoading={isFlagworkSaveLoading}
+              isGiftPokemonLoading={isGiftPokemonLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
               isSpreadsheetImportLoading={isSpreadsheetImportLoading}
               onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
               onOpenExeFsPatchWorkflow={handleOpenExeFsPatchWorkflow}
               onOpenFlagworkSaveWorkflow={handleOpenFlagworkSaveWorkflow}
+              onOpenGiftPokemonWorkflow={handleOpenGiftPokemonWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
               onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
@@ -1706,6 +1806,24 @@ export function App({
                 searchText={trainerSearchText}
                 selectedTrainerId={selectedTrainerId}
                 workflow={trainersWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'giftPokemon' ? (
+            isGiftPokemonLoading && !giftPokemonWorkflow ? (
+              <WorkflowLoadingPanel label="Gift Pokemon" />
+            ) : (
+              <GiftPokemonSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isGiftPokemonUpdating={isGiftPokemonUpdating}
+                onSearchChange={setGiftPokemonSearchText}
+                onSelectGift={setSelectedGiftPokemonIndex}
+                onStartEditSession={handleStartEditSession}
+                onUpdateGiftPokemonField={handleUpdateGiftPokemonField}
+                searchText={giftPokemonSearchText}
+                selectedGiftIndex={selectedGiftPokemonIndex}
+                workflow={giftPokemonWorkflow}
               />
             )
           ) : null}
@@ -2088,11 +2206,13 @@ function WorkflowsSection({
   isRaidRewardsLoading,
   isPlacementLoading,
   isFlagworkSaveLoading,
+  isGiftPokemonLoading,
   isRoyalCandyLoading,
   isSpreadsheetImportLoading,
   onOpenEncountersWorkflow,
   onOpenExeFsPatchWorkflow,
   onOpenFlagworkSaveWorkflow,
+  onOpenGiftPokemonWorkflow,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
@@ -2118,11 +2238,13 @@ function WorkflowsSection({
   isRaidRewardsLoading: boolean;
   isPlacementLoading: boolean;
   isFlagworkSaveLoading: boolean;
+  isGiftPokemonLoading: boolean;
   isRoyalCandyLoading: boolean;
   isSpreadsheetImportLoading: boolean;
   onOpenEncountersWorkflow: () => void;
   onOpenExeFsPatchWorkflow: () => void;
   onOpenFlagworkSaveWorkflow: () => void;
+  onOpenGiftPokemonWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
@@ -2153,6 +2275,7 @@ function WorkflowsSection({
           const isMovesWorkflow = definition.id === 'moves';
           const isTextWorkflow = definition.id === 'text';
           const isTrainersWorkflow = definition.id === 'trainers';
+          const isGiftPokemonWorkflow = definition.id === 'giftPokemon';
           const isShopsWorkflow = definition.id === 'shops';
           const isEncountersWorkflow = definition.id === 'encounters';
           const isRaidRewardsWorkflow = definition.id === 'raidRewards';
@@ -2166,6 +2289,8 @@ function WorkflowsSection({
           const canOpenMoves = isMovesWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
+          const canOpenGiftPokemon =
+            isGiftPokemonWorkflow && workflowState.availability !== 'disabled';
           const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
           const canOpenEncounters =
             isEncountersWorkflow && workflowState.availability !== 'disabled';
@@ -2248,6 +2373,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isTrainersLoading ? 'Loading' : 'Open Trainers'}</span>
+                  </button>
+                ) : null}
+                {isGiftPokemonWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenGiftPokemon || isGiftPokemonLoading}
+                    onClick={onOpenGiftPokemonWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isGiftPokemonLoading ? 'Loading' : 'Open Gifts'}</span>
                   </button>
                 ) : null}
                 {isShopsWorkflow ? (
@@ -4986,6 +5122,335 @@ function TrainerFieldInput({
       >
         {!hasDraftOption && draftValue !== '' ? (
           <option value={draftValue}>{draftValue}</option>
+        ) : null}
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value.toString()}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <input
+      aria-label={field.label}
+      disabled={disabled}
+      max={field.maximumValue ?? undefined}
+      min={field.minimumValue ?? undefined}
+      onChange={(event) => onChange(event.target.value)}
+      type="number"
+      value={draftValue}
+    />
+  );
+}
+
+function GiftPokemonSection({
+  editSession,
+  isEditStarting,
+  isGiftPokemonUpdating,
+  onSearchChange,
+  onSelectGift,
+  onStartEditSession,
+  onUpdateGiftPokemonField,
+  searchText,
+  selectedGiftIndex,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isGiftPokemonUpdating: boolean;
+  onSearchChange: (searchText: string) => void;
+  onSelectGift: (giftIndex: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateGiftPokemonField: (giftIndex: number, field: string, value: string) => void;
+  searchText: string;
+  selectedGiftIndex: number | null;
+  workflow: GiftPokemonWorkflow | null;
+}) {
+  const gifts = workflow?.gifts ?? [];
+  const filteredGifts = useMemo(
+    () => filterGiftPokemon(gifts, searchText),
+    [gifts, searchText]
+  );
+  const selectedGift = useMemo(
+    () =>
+      gifts.find((gift) => gift.giftIndex === selectedGiftIndex) ?? filteredGifts[0] ?? null,
+    [filteredGifts, gifts, selectedGiftIndex]
+  );
+  const canEditGifts = workflow?.summary.availability === 'available';
+  const pendingGiftIndexes = useMemo(() => getPendingGiftPokemonIndexes(editSession), [editSession]);
+
+  return (
+    <>
+      <section aria-labelledby="gift-pokemon-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Dna aria-hidden="true" size={18} />
+          <h2 id="gift-pokemon-heading">Gift Pokemon</h2>
+        </div>
+
+        <div className="items-toolbar trainers-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search gift Pokemon"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search gift Pokemon"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded gifts"
+            value={workflow ? workflow.stats.totalGiftCount.toString() : '0'}
+          />
+          <Metric
+            label="Egg gifts"
+            value={workflow ? workflow.stats.eggGiftCount.toString() : '0'}
+          />
+          <Metric
+            label="Fixed IV rows"
+            value={workflow ? workflow.stats.fixedIvGiftCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="trainers-layout">
+            <div
+              aria-colcount={6}
+              aria-label="Gift Pokemon"
+              aria-rowcount={filteredGifts.length + 1}
+              className="trainers-table"
+              role="table"
+            >
+              <div className="trainers-row trainers-row-heading" role="row">
+                <span role="columnheader">Index</span>
+                <span role="columnheader">Gift</span>
+                <span role="columnheader">Species</span>
+                <span role="columnheader">Level</span>
+                <span role="columnheader">IVs</span>
+                <span role="columnheader">Source</span>
+              </div>
+              <VirtualTableBody
+                getKey={(gift) => gift.giftIndex}
+                items={filteredGifts}
+                renderRow={(gift) => (
+                  <button
+                    className={`trainers-row ${
+                      selectedGift?.giftIndex === gift.giftIndex ? 'trainers-row-selected' : ''
+                    } ${pendingGiftIndexes.has(gift.giftIndex) ? 'trainers-row-pending' : ''}`}
+                    onClick={() => onSelectGift(gift.giftIndex)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{gift.giftIndex + 1}</span>
+                    <span role="cell">{gift.label}</span>
+                    <span role="cell">{gift.species}</span>
+                    <span role="cell">{gift.level}</span>
+                    <span role="cell">{gift.ivSummary}</span>
+                    <span role="cell">{formatSourceLayer(gift.provenance.sourceLayer)}</span>
+                  </button>
+                )}
+              />
+            </div>
+
+            <SelectedGiftPokemonPanel
+              canEditGifts={canEditGifts}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              gift={selectedGift}
+              isEditStarting={isEditStarting}
+              isGiftPokemonUpdating={isGiftPokemonUpdating}
+              onStartEditSession={onStartEditSession}
+              onUpdateGiftPokemonField={onUpdateGiftPokemonField}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Gift Pokemon from Workflows to load backend gift data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedGiftPokemonPanel({
+  canEditGifts,
+  editSession,
+  editableFields,
+  gift,
+  isEditStarting,
+  isGiftPokemonUpdating,
+  onStartEditSession,
+  onUpdateGiftPokemonField
+}: {
+  canEditGifts: boolean;
+  editSession: EditSession | null;
+  editableFields: GiftPokemonEditableField[];
+  gift: GiftPokemonRecord | null;
+  isEditStarting: boolean;
+  isGiftPokemonUpdating: boolean;
+  onStartEditSession: () => void;
+  onUpdateGiftPokemonField: (giftIndex: number, field: string, value: string) => void;
+}) {
+  const [giftDrafts, setGiftDrafts] = useState<Record<string, string>>({});
+  const giftFields = editableFields.filter((field) =>
+    giftPokemonFieldNames.includes(field.field as (typeof giftPokemonFieldNames)[number])
+  );
+
+  useEffect(() => {
+    if (!gift) {
+      setGiftDrafts({});
+      return;
+    }
+
+    setGiftDrafts(
+      Object.fromEntries(
+        giftFields.map((field) => [
+          field.field,
+          (getEditableGiftPokemonFieldValue(gift, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [editableFields, gift]);
+
+  return (
+    <aside aria-label="Selected gift Pokemon provenance" className="trainer-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Gift</h3>
+      </div>
+
+      {gift ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Gift</dt>
+              <dd>{gift.label}</dd>
+            </div>
+            <div>
+              <dt>Data file</dt>
+              <dd>{gift.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(gift.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(gift.provenance.fileState)}</dd>
+            </div>
+            <div>
+              <dt>Ball</dt>
+              <dd>{gift.ballItem}</dd>
+            </div>
+            <div>
+              <dt>Held item</dt>
+              <dd>{gift.heldItem ?? 'None'}</dd>
+            </div>
+            <div>
+              <dt>Special move</dt>
+              <dd>{gift.specialMove ?? 'None'}</dd>
+            </div>
+            <div>
+              <dt>IV detail</dt>
+              <dd>{formatGiftPokemonIvs(gift)}</dd>
+            </div>
+          </dl>
+
+          <div className="trainer-edit-form">
+            <div className="trainer-field-grid">
+              {giftFields.map((field) => {
+                const currentValue = getEditableGiftPokemonFieldValue(gift, field.field);
+                const draftValue = giftDrafts[field.field] ?? '';
+                const draftState = getGiftPokemonDraftState(draftValue, currentValue, field);
+                const canSubmit =
+                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+
+                return (
+                  <div className="trainer-editor-row" key={field.field}>
+                    <label className="path-field">
+                      <span>{field.label}</span>
+                      <GiftPokemonFieldInput
+                        disabled={!canEditGifts || editSession === null || isGiftPokemonUpdating}
+                        draftValue={draftValue}
+                        field={field}
+                        onChange={(value) =>
+                          setGiftDrafts((currentDrafts) => ({
+                            ...currentDrafts,
+                            [field.field]: value
+                          }))
+                        }
+                      />
+                    </label>
+                    {editSession ? (
+                      <button
+                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                        className="primary-button compact-button"
+                        disabled={!canSubmit || isGiftPokemonUpdating}
+                        onClick={() =>
+                          onUpdateGiftPokemonField(
+                            gift.giftIndex,
+                            field.field,
+                            draftState.parsedValue!.toString()
+                          )
+                        }
+                        type="button"
+                      >
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isGiftPokemonUpdating ? 'Saving' : 'Save'}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditGifts || isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No gift selected.</p>
+      )}
+    </aside>
+  );
+}
+
+function GiftPokemonFieldInput({
+  disabled,
+  draftValue,
+  field,
+  onChange
+}: {
+  disabled: boolean;
+  draftValue: string;
+  field: GiftPokemonEditableField;
+  onChange: (value: string) => void;
+}) {
+  if (field.options.length > 0) {
+    const hasDraftOption = field.options.some((option) => option.value.toString() === draftValue);
+
+    return (
+      <select
+        aria-label={field.label}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        value={draftValue}
+      >
+        {!hasDraftOption ? (
+          <option value={draftValue}>{draftValue === '' ? 'Custom fixed IVs' : draftValue}</option>
         ) : null}
         {field.options.map((option) => (
           <option key={option.value} value={option.value.toString()}>
@@ -8038,6 +8503,46 @@ function filterTrainers(trainers: TrainerRecord[], searchText: string) {
   );
 }
 
+function filterGiftPokemon(gifts: GiftPokemonRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return gifts;
+  }
+
+  return gifts.filter((gift) =>
+    [
+      gift.giftIndex.toString(),
+      (gift.giftIndex + 1).toString(),
+      gift.label,
+      gift.species,
+      gift.speciesId.toString(),
+      gift.form.toString(),
+      gift.level.toString(),
+      gift.isEgg ? 'egg' : '',
+      gift.heldItem ?? 'None',
+      gift.heldItemId.toString(),
+      gift.ballItem,
+      gift.ballItemId.toString(),
+      gift.abilityLabel,
+      gift.ability.toString(),
+      gift.natureLabel,
+      gift.nature.toString(),
+      gift.genderLabel,
+      gift.gender.toString(),
+      gift.shinyLockLabel,
+      gift.shinyLock.toString(),
+      gift.dynamaxLevel.toString(),
+      gift.canGigantamax ? 'gigantamax' : '',
+      gift.specialMove ?? 'None',
+      gift.specialMoveId.toString(),
+      gift.ivSummary,
+      formatGiftPokemonIvs(gift),
+      gift.provenance.sourceFile
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function filterShops(shops: ShopRecord[], searchText: string) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -8585,6 +9090,51 @@ function getEditablePokemonFieldValue(pokemon: TrainerPokemonRecord, field: stri
   }
 }
 
+function getEditableGiftPokemonFieldValue(gift: GiftPokemonRecord, field: string) {
+  switch (field) {
+    case giftSpeciesFieldName:
+      return gift.speciesId;
+    case formFieldName:
+      return gift.form;
+    case levelFieldName:
+      return gift.level;
+    case heldItemIdFieldName:
+      return gift.heldItemId;
+    case giftBallItemIdFieldName:
+      return gift.ballItemId;
+    case abilityFieldName:
+      return gift.ability;
+    case natureFieldName:
+      return gift.nature;
+    case genderFieldName:
+      return gift.gender;
+    case giftShinyLockFieldName:
+      return gift.shinyLock;
+    case dynamaxLevelFieldName:
+      return gift.dynamaxLevel;
+    case canGigantamaxFieldName:
+      return gift.canGigantamax ? 1 : 0;
+    case giftSpecialMoveIdFieldName:
+      return gift.specialMoveId;
+    case ivFieldNames[0]:
+      return gift.ivs.hp;
+    case ivFieldNames[1]:
+      return gift.ivs.attack;
+    case ivFieldNames[2]:
+      return gift.ivs.defense;
+    case ivFieldNames[3]:
+      return gift.ivs.specialAttack;
+    case ivFieldNames[4]:
+      return gift.ivs.specialDefense;
+    case ivFieldNames[5]:
+      return gift.ivs.speed;
+    case giftFlawlessIvCountFieldName:
+      return gift.flawlessIvCount;
+    default:
+      return null;
+  }
+}
+
 function getItemFieldSaveLabel(field: ItemEditableField) {
   return `Save ${field.label.replace(/\s+price$/i, '')}`;
 }
@@ -8694,6 +9244,31 @@ function getIntegerDraftState(
   };
 }
 
+function getGiftPokemonDraftState(
+  draftValue: string,
+  currentValue: number | null,
+  field: GiftPokemonEditableField | undefined
+) {
+  const normalizedValue = draftValue.trim();
+  const parsedValue = /^-?\d+$/.test(normalizedValue)
+    ? Number.parseInt(normalizedValue, 10)
+    : null;
+  const minimumValue = field?.minimumValue ?? null;
+  const maximumValue = field?.maximumValue ?? null;
+  const inRange =
+    parsedValue !== null &&
+    (minimumValue === null || parsedValue >= minimumValue) &&
+    (maximumValue === null || parsedValue <= maximumValue);
+
+  return {
+    canSubmit:
+      field !== undefined &&
+      inRange &&
+      (currentValue === null || parsedValue !== currentValue),
+    parsedValue
+  };
+}
+
 function getPendingItemIds(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
@@ -8734,6 +9309,19 @@ function getPendingTrainerIds(editSession: EditSession | null) {
     (editSession?.pendingEdits ?? [])
       .filter((edit) => edit.domain === 'workflow.trainers')
       .map((edit) => Number.parseInt((edit.recordId ?? '').split(':')[0] ?? '', 10))
+      .filter(Number.isInteger)
+  );
+}
+
+function getPendingGiftPokemonIndexes(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.giftPokemon')
+      .map((edit) => {
+        const recordId = edit.recordId ?? '';
+        const normalizedRecordId = recordId.startsWith('gift:') ? recordId.slice(5) : recordId;
+        return Number.parseInt(normalizedRecordId, 10);
+      })
       .filter(Number.isInteger)
   );
 }
@@ -8985,6 +9573,28 @@ function formatPokemonDexPresence(pokemon: PokemonRecord) {
     .join(', ');
 }
 
+function formatGiftPokemonIvs(gift: GiftPokemonRecord) {
+  return [
+    `HP ${formatGiftPokemonIvValue(gift.ivs.hp)}`,
+    `Atk ${formatGiftPokemonIvValue(gift.ivs.attack)}`,
+    `Def ${formatGiftPokemonIvValue(gift.ivs.defense)}`,
+    `SpA ${formatGiftPokemonIvValue(gift.ivs.specialAttack)}`,
+    `SpD ${formatGiftPokemonIvValue(gift.ivs.specialDefense)}`,
+    `Spe ${formatGiftPokemonIvValue(gift.ivs.speed)}`
+  ].join(' / ');
+}
+
+function formatGiftPokemonIvValue(value: number) {
+  switch (value) {
+    case -4:
+      return '3 perfect';
+    case -1:
+      return 'Random';
+    default:
+      return value.toString();
+  }
+}
+
 function formatMovePower(power: number) {
   return power === 0 ? '-' : power.toString();
 }
@@ -9022,6 +9632,7 @@ function formatSourceLayer(
   layer:
     | EncounterTableRecord['provenance']['sourceLayer']
     | FlagRecord['provenance']['sourceLayer']
+    | GiftPokemonRecord['provenance']['sourceLayer']
     | ItemRecord['provenance']['sourceLayer']
     | MoveRecord['provenance']['sourceLayer']
     | PokemonRecord['provenance']['sourceLayer']
@@ -9053,6 +9664,7 @@ function formatFileState(
   state:
     | EncounterTableRecord['provenance']['fileState']
     | FlagRecord['provenance']['fileState']
+    | GiftPokemonRecord['provenance']['fileState']
     | ItemRecord['provenance']['fileState']
     | MoveRecord['provenance']['fileState']
     | PokemonRecord['provenance']['fileState']

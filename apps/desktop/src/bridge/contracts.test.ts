@@ -17,6 +17,8 @@ import {
   loadExeFsPatchWorkflowResponseSchema,
   loadFlagworkSaveWorkflowRequestSchema,
   loadFlagworkSaveWorkflowResponseSchema,
+  loadGiftPokemonWorkflowRequestSchema,
+  loadGiftPokemonWorkflowResponseSchema,
   loadItemsWorkflowRequestSchema,
   loadItemsWorkflowResponseSchema,
   loadMovesWorkflowRequestSchema,
@@ -47,6 +49,8 @@ import {
   startEditSessionResponseSchema,
   updateItemFieldRequestSchema,
   updateItemFieldResponseSchema,
+  updateGiftPokemonFieldRequestSchema,
+  updateGiftPokemonFieldResponseSchema,
   updatePokemonFieldRequestSchema,
   updatePokemonFieldResponseSchema,
   updatePokemonEvolutionRequestSchema,
@@ -237,6 +241,10 @@ describe('bridge contracts', () => {
     const textResponseSchema = createBridgeResponseSchema(loadTextWorkflowResponseSchema);
     const trainersRequestSchema = createBridgeRequestSchema(loadTrainersWorkflowRequestSchema);
     const trainersResponseSchema = createBridgeResponseSchema(loadTrainersWorkflowResponseSchema);
+    const giftPokemonRequestSchema = createBridgeRequestSchema(loadGiftPokemonWorkflowRequestSchema);
+    const giftPokemonResponseSchema = createBridgeResponseSchema(
+      loadGiftPokemonWorkflowResponseSchema
+    );
     const shopsRequestSchema = createBridgeRequestSchema(loadShopsWorkflowRequestSchema);
     const shopsResponseSchema = createBridgeResponseSchema(loadShopsWorkflowResponseSchema);
     const encountersRequestSchema = createBridgeRequestSchema(
@@ -713,6 +721,95 @@ describe('bridge contracts', () => {
           trainerId: 10
         }
       ]
+    } as const;
+    const giftPokemonWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'ivHp',
+          label: 'HP IV',
+          maximumValue: 31,
+          minimumValue: -4,
+          options: [],
+          valueKind: 'integer'
+        },
+        {
+          field: 'flawlessIvCount',
+          label: 'IV preset',
+          maximumValue: 6,
+          minimumValue: 0,
+          options: [
+            {
+              label: 'Random IVs',
+              value: 0
+            },
+            {
+              label: '3 Guaranteed Perfect IVs',
+              value: 3
+            },
+            {
+              label: '6 Perfect IVs',
+              value: 6
+            }
+          ],
+          valueKind: 'integer'
+        }
+      ],
+      gifts: [
+        {
+          ability: 3,
+          abilityLabel: 'Hidden Ability',
+          ballItem: 'Poke Ball',
+          ballItemId: 4,
+          canGigantamax: true,
+          dynamaxLevel: 10,
+          flawlessIvCount: 0,
+          form: 0,
+          gender: 0,
+          genderLabel: 'Random',
+          giftIndex: 0,
+          heldItem: null,
+          heldItemId: 0,
+          isEgg: false,
+          ivs: {
+            attack: -1,
+            defense: -1,
+            hp: -1,
+            specialAttack: -1,
+            specialDefense: -1,
+            speed: -1
+          },
+          ivSummary: 'Random IVs',
+          label: 'Gift 001: Grookey Lv. 50 Form 0',
+          level: 50,
+          nature: 25,
+          natureLabel: 'Random',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/script_event_data/add_poke.bin',
+            sourceLayer: 'base'
+          },
+          shinyLock: 0,
+          shinyLockLabel: 'Random',
+          specialMove: null,
+          specialMoveId: 0,
+          species: 'Grookey',
+          speciesId: 810
+        }
+      ],
+      stats: {
+        eggGiftCount: 0,
+        fixedIvGiftCount: 0,
+        sourceFileCount: 4,
+        totalGiftCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
+        diagnostics: [],
+        id: 'giftPokemon',
+        label: 'Gift Pokemon'
+      }
     } as const;
     const shopsWorkflow = {
       diagnostics: [],
@@ -1315,6 +1412,28 @@ describe('bridge contracts', () => {
     ).toBe(true);
 
     expect(
+      giftPokemonRequestSchema.safeParse({
+        command: kmCommandNames.loadGiftPokemonWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null,
+            saveFilePath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      giftPokemonResponseSchema.safeParse({
+        payload: {
+          workflow: giftPokemonWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
       shopsRequestSchema.safeParse({
         command: kmCommandNames.loadShopsWorkflow,
         payload: {
@@ -1587,6 +1706,12 @@ describe('bridge contracts', () => {
     const updateTextResponseSchema = createBridgeResponseSchema(updateTextEntryResponseSchema);
     const updateTrainerRequestSchema = createBridgeRequestSchema(updateTrainerFieldRequestSchema);
     const updateTrainerResponseSchema = createBridgeResponseSchema(updateTrainerFieldResponseSchema);
+    const updateGiftPokemonRequestSchema = createBridgeRequestSchema(
+      updateGiftPokemonFieldRequestSchema
+    );
+    const updateGiftPokemonResponseSchema = createBridgeResponseSchema(
+      updateGiftPokemonFieldResponseSchema
+    );
     const updateShopRequestSchema = createBridgeRequestSchema(
       updateShopInventoryItemRequestSchema
     );
@@ -2073,6 +2198,93 @@ describe('bridge contracts', () => {
         }
       ]
     } as const;
+    const giftPokemonSession = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.giftPokemon',
+          field: 'ivHp',
+          newValue: '-4',
+          recordId: 'gift:0',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/bin/script_event_data/add_poke.bin'
+            }
+          ],
+          summary: 'Set Gift 001: Grookey Lv. 50 Form 0 HP IV to -4.'
+        }
+      ],
+      sessionId: 'session-1'
+    } as const;
+    const giftPokemonWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'ivHp',
+          label: 'HP IV',
+          maximumValue: 31,
+          minimumValue: -4,
+          options: [],
+          valueKind: 'integer'
+        }
+      ],
+      gifts: [
+        {
+          ability: 3,
+          abilityLabel: 'Hidden Ability',
+          ballItem: 'Poke Ball',
+          ballItemId: 4,
+          canGigantamax: true,
+          dynamaxLevel: 10,
+          flawlessIvCount: 3,
+          form: 0,
+          gender: 0,
+          genderLabel: 'Random',
+          giftIndex: 0,
+          heldItem: null,
+          heldItemId: 0,
+          isEgg: false,
+          ivs: {
+            attack: -1,
+            defense: -1,
+            hp: -4,
+            specialAttack: -1,
+            specialDefense: -1,
+            speed: -1
+          },
+          ivSummary: '3 guaranteed perfect IVs',
+          label: 'Gift 001: Grookey Lv. 50 Form 0',
+          level: 50,
+          nature: 25,
+          natureLabel: 'Random',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/script_event_data/add_poke.bin',
+            sourceLayer: 'base'
+          },
+          shinyLock: 0,
+          shinyLockLabel: 'Random',
+          specialMove: null,
+          specialMoveId: 0,
+          species: 'Grookey',
+          speciesId: 810
+        }
+      ],
+      stats: {
+        eggGiftCount: 0,
+        fixedIvGiftCount: 0,
+        sourceFileCount: 4,
+        totalGiftCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
+        diagnostics: [],
+        id: 'giftPokemon',
+        label: 'Gift Pokemon'
+      }
+    } as const;
     const shopSession = {
       hasPendingChanges: true,
       pendingEdits: [
@@ -2496,6 +2708,34 @@ describe('bridge contracts', () => {
           diagnostics: [],
           session: trainerSession,
           workflow: trainersWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateGiftPokemonRequestSchema.safeParse({
+        command: kmCommandNames.updateGiftPokemonField,
+        payload: {
+          field: 'ivHp',
+          giftIndex: 0,
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output',
+            saveFilePath: null
+          },
+          session: editSession,
+          value: '-4'
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateGiftPokemonResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: giftPokemonSession,
+          workflow: giftPokemonWorkflow
         }
       }).success
     ).toBe(true);

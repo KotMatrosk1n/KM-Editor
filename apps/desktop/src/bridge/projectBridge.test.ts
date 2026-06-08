@@ -158,6 +158,14 @@ describe('projectBridge', () => {
               },
               {
                 availability: 'readOnly',
+                description:
+                  'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
+                diagnostics: [],
+                id: 'giftPokemon',
+                label: 'Gift Pokemon'
+              },
+              {
+                availability: 'readOnly',
                 description: 'Shop inventories, prices, stock limits, and source provenance.',
                 diagnostics: [],
                 id: 'shops',
@@ -603,6 +611,104 @@ describe('projectBridge', () => {
                   trainerId: 10
                 }
               ]
+            }
+          }
+        });
+      }
+
+      if (request.command === 'giftPokemon.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              editableFields: [
+                {
+                  field: 'ivHp',
+                  label: 'HP IV',
+                  maximumValue: 31,
+                  minimumValue: -4,
+                  options: [],
+                  valueKind: 'integer'
+                },
+                {
+                  field: 'flawlessIvCount',
+                  label: 'IV preset',
+                  maximumValue: 6,
+                  minimumValue: 0,
+                  options: [
+                    {
+                      label: 'Random IVs',
+                      value: 0
+                    },
+                    {
+                      label: '3 Guaranteed Perfect IVs',
+                      value: 3
+                    },
+                    {
+                      label: '6 Perfect IVs',
+                      value: 6
+                    }
+                  ],
+                  valueKind: 'integer'
+                }
+              ],
+              gifts: [
+                {
+                  ability: 1,
+                  abilityLabel: 'Ability 1',
+                  ballItem: 'Poke Ball',
+                  ballItemId: 4,
+                  canGigantamax: false,
+                  dynamaxLevel: 0,
+                  flawlessIvCount: 3,
+                  form: 0,
+                  gender: 0,
+                  genderLabel: 'Random',
+                  giftIndex: 0,
+                  heldItem: null,
+                  heldItemId: 0,
+                  isEgg: false,
+                  ivs: {
+                    attack: -1,
+                    defense: -1,
+                    hp: -4,
+                    specialAttack: -1,
+                    specialDefense: -1,
+                    speed: -1
+                  },
+                  ivSummary: '3 guaranteed perfect IVs',
+                  label: 'Gift 001: Bulbasaur Lv. 5 Form 0',
+                  level: 5,
+                  nature: 25,
+                  natureLabel: 'Random',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/bin/script_event_data/add_poke.bin',
+                    sourceLayer: 'base'
+                  },
+                  shinyLock: 1,
+                  shinyLockLabel: 'Never Shiny',
+                  specialMove: null,
+                  specialMoveId: 0,
+                  species: 'Bulbasaur',
+                  speciesId: 1
+                }
+              ],
+              stats: {
+                eggGiftCount: 0,
+                fixedIvGiftCount: 0,
+                sourceFileCount: 1,
+                totalGiftCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description:
+                  'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
+                diagnostics: [],
+                id: 'giftPokemon',
+                label: 'Gift Pokemon'
+              }
             }
           }
         });
@@ -1198,6 +1304,7 @@ describe('projectBridge', () => {
     const moves = await bridge.loadMovesWorkflow({ paths: projectPaths });
     const text = await bridge.loadTextWorkflow({ paths: projectPaths });
     const trainers = await bridge.loadTrainersWorkflow({ paths: projectPaths });
+    const giftPokemon = await bridge.loadGiftPokemonWorkflow({ paths: projectPaths });
     const shops = await bridge.loadShopsWorkflow({ paths: projectPaths });
     const encounters = await bridge.loadEncountersWorkflow({ paths: projectPaths });
     const raidRewards = await bridge.loadRaidRewardsWorkflow({ paths: projectPaths });
@@ -1212,14 +1319,15 @@ describe('projectBridge', () => {
     expect(workflows.workflows[2]?.id).toBe('moves');
     expect(workflows.workflows[3]?.id).toBe('text');
     expect(workflows.workflows[4]?.id).toBe('trainers');
-    expect(workflows.workflows[5]?.id).toBe('shops');
-    expect(workflows.workflows[6]?.id).toBe('encounters');
-    expect(workflows.workflows[7]?.id).toBe('raidRewards');
-    expect(workflows.workflows[8]?.id).toBe('placement');
-    expect(workflows.workflows[9]?.id).toBe('flagworkSave');
-    expect(workflows.workflows[10]?.id).toBe('exefsPatches');
-    expect(workflows.workflows[11]?.id).toBe('royalCandy');
-    expect(workflows.workflows[12]?.id).toBe('spreadsheetImport');
+    expect(workflows.workflows[5]?.id).toBe('giftPokemon');
+    expect(workflows.workflows[6]?.id).toBe('shops');
+    expect(workflows.workflows[7]?.id).toBe('encounters');
+    expect(workflows.workflows[8]?.id).toBe('raidRewards');
+    expect(workflows.workflows[9]?.id).toBe('placement');
+    expect(workflows.workflows[10]?.id).toBe('flagworkSave');
+    expect(workflows.workflows[11]?.id).toBe('exefsPatches');
+    expect(workflows.workflows[12]?.id).toBe('royalCandy');
+    expect(workflows.workflows[13]?.id).toBe('spreadsheetImport');
     expect(items.workflow.editableFields).toHaveLength(4);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(pokemon.workflow.editableFields[0]?.field).toBe('hp');
@@ -1230,6 +1338,7 @@ describe('projectBridge', () => {
     expect(text.workflow.editableFields[0]?.field).toBe('value');
     expect(text.workflow.entries[0]?.label).toBe('story #0');
     expect(trainers.workflow.trainers[0]?.name).toBe('Avery');
+    expect(giftPokemon.workflow.gifts[0]?.ivSummary).toBe('3 guaranteed perfect IVs');
     expect(shops.workflow.editableFields[0]?.field).toBe('itemId');
     expect(shops.workflow.shops[0]?.name).toBe('Route 1 Mart');
     expect(encounters.workflow.editableFields[0]?.field).toBe('probability');
@@ -1889,6 +1998,120 @@ describe('projectBridge', () => {
 
     expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.pokemon');
     expect(updated.session.pendingEdits[0]?.field).toBe('evolution:upsert:0');
+  });
+
+  it('runs gift Pokemon field update command', async () => {
+    const bridge = createProjectBridge(async (requestJson) => {
+      const request = JSON.parse(requestJson) as { command: string };
+
+      expect(request.command).toBe('giftPokemon.field.update');
+
+      return JSON.stringify({
+        error: null,
+        payload: {
+          diagnostics: [],
+          session: {
+            hasPendingChanges: true,
+            pendingEdits: [
+              {
+                domain: 'workflow.giftPokemon',
+                field: 'ivHp',
+                newValue: '31',
+                recordId: 'gift:0',
+                sources: [
+                  {
+                    layer: 'base',
+                    relativePath: 'romfs/bin/script_event_data/add_poke.bin'
+                  }
+                ],
+                summary: 'Set Gift 001 HP IV to 31.'
+              }
+            ],
+            sessionId: 'session-1'
+          },
+          workflow: {
+            diagnostics: [],
+            editableFields: [
+              {
+                field: 'ivHp',
+                label: 'HP IV',
+                maximumValue: 31,
+                minimumValue: -4,
+                options: [],
+                valueKind: 'integer'
+              }
+            ],
+            gifts: [
+              {
+                ability: 1,
+                abilityLabel: 'Ability 1',
+                ballItem: 'Poke Ball',
+                ballItemId: 4,
+                canGigantamax: false,
+                dynamaxLevel: 0,
+                flawlessIvCount: null,
+                form: 0,
+                gender: 0,
+                genderLabel: 'Random',
+                giftIndex: 0,
+                heldItem: null,
+                heldItemId: 0,
+                isEgg: false,
+                ivs: {
+                  attack: -1,
+                  defense: -1,
+                  hp: 31,
+                  specialAttack: -1,
+                  specialDefense: -1,
+                  speed: -1
+                },
+                ivSummary: 'HP 31 / Atk -1 / Def -1 / SpA -1 / SpD -1 / Spe -1',
+                label: 'Gift 001: Bulbasaur Lv. 5 Form 0',
+                level: 5,
+                nature: 25,
+                natureLabel: 'Random',
+                provenance: {
+                  fileState: 'baseOnly',
+                  sourceFile: 'romfs/bin/script_event_data/add_poke.bin',
+                  sourceLayer: 'base'
+                },
+                shinyLock: 1,
+                shinyLockLabel: 'Never Shiny',
+                specialMove: null,
+                specialMoveId: 0,
+                species: 'Bulbasaur',
+                speciesId: 1
+              }
+            ],
+            stats: {
+              eggGiftCount: 0,
+              fixedIvGiftCount: 1,
+              sourceFileCount: 1,
+              totalGiftCount: 1
+            },
+            summary: {
+              availability: 'available',
+              description:
+                'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
+              diagnostics: [],
+              id: 'giftPokemon',
+              label: 'Gift Pokemon'
+            }
+          }
+        }
+      });
+    });
+
+    const updated = await bridge.updateGiftPokemonField({
+      field: 'ivHp',
+      giftIndex: 0,
+      paths: editableProjectPaths,
+      session: null,
+      value: '31'
+    });
+
+    expect(updated.workflow.gifts[0]?.ivs.hp).toBe(31);
+    expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.giftPokemon');
   });
 
   it('runs move field update command', async () => {

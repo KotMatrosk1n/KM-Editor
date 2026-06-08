@@ -7,6 +7,7 @@ import {
   type EncountersWorkflow,
   type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
+  type GiftPokemonWorkflow,
   type ItemsWorkflow,
   type MovesWorkflow,
   type PlacementWorkflow,
@@ -45,6 +46,8 @@ describe('App', () => {
       exeFsPatchWorkflow: null,
       flagworkSaveSearchText: '',
       flagworkSaveWorkflow: null,
+      giftPokemonSearchText: '',
+      giftPokemonWorkflow: null,
       itemSearchText: '',
       itemsWorkflow: null,
       movesSearchText: '',
@@ -66,6 +69,7 @@ describe('App', () => {
       selectedEncounterTableId: null,
       selectedExeFsCheckId: null,
       selectedExeFsPatchId: null,
+      selectedGiftPokemonIndex: null,
       selectedRoyalCandyCheckId: null,
       selectedRoyalCandyWorkflowId: null,
       selectedSpreadsheetImportProfileId: null,
@@ -619,6 +623,55 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Trainers change plan to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
+  it('opens Gift Pokemon, edits IVs, reviews a gift plan, and applies it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Gifts' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Gift Pokemon' })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Bulbasaur').length).toBeGreaterThan(0);
+    expect(screen.getByText('3 guaranteed perfect IVs')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const hpIvInput = screen.getByLabelText('HP IV');
+    expect(hpIvInput).toHaveDisplayValue('-4');
+    await user.clear(hpIvInput);
+    await user.type(hpIvInput, '31');
+    await user.click(screen.getByRole('button', { name: 'Save hp iv' }));
+
+    expect(await screen.findByDisplayValue('31')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Gift 001 ivHp to 31.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending gift Pokemon change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(
+      screen.getAllByText('romfs/bin/script_event_data/add_poke.bin').length
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Applied Gift Pokemon change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
   });
 
@@ -1986,6 +2039,252 @@ function createMockProjectBridge(
       }
     ]
   };
+  const giftPokemonWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
+    diagnostics: [],
+    id: 'giftPokemon',
+    label: 'Gift Pokemon'
+  };
+  const giftPokemonWorkflow: GiftPokemonWorkflow = {
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'species',
+        label: 'Species',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '001 Bulbasaur', value: 1 },
+          { label: '810 Grookey', value: 810 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'form',
+        label: 'Form',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'level',
+        label: 'Level',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'heldItemId',
+        label: 'Held item',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Potion', value: 1 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ballItemId',
+        label: 'Ball item',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '004 Poke Ball', value: 4 },
+          { label: '003 Great Ball', value: 3 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ability',
+        label: 'Ability slot',
+        maximumValue: 3,
+        minimumValue: 0,
+        options: [
+          { label: 'Default', value: 0 },
+          { label: 'Ability 1', value: 1 },
+          { label: 'Hidden Ability', value: 3 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'nature',
+        label: 'Nature',
+        maximumValue: 25,
+        minimumValue: 0,
+        options: [
+          { label: 'Hardy', value: 0 },
+          { label: 'Random', value: 25 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'gender',
+        label: 'Gender',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [
+          { label: 'Random', value: 0 },
+          { label: 'Male', value: 1 },
+          { label: 'Female', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'shinyLock',
+        label: 'Shiny lock',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: 'Random', value: 0 },
+          { label: 'Never Shiny', value: 1 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'dynamaxLevel',
+        label: 'Dynamax level',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'canGigantamax',
+        label: 'Can Gigantamax',
+        maximumValue: 1,
+        minimumValue: 0,
+        options: [
+          { label: 'No', value: 0 },
+          { label: 'Yes', value: 1 }
+        ],
+        valueKind: 'boolean'
+      },
+      {
+        field: 'specialMoveId',
+        label: 'Special move',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivHp',
+        label: 'HP IV',
+        maximumValue: 31,
+        minimumValue: -4,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivAttack',
+        label: 'Attack IV',
+        maximumValue: 31,
+        minimumValue: -1,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivDefense',
+        label: 'Defense IV',
+        maximumValue: 31,
+        minimumValue: -1,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivSpecialAttack',
+        label: 'Sp. Atk IV',
+        maximumValue: 31,
+        minimumValue: -1,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivSpecialDefense',
+        label: 'Sp. Def IV',
+        maximumValue: 31,
+        minimumValue: -1,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivSpeed',
+        label: 'Speed IV',
+        maximumValue: 31,
+        minimumValue: -1,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'flawlessIvCount',
+        label: 'IV preset',
+        maximumValue: 6,
+        minimumValue: 0,
+        options: [
+          { label: 'Random IVs', value: 0 },
+          { label: '3 Guaranteed Perfect IVs', value: 3 },
+          { label: '6 Perfect IVs', value: 6 }
+        ],
+        valueKind: 'integer'
+      }
+    ],
+    gifts: [
+      {
+        ability: 1,
+        abilityLabel: 'Ability 1',
+        ballItem: 'Poke Ball',
+        ballItemId: 4,
+        canGigantamax: false,
+        dynamaxLevel: 0,
+        flawlessIvCount: 3,
+        form: 0,
+        gender: 0,
+        genderLabel: 'Random',
+        giftIndex: 0,
+        heldItem: null,
+        heldItemId: 0,
+        isEgg: false,
+        ivs: {
+          attack: -1,
+          defense: -1,
+          hp: -4,
+          specialAttack: -1,
+          specialDefense: -1,
+          speed: -1
+        },
+        ivSummary: '3 guaranteed perfect IVs',
+        label: 'Gift 001: Bulbasaur Lv. 5 Form 0',
+        level: 5,
+        nature: 25,
+        natureLabel: 'Random',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/script_event_data/add_poke.bin',
+          sourceLayer: 'base'
+        },
+        shinyLock: 1,
+        shinyLockLabel: 'Never Shiny',
+        specialMove: null,
+        specialMoveId: 0,
+        species: 'Bulbasaur',
+        speciesId: 1
+      }
+    ],
+    stats: {
+      eggGiftCount: 0,
+      fixedIvGiftCount: 0,
+      sourceFileCount: 1,
+      totalGiftCount: 1
+    },
+    summary: giftPokemonWorkflowSummary
+  };
   const shopsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Shop inventories, item metadata, and source provenance.',
@@ -2519,10 +2818,10 @@ function createMockProjectBridge(
                     targetRelativePath: 'romfs/bin/message/English/common/story.dat'
                   }
                 ]
-              : request.session.pendingEdits[0]?.domain === 'workflow.trainers'
-                ? [
-                    {
-                      reason: 'Apply pending Trainers edit: Set Avery slot 1 level to 25.',
+                : request.session.pendingEdits[0]?.domain === 'workflow.trainers'
+                  ? [
+                      {
+                        reason: 'Apply pending Trainers edit: Set Avery slot 1 level to 25.',
                       replacesExistingOutput: false,
                       sources: [
                         {
@@ -2559,6 +2858,20 @@ function createMockProjectBridge(
                           }
                         ],
                         targetRelativePath: 'romfs/bin/pml/waza/waza_033.bin'
+                      }
+                    ]
+                : request.session.pendingEdits[0]?.domain === 'workflow.giftPokemon'
+                  ? [
+                      {
+                        reason: 'Apply pending Gift Pokemon edit: Set Gift 001 HP IV to 31.',
+                        replacesExistingOutput: false,
+                        sources: [
+                          {
+                            layer: 'base',
+                            relativePath: 'romfs/bin/script_event_data/add_poke.bin'
+                          }
+                        ],
+                        targetRelativePath: 'romfs/bin/script_event_data/add_poke.bin'
                       }
                     ]
                 : request.session.pendingEdits[0]?.domain === 'workflow.shops'
@@ -2662,6 +2975,7 @@ function createMockProjectBridge(
           movesWorkflowSummary,
           textWorkflowSummary,
           trainersWorkflowSummary,
+          giftPokemonWorkflowSummary,
           shopsWorkflowSummary,
           encountersWorkflowSummary,
           raidRewardsWorkflowSummary,
@@ -3014,6 +3328,10 @@ function createMockProjectBridge(
     loadTrainersWorkflow: () =>
       Promise.resolve({
         workflow: trainersWorkflow
+      }),
+    loadGiftPokemonWorkflow: () =>
+      Promise.resolve({
+        workflow: giftPokemonWorkflow
       }),
     loadShopsWorkflow: () =>
       Promise.resolve({
@@ -3510,6 +3828,54 @@ function createMockProjectBridge(
             )
         }
       }),
+    updateGiftPokemonField: (request) => {
+      const value = Number.parseInt(request.value, 10);
+
+      return Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.giftPokemon',
+              field: request.field,
+              newValue: request.value,
+              recordId: `gift:${request.giftIndex}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/script_event_data/add_poke.bin'
+                }
+              ],
+              summary: `Set Gift 001 ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...giftPokemonWorkflow,
+          gifts: giftPokemonWorkflow.gifts.map((gift) =>
+            gift.giftIndex === request.giftIndex
+              ? {
+                  ...gift,
+                  ivs:
+                    request.field === 'ivHp'
+                      ? {
+                          ...gift.ivs,
+                          hp: value
+                        }
+                      : gift.ivs,
+                  ivSummary:
+                    request.field === 'ivHp'
+                      ? `HP ${value} / Atk -1 / Def -1 / SpA -1 / SpD -1 / Spe -1`
+                      : gift.ivSummary,
+                  level: request.field === 'level' ? value : gift.level
+                }
+              : gift
+          )
+        }
+      });
+    },
     updateShopInventoryItem: (request) =>
       Promise.resolve({
         diagnostics: [],
@@ -3693,6 +4059,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Trainers change plan to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.giftPokemon') {
+    return 'Applied Gift Pokemon change plan to the configured LayeredFS output root.';
+  }
+
   if (targetRelativePath.includes('/shop/')) {
     return 'Applied Shops change plan to the configured LayeredFS output root.';
   }
@@ -3746,6 +4116,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending text change is valid.';
     case 'workflow.trainers':
       return 'Pending trainer change is valid.';
+    case 'workflow.giftPokemon':
+      return 'Pending gift Pokemon change is valid.';
     case 'workflow.shops':
       return 'Pending shop change is valid.';
     case 'workflow.encounters':
