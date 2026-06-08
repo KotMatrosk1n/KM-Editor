@@ -3,6 +3,7 @@
 import {
   Activity,
   ArrowDown,
+  ArrowLeftRight,
   ArrowUp,
   CheckCircle,
   ClipboardCheck,
@@ -96,6 +97,9 @@ import {
   type TextEditableField,
   type TextEntryRecord,
   type TextWorkflow,
+  type TradePokemonEditableField,
+  type TradePokemonRecord,
+  type TradePokemonWorkflow,
   type TrainerEditableField,
   type TrainerPokemonRecord,
   type TrainerRecord,
@@ -161,6 +165,11 @@ const sections: Array<{
     id: 'giftPokemon',
     label: 'Gift Pokemon',
     icon: Dna
+  },
+  {
+    id: 'tradePokemon',
+    label: 'Trade Pokemon',
+    icon: ArrowLeftRight
   },
   {
     id: 'staticEncounters',
@@ -255,6 +264,12 @@ const workflowDefinitions: Array<{
     label: 'Gift Pokemon',
     description: 'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
     icon: Dna
+  },
+  {
+    id: 'tradePokemon',
+    label: 'Trade Pokemon',
+    description: 'In-game trade records, requested Pokemon, IV modes, relearn moves, and source provenance.',
+    icon: ArrowLeftRight
   },
   {
     id: 'staticEncounters',
@@ -452,6 +467,50 @@ const giftPokemonFieldNames = [
   ...ivFieldNames,
   giftFlawlessIvCountFieldName
 ] as const;
+const tradeField03FieldName = 'field03';
+const tradeRequiredSpeciesFieldName = 'requiredSpecies';
+const tradeRequiredFormFieldName = 'requiredForm';
+const tradeRequiredNatureFieldName = 'requiredNature';
+const tradeUnknownRequirementFieldName = 'unknownRequirement';
+const tradeTrainerIdFieldName = 'trainerId';
+const tradeOtGenderFieldName = 'otGender';
+const tradeMemoryCodeFieldName = 'memoryCode';
+const tradeMemoryTextVariableFieldName = 'memoryTextVariable';
+const tradeMemoryFeelFieldName = 'memoryFeel';
+const tradeMemoryIntensityFieldName = 'memoryIntensity';
+const tradeRelearnMoveFieldNames = [
+  'relearnMove0',
+  'relearnMove1',
+  'relearnMove2',
+  'relearnMove3'
+] as const;
+const tradePokemonFieldNames = [
+  giftSpeciesFieldName,
+  formFieldName,
+  levelFieldName,
+  heldItemIdFieldName,
+  giftBallItemIdFieldName,
+  tradeField03FieldName,
+  abilityFieldName,
+  natureFieldName,
+  genderFieldName,
+  giftShinyLockFieldName,
+  dynamaxLevelFieldName,
+  canGigantamaxFieldName,
+  tradeRequiredSpeciesFieldName,
+  tradeRequiredFormFieldName,
+  tradeRequiredNatureFieldName,
+  tradeUnknownRequirementFieldName,
+  tradeTrainerIdFieldName,
+  tradeOtGenderFieldName,
+  tradeMemoryCodeFieldName,
+  tradeMemoryTextVariableFieldName,
+  tradeMemoryFeelFieldName,
+  tradeMemoryIntensityFieldName,
+  ...tradeRelearnMoveFieldNames,
+  ...ivFieldNames,
+  giftFlawlessIvCountFieldName
+] as const;
 const staticEncounterScenarioFieldName = 'encounterScenario';
 const staticEncounterMoveFieldNames = ['move0Id', 'move1Id', 'move2Id', 'move3Id'] as const;
 const staticEncounterFieldNames = [
@@ -525,6 +584,8 @@ export function App({
   const flagworkSaveWorkflow = useWorkbenchStore((state) => state.flagworkSaveWorkflow);
   const giftPokemonSearchText = useWorkbenchStore((state) => state.giftPokemonSearchText);
   const giftPokemonWorkflow = useWorkbenchStore((state) => state.giftPokemonWorkflow);
+  const tradePokemonSearchText = useWorkbenchStore((state) => state.tradePokemonSearchText);
+  const tradePokemonWorkflow = useWorkbenchStore((state) => state.tradePokemonWorkflow);
   const staticEncounterSearchText = useWorkbenchStore(
     (state) => state.staticEncounterSearchText
   );
@@ -575,6 +636,9 @@ export function App({
   const selectedGiftPokemonIndex = useWorkbenchStore(
     (state) => state.selectedGiftPokemonIndex
   );
+  const selectedTradePokemonIndex = useWorkbenchStore(
+    (state) => state.selectedTradePokemonIndex
+  );
   const selectedStaticEncounterIndex = useWorkbenchStore(
     (state) => state.selectedStaticEncounterIndex
   );
@@ -620,6 +684,10 @@ export function App({
     (state) => state.setGiftPokemonSearchText
   );
   const setGiftPokemonWorkflow = useWorkbenchStore((state) => state.setGiftPokemonWorkflow);
+  const setTradePokemonSearchText = useWorkbenchStore(
+    (state) => state.setTradePokemonSearchText
+  );
+  const setTradePokemonWorkflow = useWorkbenchStore((state) => state.setTradePokemonWorkflow);
   const setStaticEncounterSearchText = useWorkbenchStore(
     (state) => state.setStaticEncounterSearchText
   );
@@ -671,6 +739,9 @@ export function App({
   const setSelectedGiftPokemonIndex = useWorkbenchStore(
     (state) => state.setSelectedGiftPokemonIndex
   );
+  const setSelectedTradePokemonIndex = useWorkbenchStore(
+    (state) => state.setSelectedTradePokemonIndex
+  );
   const setSelectedStaticEncounterIndex = useWorkbenchStore(
     (state) => state.setSelectedStaticEncounterIndex
   );
@@ -717,6 +788,8 @@ export function App({
   const [isTrainerUpdating, setIsTrainerUpdating] = useState(false);
   const [isGiftPokemonLoading, setIsGiftPokemonLoading] = useState(false);
   const [isGiftPokemonUpdating, setIsGiftPokemonUpdating] = useState(false);
+  const [isTradePokemonLoading, setIsTradePokemonLoading] = useState(false);
+  const [isTradePokemonUpdating, setIsTradePokemonUpdating] = useState(false);
   const [isStaticEncountersLoading, setIsStaticEncountersLoading] = useState(false);
   const [isStaticEncounterUpdating, setIsStaticEncounterUpdating] = useState(false);
   const [isShopsLoading, setIsShopsLoading] = useState(false);
@@ -898,6 +971,20 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsGiftPokemonLoading(false);
+    }
+  };
+
+  const handleOpenTradePokemonWorkflow = async () => {
+    setIsTradePokemonLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadTradePokemonWorkflow({ paths: toProjectPaths(draftPaths) });
+      setTradePokemonWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTradePokemonLoading(false);
     }
   };
 
@@ -1137,6 +1224,12 @@ export function App({
           void handleOpenGiftPokemonWorkflow();
         }
         break;
+      case 'tradePokemon':
+        if (!tradePokemonWorkflow && !isTradePokemonLoading) {
+          markLazyLoadStarted();
+          void handleOpenTradePokemonWorkflow();
+        }
+        break;
       case 'staticEncounters':
         if (!staticEncountersWorkflow && !isStaticEncountersLoading) {
           markLazyLoadStarted();
@@ -1205,6 +1298,7 @@ export function App({
     isExeFsPatchLoading,
     isFlagworkSaveLoading,
     isGiftPokemonLoading,
+    isTradePokemonLoading,
     isStaticEncountersLoading,
     isItemsLoading,
     isMovesLoading,
@@ -1227,6 +1321,7 @@ export function App({
     spreadsheetImportWorkflow,
     staticEncountersWorkflow,
     textWorkflow,
+    tradePokemonWorkflow,
     trainersWorkflow,
     workflows
   ]);
@@ -1481,6 +1576,33 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsGiftPokemonUpdating(false);
+    }
+  };
+
+  const handleUpdateTradePokemonField = async (
+    tradeIndex: number,
+    field: string,
+    value: string
+  ) => {
+    setIsTradePokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateTradePokemonField({
+        field,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        tradeIndex,
+        value
+      });
+      setTradePokemonWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTradePokemonUpdating(false);
     }
   };
 
@@ -1800,6 +1922,7 @@ export function App({
               isPlacementLoading={isPlacementLoading}
               isFlagworkSaveLoading={isFlagworkSaveLoading}
               isGiftPokemonLoading={isGiftPokemonLoading}
+              isTradePokemonLoading={isTradePokemonLoading}
               isStaticEncountersLoading={isStaticEncountersLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
@@ -1808,6 +1931,7 @@ export function App({
               onOpenExeFsPatchWorkflow={handleOpenExeFsPatchWorkflow}
               onOpenFlagworkSaveWorkflow={handleOpenFlagworkSaveWorkflow}
               onOpenGiftPokemonWorkflow={handleOpenGiftPokemonWorkflow}
+              onOpenTradePokemonWorkflow={handleOpenTradePokemonWorkflow}
               onOpenStaticEncountersWorkflow={handleOpenStaticEncountersWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
@@ -1930,6 +2054,24 @@ export function App({
                 searchText={giftPokemonSearchText}
                 selectedGiftIndex={selectedGiftPokemonIndex}
                 workflow={giftPokemonWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'tradePokemon' ? (
+            isTradePokemonLoading && !tradePokemonWorkflow ? (
+              <WorkflowLoadingPanel label="Trade Pokemon" />
+            ) : (
+              <TradePokemonSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isTradePokemonUpdating={isTradePokemonUpdating}
+                onSearchChange={setTradePokemonSearchText}
+                onSelectTrade={setSelectedTradePokemonIndex}
+                onStartEditSession={handleStartEditSession}
+                onUpdateTradePokemonField={handleUpdateTradePokemonField}
+                searchText={tradePokemonSearchText}
+                selectedTradeIndex={selectedTradePokemonIndex}
+                workflow={tradePokemonWorkflow}
               />
             )
           ) : null}
@@ -2331,6 +2473,7 @@ function WorkflowsSection({
   isPlacementLoading,
   isFlagworkSaveLoading,
   isGiftPokemonLoading,
+  isTradePokemonLoading,
   isStaticEncountersLoading,
   isRoyalCandyLoading,
   isSpreadsheetImportLoading,
@@ -2338,6 +2481,7 @@ function WorkflowsSection({
   onOpenExeFsPatchWorkflow,
   onOpenFlagworkSaveWorkflow,
   onOpenGiftPokemonWorkflow,
+  onOpenTradePokemonWorkflow,
   onOpenStaticEncountersWorkflow,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
@@ -2365,6 +2509,7 @@ function WorkflowsSection({
   isPlacementLoading: boolean;
   isFlagworkSaveLoading: boolean;
   isGiftPokemonLoading: boolean;
+  isTradePokemonLoading: boolean;
   isStaticEncountersLoading: boolean;
   isRoyalCandyLoading: boolean;
   isSpreadsheetImportLoading: boolean;
@@ -2372,6 +2517,7 @@ function WorkflowsSection({
   onOpenExeFsPatchWorkflow: () => void;
   onOpenFlagworkSaveWorkflow: () => void;
   onOpenGiftPokemonWorkflow: () => void;
+  onOpenTradePokemonWorkflow: () => void;
   onOpenStaticEncountersWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
@@ -2404,6 +2550,7 @@ function WorkflowsSection({
           const isTextWorkflow = definition.id === 'text';
           const isTrainersWorkflow = definition.id === 'trainers';
           const isGiftPokemonWorkflow = definition.id === 'giftPokemon';
+          const isTradePokemonWorkflow = definition.id === 'tradePokemon';
           const isStaticEncountersWorkflow = definition.id === 'staticEncounters';
           const isShopsWorkflow = definition.id === 'shops';
           const isEncountersWorkflow = definition.id === 'encounters';
@@ -2420,6 +2567,8 @@ function WorkflowsSection({
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
           const canOpenGiftPokemon =
             isGiftPokemonWorkflow && workflowState.availability !== 'disabled';
+          const canOpenTradePokemon =
+            isTradePokemonWorkflow && workflowState.availability !== 'disabled';
           const canOpenStaticEncounters =
             isStaticEncountersWorkflow && workflowState.availability !== 'disabled';
           const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
@@ -2515,6 +2664,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isGiftPokemonLoading ? 'Loading' : 'Open Gifts'}</span>
+                  </button>
+                ) : null}
+                {isTradePokemonWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenTradePokemon || isTradePokemonLoading}
+                    onClick={onOpenTradePokemonWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isTradePokemonLoading ? 'Loading' : 'Open Trades'}</span>
                   </button>
                 ) : null}
                 {isStaticEncountersWorkflow ? (
@@ -5581,6 +5741,362 @@ function GiftPokemonFieldInput({
   disabled: boolean;
   draftValue: string;
   field: GiftPokemonEditableField;
+  onChange: (value: string) => void;
+}) {
+  if (field.options.length > 0) {
+    const hasDraftOption = field.options.some((option) => option.value.toString() === draftValue);
+
+    return (
+      <select
+        aria-label={field.label}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        value={draftValue}
+      >
+        {!hasDraftOption ? (
+          <option value={draftValue}>{draftValue === '' ? 'Custom fixed IVs' : draftValue}</option>
+        ) : null}
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value.toString()}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <input
+      aria-label={field.label}
+      disabled={disabled}
+      max={field.maximumValue ?? undefined}
+      min={field.minimumValue ?? undefined}
+      onChange={(event) => onChange(event.target.value)}
+      type="number"
+      value={draftValue}
+    />
+  );
+}
+
+function TradePokemonSection({
+  editSession,
+  isEditStarting,
+  isTradePokemonUpdating,
+  onSearchChange,
+  onSelectTrade,
+  onStartEditSession,
+  onUpdateTradePokemonField,
+  searchText,
+  selectedTradeIndex,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isTradePokemonUpdating: boolean;
+  onSearchChange: (searchText: string) => void;
+  onSelectTrade: (tradeIndex: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateTradePokemonField: (tradeIndex: number, field: string, value: string) => void;
+  searchText: string;
+  selectedTradeIndex: number | null;
+  workflow: TradePokemonWorkflow | null;
+}) {
+  const trades = workflow?.trades ?? [];
+  const filteredTrades = useMemo(
+    () => filterTradePokemon(trades, searchText),
+    [searchText, trades]
+  );
+  const selectedTrade = useMemo(
+    () =>
+      trades.find((trade) => trade.tradeIndex === selectedTradeIndex) ??
+      filteredTrades[0] ??
+      null,
+    [filteredTrades, selectedTradeIndex, trades]
+  );
+  const canEditTrades = workflow?.summary.availability === 'available';
+  const pendingTradeIndexes = useMemo(
+    () => getPendingTradePokemonIndexes(editSession),
+    [editSession]
+  );
+
+  return (
+    <>
+      <section aria-labelledby="trade-pokemon-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <ArrowLeftRight aria-hidden="true" size={18} />
+          <h2 id="trade-pokemon-heading">Trade Pokemon</h2>
+        </div>
+
+        <div className="items-toolbar trainers-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search trade Pokemon"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search trade Pokemon"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded trades"
+            value={workflow ? workflow.stats.totalTradeCount.toString() : '0'}
+          />
+          <Metric
+            label="Fixed IV rows"
+            value={workflow ? workflow.stats.fixedIvTradeCount.toString() : '0'}
+          />
+          <Metric
+            label="Sources"
+            value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="trainers-layout">
+            <div
+              aria-colcount={7}
+              aria-label="Trade Pokemon"
+              aria-rowcount={filteredTrades.length + 1}
+              className="trainers-table"
+              role="table"
+            >
+              <div className="trainers-row trade-pokemon-row trainers-row-heading" role="row">
+                <span role="columnheader">Index</span>
+                <span role="columnheader">Requested</span>
+                <span role="columnheader">Received</span>
+                <span role="columnheader">Level</span>
+                <span role="columnheader">IVs</span>
+                <span role="columnheader">Moves</span>
+                <span role="columnheader">Source</span>
+              </div>
+              <VirtualTableBody
+                getKey={(trade) => trade.tradeIndex}
+                items={filteredTrades}
+                renderRow={(trade) => (
+                  <button
+                    className={`trainers-row trade-pokemon-row ${
+                      selectedTrade?.tradeIndex === trade.tradeIndex
+                        ? 'trainers-row-selected'
+                        : ''
+                    } ${
+                      pendingTradeIndexes.has(trade.tradeIndex) ? 'trainers-row-pending' : ''
+                    }`}
+                    onClick={() => onSelectTrade(trade.tradeIndex)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{trade.tradeIndex + 1}</span>
+                    <span role="cell">{formatSpeciesFormLabel(trade.requiredSpecies, trade.requiredForm)}</span>
+                    <span role="cell">{formatSpeciesFormLabel(trade.species, trade.form)}</span>
+                    <span role="cell">{trade.level}</span>
+                    <span role="cell">{trade.ivSummary}</span>
+                    <span role="cell">{formatTradePokemonRelearnMoves(trade)}</span>
+                    <span role="cell">{formatSourceLayer(trade.provenance.sourceLayer)}</span>
+                  </button>
+                )}
+              />
+            </div>
+
+            <SelectedTradePokemonPanel
+              canEditTrades={canEditTrades}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              isEditStarting={isEditStarting}
+              isTradePokemonUpdating={isTradePokemonUpdating}
+              onStartEditSession={onStartEditSession}
+              onUpdateTradePokemonField={onUpdateTradePokemonField}
+              trade={selectedTrade}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Trade Pokemon from Workflows to load backend trade data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedTradePokemonPanel({
+  canEditTrades,
+  editSession,
+  editableFields,
+  isEditStarting,
+  isTradePokemonUpdating,
+  onStartEditSession,
+  onUpdateTradePokemonField,
+  trade
+}: {
+  canEditTrades: boolean;
+  editSession: EditSession | null;
+  editableFields: TradePokemonEditableField[];
+  isEditStarting: boolean;
+  isTradePokemonUpdating: boolean;
+  onStartEditSession: () => void;
+  onUpdateTradePokemonField: (tradeIndex: number, field: string, value: string) => void;
+  trade: TradePokemonRecord | null;
+}) {
+  const [tradeDrafts, setTradeDrafts] = useState<Record<string, string>>({});
+  const tradeFields = editableFields.filter((field) =>
+    tradePokemonFieldNames.includes(field.field as (typeof tradePokemonFieldNames)[number])
+  );
+
+  useEffect(() => {
+    if (!trade) {
+      setTradeDrafts({});
+      return;
+    }
+
+    setTradeDrafts(
+      Object.fromEntries(
+        tradeFields.map((field) => [
+          field.field,
+          (getEditableTradePokemonFieldValue(trade, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [editableFields, trade]);
+
+  return (
+    <aside aria-label="Selected trade Pokemon provenance" className="trainer-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Trade</h3>
+      </div>
+
+      {trade ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Trade</dt>
+              <dd>{trade.label}</dd>
+            </div>
+            <div>
+              <dt>Data file</dt>
+              <dd>{trade.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(trade.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(trade.provenance.fileState)}</dd>
+            </div>
+            <div>
+              <dt>Requested</dt>
+              <dd>{formatSpeciesFormLabel(trade.requiredSpecies, trade.requiredForm)}</dd>
+            </div>
+            <div>
+              <dt>Received</dt>
+              <dd>{`${formatSpeciesFormLabel(trade.species, trade.form)} Lv. ${trade.level}`}</dd>
+            </div>
+            <div>
+              <dt>Ball</dt>
+              <dd>{trade.ballItem}</dd>
+            </div>
+            <div>
+              <dt>Held item</dt>
+              <dd>{trade.heldItem ?? 'None'}</dd>
+            </div>
+            <div>
+              <dt>Relearn moves</dt>
+              <dd>{formatTradePokemonRelearnMoves(trade)}</dd>
+            </div>
+            <div>
+              <dt>Memory</dt>
+              <dd>{formatTradePokemonMemory(trade)}</dd>
+            </div>
+            <div>
+              <dt>Identifiers</dt>
+              <dd>{`${trade.hash0} / ${trade.hash1} / ${trade.hash2}`}</dd>
+            </div>
+            <div>
+              <dt>IV detail</dt>
+              <dd>{formatTradePokemonIvs(trade)}</dd>
+            </div>
+          </dl>
+
+          <div className="trainer-edit-form">
+            <div className="trainer-field-grid">
+              {tradeFields.map((field) => {
+                const currentValue = getEditableTradePokemonFieldValue(trade, field.field);
+                const draftValue = tradeDrafts[field.field] ?? '';
+                const draftState = getTradePokemonDraftState(draftValue, currentValue, field);
+                const canSubmit =
+                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+
+                return (
+                  <div className="trainer-editor-row" key={field.field}>
+                    <label className="path-field">
+                      <span>{field.label}</span>
+                      <TradePokemonFieldInput
+                        disabled={!canEditTrades || editSession === null || isTradePokemonUpdating}
+                        draftValue={draftValue}
+                        field={field}
+                        onChange={(value) =>
+                          setTradeDrafts((currentDrafts) => ({
+                            ...currentDrafts,
+                            [field.field]: value
+                          }))
+                        }
+                      />
+                    </label>
+                    {editSession ? (
+                      <button
+                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                        className="primary-button compact-button"
+                        disabled={!canSubmit || isTradePokemonUpdating}
+                        onClick={() =>
+                          onUpdateTradePokemonField(
+                            trade.tradeIndex,
+                            field.field,
+                            draftState.parsedValue!.toString()
+                          )
+                        }
+                        type="button"
+                      >
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isTradePokemonUpdating ? 'Saving' : 'Save'}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditTrades || isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No trade selected.</p>
+      )}
+    </aside>
+  );
+}
+
+function TradePokemonFieldInput({
+  disabled,
+  draftValue,
+  field,
+  onChange
+}: {
+  disabled: boolean;
+  draftValue: string;
+  field: TradePokemonEditableField;
   onChange: (value: string) => void;
 }) {
   if (field.options.length > 0) {
@@ -9050,6 +9566,59 @@ function filterGiftPokemon(gifts: GiftPokemonRecord[], searchText: string) {
   );
 }
 
+function filterTradePokemon(trades: TradePokemonRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return trades;
+  }
+
+  return trades.filter((trade) =>
+    [
+      trade.tradeIndex.toString(),
+      (trade.tradeIndex + 1).toString(),
+      trade.label,
+      trade.species,
+      trade.speciesId.toString(),
+      trade.form.toString(),
+      trade.level.toString(),
+      trade.requiredSpecies,
+      trade.requiredSpeciesId.toString(),
+      trade.requiredForm.toString(),
+      trade.requiredNatureLabel,
+      trade.requiredNature.toString(),
+      trade.heldItem ?? 'None',
+      trade.heldItemId.toString(),
+      trade.ballItem,
+      trade.ballItemId.toString(),
+      trade.abilityLabel,
+      trade.ability.toString(),
+      trade.natureLabel,
+      trade.nature.toString(),
+      trade.genderLabel,
+      trade.gender.toString(),
+      trade.shinyLockLabel,
+      trade.shinyLock.toString(),
+      trade.dynamaxLevel.toString(),
+      trade.canGigantamax ? 'gigantamax' : '',
+      trade.trainerId.toString(),
+      trade.otGenderLabel,
+      trade.memoryCode.toString(),
+      trade.memoryTextVariable.toString(),
+      trade.memoryFeel.toString(),
+      trade.memoryIntensity.toString(),
+      trade.field03.toString(),
+      trade.hash0,
+      trade.hash1,
+      trade.hash2,
+      trade.ivSummary,
+      formatTradePokemonIvs(trade),
+      formatTradePokemonRelearnMoves(trade),
+      trade.provenance.sourceFile
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText: string) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -9682,6 +10251,79 @@ function getEditableGiftPokemonFieldValue(gift: GiftPokemonRecord, field: string
   }
 }
 
+function getEditableTradePokemonFieldValue(trade: TradePokemonRecord, field: string) {
+  switch (field) {
+    case giftSpeciesFieldName:
+      return trade.speciesId;
+    case formFieldName:
+      return trade.form;
+    case levelFieldName:
+      return trade.level;
+    case heldItemIdFieldName:
+      return trade.heldItemId;
+    case giftBallItemIdFieldName:
+      return trade.ballItemId;
+    case tradeField03FieldName:
+      return trade.field03;
+    case abilityFieldName:
+      return trade.ability;
+    case natureFieldName:
+      return trade.nature;
+    case genderFieldName:
+      return trade.gender;
+    case giftShinyLockFieldName:
+      return trade.shinyLock;
+    case dynamaxLevelFieldName:
+      return trade.dynamaxLevel;
+    case canGigantamaxFieldName:
+      return trade.canGigantamax ? 1 : 0;
+    case tradeRequiredSpeciesFieldName:
+      return trade.requiredSpeciesId;
+    case tradeRequiredFormFieldName:
+      return trade.requiredForm;
+    case tradeRequiredNatureFieldName:
+      return trade.requiredNature;
+    case tradeUnknownRequirementFieldName:
+      return trade.unknownRequirement;
+    case tradeTrainerIdFieldName:
+      return trade.trainerId;
+    case tradeOtGenderFieldName:
+      return trade.otGender;
+    case tradeMemoryCodeFieldName:
+      return trade.memoryCode;
+    case tradeMemoryTextVariableFieldName:
+      return trade.memoryTextVariable;
+    case tradeMemoryFeelFieldName:
+      return trade.memoryFeel;
+    case tradeMemoryIntensityFieldName:
+      return trade.memoryIntensity;
+    case tradeRelearnMoveFieldNames[0]:
+      return trade.relearnMoves[0]?.moveId ?? null;
+    case tradeRelearnMoveFieldNames[1]:
+      return trade.relearnMoves[1]?.moveId ?? null;
+    case tradeRelearnMoveFieldNames[2]:
+      return trade.relearnMoves[2]?.moveId ?? null;
+    case tradeRelearnMoveFieldNames[3]:
+      return trade.relearnMoves[3]?.moveId ?? null;
+    case ivFieldNames[0]:
+      return trade.ivs.hp;
+    case ivFieldNames[1]:
+      return trade.ivs.attack;
+    case ivFieldNames[2]:
+      return trade.ivs.defense;
+    case ivFieldNames[3]:
+      return trade.ivs.specialAttack;
+    case ivFieldNames[4]:
+      return trade.ivs.specialDefense;
+    case ivFieldNames[5]:
+      return trade.ivs.speed;
+    case giftFlawlessIvCountFieldName:
+      return trade.flawlessIvCount;
+    default:
+      return null;
+  }
+}
+
 function getEditableStaticEncounterFieldValue(encounter: StaticEncounterRecord, field: string) {
   switch (field) {
     case giftSpeciesFieldName:
@@ -9879,6 +10521,31 @@ function getGiftPokemonDraftState(
   };
 }
 
+function getTradePokemonDraftState(
+  draftValue: string,
+  currentValue: number | null,
+  field: TradePokemonEditableField | undefined
+) {
+  const normalizedValue = draftValue.trim();
+  const parsedValue = /^-?\d+$/.test(normalizedValue)
+    ? Number.parseInt(normalizedValue, 10)
+    : null;
+  const minimumValue = field?.minimumValue ?? null;
+  const maximumValue = field?.maximumValue ?? null;
+  const inRange =
+    parsedValue !== null &&
+    (minimumValue === null || parsedValue >= minimumValue) &&
+    (maximumValue === null || parsedValue <= maximumValue);
+
+  return {
+    canSubmit:
+      field !== undefined &&
+      inRange &&
+      (currentValue === null || parsedValue !== currentValue),
+    parsedValue
+  };
+}
+
 function getStaticEncounterDraftState(
   draftValue: string,
   currentValue: number | null,
@@ -9955,6 +10622,19 @@ function getPendingGiftPokemonIndexes(editSession: EditSession | null) {
       .map((edit) => {
         const recordId = edit.recordId ?? '';
         const normalizedRecordId = recordId.startsWith('gift:') ? recordId.slice(5) : recordId;
+        return Number.parseInt(normalizedRecordId, 10);
+      })
+      .filter(Number.isInteger)
+  );
+}
+
+function getPendingTradePokemonIndexes(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.tradePokemon')
+      .map((edit) => {
+        const recordId = edit.recordId ?? '';
+        const normalizedRecordId = recordId.startsWith('trade:') ? recordId.slice(6) : recordId;
         return Number.parseInt(normalizedRecordId, 10);
       })
       .filter(Number.isInteger)
@@ -10245,6 +10925,40 @@ function formatGiftPokemonIvValue(value: number) {
   }
 }
 
+function formatTradePokemonIvs(trade: TradePokemonRecord) {
+  return [
+    `HP ${formatGiftPokemonIvValue(trade.ivs.hp)}`,
+    `Atk ${formatGiftPokemonIvValue(trade.ivs.attack)}`,
+    `Def ${formatGiftPokemonIvValue(trade.ivs.defense)}`,
+    `SpA ${formatGiftPokemonIvValue(trade.ivs.specialAttack)}`,
+    `SpD ${formatGiftPokemonIvValue(trade.ivs.specialDefense)}`,
+    `Spe ${formatGiftPokemonIvValue(trade.ivs.speed)}`
+  ].join(' / ');
+}
+
+function formatTradePokemonRelearnMoves(trade: TradePokemonRecord) {
+  const moves = trade.relearnMoves
+    .filter((move) => move.moveId > 0)
+    .map((move) => move.move ?? `Move ${move.moveId}`);
+
+  return moves.length > 0 ? moves.join(' / ') : 'None';
+}
+
+function formatTradePokemonMemory(trade: TradePokemonRecord) {
+  return [
+    `Trainer ${trade.trainerId}`,
+    `OT ${trade.otGenderLabel}`,
+    `Memory ${trade.memoryCode}`,
+    `Text ${trade.memoryTextVariable}`,
+    `Feeling ${trade.memoryFeel}`,
+    `Intensity ${trade.memoryIntensity}`
+  ].join(' / ');
+}
+
+function formatSpeciesFormLabel(species: string, form: number) {
+  return form === 0 ? species : `${species}-${form}`;
+}
+
 function formatStaticEncounterIvs(encounter: StaticEncounterRecord) {
   return [
     `HP ${formatGiftPokemonIvValue(encounter.ivs.hp)}`,
@@ -10322,6 +11036,7 @@ function formatSourceLayer(
     | SpreadsheetImportProfileRecord['provenance']['sourceLayer']
     | StaticEncounterRecord['provenance']['sourceLayer']
     | TextEntryRecord['provenance']['sourceLayer']
+    | TradePokemonRecord['provenance']['sourceLayer']
     | TrainerRecord['provenance']['sourceLayer']
 ) {
   return {
@@ -10355,6 +11070,7 @@ function formatFileState(
     | SpreadsheetImportProfileRecord['provenance']['fileState']
     | StaticEncounterRecord['provenance']['fileState']
     | TextEntryRecord['provenance']['fileState']
+    | TradePokemonRecord['provenance']['fileState']
     | TrainerRecord['provenance']['fileState']
 ) {
   return {

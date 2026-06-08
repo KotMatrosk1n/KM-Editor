@@ -12,6 +12,7 @@ public static class SwShWorkflowIds
     public const string Text = "text";
     public const string Trainers = "trainers";
     public const string GiftPokemon = "giftPokemon";
+    public const string TradePokemon = "tradePokemon";
     public const string StaticEncounters = "staticEncounters";
     public const string Shops = "shops";
     public const string Encounters = "encounters";

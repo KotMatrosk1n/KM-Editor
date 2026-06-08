@@ -16,6 +16,7 @@ using KM.Api.StaticEncounters;
 using KM.Api.Text;
 using KM.Api.SpreadsheetImport;
 using KM.Api.Trainers;
+using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.SwSh.Items;
 using KM.SwSh.Encounters;
@@ -32,6 +33,7 @@ using KM.SwSh.StaticEncounters;
 using KM.SwSh.Text;
 using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.Trainers;
+using KM.SwSh.Trades;
 using KM.SwSh.Workflows;
 
 namespace KM.Tools.Bridge;
@@ -132,6 +134,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadGiftPokemonWorkflowResponse(ToGiftPokemonWorkflowDto(workflow));
+    }
+
+    public static LoadTradePokemonWorkflowResponse ToDto(SwShTradePokemonWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTradePokemonWorkflowResponse(ToTradePokemonWorkflowDto(workflow));
     }
 
     public static LoadStaticEncountersWorkflowResponse ToDto(SwShStaticEncountersWorkflow workflow)
@@ -267,6 +276,16 @@ public static class SwShBridgeMapper
 
         return new UpdateGiftPokemonFieldResponse(
             ToGiftPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateTradePokemonFieldResponse ToDto(SwShTradePokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTradePokemonFieldResponse(
+            ToTradePokemonWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -446,6 +465,104 @@ public static class SwShBridgeMapper
     private static GiftPokemonEditableFieldOptionDto ToDto(SwShGiftPokemonEditableFieldOption option)
     {
         return new GiftPokemonEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static TradePokemonWorkflowDto ToTradePokemonWorkflowDto(SwShTradePokemonWorkflow workflow)
+    {
+        return new TradePokemonWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Trades.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new TradePokemonWorkflowStatsDto(
+                workflow.Stats.TotalTradeCount,
+                workflow.Stats.FixedIvTradeCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TradePokemonRecordDto ToDto(SwShTradePokemonEntry trade)
+    {
+        return new TradePokemonRecordDto(
+            trade.TradeIndex,
+            trade.Label,
+            trade.SpeciesId,
+            trade.Species,
+            trade.Form,
+            trade.Level,
+            trade.HeldItemId,
+            trade.HeldItem,
+            trade.BallItemId,
+            trade.BallItem,
+            trade.Ability,
+            trade.AbilityLabel,
+            trade.Nature,
+            trade.NatureLabel,
+            trade.Gender,
+            trade.GenderLabel,
+            trade.ShinyLock,
+            trade.ShinyLockLabel,
+            trade.DynamaxLevel,
+            trade.CanGigantamax,
+            trade.RequiredSpeciesId,
+            trade.RequiredSpecies,
+            trade.RequiredForm,
+            trade.RequiredNature,
+            trade.RequiredNatureLabel,
+            trade.UnknownRequirement,
+            trade.TrainerId,
+            trade.OtGender,
+            trade.OtGenderLabel,
+            trade.MemoryCode,
+            trade.MemoryTextVariable,
+            trade.MemoryFeel,
+            trade.MemoryIntensity,
+            trade.Field03,
+            FormatHash(trade.Hash0),
+            FormatHash(trade.Hash1),
+            FormatHash(trade.Hash2),
+            trade.RelearnMoves.Select(ToDto).ToArray(),
+            new TradePokemonIvsDto(
+                trade.Ivs.HP,
+                trade.Ivs.Attack,
+                trade.Ivs.Defense,
+                trade.Ivs.SpecialAttack,
+                trade.Ivs.SpecialDefense,
+                trade.Ivs.Speed),
+            trade.FlawlessIvCount,
+            trade.IvSummary,
+            new TradePokemonProvenanceDto(
+                trade.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(trade.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(trade.Provenance.FileState)));
+    }
+
+    private static TradePokemonMoveRecordDto ToDto(SwShTradePokemonMoveRecord move)
+    {
+        return new TradePokemonMoveRecordDto(
+            move.Slot,
+            move.MoveId,
+            move.Move);
+    }
+
+    private static TradePokemonEditableFieldDto ToDto(SwShTradePokemonEditableField field)
+    {
+        return new TradePokemonEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static TradePokemonEditableFieldOptionDto ToDto(SwShTradePokemonEditableFieldOption option)
+    {
+        return new TradePokemonEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static string FormatHash(ulong value)
+    {
+        return $"0x{value:X16}";
     }
 
     private static StaticEncountersWorkflowDto ToStaticEncountersWorkflowDto(SwShStaticEncountersWorkflow workflow)

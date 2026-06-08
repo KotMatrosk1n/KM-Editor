@@ -21,6 +21,8 @@ export const kmCommandNameValues = [
   'trainers.field.update',
   'giftPokemon.load',
   'giftPokemon.field.update',
+  'tradePokemon.load',
+  'tradePokemon.field.update',
   'staticEncounters.load',
   'staticEncounters.field.update',
   'shops.load',
@@ -68,6 +70,8 @@ export const kmCommandNames = {
   updateTrainerField: 'trainers.field.update',
   loadGiftPokemonWorkflow: 'giftPokemon.load',
   updateGiftPokemonField: 'giftPokemon.field.update',
+  loadTradePokemonWorkflow: 'tradePokemon.load',
+  updateTradePokemonField: 'tradePokemon.field.update',
   loadStaticEncountersWorkflow: 'staticEncounters.load',
   updateStaticEncounterField: 'staticEncounters.field.update',
   loadShopsWorkflow: 'shops.load',
@@ -154,6 +158,10 @@ export const loadTrainersWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadGiftPokemonWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadTradePokemonWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -902,6 +910,104 @@ export const loadGiftPokemonWorkflowResponseSchema = z.strictObject({
   workflow: giftPokemonWorkflowSchema
 });
 
+export const tradePokemonProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const tradePokemonIvsSchema = z.strictObject({
+  attack: z.number().int(),
+  defense: z.number().int(),
+  hp: z.number().int(),
+  specialAttack: z.number().int(),
+  specialDefense: z.number().int(),
+  speed: z.number().int()
+});
+
+export const tradePokemonMoveSchema = z.strictObject({
+  move: z.string().nullable(),
+  moveId: z.number().int().nonnegative(),
+  slot: z.number().int().nonnegative()
+});
+
+export const tradePokemonEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
+export const tradePokemonEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  options: z.array(tradePokemonEditableFieldOptionSchema),
+  valueKind: z.string()
+});
+
+export const tradePokemonRecordSchema = z.strictObject({
+  ability: z.number().int().nonnegative(),
+  abilityLabel: z.string(),
+  ballItem: z.string(),
+  ballItemId: z.number().int().nonnegative(),
+  canGigantamax: z.boolean(),
+  dynamaxLevel: z.number().int().nonnegative(),
+  field03: z.number().int().nonnegative(),
+  flawlessIvCount: z.number().int().nullable(),
+  form: z.number().int().nonnegative(),
+  gender: z.number().int(),
+  genderLabel: z.string(),
+  hash0: z.string(),
+  hash1: z.string(),
+  hash2: z.string(),
+  heldItem: z.string().nullable(),
+  heldItemId: z.number().int().nonnegative(),
+  ivs: tradePokemonIvsSchema,
+  ivSummary: z.string(),
+  label: z.string(),
+  level: z.number().int().nonnegative(),
+  memoryCode: z.number().int().nonnegative(),
+  memoryFeel: z.number().int().nonnegative(),
+  memoryIntensity: z.number().int().nonnegative(),
+  memoryTextVariable: z.number().int().nonnegative(),
+  nature: z.number().int().nonnegative(),
+  natureLabel: z.string(),
+  otGender: z.number().int().nonnegative(),
+  otGenderLabel: z.string(),
+  provenance: tradePokemonProvenanceSchema,
+  relearnMoves: z.array(tradePokemonMoveSchema),
+  requiredForm: z.number().int().nonnegative(),
+  requiredNature: z.number().int().nonnegative(),
+  requiredNatureLabel: z.string(),
+  requiredSpecies: z.string(),
+  requiredSpeciesId: z.number().int().nonnegative(),
+  shinyLock: z.number().int().nonnegative(),
+  shinyLockLabel: z.string(),
+  species: z.string(),
+  speciesId: z.number().int().nonnegative(),
+  tradeIndex: z.number().int().nonnegative(),
+  trainerId: z.number().int().nonnegative(),
+  unknownRequirement: z.number().int().nonnegative()
+});
+
+export const tradePokemonWorkflowStatsSchema = z.strictObject({
+  fixedIvTradeCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative(),
+  totalTradeCount: z.number().int().nonnegative()
+});
+
+export const tradePokemonWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(tradePokemonEditableFieldSchema),
+  stats: tradePokemonWorkflowStatsSchema,
+  summary: workflowSummarySchema,
+  trades: z.array(tradePokemonRecordSchema)
+});
+
+export const loadTradePokemonWorkflowResponseSchema = z.strictObject({
+  workflow: tradePokemonWorkflowSchema
+});
+
 export const staticEncounterProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -1565,6 +1671,20 @@ export const updateGiftPokemonFieldResponseSchema = z.strictObject({
   workflow: giftPokemonWorkflowSchema
 });
 
+export const updateTradePokemonFieldRequestSchema = z.strictObject({
+  field: z.string(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  tradeIndex: z.number().int().nonnegative(),
+  value: z.string()
+});
+
+export const updateTradePokemonFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: tradePokemonWorkflowSchema
+});
+
 export const updateStaticEncounterFieldRequestSchema = z.strictObject({
   encounterIndex: z.number().int().nonnegative(),
   field: z.string(),
@@ -1750,6 +1870,13 @@ export type GiftPokemonEditableFieldOption = z.infer<
 >;
 export type GiftPokemonRecord = z.infer<typeof giftPokemonRecordSchema>;
 export type GiftPokemonWorkflow = z.infer<typeof giftPokemonWorkflowSchema>;
+export type TradePokemonEditableField = z.infer<typeof tradePokemonEditableFieldSchema>;
+export type TradePokemonEditableFieldOption = z.infer<
+  typeof tradePokemonEditableFieldOptionSchema
+>;
+export type TradePokemonMoveRecord = z.infer<typeof tradePokemonMoveSchema>;
+export type TradePokemonRecord = z.infer<typeof tradePokemonRecordSchema>;
+export type TradePokemonWorkflow = z.infer<typeof tradePokemonWorkflowSchema>;
 export type StaticEncounterEditableField = z.infer<typeof staticEncounterEditableFieldSchema>;
 export type StaticEncounterEditableFieldOption = z.infer<
   typeof staticEncounterEditableFieldOptionSchema
@@ -1816,6 +1943,12 @@ export type LoadGiftPokemonWorkflowRequest = z.infer<
 >;
 export type LoadGiftPokemonWorkflowResponse = z.infer<
   typeof loadGiftPokemonWorkflowResponseSchema
+>;
+export type LoadTradePokemonWorkflowRequest = z.infer<
+  typeof loadTradePokemonWorkflowRequestSchema
+>;
+export type LoadTradePokemonWorkflowResponse = z.infer<
+  typeof loadTradePokemonWorkflowResponseSchema
 >;
 export type LoadStaticEncountersWorkflowRequest = z.infer<
   typeof loadStaticEncountersWorkflowRequestSchema
@@ -1886,6 +2019,12 @@ export type UpdateGiftPokemonFieldRequest = z.infer<
 >;
 export type UpdateGiftPokemonFieldResponse = z.infer<
   typeof updateGiftPokemonFieldResponseSchema
+>;
+export type UpdateTradePokemonFieldRequest = z.infer<
+  typeof updateTradePokemonFieldRequestSchema
+>;
+export type UpdateTradePokemonFieldResponse = z.infer<
+  typeof updateTradePokemonFieldResponseSchema
 >;
 export type UpdateStaticEncounterFieldRequest = z.infer<
   typeof updateStaticEncounterFieldRequestSchema

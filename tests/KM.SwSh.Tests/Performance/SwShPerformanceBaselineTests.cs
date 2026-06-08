@@ -14,6 +14,7 @@ using KM.SwSh.Shops;
 using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.StaticEncounters;
 using KM.SwSh.Text;
+using KM.SwSh.Trades;
 using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
 using System.Diagnostics;
@@ -36,7 +37,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
             "The synthetic baseline must include enough files to exercise project graph enumeration.");
 
         var workflowList = Record(measurements, "workflows.list", () => workflowService.List(temp.Paths));
-        Assert.Equal(15, workflowList.Workflows.Count);
+        Assert.Equal(16, workflowList.Workflows.Count);
 
         var items = Record(measurements, "items.load", () => workflowService.LoadItems(temp.Paths));
         var pokemon = Record(measurements, "pokemon.load", () => workflowService.LoadPokemon(temp.Paths));
@@ -44,6 +45,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var text = Record(measurements, "text.load", () => workflowService.LoadText(temp.Paths));
         var trainers = Record(measurements, "trainers.load", () => workflowService.LoadTrainers(temp.Paths));
         var giftPokemon = Record(measurements, "giftPokemon.load", () => workflowService.LoadGiftPokemon(temp.Paths));
+        var tradePokemon = Record(measurements, "tradePokemon.load", () => workflowService.LoadTradePokemon(temp.Paths));
         var staticEncounters = Record(measurements, "staticEncounters.load", () => workflowService.LoadStaticEncounters(temp.Paths));
         var shops = Record(measurements, "shops.load", () => workflowService.LoadShops(temp.Paths));
         var encounters = Record(measurements, "encounters.load", () => workflowService.LoadEncounters(temp.Paths));
@@ -60,6 +62,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         Assert.True(text.Stats.TotalTextEntryCount >= SwShPerformanceFixtureProject.TextTableCount * SwShPerformanceFixtureProject.TextLinesPerTable);
         Assert.Equal(SwShPerformanceFixtureProject.TrainerCount, trainers.Stats.TotalTrainerCount);
         Assert.True(giftPokemon.Summary.Availability != SwShWorkflowAvailability.Disabled);
+        Assert.Equal(2, tradePokemon.Stats.TotalTradeCount);
         Assert.Equal(2, staticEncounters.Stats.TotalEncounterCount);
         Assert.True(shops.Stats.TotalInventoryItemCount > 0);
         Assert.Equal(SwShPerformanceFixtureProject.EncounterTableCount * 3 * 2, encounters.Stats.TotalTableCount);
@@ -96,6 +99,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var text = Record(measurements, "text.load.openedProject", () => new SwShTextWorkflowService().Load(project));
         var trainers = Record(measurements, "trainers.load.openedProject", () => new SwShTrainersWorkflowService().Load(project));
         var giftPokemon = Record(measurements, "giftPokemon.load.openedProject", () => new SwShGiftPokemonWorkflowService().Load(project));
+        var tradePokemon = Record(measurements, "tradePokemon.load.openedProject", () => new SwShTradePokemonWorkflowService().Load(project));
         var staticEncounters = Record(measurements, "staticEncounters.load.openedProject", () => new SwShStaticEncountersWorkflowService().Load(project));
 
         Assert.Equal(SwShPerformanceFixtureProject.ItemCount, items.Items.Count);
@@ -107,6 +111,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         Assert.True(text.Entries.Count > 0);
         Assert.Equal(SwShPerformanceFixtureProject.TrainerCount, trainers.Trainers.Count);
         Assert.True(giftPokemon.Summary.Availability != SwShWorkflowAvailability.Disabled);
+        Assert.Equal(2, tradePokemon.Trades.Count);
         Assert.Equal(2, staticEncounters.Encounters.Count);
 
         var repeatOpen1 = Record(measurements, "project.open.repeat1", () => workspaceService.Open(temp.Paths));

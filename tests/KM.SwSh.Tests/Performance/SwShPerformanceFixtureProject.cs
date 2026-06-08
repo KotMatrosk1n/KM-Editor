@@ -3,6 +3,7 @@
 using KM.Formats.SwSh;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.Tests.StaticEncounters;
+using KM.SwSh.Tests.Trades;
 using KM.SwSh.Tests.Trainers;
 using System.Buffers.Binary;
 
@@ -36,6 +37,7 @@ internal static class SwShPerformanceFixtureProject
         WriteTextTables(temp);
         WriteTrainers(temp);
         WriteMovesData(temp);
+        WriteTradePokemon(temp);
         WriteStaticEncounters(temp);
         WriteShopData(temp);
         WriteDataTablePack(temp);
@@ -198,6 +200,14 @@ internal static class SwShPerformanceFixtureProject
             "bin/script_event_data/event_encount_data.bin",
             SwShStaticEncountersWorkflowServiceTests.CreateStaticEncounterTable(
                 new SwShStaticEncounterStats(31, 31, 31, 31, 31, 31)));
+    }
+
+    private static void WriteTradePokemon(TemporarySwShProject temp)
+    {
+        temp.WriteBaseRomFsFile(
+            "bin/script_event_data/field_trade.bin",
+            SwShTradePokemonWorkflowServiceTests.CreateTradeTable(
+                new SwShTradePokemonIvs(31, 30, 29, 28, 27, 26)));
     }
 
     private static SwShMoveDataRecord CreateMoveRecord(int moveId)

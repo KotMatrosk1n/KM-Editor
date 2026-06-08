@@ -16,6 +16,7 @@ using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.StaticEncounters;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
+using KM.SwSh.Trades;
 
 namespace KM.SwSh.Workflows;
 
@@ -28,6 +29,7 @@ public sealed class SwShWorkflowService
     private readonly SwShExeFsPatchWorkflowService exeFsPatchWorkflowService;
     private readonly SwShFlagworkSaveWorkflowService flagworkSaveWorkflowService;
     private readonly SwShGiftPokemonWorkflowService giftPokemonWorkflowService;
+    private readonly SwShTradePokemonWorkflowService tradePokemonWorkflowService;
     private readonly SwShStaticEncountersWorkflowService staticEncountersWorkflowService;
     private readonly SwShPlacementWorkflowService placementWorkflowService;
     private readonly SwShRaidRewardsWorkflowService raidRewardsWorkflowService;
@@ -51,6 +53,7 @@ public sealed class SwShWorkflowService
         SwShPlacementWorkflowService? placementWorkflowService = null,
         SwShFlagworkSaveWorkflowService? flagworkSaveWorkflowService = null,
         SwShGiftPokemonWorkflowService? giftPokemonWorkflowService = null,
+        SwShTradePokemonWorkflowService? tradePokemonWorkflowService = null,
         SwShStaticEncountersWorkflowService? staticEncountersWorkflowService = null,
         SwShExeFsPatchWorkflowService? exeFsPatchWorkflowService = null,
         SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null,
@@ -66,6 +69,7 @@ public sealed class SwShWorkflowService
         this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService(sharedParsedDataCache);
         this.flagworkSaveWorkflowService = flagworkSaveWorkflowService ?? new SwShFlagworkSaveWorkflowService();
         this.giftPokemonWorkflowService = giftPokemonWorkflowService ?? new SwShGiftPokemonWorkflowService();
+        this.tradePokemonWorkflowService = tradePokemonWorkflowService ?? new SwShTradePokemonWorkflowService();
         this.staticEncountersWorkflowService = staticEncountersWorkflowService ?? new SwShStaticEncountersWorkflowService();
         this.placementWorkflowService = placementWorkflowService ?? new SwShPlacementWorkflowService();
         this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
@@ -90,6 +94,7 @@ public sealed class SwShWorkflowService
                 textWorkflowService.CreateSummary(project),
                 trainersWorkflowService.CreateSummary(project),
                 giftPokemonWorkflowService.CreateSummary(project),
+                tradePokemonWorkflowService.CreateSummary(project),
                 staticEncountersWorkflowService.CreateSummary(project),
                 shopsWorkflowService.CreateSummary(project),
                 encountersWorkflowService.CreateSummary(project),
@@ -163,6 +168,15 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return staticEncountersWorkflowService.Load(project);
+    }
+
+    public SwShTradePokemonWorkflow LoadTradePokemon(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return tradePokemonWorkflowService.Load(project);
     }
 
     public SwShShopsWorkflow LoadShops(ProjectPaths paths)

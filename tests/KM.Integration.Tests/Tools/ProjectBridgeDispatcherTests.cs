@@ -17,6 +17,7 @@ using KM.Api.Shops;
 using KM.Api.SpreadsheetImport;
 using KM.Api.StaticEncounters;
 using KM.Api.Text;
+using KM.Api.Trades;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
@@ -151,6 +152,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("giftPokemon", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("tradePokemon", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             },
             workflow =>
@@ -535,6 +541,73 @@ public sealed class ProjectBridgeDispatcherTests
             "romfs/bin/script_event_data/event_encount_data.bin".Replace('/', Path.DirectorySeparatorChar));
         var output = SwShStaticEncounterArchive.Parse(File.ReadAllBytes(outputPath));
         Assert.Equal(12, output.Encounters[0].Ivs.Attack);
+    }
+
+    [Fact]
+    public void DispatchLoadTradePokemonWorkflowReturnsRealTradeRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShTradePokemonBridgeFixtures.WriteBaseTradePokemon(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadTradePokemonWorkflow,
+            new LoadTradePokemonWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-trade-pokemon");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadTradePokemonWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-trade-pokemon", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Equal(2, response.Payload.Workflow.Trades.Count);
+        var trade = response.Payload.Workflow.Trades[0];
+        Assert.Equal(0, trade.TradeIndex);
+        Assert.Equal("Grookey", trade.Species);
+        Assert.Equal("Pikachu", trade.RequiredSpecies);
+        Assert.Equal("Hidden Ability", trade.AbilityLabel);
+        Assert.Equal("0x1122334455667788", trade.Hash0);
+        Assert.Equal("romfs/bin/script_event_data/field_trade.bin", trade.Provenance.SourceFile);
+        Assert.Equal(ProjectFileLayerDto.Base, trade.Provenance.SourceLayer);
+        Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "ivHp");
+        Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "requiredSpecies");
+    }
+
+    [Fact]
+    public void DispatchApplyTradePokemonChangePlanWritesTradeTable()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShTradePokemonBridgeFixtures.WriteBaseTradePokemon(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateTradePokemonField,
+            new UpdateTradePokemonFieldRequest(
+                temp.Paths,
+                Session: null,
+                TradeIndex: 0,
+                Field: "ivAttack",
+                Value: "12"),
+            requestId: "request-trade-pokemon-update");
+        var update = DeserializeResponse<UpdateTradePokemonFieldResponse>(dispatcher.Dispatch(updateJson)).Payload!;
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, update.Session),
+            requestId: "request-trade-pokemon-plan");
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson)).Payload!.ChangePlan;
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, update.Session, plan),
+            requestId: "request-trade-pokemon-apply");
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson)).Payload!.ApplyResult;
+
+        Assert.Contains("romfs/bin/script_event_data/field_trade.bin", apply.WrittenFiles);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs/bin/script_event_data/field_trade.bin".Replace('/', Path.DirectorySeparatorChar));
+        var output = SwShTradePokemonArchive.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal(12, output.Trades[0].Ivs.Attack);
     }
 
     [Fact]

@@ -19,6 +19,8 @@ import {
   loadFlagworkSaveWorkflowResponseSchema,
   loadGiftPokemonWorkflowRequestSchema,
   loadGiftPokemonWorkflowResponseSchema,
+  loadTradePokemonWorkflowRequestSchema,
+  loadTradePokemonWorkflowResponseSchema,
   loadItemsWorkflowRequestSchema,
   loadItemsWorkflowResponseSchema,
   loadMovesWorkflowRequestSchema,
@@ -51,6 +53,8 @@ import {
   updateItemFieldResponseSchema,
   updateGiftPokemonFieldRequestSchema,
   updateGiftPokemonFieldResponseSchema,
+  updateTradePokemonFieldRequestSchema,
+  updateTradePokemonFieldResponseSchema,
   updatePokemonFieldRequestSchema,
   updatePokemonFieldResponseSchema,
   updatePokemonEvolutionRequestSchema,
@@ -244,6 +248,10 @@ describe('bridge contracts', () => {
     const giftPokemonRequestSchema = createBridgeRequestSchema(loadGiftPokemonWorkflowRequestSchema);
     const giftPokemonResponseSchema = createBridgeResponseSchema(
       loadGiftPokemonWorkflowResponseSchema
+    );
+    const tradePokemonRequestSchema = createBridgeRequestSchema(loadTradePokemonWorkflowRequestSchema);
+    const tradePokemonResponseSchema = createBridgeResponseSchema(
+      loadTradePokemonWorkflowResponseSchema
     );
     const shopsRequestSchema = createBridgeRequestSchema(loadShopsWorkflowRequestSchema);
     const shopsResponseSchema = createBridgeResponseSchema(loadShopsWorkflowResponseSchema);
@@ -811,6 +819,108 @@ describe('bridge contracts', () => {
         label: 'Gift Pokemon'
       }
     } as const;
+    const tradePokemonWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'ivHp',
+          label: 'HP IV',
+          maximumValue: 31,
+          minimumValue: -4,
+          options: [],
+          valueKind: 'integer'
+        },
+        {
+          field: 'requiredSpecies',
+          label: 'Requested species',
+          maximumValue: 65535,
+          minimumValue: 0,
+          options: [
+            {
+              label: '133 Eevee',
+              value: 133
+            }
+          ],
+          valueKind: 'integer'
+        }
+      ],
+      stats: {
+        fixedIvTradeCount: 0,
+        sourceFileCount: 4,
+        totalTradeCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description:
+          'In-game trade records, requested Pokemon, IV modes, relearn moves, and source provenance.',
+        diagnostics: [],
+        id: 'tradePokemon',
+        label: 'Trade Pokemon'
+      },
+      trades: [
+        {
+          ability: 1,
+          abilityLabel: 'Ability 1',
+          ballItem: 'Poke Ball',
+          ballItemId: 4,
+          canGigantamax: false,
+          dynamaxLevel: 0,
+          field03: 0,
+          flawlessIvCount: 3,
+          form: 0,
+          gender: 0,
+          genderLabel: 'Random',
+          hash0: '0x1122334455667788',
+          hash1: '0x8877665544332211',
+          hash2: '0x0102030405060708',
+          heldItem: null,
+          heldItemId: 0,
+          ivs: {
+            attack: -1,
+            defense: -1,
+            hp: -4,
+            specialAttack: -1,
+            specialDefense: -1,
+            speed: -1
+          },
+          ivSummary: '3 guaranteed perfect IVs',
+          label: 'Trade 001: Eevee -> Grookey Lv. 50',
+          level: 50,
+          memoryCode: 11,
+          memoryFeel: 12,
+          memoryIntensity: 13,
+          memoryTextVariable: 4660,
+          nature: 25,
+          natureLabel: 'Random',
+          otGender: 1,
+          otGenderLabel: 'Female',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/script_event_data/field_trade.bin',
+            sourceLayer: 'base'
+          },
+          relearnMoves: [
+            {
+              move: 'Scratch',
+              moveId: 1,
+              slot: 0
+            }
+          ],
+          requiredForm: 0,
+          requiredNature: 25,
+          requiredNatureLabel: 'Random',
+          requiredSpecies: 'Eevee',
+          requiredSpeciesId: 133,
+          shinyLock: 2,
+          shinyLockLabel: 'Never Shiny',
+          species: 'Grookey',
+          speciesId: 810,
+          tradeIndex: 0,
+          trainerId: 123456,
+          unknownRequirement: 0
+        }
+      ]
+    } as const;
     const shopsWorkflow = {
       diagnostics: [],
       editableFields: [
@@ -1288,6 +1398,8 @@ describe('bridge contracts', () => {
             movesWorkflow.summary,
             textWorkflow.summary,
             trainersWorkflow.summary,
+            giftPokemonWorkflow.summary,
+            tradePokemonWorkflow.summary,
             shopsWorkflow.summary,
             encountersWorkflow.summary,
             raidRewardsWorkflow.summary,
@@ -1429,6 +1541,28 @@ describe('bridge contracts', () => {
       giftPokemonResponseSchema.safeParse({
         payload: {
           workflow: giftPokemonWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      tradePokemonRequestSchema.safeParse({
+        command: kmCommandNames.loadTradePokemonWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null,
+            saveFilePath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      tradePokemonResponseSchema.safeParse({
+        payload: {
+          workflow: tradePokemonWorkflow
         }
       }).success
     ).toBe(true);
@@ -1711,6 +1845,12 @@ describe('bridge contracts', () => {
     );
     const updateGiftPokemonResponseSchema = createBridgeResponseSchema(
       updateGiftPokemonFieldResponseSchema
+    );
+    const updateTradePokemonRequestSchema = createBridgeRequestSchema(
+      updateTradePokemonFieldRequestSchema
+    );
+    const updateTradePokemonResponseSchema = createBridgeResponseSchema(
+      updateTradePokemonFieldResponseSchema
     );
     const updateShopRequestSchema = createBridgeRequestSchema(
       updateShopInventoryItemRequestSchema
@@ -2285,6 +2425,114 @@ describe('bridge contracts', () => {
         label: 'Gift Pokemon'
       }
     } as const;
+    const tradePokemonSession = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.tradePokemon',
+          field: 'ivHp',
+          newValue: '31',
+          recordId: 'trade:0',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/bin/script_event_data/field_trade.bin'
+            }
+          ],
+          summary: 'Set Trade 001 HP IV to 31.'
+        }
+      ],
+      sessionId: 'session-1'
+    } as const;
+    const tradePokemonWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'ivHp',
+          label: 'HP IV',
+          maximumValue: 31,
+          minimumValue: -4,
+          options: [],
+          valueKind: 'integer'
+        }
+      ],
+      stats: {
+        fixedIvTradeCount: 1,
+        sourceFileCount: 4,
+        totalTradeCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description:
+          'In-game trade records, requested Pokemon, IV modes, relearn moves, and source provenance.',
+        diagnostics: [],
+        id: 'tradePokemon',
+        label: 'Trade Pokemon'
+      },
+      trades: [
+        {
+          ability: 3,
+          abilityLabel: 'Hidden Ability',
+          ballItem: 'Poke Ball',
+          ballItemId: 4,
+          canGigantamax: true,
+          dynamaxLevel: 10,
+          field03: 0,
+          flawlessIvCount: null,
+          form: 1,
+          gender: 0,
+          genderLabel: 'Random',
+          hash0: '0x1122334455667788',
+          hash1: '0x8877665544332211',
+          hash2: '0x0102030405060708',
+          heldItem: 'Potion',
+          heldItemId: 1,
+          ivs: {
+            attack: 30,
+            defense: 29,
+            hp: 31,
+            specialAttack: 27,
+            specialDefense: 26,
+            speed: 28
+          },
+          ivSummary: 'HP 31 / Atk 30 / Def 29 / SpA 27 / SpD 26 / Spe 28',
+          label: 'Trade 001: Eevee -> Grookey-1 Lv. 50',
+          level: 50,
+          memoryCode: 11,
+          memoryFeel: 12,
+          memoryIntensity: 13,
+          memoryTextVariable: 4660,
+          nature: 25,
+          natureLabel: 'Random',
+          otGender: 1,
+          otGenderLabel: 'Female',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/script_event_data/field_trade.bin',
+            sourceLayer: 'base'
+          },
+          relearnMoves: [
+            {
+              move: 'Scratch',
+              moveId: 1,
+              slot: 0
+            }
+          ],
+          requiredForm: 0,
+          requiredNature: 25,
+          requiredNatureLabel: 'Random',
+          requiredSpecies: 'Eevee',
+          requiredSpeciesId: 133,
+          shinyLock: 0,
+          shinyLockLabel: 'Random',
+          species: 'Grookey',
+          speciesId: 810,
+          tradeIndex: 0,
+          trainerId: 123456,
+          unknownRequirement: 0
+        }
+      ]
+    } as const;
     const shopSession = {
       hasPendingChanges: true,
       pendingEdits: [
@@ -2736,6 +2984,34 @@ describe('bridge contracts', () => {
           diagnostics: [],
           session: giftPokemonSession,
           workflow: giftPokemonWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateTradePokemonRequestSchema.safeParse({
+        command: kmCommandNames.updateTradePokemonField,
+        payload: {
+          field: 'ivHp',
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output',
+            saveFilePath: null
+          },
+          session: editSession,
+          tradeIndex: 0,
+          value: '31'
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateTradePokemonResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: tradePokemonSession,
+          workflow: tradePokemonWorkflow
         }
       }).success
     ).toBe(true);
