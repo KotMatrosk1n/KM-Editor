@@ -136,7 +136,8 @@ public sealed class SwShRaidBattlesWorkflowService
 
             var archive = SwShEncounterNestArchive.Parse(memberData);
             var provenance = CreateProvenance(dataSource.GraphEntry);
-            var tables = FlattenArchive(archive, provenance, lookupTables.SpeciesNames);
+            var rewardLinks = LoadRewardLinks(project);
+            var tables = FlattenArchive(archive, provenance, lookupTables.SpeciesNames, rewardLinks);
 
             return CreateWorkflow(summary, tables, sourceFileCount: 1 + lookupTables.SourceFileCount, lookupTables, diagnostics);
         }
@@ -284,7 +285,8 @@ public sealed class SwShRaidBattlesWorkflowService
     private static IReadOnlyList<SwShRaidBattleTableRecord> FlattenArchive(
         SwShEncounterNestArchive archive,
         SwShRaidBattleProvenance provenance,
-        IReadOnlyList<string> speciesNames)
+        IReadOnlyList<string> speciesNames,
+        IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> rewardLinks)
     {
         return archive.Tables
             .Select((table, tableIndex) => new SwShRaidBattleTableRecord(
@@ -294,7 +296,7 @@ public sealed class SwShRaidBattlesWorkflowService
                 FormatGameVersion(table.GameVersion),
                 FormatHash(table.TableId),
                 table.Entries
-                    .Select((entry, entryIndex) => ToSlotRecord(entry, entryIndex, speciesNames))
+                    .Select((entry, entryIndex) => ToSlotRecord(entry, entryIndex, speciesNames, rewardLinks))
                     .ToArray(),
                 provenance))
             .ToArray();
@@ -303,9 +305,12 @@ public sealed class SwShRaidBattlesWorkflowService
     private static SwShRaidBattleSlotRecord ToSlotRecord(
         SwShEncounterNest entry,
         int entryIndex,
-        IReadOnlyList<string> speciesNames)
+        IReadOnlyList<string> speciesNames,
+        IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> rewardLinks)
     {
         var probabilities = PadProbabilities(entry.Probabilities, length: 5);
+        var dropTableHash = FormatHash(entry.DropTableId);
+        var bonusTableHash = FormatHash(entry.BonusTableId);
         return new SwShRaidBattleSlotRecord(
             Slot: entryIndex + 1,
             entry.EntryIndex,
@@ -321,8 +326,74 @@ public sealed class SwShRaidBattlesWorkflowService
             probabilities,
             FormatProbabilitySummary(probabilities),
             FormatHash(entry.LevelTableId),
-            FormatHash(entry.DropTableId),
-            FormatHash(entry.BonusTableId));
+            dropTableHash,
+            bonusTableHash,
+            CreateRewardLink("drop", dropTableHash, rewardLinks),
+            CreateRewardLink("bonus", bonusTableHash, rewardLinks));
+    }
+
+    private static IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> LoadRewardLinks(
+        OpenedProject project)
+    {
+        var rewardWorkflow = new SwShRaidRewardsWorkflowService().Load(project);
+
+        return rewardWorkflow.Tables
+            .Select(table => new SwShRaidBattleRewardLinkRecord(
+                table.RewardKind,
+                table.RewardKindLabel,
+                table.TableId,
+                table.SourceTableHash,
+                IsMatched: true,
+                table.Rewards.Count,
+                FormatRewardPreview(table.Rewards)))
+            .GroupBy(link => (link.RewardKind, link.SourceTableHash))
+            .ToDictionary(group => group.Key, group => group.First());
+    }
+
+    private static SwShRaidBattleRewardLinkRecord CreateRewardLink(
+        string rewardKind,
+        string sourceTableHash,
+        IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> rewardLinks)
+    {
+        if (rewardLinks.TryGetValue((rewardKind, sourceTableHash), out var link))
+        {
+            return link;
+        }
+
+        var member = SwShRaidRewardsWorkflowService.KnownArchiveMembers.First(candidate =>
+            string.Equals(candidate.Key, rewardKind, StringComparison.Ordinal));
+
+        return new SwShRaidBattleRewardLinkRecord(
+            rewardKind,
+            member.Label,
+            TableId: string.Empty,
+            sourceTableHash,
+            IsMatched: false,
+            RewardItemCount: 0,
+            Preview: sourceTableHash == FormatHash(0)
+                ? $"No {member.Label.ToLowerInvariant()} table linked"
+                : $"No loaded {member.Label.ToLowerInvariant()} table matches this hash");
+    }
+
+    private static string FormatRewardPreview(IReadOnlyList<SwShRaidRewardItemRecord> rewards)
+    {
+        if (rewards.Count == 0)
+        {
+            return "No reward rows";
+        }
+
+        var previewItems = rewards
+            .Take(3)
+            .Select(reward => reward.ItemName)
+            .ToArray();
+        var suffix = rewards.Count > previewItems.Length
+            ? $", +{(rewards.Count - previewItems.Length).ToString(CultureInfo.InvariantCulture)} more"
+            : string.Empty;
+
+        var label = rewards.Count == 1 ? "reward" : "rewards";
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{rewards.Count} {label}: {string.Join(", ", previewItems)}{suffix}");
     }
 
     private static int[] PadProbabilities(IReadOnlyList<uint> values, int length)

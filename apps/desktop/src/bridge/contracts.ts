@@ -1397,11 +1397,23 @@ export const raidBattleEditableFieldOptionSchema = z.strictObject({
   value: z.number().int()
 });
 
+export const raidBattleRewardLinkSchema = z.strictObject({
+  isMatched: z.boolean(),
+  preview: z.string(),
+  rewardItemCount: z.number().int().nonnegative(),
+  rewardKind: z.string(),
+  rewardKindLabel: z.string(),
+  sourceTableHash: z.string(),
+  tableId: z.string()
+});
+
 export const raidBattleSlotRecordSchema = z.strictObject({
   ability: z.number().int().nonnegative(),
   abilityLabel: z.string(),
   bonusTableHash: z.string(),
+  bonusRewardLink: raidBattleRewardLinkSchema,
   dropTableHash: z.string(),
+  dropRewardLink: raidBattleRewardLinkSchema,
   entryIndex: z.number().int().nonnegative(),
   flawlessIvs: z.number().int().nonnegative(),
   form: z.number().int().nonnegative(),

@@ -23,6 +23,15 @@ public sealed record SwShRaidBattleEditableField(
     int? MaximumValue,
     IReadOnlyList<SwShRaidBattleEditableFieldOption> Options);
 
+public sealed record SwShRaidBattleRewardLinkRecord(
+    string RewardKind,
+    string RewardKindLabel,
+    string TableId,
+    string SourceTableHash,
+    bool IsMatched,
+    int RewardItemCount,
+    string Preview);
+
 public sealed record SwShRaidBattleSlotRecord(
     int Slot,
     int EntryIndex,
@@ -39,7 +48,9 @@ public sealed record SwShRaidBattleSlotRecord(
     string ProbabilitySummary,
     string LevelTableHash,
     string DropTableHash,
-    string BonusTableHash);
+    string BonusTableHash,
+    SwShRaidBattleRewardLinkRecord DropRewardLink,
+    SwShRaidBattleRewardLinkRecord BonusRewardLink);
 
 public sealed record SwShRaidBattleTableRecord(
     string TableId,

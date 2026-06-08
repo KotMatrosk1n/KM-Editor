@@ -39,6 +39,15 @@ public sealed record RaidBattleEditableFieldDto(
     int? MaximumValue,
     IReadOnlyList<RaidBattleEditableFieldOptionDto> Options);
 
+public sealed record RaidBattleRewardLinkDto(
+    string RewardKind,
+    string RewardKindLabel,
+    string TableId,
+    string SourceTableHash,
+    bool IsMatched,
+    int RewardItemCount,
+    string Preview);
+
 public sealed record RaidBattleSlotRecordDto(
     int Slot,
     int EntryIndex,
@@ -55,7 +64,9 @@ public sealed record RaidBattleSlotRecordDto(
     string ProbabilitySummary,
     string LevelTableHash,
     string DropTableHash,
-    string BonusTableHash);
+    string BonusTableHash,
+    RaidBattleRewardLinkDto DropRewardLink,
+    RaidBattleRewardLinkDto BonusRewardLink);
 
 public sealed record RaidBattleTableRecordDto(
     string TableId,

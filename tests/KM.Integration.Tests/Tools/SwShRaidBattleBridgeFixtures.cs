@@ -17,6 +17,16 @@ internal static class SwShRaidBattleBridgeFixtures
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/monsname.dat",
             CreateTextTable(133, (25, "Pikachu"), (133, "Eevee")));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            SwShGameTextFile.Write(
+            [
+                new SwShGameTextLine("", Flags: 0),
+                new SwShGameTextLine("Potion", Flags: 0),
+                new SwShGameTextLine("Rare Candy", Flags: 0),
+                new SwShGameTextLine("Exp. Candy L", Flags: 0),
+                new SwShGameTextLine("Armorite Ore", Flags: 0),
+            ]));
     }
 
     public static byte[] CreateRaidBattlePack()
@@ -25,6 +35,7 @@ internal static class SwShRaidBattleBridgeFixtures
         [
             new SwShGfPackNamedFile(SwShRaidBattlesWorkflowService.EncounterMemberName, CreateArchive().Write()),
             new SwShGfPackNamedFile("nest_hole_drop_rewards.bin", SwShRaidRewardBridgeFixtures.CreateDropArchive().Write()),
+            new SwShGfPackNamedFile("nest_hole_bonus_rewards.bin", SwShRaidRewardBridgeFixtures.CreateBonusArchive().Write()),
         ]).Write();
     }
 

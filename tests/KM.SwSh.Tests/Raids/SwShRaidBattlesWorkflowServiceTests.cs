@@ -53,6 +53,22 @@ public sealed class SwShRaidBattlesWorkflowServiceTests
         Assert.Equal("0x1122334455667788", slot.LevelTableHash);
         Assert.Equal("0xAABBCCDD00112233", slot.DropTableHash);
         Assert.Equal("0x1020304050607080", slot.BonusTableHash);
+        Assert.True(slot.DropRewardLink.IsMatched);
+        Assert.Equal("Drop", slot.DropRewardLink.RewardKindLabel);
+        Assert.Equal("0xAABBCCDD00112233", slot.DropRewardLink.SourceTableHash);
+        Assert.Equal(2, slot.DropRewardLink.RewardItemCount);
+        Assert.Contains("Exp. Candy L", slot.DropRewardLink.Preview, StringComparison.Ordinal);
+        Assert.True(slot.BonusRewardLink.IsMatched);
+        Assert.Equal("Bonus", slot.BonusRewardLink.RewardKindLabel);
+        Assert.Equal("0x1020304050607080", slot.BonusRewardLink.SourceTableHash);
+        Assert.Equal(1, slot.BonusRewardLink.RewardItemCount);
+        Assert.Contains("Armorite Ore", slot.BonusRewardLink.Preview, StringComparison.Ordinal);
+
+        var unmatchedSlot = table.Slots[1];
+        Assert.True(unmatchedSlot.DropRewardLink.IsMatched);
+        Assert.False(unmatchedSlot.BonusRewardLink.IsMatched);
+        Assert.Equal("0x0807060504030201", unmatchedSlot.BonusRewardLink.SourceTableHash);
+        Assert.Contains("No loaded bonus table matches this hash", unmatchedSlot.BonusRewardLink.Preview, StringComparison.Ordinal);
 
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShRaidBattlesWorkflowService.SpeciesField).Options,
