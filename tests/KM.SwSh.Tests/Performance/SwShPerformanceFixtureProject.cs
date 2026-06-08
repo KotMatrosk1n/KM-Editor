@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Formats.SwSh;
+using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.Tests.Rentals;
 using KM.SwSh.Tests.StaticEncounters;
@@ -23,6 +24,7 @@ internal static class SwShPerformanceFixtureProject
     public const int EncounterSlotsPerTable = 24;
     public const int RaidBattleTableCount = 24;
     public const int RaidBattleSlotsPerTable = 12;
+    public const int DynamaxAdventureCount = 80;
     public const int RaidRewardTableCount = 24;
     public const int RaidRewardRowsPerTable = 12;
     public const int PlacementAreaCount = 12;
@@ -43,6 +45,7 @@ internal static class SwShPerformanceFixtureProject
         WriteTradePokemon(temp);
         WriteStaticEncounters(temp);
         WriteRentalPokemon(temp);
+        WriteDynamaxAdventures(temp);
         WriteShopData(temp);
         WriteDataTablePack(temp);
         WritePlacement(temp);
@@ -220,6 +223,40 @@ internal static class SwShPerformanceFixtureProject
             "bin/script_event_data/rental.bin",
             SwShRentalPokemonWorkflowServiceTests.CreateRentalTable(
                 new SwShRentalPokemonStats(31, 31, 31, 31, 31, 31)));
+    }
+
+    private static void WriteDynamaxAdventures(TemporarySwShProject temp)
+    {
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            new SwShDynamaxAdventureArchive(
+                Enumerable.Range(0, DynamaxAdventureCount)
+                    .Select(index => new SwShDynamaxAdventureRecord(
+                        index,
+                        IsSingleCapture: index % 5 == 0,
+                        SingleCaptureFlagBlock: 0x5500000000000000UL + (ulong)index,
+                        Field02: 0,
+                        Form: index % 3,
+                        GigantamaxState: index % 3,
+                        BallItemId: 4,
+                        AdventureIndex: 1000 + index,
+                        Level: 60 + (index % 10),
+                        Species: 1 + (index % 900),
+                        UiMessageId: 0x6600000000000000UL + (ulong)index,
+                        OtGender: 1,
+                        Version: index % 3,
+                        ShinyRoll: 1,
+                        new SwShDynamaxAdventureIvs(
+                            Hp: index % 2 == 0 ? -4 : -1,
+                            Attack: -1,
+                            Defense: index % 32,
+                            Speed: -1,
+                            SpecialAttack: -1,
+                            SpecialDefense: -1),
+                        Ability: index % 3,
+                        IsStoryProgressGated: index % 11 == 0,
+                        Moves: [1 + (index % MoveCount), 2 + (index % MoveCount), 3 + (index % MoveCount), 4 + (index % MoveCount)]))
+                    .ToArray()).Write());
     }
 
     private static SwShMoveDataRecord CreateMoveRecord(int moveId)

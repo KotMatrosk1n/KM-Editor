@@ -41,6 +41,9 @@ import {
   type ApiDiagnostic,
   type ApplyResult,
   type ChangePlan,
+  type DynamaxAdventureEditableField,
+  type DynamaxAdventureRecord,
+  type DynamaxAdventuresWorkflow,
   type EditSession,
   type EncounterEditableField,
   type EncounterSlotRecord,
@@ -189,6 +192,11 @@ const sections: Array<{
     icon: Dna
   },
   {
+    id: 'dynamaxAdventures',
+    label: 'Dynamax Adventures',
+    icon: ShieldCheck
+  },
+  {
     id: 'shops',
     label: 'Shops',
     icon: ListChecks
@@ -299,6 +307,13 @@ const workflowDefinitions: Array<{
     label: 'Rental Pokemon',
     description: 'Rental Pokemon records, fixed IVs, EVs, items, moves, and source provenance.',
     icon: Dna
+  },
+  {
+    id: 'dynamaxAdventures',
+    label: 'Dynamax Adventures',
+    description:
+      'Adventure encounter Pokemon, ability rolls, moves, IV overrides, capture rules, and source provenance.',
+    icon: ShieldCheck
   },
   {
     id: 'shops',
@@ -575,6 +590,37 @@ const rentalPokemonFieldNames = [
   ...ivFieldNames,
   rentalFixedIvPresetFieldName
 ] as const;
+const dynamaxAdventureBallItemIdFieldName = 'ballItemId';
+const dynamaxAdventureGigantamaxStateFieldName = 'gigantamaxState';
+const dynamaxAdventureVersionFieldName = 'version';
+const dynamaxAdventureShinyRollFieldName = 'shinyRoll';
+const dynamaxAdventureGuaranteedPerfectIvsFieldName = 'guaranteedPerfectIvs';
+const dynamaxAdventureIvFieldNames = [
+  'ivAttack',
+  'ivDefense',
+  'ivSpecialAttack',
+  'ivSpecialDefense',
+  'ivSpeed'
+] as const;
+const dynamaxAdventureIsSingleCaptureFieldName = 'isSingleCapture';
+const dynamaxAdventureIsStoryProgressGatedFieldName = 'isStoryProgressGated';
+const dynamaxAdventureOtGenderFieldName = 'otGender';
+const dynamaxAdventureFieldNames = [
+  giftSpeciesFieldName,
+  formFieldName,
+  levelFieldName,
+  dynamaxAdventureBallItemIdFieldName,
+  abilityFieldName,
+  dynamaxAdventureGigantamaxStateFieldName,
+  dynamaxAdventureVersionFieldName,
+  dynamaxAdventureShinyRollFieldName,
+  ...staticEncounterMoveFieldNames,
+  dynamaxAdventureGuaranteedPerfectIvsFieldName,
+  ...dynamaxAdventureIvFieldNames,
+  dynamaxAdventureIsSingleCaptureFieldName,
+  dynamaxAdventureIsStoryProgressGatedFieldName,
+  dynamaxAdventureOtGenderFieldName
+] as const;
 const shopItemIdFieldName = 'itemId';
 const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
@@ -654,6 +700,12 @@ export function App({
     (state) => state.rentalPokemonSearchText
   );
   const rentalPokemonWorkflow = useWorkbenchStore((state) => state.rentalPokemonWorkflow);
+  const dynamaxAdventureSearchText = useWorkbenchStore(
+    (state) => state.dynamaxAdventureSearchText
+  );
+  const dynamaxAdventuresWorkflow = useWorkbenchStore(
+    (state) => state.dynamaxAdventuresWorkflow
+  );
   const itemSearchText = useWorkbenchStore((state) => state.itemSearchText);
   const itemsWorkflow = useWorkbenchStore((state) => state.itemsWorkflow);
   const movesSearchText = useWorkbenchStore((state) => state.movesSearchText);
@@ -712,6 +764,9 @@ export function App({
   const selectedRentalPokemonIndex = useWorkbenchStore(
     (state) => state.selectedRentalPokemonIndex
   );
+  const selectedDynamaxAdventureEntryIndex = useWorkbenchStore(
+    (state) => state.selectedDynamaxAdventureEntryIndex
+  );
   const selectedRoyalCandyCheckId = useWorkbenchStore(
     (state) => state.selectedRoyalCandyCheckId
   );
@@ -769,6 +824,12 @@ export function App({
   );
   const setRentalPokemonWorkflow = useWorkbenchStore(
     (state) => state.setRentalPokemonWorkflow
+  );
+  const setDynamaxAdventureSearchText = useWorkbenchStore(
+    (state) => state.setDynamaxAdventureSearchText
+  );
+  const setDynamaxAdventuresWorkflow = useWorkbenchStore(
+    (state) => state.setDynamaxAdventuresWorkflow
   );
   const setItemSearchText = useWorkbenchStore((state) => state.setItemSearchText);
   const setItemsWorkflow = useWorkbenchStore((state) => state.setItemsWorkflow);
@@ -829,6 +890,9 @@ export function App({
   const setSelectedRentalPokemonIndex = useWorkbenchStore(
     (state) => state.setSelectedRentalPokemonIndex
   );
+  const setSelectedDynamaxAdventureEntryIndex = useWorkbenchStore(
+    (state) => state.setSelectedDynamaxAdventureEntryIndex
+  );
   const setSelectedRoyalCandyCheckId = useWorkbenchStore(
     (state) => state.setSelectedRoyalCandyCheckId
   );
@@ -878,6 +942,8 @@ export function App({
   const [isStaticEncounterUpdating, setIsStaticEncounterUpdating] = useState(false);
   const [isRentalPokemonLoading, setIsRentalPokemonLoading] = useState(false);
   const [isRentalPokemonUpdating, setIsRentalPokemonUpdating] = useState(false);
+  const [isDynamaxAdventuresLoading, setIsDynamaxAdventuresLoading] = useState(false);
+  const [isDynamaxAdventureUpdating, setIsDynamaxAdventureUpdating] = useState(false);
   const [isShopsLoading, setIsShopsLoading] = useState(false);
   const [isShopUpdating, setIsShopUpdating] = useState(false);
   const [isEncountersLoading, setIsEncountersLoading] = useState(false);
@@ -1105,6 +1171,22 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsRentalPokemonLoading(false);
+    }
+  };
+
+  const handleOpenDynamaxAdventuresWorkflow = async () => {
+    setIsDynamaxAdventuresLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadDynamaxAdventuresWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setDynamaxAdventuresWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsDynamaxAdventuresLoading(false);
     }
   };
 
@@ -1360,6 +1442,12 @@ export function App({
           void handleOpenRentalPokemonWorkflow();
         }
         break;
+      case 'dynamaxAdventures':
+        if (!dynamaxAdventuresWorkflow && !isDynamaxAdventuresLoading) {
+          markLazyLoadStarted();
+          void handleOpenDynamaxAdventuresWorkflow();
+        }
+        break;
       case 'shops':
         if (!shopsWorkflow && !isShopsLoading) {
           markLazyLoadStarted();
@@ -1419,6 +1507,7 @@ export function App({
     }
   }, [
     activeSection,
+    dynamaxAdventuresWorkflow,
     encountersWorkflow,
     exeFsPatchWorkflow,
     flagworkSaveWorkflow,
@@ -1429,6 +1518,7 @@ export function App({
     isFlagworkSaveLoading,
     isGiftPokemonLoading,
     isRentalPokemonLoading,
+    isDynamaxAdventuresLoading,
     isTradePokemonLoading,
     isStaticEncountersLoading,
     isItemsLoading,
@@ -1794,6 +1884,33 @@ export function App({
     }
   };
 
+  const handleUpdateDynamaxAdventureField = async (
+    entryIndex: number,
+    field: string,
+    value: string
+  ) => {
+    setIsDynamaxAdventureUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateDynamaxAdventureField({
+        entryIndex,
+        field,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        value
+      });
+      setDynamaxAdventuresWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsDynamaxAdventureUpdating(false);
+    }
+  };
+
   const handleUpdateShopInventoryItem = async (
     shopId: string,
     slot: number,
@@ -2116,6 +2233,7 @@ export function App({
               isTradePokemonLoading={isTradePokemonLoading}
               isStaticEncountersLoading={isStaticEncountersLoading}
               isRentalPokemonLoading={isRentalPokemonLoading}
+              isDynamaxAdventuresLoading={isDynamaxAdventuresLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
               isSpreadsheetImportLoading={isSpreadsheetImportLoading}
@@ -2126,6 +2244,7 @@ export function App({
               onOpenTradePokemonWorkflow={handleOpenTradePokemonWorkflow}
               onOpenStaticEncountersWorkflow={handleOpenStaticEncountersWorkflow}
               onOpenRentalPokemonWorkflow={handleOpenRentalPokemonWorkflow}
+              onOpenDynamaxAdventuresWorkflow={handleOpenDynamaxAdventuresWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
               onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
@@ -2302,6 +2421,24 @@ export function App({
                 searchText={rentalPokemonSearchText}
                 selectedRentalIndex={selectedRentalPokemonIndex}
                 workflow={rentalPokemonWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'dynamaxAdventures' ? (
+            isDynamaxAdventuresLoading && !dynamaxAdventuresWorkflow ? (
+              <WorkflowLoadingPanel label="Dynamax Adventures" />
+            ) : (
+              <DynamaxAdventuresSection
+                editSession={editSession}
+                isDynamaxAdventureUpdating={isDynamaxAdventureUpdating}
+                isEditStarting={isEditStarting}
+                onSearchChange={setDynamaxAdventureSearchText}
+                onSelectAdventure={setSelectedDynamaxAdventureEntryIndex}
+                onStartEditSession={handleStartEditSession}
+                onUpdateDynamaxAdventureField={handleUpdateDynamaxAdventureField}
+                searchText={dynamaxAdventureSearchText}
+                selectedEntryIndex={selectedDynamaxAdventureEntryIndex}
+                workflow={dynamaxAdventuresWorkflow}
               />
             )
           ) : null}
@@ -2707,6 +2844,7 @@ function WorkflowsSection({
   isTradePokemonLoading,
   isStaticEncountersLoading,
   isRentalPokemonLoading,
+  isDynamaxAdventuresLoading,
   isRoyalCandyLoading,
   isSpreadsheetImportLoading,
   onOpenEncountersWorkflow,
@@ -2716,6 +2854,7 @@ function WorkflowsSection({
   onOpenTradePokemonWorkflow,
   onOpenStaticEncountersWorkflow,
   onOpenRentalPokemonWorkflow,
+  onOpenDynamaxAdventuresWorkflow,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
@@ -2747,6 +2886,7 @@ function WorkflowsSection({
   isTradePokemonLoading: boolean;
   isStaticEncountersLoading: boolean;
   isRentalPokemonLoading: boolean;
+  isDynamaxAdventuresLoading: boolean;
   isRoyalCandyLoading: boolean;
   isSpreadsheetImportLoading: boolean;
   onOpenEncountersWorkflow: () => void;
@@ -2756,6 +2896,7 @@ function WorkflowsSection({
   onOpenTradePokemonWorkflow: () => void;
   onOpenStaticEncountersWorkflow: () => void;
   onOpenRentalPokemonWorkflow: () => void;
+  onOpenDynamaxAdventuresWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
@@ -2791,6 +2932,7 @@ function WorkflowsSection({
           const isTradePokemonWorkflow = definition.id === 'tradePokemon';
           const isStaticEncountersWorkflow = definition.id === 'staticEncounters';
           const isRentalPokemonWorkflow = definition.id === 'rentalPokemon';
+          const isDynamaxAdventuresWorkflow = definition.id === 'dynamaxAdventures';
           const isShopsWorkflow = definition.id === 'shops';
           const isEncountersWorkflow = definition.id === 'encounters';
           const isRaidBattlesWorkflow = definition.id === 'raidBattles';
@@ -2813,6 +2955,8 @@ function WorkflowsSection({
             isStaticEncountersWorkflow && workflowState.availability !== 'disabled';
           const canOpenRentalPokemon =
             isRentalPokemonWorkflow && workflowState.availability !== 'disabled';
+          const canOpenDynamaxAdventures =
+            isDynamaxAdventuresWorkflow && workflowState.availability !== 'disabled';
           const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
           const canOpenEncounters =
             isEncountersWorkflow && workflowState.availability !== 'disabled';
@@ -2943,6 +3087,19 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isRentalPokemonLoading ? 'Loading' : 'Open Rentals'}</span>
+                  </button>
+                ) : null}
+                {isDynamaxAdventuresWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenDynamaxAdventures || isDynamaxAdventuresLoading}
+                    onClick={onOpenDynamaxAdventuresWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>
+                      {isDynamaxAdventuresLoading ? 'Loading' : 'Open Adventures'}
+                    </span>
                   </button>
                 ) : null}
                 {isShopsWorkflow ? (
@@ -6747,6 +6904,395 @@ function RentalPokemonFieldInput({
       >
         {!hasDraftOption ? (
           <option value={draftValue}>{draftValue === '' ? 'Mixed fixed IVs' : draftValue}</option>
+        ) : null}
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value.toString()}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <input
+      aria-label={field.label}
+      disabled={disabled}
+      max={field.maximumValue ?? undefined}
+      min={field.minimumValue ?? undefined}
+      onChange={(event) => onChange(event.target.value)}
+      type="number"
+      value={draftValue}
+    />
+  );
+}
+
+function DynamaxAdventuresSection({
+  editSession,
+  isDynamaxAdventureUpdating,
+  isEditStarting,
+  onSearchChange,
+  onSelectAdventure,
+  onStartEditSession,
+  onUpdateDynamaxAdventureField,
+  searchText,
+  selectedEntryIndex,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isDynamaxAdventureUpdating: boolean;
+  isEditStarting: boolean;
+  onSearchChange: (searchText: string) => void;
+  onSelectAdventure: (entryIndex: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateDynamaxAdventureField: (entryIndex: number, field: string, value: string) => void;
+  searchText: string;
+  selectedEntryIndex: number | null;
+  workflow: DynamaxAdventuresWorkflow | null;
+}) {
+  const encounters = workflow?.encounters ?? [];
+  const filteredEncounters = useMemo(
+    () => filterDynamaxAdventures(encounters, searchText),
+    [encounters, searchText]
+  );
+  const selectedEncounter = useMemo(
+    () =>
+      encounters.find((encounter) => encounter.entryIndex === selectedEntryIndex) ??
+      filteredEncounters[0] ??
+      null,
+    [encounters, filteredEncounters, selectedEntryIndex]
+  );
+  const canEditDynamaxAdventures = workflow?.summary.availability === 'available';
+  const pendingEntryIndexes = useMemo(
+    () => getPendingDynamaxAdventureIndexes(editSession),
+    [editSession]
+  );
+
+  return (
+    <>
+      <section aria-labelledby="dynamax-adventures-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <ShieldCheck aria-hidden="true" size={18} />
+          <h2 id="dynamax-adventures-heading">Dynamax Adventures</h2>
+        </div>
+
+        <div className="items-toolbar trainers-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search Dynamax Adventures"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search Dynamax Adventures"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded encounters"
+            value={workflow ? workflow.stats.totalEncounterCount.toString() : '0'}
+          />
+          <Metric
+            label="Single capture"
+            value={workflow ? workflow.stats.singleCaptureCount.toString() : '0'}
+          />
+          <Metric
+            label="Guaranteed IV rows"
+            value={
+              workflow ? workflow.stats.guaranteedPerfectIvEncounterCount.toString() : '0'
+            }
+          />
+        </div>
+
+        {workflow ? (
+          <div className="trainers-layout">
+            <div
+              aria-colcount={7}
+              aria-label="Dynamax Adventure encounters"
+              aria-rowcount={filteredEncounters.length + 1}
+              className="trainers-table"
+              role="table"
+            >
+              <div className="trainers-row static-encounters-row trainers-row-heading" role="row">
+                <span role="columnheader">Index</span>
+                <span role="columnheader">Adventure</span>
+                <span role="columnheader">Pokemon</span>
+                <span role="columnheader">Version</span>
+                <span role="columnheader">IVs</span>
+                <span role="columnheader">Moves</span>
+                <span role="columnheader">Source</span>
+              </div>
+              <VirtualTableBody
+                getKey={(encounter) => encounter.entryIndex}
+                items={filteredEncounters}
+                renderRow={(encounter) => (
+                  <button
+                    className={`trainers-row static-encounters-row ${
+                      selectedEncounter?.entryIndex === encounter.entryIndex
+                        ? 'trainers-row-selected'
+                        : ''
+                    } ${
+                      pendingEntryIndexes.has(encounter.entryIndex)
+                        ? 'trainers-row-pending'
+                        : ''
+                    }`}
+                    onClick={() => onSelectAdventure(encounter.entryIndex)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{encounter.entryIndex + 1}</span>
+                    <span role="cell">{encounter.label}</span>
+                    <span role="cell">
+                      {formatSpeciesFormLabel(encounter.species, encounter.form)}
+                    </span>
+                    <span role="cell">{encounter.versionLabel}</span>
+                    <span role="cell">{encounter.ivSummary}</span>
+                    <span role="cell">{formatDynamaxAdventureMoves(encounter)}</span>
+                    <span role="cell">
+                      {formatSourceLayer(encounter.provenance.sourceLayer)}
+                    </span>
+                  </button>
+                )}
+              />
+            </div>
+
+            <SelectedDynamaxAdventurePanel
+              canEditDynamaxAdventures={canEditDynamaxAdventures}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              encounter={selectedEncounter}
+              isDynamaxAdventureUpdating={isDynamaxAdventureUpdating}
+              isEditStarting={isEditStarting}
+              onStartEditSession={onStartEditSession}
+              onUpdateDynamaxAdventureField={onUpdateDynamaxAdventureField}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Dynamax Adventures from Workflows to load backend encounter data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedDynamaxAdventurePanel({
+  canEditDynamaxAdventures,
+  editSession,
+  editableFields,
+  encounter,
+  isDynamaxAdventureUpdating,
+  isEditStarting,
+  onStartEditSession,
+  onUpdateDynamaxAdventureField
+}: {
+  canEditDynamaxAdventures: boolean;
+  editSession: EditSession | null;
+  editableFields: DynamaxAdventureEditableField[];
+  encounter: DynamaxAdventureRecord | null;
+  isDynamaxAdventureUpdating: boolean;
+  isEditStarting: boolean;
+  onStartEditSession: () => void;
+  onUpdateDynamaxAdventureField: (entryIndex: number, field: string, value: string) => void;
+}) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const adventureFields = editableFields.filter((field) =>
+    dynamaxAdventureFieldNames.includes(
+      field.field as (typeof dynamaxAdventureFieldNames)[number]
+    )
+  );
+
+  useEffect(() => {
+    if (!encounter) {
+      setDrafts({});
+      return;
+    }
+
+    setDrafts(
+      Object.fromEntries(
+        adventureFields.map((field) => [
+          field.field,
+          (getEditableDynamaxAdventureFieldValue(encounter, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [editableFields, encounter]);
+
+  return (
+    <aside aria-label="Selected Dynamax Adventure provenance" className="trainer-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Adventure</h3>
+      </div>
+
+      {encounter ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Encounter</dt>
+              <dd>{encounter.label}</dd>
+            </div>
+            <div>
+              <dt>Data file</dt>
+              <dd>{encounter.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(encounter.provenance.fileState)}</dd>
+            </div>
+            <div>
+              <dt>Pokemon</dt>
+              <dd>{`${formatSpeciesFormLabel(encounter.species, encounter.form)} Lv. ${encounter.level}`}</dd>
+            </div>
+            <div>
+              <dt>Ball</dt>
+              <dd>{encounter.ballItem}</dd>
+            </div>
+            <div>
+              <dt>Ability</dt>
+              <dd>{encounter.abilityLabel}</dd>
+            </div>
+            <div>
+              <dt>G-Max / Version</dt>
+              <dd>{`${encounter.gigantamaxLabel} / ${encounter.versionLabel}`}</dd>
+            </div>
+            <div>
+              <dt>Shiny roll</dt>
+              <dd>{encounter.shinyRollLabel}</dd>
+            </div>
+            <div>
+              <dt>Rules</dt>
+              <dd>
+                {`${encounter.isSingleCapture ? 'Single capture' : 'Repeat capture'} / ${
+                  encounter.isStoryProgressGated ? 'Story gated' : 'Ungated'
+                }`}
+              </dd>
+            </div>
+            <div>
+              <dt>Hashes</dt>
+              <dd>{`${encounter.singleCaptureFlagBlock} / ${encounter.uiMessageId}`}</dd>
+            </div>
+            <div>
+              <dt>OT gender</dt>
+              <dd>{encounter.otGender}</dd>
+            </div>
+            <div>
+              <dt>Moves</dt>
+              <dd>{formatDynamaxAdventureMoves(encounter)}</dd>
+            </div>
+            <div>
+              <dt>IV detail</dt>
+              <dd>{formatDynamaxAdventureIvs(encounter)}</dd>
+            </div>
+          </dl>
+
+          <div className="trainer-edit-form">
+            <div className="trainer-field-grid">
+              {adventureFields.map((field) => {
+                const currentValue = getEditableDynamaxAdventureFieldValue(
+                  encounter,
+                  field.field
+                );
+                const draftValue = drafts[field.field] ?? '';
+                const draftState = getDynamaxAdventureDraftState(
+                  draftValue,
+                  currentValue,
+                  field
+                );
+                const canSubmit =
+                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+
+                return (
+                  <div className="trainer-editor-row" key={field.field}>
+                    <label className="path-field">
+                      <span>{field.label}</span>
+                      <DynamaxAdventureFieldInput
+                        disabled={
+                          !canEditDynamaxAdventures ||
+                          editSession === null ||
+                          isDynamaxAdventureUpdating
+                        }
+                        draftValue={draftValue}
+                        field={field}
+                        onChange={(value) =>
+                          setDrafts((currentDrafts) => ({
+                            ...currentDrafts,
+                            [field.field]: value
+                          }))
+                        }
+                      />
+                    </label>
+                    {editSession ? (
+                      <button
+                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                        className="primary-button compact-button"
+                        disabled={!canSubmit || isDynamaxAdventureUpdating}
+                        onClick={() =>
+                          onUpdateDynamaxAdventureField(
+                            encounter.entryIndex,
+                            field.field,
+                            draftState.parsedValue!.toString()
+                          )
+                        }
+                        type="button"
+                      >
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isDynamaxAdventureUpdating ? 'Saving' : 'Save'}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditDynamaxAdventures || isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No Adventure encounter selected.</p>
+      )}
+    </aside>
+  );
+}
+
+function DynamaxAdventureFieldInput({
+  disabled,
+  draftValue,
+  field,
+  onChange
+}: {
+  disabled: boolean;
+  draftValue: string;
+  field: DynamaxAdventureEditableField;
+  onChange: (value: string) => void;
+}) {
+  if (field.options.length > 0) {
+    const hasDraftOption = field.options.some((option) => option.value.toString() === draftValue);
+
+    return (
+      <select
+        aria-label={field.label}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        value={draftValue}
+      >
+        {!hasDraftOption ? (
+          <option value={draftValue}>{draftValue === '' ? 'Custom value' : draftValue}</option>
         ) : null}
         {field.options.map((option) => (
           <option key={option.value} value={option.value.toString()}>
@@ -10718,6 +11264,49 @@ function filterRentalPokemon(rentals: RentalPokemonRecord[], searchText: string)
   );
 }
 
+function filterDynamaxAdventures(
+  encounters: DynamaxAdventureRecord[],
+  searchText: string
+) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return encounters;
+  }
+
+  return encounters.filter((encounter) =>
+    [
+      encounter.entryIndex.toString(),
+      (encounter.entryIndex + 1).toString(),
+      encounter.adventureIndex.toString(),
+      encounter.label,
+      encounter.species,
+      encounter.speciesId.toString(),
+      encounter.form.toString(),
+      encounter.level.toString(),
+      encounter.ballItem,
+      encounter.ballItemId.toString(),
+      encounter.abilityLabel,
+      encounter.ability.toString(),
+      encounter.gigantamaxLabel,
+      encounter.gigantamaxState.toString(),
+      encounter.versionLabel,
+      encounter.version.toString(),
+      encounter.shinyRollLabel,
+      encounter.shinyRoll.toString(),
+      encounter.isSingleCapture ? 'single capture' : 'repeat capture',
+      encounter.isStoryProgressGated ? 'story gated' : 'ungated',
+      encounter.singleCaptureFlagBlock,
+      encounter.uiMessageId,
+      encounter.otGender.toString(),
+      encounter.ivSummary,
+      formatDynamaxAdventureIvs(encounter),
+      formatDynamaxAdventureMoves(encounter),
+      encounter.provenance.sourceFile
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText: string) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -11545,6 +12134,58 @@ function getEditableRentalPokemonFieldValue(rental: RentalPokemonRecord, field: 
   }
 }
 
+function getEditableDynamaxAdventureFieldValue(
+  encounter: DynamaxAdventureRecord,
+  field: string
+) {
+  switch (field) {
+    case giftSpeciesFieldName:
+      return encounter.speciesId;
+    case formFieldName:
+      return encounter.form;
+    case levelFieldName:
+      return encounter.level;
+    case dynamaxAdventureBallItemIdFieldName:
+      return encounter.ballItemId;
+    case abilityFieldName:
+      return encounter.ability;
+    case dynamaxAdventureGigantamaxStateFieldName:
+      return encounter.gigantamaxState;
+    case dynamaxAdventureVersionFieldName:
+      return encounter.version;
+    case dynamaxAdventureShinyRollFieldName:
+      return encounter.shinyRoll;
+    case staticEncounterMoveFieldNames[0]:
+      return encounter.moves[0]?.moveId ?? null;
+    case staticEncounterMoveFieldNames[1]:
+      return encounter.moves[1]?.moveId ?? null;
+    case staticEncounterMoveFieldNames[2]:
+      return encounter.moves[2]?.moveId ?? null;
+    case staticEncounterMoveFieldNames[3]:
+      return encounter.moves[3]?.moveId ?? null;
+    case dynamaxAdventureGuaranteedPerfectIvsFieldName:
+      return encounter.guaranteedPerfectIvs;
+    case dynamaxAdventureIvFieldNames[0]:
+      return encounter.ivs.attack;
+    case dynamaxAdventureIvFieldNames[1]:
+      return encounter.ivs.defense;
+    case dynamaxAdventureIvFieldNames[2]:
+      return encounter.ivs.specialAttack;
+    case dynamaxAdventureIvFieldNames[3]:
+      return encounter.ivs.specialDefense;
+    case dynamaxAdventureIvFieldNames[4]:
+      return encounter.ivs.speed;
+    case dynamaxAdventureIsSingleCaptureFieldName:
+      return encounter.isSingleCapture ? 1 : 0;
+    case dynamaxAdventureIsStoryProgressGatedFieldName:
+      return encounter.isStoryProgressGated ? 1 : 0;
+    case dynamaxAdventureOtGenderFieldName:
+      return encounter.otGender;
+    default:
+      return null;
+  }
+}
+
 function getItemFieldSaveLabel(field: ItemEditableField) {
   return `Save ${field.label.replace(/\s+price$/i, '')}`;
 }
@@ -11755,6 +12396,31 @@ function getRentalPokemonDraftState(
   };
 }
 
+function getDynamaxAdventureDraftState(
+  draftValue: string,
+  currentValue: number | null,
+  field: DynamaxAdventureEditableField | undefined
+) {
+  const normalizedValue = draftValue.trim();
+  const parsedValue = /^-?\d+$/.test(normalizedValue)
+    ? Number.parseInt(normalizedValue, 10)
+    : null;
+  const minimumValue = field?.minimumValue ?? null;
+  const maximumValue = field?.maximumValue ?? null;
+  const inRange =
+    parsedValue !== null &&
+    (minimumValue === null || parsedValue >= minimumValue) &&
+    (maximumValue === null || parsedValue <= maximumValue);
+
+  return {
+    canSubmit:
+      field !== undefined &&
+      inRange &&
+      (currentValue === null || parsedValue !== currentValue),
+    parsedValue
+  };
+}
+
 function getPendingItemIds(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
@@ -11848,6 +12514,21 @@ function getPendingRentalPokemonIndexes(editSession: EditSession | null) {
         const recordId = edit.recordId ?? '';
         const normalizedRecordId = recordId.startsWith('rental:')
           ? recordId.slice(7)
+          : recordId;
+        return Number.parseInt(normalizedRecordId, 10);
+      })
+      .filter(Number.isInteger)
+  );
+}
+
+function getPendingDynamaxAdventureIndexes(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.dynamaxAdventures')
+      .map((edit) => {
+        const recordId = edit.recordId ?? '';
+        const normalizedRecordId = recordId.startsWith('dynamaxAdventure:')
+          ? recordId.slice(17)
           : recordId;
         return Number.parseInt(normalizedRecordId, 10);
       })
@@ -12249,6 +12930,34 @@ function formatRentalPokemonMoves(rental: RentalPokemonRecord) {
   return moves.length > 0 ? moves.join(' / ') : 'None';
 }
 
+function formatDynamaxAdventureIvs(encounter: DynamaxAdventureRecord) {
+  const hpValue =
+    encounter.guaranteedPerfectIvs > 0
+      ? `${encounter.guaranteedPerfectIvs} guaranteed perfect`
+      : formatDynamaxAdventureIvValue(encounter.ivs.hp);
+
+  return [
+    `HP ${hpValue}`,
+    `Atk ${formatDynamaxAdventureIvValue(encounter.ivs.attack)}`,
+    `Def ${formatDynamaxAdventureIvValue(encounter.ivs.defense)}`,
+    `SpA ${formatDynamaxAdventureIvValue(encounter.ivs.specialAttack)}`,
+    `SpD ${formatDynamaxAdventureIvValue(encounter.ivs.specialDefense)}`,
+    `Spe ${formatDynamaxAdventureIvValue(encounter.ivs.speed)}`
+  ].join(' / ');
+}
+
+function formatDynamaxAdventureIvValue(value: number) {
+  return value === -1 ? 'Random' : value.toString();
+}
+
+function formatDynamaxAdventureMoves(encounter: DynamaxAdventureRecord) {
+  const moves = encounter.moves
+    .filter((move) => move.moveId > 0)
+    .map((move) => move.move ?? `Move ${move.moveId}`);
+
+  return moves.length > 0 ? moves.join(' / ') : 'None';
+}
+
 function getFixedRentalPokemonIvPreset(rental: RentalPokemonRecord) {
   const values = [
     rental.ivs.hp,
@@ -12301,6 +13010,7 @@ const workflowAvailabilityClassNames = {
 function formatSourceLayer(
   layer:
     | EncounterTableRecord['provenance']['sourceLayer']
+    | DynamaxAdventureRecord['provenance']['sourceLayer']
     | FlagRecord['provenance']['sourceLayer']
     | GiftPokemonRecord['provenance']['sourceLayer']
     | ItemRecord['provenance']['sourceLayer']
@@ -12336,6 +13046,7 @@ function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][n
 function formatFileState(
   state:
     | EncounterTableRecord['provenance']['fileState']
+    | DynamaxAdventureRecord['provenance']['fileState']
     | FlagRecord['provenance']['fileState']
     | GiftPokemonRecord['provenance']['fileState']
     | ItemRecord['provenance']['fileState']

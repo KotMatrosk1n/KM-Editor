@@ -6,7 +6,7 @@ Priority 7 starts with measurement rather than broad optimization. The first bas
 
 - Project open and file graph building across base RomFS, base ExeFS, and LayeredFS output roots.
 - Workflow list creation through `SwShWorkflowService.List`.
-- Individual workflow loads for Items, Pokemon Data, Moves Data, Text, Trainers, Shops, Encounters, Raid Battles, Raid Rewards, Placement, Flagwork/Save, ExeFS Patches, Royal Candy, and Spreadsheet Import.
+- Individual workflow loads for Items, Pokemon Data, Moves Data, Text, Trainers, Gifts, Trades, Static Encounters, Rentals, Dynamax Adventures, Shops, Encounters, Raid Battles, Raid Rewards, Placement, Flagwork/Save, ExeFS Patches, Royal Candy, and Spreadsheet Import.
 - Repeated opened-project workflow loads that currently reparse shared sources such as item metadata and ExeFS compatibility data.
 - Large frontend risk identification from current app shape: workflow arrays are stored and rendered as full repeated lists, so future UI work should measure render cost before adding more rows.
 

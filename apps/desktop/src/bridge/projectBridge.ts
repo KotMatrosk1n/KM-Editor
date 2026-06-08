@@ -24,6 +24,8 @@ import {
   type LoadStaticEncountersWorkflowResponse,
   type LoadRentalPokemonWorkflowRequest,
   type LoadRentalPokemonWorkflowResponse,
+  type LoadDynamaxAdventuresWorkflowRequest,
+  type LoadDynamaxAdventuresWorkflowResponse,
   type LoadItemsWorkflowRequest,
   type LoadItemsWorkflowResponse,
   type LoadMovesWorkflowRequest,
@@ -75,6 +77,8 @@ import {
   type UpdateStaticEncounterFieldResponse,
   type UpdateRentalPokemonFieldRequest,
   type UpdateRentalPokemonFieldResponse,
+  type UpdateDynamaxAdventureFieldRequest,
+  type UpdateDynamaxAdventureFieldResponse,
   type UpdateMoveFieldRequest,
   type UpdateMoveFieldResponse,
   type UpdateEncounterSlotFieldRequest,
@@ -107,6 +111,7 @@ import {
   loadTradePokemonWorkflowResponseSchema,
   loadStaticEncountersWorkflowResponseSchema,
   loadRentalPokemonWorkflowResponseSchema,
+  loadDynamaxAdventuresWorkflowResponseSchema,
   loadItemsWorkflowResponseSchema,
   loadMovesWorkflowResponseSchema,
   loadPokemonWorkflowResponseSchema,
@@ -129,6 +134,7 @@ import {
   updateTradePokemonFieldResponseSchema,
   updateStaticEncounterFieldResponseSchema,
   updateRentalPokemonFieldResponseSchema,
+  updateDynamaxAdventureFieldResponseSchema,
   updateMoveFieldResponseSchema,
   updatePokemonFieldResponseSchema,
   updatePokemonEvolutionResponseSchema,
@@ -170,6 +176,9 @@ export type ProjectBridge = {
   loadRentalPokemonWorkflow: (
     request: LoadRentalPokemonWorkflowRequest
   ) => Promise<LoadRentalPokemonWorkflowResponse>;
+  loadDynamaxAdventuresWorkflow: (
+    request: LoadDynamaxAdventuresWorkflowRequest
+  ) => Promise<LoadDynamaxAdventuresWorkflowResponse>;
   loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
   loadMovesWorkflow: (request: LoadMovesWorkflowRequest) => Promise<LoadMovesWorkflowResponse>;
   loadPokemonWorkflow: (
@@ -226,6 +235,9 @@ export type ProjectBridge = {
   updateRentalPokemonField: (
     request: UpdateRentalPokemonFieldRequest
   ) => Promise<UpdateRentalPokemonFieldResponse>;
+  updateDynamaxAdventureField: (
+    request: UpdateDynamaxAdventureFieldRequest
+  ) => Promise<UpdateDynamaxAdventureFieldResponse>;
   updateMoveField: (request: UpdateMoveFieldRequest) => Promise<UpdateMoveFieldResponse>;
   updateEncounterSlotField: (
     request: UpdateEncounterSlotFieldRequest
@@ -352,6 +364,13 @@ export function createProjectBridge(
         kmCommandNames.loadRentalPokemonWorkflow,
         request,
         loadRentalPokemonWorkflowResponseSchema
+      ),
+    loadDynamaxAdventuresWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadDynamaxAdventuresWorkflow,
+        request,
+        loadDynamaxAdventuresWorkflowResponseSchema
       ),
     loadItemsWorkflow: (request) =>
       sendProjectBridgeRequest(
@@ -499,6 +518,13 @@ export function createProjectBridge(
         kmCommandNames.updateRentalPokemonField,
         request,
         updateRentalPokemonFieldResponseSchema
+      ),
+    updateDynamaxAdventureField: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateDynamaxAdventureField,
+        request,
+        updateDynamaxAdventureFieldResponseSchema
       ),
     updateMoveField: (request) =>
       sendProjectBridgeRequest(

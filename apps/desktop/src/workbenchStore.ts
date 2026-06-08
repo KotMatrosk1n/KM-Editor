@@ -5,6 +5,7 @@ import {
   type ApiDiagnostic,
   type ApplyResult,
   type ChangePlan,
+  type DynamaxAdventuresWorkflow,
   type EditSession,
   type EncountersWorkflow,
   type ExeFsPatchWorkflow,
@@ -42,6 +43,7 @@ export type WorkbenchSection =
   | 'tradePokemon'
   | 'staticEncounters'
   | 'rentalPokemon'
+  | 'dynamaxAdventures'
   | 'shops'
   | 'encounters'
   | 'raidBattles'
@@ -89,6 +91,8 @@ type WorkbenchState = {
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
   rentalPokemonSearchText: string;
   rentalPokemonWorkflow: RentalPokemonWorkflow | null;
+  dynamaxAdventureSearchText: string;
+  dynamaxAdventuresWorkflow: DynamaxAdventuresWorkflow | null;
   itemSearchText: string;
   itemsWorkflow: ItemsWorkflow | null;
   movesSearchText: string;
@@ -119,6 +123,7 @@ type WorkbenchState = {
   selectedTradePokemonIndex: number | null;
   selectedStaticEncounterIndex: number | null;
   selectedRentalPokemonIndex: number | null;
+  selectedDynamaxAdventureEntryIndex: number | null;
   selectedRoyalCandyCheckId: string | null;
   selectedRoyalCandyWorkflowId: string | null;
   selectedSpreadsheetImportProfileId: string | null;
@@ -157,6 +162,10 @@ type WorkbenchState = {
   setStaticEncountersWorkflow: (staticEncountersWorkflow: StaticEncountersWorkflow) => void;
   setRentalPokemonSearchText: (rentalPokemonSearchText: string) => void;
   setRentalPokemonWorkflow: (rentalPokemonWorkflow: RentalPokemonWorkflow) => void;
+  setDynamaxAdventureSearchText: (dynamaxAdventureSearchText: string) => void;
+  setDynamaxAdventuresWorkflow: (
+    dynamaxAdventuresWorkflow: DynamaxAdventuresWorkflow
+  ) => void;
   setItemsWorkflow: (itemsWorkflow: ItemsWorkflow) => void;
   setItemSearchText: (itemSearchText: string) => void;
   setMovesSearchText: (movesSearchText: string) => void;
@@ -188,6 +197,9 @@ type WorkbenchState = {
   setSelectedTradePokemonIndex: (selectedTradePokemonIndex: number | null) => void;
   setSelectedStaticEncounterIndex: (selectedStaticEncounterIndex: number | null) => void;
   setSelectedRentalPokemonIndex: (selectedRentalPokemonIndex: number | null) => void;
+  setSelectedDynamaxAdventureEntryIndex: (
+    selectedDynamaxAdventureEntryIndex: number | null
+  ) => void;
   setSelectedRoyalCandyCheckId: (selectedRoyalCandyCheckId: string | null) => void;
   setSelectedRoyalCandyWorkflowId: (selectedRoyalCandyWorkflowId: string | null) => void;
   setSelectedSpreadsheetImportProfileId: (
@@ -238,6 +250,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   staticEncountersWorkflow: null,
   rentalPokemonSearchText: '',
   rentalPokemonWorkflow: null,
+  dynamaxAdventureSearchText: '',
+  dynamaxAdventuresWorkflow: null,
   itemSearchText: '',
   itemsWorkflow: null,
   movesSearchText: '',
@@ -267,6 +281,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedTradePokemonIndex: null,
   selectedStaticEncounterIndex: null,
   selectedRentalPokemonIndex: null,
+  selectedDynamaxAdventureEntryIndex: null,
   selectedRoyalCandyCheckId: null,
   selectedRoyalCandyWorkflowId: null,
   selectedSpreadsheetImportProfileId: null,
@@ -309,6 +324,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setStaticEncounterSearchText: (staticEncounterSearchText) =>
     set({ staticEncounterSearchText }),
   setRentalPokemonSearchText: (rentalPokemonSearchText) => set({ rentalPokemonSearchText }),
+  setDynamaxAdventureSearchText: (dynamaxAdventureSearchText) =>
+    set({ dynamaxAdventureSearchText }),
   setPlacementSearchText: (placementSearchText) => set({ placementSearchText }),
   setPokemonSearchText: (pokemonSearchText) => set({ pokemonSearchText }),
   setRaidBattleSearchText: (raidBattleSearchText) => set({ raidBattleSearchText }),
@@ -453,6 +470,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         selectedRentalPokemonIndex
       };
     }),
+  setDynamaxAdventuresWorkflow: (dynamaxAdventuresWorkflow) =>
+    set((state) => {
+      const selectedDynamaxAdventureEntryIndex = dynamaxAdventuresWorkflow.encounters.some(
+        (encounter) => encounter.entryIndex === state.selectedDynamaxAdventureEntryIndex
+      )
+        ? state.selectedDynamaxAdventureEntryIndex
+        : (dynamaxAdventuresWorkflow.encounters[0]?.entryIndex ?? null);
+
+      return {
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'dynamaxAdventures'),
+        applyResult: null,
+        changePlan: null,
+        dynamaxAdventureSearchText: '',
+        dynamaxAdventuresWorkflow,
+        editSession: null,
+        editValidationDiagnostics: [],
+        selectedDynamaxAdventureEntryIndex
+      };
+    }),
   setItemSearchText: (itemSearchText) => set({ itemSearchText }),
   setMovesSearchText: (movesSearchText) => set({ movesSearchText }),
   setShopSearchText: (shopSearchText) => set({ shopSearchText }),
@@ -478,6 +514,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       staticEncountersWorkflow: null,
       rentalPokemonSearchText: '',
       rentalPokemonWorkflow: null,
+      dynamaxAdventureSearchText: '',
+      dynamaxAdventuresWorkflow: null,
       itemSearchText: '',
       itemsWorkflow: null,
       movesSearchText: '',
@@ -503,6 +541,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       selectedTradePokemonIndex: null,
       selectedStaticEncounterIndex: null,
       selectedRentalPokemonIndex: null,
+      selectedDynamaxAdventureEntryIndex: null,
       selectedRoyalCandyCheckId: null,
       selectedRoyalCandyWorkflowId: null,
       selectedSpreadsheetImportProfileId: null,
@@ -559,6 +598,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set({ selectedStaticEncounterIndex }),
   setSelectedRentalPokemonIndex: (selectedRentalPokemonIndex) =>
     set({ selectedRentalPokemonIndex }),
+  setSelectedDynamaxAdventureEntryIndex: (selectedDynamaxAdventureEntryIndex) =>
+    set({ selectedDynamaxAdventureEntryIndex }),
   setSelectedRoyalCandyCheckId: (selectedRoyalCandyCheckId) =>
     set({ selectedRoyalCandyCheckId }),
   setSelectedRoyalCandyWorkflowId: (selectedRoyalCandyWorkflowId) =>
