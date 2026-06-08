@@ -4,25 +4,33 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+use tauri_plugin_shell::ShellExt;
+
+const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 #[tauri::command(rename_all = "camelCase")]
-async fn project_bridge_once(request_json: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || run_project_bridge_once(request_json))
+async fn project_bridge_once(
+    app_handle: tauri::AppHandle,
+    request_json: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || run_project_bridge_once(&app_handle, request_json))
         .await
         .map_err(|error| format!("Project bridge request task failed: {error}"))?
 }
 
-fn run_project_bridge_once(request_json: String) -> Result<String, String> {
-    let repo_root = resolve_repo_root()?;
-    let mut child = Command::new("dotnet")
-        .args([
-            "run",
-            "--project",
-            "src/KM.Tools",
-            "--no-restore",
-            "--",
-            "bridge-once",
-        ])
-        .current_dir(repo_root)
+fn run_project_bridge_once(
+    app_handle: &tauri::AppHandle,
+    request_json: String,
+) -> Result<String, String> {
+    let mut command = resolve_project_bridge_command(app_handle)?;
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -63,6 +71,49 @@ fn run_project_bridge_once(request_json: String) -> Result<String, String> {
         .ok_or_else(|| "Project bridge runner returned an empty response.".to_owned())
 }
 
+fn resolve_project_bridge_command(app_handle: &tauri::AppHandle) -> Result<Command, String> {
+    if let Some(command) = resolve_bundled_bridge_command(app_handle)? {
+        return Ok(command);
+    }
+
+    resolve_dev_bridge_command()
+}
+
+fn resolve_bundled_bridge_command(
+    app_handle: &tauri::AppHandle,
+) -> Result<Option<Command>, String> {
+    let sidecar_command = app_handle
+        .shell()
+        .sidecar(BRIDGE_SIDECAR_NAME)
+        .map_err(|error| format!("Could not resolve the bundled project bridge sidecar: {error}"))?
+        .arg("bridge-once");
+    let command: Command = sidecar_command.into();
+    let program_path = Path::new(command.get_program());
+
+    if program_path.is_file() {
+        Ok(Some(command))
+    } else {
+        Ok(None)
+    }
+}
+
+fn resolve_dev_bridge_command() -> Result<Command, String> {
+    let repo_root = resolve_repo_root()?;
+    let mut command = Command::new("dotnet");
+    command
+        .args([
+            "run",
+            "--project",
+            "src/KM.Tools",
+            "--no-restore",
+            "--",
+            "bridge-once",
+        ])
+        .current_dir(repo_root);
+
+    Ok(command)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -74,7 +125,10 @@ pub fn run() {
 }
 
 fn resolve_repo_root() -> Result<PathBuf, String> {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    #[cfg(debug_assertions)]
+    let manifest_dir = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+    #[cfg(not(debug_assertions))]
+    let manifest_dir: Option<PathBuf> = None;
     let current_dir = std::env::current_dir()
         .map_err(|error| format!("Could not inspect current directory: {error}"))?;
     let current_exe = std::env::current_exe()
@@ -82,7 +136,7 @@ fn resolve_repo_root() -> Result<PathBuf, String> {
         .and_then(|path| path.parent().map(Path::to_path_buf));
 
     // Tauri can launch from different working directories in dev/build flows; walk known anchors.
-    [Some(manifest_dir), Some(current_dir), current_exe]
+    [manifest_dir, Some(current_dir), current_exe]
         .into_iter()
         .flatten()
         .find_map(find_repo_root)

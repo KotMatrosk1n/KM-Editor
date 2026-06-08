@@ -32,11 +32,14 @@ pnpm typecheck
 pnpm build
 pnpm test:run
 pnpm test:workflow
+pnpm sidecar:publish
 pnpm tauri:dev
 pnpm tauri:build
 ```
 
 The workflow test command runs Playwright against the Vite desktop shell and starts the dev server automatically when needed.
+
+Tauri dev and build commands publish `src/KM.Tools` as a self-contained sidecar before launching or packaging the desktop app. To refresh only the sidecar, run `pnpm sidecar:publish`; the generated executable is staged under `apps/desktop/src-tauri/binaries/` and is intentionally not committed.
 
 Tauri builds on Windows require Visual Studio Build Tools with the Microsoft C++ toolchain and Windows SDK components available to the Rust MSVC target.
 
