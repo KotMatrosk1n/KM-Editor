@@ -11718,6 +11718,8 @@ function getEditableItemFieldValue(item: ItemRecord, field: string) {
       return item.metadata.friendshipGain2;
     case 'friendshipGain3':
       return item.metadata.friendshipGain3;
+    case 'machineMoveId':
+      return item.metadata.machineMoveId;
     default:
       return null;
   }

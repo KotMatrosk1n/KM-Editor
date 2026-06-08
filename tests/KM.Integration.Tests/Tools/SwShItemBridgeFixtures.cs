@@ -14,14 +14,37 @@ internal static class SwShItemBridgeFixtures
 
     public static byte[] CreateItemTable(params ItemBridgeFixtureRecord[] records)
     {
+        return CreateItemTable(machineMovesBySlot: null, records);
+    }
+
+    public static byte[] CreateItemTableWithMachineMoves(
+        IReadOnlyDictionary<int, int> machineMovesBySlot,
+        params ItemBridgeFixtureRecord[] records)
+    {
+        return CreateItemTable(machineMovesBySlot, records);
+    }
+
+    private static byte[] CreateItemTable(
+        IReadOnlyDictionary<int, int>? machineMovesBySlot,
+        params ItemBridgeFixtureRecord[] records)
+    {
         var itemCount = records.Length;
         var maxRowIndex = records.Length == 0
             ? 0
             : records.Max(record => record.RawRowIndex) + 1;
         var rowsStart = HeaderSize + (itemCount * sizeof(ushort));
-        var data = new byte[rowsStart + (maxRowIndex * RowSize)];
+        var machineTableOffset = rowsStart + (maxRowIndex * RowSize);
+        var dataLength = machineMovesBySlot is null
+            ? machineTableOffset
+            : machineTableOffset + (200 * sizeof(uint));
+        var data = new byte[dataLength];
 
         BinaryPrimitives.WriteUInt16LittleEndian(data, checked((ushort)itemCount));
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            data.AsSpan(0x02),
+            machineMovesBySlot is null
+                ? (ushort)0
+                : checked((ushort)((machineTableOffset - HeaderSize) / 2)));
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x04), checked((ushort)maxRowIndex));
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(RowsStartOffset), rowsStart);
 
@@ -64,6 +87,16 @@ internal static class SwShItemBridgeFixtures
             data[rowOffset + 0x2F] = unchecked((byte)record.FriendshipGain3);
         }
 
+        if (machineMovesBySlot is not null)
+        {
+            foreach (var (slot, moveId) in machineMovesBySlot)
+            {
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(machineTableOffset + (slot * sizeof(uint)) + 2),
+                    checked((ushort)moveId));
+            }
+        }
+
         return data;
     }
 
@@ -100,6 +133,42 @@ internal static class SwShItemBridgeFixtures
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/itemname.dat",
             CreateItemNames("None", "Potion", "Antidote"));
+    }
+
+    public static void WriteBaseMachineItems(TemporaryBridgeProject temp)
+    {
+        temp.WriteBaseRomFsFile(
+            "bin/pml/item/item.dat",
+            CreateItemTableWithMachineMoves(
+                new Dictionary<int, int> { [10] = 345 },
+                new ItemBridgeFixtureRecord(0, 0, 0, 0, 0, SwShItemPouch.Items),
+                new ItemBridgeFixtureRecord(
+                    1,
+                    1,
+                    0,
+                    0,
+                    0,
+                    SwShItemPouch.TMs,
+                    FieldUseType: 2,
+                    GroupType: 4,
+                    GroupIndex: 10)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            CreateItemNames("None", "TM10 Magical Leaf"));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            CreateIndexedText(346, (85, "Thunderbolt"), (345, "Magical Leaf")));
+    }
+
+    private static byte[] CreateIndexedText(int count, params (int Index, string Text)[] entries)
+    {
+        var values = Enumerable.Repeat(string.Empty, count).ToArray();
+        foreach (var (index, text) in entries)
+        {
+            values[index] = text;
+        }
+
+        return CreateItemNames(values);
     }
 }
 

@@ -63,7 +63,10 @@ public sealed record ItemMetadataDto(
     int PpGain,
     int FriendshipGain1,
     int FriendshipGain2,
-    int FriendshipGain3);
+    int FriendshipGain3,
+    int? MachineSlot,
+    int? MachineMoveId,
+    string? MachineMoveName);
 
 public sealed record ItemRecordDto(
     int ItemId,

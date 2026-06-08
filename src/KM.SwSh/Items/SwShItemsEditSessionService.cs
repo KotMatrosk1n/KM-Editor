@@ -41,6 +41,7 @@ public sealed class SwShItemsEditSessionService
     public const string FriendshipGain1Field = SwShItemsWorkflowService.FriendshipGain1Field;
     public const string FriendshipGain2Field = SwShItemsWorkflowService.FriendshipGain2Field;
     public const string FriendshipGain3Field = SwShItemsWorkflowService.FriendshipGain3Field;
+    public const string MachineMoveIdField = SwShItemsWorkflowService.MachineMoveIdField;
 
     private const string ItemsEditDomain = "workflow.items";
 
@@ -287,8 +288,7 @@ public sealed class SwShItemsEditSessionService
             return;
         }
 
-        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
-            || workflow.Items.All(item => item.ItemId != itemId))
+        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -298,10 +298,25 @@ public sealed class SwShItemsEditSessionService
             return;
         }
 
-        if (TryParsePendingEditValue(edit, diagnostics) is null)
+        var selectedItem = workflow.Items.FirstOrDefault(item => item.ItemId == itemId);
+        if (selectedItem is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending item edit targets a record that is not loaded.",
+                field: "itemId",
+                expected: "Existing item record"));
+            return;
+        }
+
+        var itemValue = TryParsePendingEditValue(edit, diagnostics);
+        var itemField = GetEditableField(edit.Field);
+        if (itemValue is null || itemField is null)
         {
             return;
         }
+
+        CanEditMachineMove(selectedItem, itemField, diagnostics);
     }
 
     private static PendingEdit? CreatePendingEdit(
@@ -321,6 +336,11 @@ public sealed class SwShItemsEditSessionService
         if (!TryParseItemValue(value, itemField.MinimumValue, itemField.MaximumValue, out var itemValue))
         {
             diagnostics.Add(CreateItemValueRangeDiagnostic(itemField));
+            return null;
+        }
+
+        if (!CanEditMachineMove(selectedItem, itemField, diagnostics))
+        {
             return null;
         }
 
@@ -358,6 +378,39 @@ public sealed class SwShItemsEditSessionService
         return int.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out itemValue)
             && itemValue >= minimumValue
             && itemValue <= maximumValue;
+    }
+
+    private static bool CanEditMachineMove(
+        SwShItemRecord selectedItem,
+        ItemField itemField,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (itemField.Field != MachineMoveIdField)
+        {
+            return true;
+        }
+
+        if (selectedItem.Metadata.MachineSlot is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Only TM/TR item records can edit taught moves.",
+                field: itemField.Field,
+                expected: "Item with a machine slot"));
+            return false;
+        }
+
+        if (selectedItem.Metadata.MachineMoveId is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "This item table does not expose a writable TM/TR move table.",
+                field: itemField.Field,
+                expected: "Available item machine move table"));
+            return false;
+        }
+
+        return true;
     }
 
     private static ItemField? GetEditableField(string? field)
@@ -462,6 +515,13 @@ public sealed class SwShItemsEditSessionService
                 FriendshipGain3Field,
                 "friendship gain 3",
                 SwShItemTableField.FriendshipGain3),
+            MachineMoveIdField => new ItemField(
+                MachineMoveIdField,
+                "taught move",
+                MinimumValue: 0,
+                MaximumValue: SwShItemsWorkflowService.MaximumMoveId,
+                TableField: SwShItemTableField.MachineMove,
+                ActualValueMultiplier: 1),
             _ => null,
         };
     }
@@ -589,6 +649,14 @@ public sealed class SwShItemsEditSessionService
                 workflow,
                 itemId,
                 item => item with { FriendshipGain3 = itemValue }),
+            MachineMoveIdField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with
+                {
+                    MachineMoveId = itemValue,
+                    MachineMoveName = ResolveMoveName(workflow, itemValue),
+                }),
             _ => workflow,
         };
     }
@@ -603,6 +671,20 @@ public sealed class SwShItemsEditSessionService
             .ToArray();
 
         return workflow with { Items = items };
+    }
+
+    private static string? ResolveMoveName(SwShItemsWorkflow workflow, int moveId)
+    {
+        var label = workflow.EditableFields
+            .FirstOrDefault(field => field.Field == MachineMoveIdField)
+            ?.Options
+            .FirstOrDefault(option => option.Value == moveId)
+            ?.Label;
+        var prefix = string.Create(CultureInfo.InvariantCulture, $"{moveId:000} ");
+
+        return label is not null && label.StartsWith(prefix, StringComparison.Ordinal)
+            ? label[prefix.Length..]
+            : null;
     }
 
     private static SwShItemsWorkflow OverlayItemMetadata(
@@ -820,6 +902,7 @@ public sealed class SwShItemsEditSessionService
             FriendshipGain1Field,
             FriendshipGain2Field,
             FriendshipGain3Field,
+            MachineMoveIdField,
         ];
     }
 

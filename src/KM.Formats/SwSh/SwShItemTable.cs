@@ -39,6 +39,8 @@ public sealed record SwShItemTableRecord(
     sbyte FriendshipGain1,
     sbyte FriendshipGain2,
     sbyte FriendshipGain3,
+    int? MachineSlot,
+    ushort? MachineMoveId,
     IReadOnlyList<int> SharedItemIds);
 
 public sealed record SwShItemTableEdit(
@@ -80,6 +82,7 @@ public enum SwShItemTableField
     FriendshipGain1,
     FriendshipGain2,
     FriendshipGain3,
+    MachineMove,
 }
 
 public enum SwShItemPouch : byte
@@ -135,13 +138,28 @@ public sealed class SwShItemTable
     private const int EntryTableOffset = 0x44;
     private const int MaxRowIndexOffset = 0x04;
     private const int RowsStartOffset = 0x40;
+    private const int MachineTablePointerOffset = 0x02;
+    private const int MachineTableCount = 200;
+    private const int MachineTableEntrySize = 4;
+    private const int MachineTableMoveOffset = 2;
+    private const int MachineTableGroupType = 4;
+    private const int MachineTableFieldUseType = 2;
 
     private readonly byte[] data;
+    private readonly int machineTableOffset;
+    private readonly IReadOnlyList<ushort>? machineMoves;
     private readonly Dictionary<int, SwShItemTableRecord> recordsByItemId;
 
-    private SwShItemTable(byte[] data, int rowsStart, IReadOnlyList<int> rawRowIndexes)
+    private SwShItemTable(
+        byte[] data,
+        int rowsStart,
+        IReadOnlyList<int> rawRowIndexes,
+        int machineTableOffset,
+        IReadOnlyList<ushort>? machineMoves)
     {
         this.data = data;
+        this.machineTableOffset = machineTableOffset;
+        this.machineMoves = machineMoves;
         RowsStart = rowsStart;
         RawRowIndexes = rawRowIndexes;
 
@@ -204,7 +222,11 @@ public sealed class SwShItemTable
             rawRowIndexes[itemId] = rowIndex;
         }
 
-        return new SwShItemTable(data.ToArray(), rowsStart, rawRowIndexes);
+        var machineTableOffset = TryReadMachineMoves(data, out var machineMoves)
+            ? ResolveMachineTableOffset(data)
+            : -1;
+
+        return new SwShItemTable(data.ToArray(), rowsStart, rawRowIndexes, machineTableOffset, machineMoves);
     }
 
     public byte[] WriteEdits(IReadOnlyList<SwShItemTableEdit> edits)
@@ -306,6 +328,9 @@ public sealed class SwShItemTable
                 case SwShItemTableField.FriendshipGain3:
                     WriteSignedByte(result, rowOffset + FriendshipGain3Offset, edit.Value);
                     break;
+                case SwShItemTableField.MachineMove:
+                    WriteMachineMove(result, record, edit.Value);
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(edits), $"Item field '{edit.Field}' is not supported.");
             }
@@ -365,6 +390,25 @@ public sealed class SwShItemTable
         BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(offset), checked((short)value));
     }
 
+    private void WriteMachineMove(byte[] data, SwShItemTableRecord record, int value)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(value);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(value, ushort.MaxValue);
+
+        if (record.MachineSlot is null)
+        {
+            throw new ArgumentOutOfRangeException(nameof(record), $"Item {record.ItemId} is not linked to a TM/TR slot.");
+        }
+
+        if (machineTableOffset < 0 || machineTableOffset + (MachineTableCount * MachineTableEntrySize) > data.Length)
+        {
+            throw new InvalidDataException("Item machine move table is not available in this item data file.");
+        }
+
+        var moveOffset = machineTableOffset + (record.MachineSlot.Value * MachineTableEntrySize) + MachineTableMoveOffset;
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(moveOffset), checked((ushort)value));
+    }
+
     public byte[] WriteClonedRows(IReadOnlyList<SwShItemTableCloneEdit> edits)
     {
         ArgumentNullException.ThrowIfNull(edits);
@@ -399,6 +443,15 @@ public sealed class SwShItemTable
         var rowOffset = RowsStart + (rawRowIndex * RowSize);
         var pouchByte = data[rowOffset + PouchOffset];
         var pouch = (SwShItemPouch)(pouchByte & 0x0F);
+        var fieldUseType = data[rowOffset + FieldUseTypeOffset];
+        var groupType = data[rowOffset + GroupTypeOffset];
+        var groupIndex = data[rowOffset + GroupIndexOffset];
+        var machineSlot = TryGetMachineSlot(groupType, fieldUseType, groupIndex, out var slot)
+            ? slot
+            : (int?)null;
+        var machineMove = machineSlot is not null && machineMoves is not null
+            ? machineMoves[machineSlot.Value]
+            : (ushort?)null;
 
         return new SwShItemTableRecord(
             itemId,
@@ -409,14 +462,14 @@ public sealed class SwShItemTable
             pouch,
             (byte)(pouchByte >> 4),
             data[rowOffset + FlingPowerOffset],
-            data[rowOffset + FieldUseTypeOffset],
+            fieldUseType,
             data[rowOffset + FieldFlagsOffset],
             data[rowOffset + CanUseOnPokemonOffset] == 1,
             data[rowOffset + ItemTypeOffset],
             data[rowOffset + SortIndexOffset],
             BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(rowOffset + ItemSpriteOffset)),
-            data[rowOffset + GroupTypeOffset],
-            data[rowOffset + GroupIndexOffset],
+            groupType,
+            groupIndex,
             data[rowOffset + CureStatusFlagsOffset],
             data[rowOffset + Boost0Offset],
             data[rowOffset + Boost1Offset],
@@ -435,6 +488,63 @@ public sealed class SwShItemTable
             unchecked((sbyte)data[rowOffset + FriendshipGain1Offset]),
             unchecked((sbyte)data[rowOffset + FriendshipGain2Offset]),
             unchecked((sbyte)data[rowOffset + FriendshipGain3Offset]),
+            machineSlot,
+            machineMove,
             aliases);
+    }
+
+    private static bool TryGetMachineSlot(byte groupType, byte fieldUseType, byte groupIndex, out int slot)
+    {
+        if (groupType == MachineTableGroupType
+            && fieldUseType == MachineTableFieldUseType
+            && groupIndex < MachineTableCount)
+        {
+            slot = groupIndex;
+            return true;
+        }
+
+        slot = 0;
+        return false;
+    }
+
+    private static bool TryReadMachineMoves(ReadOnlySpan<byte> data, out IReadOnlyList<ushort>? moves)
+    {
+        var tableOffset = ResolveMachineTableOffset(data);
+        if (tableOffset < 0)
+        {
+            moves = null;
+            return false;
+        }
+
+        var result = new ushort[MachineTableCount];
+        for (var slot = 0; slot < result.Length; slot++)
+        {
+            result[slot] = BinaryPrimitives.ReadUInt16LittleEndian(
+                data[(tableOffset + (slot * MachineTableEntrySize) + MachineTableMoveOffset)..]);
+        }
+
+        moves = result;
+        return true;
+    }
+
+    private static int ResolveMachineTableOffset(ReadOnlySpan<byte> data)
+    {
+        if (data.Length < MachineTablePointerOffset + sizeof(ushort))
+        {
+            return -1;
+        }
+
+        var tablePointer = BinaryPrimitives.ReadUInt16LittleEndian(data[MachineTablePointerOffset..]);
+        if (tablePointer == 0)
+        {
+            return -1;
+        }
+
+        var tableBase = tablePointer * 2;
+        var tableOffset = HeaderSize + tableBase;
+        return tableOffset >= HeaderSize
+            && tableOffset + (MachineTableCount * MachineTableEntrySize) <= data.Length
+            ? tableOffset
+            : -1;
     }
 }

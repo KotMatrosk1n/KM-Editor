@@ -277,6 +277,34 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchLoadItemsWorkflowReturnsMachineMoveLinkage()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShItemBridgeFixtures.WriteBaseMachineItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-items-machine");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadItemsWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        var item = response.Payload.Workflow.Items[1];
+        Assert.Equal(10, item.Metadata.MachineSlot);
+        Assert.Equal(345, item.Metadata.MachineMoveId);
+        Assert.Equal("Magical Leaf", item.Metadata.MachineMoveName);
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Inventory").Details,
+            detail => detail.Label == "Machine" && detail.Value == "TM10 (slot 10) -> Magical Leaf (345)");
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "machineMoveId").Options,
+            option => option.Value == 345 && option.Label == "345 Magical Leaf");
+    }
+
+    [Fact]
     public void DispatchLoadPokemonWorkflowReturnsRealPokemonRecords()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -2018,6 +2046,39 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchUpdateItemFieldReturnsPendingMachineMoveSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShItemBridgeFixtures.WriteBaseMachineItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(
+                temp.Paths,
+                Session: null,
+                ItemId: 1,
+                Field: "machineMoveId",
+                Value: "85"),
+            requestId: "request-items-machine-edit");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdateItemFieldResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.True(response.Payload.Session.HasPendingChanges);
+        var item = response.Payload.Workflow.Items[1];
+        Assert.Equal(85, item.Metadata.MachineMoveId);
+        Assert.Equal("Thunderbolt", item.Metadata.MachineMoveName);
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Inventory").Details,
+            detail => detail.Label == "Machine" && detail.Value == "TM10 (slot 10) -> Thunderbolt (85)");
+        var edit = Assert.Single(response.Payload.Session.PendingEdits);
+        Assert.Equal("machineMoveId", edit.Field);
+        Assert.Equal("85", edit.NewValue);
+    }
+
+    [Fact]
     public void DispatchUpdateTextEntryReturnsPendingTextSession()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -2238,6 +2299,45 @@ public sealed class ProjectBridgeDispatcherTests
         var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
         Assert.Equal(254, item.HealAmount);
         Assert.Equal(300u, item.BuyPrice);
+        Assert.DoesNotContain(
+            response.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchApplyChangePlanWritesItemMachineMove()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShItemBridgeFixtures.WriteBaseMachineItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var sessionResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(temp.Paths, Session: null, ItemId: 1, Field: "machineMoveId", Value: "85"),
+            requestId: "request-items-machine-edit"));
+        var sessionResponse = DeserializeResponse<UpdateItemFieldResponse>(sessionResponseJson);
+        Assert.NotNull(sessionResponse.Payload);
+        var planResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, sessionResponse.Payload.Session),
+            requestId: "request-change-plan"));
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(planResponseJson);
+        Assert.NotNull(planResponse.Payload);
+        var requestJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, sessionResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-change-plan-apply");
+
+        var responseJson = dispatcher.Dispatch(requestJson);
+        var response = DeserializeResponse<ApplyChangePlanResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Equal("romfs/bin/pml/item/item.dat", Assert.Single(response.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
+        Assert.Equal(10, item.MachineSlot);
+        Assert.Equal((ushort)85, item.MachineMoveId);
         Assert.DoesNotContain(
             response.Payload.ApplyResult.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);

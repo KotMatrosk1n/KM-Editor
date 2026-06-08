@@ -14,15 +14,37 @@ internal static class SwShItemTestFixtures
 
     public static byte[] CreateItemTable(params ItemFixtureRecord[] records)
     {
+        return CreateItemTable(machineMovesBySlot: null, records);
+    }
+
+    public static byte[] CreateItemTableWithMachineMoves(
+        IReadOnlyDictionary<int, int> machineMovesBySlot,
+        params ItemFixtureRecord[] records)
+    {
+        return CreateItemTable(machineMovesBySlot, records);
+    }
+
+    private static byte[] CreateItemTable(
+        IReadOnlyDictionary<int, int>? machineMovesBySlot,
+        params ItemFixtureRecord[] records)
+    {
         var itemCount = records.Length;
         var maxRowIndex = records.Length == 0
             ? 0
             : records.Max(record => record.RawRowIndex) + 1;
         var rowsStart = HeaderSize + (itemCount * sizeof(ushort));
-        var data = new byte[rowsStart + (maxRowIndex * RowSize)];
+        var machineTableOffset = rowsStart + (maxRowIndex * RowSize);
+        var dataLength = machineMovesBySlot is null
+            ? machineTableOffset
+            : machineTableOffset + (200 * sizeof(uint));
+        var data = new byte[dataLength];
 
         BinaryPrimitives.WriteUInt16LittleEndian(data, checked((ushort)itemCount));
-        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x02), 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            data.AsSpan(0x02),
+            machineMovesBySlot is null
+                ? (ushort)0
+                : checked((ushort)((machineTableOffset - HeaderSize) / 2)));
         BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x04), checked((ushort)maxRowIndex));
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(RowsStartOffset), rowsStart);
 
@@ -63,6 +85,16 @@ internal static class SwShItemTestFixtures
             data[rowOffset + 0x2D] = unchecked((byte)record.FriendshipGain1);
             data[rowOffset + 0x2E] = unchecked((byte)record.FriendshipGain2);
             data[rowOffset + 0x2F] = unchecked((byte)record.FriendshipGain3);
+        }
+
+        if (machineMovesBySlot is not null)
+        {
+            foreach (var (slot, moveId) in machineMovesBySlot)
+            {
+                BinaryPrimitives.WriteUInt16LittleEndian(
+                    data.AsSpan(machineTableOffset + (slot * sizeof(uint)) + 2),
+                    checked((ushort)moveId));
+            }
         }
 
         return data;

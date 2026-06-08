@@ -104,6 +104,50 @@ public sealed class SwShItemsWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadReadsMachineMoveLinkageAndMoveOptions()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/pml/item/item.dat",
+            SwShItemTestFixtures.CreateItemTableWithMachineMoves(
+                new Dictionary<int, int> { [10] = 345 },
+                new ItemFixtureRecord(0, 0, 0, 0, 0, SwShItemPouch.Items),
+                new ItemFixtureRecord(
+                    1,
+                    1,
+                    0,
+                    0,
+                    0,
+                    SwShItemPouch.TMs,
+                    FieldUseType: 2,
+                    GroupType: 4,
+                    GroupIndex: 10)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            SwShItemTestFixtures.CreateItemNames("None", "TM10 Magical Leaf"));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            CreateIndexedText(346, (345, "Magical Leaf")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShItemsWorkflowService().Load(project);
+
+        var item = workflow.Items[1];
+        Assert.Equal(3, workflow.Stats.SourceFileCount);
+        Assert.Equal(10, item.Metadata.MachineSlot);
+        Assert.Equal(345, item.Metadata.MachineMoveId);
+        Assert.Equal("Magical Leaf", item.Metadata.MachineMoveName);
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Inventory").Details,
+            detail => detail.Label == "Machine" && detail.Value == "TM10 (slot 10) -> Magical Leaf (345)");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShItemsWorkflowService.MachineMoveIdField).Options,
+            option => option.Value == 345 && option.Label == "345 Magical Leaf");
+        Assert.Empty(workflow.Diagnostics);
+    }
+
+    [Fact]
     public void LoadUsesFallbackNamesWhenItemNameTableIsMissing()
     {
         using var temp = TemporarySwShProject.Create();
@@ -163,5 +207,16 @@ public sealed class SwShItemsWorkflowServiceTests
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/itemname.dat",
             SwShItemTestFixtures.CreateItemNames("None", "Potion", "Antidote"));
+    }
+
+    private static byte[] CreateIndexedText(int count, params (int Index, string Text)[] entries)
+    {
+        var values = Enumerable.Repeat(string.Empty, count).ToArray();
+        foreach (var (index, text) in entries)
+        {
+            values[index] = text;
+        }
+
+        return SwShItemTestFixtures.CreateItemNames(values);
     }
 }

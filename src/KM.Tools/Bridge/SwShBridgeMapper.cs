@@ -1062,7 +1062,10 @@ public static class SwShBridgeMapper
                 item.Metadata.PpGain,
                 item.Metadata.FriendshipGain1,
                 item.Metadata.FriendshipGain2,
-                item.Metadata.FriendshipGain3),
+                item.Metadata.FriendshipGain3,
+                item.Metadata.MachineSlot,
+                item.Metadata.MachineMoveId,
+                item.Metadata.MachineMoveName),
             item.SharedItemIds,
             item.DetailGroups.Select(ToDto).ToArray(),
             new ItemProvenanceDto(
