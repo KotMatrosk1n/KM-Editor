@@ -15,10 +15,40 @@ public sealed class SwShItemsWorkflowService
     public const string SellPriceField = "sellPrice";
     public const string WattsPriceField = "wattsPrice";
     public const string AlternatePriceField = "alternatePrice";
+    public const string PouchField = "pouch";
+    public const string PouchFlagsField = "pouchFlags";
+    public const string FlingPowerField = "flingPower";
+    public const string FieldUseTypeField = "fieldUseType";
+    public const string FieldFlagsField = "fieldFlags";
+    public const string CanUseOnPokemonField = "canUseOnPokemon";
+    public const string ItemTypeField = "itemType";
+    public const string SortIndexField = "sortIndex";
+    public const string ItemSpriteField = "itemSprite";
+    public const string GroupTypeField = "groupType";
+    public const string GroupIndexField = "groupIndex";
+    public const string CureStatusFlagsField = "cureStatusFlags";
+    public const string UseFlags1Field = "useFlags1";
+    public const string UseFlags2Field = "useFlags2";
+    public const string EvHpField = "evHp";
+    public const string EvAttackField = "evAttack";
+    public const string EvDefenseField = "evDefense";
+    public const string EvSpeedField = "evSpeed";
+    public const string EvSpecialAttackField = "evSpecialAttack";
+    public const string EvSpecialDefenseField = "evSpecialDefense";
+    public const string HealAmountField = "healAmount";
+    public const string PpGainField = "ppGain";
+    public const string FriendshipGain1Field = "friendshipGain1";
+    public const string FriendshipGain2Field = "friendshipGain2";
+    public const string FriendshipGain3Field = "friendshipGain3";
     public const int MaximumBuyPrice = 999_999;
     public const int MaximumSellPrice = MaximumBuyPrice / 2;
     public const int MaximumWattsPrice = 999_999;
     public const int MaximumAlternatePrice = 999_999;
+    public const int MaximumByteValue = byte.MaxValue;
+    public const int MaximumPouchValue = 8;
+    public const int MaximumPouchFlagsValue = 0x0F;
+    public const int MinimumSignedByteValue = sbyte.MinValue;
+    public const int MaximumSignedByteValue = sbyte.MaxValue;
     public const string ItemDataPath = SwShItemTable.ItemDataRelativePath;
     public const string EnglishItemNamePath = "romfs/bin/message/English/common/itemname.dat";
 
@@ -27,6 +57,29 @@ public sealed class SwShItemsWorkflowService
     private const int TechnicalRecordTrSlotStart = 100;
     private const int TechnicalRecordLastSlot = 199;
 
+    private static readonly IReadOnlyList<SwShItemEditableFieldOption> BooleanOptions =
+    [
+        new SwShItemEditableFieldOption(0, "No"),
+        new SwShItemEditableFieldOption(1, "Yes"),
+    ];
+
+    private static readonly IReadOnlyList<SwShItemEditableFieldOption> PouchOptions =
+        Enumerable.Range(0, MaximumPouchValue + 1)
+            .Select(value => new SwShItemEditableFieldOption(value, FormatPouch(value)))
+            .ToArray();
+
+    private static readonly IReadOnlyList<SwShItemEditableFieldOption> FieldUseTypeOptions =
+    [
+        new SwShItemEditableFieldOption(0, "Inert"),
+        new SwShItemEditableFieldOption(1, "Medicine"),
+        new SwShItemEditableFieldOption(2, "TM/TR"),
+        new SwShItemEditableFieldOption(5, "Spray"),
+        new SwShItemEditableFieldOption(6, "Evolution"),
+        new SwShItemEditableFieldOption(7, "Escape Rope"),
+        new SwShItemEditableFieldOption(12, "Berry"),
+        new SwShItemEditableFieldOption(15, "Form Change"),
+    ];
+
     private static readonly IReadOnlyList<SwShItemEditableField> EditableFields =
     [
         new SwShItemEditableField(
@@ -34,25 +87,204 @@ public sealed class SwShItemsWorkflowService
             "Buy price",
             "integer",
             MinimumValue: 0,
-            MaximumBuyPrice),
+            MaximumValue: MaximumBuyPrice,
+            Options: []),
         new SwShItemEditableField(
             SellPriceField,
             "Sell price",
             "integer",
             MinimumValue: 0,
-            MaximumSellPrice),
+            MaximumValue: MaximumSellPrice,
+            Options: []),
         new SwShItemEditableField(
             WattsPriceField,
             "Watts price",
             "integer",
             MinimumValue: 0,
-            MaximumWattsPrice),
+            MaximumValue: MaximumWattsPrice,
+            Options: []),
         new SwShItemEditableField(
             AlternatePriceField,
             "Alternate price",
             "integer",
             MinimumValue: 0,
-            MaximumAlternatePrice),
+            MaximumValue: MaximumAlternatePrice,
+            Options: []),
+        new SwShItemEditableField(
+            PouchField,
+            "Pouch",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumPouchValue,
+            Options: PouchOptions),
+        new SwShItemEditableField(
+            PouchFlagsField,
+            "Pouch flags",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumPouchFlagsValue,
+            Options: []),
+        new SwShItemEditableField(
+            FlingPowerField,
+            "Fling power",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            FieldUseTypeField,
+            "Field use type",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: FieldUseTypeOptions),
+        new SwShItemEditableField(
+            FieldFlagsField,
+            "Field flags",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            CanUseOnPokemonField,
+            "Can use on Pokemon",
+            "boolean",
+            MinimumValue: 0,
+            MaximumValue: 1,
+            Options: BooleanOptions),
+        new SwShItemEditableField(
+            ItemTypeField,
+            "Item type",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            SortIndexField,
+            "Sort index",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            ItemSpriteField,
+            "Sprite",
+            "integer",
+            MinimumValue: short.MinValue,
+            MaximumValue: short.MaxValue,
+            Options: []),
+        new SwShItemEditableField(
+            GroupTypeField,
+            "Group type",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            GroupIndexField,
+            "Group index",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            CureStatusFlagsField,
+            "Cure status flags",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            UseFlags1Field,
+            "Use flags 1",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            UseFlags2Field,
+            "Use flags 2",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            EvHpField,
+            "HP EV gain",
+            "integer",
+            MinimumValue: MinimumSignedByteValue,
+            MaximumValue: MaximumSignedByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            EvAttackField,
+            "Attack EV gain",
+            "integer",
+            MinimumValue: MinimumSignedByteValue,
+            MaximumValue: MaximumSignedByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            EvDefenseField,
+            "Defense EV gain",
+            "integer",
+            MinimumValue: MinimumSignedByteValue,
+            MaximumValue: MaximumSignedByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            EvSpeedField,
+            "Speed EV gain",
+            "integer",
+            MinimumValue: MinimumSignedByteValue,
+            MaximumValue: MaximumSignedByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            EvSpecialAttackField,
+            "Sp. Atk EV gain",
+            "integer",
+            MinimumValue: MinimumSignedByteValue,
+            MaximumValue: MaximumSignedByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            EvSpecialDefenseField,
+            "Sp. Def EV gain",
+            "integer",
+            MinimumValue: MinimumSignedByteValue,
+            MaximumValue: MaximumSignedByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            HealAmountField,
+            "Heal amount",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            PpGainField,
+            "PP gain",
+            "integer",
+            MinimumValue: 0,
+            MaximumValue: MaximumByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            FriendshipGain1Field,
+            "Friendship gain 1",
+            "integer",
+            MinimumValue: MinimumSignedByteValue,
+            MaximumValue: MaximumSignedByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            FriendshipGain2Field,
+            "Friendship gain 2",
+            "integer",
+            MinimumValue: MinimumSignedByteValue,
+            MaximumValue: MaximumSignedByteValue,
+            Options: []),
+        new SwShItemEditableField(
+            FriendshipGain3Field,
+            "Friendship gain 3",
+            "integer",
+            MinimumValue: MinimumSignedByteValue,
+            MaximumValue: MaximumSignedByteValue,
+            Options: []),
     ];
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -302,17 +534,54 @@ public sealed class SwShItemsWorkflowService
         IReadOnlyList<string> itemNames,
         SwShItemProvenance provenance)
     {
+        var metadata = CreateMetadata(item);
+
         return new SwShItemRecord(
             item.ItemId,
             GetItemName(item.ItemId, itemNames),
-            FormatPouch(item.Pouch),
+            FormatPouch(metadata.Pouch),
             checked((int)item.BuyPrice),
             checked((int)(item.BuyPrice / 2)),
             checked((int)item.WattsPrice),
             checked((int)item.AlternatePrice),
+            metadata,
             item.SharedItemIds,
-            CreateDetailGroups(item),
+            CreateDetailGroups(metadata),
             provenance);
+    }
+
+    private static SwShItemMetadata CreateMetadata(SwShItemTableRecord item)
+    {
+        return new SwShItemMetadata(
+            (int)item.Pouch,
+            item.PouchFlags,
+            item.FlingPower,
+            item.FieldUseType,
+            item.FieldFlags,
+            item.CanUseOnPokemon,
+            item.ItemType,
+            item.SortIndex,
+            item.ItemSprite,
+            item.GroupType,
+            item.GroupIndex,
+            item.CureStatusFlags,
+            item.Boost0,
+            item.Boost1,
+            item.Boost2,
+            item.Boost3,
+            item.UseFlags1,
+            item.UseFlags2,
+            item.EvHp,
+            item.EvAttack,
+            item.EvDefense,
+            item.EvSpeed,
+            item.EvSpecialAttack,
+            item.EvSpecialDefense,
+            item.HealAmount,
+            item.PpGain,
+            item.FriendshipGain1,
+            item.FriendshipGain2,
+            item.FriendshipGain3);
     }
 
     private static string GetItemName(int itemId, IReadOnlyList<string> itemNames)
@@ -325,9 +594,9 @@ public sealed class SwShItemsWorkflowService
         return $"Item {itemId}";
     }
 
-    private static string FormatPouch(SwShItemPouch pouch)
+    internal static string FormatPouch(int pouch)
     {
-        return pouch switch
+        return (SwShItemPouch)pouch switch
         {
             SwShItemPouch.Medicine => "Medicine",
             SwShItemPouch.Balls => "Balls",
@@ -338,18 +607,18 @@ public sealed class SwShItemsWorkflowService
             SwShItemPouch.Treasures => "Treasures",
             SwShItemPouch.Ingredients => "Ingredients",
             SwShItemPouch.KeyItems => "Key Items",
-            _ => $"Pouch {(byte)pouch}",
+            _ => $"Pouch {pouch.ToString(CultureInfo.InvariantCulture)}",
         };
     }
 
-    private static IReadOnlyList<SwShItemDetailGroup> CreateDetailGroups(SwShItemTableRecord item)
+    internal static IReadOnlyList<SwShItemDetailGroup> CreateDetailGroups(SwShItemMetadata item)
     {
         return
         [
             new SwShItemDetailGroup(
                 "Inventory",
                 [
-                    new SwShItemDetail("Pouch", $"{FormatPouch(item.Pouch)} ({(byte)item.Pouch})"),
+                    new SwShItemDetail("Pouch", $"{FormatPouch(item.Pouch)} ({item.Pouch.ToString(CultureInfo.InvariantCulture)})"),
                     new SwShItemDetail("Pouch flags", FormatHex(item.PouchFlags)),
                     new SwShItemDetail("Item type", item.ItemType.ToString(CultureInfo.InvariantCulture)),
                     new SwShItemDetail("Sort index", item.SortIndex.ToString(CultureInfo.InvariantCulture)),
@@ -419,7 +688,7 @@ public sealed class SwShItemsWorkflowService
         ];
     }
 
-    private static string FormatGroupType(byte value)
+    private static string FormatGroupType(int value)
     {
         return value switch
         {
@@ -432,7 +701,7 @@ public sealed class SwShItemsWorkflowService
         };
     }
 
-    private static string FormatFieldUseType(byte value)
+    private static string FormatFieldUseType(int value)
     {
         return value switch
         {
@@ -448,7 +717,7 @@ public sealed class SwShItemsWorkflowService
         };
     }
 
-    private static string FormatMachineSummary(SwShItemTableRecord item)
+    private static string FormatMachineSummary(SwShItemMetadata item)
     {
         if (item.GroupType != TechnicalRecordMachineGroup
             || item.FieldUseType != TechnicalRecordFieldUseType
@@ -464,7 +733,7 @@ public sealed class SwShItemsWorkflowService
             $"{(isTr ? "TR" : "TM")}{number:00} (slot {item.GroupIndex})");
     }
 
-    private static string FormatFlags(byte value, params (int Flag, string Label)[] flags)
+    private static string FormatFlags(int value, params (int Flag, string Label)[] flags)
     {
         if (value == 0)
         {
@@ -481,7 +750,7 @@ public sealed class SwShItemsWorkflowService
             : string.Join(", ", labels);
     }
 
-    private static string FormatBattleBoosts(SwShItemTableRecord item)
+    private static string FormatBattleBoosts(SwShItemMetadata item)
     {
         return string.Join(
             " / ",
@@ -495,9 +764,9 @@ public sealed class SwShItemsWorkflowService
             ]);
     }
 
-    private static string FormatEvGain(SwShItemTableRecord item)
+    private static string FormatEvGain(SwShItemMetadata item)
     {
-        var values = new (string Label, sbyte Value)[]
+        var values = new (string Label, int Value)[]
         {
             ("HP", item.EvHp),
             ("Atk", item.EvAttack),
@@ -514,7 +783,7 @@ public sealed class SwShItemsWorkflowService
         return gains.Length == 0 ? "None" : string.Join(", ", gains);
     }
 
-    private static string FormatHealAmount(byte value)
+    private static string FormatHealAmount(int value)
     {
         return value switch
         {
@@ -525,14 +794,14 @@ public sealed class SwShItemsWorkflowService
         };
     }
 
-    private static string FormatFriendshipGains(SwShItemTableRecord item)
+    private static string FormatFriendshipGains(SwShItemMetadata item)
     {
         return string.Create(
             CultureInfo.InvariantCulture,
             $"{FormatSigned(item.FriendshipGain1)} / {FormatSigned(item.FriendshipGain2)} / {FormatSigned(item.FriendshipGain3)}");
     }
 
-    private static string FormatSigned(sbyte value)
+    private static string FormatSigned(int value)
     {
         return value > 0
             ? $"+{value.ToString(CultureInfo.InvariantCulture)}"
@@ -544,7 +813,7 @@ public sealed class SwShItemsWorkflowService
         return value ? "Yes" : "No";
     }
 
-    private static string FormatHex(byte value)
+    private static string FormatHex(int value)
     {
         return string.Create(CultureInfo.InvariantCulture, $"0x{value:X2}");
     }

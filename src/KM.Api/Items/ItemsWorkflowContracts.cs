@@ -34,6 +34,37 @@ public sealed record ItemDetailGroupDto(
     string Label,
     IReadOnlyList<ItemDetailDto> Details);
 
+public sealed record ItemMetadataDto(
+    int Pouch,
+    int PouchFlags,
+    int FlingPower,
+    int FieldUseType,
+    int FieldFlags,
+    bool CanUseOnPokemon,
+    int ItemType,
+    int SortIndex,
+    int ItemSprite,
+    int GroupType,
+    int GroupIndex,
+    int CureStatusFlags,
+    int Boost0,
+    int Boost1,
+    int Boost2,
+    int Boost3,
+    int UseFlags1,
+    int UseFlags2,
+    int EvHp,
+    int EvAttack,
+    int EvDefense,
+    int EvSpeed,
+    int EvSpecialAttack,
+    int EvSpecialDefense,
+    int HealAmount,
+    int PpGain,
+    int FriendshipGain1,
+    int FriendshipGain2,
+    int FriendshipGain3);
+
 public sealed record ItemRecordDto(
     int ItemId,
     string Name,
@@ -42,16 +73,22 @@ public sealed record ItemRecordDto(
     int SellPrice,
     int WattsPrice,
     int AlternatePrice,
+    ItemMetadataDto Metadata,
     IReadOnlyList<int> SharedItemIds,
     IReadOnlyList<ItemDetailGroupDto> DetailGroups,
     ItemProvenanceDto Provenance);
+
+public sealed record ItemEditableFieldOptionDto(
+    int Value,
+    string Label);
 
 public sealed record ItemEditableFieldDto(
     string Field,
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<ItemEditableFieldOptionDto> Options);
 
 public sealed record ItemsWorkflowStatsDto(
     int TotalItemCount,

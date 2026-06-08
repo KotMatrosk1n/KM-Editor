@@ -52,28 +52,30 @@ public sealed class SwShItemsWorkflowServiceTests
         Assert.Equal(ProjectFileLayer.Base, item.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.BaseOnly, item.Provenance.FileState);
         Assert.Equal(SwShItemsWorkflowService.ItemDataPath, item.Provenance.SourceFile);
-        Assert.Collection(
+        Assert.Equal(0, item.Metadata.Pouch);
+        Assert.True(item.Metadata.CanUseOnPokemon);
+        Assert.Equal(20, item.Metadata.HealAmount);
+        Assert.Contains(
             workflow.EditableFields,
-            editableField =>
-            {
-                Assert.Equal(SwShItemsWorkflowService.BuyPriceField, editableField.Field);
-                Assert.Equal(SwShItemsWorkflowService.MaximumBuyPrice, editableField.MaximumValue);
-            },
-            editableField =>
-            {
-                Assert.Equal(SwShItemsWorkflowService.SellPriceField, editableField.Field);
-                Assert.Equal(SwShItemsWorkflowService.MaximumSellPrice, editableField.MaximumValue);
-            },
-            editableField =>
-            {
-                Assert.Equal(SwShItemsWorkflowService.WattsPriceField, editableField.Field);
-                Assert.Equal(SwShItemsWorkflowService.MaximumWattsPrice, editableField.MaximumValue);
-            },
-            editableField =>
-            {
-                Assert.Equal(SwShItemsWorkflowService.AlternatePriceField, editableField.Field);
-                Assert.Equal(SwShItemsWorkflowService.MaximumAlternatePrice, editableField.MaximumValue);
-            });
+            editableField => editableField.Field == SwShItemsWorkflowService.BuyPriceField
+                && editableField.MaximumValue == SwShItemsWorkflowService.MaximumBuyPrice);
+        Assert.Contains(
+            workflow.EditableFields,
+            editableField => editableField.Field == SwShItemsWorkflowService.SellPriceField
+                && editableField.MaximumValue == SwShItemsWorkflowService.MaximumSellPrice);
+        Assert.Contains(
+            workflow.EditableFields,
+            editableField => editableField.Field == SwShItemsWorkflowService.PouchField
+                && editableField.Options.Any(option => option.Value == 0 && option.Label == "Medicine"));
+        Assert.Contains(
+            workflow.EditableFields,
+            editableField => editableField.Field == SwShItemsWorkflowService.FieldUseTypeField
+                && editableField.Options.Any(option => option.Value == 1 && option.Label == "Medicine"));
+        Assert.Contains(
+            workflow.EditableFields,
+            editableField => editableField.Field == SwShItemsWorkflowService.EvHpField
+                && editableField.MinimumValue == SwShItemsWorkflowService.MinimumSignedByteValue
+                && editableField.MaximumValue == SwShItemsWorkflowService.MaximumSignedByteValue);
         Assert.Empty(workflow.Diagnostics);
     }
 

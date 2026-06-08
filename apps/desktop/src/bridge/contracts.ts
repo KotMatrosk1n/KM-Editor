@@ -371,12 +371,45 @@ export const itemDetailGroupSchema = z.strictObject({
   label: z.string()
 });
 
+export const itemMetadataSchema = z.strictObject({
+  boost0: z.number().int(),
+  boost1: z.number().int(),
+  boost2: z.number().int(),
+  boost3: z.number().int(),
+  canUseOnPokemon: z.boolean(),
+  cureStatusFlags: z.number().int(),
+  evAttack: z.number().int(),
+  evDefense: z.number().int(),
+  evHp: z.number().int(),
+  evSpecialAttack: z.number().int(),
+  evSpecialDefense: z.number().int(),
+  evSpeed: z.number().int(),
+  fieldFlags: z.number().int(),
+  fieldUseType: z.number().int(),
+  flingPower: z.number().int(),
+  friendshipGain1: z.number().int(),
+  friendshipGain2: z.number().int(),
+  friendshipGain3: z.number().int(),
+  groupIndex: z.number().int(),
+  groupType: z.number().int(),
+  healAmount: z.number().int(),
+  itemSprite: z.number().int(),
+  itemType: z.number().int(),
+  pouch: z.number().int(),
+  pouchFlags: z.number().int(),
+  ppGain: z.number().int(),
+  sortIndex: z.number().int(),
+  useFlags1: z.number().int(),
+  useFlags2: z.number().int()
+});
+
 export const itemRecordSchema = z.strictObject({
   alternatePrice: z.number().int().nonnegative(),
   buyPrice: z.number().int().nonnegative(),
   category: z.string(),
   detailGroups: z.array(itemDetailGroupSchema),
   itemId: z.number().int().nonnegative(),
+  metadata: itemMetadataSchema,
   name: z.string(),
   provenance: itemProvenanceSchema,
   sellPrice: z.number().int().nonnegative(),
@@ -384,11 +417,17 @@ export const itemRecordSchema = z.strictObject({
   wattsPrice: z.number().int().nonnegative()
 });
 
+export const itemEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
 export const itemEditableFieldSchema = z.strictObject({
   field: z.string(),
   label: z.string(),
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
+  options: z.array(itemEditableFieldOptionSchema),
   valueKind: z.string()
 });
 

@@ -15,6 +15,38 @@ const editableProjectPaths = {
   saveFilePath: null
 };
 
+const itemMetadata = {
+  boost0: 0,
+  boost1: 0,
+  boost2: 0,
+  boost3: 0,
+  canUseOnPokemon: true,
+  cureStatusFlags: 0,
+  evAttack: 0,
+  evDefense: 0,
+  evHp: 0,
+  evSpecialAttack: 0,
+  evSpecialDefense: 0,
+  evSpeed: 0,
+  fieldFlags: 2,
+  fieldUseType: 1,
+  flingPower: 30,
+  friendshipGain1: 1,
+  friendshipGain2: 1,
+  friendshipGain3: 0,
+  groupIndex: 0,
+  groupType: 0,
+  healAmount: 20,
+  itemSprite: 12,
+  itemType: 9,
+  pouch: 0,
+  pouchFlags: 0,
+  ppGain: 0,
+  sortIndex: 5,
+  useFlags1: 4,
+  useFlags2: 0
+} as const;
+
 const readOnlyHealth = {
   canOpenEditableWorkflows: false,
   canOpenReadOnlyWorkflows: true,
@@ -1346,6 +1378,7 @@ describe('projectBridge', () => {
                 label: 'Buy price',
                 maximumValue: 999999,
                 minimumValue: 0,
+                options: [],
                 valueKind: 'integer'
               },
               {
@@ -1353,6 +1386,7 @@ describe('projectBridge', () => {
                 label: 'Sell price',
                 maximumValue: 499999,
                 minimumValue: 0,
+                options: [],
                 valueKind: 'integer'
               },
               {
@@ -1360,6 +1394,7 @@ describe('projectBridge', () => {
                 label: 'Watts price',
                 maximumValue: 999999,
                 minimumValue: 0,
+                options: [],
                 valueKind: 'integer'
               },
               {
@@ -1367,6 +1402,7 @@ describe('projectBridge', () => {
                 label: 'Alternate price',
                 maximumValue: 999999,
                 minimumValue: 0,
+                options: [],
                 valueKind: 'integer'
               }
             ],
@@ -1389,6 +1425,7 @@ describe('projectBridge', () => {
                   }
                 ],
                 itemId: 1,
+                metadata: itemMetadata,
                 name: 'Potion',
                 provenance: {
                   fileState: 'baseOnly',
@@ -1750,6 +1787,7 @@ describe('projectBridge', () => {
                   label: 'Buy price',
                   maximumValue: 999999,
                   minimumValue: 0,
+                  options: [],
                   valueKind: 'integer'
                 },
                 {
@@ -1757,6 +1795,7 @@ describe('projectBridge', () => {
                   label: 'Sell price',
                   maximumValue: 499999,
                   minimumValue: 0,
+                  options: [],
                   valueKind: 'integer'
                 },
                 {
@@ -1764,6 +1803,7 @@ describe('projectBridge', () => {
                   label: 'Watts price',
                   maximumValue: 999999,
                   minimumValue: 0,
+                  options: [],
                   valueKind: 'integer'
                 },
                 {
@@ -1771,6 +1811,7 @@ describe('projectBridge', () => {
                   label: 'Alternate price',
                   maximumValue: 999999,
                   minimumValue: 0,
+                  options: [],
                   valueKind: 'integer'
                 }
               ],
@@ -1793,6 +1834,7 @@ describe('projectBridge', () => {
                     }
                   ],
                   itemId: 1,
+                  metadata: itemMetadata,
                   name: 'Potion',
                   provenance: {
                     fileState: 'baseOnly',

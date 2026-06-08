@@ -44,7 +44,7 @@ public sealed record SwShItemTableRecord(
 public sealed record SwShItemTableEdit(
     int ItemId,
     SwShItemTableField Field,
-    uint Value);
+    int Value);
 
 public sealed record SwShItemTableCloneEdit(
     int TemplateItemId,
@@ -55,6 +55,31 @@ public enum SwShItemTableField
     BuyPrice,
     WattsPrice,
     AlternatePrice,
+    Pouch,
+    PouchFlags,
+    FlingPower,
+    FieldUseType,
+    FieldFlags,
+    CanUseOnPokemon,
+    ItemType,
+    SortIndex,
+    ItemSprite,
+    GroupType,
+    GroupIndex,
+    CureStatusFlags,
+    UseFlags1,
+    UseFlags2,
+    EvHp,
+    EvAttack,
+    EvDefense,
+    EvSpeed,
+    EvSpecialAttack,
+    EvSpecialDefense,
+    HealAmount,
+    PpGain,
+    FriendshipGain1,
+    FriendshipGain2,
+    FriendshipGain3,
 }
 
 public enum SwShItemPouch : byte
@@ -198,13 +223,88 @@ public sealed class SwShItemTable
             switch (edit.Field)
             {
                 case SwShItemTableField.BuyPrice:
-                    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(rowOffset + BuyPriceOffset), edit.Value);
+                    WriteUInt32(result, rowOffset + BuyPriceOffset, edit.Value);
                     break;
                 case SwShItemTableField.WattsPrice:
-                    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(rowOffset + WattsPriceOffset), edit.Value);
+                    WriteUInt32(result, rowOffset + WattsPriceOffset, edit.Value);
                     break;
                 case SwShItemTableField.AlternatePrice:
-                    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(rowOffset + AlternatePriceOffset), edit.Value);
+                    WriteUInt32(result, rowOffset + AlternatePriceOffset, edit.Value);
+                    break;
+                case SwShItemTableField.Pouch:
+                    WritePackedNibble(result, rowOffset + PouchOffset, edit.Value, writeHighNibble: false);
+                    break;
+                case SwShItemTableField.PouchFlags:
+                    WritePackedNibble(result, rowOffset + PouchOffset, edit.Value, writeHighNibble: true);
+                    break;
+                case SwShItemTableField.FlingPower:
+                    WriteByte(result, rowOffset + FlingPowerOffset, edit.Value);
+                    break;
+                case SwShItemTableField.FieldUseType:
+                    WriteByte(result, rowOffset + FieldUseTypeOffset, edit.Value);
+                    break;
+                case SwShItemTableField.FieldFlags:
+                    WriteByte(result, rowOffset + FieldFlagsOffset, edit.Value);
+                    break;
+                case SwShItemTableField.CanUseOnPokemon:
+                    WriteBooleanByte(result, rowOffset + CanUseOnPokemonOffset, edit.Value);
+                    break;
+                case SwShItemTableField.ItemType:
+                    WriteByte(result, rowOffset + ItemTypeOffset, edit.Value);
+                    break;
+                case SwShItemTableField.SortIndex:
+                    WriteByte(result, rowOffset + SortIndexOffset, edit.Value);
+                    break;
+                case SwShItemTableField.ItemSprite:
+                    WriteInt16(result, rowOffset + ItemSpriteOffset, edit.Value);
+                    break;
+                case SwShItemTableField.GroupType:
+                    WriteByte(result, rowOffset + GroupTypeOffset, edit.Value);
+                    break;
+                case SwShItemTableField.GroupIndex:
+                    WriteByte(result, rowOffset + GroupIndexOffset, edit.Value);
+                    break;
+                case SwShItemTableField.CureStatusFlags:
+                    WriteByte(result, rowOffset + CureStatusFlagsOffset, edit.Value);
+                    break;
+                case SwShItemTableField.UseFlags1:
+                    WriteByte(result, rowOffset + UseFlags1Offset, edit.Value);
+                    break;
+                case SwShItemTableField.UseFlags2:
+                    WriteByte(result, rowOffset + UseFlags2Offset, edit.Value);
+                    break;
+                case SwShItemTableField.EvHp:
+                    WriteSignedByte(result, rowOffset + EvHpOffset, edit.Value);
+                    break;
+                case SwShItemTableField.EvAttack:
+                    WriteSignedByte(result, rowOffset + EvAttackOffset, edit.Value);
+                    break;
+                case SwShItemTableField.EvDefense:
+                    WriteSignedByte(result, rowOffset + EvDefenseOffset, edit.Value);
+                    break;
+                case SwShItemTableField.EvSpeed:
+                    WriteSignedByte(result, rowOffset + EvSpeedOffset, edit.Value);
+                    break;
+                case SwShItemTableField.EvSpecialAttack:
+                    WriteSignedByte(result, rowOffset + EvSpecialAttackOffset, edit.Value);
+                    break;
+                case SwShItemTableField.EvSpecialDefense:
+                    WriteSignedByte(result, rowOffset + EvSpecialDefenseOffset, edit.Value);
+                    break;
+                case SwShItemTableField.HealAmount:
+                    WriteByte(result, rowOffset + HealAmountOffset, edit.Value);
+                    break;
+                case SwShItemTableField.PpGain:
+                    WriteByte(result, rowOffset + PpGainOffset, edit.Value);
+                    break;
+                case SwShItemTableField.FriendshipGain1:
+                    WriteSignedByte(result, rowOffset + FriendshipGain1Offset, edit.Value);
+                    break;
+                case SwShItemTableField.FriendshipGain2:
+                    WriteSignedByte(result, rowOffset + FriendshipGain2Offset, edit.Value);
+                    break;
+                case SwShItemTableField.FriendshipGain3:
+                    WriteSignedByte(result, rowOffset + FriendshipGain3Offset, edit.Value);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(edits), $"Item field '{edit.Field}' is not supported.");
@@ -212,6 +312,57 @@ public sealed class SwShItemTable
         }
 
         return result;
+    }
+
+    private static void WriteByte(byte[] data, int offset, int value)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(value);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(value, byte.MaxValue);
+
+        data[offset] = checked((byte)value);
+    }
+
+    private static void WriteUInt32(byte[] data, int offset, int value)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(value);
+
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset), checked((uint)value));
+    }
+
+    private static void WriteSignedByte(byte[] data, int offset, int value)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(value, sbyte.MinValue);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(value, sbyte.MaxValue);
+
+        data[offset] = unchecked((byte)(sbyte)value);
+    }
+
+    private static void WriteBooleanByte(byte[] data, int offset, int value)
+    {
+        if (value is not 0 and not 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), "Boolean item metadata fields must be 0 or 1.");
+        }
+
+        data[offset] = checked((byte)value);
+    }
+
+    private static void WritePackedNibble(byte[] data, int offset, int value, bool writeHighNibble)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(value);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 0x0F);
+
+        data[offset] = writeHighNibble
+            ? (byte)((data[offset] & 0x0F) | (value << 4))
+            : (byte)((data[offset] & 0xF0) | value);
+    }
+
+    private static void WriteInt16(byte[] data, int offset, int value)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(value, short.MinValue);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(value, short.MaxValue);
+
+        BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(offset), checked((short)value));
     }
 
     public byte[] WriteClonedRows(IReadOnlyList<SwShItemTableCloneEdit> edits)

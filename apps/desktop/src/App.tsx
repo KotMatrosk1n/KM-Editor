@@ -3372,14 +3372,7 @@ function SelectedItemPanel({
         ])
       )
     );
-  }, [
-    editableFields,
-    item?.alternatePrice,
-    item?.buyPrice,
-    item?.itemId,
-    item?.sellPrice,
-    item?.wattsPrice
-  ]);
+  }, [editableFields, item]);
 
   return (
     <aside aria-label="Selected item provenance" className="item-inspector">
@@ -3435,25 +3428,52 @@ function SelectedItemPanel({
                 const draftState = getItemPriceDraftState(draftValue, currentValue, field);
                 const canSubmit =
                   editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+                const hasOptions = field.options.length > 0;
+                const hasDraftOption = field.options.some(
+                  (option) => option.value.toString() === draftValue
+                );
 
                 return (
                   <div className="item-price-editor-row" key={field.field}>
                     <label className="path-field">
                       <span>{field.label}</span>
-                      <input
-                        aria-label={field.label}
-                        disabled={!canEditItems || editSession === null || isItemUpdating}
-                        max={field.maximumValue ?? undefined}
-                        min={field.minimumValue ?? undefined}
-                        onChange={(event) =>
-                          setFieldDrafts((currentDrafts) => ({
-                            ...currentDrafts,
-                            [field.field]: event.target.value
-                          }))
-                        }
-                        type="number"
-                        value={draftValue}
-                      />
+                      {hasOptions ? (
+                        <select
+                          aria-label={field.label}
+                          disabled={!canEditItems || editSession === null || isItemUpdating}
+                          onChange={(event) =>
+                            setFieldDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [field.field]: event.target.value
+                            }))
+                          }
+                          value={draftValue}
+                        >
+                          {!hasDraftOption && draftValue !== '' ? (
+                            <option value={draftValue}>{`Current ${draftValue}`}</option>
+                          ) : null}
+                          {field.options.map((option) => (
+                            <option key={`${field.field}:${option.value}`} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          aria-label={field.label}
+                          disabled={!canEditItems || editSession === null || isItemUpdating}
+                          max={field.maximumValue ?? undefined}
+                          min={field.minimumValue ?? undefined}
+                          onChange={(event) =>
+                            setFieldDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [field.field]: event.target.value
+                            }))
+                          }
+                          type="number"
+                          value={draftValue}
+                        />
+                      )}
                     </label>
 
                     {editSession ? (
@@ -11648,6 +11668,56 @@ function getEditableItemFieldValue(item: ItemRecord, field: string) {
       return item.wattsPrice;
     case alternatePriceFieldName:
       return item.alternatePrice;
+    case 'pouch':
+      return item.metadata.pouch;
+    case 'pouchFlags':
+      return item.metadata.pouchFlags;
+    case 'flingPower':
+      return item.metadata.flingPower;
+    case 'fieldUseType':
+      return item.metadata.fieldUseType;
+    case 'fieldFlags':
+      return item.metadata.fieldFlags;
+    case 'canUseOnPokemon':
+      return item.metadata.canUseOnPokemon ? 1 : 0;
+    case 'itemType':
+      return item.metadata.itemType;
+    case 'sortIndex':
+      return item.metadata.sortIndex;
+    case 'itemSprite':
+      return item.metadata.itemSprite;
+    case 'groupType':
+      return item.metadata.groupType;
+    case 'groupIndex':
+      return item.metadata.groupIndex;
+    case 'cureStatusFlags':
+      return item.metadata.cureStatusFlags;
+    case 'useFlags1':
+      return item.metadata.useFlags1;
+    case 'useFlags2':
+      return item.metadata.useFlags2;
+    case 'evHp':
+      return item.metadata.evHp;
+    case 'evAttack':
+      return item.metadata.evAttack;
+    case 'evDefense':
+      return item.metadata.evDefense;
+    case 'evSpeed':
+      return item.metadata.evSpeed;
+    case 'evSpecialAttack':
+      return item.metadata.evSpecialAttack;
+    case 'evSpecialDefense':
+      return item.metadata.evSpecialDefense;
+    case 'healAmount':
+      return item.metadata.healAmount;
+    case 'ppGain':
+      return item.metadata.ppGain;
+    case 'friendshipGain1':
+      return item.metadata.friendshipGain1;
+    case 'friendshipGain2':
+      return item.metadata.friendshipGain2;
+    case 'friendshipGain3':
+      return item.metadata.friendshipGain3;
     default:
       return null;
   }
@@ -12230,7 +12300,7 @@ function getItemPriceDraftState(
   field: ItemEditableField | undefined
 ) {
   const normalizedValue = draftValue.trim();
-  const parsedValue = /^\d+$/.test(normalizedValue)
+  const parsedValue = /^-?\d+$/.test(normalizedValue)
     ? Number.parseInt(normalizedValue, 10)
     : null;
   const minimumValue = field?.minimumValue ?? null;

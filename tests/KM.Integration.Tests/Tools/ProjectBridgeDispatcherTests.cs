@@ -259,28 +259,21 @@ public sealed class ProjectBridgeDispatcherTests
             detail => detail.Label == "Heal" && detail.Value == "20 HP");
         Assert.Equal("romfs/bin/pml/item/item.dat", item.Provenance.SourceFile);
         Assert.Equal(ProjectFileLayerDto.Base, item.Provenance.SourceLayer);
-        Assert.Collection(
+        Assert.Equal(0, item.Metadata.Pouch);
+        Assert.True(item.Metadata.CanUseOnPokemon);
+        Assert.Equal(20, item.Metadata.HealAmount);
+        Assert.Contains(
             response.Payload.Workflow.EditableFields,
-            editableField =>
-            {
-                Assert.Equal("buyPrice", editableField.Field);
-                Assert.Equal(999_999, editableField.MaximumValue);
-            },
-            editableField =>
-            {
-                Assert.Equal("sellPrice", editableField.Field);
-                Assert.Equal(499_999, editableField.MaximumValue);
-            },
-            editableField =>
-            {
-                Assert.Equal("wattsPrice", editableField.Field);
-                Assert.Equal(999_999, editableField.MaximumValue);
-            },
-            editableField =>
-            {
-                Assert.Equal("alternatePrice", editableField.Field);
-                Assert.Equal(999_999, editableField.MaximumValue);
-            });
+            editableField => editableField.Field == "buyPrice" && editableField.MaximumValue == 999_999);
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields,
+            editableField => editableField.Field == "sellPrice" && editableField.MaximumValue == 499_999);
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "pouch").Options,
+            option => option.Value == 0 && option.Label == "Medicine");
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "fieldUseType").Options,
+            option => option.Value == 1 && option.Label == "Medicine");
     }
 
     [Fact]
@@ -1993,6 +1986,38 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchUpdateItemFieldReturnsPendingMetadataSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(
+                temp.Paths,
+                Session: null,
+                ItemId: 1,
+                Field: "healAmount",
+                Value: "254"),
+            requestId: "request-items-metadata-edit");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdateItemFieldResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.True(response.Payload.Session.HasPendingChanges);
+        var item = response.Payload.Workflow.Items[1];
+        Assert.Equal(254, item.Metadata.HealAmount);
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Pokemon Effects").Details,
+            detail => detail.Label == "Heal" && detail.Value == "Half HP");
+        var edit = Assert.Single(response.Payload.Session.PendingEdits);
+        Assert.Equal("healAmount", edit.Field);
+        Assert.Equal("254", edit.NewValue);
+    }
+
+    [Fact]
     public void DispatchUpdateTextEntryReturnsPendingTextSession()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -2174,6 +2199,45 @@ public sealed class ProjectBridgeDispatcherTests
         var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
         var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
         Assert.Equal(450u, item.BuyPrice);
+        Assert.DoesNotContain(
+            response.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchApplyChangePlanWritesItemMetadata()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var sessionResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(temp.Paths, Session: null, ItemId: 1, Field: "healAmount", Value: "254"),
+            requestId: "request-items-metadata-edit"));
+        var sessionResponse = DeserializeResponse<UpdateItemFieldResponse>(sessionResponseJson);
+        Assert.NotNull(sessionResponse.Payload);
+        var planResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, sessionResponse.Payload.Session),
+            requestId: "request-change-plan"));
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(planResponseJson);
+        Assert.NotNull(planResponse.Payload);
+        var requestJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, sessionResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-change-plan-apply");
+
+        var responseJson = dispatcher.Dispatch(requestJson);
+        var response = DeserializeResponse<ApplyChangePlanResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Equal("romfs/bin/pml/item/item.dat", Assert.Single(response.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
+        Assert.Equal(254, item.HealAmount);
+        Assert.Equal(300u, item.BuyPrice);
         Assert.DoesNotContain(
             response.Payload.ApplyResult.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
