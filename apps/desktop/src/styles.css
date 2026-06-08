@@ -213,6 +213,13 @@ h2 {
   font-weight: 700;
 }
 
+.path-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
+  min-width: 0;
+}
+
 .path-field input {
   min-width: 0;
   min-height: 40px;
@@ -252,6 +259,12 @@ h2 {
 
 .secondary-button:hover {
   background: #e2ece1;
+}
+
+.icon-button {
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
 }
 
 .primary-button:disabled,
