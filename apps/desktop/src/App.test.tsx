@@ -241,8 +241,9 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: /Growl/ }));
     await user.clear(screen.getByLabelText('Move ID'));
     await user.type(screen.getByLabelText('Move ID'), '345');
-    await user.clear(screen.getByLabelText('Level'));
-    await user.type(screen.getByLabelText('Level'), '9');
+    const learnsetLevelInput = screen.getAllByLabelText('Level')[1]!;
+    await user.clear(learnsetLevelInput);
+    await user.type(learnsetLevelInput, '9');
     await user.click(screen.getByRole('button', { name: 'Save learnset row' }));
 
     expect(await screen.findByRole('button', { name: /Magical Leaf/ })).toBeInTheDocument();
@@ -250,6 +251,38 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(screen.getByText('Set Bulbasaur learnset slot 1 to Lv. 9 Magical Leaf.')).toBeInTheDocument();
+  });
+
+  it('starts a Pokemon edit session and saves an evolution row change', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: /Species 2/ }));
+    await user.clear(screen.getByLabelText('Method'));
+    await user.type(screen.getByLabelText('Method'), '8');
+    await user.clear(screen.getByLabelText('Argument'));
+    await user.type(screen.getByLabelText('Argument'), '25');
+    await user.clear(screen.getByLabelText('Form'));
+    await user.type(screen.getByLabelText('Form'), '1');
+    const evolutionLevelInput = screen.getAllByLabelText('Level')[0]!;
+    await user.clear(evolutionLevelInput);
+    await user.type(evolutionLevelInput, '32');
+    await user.click(screen.getByRole('button', { name: 'Save evolution row' }));
+
+    expect(await screen.findByRole('button', { name: /M 8/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Bulbasaur evolution slot 0 to species 2 at level 32.')).toBeInTheDocument();
   });
 
   it('opens Moves Data, searches records, and shows selected details', async () => {
@@ -1179,6 +1212,7 @@ function createMockProjectBridge(
             form: 0,
             level: 16,
             method: 4,
+            slot: 0,
             species: 2
           }
         ],
@@ -3007,6 +3041,102 @@ function createMockProjectBridge(
             return {
               ...pokemon,
               learnset: learnset.map((move, slot) => ({ ...move, slot }))
+            };
+          })
+        }
+      }),
+    updatePokemonEvolution: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.pokemon',
+              field: `evolution:${request.action === 'add' ? 'upsert' : request.action}:${
+                request.action === 'add'
+                  ? pokemonWorkflow.pokemon.find((pokemon) => pokemon.personalId === request.personalId)
+                      ?.evolutions.length ?? 0
+                  : request.slot ?? 0
+              }`,
+              newValue:
+                request.method !== null &&
+                request.argument !== null &&
+                request.species !== null &&
+                request.form !== null &&
+                request.level !== null
+                  ? `${request.method}:${request.argument}:${request.species}:${request.form}:${request.level}`
+                  : '1',
+              recordId: request.personalId.toString(),
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: `romfs/bin/pml/evolution/evo_${request.personalId
+                    .toString()
+                    .padStart(3, '0')}.bin`
+                }
+              ],
+              summary:
+                request.action === 'remove'
+                  ? `Remove Bulbasaur evolution slot ${request.slot}.`
+                  : request.action === 'moveUp'
+                  ? `Move Bulbasaur evolution slot ${request.slot} up.`
+                  : request.action === 'moveDown'
+                  ? `Move Bulbasaur evolution slot ${request.slot} down.`
+                  : `Set Bulbasaur evolution slot ${request.slot ?? 0} to species ${
+                      request.species
+                    } at level ${request.level}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...pokemonWorkflow,
+          pokemon: pokemonWorkflow.pokemon.map((pokemon) => {
+            if (pokemon.personalId !== request.personalId) {
+              return pokemon;
+            }
+
+            const evolutions = [...pokemon.evolutions];
+            const targetSlot = request.action === 'add' ? evolutions.length : request.slot ?? 0;
+            if (
+              (request.action === 'upsert' || request.action === 'add') &&
+              request.method !== null &&
+              request.argument !== null &&
+              request.species !== null &&
+              request.form !== null &&
+              request.level !== null
+            ) {
+              const row = {
+                argument: request.argument,
+                form: request.form,
+                level: request.level,
+                method: request.method,
+                slot: targetSlot,
+                species: request.species
+              };
+              if (targetSlot < evolutions.length) {
+                evolutions[targetSlot] = row;
+              } else {
+                evolutions.push(row);
+              }
+            } else if (request.action === 'remove' && targetSlot < evolutions.length) {
+              evolutions.splice(targetSlot, 1);
+            } else if (request.action === 'moveUp' && targetSlot > 0) {
+              [evolutions[targetSlot - 1], evolutions[targetSlot]] = [
+                evolutions[targetSlot]!,
+                evolutions[targetSlot - 1]!
+              ];
+            } else if (request.action === 'moveDown' && targetSlot < evolutions.length - 1) {
+              [evolutions[targetSlot + 1], evolutions[targetSlot]] = [
+                evolutions[targetSlot]!,
+                evolutions[targetSlot + 1]!
+              ];
+            }
+
+            return {
+              ...pokemon,
+              evolutions: evolutions.map((evolution, slot) => ({ ...evolution, slot }))
             };
           })
         }

@@ -71,6 +71,7 @@ public sealed record SwShPokemonPersonalDetails(
     int CrownDexIndex);
 
 public sealed record SwShPokemonEvolutionRecord(
+    int Slot,
     int Method,
     int Argument,
     int Species,

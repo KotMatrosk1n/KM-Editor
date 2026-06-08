@@ -110,6 +110,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadPokemonWorkflow => DispatchLoadPokemonWorkflow(requestJson),
                 KmCommandNames.UpdatePokemonField => DispatchUpdatePokemonField(requestJson),
                 KmCommandNames.UpdatePokemonLearnset => DispatchUpdatePokemonLearnset(requestJson),
+                KmCommandNames.UpdatePokemonEvolution => DispatchUpdatePokemonEvolution(requestJson),
                 KmCommandNames.LoadMovesWorkflow => DispatchLoadMovesWorkflow(requestJson),
                 KmCommandNames.UpdateMoveField => DispatchUpdateMoveField(requestJson),
                 KmCommandNames.LoadTextWorkflow => DispatchLoadTextWorkflow(requestJson),
@@ -237,6 +238,28 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.MoveId,
             request.Payload.Level);
         var response = SwShBridgeMapper.ToDtoLearnsetUpdate(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdatePokemonEvolution(string requestJson)
+    {
+        var request = DeserializeRequest<UpdatePokemonEvolutionRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = pokemonEditSessionService.UpdateEvolution(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            request.Payload.PersonalId,
+            request.Payload.Action,
+            request.Payload.Slot,
+            request.Payload.Method,
+            request.Payload.Argument,
+            request.Payload.Species,
+            request.Payload.Form,
+            request.Payload.Level);
+        var response = SwShBridgeMapper.ToDtoEvolutionUpdate(result);
 
         return SerializeSuccess(response, request.RequestId);
     }

@@ -122,6 +122,42 @@ public sealed class SwShPokemonEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateEvolutionOverlaysPendingRowEdit()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+
+        var result = service.UpdateEvolution(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 0,
+            method: 8,
+            argument: 25,
+            species: 2,
+            form: 1,
+            level: 32);
+
+        var pokemon = result.Workflow.Pokemon.Single(record => record.PersonalId == 1);
+        var evolution = Assert.Single(pokemon.Evolutions);
+        Assert.Equal(0, evolution.Slot);
+        Assert.Equal(8, evolution.Method);
+        Assert.Equal(25, evolution.Argument);
+        Assert.Equal(2, evolution.Species);
+        Assert.Equal(1, evolution.Form);
+        Assert.Equal(32, evolution.Level);
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal("workflow.pokemon", edit.Domain);
+        Assert.Equal("1", edit.RecordId);
+        Assert.Equal("evolution:upsert:0", edit.Field);
+        Assert.Equal("8:25:2:1:32", edit.NewValue);
+        Assert.Equal("Set Bulbasaur evolution slot 0 to species 2 at level 32.", edit.Summary);
+        Assert.Contains(edit.Sources, source => source.RelativePath == SwShPokemonWorkflowService.CreateEvolutionDataPath(1));
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
     public void UpdateFieldReplacesPendingEditForSamePokemonAndField()
     {
         using var temp = CreateEditableProject();
@@ -190,6 +226,31 @@ public sealed class SwShPokemonEditSessionServiceTests
         Assert.True(plan.CanApply);
         Assert.Contains(plan.Writes, write => write.TargetRelativePath == SwShPokemonWorkflowService.PersonalDataPath);
         Assert.Contains(plan.Writes, write => write.TargetRelativePath == SwShPokemonWorkflowService.LearnsetDataPath);
+    }
+
+    [Fact]
+    public void CreateChangePlanCanTargetEvolutionFile()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var evolutionUpdate = service.UpdateEvolution(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "add",
+            slot: null,
+            method: 4,
+            argument: 0,
+            species: 3,
+            form: 0,
+            level: 36);
+
+        var plan = service.CreateChangePlan(temp.Paths, evolutionUpdate.Session);
+
+        Assert.True(plan.CanApply);
+        var write = Assert.Single(plan.Writes);
+        Assert.Equal(SwShPokemonWorkflowService.CreateEvolutionDataPath(1), write.TargetRelativePath);
+        Assert.Contains(write.Sources, source => source.Layer == ProjectFileLayer.Base);
     }
 
     [Fact]
@@ -293,6 +354,71 @@ public sealed class SwShPokemonEditSessionServiceTests
             baseLearnset.Moves,
             move => Assert.Equal(33, move.MoveId),
             move => Assert.Equal(45, move.MoveId));
+    }
+
+    [Fact]
+    public void ApplyChangePlanWritesOutputEvolutionFileAndLeavesBaseUntouched()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var rowUpdate = service.UpdateEvolution(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 0,
+            method: 8,
+            argument: 25,
+            species: 2,
+            form: 1,
+            level: 32);
+        var addUpdate = service.UpdateEvolution(
+            temp.Paths,
+            rowUpdate.Session,
+            personalId: 1,
+            action: "add",
+            slot: null,
+            method: 4,
+            argument: 0,
+            species: 3,
+            form: 0,
+            level: 36);
+        var plan = service.CreateChangePlan(temp.Paths, addUpdate.Session);
+
+        var apply = service.ApplyChangePlan(temp.Paths, addUpdate.Session, plan);
+
+        var targetRelativePath = SwShPokemonWorkflowService.CreateEvolutionDataPath(1);
+        Assert.Contains(apply.WrittenFiles, file => file.RelativePath == targetRelativePath);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputBytes = File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var outputEvolutions = SwShEvolutionSet.Parse(outputBytes).Evolutions;
+        Assert.Collection(
+            outputEvolutions,
+            evolution =>
+            {
+                Assert.Equal(0, evolution.Slot);
+                Assert.Equal(8, evolution.Method);
+                Assert.Equal(25, evolution.Argument);
+                Assert.Equal(2, evolution.Species);
+                Assert.Equal(1, evolution.Form);
+                Assert.Equal(32, evolution.Level);
+            },
+            evolution =>
+            {
+                Assert.Equal(1, evolution.Slot);
+                Assert.Equal(4, evolution.Method);
+                Assert.Equal(3, evolution.Species);
+                Assert.Equal(36, evolution.Level);
+            });
+        var baseBytes = File.ReadAllBytes(Path.Combine(
+            temp.BaseRomFsPath,
+            "bin/pml/evolution/evo_001.bin"));
+        var baseEvolution = Assert.Single(SwShEvolutionSet.Parse(baseBytes).Evolutions);
+        Assert.Equal(4, baseEvolution.Method);
+        Assert.Equal(2, baseEvolution.Species);
+        Assert.Equal(16, baseEvolution.Level);
     }
 
     [Fact]

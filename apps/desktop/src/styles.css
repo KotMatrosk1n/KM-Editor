@@ -883,6 +883,10 @@ h2 {
   text-align: left;
 }
 
+.evolution-row {
+  grid-template-columns: 38px 56px minmax(0, 1fr) 42px 54px 64px;
+}
+
 .learnset-row:hover,
 .learnset-row-selected {
   color: #ffffff;
@@ -903,6 +907,10 @@ h2 {
   grid-template-columns: minmax(0, 1fr) minmax(88px, 0.7fr);
   gap: 10px;
   align-items: end;
+}
+
+.evolution-edit-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .learnset-button-row {

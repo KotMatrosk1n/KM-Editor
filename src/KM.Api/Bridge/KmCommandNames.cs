@@ -16,6 +16,7 @@ public static class KmCommandNames
     public const string LoadPokemonWorkflow = "pokemon.load";
     public const string UpdatePokemonField = "pokemon.field.update";
     public const string UpdatePokemonLearnset = "pokemon.learnset.update";
+    public const string UpdatePokemonEvolution = "pokemon.evolution.update";
     public const string LoadMovesWorkflow = "moves.load";
     public const string UpdateMoveField = "moves.field.update";
     public const string LoadTextWorkflow = "text.load";

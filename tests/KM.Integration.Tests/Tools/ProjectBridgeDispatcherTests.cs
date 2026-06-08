@@ -278,6 +278,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(ProjectFileLayerDto.Base, pokemon.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryStateDto.BaseOnly, pokemon.Provenance.FileState);
         var evolution = Assert.Single(pokemon.Evolutions);
+        Assert.Equal(0, evolution.Slot);
         Assert.Equal(2, evolution.Species);
         Assert.Equal(16, evolution.Level);
         Assert.Collection(
@@ -359,6 +360,47 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("1", edit.RecordId);
         Assert.Equal("learnset:upsert:1", edit.Field);
         Assert.Equal("345:9", edit.NewValue);
+    }
+
+    [Fact]
+    public void DispatchUpdatePokemonEvolutionReturnsPendingPokemonSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShPokemonBridgeFixtures.WriteBasePokemonData(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdatePokemonEvolution,
+            new UpdatePokemonEvolutionRequest(
+                temp.Paths,
+                Session: null,
+                PersonalId: 1,
+                Action: "upsert",
+                Slot: 0,
+                Method: 8,
+                Argument: 25,
+                Species: 2,
+                Form: 1,
+                Level: 32),
+            requestId: "request-pokemon-evolution-update");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdatePokemonEvolutionResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-pokemon-evolution-update", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var updatedEvolution = Assert.Single(response.Payload.Workflow.Pokemon[1].Evolutions);
+        Assert.Equal(0, updatedEvolution.Slot);
+        Assert.Equal(8, updatedEvolution.Method);
+        Assert.Equal(25, updatedEvolution.Argument);
+        Assert.Equal(2, updatedEvolution.Species);
+        Assert.Equal(1, updatedEvolution.Form);
+        Assert.Equal(32, updatedEvolution.Level);
+        var edit = Assert.Single(response.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.pokemon", edit.Domain);
+        Assert.Equal("1", edit.RecordId);
+        Assert.Equal("evolution:upsert:0", edit.Field);
+        Assert.Equal("8:25:2:1:32", edit.NewValue);
     }
 
     [Fact]
