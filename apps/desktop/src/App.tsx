@@ -130,6 +130,7 @@ import {
   type WorkbenchSection,
   useWorkbenchStore
 } from './workbenchStore';
+import kmLogoUrl from './assets/km-logo.png';
 
 const sections: Array<{
   id: WorkbenchSection;
@@ -2154,7 +2155,7 @@ export function App({
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <Layers aria-hidden="true" size={24} />
+          <img alt="" aria-hidden="true" className="brand-logo" src={kmLogoUrl} />
           <span>KM Editor</span>
         </div>
 
