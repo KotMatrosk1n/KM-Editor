@@ -22,6 +22,8 @@ import {
   type LoadTradePokemonWorkflowResponse,
   type LoadStaticEncountersWorkflowRequest,
   type LoadStaticEncountersWorkflowResponse,
+  type LoadRentalPokemonWorkflowRequest,
+  type LoadRentalPokemonWorkflowResponse,
   type LoadItemsWorkflowRequest,
   type LoadItemsWorkflowResponse,
   type LoadMovesWorkflowRequest,
@@ -69,6 +71,8 @@ import {
   type UpdateTradePokemonFieldResponse,
   type UpdateStaticEncounterFieldRequest,
   type UpdateStaticEncounterFieldResponse,
+  type UpdateRentalPokemonFieldRequest,
+  type UpdateRentalPokemonFieldResponse,
   type UpdateMoveFieldRequest,
   type UpdateMoveFieldResponse,
   type UpdateEncounterSlotFieldRequest,
@@ -98,6 +102,7 @@ import {
   loadGiftPokemonWorkflowResponseSchema,
   loadTradePokemonWorkflowResponseSchema,
   loadStaticEncountersWorkflowResponseSchema,
+  loadRentalPokemonWorkflowResponseSchema,
   loadItemsWorkflowResponseSchema,
   loadMovesWorkflowResponseSchema,
   loadPokemonWorkflowResponseSchema,
@@ -118,6 +123,7 @@ import {
   updateGiftPokemonFieldResponseSchema,
   updateTradePokemonFieldResponseSchema,
   updateStaticEncounterFieldResponseSchema,
+  updateRentalPokemonFieldResponseSchema,
   updateMoveFieldResponseSchema,
   updatePokemonFieldResponseSchema,
   updatePokemonEvolutionResponseSchema,
@@ -155,6 +161,9 @@ export type ProjectBridge = {
   loadStaticEncountersWorkflow: (
     request: LoadStaticEncountersWorkflowRequest
   ) => Promise<LoadStaticEncountersWorkflowResponse>;
+  loadRentalPokemonWorkflow: (
+    request: LoadRentalPokemonWorkflowRequest
+  ) => Promise<LoadRentalPokemonWorkflowResponse>;
   loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
   loadMovesWorkflow: (request: LoadMovesWorkflowRequest) => Promise<LoadMovesWorkflowResponse>;
   loadPokemonWorkflow: (
@@ -205,6 +214,9 @@ export type ProjectBridge = {
   updateStaticEncounterField: (
     request: UpdateStaticEncounterFieldRequest
   ) => Promise<UpdateStaticEncounterFieldResponse>;
+  updateRentalPokemonField: (
+    request: UpdateRentalPokemonFieldRequest
+  ) => Promise<UpdateRentalPokemonFieldResponse>;
   updateMoveField: (request: UpdateMoveFieldRequest) => Promise<UpdateMoveFieldResponse>;
   updateEncounterSlotField: (
     request: UpdateEncounterSlotFieldRequest
@@ -321,6 +333,13 @@ export function createProjectBridge(
         kmCommandNames.loadStaticEncountersWorkflow,
         request,
         loadStaticEncountersWorkflowResponseSchema
+      ),
+    loadRentalPokemonWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadRentalPokemonWorkflow,
+        request,
+        loadRentalPokemonWorkflowResponseSchema
       ),
     loadItemsWorkflow: (request) =>
       sendProjectBridgeRequest(
@@ -454,6 +473,13 @@ export function createProjectBridge(
         kmCommandNames.updateStaticEncounterField,
         request,
         updateStaticEncounterFieldResponseSchema
+      ),
+    updateRentalPokemonField: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateRentalPokemonField,
+        request,
+        updateRentalPokemonFieldResponseSchema
       ),
     updateMoveField: (request) =>
       sendProjectBridgeRequest(

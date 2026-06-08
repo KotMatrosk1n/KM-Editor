@@ -15,6 +15,7 @@ import {
   type ProjectFileGraph,
   type ProjectHealth,
   type RaidRewardsWorkflow,
+  type RentalPokemonWorkflow,
   type ShopsWorkflow,
   type SpreadsheetImportWorkflow,
   type StaticEncountersWorkflow,
@@ -52,6 +53,8 @@ describe('App', () => {
       giftPokemonWorkflow: null,
       tradePokemonSearchText: '',
       tradePokemonWorkflow: null,
+      rentalPokemonSearchText: '',
+      rentalPokemonWorkflow: null,
       staticEncounterSearchText: '',
       staticEncountersWorkflow: null,
       itemSearchText: '',
@@ -77,6 +80,7 @@ describe('App', () => {
       selectedExeFsPatchId: null,
       selectedGiftPokemonIndex: null,
       selectedTradePokemonIndex: null,
+      selectedRentalPokemonIndex: null,
       selectedStaticEncounterIndex: null,
       selectedRoyalCandyCheckId: null,
       selectedRoyalCandyWorkflowId: null,
@@ -139,6 +143,10 @@ describe('App', () => {
       screen.getByRole('heading', { level: 3, name: 'Text and Dialogue Map' })
     ).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Trainers' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Gift Pokemon' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Trade Pokemon' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Static Encounters' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Rental Pokemon' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Shops' })).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { level: 3, name: 'Encounters and Wild Data' })
@@ -781,6 +789,55 @@ describe('App', () => {
       screen.getByText(
         'Applied Static Encounter change plan to the configured LayeredFS output root.'
       )
+    ).toBeInTheDocument();
+  });
+
+  it('opens Rental Pokemon, edits IVs, reviews a rental plan, and applies it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Rentals' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Rental Pokemon' })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Grookey').length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText('HP 31 / Atk 31 / Def 31 / SpA 31 / SpD 31 / Spe 31').length
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const hpIvInput = screen.getByLabelText('HP IV');
+    expect(hpIvInput).toHaveDisplayValue('31');
+    await user.clear(hpIvInput);
+    await user.type(hpIvInput, '0');
+    await user.click(screen.getByRole('button', { name: 'Save hp iv' }));
+
+    await waitFor(() => expect(screen.getByLabelText('HP IV')).toHaveDisplayValue('0'));
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Rental 001 ivHp to 0.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending rental Pokemon change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(screen.getAllByText('romfs/bin/script_event_data/rental.bin').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Applied Rental Pokemon change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
   });
 
@@ -2982,6 +3039,206 @@ function createMockProjectBridge(
     },
     summary: staticEncountersWorkflowSummary
   };
+  const rentalPokemonWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Rental Pokemon records, fixed IVs, EVs, items, moves, and source provenance.',
+    diagnostics: [],
+    id: 'rentalPokemon',
+    label: 'Rental Pokemon'
+  };
+  const rentalPokemonWorkflow: RentalPokemonWorkflow = {
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'species',
+        label: 'Species',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '001 Bulbasaur', value: 1 },
+          { label: '810 Grookey', value: 810 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'form',
+        label: 'Form',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'level',
+        label: 'Level',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'heldItemId',
+        label: 'Held item',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Potion', value: 1 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ballItemId',
+        label: 'Ball',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '004 Poke Ball', value: 4 },
+          { label: '005 Great Ball', value: 5 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ability',
+        label: 'Ability slot',
+        maximumValue: 3,
+        minimumValue: 0,
+        options: [
+          { label: 'Default', value: 0 },
+          { label: 'Ability 1', value: 1 },
+          { label: 'Hidden Ability', value: 3 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'nature',
+        label: 'Nature',
+        maximumValue: 25,
+        minimumValue: 0,
+        options: [
+          { label: 'Hardy', value: 0 },
+          { label: 'Random', value: 25 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'gender',
+        label: 'Gender',
+        maximumValue: 2,
+        minimumValue: 0,
+        options: [
+          { label: 'Random', value: 0 },
+          { label: 'Male', value: 1 },
+          { label: 'Female', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'trainerId',
+        label: 'Trainer ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'move0Id',
+        label: 'Move 1',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'evHp',
+        label: 'HP EV',
+        maximumValue: 252,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivHp',
+        label: 'HP IV',
+        maximumValue: 31,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'fixedIvPreset',
+        label: 'Fixed IV preset',
+        maximumValue: 31,
+        minimumValue: 0,
+        options: [
+          { label: '0 IVs', value: 0 },
+          { label: '31 IVs', value: 31 }
+        ],
+        valueKind: 'integer'
+      }
+    ],
+    rentals: [
+      {
+        ability: 1,
+        abilityLabel: 'Ability 1',
+        ballItem: 'Poke Ball',
+        ballItemId: 4,
+        evs: {
+          attack: 252,
+          defense: 0,
+          hp: 4,
+          specialAttack: 0,
+          specialDefense: 0,
+          speed: 252
+        },
+        form: 0,
+        gender: 1,
+        genderLabel: 'Male',
+        hash1: '0x0000000000000010',
+        hash2: '0x0000000000000020',
+        hasPerfectIvs: true,
+        heldItem: 'Potion',
+        heldItemId: 1,
+        ivs: {
+          attack: 31,
+          defense: 31,
+          hp: 31,
+          specialAttack: 31,
+          specialDefense: 31,
+          speed: 31
+        },
+        ivSummary: 'HP 31 / Atk 31 / Def 31 / SpA 31 / SpD 31 / Spe 31',
+        label: 'Rental 001: Grookey Lv. 50',
+        level: 50,
+        moves: [
+          { move: 'Scratch', moveId: 1, slot: 0 },
+          { move: null, moveId: 0, slot: 1 },
+          { move: null, moveId: 0, slot: 2 },
+          { move: null, moveId: 0, slot: 3 }
+        ],
+        nature: 0,
+        natureLabel: 'Hardy',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/script_event_data/rental.bin',
+          sourceLayer: 'base'
+        },
+        rentalIndex: 0,
+        species: 'Grookey',
+        speciesId: 810,
+        trainerId: 12345
+      }
+    ],
+    stats: {
+      perfectIvRentalCount: 1,
+      sourceFileCount: 1,
+      totalRentalCount: 1
+    },
+    summary: rentalPokemonWorkflowSummary
+  };
   const shopsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Shop inventories, item metadata, and source provenance.',
@@ -3601,6 +3858,20 @@ function createMockProjectBridge(
                           'romfs/bin/script_event_data/event_encount_data.bin'
                       }
                     ]
+                : request.session.pendingEdits[0]?.domain === 'workflow.rentalPokemon'
+                  ? [
+                      {
+                        reason: 'Apply pending Rental Pokemon edit: Set Rental 001 HP IV to 0.',
+                        replacesExistingOutput: false,
+                        sources: [
+                          {
+                            layer: 'base',
+                            relativePath: 'romfs/bin/script_event_data/rental.bin'
+                          }
+                        ],
+                        targetRelativePath: 'romfs/bin/script_event_data/rental.bin'
+                      }
+                    ]
                 : request.session.pendingEdits[0]?.domain === 'workflow.shops'
                   ? [
                       {
@@ -3705,6 +3976,7 @@ function createMockProjectBridge(
           giftPokemonWorkflowSummary,
           tradePokemonWorkflowSummary,
           staticEncountersWorkflowSummary,
+          rentalPokemonWorkflowSummary,
           shopsWorkflowSummary,
           encountersWorkflowSummary,
           raidRewardsWorkflowSummary,
@@ -4069,6 +4341,10 @@ function createMockProjectBridge(
     loadStaticEncountersWorkflow: () =>
       Promise.resolve({
         workflow: staticEncountersWorkflow
+      }),
+    loadRentalPokemonWorkflow: () =>
+      Promise.resolve({
+        workflow: rentalPokemonWorkflow
       }),
     loadShopsWorkflow: () =>
       Promise.resolve({
@@ -4709,6 +4985,54 @@ function createMockProjectBridge(
         }
       });
     },
+    updateRentalPokemonField: (request) => {
+      const value = Number.parseInt(request.value, 10);
+
+      return Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.rentalPokemon',
+              field: request.field,
+              newValue: request.value,
+              recordId: `rental:${request.rentalIndex}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/script_event_data/rental.bin'
+                }
+              ],
+              summary: `Set Rental 001 ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...rentalPokemonWorkflow,
+          rentals: rentalPokemonWorkflow.rentals.map((rental) =>
+            rental.rentalIndex === request.rentalIndex
+              ? {
+                  ...rental,
+                  ivs:
+                    request.field === 'ivHp'
+                      ? {
+                          ...rental.ivs,
+                          hp: value
+                        }
+                      : rental.ivs,
+                  ivSummary:
+                    request.field === 'ivHp'
+                      ? `HP ${value} / Atk 31 / Def 31 / SpA 31 / SpD 31 / Spe 31`
+                      : rental.ivSummary,
+                  level: request.field === 'level' ? value : rental.level
+                }
+              : rental
+          )
+        }
+      });
+    },
     updateShopInventoryItem: (request) =>
       Promise.resolve({
         diagnostics: [],
@@ -4904,6 +5228,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Static Encounter change plan to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.rentalPokemon') {
+    return 'Applied Rental Pokemon change plan to the configured LayeredFS output root.';
+  }
+
   if (targetRelativePath.includes('/shop/')) {
     return 'Applied Shops change plan to the configured LayeredFS output root.';
   }
@@ -4963,6 +5291,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending trade Pokemon change is valid.';
     case 'workflow.staticEncounters':
       return 'Pending static encounter change is valid.';
+    case 'workflow.rentalPokemon':
+      return 'Pending rental Pokemon change is valid.';
     case 'workflow.shops':
       return 'Pending shop change is valid.';
     case 'workflow.encounters':

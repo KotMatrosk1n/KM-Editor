@@ -12,6 +12,7 @@ using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Raids;
+using KM.Api.Rentals;
 using KM.Api.RoyalCandy;
 using KM.Api.Shops;
 using KM.Api.SpreadsheetImport;
@@ -162,6 +163,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("staticEncounters", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("rentalPokemon", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             },
             workflow =>
@@ -608,6 +614,72 @@ public sealed class ProjectBridgeDispatcherTests
             "romfs/bin/script_event_data/field_trade.bin".Replace('/', Path.DirectorySeparatorChar));
         var output = SwShTradePokemonArchive.Parse(File.ReadAllBytes(outputPath));
         Assert.Equal(12, output.Trades[0].Ivs.Attack);
+    }
+
+    [Fact]
+    public void DispatchLoadRentalPokemonWorkflowReturnsRealRentalRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRentalPokemonBridgeFixtures.WriteBaseRentalPokemon(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadRentalPokemonWorkflow,
+            new LoadRentalPokemonWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-rental-pokemon");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadRentalPokemonWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-rental-pokemon", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Equal(2, response.Payload.Workflow.Rentals.Count);
+        var rental = response.Payload.Workflow.Rentals[0];
+        Assert.Equal(0, rental.RentalIndex);
+        Assert.Equal("Eevee", rental.Species);
+        Assert.Equal("Hidden Ability", rental.AbilityLabel);
+        Assert.Equal("0x1122334455667788", rental.Hash1);
+        Assert.Equal("romfs/bin/script_event_data/rental.bin", rental.Provenance.SourceFile);
+        Assert.Equal(ProjectFileLayerDto.Base, rental.Provenance.SourceLayer);
+        Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "ivHp");
+        Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "fixedIvPreset");
+    }
+
+    [Fact]
+    public void DispatchApplyRentalPokemonChangePlanWritesRentalTable()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRentalPokemonBridgeFixtures.WriteBaseRentalPokemon(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateRentalPokemonField,
+            new UpdateRentalPokemonFieldRequest(
+                temp.Paths,
+                Session: null,
+                RentalIndex: 0,
+                Field: "ivAttack",
+                Value: "12"),
+            requestId: "request-rental-pokemon-update");
+        var update = DeserializeResponse<UpdateRentalPokemonFieldResponse>(dispatcher.Dispatch(updateJson)).Payload!;
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, update.Session),
+            requestId: "request-rental-pokemon-plan");
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson)).Payload!.ChangePlan;
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, update.Session, plan),
+            requestId: "request-rental-pokemon-apply");
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson)).Payload!.ApplyResult;
+
+        Assert.Contains("romfs/bin/script_event_data/rental.bin", apply.WrittenFiles);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs/bin/script_event_data/rental.bin".Replace('/', Path.DirectorySeparatorChar));
+        var output = SwShRentalPokemonArchive.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal(12, output.Rentals[0].Ivs.Attack);
     }
 
     [Fact]
