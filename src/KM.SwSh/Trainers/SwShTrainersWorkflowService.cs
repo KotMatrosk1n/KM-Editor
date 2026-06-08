@@ -343,7 +343,7 @@ public sealed class SwShTrainersWorkflowService
             }
         }
 
-        return CreateWorkflow(summary, trainers.OrderBy(trainer => trainer.TrainerId).ToArray(), diagnostics, parsedSourceFileCount);
+        return CreateWorkflow(summary, trainers.OrderBy(trainer => trainer.TrainerId).ToArray(), diagnostics, parsedSourceFileCount, names);
     }
 
     internal static WorkflowFileSource? ResolveWorkflowFile(OpenedProject project, string relativePath)
@@ -459,17 +459,69 @@ public sealed class SwShTrainersWorkflowService
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShTrainerRecord> trainers,
         IReadOnlyList<ValidationDiagnostic> diagnostics,
-        int sourceFileCount)
+        int sourceFileCount,
+        TrainerLookupTables? names = null)
     {
         return new SwShTrainersWorkflow(
             summary,
             trainers,
-            EditableFields,
+            CreateEditableFields(names),
             new SwShTrainersWorkflowStats(
                 trainers.Count,
                 trainers.Sum(trainer => trainer.Team.Count),
                 sourceFileCount),
             diagnostics);
+    }
+
+    private static IReadOnlyList<SwShTrainerEditableField> CreateEditableFields(TrainerLookupTables? names)
+    {
+        if (names is null)
+        {
+            return EditableFields;
+        }
+
+        var trainerClassOptions = CreateIndexedOptions(names.TrainerClasses, "Class");
+        var speciesOptions = CreateIndexedOptions(names.SpeciesNames, "Species");
+        var itemOptions = CreateIndexedOptions(names.ItemNames, "Item");
+        var moveOptions = CreateIndexedOptions(names.MoveNames, "Move");
+
+        return EditableFields
+            .Select(field =>
+            {
+                var options = field.Field switch
+                {
+                    TrainerClassIdField => trainerClassOptions,
+                    SpeciesIdField => speciesOptions,
+                    HeldItemIdField => itemOptions,
+                    Move1IdField or Move2IdField or Move3IdField or Move4IdField => moveOptions,
+                    _ => field.Options,
+                };
+
+                return options.Count == 0 || ReferenceEquals(options, field.Options)
+                    ? field
+                    : field with { Options = options };
+            })
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SwShTrainerEditableFieldOption> CreateIndexedOptions(
+        IReadOnlyList<string> names,
+        string fallbackPrefix)
+    {
+        return names.Count == 0
+            ? []
+            : names
+                .Select((name, index) =>
+                {
+                    var label = string.IsNullOrWhiteSpace(name)
+                        ? index == 0 ? "None" : $"{fallbackPrefix} {index}"
+                        : name;
+
+                    return new SwShTrainerEditableFieldOption(
+                        index,
+                        string.Create(CultureInfo.InvariantCulture, $"{index:000} {label}"));
+                })
+                .ToArray();
     }
 
     private static IReadOnlyList<WorkflowFileSource> ResolveTrainerFolder(OpenedProject project, string rootPath)

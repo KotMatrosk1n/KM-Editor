@@ -582,6 +582,10 @@ describe('App', () => {
     expect(screen.getByRole('option', { name: 'Slot 1: Grookey' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    expect(screen.getByLabelText('Trainer class ID')).toHaveDisplayValue('005 Pokemon Trainer');
+    expect(screen.getByLabelText('Species ID')).toHaveDisplayValue('810 Grookey');
+    expect(screen.getByLabelText('Held item ID')).toHaveDisplayValue('001 Potion');
+    expect(screen.getByLabelText('Move 1 ID')).toHaveDisplayValue('001 Scratch');
     const levelInput = screen.getByLabelText('Level');
     await user.clear(levelInput);
     await user.type(levelInput, '25');
@@ -1685,6 +1689,10 @@ function createMockProjectBridge(
         label: 'Trainer class ID',
         maximumValue: 65535,
         minimumValue: 0,
+        options: [
+          { label: '005 Pokemon Trainer', value: 5 },
+          { label: '006 Gym Leader', value: 6 }
+        ],
         valueKind: 'integer'
       },
       {
@@ -1692,6 +1700,7 @@ function createMockProjectBridge(
         label: 'Battle type',
         maximumValue: 2,
         minimumValue: 0,
+        options: [],
         valueKind: 'integer'
       },
       {
@@ -1699,6 +1708,10 @@ function createMockProjectBridge(
         label: 'Species ID',
         maximumValue: 65535,
         minimumValue: 0,
+        options: [
+          { label: '810 Grookey', value: 810 },
+          { label: '821 Rookidee', value: 821 }
+        ],
         valueKind: 'integer'
       },
       {
@@ -1706,6 +1719,7 @@ function createMockProjectBridge(
         label: 'Level',
         maximumValue: 100,
         minimumValue: 1,
+        options: [],
         valueKind: 'integer'
       },
       {
@@ -1713,6 +1727,10 @@ function createMockProjectBridge(
         label: 'Held item ID',
         maximumValue: 65535,
         minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Potion', value: 1 }
+        ],
         valueKind: 'integer'
       },
       {
@@ -1720,6 +1738,11 @@ function createMockProjectBridge(
         label: 'Move 1 ID',
         maximumValue: 65535,
         minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 },
+          { label: '002 Growl', value: 2 }
+        ],
         valueKind: 'integer'
       },
       {
@@ -1727,6 +1750,11 @@ function createMockProjectBridge(
         label: 'Move 2 ID',
         maximumValue: 65535,
         minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 },
+          { label: '002 Growl', value: 2 }
+        ],
         valueKind: 'integer'
       },
       {
@@ -1734,6 +1762,11 @@ function createMockProjectBridge(
         label: 'Move 3 ID',
         maximumValue: 65535,
         minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 },
+          { label: '002 Growl', value: 2 }
+        ],
         valueKind: 'integer'
       },
       {
@@ -1741,6 +1774,11 @@ function createMockProjectBridge(
         label: 'Move 4 ID',
         maximumValue: 65535,
         minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 },
+          { label: '002 Growl', value: 2 }
+        ],
         valueKind: 'integer'
       }
     ],

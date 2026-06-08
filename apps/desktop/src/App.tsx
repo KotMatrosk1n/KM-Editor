@@ -4687,19 +4687,16 @@ function SelectedTrainerPanel({
                   <div className="trainer-editor-row" key={field.field}>
                     <label className="path-field">
                       <span>{field.label}</span>
-                      <input
-                        aria-label={field.label}
+                      <TrainerFieldInput
                         disabled={!canEditTrainers || editSession === null || isTrainerUpdating}
-                        max={field.maximumValue ?? undefined}
-                        min={field.minimumValue ?? undefined}
-                        onChange={(event) =>
+                        draftValue={draftValue}
+                        field={field}
+                        onChange={(value) =>
                           setTrainerDrafts((currentDrafts) => ({
                             ...currentDrafts,
-                            [field.field]: event.target.value
+                            [field.field]: value
                           }))
                         }
-                        type="number"
-                        value={draftValue}
                       />
                     </label>
                     {editSession ? (
@@ -4755,19 +4752,16 @@ function SelectedTrainerPanel({
                     <div className="trainer-editor-row" key={field.field}>
                       <label className="path-field">
                         <span>{field.label}</span>
-                        <input
-                          aria-label={field.label}
+                        <TrainerFieldInput
                           disabled={!canEditTrainers || editSession === null || isTrainerUpdating}
-                          max={field.maximumValue ?? undefined}
-                          min={field.minimumValue ?? undefined}
-                          onChange={(event) =>
+                          draftValue={draftValue}
+                          field={field}
+                          onChange={(value) =>
                             setPokemonDrafts((currentDrafts) => ({
                               ...currentDrafts,
-                              [field.field]: event.target.value
+                              [field.field]: value
                             }))
                           }
-                          type="number"
-                          value={draftValue}
                         />
                       </label>
                       {editSession ? (
@@ -4814,6 +4808,52 @@ function SelectedTrainerPanel({
         <p className="empty-copy">No trainer selected.</p>
       )}
     </aside>
+  );
+}
+
+function TrainerFieldInput({
+  disabled,
+  draftValue,
+  field,
+  onChange
+}: {
+  disabled: boolean;
+  draftValue: string;
+  field: TrainerEditableField;
+  onChange: (value: string) => void;
+}) {
+  if (field.options.length > 0) {
+    const hasDraftOption = field.options.some((option) => option.value.toString() === draftValue);
+
+    return (
+      <select
+        aria-label={field.label}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        value={draftValue}
+      >
+        {!hasDraftOption && draftValue !== '' ? (
+          <option value={draftValue}>{draftValue}</option>
+        ) : null}
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value.toString()}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <input
+      aria-label={field.label}
+      disabled={disabled}
+      max={field.maximumValue ?? undefined}
+      min={field.minimumValue ?? undefined}
+      onChange={(event) => onChange(event.target.value)}
+      type="number"
+      value={draftValue}
+    />
   );
 }
 
