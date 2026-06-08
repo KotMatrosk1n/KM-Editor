@@ -562,7 +562,7 @@ public sealed class SwShRoyalCandyWorkflowService
         yield return CreateOutput(workflowId, BagEventScriptPath, FindSource(sourceMap, BagEventScriptPath), "RomFS script", outputStatus, "Royal Candy bag event grant patch.");
         yield return CreateOutput(workflowId, ExeFsMainPath, FindSource(sourceMap, ExeFsMainPath), "ExeFS NSO", outputStatus, "Royal Candy ExeFS UI and usage patch.");
 
-        foreach (var textSet in textSets)
+        foreach (var textSet in SelectSupportedTextOutputSets(textSets))
         {
             yield return CreateOutput(
                 workflowId,
@@ -583,6 +583,15 @@ public sealed class SwShRoyalCandyWorkflowService
                     $"Royal Candy name text patch for {textSet.Language}.");
             }
         }
+    }
+
+    private static IReadOnlyList<MessageTextSet> SelectSupportedTextOutputSets(IReadOnlyList<MessageTextSet> textSets)
+    {
+        var english = textSets
+            .Where(set => string.Equals(set.Language, "English", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        return english.Length > 0 ? english : textSets.Take(1).ToArray();
     }
 
     private static void AddUninstallWorkflow(
