@@ -1,7 +1,5 @@
 # Tests
 
-Status: Priority 2 backend test setup.
-
 Backend test projects live here and mirror the source structure where useful.
 
 The backend test framework is xUnit.
