@@ -597,6 +597,7 @@ h2 {
 }
 
 .virtual-table-row > .items-row,
+.virtual-table-row > .moves-row,
 .virtual-table-row > .text-row,
 .virtual-table-row > .trainers-row {
   height: 100%;
@@ -669,6 +670,69 @@ h2 {
   font-size: 13px;
   font-weight: 700;
   list-style: none;
+}
+
+.moves-toolbar {
+  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
+}
+
+.moves-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+}
+
+.moves-table {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+}
+
+.moves-row {
+  display: grid;
+  grid-template-columns: 64px minmax(140px, 1fr) minmax(92px, 0.75fr) minmax(92px, 0.75fr) 72px 72px 64px minmax(150px, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  color: #202420;
+  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid #e1e5df;
+  box-sizing: border-box;
+  text-align: left;
+  width: 100%;
+}
+
+.moves-row:last-child {
+  border-bottom: 0;
+}
+
+.moves-row:not(.moves-row-heading) {
+  cursor: pointer;
+}
+
+.moves-row:not(.moves-row-heading):hover,
+.moves-row-selected {
+  color: #ffffff;
+  background: #4338ca;
+}
+
+.moves-row-heading {
+  color: #6c756a;
+  background: #f5f6f4;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: default;
+}
+
+.moves-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .item-edit-form {
@@ -1654,9 +1718,11 @@ h2 {
 
   .workflow-row,
   .items-toolbar,
+  .moves-toolbar,
   .spreadsheet-import-toolbar,
   .spreadsheet-source-row,
   .items-layout,
+  .moves-layout,
   .text-layout,
   .trainers-layout,
   .shops-layout,
@@ -1685,6 +1751,18 @@ h2 {
 
   .item-price-editor-row {
     grid-template-columns: 1fr;
+  }
+
+  .moves-row {
+    grid-template-columns: 56px minmax(120px, 1fr) minmax(92px, 0.8fr);
+  }
+
+  .moves-row span:nth-child(4),
+  .moves-row span:nth-child(5),
+  .moves-row span:nth-child(6),
+  .moves-row span:nth-child(7),
+  .moves-row span:nth-child(8) {
+    display: none;
   }
 
   .trainers-row {

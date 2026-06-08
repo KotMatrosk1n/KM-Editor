@@ -7,6 +7,7 @@ using KM.Api.Encounters;
 using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Items;
+using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
@@ -129,6 +130,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("pokemon", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("moves", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             },
             workflow =>
@@ -279,6 +285,42 @@ public sealed class ProjectBridgeDispatcherTests
                 Assert.Equal(45, move.MoveId);
                 Assert.Equal("Growl", move.MoveName);
             });
+    }
+
+    [Fact]
+    public void DispatchLoadMovesWorkflowReturnsRealMoveRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShMoveBridgeFixtures.WriteBaseMoves(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadMovesWorkflow,
+            new LoadMovesWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-moves");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadMovesWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-moves", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var move = Assert.Single(response.Payload.Workflow.Moves);
+        Assert.Equal(33, move.MoveId);
+        Assert.Equal("Tackle", move.Name);
+        Assert.Equal("Normal", move.TypeName);
+        Assert.Equal("Physical", move.CategoryName);
+        Assert.Equal(40, move.Power);
+        Assert.Equal(100, move.Accuracy);
+        Assert.Equal(35, move.PP);
+        Assert.Equal("Opponent", move.TargetName);
+        Assert.Equal("Paralyze", move.InflictName);
+        Assert.Equal(-25, move.Recoil);
+        Assert.Contains(move.Flags, flag => flag.Field == "makesContact" && flag.Enabled);
+        Assert.Contains(move.StatChanges, stat => stat.StatName == "Attack" && stat.Stage == -1);
+        Assert.Equal(1, response.Payload.Workflow.Stats.TotalMoveCount);
+        Assert.Equal(3, response.Payload.Workflow.Stats.ActiveFlagCount);
+        Assert.Equal("romfs/bin/pml/waza/waza_033.bin", move.Provenance.SourceFile);
+        Assert.Equal(ProjectFileLayerDto.Base, move.Provenance.SourceLayer);
     }
 
     [Fact]

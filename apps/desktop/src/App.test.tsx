@@ -8,6 +8,7 @@ import {
   type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
   type ItemsWorkflow,
+  type MovesWorkflow,
   type PlacementWorkflow,
   type PokemonWorkflow,
   type ProjectFileGraph,
@@ -46,6 +47,8 @@ describe('App', () => {
       flagworkSaveWorkflow: null,
       itemSearchText: '',
       itemsWorkflow: null,
+      movesSearchText: '',
+      movesWorkflow: null,
       openProject: null,
       placementSearchText: '',
       placementWorkflow: null,
@@ -68,6 +71,7 @@ describe('App', () => {
       selectedSpreadsheetImportProfileId: null,
       selectedFlagId: null,
       selectedItemId: null,
+      selectedMoveId: null,
       selectedPlacementObjectId: null,
       selectedPokemonPersonalId: null,
       selectedRaidRewardTableId: null,
@@ -118,6 +122,7 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Workflow List' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Items' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Pokemon Data' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Moves Data' })).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { level: 3, name: 'Text and Dialogue Map' })
     ).toBeInTheDocument();
@@ -185,6 +190,31 @@ describe('App', () => {
     expect(screen.getAllByText('Charmander').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Fire').length).toBeGreaterThan(0);
     expect(screen.getByText('romfs/bin/pml/personal/personal_total.bin')).toBeInTheDocument();
+    expect(screen.getByText('Base only')).toBeInTheDocument();
+  });
+
+  it('opens Moves Data, searches records, and shows selected details', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge()} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Moves' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Moves Data' })).toBeInTheDocument();
+    expect(screen.getAllByText('Tackle').length).toBeGreaterThan(0);
+    expect(screen.getByText('Makes Contact')).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Search moves'));
+    await user.type(screen.getByLabelText('Search moves'), 'burn');
+
+    expect(screen.queryByText('Tackle')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Ember').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Fire').length).toBeGreaterThan(0);
+    expect(screen.getByText('Burn')).toBeInTheDocument();
+    expect(screen.getByText('romfs/bin/pml/waza/waza_052.bin')).toBeInTheDocument();
     expect(screen.getByText('Base only')).toBeInTheDocument();
   });
 
@@ -1069,6 +1099,174 @@ function createMockProjectBridge(
     },
     summary: pokemonWorkflowSummary
   };
+  const movesWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Move stats, target behavior, secondary effects, flags, and source provenance.',
+    diagnostics: [],
+    id: 'moves',
+    label: 'Moves Data'
+  };
+  const movesWorkflow: MovesWorkflow = {
+    diagnostics: [],
+    moves: [
+      {
+        accuracy: 100,
+        canUseMove: true,
+        category: 1,
+        categoryName: 'Physical',
+        critStage: 0,
+        description: 'A physical attack in which the user charges and slams into the target.',
+        effectSequence: 12,
+        flags: [
+          {
+            enabled: true,
+            field: 'makesContact',
+            label: 'Makes Contact'
+          },
+          {
+            enabled: true,
+            field: 'protect',
+            label: 'Blocked By Protect'
+          },
+          {
+            enabled: true,
+            field: 'punch',
+            label: 'Punch Move'
+          }
+        ],
+        flinch: 0,
+        hitMax: 1,
+        hitMin: 1,
+        inflict: 0,
+        inflictName: 'None',
+        inflictPercent: 0,
+        maxMovePower: 90,
+        moveId: 33,
+        name: 'Tackle',
+        power: 40,
+        pp: 35,
+        priority: 0,
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/pml/waza/waza_033.bin',
+          sourceLayer: 'base'
+        },
+        quality: 2,
+        rawHealing: 0,
+        rawInflictCount: 0,
+        recoil: 0,
+        statChanges: [
+          {
+            percent: 0,
+            slot: 1,
+            stage: 0,
+            stat: 0,
+            statName: 'None'
+          },
+          {
+            percent: 0,
+            slot: 2,
+            stage: 0,
+            stat: 0,
+            statName: 'None'
+          },
+          {
+            percent: 0,
+            slot: 3,
+            stage: 0,
+            stat: 0,
+            statName: 'None'
+          }
+        ],
+        target: 3,
+        targetName: 'Opponent',
+        turnMax: 0,
+        turnMin: 0,
+        type: 0,
+        typeName: 'Normal',
+        version: 1
+      },
+      {
+        accuracy: 100,
+        canUseMove: true,
+        category: 2,
+        categoryName: 'Special',
+        critStage: 0,
+        description: 'The target is attacked with small flames. This may also leave the target burned.',
+        effectSequence: 22,
+        flags: [
+          {
+            enabled: true,
+            field: 'protect',
+            label: 'Blocked By Protect'
+          },
+          {
+            enabled: true,
+            field: 'metronome',
+            label: 'Callable By Metronome'
+          }
+        ],
+        flinch: 0,
+        hitMax: 1,
+        hitMin: 1,
+        inflict: 4,
+        inflictName: 'Burn',
+        inflictPercent: 10,
+        maxMovePower: 90,
+        moveId: 52,
+        name: 'Ember',
+        power: 40,
+        pp: 25,
+        priority: 0,
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/pml/waza/waza_052.bin',
+          sourceLayer: 'base'
+        },
+        quality: 2,
+        rawHealing: 0,
+        rawInflictCount: 1,
+        recoil: 0,
+        statChanges: [
+          {
+            percent: 0,
+            slot: 1,
+            stage: 0,
+            stat: 0,
+            statName: 'None'
+          },
+          {
+            percent: 0,
+            slot: 2,
+            stage: 0,
+            stat: 0,
+            statName: 'None'
+          },
+          {
+            percent: 0,
+            slot: 3,
+            stage: 0,
+            stat: 0,
+            statName: 'None'
+          }
+        ],
+        target: 3,
+        targetName: 'Opponent',
+        turnMax: 0,
+        turnMin: 0,
+        type: 9,
+        typeName: 'Fire',
+        version: 1
+      }
+    ],
+    stats: {
+      activeFlagCount: 5,
+      enabledMoveCount: 2,
+      sourceFileCount: 4,
+      totalMoveCount: 2
+    },
+    summary: movesWorkflowSummary
+  };
   const textWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Text entries, dialogue references, and source provenance.',
@@ -1907,6 +2105,7 @@ function createMockProjectBridge(
         workflows: [
           itemsWorkflow.summary,
           pokemonWorkflowSummary,
+          movesWorkflowSummary,
           textWorkflowSummary,
           trainersWorkflowSummary,
           shopsWorkflowSummary,
@@ -2249,6 +2448,10 @@ function createMockProjectBridge(
     loadPokemonWorkflow: () =>
       Promise.resolve({
         workflow: pokemonWorkflow
+      }),
+    loadMovesWorkflow: () =>
+      Promise.resolve({
+        workflow: movesWorkflow
       }),
     loadTextWorkflow: () =>
       Promise.resolve({

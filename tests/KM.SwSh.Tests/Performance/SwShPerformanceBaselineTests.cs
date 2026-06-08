@@ -5,6 +5,7 @@ using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Items;
+using KM.SwSh.Moves;
 using KM.SwSh.Placement;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
@@ -33,10 +34,11 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
             "The synthetic baseline must include enough files to exercise project graph enumeration.");
 
         var workflowList = Record(measurements, "workflows.list", () => workflowService.List(temp.Paths));
-        Assert.Equal(12, workflowList.Workflows.Count);
+        Assert.Equal(13, workflowList.Workflows.Count);
 
         var items = Record(measurements, "items.load", () => workflowService.LoadItems(temp.Paths));
         var pokemon = Record(measurements, "pokemon.load", () => workflowService.LoadPokemon(temp.Paths));
+        var moves = Record(measurements, "moves.load", () => workflowService.LoadMoves(temp.Paths));
         var text = Record(measurements, "text.load", () => workflowService.LoadText(temp.Paths));
         var trainers = Record(measurements, "trainers.load", () => workflowService.LoadTrainers(temp.Paths));
         var shops = Record(measurements, "shops.load", () => workflowService.LoadShops(temp.Paths));
@@ -50,6 +52,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
 
         Assert.Equal(SwShPerformanceFixtureProject.ItemCount, items.Stats.TotalItemCount);
         Assert.Equal(SwShPerformanceFixtureProject.PokemonCount, pokemon.Stats.TotalPokemonCount);
+        Assert.Equal(SwShPerformanceFixtureProject.MoveCount, moves.Stats.TotalMoveCount);
         Assert.True(text.Stats.TotalTextEntryCount >= SwShPerformanceFixtureProject.TextTableCount * SwShPerformanceFixtureProject.TextLinesPerTable);
         Assert.Equal(SwShPerformanceFixtureProject.TrainerCount, trainers.Stats.TotalTrainerCount);
         Assert.True(shops.Stats.TotalInventoryItemCount > 0);
@@ -75,9 +78,11 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var workspaceService = new ProjectWorkspaceService();
         var project = Record(measurements, "project.open.shared", () => workspaceService.Open(temp.Paths));
         var itemsService = new SwShItemsWorkflowService();
+        var movesService = new SwShMovesWorkflowService();
         var exeFsService = new SwShExeFsPatchWorkflowService();
 
         var items = Record(measurements, "items.load.openedProject", () => itemsService.Load(project));
+        var moves = Record(measurements, "moves.load.openedProject", () => movesService.Load(project));
         var shops = Record(measurements, "shops.load.openedProject.includesItems", () => new SwShShopsWorkflowService(itemsService).Load(project));
         var spreadsheetImport = Record(measurements, "spreadsheetImport.load.openedProject.includesItems", () => new SwShSpreadsheetImportWorkflowService(itemsService).Load(project));
         var exeFs = Record(measurements, "exefsPatches.load.openedProject", () => exeFsService.Load(project));
@@ -86,6 +91,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var trainers = Record(measurements, "trainers.load.openedProject", () => new SwShTrainersWorkflowService().Load(project));
 
         Assert.Equal(SwShPerformanceFixtureProject.ItemCount, items.Items.Count);
+        Assert.Equal(SwShPerformanceFixtureProject.MoveCount, moves.Moves.Count);
         Assert.True(shops.Shops.Count > 0);
         Assert.Single(spreadsheetImport.Profiles);
         Assert.Single(exeFs.Patches);

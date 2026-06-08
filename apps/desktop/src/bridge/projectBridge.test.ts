@@ -136,6 +136,14 @@ describe('projectBridge', () => {
               },
               {
                 availability: 'readOnly',
+                description:
+                  'Move stats, target behavior, secondary effects, flags, and source provenance.',
+                diagnostics: [],
+                id: 'moves',
+                label: 'Moves Data'
+              },
+              {
+                availability: 'readOnly',
                 description: 'Text entries, dialogue references, and source provenance.',
                 diagnostics: [],
                 id: 'text',
@@ -291,6 +299,87 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'pokemon',
                 label: 'Pokemon Data'
+              }
+            }
+          }
+        });
+      }
+
+      if (request.command === 'moves.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              moves: [
+                {
+                  accuracy: 100,
+                  canUseMove: true,
+                  category: 1,
+                  categoryName: 'Physical',
+                  critStage: 0,
+                  description:
+                    'A physical attack in which the user charges and slams into the target.',
+                  effectSequence: 12,
+                  flags: [
+                    {
+                      enabled: true,
+                      field: 'makesContact',
+                      label: 'Makes Contact'
+                    }
+                  ],
+                  flinch: 0,
+                  hitMax: 1,
+                  hitMin: 1,
+                  inflict: 0,
+                  inflictName: 'None',
+                  inflictPercent: 0,
+                  maxMovePower: 90,
+                  moveId: 33,
+                  name: 'Tackle',
+                  power: 40,
+                  pp: 35,
+                  priority: 0,
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/bin/pml/waza/waza_033.bin',
+                    sourceLayer: 'base'
+                  },
+                  quality: 2,
+                  rawHealing: 0,
+                  rawInflictCount: 0,
+                  recoil: 0,
+                  statChanges: [
+                    {
+                      percent: 30,
+                      slot: 1,
+                      stage: -1,
+                      stat: 1,
+                      statName: 'Attack'
+                    }
+                  ],
+                  target: 3,
+                  targetName: 'Opponent',
+                  turnMax: 0,
+                  turnMin: 0,
+                  type: 0,
+                  typeName: 'Normal',
+                  version: 1
+                }
+              ],
+              stats: {
+                activeFlagCount: 1,
+                enabledMoveCount: 1,
+                sourceFileCount: 4,
+                totalMoveCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description:
+                  'Move stats, target behavior, secondary effects, flags, and source provenance.',
+                diagnostics: [],
+                id: 'moves',
+                label: 'Moves Data'
               }
             }
           }
@@ -1035,6 +1124,7 @@ describe('projectBridge', () => {
     const workflows = await bridge.listWorkflows({ paths: projectPaths });
     const items = await bridge.loadItemsWorkflow({ paths: projectPaths });
     const pokemon = await bridge.loadPokemonWorkflow({ paths: projectPaths });
+    const moves = await bridge.loadMovesWorkflow({ paths: projectPaths });
     const text = await bridge.loadTextWorkflow({ paths: projectPaths });
     const trainers = await bridge.loadTrainersWorkflow({ paths: projectPaths });
     const shops = await bridge.loadShopsWorkflow({ paths: projectPaths });
@@ -1048,20 +1138,23 @@ describe('projectBridge', () => {
 
     expect(workflows.workflows[0]?.id).toBe('items');
     expect(workflows.workflows[1]?.id).toBe('pokemon');
-    expect(workflows.workflows[2]?.id).toBe('text');
-    expect(workflows.workflows[3]?.id).toBe('trainers');
-    expect(workflows.workflows[4]?.id).toBe('shops');
-    expect(workflows.workflows[5]?.id).toBe('encounters');
-    expect(workflows.workflows[6]?.id).toBe('raidRewards');
-    expect(workflows.workflows[7]?.id).toBe('placement');
-    expect(workflows.workflows[8]?.id).toBe('flagworkSave');
-    expect(workflows.workflows[9]?.id).toBe('exefsPatches');
-    expect(workflows.workflows[10]?.id).toBe('royalCandy');
-    expect(workflows.workflows[11]?.id).toBe('spreadsheetImport');
+    expect(workflows.workflows[2]?.id).toBe('moves');
+    expect(workflows.workflows[3]?.id).toBe('text');
+    expect(workflows.workflows[4]?.id).toBe('trainers');
+    expect(workflows.workflows[5]?.id).toBe('shops');
+    expect(workflows.workflows[6]?.id).toBe('encounters');
+    expect(workflows.workflows[7]?.id).toBe('raidRewards');
+    expect(workflows.workflows[8]?.id).toBe('placement');
+    expect(workflows.workflows[9]?.id).toBe('flagworkSave');
+    expect(workflows.workflows[10]?.id).toBe('exefsPatches');
+    expect(workflows.workflows[11]?.id).toBe('royalCandy');
+    expect(workflows.workflows[12]?.id).toBe('spreadsheetImport');
     expect(items.workflow.editableFields).toHaveLength(4);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(pokemon.workflow.pokemon[0]?.name).toBe('Bulbasaur');
     expect(pokemon.workflow.pokemon[0]?.learnset[0]?.moveName).toBe('Tackle');
+    expect(moves.workflow.moves[0]?.name).toBe('Tackle');
+    expect(moves.workflow.moves[0]?.statChanges[0]?.statName).toBe('Attack');
     expect(text.workflow.editableFields[0]?.field).toBe('value');
     expect(text.workflow.entries[0]?.label).toBe('story #0');
     expect(trainers.workflow.trainers[0]?.name).toBe('Avery');
