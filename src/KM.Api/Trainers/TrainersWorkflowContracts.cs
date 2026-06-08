@@ -21,11 +21,29 @@ public sealed record TrainerPokemonRecordDto(
     int Slot,
     int SpeciesId,
     string Species,
+    int Form,
     int Level,
     int HeldItemId,
     string? HeldItem,
     IReadOnlyList<int> MoveIds,
-    IReadOnlyList<string> Moves);
+    IReadOnlyList<string> Moves,
+    int Gender,
+    int Ability,
+    int Nature,
+    TrainerPokemonStatsDto Evs,
+    int DynamaxLevel,
+    bool CanGigantamax,
+    TrainerPokemonStatsDto Ivs,
+    bool Shiny,
+    bool CanDynamax);
+
+public sealed record TrainerPokemonStatsDto(
+    int HP,
+    int Attack,
+    int Defense,
+    int SpecialAttack,
+    int SpecialDefense,
+    int Speed);
 
 public sealed record TrainerRecordDto(
     int TrainerId,

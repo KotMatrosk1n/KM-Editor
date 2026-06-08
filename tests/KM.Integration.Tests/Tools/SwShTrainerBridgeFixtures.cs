@@ -37,6 +37,21 @@ internal static class SwShTrainerBridgeFixtures
         {
             var rowOffset = index * SwShTrainerTeamFile.RowSize;
             var record = pokemon[index];
+            if (index == 0)
+            {
+                data[rowOffset] = 0x21;
+                data[rowOffset + 0x01] = 13;
+                data[rowOffset + 0x02] = 10;
+                data[rowOffset + 0x03] = 20;
+                data[rowOffset + 0x04] = 30;
+                data[rowOffset + 0x05] = 40;
+                data[rowOffset + 0x06] = 50;
+                data[rowOffset + 0x07] = 60;
+                data[rowOffset + 0x08] = 7;
+                data[rowOffset + 0x09] = 1;
+                WriteUInt32(data, rowOffset + 0x1C, PackIvs(1, 2, 3, 4, 5, 6, shiny: true, canDynamax: false));
+            }
+
             WriteUInt16(data, rowOffset + 0x0A, record.level);
             WriteUInt16(data, rowOffset + 0x0C, record.speciesId);
             WriteUInt16(data, rowOffset + 0x10, record.heldItemId);
@@ -67,5 +82,33 @@ internal static class SwShTrainerBridgeFixtures
     {
         data[offset] = checked((byte)(value & 0xFF));
         data[offset + 1] = checked((byte)(value >> 8));
+    }
+
+    private static void WriteUInt32(byte[] data, int offset, uint value)
+    {
+        data[offset] = checked((byte)(value & 0xFF));
+        data[offset + 1] = checked((byte)((value >> 8) & 0xFF));
+        data[offset + 2] = checked((byte)((value >> 16) & 0xFF));
+        data[offset + 3] = checked((byte)(value >> 24));
+    }
+
+    private static uint PackIvs(
+        int hp,
+        int attack,
+        int defense,
+        int speed,
+        int specialAttack,
+        int specialDefense,
+        bool shiny,
+        bool canDynamax)
+    {
+        return (uint)hp
+            | ((uint)attack << 5)
+            | ((uint)defense << 10)
+            | ((uint)speed << 15)
+            | ((uint)specialAttack << 20)
+            | ((uint)specialDefense << 25)
+            | (shiny ? 1u << 30 : 0)
+            | (canDynamax ? 1u << 31 : 0);
     }
 }

@@ -15,12 +15,32 @@ public sealed class SwShTrainersWorkflowService
     public const string TrainerClassIdField = "trainerClassId";
     public const string BattleTypeField = "battleType";
     public const string SpeciesIdField = "speciesId";
+    public const string FormField = "form";
     public const string LevelField = "level";
     public const string HeldItemIdField = "heldItemId";
     public const string Move1IdField = "move1Id";
     public const string Move2IdField = "move2Id";
     public const string Move3IdField = "move3Id";
     public const string Move4IdField = "move4Id";
+    public const string GenderField = "gender";
+    public const string AbilityField = "ability";
+    public const string NatureField = "nature";
+    public const string EvHpField = "evHp";
+    public const string EvAttackField = "evAttack";
+    public const string EvDefenseField = "evDefense";
+    public const string EvSpecialAttackField = "evSpecialAttack";
+    public const string EvSpecialDefenseField = "evSpecialDefense";
+    public const string EvSpeedField = "evSpeed";
+    public const string DynamaxLevelField = "dynamaxLevel";
+    public const string CanGigantamaxField = "canGigantamax";
+    public const string IvHpField = "ivHp";
+    public const string IvAttackField = "ivAttack";
+    public const string IvDefenseField = "ivDefense";
+    public const string IvSpecialAttackField = "ivSpecialAttack";
+    public const string IvSpecialDefenseField = "ivSpecialDefense";
+    public const string IvSpeedField = "ivSpeed";
+    public const string ShinyField = "shiny";
+    public const string CanDynamaxField = "canDynamax";
     public const string TrainerDataRootPath = SwShTrainerDataFile.TrainerDataRootRelativePath;
     public const string TrainerPokeRootPath = SwShTrainerTeamFile.TrainerPokeRootRelativePath;
     public const string PreferredLanguage = "English";
@@ -49,6 +69,12 @@ public sealed class SwShTrainersWorkflowService
             "integer",
             0,
             SwShTrainerTeamFile.MaximumPokemonId),
+        new SwShTrainerEditableField(
+            FormField,
+            "Form",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumFormId),
         new SwShTrainerEditableField(
             LevelField,
             "Level",
@@ -85,6 +111,120 @@ public sealed class SwShTrainersWorkflowService
             "integer",
             0,
             SwShTrainerTeamFile.MaximumMoveId),
+        new SwShTrainerEditableField(
+            GenderField,
+            "Gender",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumGenderValue),
+        new SwShTrainerEditableField(
+            AbilityField,
+            "Ability",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumAbilityValue),
+        new SwShTrainerEditableField(
+            NatureField,
+            "Nature",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumNatureId),
+        new SwShTrainerEditableField(
+            EvHpField,
+            "EV HP",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumEvValue),
+        new SwShTrainerEditableField(
+            EvAttackField,
+            "EV Attack",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumEvValue),
+        new SwShTrainerEditableField(
+            EvDefenseField,
+            "EV Defense",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumEvValue),
+        new SwShTrainerEditableField(
+            EvSpecialAttackField,
+            "EV Sp. Atk",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumEvValue),
+        new SwShTrainerEditableField(
+            EvSpecialDefenseField,
+            "EV Sp. Def",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumEvValue),
+        new SwShTrainerEditableField(
+            EvSpeedField,
+            "EV Speed",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumEvValue),
+        new SwShTrainerEditableField(
+            DynamaxLevelField,
+            "Dynamax level",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumDynamaxLevel),
+        new SwShTrainerEditableField(
+            CanGigantamaxField,
+            "Can Gigantamax",
+            "integer",
+            0,
+            1),
+        new SwShTrainerEditableField(
+            IvHpField,
+            "IV HP",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumIvValue),
+        new SwShTrainerEditableField(
+            IvAttackField,
+            "IV Attack",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumIvValue),
+        new SwShTrainerEditableField(
+            IvDefenseField,
+            "IV Defense",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumIvValue),
+        new SwShTrainerEditableField(
+            IvSpecialAttackField,
+            "IV Sp. Atk",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumIvValue),
+        new SwShTrainerEditableField(
+            IvSpecialDefenseField,
+            "IV Sp. Def",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumIvValue),
+        new SwShTrainerEditableField(
+            IvSpeedField,
+            "IV Speed",
+            "integer",
+            0,
+            SwShTrainerTeamFile.MaximumIvValue),
+        new SwShTrainerEditableField(
+            ShinyField,
+            "Shiny",
+            "integer",
+            0,
+            1),
+        new SwShTrainerEditableField(
+            CanDynamaxField,
+            "Can Dynamax",
+            "integer",
+            0,
+            1),
     ];
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -254,12 +394,32 @@ public sealed class SwShTrainersWorkflowService
     internal static bool IsTrainerPokemonField(string? field)
     {
         return string.Equals(field, SpeciesIdField, StringComparison.Ordinal)
+            || string.Equals(field, FormField, StringComparison.Ordinal)
             || string.Equals(field, LevelField, StringComparison.Ordinal)
             || string.Equals(field, HeldItemIdField, StringComparison.Ordinal)
             || string.Equals(field, Move1IdField, StringComparison.Ordinal)
             || string.Equals(field, Move2IdField, StringComparison.Ordinal)
             || string.Equals(field, Move3IdField, StringComparison.Ordinal)
-            || string.Equals(field, Move4IdField, StringComparison.Ordinal);
+            || string.Equals(field, Move4IdField, StringComparison.Ordinal)
+            || string.Equals(field, GenderField, StringComparison.Ordinal)
+            || string.Equals(field, AbilityField, StringComparison.Ordinal)
+            || string.Equals(field, NatureField, StringComparison.Ordinal)
+            || string.Equals(field, EvHpField, StringComparison.Ordinal)
+            || string.Equals(field, EvAttackField, StringComparison.Ordinal)
+            || string.Equals(field, EvDefenseField, StringComparison.Ordinal)
+            || string.Equals(field, EvSpecialAttackField, StringComparison.Ordinal)
+            || string.Equals(field, EvSpecialDefenseField, StringComparison.Ordinal)
+            || string.Equals(field, EvSpeedField, StringComparison.Ordinal)
+            || string.Equals(field, DynamaxLevelField, StringComparison.Ordinal)
+            || string.Equals(field, CanGigantamaxField, StringComparison.Ordinal)
+            || string.Equals(field, IvHpField, StringComparison.Ordinal)
+            || string.Equals(field, IvAttackField, StringComparison.Ordinal)
+            || string.Equals(field, IvDefenseField, StringComparison.Ordinal)
+            || string.Equals(field, IvSpecialAttackField, StringComparison.Ordinal)
+            || string.Equals(field, IvSpecialDefenseField, StringComparison.Ordinal)
+            || string.Equals(field, IvSpeedField, StringComparison.Ordinal)
+            || string.Equals(field, ShinyField, StringComparison.Ordinal)
+            || string.Equals(field, CanDynamaxField, StringComparison.Ordinal);
     }
 
     internal static SwShTrainerEditableField? GetEditableField(string? field)
@@ -527,13 +687,34 @@ public sealed class SwShTrainersWorkflowService
             pokemon.Slot,
             pokemon.SpeciesId,
             GetLookupValue(names.SpeciesNames, pokemon.SpeciesId, $"Species {pokemon.SpeciesId}"),
+            pokemon.Form,
             pokemon.Level,
             pokemon.HeldItemId,
             pokemon.HeldItemId == 0
                 ? null
                 : GetLookupValue(names.ItemNames, pokemon.HeldItemId, $"Item {pokemon.HeldItemId}"),
             pokemon.MoveIds,
-            moves);
+            moves,
+            pokemon.Gender,
+            pokemon.Ability,
+            pokemon.Nature,
+            ToStatsRecord(pokemon.Evs),
+            pokemon.DynamaxLevel,
+            pokemon.CanGigantamax,
+            ToStatsRecord(pokemon.Ivs),
+            pokemon.Shiny,
+            pokemon.CanDynamax);
+    }
+
+    private static SwShTrainerPokemonStatsRecord ToStatsRecord(SwShTrainerPokemonStats stats)
+    {
+        return new SwShTrainerPokemonStatsRecord(
+            stats.HP,
+            stats.Attack,
+            stats.Defense,
+            stats.SpecialAttack,
+            stats.SpecialDefense,
+            stats.Speed);
     }
 
     private static string GetLookupValue(IReadOnlyList<string> values, int index, string fallback)

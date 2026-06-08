@@ -564,11 +564,32 @@ public static class SwShBridgeMapper
             pokemon.Slot,
             pokemon.SpeciesId,
             pokemon.Species,
+            pokemon.Form,
             pokemon.Level,
             pokemon.HeldItemId,
             pokemon.HeldItem,
             pokemon.MoveIds,
-            pokemon.Moves);
+            pokemon.Moves,
+            pokemon.Gender,
+            pokemon.Ability,
+            pokemon.Nature,
+            ToDto(pokemon.Evs),
+            pokemon.DynamaxLevel,
+            pokemon.CanGigantamax,
+            ToDto(pokemon.Ivs),
+            pokemon.Shiny,
+            pokemon.CanDynamax);
+    }
+
+    private static TrainerPokemonStatsDto ToDto(SwShTrainerPokemonStatsRecord stats)
+    {
+        return new TrainerPokemonStatsDto(
+            stats.HP,
+            stats.Attack,
+            stats.Defense,
+            stats.SpecialAttack,
+            stats.SpecialDefense,
+            stats.Speed);
     }
 
     private static TrainerEditableFieldDto ToDto(SwShTrainerEditableField field)

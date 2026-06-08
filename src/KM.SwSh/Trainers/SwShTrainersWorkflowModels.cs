@@ -18,11 +18,29 @@ public sealed record SwShTrainerPokemonRecord(
     int Slot,
     int SpeciesId,
     string Species,
+    int Form,
     int Level,
     int HeldItemId,
     string? HeldItem,
     IReadOnlyList<int> MoveIds,
-    IReadOnlyList<string> Moves);
+    IReadOnlyList<string> Moves,
+    int Gender,
+    int Ability,
+    int Nature,
+    SwShTrainerPokemonStatsRecord Evs,
+    int DynamaxLevel,
+    bool CanGigantamax,
+    SwShTrainerPokemonStatsRecord Ivs,
+    bool Shiny,
+    bool CanDynamax);
+
+public sealed record SwShTrainerPokemonStatsRecord(
+    int HP,
+    int Attack,
+    int Defense,
+    int SpecialAttack,
+    int SpecialDefense,
+    int Speed);
 
 public sealed record SwShTrainerRecord(
     int TrainerId,

@@ -113,6 +113,14 @@ public sealed class SwShTrainerDataFile
     }
 }
 
+public sealed record SwShTrainerPokemonStats(
+    int HP,
+    int Attack,
+    int Defense,
+    int SpecialAttack,
+    int SpecialDefense,
+    int Speed);
+
 public sealed record SwShTrainerPokemonTableRecord(
     int Slot,
     int SpeciesId,
@@ -123,8 +131,12 @@ public sealed record SwShTrainerPokemonTableRecord(
     int Ability,
     int Nature,
     int Form,
+    SwShTrainerPokemonStats Evs,
     int DynamaxLevel,
     bool CanGigantamax,
+    SwShTrainerPokemonStats Ivs,
+    bool Shiny,
+    bool CanDynamax,
     uint IvFlags);
 
 public sealed record SwShTrainerPokemonEdit(
@@ -135,12 +147,32 @@ public sealed record SwShTrainerPokemonEdit(
 public enum SwShTrainerPokemonField
 {
     SpeciesId,
+    Form,
     Level,
     HeldItemId,
     Move1Id,
     Move2Id,
     Move3Id,
     Move4Id,
+    Gender,
+    Ability,
+    Nature,
+    EvHp,
+    EvAttack,
+    EvDefense,
+    EvSpecialAttack,
+    EvSpecialDefense,
+    EvSpeed,
+    DynamaxLevel,
+    CanGigantamax,
+    IvHp,
+    IvAttack,
+    IvDefense,
+    IvSpecialAttack,
+    IvSpecialDefense,
+    IvSpeed,
+    Shiny,
+    CanDynamax,
 }
 
 public sealed class SwShTrainerTeamFile
@@ -148,13 +180,26 @@ public sealed class SwShTrainerTeamFile
     public const string TrainerPokeRootRelativePath = "romfs/bin/trainer/trainer_poke";
     public const int RowSize = 0x20;
     public const int MaximumPokemonId = ushort.MaxValue;
+    public const int MaximumFormId = ushort.MaxValue;
     public const int MinimumLevel = 1;
     public const int MaximumLevel = 100;
     public const int MaximumItemId = ushort.MaxValue;
     public const int MaximumMoveId = ushort.MaxValue;
+    public const int MaximumGenderValue = 3;
+    public const int MaximumAbilityValue = 3;
+    public const int MaximumNatureId = 24;
+    public const int MaximumEvValue = byte.MaxValue;
+    public const int MaximumDynamaxLevel = 10;
+    public const int MaximumIvValue = 31;
 
     private const int GenderAbilityOffset = 0x00;
     private const int NatureOffset = 0x01;
+    private const int EvHpOffset = 0x02;
+    private const int EvAttackOffset = 0x03;
+    private const int EvDefenseOffset = 0x04;
+    private const int EvSpecialAttackOffset = 0x05;
+    private const int EvSpecialDefenseOffset = 0x06;
+    private const int EvSpeedOffset = 0x07;
     private const int DynamaxLevelOffset = 0x08;
     private const int CanGigantamaxOffset = 0x09;
     private const int LevelOffset = 0x0A;
@@ -166,6 +211,15 @@ public sealed class SwShTrainerTeamFile
     private const int Move3Offset = 0x16;
     private const int Move4Offset = 0x18;
     private const int IvFlagsOffset = 0x1C;
+    private const int IvHpShift = 0;
+    private const int IvAttackShift = 5;
+    private const int IvDefenseShift = 10;
+    private const int IvSpeedShift = 15;
+    private const int IvSpecialAttackShift = 20;
+    private const int IvSpecialDefenseShift = 25;
+    private const int ShinyFlagShift = 30;
+    private const int CanDynamaxFlagShift = 31;
+    private const uint IvValueMask = 0x1F;
 
     private readonly byte[] data;
 
@@ -209,6 +263,9 @@ public sealed class SwShTrainerTeamFile
                 case SwShTrainerPokemonField.SpeciesId:
                     WriteUInt16Field(result, rowOffset + SpeciesOffset, edit.Value, MaximumPokemonId, nameof(edits));
                     break;
+                case SwShTrainerPokemonField.Form:
+                    WriteUInt16Field(result, rowOffset + FormOffset, edit.Value, MaximumFormId, nameof(edits));
+                    break;
                 case SwShTrainerPokemonField.Level:
                     ValidateRange(edit.Value, MinimumLevel, MaximumLevel, nameof(edits));
                     BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(rowOffset + LevelOffset), checked((ushort)edit.Value));
@@ -228,6 +285,63 @@ public sealed class SwShTrainerTeamFile
                 case SwShTrainerPokemonField.Move4Id:
                     WriteUInt16Field(result, rowOffset + Move4Offset, edit.Value, MaximumMoveId, nameof(edits));
                     break;
+                case SwShTrainerPokemonField.Gender:
+                    WriteTwoBitField(result, rowOffset + GenderAbilityOffset, edit.Value, shift: 0, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.Ability:
+                    WriteTwoBitField(result, rowOffset + GenderAbilityOffset, edit.Value, shift: 4, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.Nature:
+                    WriteByteField(result, rowOffset + NatureOffset, edit.Value, MaximumNatureId, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.EvHp:
+                    WriteByteField(result, rowOffset + EvHpOffset, edit.Value, MaximumEvValue, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.EvAttack:
+                    WriteByteField(result, rowOffset + EvAttackOffset, edit.Value, MaximumEvValue, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.EvDefense:
+                    WriteByteField(result, rowOffset + EvDefenseOffset, edit.Value, MaximumEvValue, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.EvSpecialAttack:
+                    WriteByteField(result, rowOffset + EvSpecialAttackOffset, edit.Value, MaximumEvValue, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.EvSpecialDefense:
+                    WriteByteField(result, rowOffset + EvSpecialDefenseOffset, edit.Value, MaximumEvValue, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.EvSpeed:
+                    WriteByteField(result, rowOffset + EvSpeedOffset, edit.Value, MaximumEvValue, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.DynamaxLevel:
+                    WriteByteField(result, rowOffset + DynamaxLevelOffset, edit.Value, MaximumDynamaxLevel, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.CanGigantamax:
+                    WriteBooleanByteField(result, rowOffset + CanGigantamaxOffset, edit.Value, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.IvHp:
+                    WriteIvValue(result, rowOffset + IvFlagsOffset, edit.Value, IvHpShift, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.IvAttack:
+                    WriteIvValue(result, rowOffset + IvFlagsOffset, edit.Value, IvAttackShift, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.IvDefense:
+                    WriteIvValue(result, rowOffset + IvFlagsOffset, edit.Value, IvDefenseShift, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.IvSpecialAttack:
+                    WriteIvValue(result, rowOffset + IvFlagsOffset, edit.Value, IvSpecialAttackShift, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.IvSpecialDefense:
+                    WriteIvValue(result, rowOffset + IvFlagsOffset, edit.Value, IvSpecialDefenseShift, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.IvSpeed:
+                    WriteIvValue(result, rowOffset + IvFlagsOffset, edit.Value, IvSpeedShift, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.Shiny:
+                    WriteIvFlag(result, rowOffset + IvFlagsOffset, edit.Value, ShinyFlagShift, nameof(edits));
+                    break;
+                case SwShTrainerPokemonField.CanDynamax:
+                    WriteIvFlag(result, rowOffset + IvFlagsOffset, edit.Value, CanDynamaxFlagShift, nameof(edits));
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(edits), $"Trainer party field '{edit.Field}' is not supported.");
             }
@@ -240,6 +354,7 @@ public sealed class SwShTrainerTeamFile
     {
         var rowOffset = rowIndex * RowSize;
         var genderAbility = data[rowOffset + GenderAbilityOffset];
+        var ivFlags = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(rowOffset + IvFlagsOffset));
 
         return new SwShTrainerPokemonTableRecord(
             rowIndex + 1,
@@ -256,9 +371,19 @@ public sealed class SwShTrainerTeamFile
             (genderAbility >> 4) & 0x3,
             data[rowOffset + NatureOffset],
             BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(rowOffset + FormOffset)),
+            new SwShTrainerPokemonStats(
+                data[rowOffset + EvHpOffset],
+                data[rowOffset + EvAttackOffset],
+                data[rowOffset + EvDefenseOffset],
+                data[rowOffset + EvSpecialAttackOffset],
+                data[rowOffset + EvSpecialDefenseOffset],
+                data[rowOffset + EvSpeedOffset]),
             data[rowOffset + DynamaxLevelOffset],
             data[rowOffset + CanGigantamaxOffset] != 0,
-            BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(rowOffset + IvFlagsOffset)));
+            ReadIvs(ivFlags),
+            IsIvFlagSet(ivFlags, ShinyFlagShift),
+            IsIvFlagSet(ivFlags, CanDynamaxFlagShift),
+            ivFlags);
     }
 
     private static void WriteUInt16Field(
@@ -270,6 +395,89 @@ public sealed class SwShTrainerTeamFile
     {
         ValidateRange(value, 0, maximum, parameterName);
         BinaryPrimitives.WriteUInt16LittleEndian(output.AsSpan(offset), checked((ushort)value));
+    }
+
+    private static void WriteByteField(
+        byte[] output,
+        int offset,
+        int value,
+        int maximum,
+        string parameterName)
+    {
+        ValidateRange(value, 0, maximum, parameterName);
+        output[offset] = checked((byte)value);
+    }
+
+    private static void WriteBooleanByteField(
+        byte[] output,
+        int offset,
+        int value,
+        string parameterName)
+    {
+        ValidateRange(value, 0, 1, parameterName);
+        output[offset] = checked((byte)value);
+    }
+
+    private static void WriteTwoBitField(
+        byte[] output,
+        int offset,
+        int value,
+        int shift,
+        string parameterName)
+    {
+        ValidateRange(value, 0, 3, parameterName);
+        var mask = 0x3 << shift;
+        output[offset] = checked((byte)((output[offset] & ~mask) | ((value & 0x3) << shift)));
+    }
+
+    private static void WriteIvValue(
+        byte[] output,
+        int offset,
+        int value,
+        int shift,
+        string parameterName)
+    {
+        ValidateRange(value, 0, MaximumIvValue, parameterName);
+        var flags = BinaryPrimitives.ReadUInt32LittleEndian(output.AsSpan(offset));
+        flags = (flags & ~(IvValueMask << shift)) | ((uint)value << shift);
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(offset), flags);
+    }
+
+    private static void WriteIvFlag(
+        byte[] output,
+        int offset,
+        int value,
+        int shift,
+        string parameterName)
+    {
+        ValidateRange(value, 0, 1, parameterName);
+        var flags = BinaryPrimitives.ReadUInt32LittleEndian(output.AsSpan(offset));
+        var mask = 1u << shift;
+        flags = value == 0
+            ? flags & ~mask
+            : flags | mask;
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(offset), flags);
+    }
+
+    private static SwShTrainerPokemonStats ReadIvs(uint ivFlags)
+    {
+        return new SwShTrainerPokemonStats(
+            ReadIvValue(ivFlags, IvHpShift),
+            ReadIvValue(ivFlags, IvAttackShift),
+            ReadIvValue(ivFlags, IvDefenseShift),
+            ReadIvValue(ivFlags, IvSpecialAttackShift),
+            ReadIvValue(ivFlags, IvSpecialDefenseShift),
+            ReadIvValue(ivFlags, IvSpeedShift));
+    }
+
+    private static int ReadIvValue(uint ivFlags, int shift)
+    {
+        return (int)((ivFlags >> shift) & IvValueMask);
+    }
+
+    private static bool IsIvFlagSet(uint ivFlags, int shift)
+    {
+        return ((ivFlags >> shift) & 1) != 0;
     }
 
     private static void ValidateRange(int value, int minimum, int maximum, string parameterName)

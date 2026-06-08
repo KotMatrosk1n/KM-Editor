@@ -1222,11 +1222,35 @@ function createMockProjectBridge(
         },
         team: [
           {
+            ability: 2,
+            canDynamax: false,
+            canGigantamax: true,
+            dynamaxLevel: 7,
+            evs: {
+              attack: 20,
+              defense: 30,
+              hp: 10,
+              specialAttack: 40,
+              specialDefense: 50,
+              speed: 60
+            },
+            form: 0,
+            gender: 1,
             heldItem: 'Potion',
             heldItemId: 1,
+            ivs: {
+              attack: 2,
+              defense: 3,
+              hp: 1,
+              specialAttack: 5,
+              specialDefense: 6,
+              speed: 4
+            },
             level: 12,
             moveIds: [1, 2, 0, 0],
             moves: ['Scratch', 'Growl', 'None', 'None'],
+            nature: 13,
+            shiny: true,
             slot: 1,
             species: 'Grookey',
             speciesId: 810

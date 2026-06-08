@@ -485,12 +485,31 @@ export const trainerProvenanceSchema = z.strictObject({
   teamSourceLayer: projectFileLayerSchema
 });
 
+export const trainerPokemonStatsSchema = z.strictObject({
+  attack: z.number().int().nonnegative(),
+  defense: z.number().int().nonnegative(),
+  hp: z.number().int().nonnegative(),
+  specialAttack: z.number().int().nonnegative(),
+  specialDefense: z.number().int().nonnegative(),
+  speed: z.number().int().nonnegative()
+});
+
 export const trainerPokemonRecordSchema = z.strictObject({
+  ability: z.number().int().nonnegative(),
+  canDynamax: z.boolean(),
+  canGigantamax: z.boolean(),
+  dynamaxLevel: z.number().int().nonnegative(),
+  evs: trainerPokemonStatsSchema,
+  form: z.number().int().nonnegative(),
+  gender: z.number().int().nonnegative(),
   heldItem: z.string().nullable(),
   heldItemId: z.number().int().nonnegative(),
+  ivs: trainerPokemonStatsSchema,
   level: z.number().int().nonnegative(),
   moveIds: z.array(z.number().int().nonnegative()),
   moves: z.array(z.string()),
+  nature: z.number().int().nonnegative(),
+  shiny: z.boolean(),
   slot: z.number().int().nonnegative(),
   speciesId: z.number().int().nonnegative(),
   species: z.string()
