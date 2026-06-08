@@ -172,6 +172,31 @@ public sealed class SwShItemsEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateFieldAddsPendingNamedBehaviorEditAndPreviewsInspectorDetails()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.CureBurnField,
+            value: "1");
+
+        Assert.Empty(result.Diagnostics);
+        Assert.True(result.Session.HasPendingChanges);
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal(SwShItemsEditSessionService.CureBurnField, edit.Field);
+        Assert.Equal("1", edit.NewValue);
+        var item = result.Workflow.Items[1];
+        Assert.Equal(0x04, item.Metadata.CureStatusFlags);
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Battle").Details,
+            detail => detail.Label == "Cures status" && detail.Value == "Burn");
+    }
+
+    [Fact]
     public void UpdateFieldRejectsMachineMoveForNonMachineItem()
     {
         using var temp = CreateEditableProject();
@@ -411,6 +436,55 @@ public sealed class SwShItemsEditSessionServiceTests
         Assert.Equal(10, item.MachineSlot);
         Assert.Equal((ushort)85, item.MachineMoveId);
         Assert.Equal(SwShItemPouch.TMs, item.Pouch);
+        Assert.DoesNotContain(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ApplyChangePlanWritesNamedBehaviorFieldsToOutputRoot()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+        var cureResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.CureBurnField,
+            value: "1");
+        var levelUpResult = service.UpdateField(
+            temp.Paths,
+            cureResult.Session,
+            itemId: 1,
+            field: SwShItemsWorkflowService.LevelUpItemField,
+            value: "1");
+        var boostResult = service.UpdateField(
+            temp.Paths,
+            levelUpResult.Session,
+            itemId: 1,
+            field: SwShItemsWorkflowService.AttackBoostField,
+            value: "6");
+        var restoreResult = service.UpdateField(
+            temp.Paths,
+            boostResult.Session,
+            itemId: 1,
+            field: SwShItemsWorkflowService.RestorePpFlagField,
+            value: "1");
+        var evFlagResult = service.UpdateField(
+            temp.Paths,
+            restoreResult.Session,
+            itemId: 1,
+            field: SwShItemsWorkflowService.SpecialAttackEvFlagField,
+            value: "1");
+        var changePlan = service.CreateChangePlan(temp.Paths, evFlagResult.Session);
+
+        var applyResult = service.ApplyChangePlan(temp.Paths, evFlagResult.Session, changePlan);
+
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
+        Assert.Single(changePlan.Writes);
+        Assert.Equal(0x04, item.CureStatusFlags);
+        Assert.Equal(0x64, item.Boost0);
+        Assert.Equal(0x85, item.UseFlags1);
+        Assert.Equal(300u, item.BuyPrice);
         Assert.DoesNotContain(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 

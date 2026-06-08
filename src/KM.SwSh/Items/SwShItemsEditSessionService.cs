@@ -28,8 +28,42 @@ public sealed class SwShItemsEditSessionService
     public const string GroupTypeField = SwShItemsWorkflowService.GroupTypeField;
     public const string GroupIndexField = SwShItemsWorkflowService.GroupIndexField;
     public const string CureStatusFlagsField = SwShItemsWorkflowService.CureStatusFlagsField;
+    public const string CureSleepField = SwShItemsWorkflowService.CureSleepField;
+    public const string CurePoisonField = SwShItemsWorkflowService.CurePoisonField;
+    public const string CureBurnField = SwShItemsWorkflowService.CureBurnField;
+    public const string CureFreezeField = SwShItemsWorkflowService.CureFreezeField;
+    public const string CureParalysisField = SwShItemsWorkflowService.CureParalysisField;
+    public const string CureConfusionField = SwShItemsWorkflowService.CureConfusionField;
+    public const string CureInfatuationField = SwShItemsWorkflowService.CureInfatuationField;
+    public const string GuardSpecField = SwShItemsWorkflowService.GuardSpecField;
+    public const string CanTargetFaintedPokemonField = SwShItemsWorkflowService.CanTargetFaintedPokemonField;
+    public const string RevivesWholePartyField = SwShItemsWorkflowService.RevivesWholePartyField;
+    public const string LevelUpItemField = SwShItemsWorkflowService.LevelUpItemField;
+    public const string EvolutionItemField = SwShItemsWorkflowService.EvolutionItemField;
+    public const string AttackBoostField = SwShItemsWorkflowService.AttackBoostField;
+    public const string DefenseBoostField = SwShItemsWorkflowService.DefenseBoostField;
+    public const string SpecialAttackBoostField = SwShItemsWorkflowService.SpecialAttackBoostField;
+    public const string SpecialDefenseBoostField = SwShItemsWorkflowService.SpecialDefenseBoostField;
+    public const string SpeedBoostField = SwShItemsWorkflowService.SpeedBoostField;
+    public const string AccuracyBoostField = SwShItemsWorkflowService.AccuracyBoostField;
+    public const string CriticalHitBoostField = SwShItemsWorkflowService.CriticalHitBoostField;
+    public const string PpUpFlagField = SwShItemsWorkflowService.PpUpFlagField;
+    public const string PpMaxFlagField = SwShItemsWorkflowService.PpMaxFlagField;
     public const string UseFlags1Field = SwShItemsWorkflowService.UseFlags1Field;
     public const string UseFlags2Field = SwShItemsWorkflowService.UseFlags2Field;
+    public const string RestorePpFlagField = SwShItemsWorkflowService.RestorePpFlagField;
+    public const string RestoreAllPpFlagField = SwShItemsWorkflowService.RestoreAllPpFlagField;
+    public const string RestoreHpFlagField = SwShItemsWorkflowService.RestoreHpFlagField;
+    public const string HpEvFlagField = SwShItemsWorkflowService.HpEvFlagField;
+    public const string AttackEvFlagField = SwShItemsWorkflowService.AttackEvFlagField;
+    public const string DefenseEvFlagField = SwShItemsWorkflowService.DefenseEvFlagField;
+    public const string SpeedEvFlagField = SwShItemsWorkflowService.SpeedEvFlagField;
+    public const string SpecialAttackEvFlagField = SwShItemsWorkflowService.SpecialAttackEvFlagField;
+    public const string SpecialDefenseEvFlagField = SwShItemsWorkflowService.SpecialDefenseEvFlagField;
+    public const string EvAbove100FlagField = SwShItemsWorkflowService.EvAbove100FlagField;
+    public const string Friendship1FlagField = SwShItemsWorkflowService.Friendship1FlagField;
+    public const string Friendship2FlagField = SwShItemsWorkflowService.Friendship2FlagField;
+    public const string Friendship3FlagField = SwShItemsWorkflowService.Friendship3FlagField;
     public const string EvHpField = SwShItemsWorkflowService.EvHpField;
     public const string EvAttackField = SwShItemsWorkflowService.EvAttackField;
     public const string EvDefenseField = SwShItemsWorkflowService.EvDefenseField;
@@ -481,8 +515,108 @@ public sealed class SwShItemsEditSessionService
                 CureStatusFlagsField,
                 "cure status flags",
                 SwShItemTableField.CureStatusFlags),
+            CureSleepField => CreateBooleanField(CureSleepField, "cures sleep", SwShItemTableField.CureSleep),
+            CurePoisonField => CreateBooleanField(CurePoisonField, "cures poison", SwShItemTableField.CurePoison),
+            CureBurnField => CreateBooleanField(CureBurnField, "cures burn", SwShItemTableField.CureBurn),
+            CureFreezeField => CreateBooleanField(CureFreezeField, "cures freeze", SwShItemTableField.CureFreeze),
+            CureParalysisField => CreateBooleanField(
+                CureParalysisField,
+                "cures paralysis",
+                SwShItemTableField.CureParalysis),
+            CureConfusionField => CreateBooleanField(
+                CureConfusionField,
+                "cures confusion",
+                SwShItemTableField.CureConfusion),
+            CureInfatuationField => CreateBooleanField(
+                CureInfatuationField,
+                "cures infatuation",
+                SwShItemTableField.CureInfatuation),
+            GuardSpecField => CreateBooleanField(GuardSpecField, "Guard Spec. effect", SwShItemTableField.GuardSpec),
+            CanTargetFaintedPokemonField => CreateBooleanField(
+                CanTargetFaintedPokemonField,
+                "can target fainted Pokemon",
+                SwShItemTableField.CanTargetFaintedPokemon),
+            RevivesWholePartyField => CreateBooleanField(
+                RevivesWholePartyField,
+                "revives whole party",
+                SwShItemTableField.RevivesWholeParty),
+            LevelUpItemField => CreateBooleanField(LevelUpItemField, "level up item", SwShItemTableField.LevelUpItem),
+            EvolutionItemField => CreateBooleanField(
+                EvolutionItemField,
+                "evolution item",
+                SwShItemTableField.EvolutionItem),
+            AttackBoostField => CreateBoostField(AttackBoostField, "Attack boost", SwShItemTableField.AttackBoost),
+            DefenseBoostField => CreateBoostField(DefenseBoostField, "Defense boost", SwShItemTableField.DefenseBoost),
+            SpecialAttackBoostField => CreateBoostField(
+                SpecialAttackBoostField,
+                "Sp. Atk boost",
+                SwShItemTableField.SpecialAttackBoost),
+            SpecialDefenseBoostField => CreateBoostField(
+                SpecialDefenseBoostField,
+                "Sp. Def boost",
+                SwShItemTableField.SpecialDefenseBoost),
+            SpeedBoostField => CreateBoostField(SpeedBoostField, "Speed boost", SwShItemTableField.SpeedBoost),
+            AccuracyBoostField => CreateBoostField(
+                AccuracyBoostField,
+                "Accuracy boost",
+                SwShItemTableField.AccuracyBoost),
+            CriticalHitBoostField => new ItemField(
+                CriticalHitBoostField,
+                "critical hit boost",
+                MinimumValue: 0,
+                MaximumValue: SwShItemsWorkflowService.MaximumCriticalHitBoostValue,
+                TableField: SwShItemTableField.CriticalHitBoost,
+                ActualValueMultiplier: 1),
+            PpUpFlagField => CreateBooleanField(PpUpFlagField, "PP Up flag", SwShItemTableField.PpUpFlag),
+            PpMaxFlagField => CreateBooleanField(PpMaxFlagField, "PP Max flag", SwShItemTableField.PpMaxFlag),
             UseFlags1Field => CreateByteField(UseFlags1Field, "use flags 1", SwShItemTableField.UseFlags1),
             UseFlags2Field => CreateByteField(UseFlags2Field, "use flags 2", SwShItemTableField.UseFlags2),
+            RestorePpFlagField => CreateBooleanField(
+                RestorePpFlagField,
+                "restore PP flag",
+                SwShItemTableField.RestorePpFlag),
+            RestoreAllPpFlagField => CreateBooleanField(
+                RestoreAllPpFlagField,
+                "restore all PP flag",
+                SwShItemTableField.RestoreAllPpFlag),
+            RestoreHpFlagField => CreateBooleanField(
+                RestoreHpFlagField,
+                "restore HP flag",
+                SwShItemTableField.RestoreHpFlag),
+            HpEvFlagField => CreateBooleanField(HpEvFlagField, "HP EV flag", SwShItemTableField.HpEvFlag),
+            AttackEvFlagField => CreateBooleanField(
+                AttackEvFlagField,
+                "Attack EV flag",
+                SwShItemTableField.AttackEvFlag),
+            DefenseEvFlagField => CreateBooleanField(
+                DefenseEvFlagField,
+                "Defense EV flag",
+                SwShItemTableField.DefenseEvFlag),
+            SpeedEvFlagField => CreateBooleanField(SpeedEvFlagField, "Speed EV flag", SwShItemTableField.SpeedEvFlag),
+            SpecialAttackEvFlagField => CreateBooleanField(
+                SpecialAttackEvFlagField,
+                "Sp. Atk EV flag",
+                SwShItemTableField.SpecialAttackEvFlag),
+            SpecialDefenseEvFlagField => CreateBooleanField(
+                SpecialDefenseEvFlagField,
+                "Sp. Def EV flag",
+                SwShItemTableField.SpecialDefenseEvFlag),
+            EvAbove100FlagField => CreateBooleanField(
+                EvAbove100FlagField,
+                "EV above 100 flag",
+                SwShItemTableField.EvAbove100Flag),
+            Friendship1FlagField => CreateBooleanField(
+                Friendship1FlagField,
+                "friendship 1 flag",
+                SwShItemTableField.Friendship1Flag),
+            Friendship2FlagField => CreateBooleanField(
+                Friendship2FlagField,
+                "friendship 2 flag",
+                SwShItemTableField.Friendship2Flag),
+            Friendship3FlagField => CreateBooleanField(
+                Friendship3FlagField,
+                "friendship 3 flag",
+                SwShItemTableField.Friendship3Flag),
             EvHpField => CreateSignedByteField(EvHpField, "HP EV gain", SwShItemTableField.EvHp),
             EvAttackField => CreateSignedByteField(
                 EvAttackField,
@@ -537,6 +671,34 @@ public sealed class SwShItemsEditSessionService
             displayName,
             MinimumValue: 0,
             MaximumValue: maximumValue,
+            TableField: tableField,
+            ActualValueMultiplier: 1);
+    }
+
+    private static ItemField CreateBooleanField(
+        string field,
+        string displayName,
+        SwShItemTableField tableField)
+    {
+        return new ItemField(
+            field,
+            displayName,
+            MinimumValue: 0,
+            MaximumValue: 1,
+            TableField: tableField,
+            ActualValueMultiplier: 1);
+    }
+
+    private static ItemField CreateBoostField(
+        string field,
+        string displayName,
+        SwShItemTableField tableField)
+    {
+        return new ItemField(
+            field,
+            displayName,
+            MinimumValue: 0,
+            MaximumValue: SwShItemsWorkflowService.MaximumBoostValue,
             TableField: tableField,
             ActualValueMultiplier: 1);
     }
@@ -621,8 +783,144 @@ public sealed class SwShItemsEditSessionService
                 workflow,
                 itemId,
                 item => item with { CureStatusFlags = itemValue }),
+            CureSleepField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { CureStatusFlags = SetBit(item.CureStatusFlags, 0, itemValue != 0) }),
+            CurePoisonField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { CureStatusFlags = SetBit(item.CureStatusFlags, 1, itemValue != 0) }),
+            CureBurnField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { CureStatusFlags = SetBit(item.CureStatusFlags, 2, itemValue != 0) }),
+            CureFreezeField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { CureStatusFlags = SetBit(item.CureStatusFlags, 3, itemValue != 0) }),
+            CureParalysisField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { CureStatusFlags = SetBit(item.CureStatusFlags, 4, itemValue != 0) }),
+            CureConfusionField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { CureStatusFlags = SetBit(item.CureStatusFlags, 5, itemValue != 0) }),
+            CureInfatuationField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { CureStatusFlags = SetBit(item.CureStatusFlags, 6, itemValue != 0) }),
+            GuardSpecField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { CureStatusFlags = SetBit(item.CureStatusFlags, 7, itemValue != 0) }),
+            CanTargetFaintedPokemonField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost0 = SetBit(item.Boost0, 0, itemValue != 0) }),
+            RevivesWholePartyField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost0 = SetBit(item.Boost0, 1, itemValue != 0) }),
+            LevelUpItemField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost0 = SetBit(item.Boost0, 2, itemValue != 0) }),
+            EvolutionItemField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost0 = SetBit(item.Boost0, 3, itemValue != 0) }),
+            AttackBoostField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost0 = SetHighNibble(item.Boost0, itemValue) }),
+            DefenseBoostField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost1 = SetLowNibble(item.Boost1, itemValue) }),
+            SpecialAttackBoostField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost1 = SetHighNibble(item.Boost1, itemValue) }),
+            SpecialDefenseBoostField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost2 = SetLowNibble(item.Boost2, itemValue) }),
+            SpeedBoostField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost2 = SetHighNibble(item.Boost2, itemValue) }),
+            AccuracyBoostField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost3 = SetLowNibble(item.Boost3, itemValue) }),
+            CriticalHitBoostField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost3 = SetPackedBits(item.Boost3, bitOffset: 4, bitCount: 2, itemValue) }),
+            PpUpFlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost3 = SetBit(item.Boost3, 6, itemValue != 0) }),
+            PpMaxFlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { Boost3 = SetBit(item.Boost3, 7, itemValue != 0) }),
             UseFlags1Field => OverlayItemMetadata(workflow, itemId, item => item with { UseFlags1 = itemValue }),
             UseFlags2Field => OverlayItemMetadata(workflow, itemId, item => item with { UseFlags2 = itemValue }),
+            RestorePpFlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags1 = SetBit(item.UseFlags1, 0, itemValue != 0) }),
+            RestoreAllPpFlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags1 = SetBit(item.UseFlags1, 1, itemValue != 0) }),
+            RestoreHpFlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags1 = SetBit(item.UseFlags1, 2, itemValue != 0) }),
+            HpEvFlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags1 = SetBit(item.UseFlags1, 3, itemValue != 0) }),
+            AttackEvFlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags1 = SetBit(item.UseFlags1, 4, itemValue != 0) }),
+            DefenseEvFlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags1 = SetBit(item.UseFlags1, 5, itemValue != 0) }),
+            SpeedEvFlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags1 = SetBit(item.UseFlags1, 6, itemValue != 0) }),
+            SpecialAttackEvFlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags1 = SetBit(item.UseFlags1, 7, itemValue != 0) }),
+            SpecialDefenseEvFlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags2 = SetBit(item.UseFlags2, 0, itemValue != 0) }),
+            EvAbove100FlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags2 = SetBit(item.UseFlags2, 1, itemValue != 0) }),
+            Friendship1FlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags2 = SetBit(item.UseFlags2, 2, itemValue != 0) }),
+            Friendship2FlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags2 = SetBit(item.UseFlags2, 3, itemValue != 0) }),
+            Friendship3FlagField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { UseFlags2 = SetBit(item.UseFlags2, 4, itemValue != 0) }),
             EvHpField => OverlayItemMetadata(workflow, itemId, item => item with { EvHp = itemValue }),
             EvAttackField => OverlayItemMetadata(workflow, itemId, item => item with { EvAttack = itemValue }),
             EvDefenseField => OverlayItemMetadata(workflow, itemId, item => item with { EvDefense = itemValue }),
@@ -685,6 +983,22 @@ public sealed class SwShItemsEditSessionService
         return label is not null && label.StartsWith(prefix, StringComparison.Ordinal)
             ? label[prefix.Length..]
             : null;
+    }
+
+    private static int SetBit(int value, int bitOffset, bool enabled)
+    {
+        var mask = 1 << bitOffset;
+        return enabled ? value | mask : value & ~mask;
+    }
+
+    private static int SetLowNibble(int value, int nibble) => (value & 0xF0) | (nibble & 0x0F);
+
+    private static int SetHighNibble(int value, int nibble) => (value & 0x0F) | ((nibble & 0x0F) << 4);
+
+    private static int SetPackedBits(int value, int bitOffset, int bitCount, int newValue)
+    {
+        var mask = ((1 << bitCount) - 1) << bitOffset;
+        return (value & ~mask) | ((newValue << bitOffset) & mask);
     }
 
     private static SwShItemsWorkflow OverlayItemMetadata(
@@ -889,8 +1203,42 @@ public sealed class SwShItemsEditSessionService
             GroupTypeField,
             GroupIndexField,
             CureStatusFlagsField,
+            CureSleepField,
+            CurePoisonField,
+            CureBurnField,
+            CureFreezeField,
+            CureParalysisField,
+            CureConfusionField,
+            CureInfatuationField,
+            GuardSpecField,
+            CanTargetFaintedPokemonField,
+            RevivesWholePartyField,
+            LevelUpItemField,
+            EvolutionItemField,
+            AttackBoostField,
+            DefenseBoostField,
+            SpecialAttackBoostField,
+            SpecialDefenseBoostField,
+            SpeedBoostField,
+            AccuracyBoostField,
+            CriticalHitBoostField,
+            PpUpFlagField,
+            PpMaxFlagField,
             UseFlags1Field,
             UseFlags2Field,
+            RestorePpFlagField,
+            RestoreAllPpFlagField,
+            RestoreHpFlagField,
+            HpEvFlagField,
+            AttackEvFlagField,
+            DefenseEvFlagField,
+            SpeedEvFlagField,
+            SpecialAttackEvFlagField,
+            SpecialDefenseEvFlagField,
+            EvAbove100FlagField,
+            Friendship1FlagField,
+            Friendship2FlagField,
+            Friendship3FlagField,
             EvHpField,
             EvAttackField,
             EvDefenseField,

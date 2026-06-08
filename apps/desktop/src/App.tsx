@@ -11692,10 +11692,78 @@ function getEditableItemFieldValue(item: ItemRecord, field: string) {
       return item.metadata.groupIndex;
     case 'cureStatusFlags':
       return item.metadata.cureStatusFlags;
+    case 'cureSleep':
+      return getPackedBit(item.metadata.cureStatusFlags, 0);
+    case 'curePoison':
+      return getPackedBit(item.metadata.cureStatusFlags, 1);
+    case 'cureBurn':
+      return getPackedBit(item.metadata.cureStatusFlags, 2);
+    case 'cureFreeze':
+      return getPackedBit(item.metadata.cureStatusFlags, 3);
+    case 'cureParalysis':
+      return getPackedBit(item.metadata.cureStatusFlags, 4);
+    case 'cureConfusion':
+      return getPackedBit(item.metadata.cureStatusFlags, 5);
+    case 'cureInfatuation':
+      return getPackedBit(item.metadata.cureStatusFlags, 6);
+    case 'guardSpec':
+      return getPackedBit(item.metadata.cureStatusFlags, 7);
+    case 'canTargetFaintedPokemon':
+      return getPackedBit(item.metadata.boost0, 0);
+    case 'revivesWholeParty':
+      return getPackedBit(item.metadata.boost0, 1);
+    case 'levelUpItem':
+      return getPackedBit(item.metadata.boost0, 2);
+    case 'evolutionItem':
+      return getPackedBit(item.metadata.boost0, 3);
+    case 'attackBoost':
+      return getHighNibble(item.metadata.boost0);
+    case 'defenseBoost':
+      return getLowNibble(item.metadata.boost1);
+    case 'specialAttackBoost':
+      return getHighNibble(item.metadata.boost1);
+    case 'specialDefenseBoost':
+      return getLowNibble(item.metadata.boost2);
+    case 'speedBoost':
+      return getHighNibble(item.metadata.boost2);
+    case 'accuracyBoost':
+      return getLowNibble(item.metadata.boost3);
+    case 'criticalHitBoost':
+      return (item.metadata.boost3 >> 4) & 0x03;
+    case 'ppUpFlag':
+      return getPackedBit(item.metadata.boost3, 6);
+    case 'ppMaxFlag':
+      return getPackedBit(item.metadata.boost3, 7);
     case 'useFlags1':
       return item.metadata.useFlags1;
     case 'useFlags2':
       return item.metadata.useFlags2;
+    case 'restorePpFlag':
+      return getPackedBit(item.metadata.useFlags1, 0);
+    case 'restoreAllPpFlag':
+      return getPackedBit(item.metadata.useFlags1, 1);
+    case 'restoreHpFlag':
+      return getPackedBit(item.metadata.useFlags1, 2);
+    case 'hpEvFlag':
+      return getPackedBit(item.metadata.useFlags1, 3);
+    case 'attackEvFlag':
+      return getPackedBit(item.metadata.useFlags1, 4);
+    case 'defenseEvFlag':
+      return getPackedBit(item.metadata.useFlags1, 5);
+    case 'speedEvFlag':
+      return getPackedBit(item.metadata.useFlags1, 6);
+    case 'specialAttackEvFlag':
+      return getPackedBit(item.metadata.useFlags1, 7);
+    case 'specialDefenseEvFlag':
+      return getPackedBit(item.metadata.useFlags2, 0);
+    case 'evAbove100Flag':
+      return getPackedBit(item.metadata.useFlags2, 1);
+    case 'friendship1Flag':
+      return getPackedBit(item.metadata.useFlags2, 2);
+    case 'friendship2Flag':
+      return getPackedBit(item.metadata.useFlags2, 3);
+    case 'friendship3Flag':
+      return getPackedBit(item.metadata.useFlags2, 4);
     case 'evHp':
       return item.metadata.evHp;
     case 'evAttack':
@@ -11723,6 +11791,18 @@ function getEditableItemFieldValue(item: ItemRecord, field: string) {
     default:
       return null;
   }
+}
+
+function getPackedBit(value: number, bitOffset: number) {
+  return (value & (1 << bitOffset)) !== 0 ? 1 : 0;
+}
+
+function getLowNibble(value: number) {
+  return value & 0x0f;
+}
+
+function getHighNibble(value: number) {
+  return (value >> 4) & 0x0f;
 }
 
 function getEditableMoveFieldValue(move: MoveRecord, field: string) {
