@@ -9,6 +9,28 @@ namespace KM.Formats.Tests;
 public sealed class SwShTrainerDataFileTests
 {
     [Fact]
+    public void TrainerClassParseAndWritePreservesUnknownBytes()
+    {
+        var data = new byte[SwShTrainerClassFile.Size];
+        data[0] = 0xEE;
+        data[1] = 8;
+        data[2] = 4;
+        data[3] = 0xDD;
+        var file = SwShTrainerClassFile.Parse(data);
+
+        var output = file.WriteEdits(
+        [
+            new SwShTrainerClassEdit(SwShTrainerClassField.BallId, 3),
+        ]);
+
+        var record = SwShTrainerClassFile.Parse(output).Record;
+        Assert.Equal(8, record.Group);
+        Assert.Equal(3, record.BallId);
+        Assert.Equal(0xEE, output[0]);
+        Assert.Equal(0xDD, output[3]);
+    }
+
+    [Fact]
     public void ParseReadsTrainerMetadata()
     {
         var file = SwShTrainerDataFile.Parse(CreateTrainerData());

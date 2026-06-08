@@ -768,6 +768,10 @@ public static class SwShBridgeMapper
             trainer.Heal,
             trainer.Money,
             trainer.Gift,
+            trainer.ClassBallId,
+            trainer.ClassBall,
+            trainer.CanEditClassBall,
+            trainer.ClassBallScope,
             trainer.Team.Select(ToDto).ToArray(),
             ToDto(trainer.Provenance));
     }
@@ -827,10 +831,13 @@ public static class SwShBridgeMapper
         return new TrainerProvenanceDto(
             provenance.SourceFile,
             provenance.TeamSourceFile,
+            provenance.ClassSourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.TeamSourceLayer),
+            provenance.ClassSourceLayer is null ? null : ProjectBridgeMapper.ToDto(provenance.ClassSourceLayer.Value),
             ProjectBridgeMapper.ToDto(provenance.FileState),
-            ProjectBridgeMapper.ToDto(provenance.TeamFileState));
+            ProjectBridgeMapper.ToDto(provenance.TeamFileState),
+            provenance.ClassFileState is null ? null : ProjectBridgeMapper.ToDto(provenance.ClassFileState.Value));
     }
 
     private static ShopRecordDto ToDto(SwShShopRecord shop)

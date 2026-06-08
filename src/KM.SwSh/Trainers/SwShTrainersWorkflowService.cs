@@ -13,6 +13,7 @@ namespace KM.SwSh.Trainers;
 public sealed class SwShTrainersWorkflowService
 {
     public const string TrainerClassIdField = "trainerClassId";
+    public const string ClassBallIdField = "classBallId";
     public const string BattleTypeField = "battleType";
     public const string TrainerItem1IdField = "trainerItem1Id";
     public const string TrainerItem2IdField = "trainerItem2Id";
@@ -51,6 +52,7 @@ public sealed class SwShTrainersWorkflowService
     public const string CanDynamaxField = "canDynamax";
     public const string TrainerDataRootPath = SwShTrainerDataFile.TrainerDataRootRelativePath;
     public const string TrainerPokeRootPath = SwShTrainerTeamFile.TrainerPokeRootRelativePath;
+    public const string TrainerClassRootPath = SwShTrainerClassFile.TrainerClassRootRelativePath;
     public const string PreferredLanguage = "English";
 
     private const string MessageRootPath = "romfs/bin/message";
@@ -70,6 +72,37 @@ public sealed class SwShTrainersWorkflowService
         new SwShTrainerEditableFieldOption(1, "1 On"),
     ];
 
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BallOptions =
+    [
+        new SwShTrainerEditableFieldOption(0, "0 None"),
+        new SwShTrainerEditableFieldOption(1, "1 Master Ball"),
+        new SwShTrainerEditableFieldOption(2, "2 Ultra Ball"),
+        new SwShTrainerEditableFieldOption(3, "3 Great Ball"),
+        new SwShTrainerEditableFieldOption(4, "4 Poke Ball"),
+        new SwShTrainerEditableFieldOption(5, "5 Safari Ball"),
+        new SwShTrainerEditableFieldOption(6, "6 Net Ball"),
+        new SwShTrainerEditableFieldOption(7, "7 Dive Ball"),
+        new SwShTrainerEditableFieldOption(8, "8 Nest Ball"),
+        new SwShTrainerEditableFieldOption(9, "9 Repeat Ball"),
+        new SwShTrainerEditableFieldOption(10, "10 Timer Ball"),
+        new SwShTrainerEditableFieldOption(11, "11 Luxury Ball"),
+        new SwShTrainerEditableFieldOption(12, "12 Premier Ball"),
+        new SwShTrainerEditableFieldOption(13, "13 Dusk Ball"),
+        new SwShTrainerEditableFieldOption(14, "14 Heal Ball"),
+        new SwShTrainerEditableFieldOption(15, "15 Quick Ball"),
+        new SwShTrainerEditableFieldOption(16, "16 Cherish Ball"),
+        new SwShTrainerEditableFieldOption(17, "17 Fast Ball"),
+        new SwShTrainerEditableFieldOption(18, "18 Level Ball"),
+        new SwShTrainerEditableFieldOption(19, "19 Lure Ball"),
+        new SwShTrainerEditableFieldOption(20, "20 Heavy Ball"),
+        new SwShTrainerEditableFieldOption(21, "21 Love Ball"),
+        new SwShTrainerEditableFieldOption(22, "22 Friend Ball"),
+        new SwShTrainerEditableFieldOption(23, "23 Moon Ball"),
+        new SwShTrainerEditableFieldOption(24, "24 Sport Ball"),
+        new SwShTrainerEditableFieldOption(25, "25 Dream Ball"),
+        new SwShTrainerEditableFieldOption(26, "26 Beast Ball"),
+    ];
+
     private static readonly IReadOnlyList<SwShTrainerEditableField> EditableFields =
     [
         new SwShTrainerEditableField(
@@ -78,6 +111,13 @@ public sealed class SwShTrainersWorkflowService
             "integer",
             0,
             SwShTrainerDataFile.MaximumClassId),
+        new SwShTrainerEditableField(
+            ClassBallIdField,
+            "Class ball",
+            "integer",
+            0,
+            SwShTrainerClassFile.MaximumBallId,
+            BallOptions),
         new SwShTrainerEditableField(
             BattleTypeField,
             "Battle type",
@@ -331,6 +371,7 @@ public sealed class SwShTrainersWorkflowService
 
         var trainerDataSources = ResolveTrainerFolder(project, TrainerDataRootPath);
         var trainerPokeSources = ResolveTrainerFolder(project, TrainerPokeRootPath);
+        var trainerClassSources = ResolveTrainerFolder(project, TrainerClassRootPath);
         if (trainerDataSources.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -347,13 +388,26 @@ public sealed class SwShTrainersWorkflowService
                 expected: $"{TrainerPokeRootPath}/**/*"));
         }
 
+        if (trainerClassSources.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Trainers did not find Sword/Shield trainer class files; class ball editing is disabled.",
+                expected: $"{TrainerClassRootPath}/**/*"));
+        }
+
         if (trainerDataSources.Count == 0)
         {
             return CreateWorkflow(summary, Array.Empty<SwShTrainerRecord>(), diagnostics, sourceFileCount: 0);
         }
 
         var names = LoadLookupTables(project, diagnostics);
+        var classRecordsByClassId = LoadTrainerClassRecords(trainerClassSources, diagnostics);
+        var classOwnershipByClassId = CreateTrainerClassOwnership(trainerDataSources, names);
         var pokeSourcesByTrainerId = trainerPokeSources
+            .GroupBy(source => source.TrainerId)
+            .ToDictionary(group => group.Key, group => group.First());
+        var classSourcesByClassId = trainerClassSources
             .GroupBy(source => source.TrainerId)
             .ToDictionary(group => group.Key, group => group.First());
         var trainers = new List<SwShTrainerRecord>();
@@ -375,7 +429,7 @@ public sealed class SwShTrainersWorkflowService
             {
                 var dataFile = SwShTrainerDataFile.Parse(File.ReadAllBytes(dataSource.AbsolutePath));
                 var teamFile = SwShTrainerTeamFile.Parse(File.ReadAllBytes(pokeSource.AbsolutePath));
-                parsedSourceFileCount += 2;
+                parsedSourceFileCount += classRecordsByClassId.ContainsKey(dataFile.Record.ClassId) ? 3 : 2;
 
                 if (dataFile.Record.PokemonCount != teamFile.Records.Count)
                 {
@@ -386,7 +440,19 @@ public sealed class SwShTrainersWorkflowService
                         expected: "Trainer data Pokemon count matching party rows"));
                 }
 
-                trainers.Add(ToTrainerRecord(dataSource, pokeSource, dataFile.Record, teamFile.Records, names));
+                classSourcesByClassId.TryGetValue(dataFile.Record.ClassId, out var classSource);
+                classRecordsByClassId.TryGetValue(dataFile.Record.ClassId, out var classRecord);
+                classOwnershipByClassId.TryGetValue(dataFile.Record.ClassId, out var classOwnership);
+
+                trainers.Add(ToTrainerRecord(
+                    dataSource,
+                    pokeSource,
+                    classSource,
+                    dataFile.Record,
+                    teamFile.Records,
+                    classRecord,
+                    classOwnership,
+                    names));
             }
             catch (InvalidDataException exception)
             {
@@ -468,6 +534,11 @@ public sealed class SwShTrainersWorkflowService
             || string.Equals(field, HealField, StringComparison.Ordinal)
             || string.Equals(field, MoneyField, StringComparison.Ordinal)
             || string.Equals(field, GiftField, StringComparison.Ordinal);
+    }
+
+    internal static bool IsTrainerClassField(string? field)
+    {
+        return string.Equals(field, ClassBallIdField, StringComparison.Ordinal);
     }
 
     internal static bool IsTrainerPokemonField(string? field)
@@ -622,6 +693,93 @@ public sealed class SwShTrainersWorkflowService
             .OrderBy(source => source.SortKey)
             .ThenBy(source => source.Entry.RelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static IReadOnlyDictionary<int, SwShTrainerClassRecord> LoadTrainerClassRecords(
+        IReadOnlyList<WorkflowFileSource> classSources,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var records = new Dictionary<int, SwShTrainerClassRecord>();
+
+        foreach (var source in classSources)
+        {
+            try
+            {
+                records[source.TrainerId] = SwShTrainerClassFile.Parse(File.ReadAllBytes(source.AbsolutePath)).Record;
+            }
+            catch (InvalidDataException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Trainer class {source.TrainerId} could not be decoded: {exception.Message}",
+                    file: source.Entry.RelativePath,
+                    expected: "Sword/Shield trainer class file"));
+            }
+            catch (IOException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Trainer class {source.TrainerId} could not be read: {exception.Message}",
+                    file: source.Entry.RelativePath,
+                    expected: "Readable trainer class file"));
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Trainer class {source.TrainerId} could not be read: {exception.Message}",
+                    file: source.Entry.RelativePath,
+                    expected: "Readable trainer class file"));
+            }
+        }
+
+        return records;
+    }
+
+    private static IReadOnlyDictionary<int, TrainerClassOwnership> CreateTrainerClassOwnership(
+        IReadOnlyList<WorkflowFileSource> trainerDataSources,
+        TrainerLookupTables names)
+    {
+        var firstOwnerNames = new Dictionary<int, string>();
+        var sharedClasses = new HashSet<int>();
+
+        foreach (var source in trainerDataSources)
+        {
+            SwShTrainerDataRecord trainer;
+            try
+            {
+                trainer = SwShTrainerDataFile.Parse(File.ReadAllBytes(source.AbsolutePath)).Record;
+            }
+            catch (InvalidDataException)
+            {
+                continue;
+            }
+            catch (IOException)
+            {
+                continue;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            var ownerName = GetLookupValue(names.TrainerNames, source.TrainerId, $"Trainer {source.TrainerId}");
+            if (!firstOwnerNames.TryGetValue(trainer.ClassId, out var firstOwnerName))
+            {
+                firstOwnerNames[trainer.ClassId] = ownerName;
+                continue;
+            }
+
+            if (!string.Equals(firstOwnerName, ownerName, StringComparison.Ordinal))
+            {
+                sharedClasses.Add(trainer.ClassId);
+            }
+        }
+
+        return firstOwnerNames
+            .ToDictionary(
+                entry => entry.Key,
+                entry => new TrainerClassOwnership(entry.Value, sharedClasses.Contains(entry.Key)));
     }
 
     private static string? ResolveSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
@@ -791,10 +949,17 @@ public sealed class SwShTrainersWorkflowService
     private static SwShTrainerRecord ToTrainerRecord(
         WorkflowFileSource dataSource,
         WorkflowFileSource pokeSource,
+        WorkflowFileSource? classSource,
         SwShTrainerDataRecord trainer,
         IReadOnlyList<SwShTrainerPokemonTableRecord> team,
+        SwShTrainerClassRecord? classRecord,
+        TrainerClassOwnership? classOwnership,
         TrainerLookupTables names)
     {
+        var canEditClassBall = classSource is not null
+            && classRecord is not null
+            && classOwnership is { HasMultipleOwners: false };
+
         return new SwShTrainerRecord(
             dataSource.TrainerId,
             GetLookupValue(names.TrainerNames, dataSource.TrainerId, $"Trainer {dataSource.TrainerId}"),
@@ -809,8 +974,12 @@ public sealed class SwShTrainersWorkflowService
             trainer.Heal,
             trainer.Money,
             trainer.Gift,
+            classRecord?.BallId,
+            classRecord is null ? null : FormatBall(classRecord.BallId),
+            canEditClassBall,
+            FormatClassBallScope(classSource, classRecord, classOwnership),
             team.Select(pokemon => ToTrainerPokemonRecord(pokemon, names)).ToArray(),
-            CreateProvenance(dataSource.Entry, pokeSource.Entry));
+            CreateProvenance(dataSource.Entry, pokeSource.Entry, classSource?.Entry));
     }
 
     private static SwShTrainerPokemonRecord ToTrainerPokemonRecord(
@@ -873,9 +1042,40 @@ public sealed class SwShTrainersWorkflowService
         };
     }
 
+    private static string FormatClassBallScope(
+        WorkflowFileSource? classSource,
+        SwShTrainerClassRecord? classRecord,
+        TrainerClassOwnership? classOwnership)
+    {
+        if (classSource is null)
+        {
+            return "Class file missing";
+        }
+
+        if (classRecord is null)
+        {
+            return "Class file unsupported";
+        }
+
+        if (classOwnership is null)
+        {
+            return "No loaded trainer owner";
+        }
+
+        return classOwnership.HasMultipleOwners
+            ? "Shared trainer class"
+            : $"Unique trainer class: {classOwnership.OwnerName}";
+    }
+
+    private static string FormatBall(int ballId)
+    {
+        return BallOptions.FirstOrDefault(option => option.Value == ballId)?.Label ?? $"Ball {ballId}";
+    }
+
     private static SwShTrainerProvenance CreateProvenance(
         ProjectFileGraphEntry dataEntry,
-        ProjectFileGraphEntry teamEntry)
+        ProjectFileGraphEntry teamEntry,
+        ProjectFileGraphEntry? classEntry)
     {
         var dataSourceLayer = dataEntry.LayeredFile is not null
             ? ProjectFileLayer.Layered
@@ -883,14 +1083,22 @@ public sealed class SwShTrainersWorkflowService
         var teamSourceLayer = teamEntry.LayeredFile is not null
             ? ProjectFileLayer.Layered
             : ProjectFileLayer.Base;
+        var classSourceLayer = classEntry?.LayeredFile is not null
+            ? ProjectFileLayer.Layered
+            : classEntry is not null
+                ? ProjectFileLayer.Base
+                : (ProjectFileLayer?)null;
 
         return new SwShTrainerProvenance(
             dataEntry.RelativePath,
             teamEntry.RelativePath,
+            classEntry?.RelativePath,
             dataSourceLayer,
             teamSourceLayer,
+            classSourceLayer,
             dataEntry.State,
-            teamEntry.State);
+            teamEntry.State,
+            classEntry?.State);
     }
 
     private static SwShWorkflowSummary CreateSummary(
@@ -933,4 +1141,8 @@ public sealed class SwShTrainersWorkflowService
         IReadOnlyList<string> SpeciesNames,
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames);
+
+    private sealed record TrainerClassOwnership(
+        string OwnerName,
+        bool HasMultipleOwners);
 }

@@ -14,6 +14,83 @@ public sealed record SwShTrainerDataRecord(
     int Money,
     int Gift);
 
+public sealed record SwShTrainerClassRecord(
+    int Group,
+    int BallId);
+
+public sealed record SwShTrainerClassEdit(
+    SwShTrainerClassField Field,
+    int Value);
+
+public enum SwShTrainerClassField
+{
+    BallId,
+}
+
+public sealed class SwShTrainerClassFile
+{
+    public const string TrainerClassRootRelativePath = "romfs/bin/trainer/trainer_type";
+    public const int Size = 0x118;
+    public const int MaximumBallId = 26;
+
+    private const int GroupOffset = 0x01;
+    private const int BallIdOffset = 0x02;
+
+    private readonly byte[] data;
+
+    private SwShTrainerClassFile(byte[] data)
+    {
+        this.data = data;
+        Record = new SwShTrainerClassRecord(
+            data[GroupOffset],
+            data[BallIdOffset]);
+    }
+
+    public SwShTrainerClassRecord Record { get; }
+
+    public static SwShTrainerClassFile Parse(ReadOnlySpan<byte> data)
+    {
+        if (data.Length != Size)
+        {
+            throw new InvalidDataException(
+                $"Trainer class file must be exactly {Size} bytes for Sword/Shield.");
+        }
+
+        return new SwShTrainerClassFile(data.ToArray());
+    }
+
+    public byte[] WriteEdits(IReadOnlyList<SwShTrainerClassEdit> edits)
+    {
+        ArgumentNullException.ThrowIfNull(edits);
+
+        var result = data.ToArray();
+        foreach (var edit in edits)
+        {
+            switch (edit.Field)
+            {
+                case SwShTrainerClassField.BallId:
+                    ValidateRange(edit.Value, 0, MaximumBallId, nameof(edits));
+                    result[BallIdOffset] = checked((byte)edit.Value);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(edits), $"Trainer class field '{edit.Field}' is not supported.");
+            }
+        }
+
+        return result;
+    }
+
+    private static void ValidateRange(int value, int minimum, int maximum, string parameterName)
+    {
+        if (value < minimum || value > maximum)
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                $"Trainer class value {value} is outside the supported range {minimum}-{maximum}.");
+        }
+    }
+}
+
 public sealed record SwShTrainerDataEdit(
     SwShTrainerDataField Field,
     int Value);

@@ -59,6 +59,62 @@ public sealed class SwShTrainersEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateFieldCreatesPendingClassBallEditAndOverlaysWorkflow()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.ClassBallIdField,
+            value: "3");
+
+        Assert.Empty(result.Diagnostics);
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal("workflow.trainers", edit.Domain);
+        Assert.Equal("classBallId", edit.Field);
+        Assert.Equal("5", edit.RecordId);
+        Assert.Equal("3", edit.NewValue);
+        var trainer = Assert.Single(result.Workflow.Trainers);
+        Assert.Equal(3, trainer.ClassBallId);
+        Assert.Equal("3 Great Ball", trainer.ClassBall);
+    }
+
+    [Fact]
+    public void UpdateFieldRejectsSharedClassBallEdit()
+    {
+        using var temp = CreateEditableProject();
+        temp.WriteBaseRomFsFile(
+            "bin/trainer/trainer_data/trainer_011.bin",
+            SwShTrainersWorkflowServiceTests.CreateTrainerData(classId: 5, battleMode: 0, pokemonCount: 1));
+        temp.WriteBaseRomFsFile(
+            "bin/trainer/trainer_poke/trainer_011.bin",
+            SwShTrainersWorkflowServiceTests.CreateTrainerTeam(
+                (speciesId: 821, level: 11, heldItemId: 0, moves: new[] { 3, 0, 0, 0 })));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/trname.dat",
+            SwShTrainersWorkflowServiceTests.CreateTextTable(11, (10, "Avery"), (11, "Other Trainer")));
+        var service = new SwShTrainersEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.ClassBallIdField,
+            value: "3");
+
+        Assert.False(result.Session.HasPendingChanges);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("uniquely owned", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void UpdateFieldCreatesPendingPartyEditAndOverlaysWorkflow()
     {
         using var temp = CreateEditableProject();
@@ -237,6 +293,36 @@ public sealed class SwShTrainersEditSessionServiceTests
         Assert.False(output.Record.Heal);
         Assert.Equal(99, output.Record.Money);
         Assert.Equal(7, output.Record.Gift);
+    }
+
+    [Fact]
+    public void ApplyChangePlanWritesEditedClassBallToOutputRoot()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.ClassBallIdField,
+            value: "3");
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal("romfs/bin/trainer/trainer_type/trainer_type_005.bin", Assert.Single(apply.WrittenFiles).RelativePath);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "trainer",
+            "trainer_type",
+            "trainer_type_005.bin");
+        var output = SwShTrainerClassFile.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal(3, output.Record.BallId);
+        Assert.Equal(8, output.Record.Group);
     }
 
     [Fact]

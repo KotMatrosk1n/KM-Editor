@@ -12,10 +12,13 @@ public sealed record LoadTrainersWorkflowRequest(ProjectPathsDto Paths);
 public sealed record TrainerProvenanceDto(
     string SourceFile,
     string TeamSourceFile,
+    string? ClassSourceFile,
     ProjectFileLayerDto SourceLayer,
     ProjectFileLayerDto TeamSourceLayer,
+    ProjectFileLayerDto? ClassSourceLayer,
     ProjectFileGraphEntryStateDto FileState,
-    ProjectFileGraphEntryStateDto TeamFileState);
+    ProjectFileGraphEntryStateDto TeamFileState,
+    ProjectFileGraphEntryStateDto? ClassFileState);
 
 public sealed record TrainerPokemonRecordDto(
     int Slot,
@@ -59,6 +62,10 @@ public sealed record TrainerRecordDto(
     bool Heal,
     int Money,
     int Gift,
+    int? ClassBallId,
+    string? ClassBall,
+    bool CanEditClassBall,
+    string ClassBallScope,
     IReadOnlyList<TrainerPokemonRecordDto> Team,
     TrainerProvenanceDto Provenance);
 

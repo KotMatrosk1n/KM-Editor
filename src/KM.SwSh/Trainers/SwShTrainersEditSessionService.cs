@@ -203,9 +203,12 @@ public sealed class SwShTrainersEditSessionService
 
             try
             {
-                var output = SwShTrainersWorkflowService.IsTrainerDataField(editGroup.First().Field)
+                var firstField = editGroup.First().Field;
+                var output = SwShTrainersWorkflowService.IsTrainerDataField(firstField)
                     ? WriteTrainerDataEdits(source, editGroup, diagnostics)
-                    : WriteTrainerTeamEdits(source, editGroup, diagnostics);
+                    : SwShTrainersWorkflowService.IsTrainerClassField(firstField)
+                        ? WriteTrainerClassEdits(source, editGroup, diagnostics)
+                        : WriteTrainerTeamEdits(source, editGroup, diagnostics);
 
                 if (output is not null)
                 {
@@ -321,6 +324,12 @@ public sealed class SwShTrainersEditSessionService
             return;
         }
 
+        if (SwShTrainersWorkflowService.IsTrainerClassField(edit.Field))
+        {
+            ValidateTrainerClassEdit(workflow, edit, diagnostics);
+            return;
+        }
+
         if (SwShTrainersWorkflowService.IsTrainerPokemonField(edit.Field))
         {
             ValidateTrainerPokemonEdit(workflow, edit, diagnostics);
@@ -343,6 +352,45 @@ public sealed class SwShTrainersEditSessionService
                 "Pending trainer edit targets a record that is not loaded.",
                 field: "trainerId",
                 expected: "Existing trainer record"));
+            return;
+        }
+
+        TryParseEditableValue(edit.Field, edit.NewValue, diagnostics);
+    }
+
+    private static void ValidateTrainerClassEdit(
+        SwShTrainersWorkflow workflow,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var classId))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending trainer class edit targets an invalid class.",
+                field: "classId",
+                expected: "Existing trainer class record"));
+            return;
+        }
+
+        var trainer = workflow.Trainers.FirstOrDefault(candidate => candidate.TrainerClassId == classId);
+        if (trainer is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending trainer class edit targets a class that is not loaded.",
+                field: "classId",
+                expected: "Loaded trainer class"));
+            return;
+        }
+
+        if (!trainer.CanEditClassBall)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Trainer class ball edits require a uniquely owned trainer class.",
+                field: edit.Field,
+                expected: "Unique trainer class with a loaded class file"));
             return;
         }
 
@@ -389,6 +437,11 @@ public sealed class SwShTrainersEditSessionService
         if (SwShTrainersWorkflowService.IsTrainerDataField(normalizedField))
         {
             return CreateTrainerDataPendingEdit(selectedTrainer, normalizedField, value, diagnostics);
+        }
+
+        if (SwShTrainersWorkflowService.IsTrainerClassField(normalizedField))
+        {
+            return CreateTrainerClassPendingEdit(selectedTrainer, normalizedField, value, diagnostics);
         }
 
         if (SwShTrainersWorkflowService.IsTrainerPokemonField(normalizedField))
@@ -438,6 +491,37 @@ public sealed class SwShTrainersEditSessionService
             CreateTrainerDataSummary(trainer, field, parsedValue.Value),
             [new ProjectFileReference(trainer.Provenance.SourceLayer, trainer.Provenance.SourceFile)],
             RecordId: trainer.TrainerId.ToString(CultureInfo.InvariantCulture),
+            Field: field,
+            NewValue: parsedValue.Value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static PendingEdit? CreateTrainerClassPendingEdit(
+        SwShTrainerRecord trainer,
+        string field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!trainer.CanEditClassBall)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Trainer class ball edits require a uniquely owned trainer class.",
+                field,
+                expected: "Unique trainer class with a loaded class file"));
+            return null;
+        }
+
+        var parsedValue = TryParseEditableValue(field, value, diagnostics);
+        if (parsedValue is null)
+        {
+            return null;
+        }
+
+        return new PendingEdit(
+            TrainersEditDomain,
+            CreateTrainerClassSummary(trainer, field, parsedValue.Value),
+            [new ProjectFileReference(trainer.Provenance.ClassSourceLayer!.Value, trainer.Provenance.ClassSourceFile!)],
+            RecordId: trainer.TrainerClassId.ToString(CultureInfo.InvariantCulture),
             Field: field,
             NewValue: parsedValue.Value.ToString(CultureInfo.InvariantCulture));
     }
@@ -543,6 +627,19 @@ public sealed class SwShTrainersEditSessionService
             };
         }
 
+        if (SwShTrainersWorkflowService.IsTrainerClassField(edit.Field)
+            && int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var classId))
+        {
+            return workflow with
+            {
+                Trainers = workflow.Trainers
+                    .Select(trainer => trainer.TrainerClassId == classId
+                        ? OverlayTrainerClassField(trainer, edit.Field!, value)
+                        : trainer)
+                    .ToArray(),
+            };
+        }
+
         if (SwShTrainersWorkflowService.IsTrainerPokemonField(edit.Field)
             && SwShTrainersWorkflowService.TryParseTeamRecordId(edit.RecordId, out trainerId, out var slot))
         {
@@ -621,6 +718,25 @@ public sealed class SwShTrainersEditSessionService
         {
             ItemIds = itemIds,
             Items = items,
+        };
+    }
+
+    private static SwShTrainerRecord OverlayTrainerClassField(
+        SwShTrainerRecord trainer,
+        string field,
+        int value)
+    {
+        return field switch
+        {
+            SwShTrainersWorkflowService.ClassBallIdField => trainer with
+            {
+                ClassBallId = value,
+                ClassBall = SwShTrainersWorkflowService.GetEditableField(field)
+                    ?.Options
+                    .FirstOrDefault(option => option.Value == value)
+                    ?.Label ?? $"Ball {value}",
+            },
+            _ => trainer,
         };
     }
 
@@ -763,6 +879,15 @@ public sealed class SwShTrainersEditSessionService
                 : new ProjectFileReference(trainer.Provenance.SourceLayer, trainer.Provenance.SourceFile);
         }
 
+        if (SwShTrainersWorkflowService.IsTrainerClassField(edit.Field)
+            && int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var classId))
+        {
+            var trainer = workflow.Trainers.FirstOrDefault(candidate => candidate.TrainerClassId == classId);
+            return trainer?.Provenance.ClassSourceFile is null || trainer.Provenance.ClassSourceLayer is null
+                ? null
+                : new ProjectFileReference(trainer.Provenance.ClassSourceLayer.Value, trainer.Provenance.ClassSourceFile);
+        }
+
         if (SwShTrainersWorkflowService.IsTrainerPokemonField(edit.Field)
             && SwShTrainersWorkflowService.TryParseTeamRecordId(edit.RecordId, out trainerId, out _))
         {
@@ -810,6 +935,23 @@ public sealed class SwShTrainersEditSessionService
         }
 
         return targetPath;
+    }
+
+    private static byte[]? WriteTrainerClassEdits(
+        SwShTrainersWorkflowService.WorkflowFileSource source,
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var classFile = SwShTrainerClassFile.Parse(File.ReadAllBytes(source.AbsolutePath));
+        var classEdits = edits
+            .Select(edit => ToTrainerClassEdit(edit, diagnostics))
+            .Where(edit => edit is not null)
+            .Select(edit => edit!)
+            .ToArray();
+
+        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            ? null
+            : classFile.WriteEdits(classEdits);
     }
 
     private static byte[]? WriteTrainerDataEdits(
@@ -878,6 +1020,31 @@ public sealed class SwShTrainersEditSessionService
         }
 
         return new SwShTrainerDataEdit(field.Value, value.Value);
+    }
+
+    private static SwShTrainerClassEdit? ToTrainerClassEdit(
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var value = TryParseEditableValue(edit.Field, edit.NewValue, diagnostics);
+        if (value is null)
+        {
+            return null;
+        }
+
+        var field = edit.Field switch
+        {
+            SwShTrainersWorkflowService.ClassBallIdField => SwShTrainerClassField.BallId,
+            _ => (SwShTrainerClassField?)null,
+        };
+
+        if (field is null)
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
+            return null;
+        }
+
+        return new SwShTrainerClassEdit(field.Value, value.Value);
     }
 
     private static SwShTrainerPokemonEdit? ToTrainerPokemonEdit(
@@ -983,6 +1150,12 @@ public sealed class SwShTrainersEditSessionService
         return $"Set {trainer.Name} {label.ToLowerInvariant()} to {value}.";
     }
 
+    private static string CreateTrainerClassSummary(SwShTrainerRecord trainer, string field, int value)
+    {
+        var label = SwShTrainersWorkflowService.GetEditableField(field)?.Label ?? field;
+        return $"Set {trainer.TrainerClass} {label.ToLowerInvariant()} to {value}.";
+    }
+
     private static string CreateTrainerPokemonSummary(
         SwShTrainerRecord trainer,
         SwShTrainerPokemonRecord pokemon,
@@ -999,7 +1172,7 @@ public sealed class SwShTrainersEditSessionService
             DiagnosticSeverity.Error,
             $"Trainer field '{field}' is not supported by the Trainers workflow yet.",
             field: "field",
-            expected: "Supported trainer data or trainer party field");
+            expected: "Supported trainer data, trainer class, or trainer party field");
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

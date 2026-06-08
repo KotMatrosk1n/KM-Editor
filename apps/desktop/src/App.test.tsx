@@ -583,6 +583,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
     expect(screen.getByLabelText('Trainer class ID')).toHaveDisplayValue('005 Pokemon Trainer');
+    expect(screen.getByLabelText('Class ball')).toHaveDisplayValue('4 Poke Ball');
     expect(screen.getByLabelText('Battle type')).toHaveDisplayValue('1 Doubles');
     expect(screen.getByLabelText('Trainer item 1 ID')).toHaveDisplayValue('001 Potion');
     expect(screen.getByLabelText('Money')).toHaveDisplayValue('24');
@@ -1699,6 +1700,18 @@ function createMockProjectBridge(
         valueKind: 'integer'
       },
       {
+        field: 'classBallId',
+        label: 'Class ball',
+        maximumValue: 26,
+        minimumValue: 0,
+        options: [
+          { label: '0 None', value: 0 },
+          { label: '3 Great Ball', value: 3 },
+          { label: '4 Poke Ball', value: 4 }
+        ],
+        valueKind: 'integer'
+      },
+      {
         field: 'battleType',
         label: 'Battle type',
         maximumValue: 2,
@@ -1883,6 +1896,10 @@ function createMockProjectBridge(
         aiFlags: 77,
         battleType: 'Doubles',
         battleTypeValue: 1,
+        canEditClassBall: true,
+        classBall: '4 Poke Ball',
+        classBallId: 4,
+        classBallScope: 'Unique trainer class: Avery',
         gift: 7,
         heal: true,
         itemIds: [1, 2, 0, 0],
@@ -1891,6 +1908,9 @@ function createMockProjectBridge(
         money: 24,
         name: 'Avery',
         provenance: {
+          classFileState: 'baseOnly',
+          classSourceFile: 'romfs/bin/trainer/trainer_type/trainer_type_005.bin',
+          classSourceLayer: 'base',
           fileState: 'baseOnly',
           sourceFile: 'romfs/bin/trainer/trainer_data/trainer_010.bin',
           sourceLayer: 'base',
