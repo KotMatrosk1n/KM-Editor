@@ -2,6 +2,7 @@
 
 using KM.Formats.SwSh;
 using KM.SwSh.Tests.Items;
+using KM.SwSh.Tests.StaticEncounters;
 using KM.SwSh.Tests.Trainers;
 using System.Buffers.Binary;
 
@@ -35,6 +36,7 @@ internal static class SwShPerformanceFixtureProject
         WriteTextTables(temp);
         WriteTrainers(temp);
         WriteMovesData(temp);
+        WriteStaticEncounters(temp);
         WriteShopData(temp);
         WriteDataTablePack(temp);
         WritePlacement(temp);
@@ -188,6 +190,14 @@ internal static class SwShPerformanceFixtureProject
                 "Dragon",
                 "Dark",
                 "Fairy"));
+    }
+
+    private static void WriteStaticEncounters(TemporarySwShProject temp)
+    {
+        temp.WriteBaseRomFsFile(
+            "bin/script_event_data/event_encount_data.bin",
+            SwShStaticEncountersWorkflowServiceTests.CreateStaticEncounterTable(
+                new SwShStaticEncounterStats(31, 31, 31, 31, 31, 31)));
     }
 
     private static SwShMoveDataRecord CreateMoveRecord(int moveId)

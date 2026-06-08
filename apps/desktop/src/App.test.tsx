@@ -17,6 +17,7 @@ import {
   type RaidRewardsWorkflow,
   type ShopsWorkflow,
   type SpreadsheetImportWorkflow,
+  type StaticEncountersWorkflow,
   type TextWorkflow,
   type TrainersWorkflow,
   type WorkflowSummary
@@ -48,6 +49,8 @@ describe('App', () => {
       flagworkSaveWorkflow: null,
       giftPokemonSearchText: '',
       giftPokemonWorkflow: null,
+      staticEncounterSearchText: '',
+      staticEncountersWorkflow: null,
       itemSearchText: '',
       itemsWorkflow: null,
       movesSearchText: '',
@@ -70,6 +73,7 @@ describe('App', () => {
       selectedExeFsCheckId: null,
       selectedExeFsPatchId: null,
       selectedGiftPokemonIndex: null,
+      selectedStaticEncounterIndex: null,
       selectedRoyalCandyCheckId: null,
       selectedRoyalCandyWorkflowId: null,
       selectedSpreadsheetImportProfileId: null,
@@ -672,6 +676,57 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Gift Pokemon change plan to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
+  it('opens Static Encounters, edits IVs, reviews a static plan, and applies it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Static Encounters' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Static Encounters' })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Grookey').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Calyrex').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const hpIvInput = screen.getByLabelText('HP IV');
+    expect(hpIvInput).toHaveDisplayValue('31');
+    await user.clear(hpIvInput);
+    await user.type(hpIvInput, '0');
+    await user.click(screen.getByRole('button', { name: 'Save hp iv' }));
+
+    expect(await screen.findByDisplayValue('0')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Static 001 ivHp to 0.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending static encounter change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(
+      screen.getAllByText('romfs/bin/script_event_data/event_encount_data.bin').length
+    ).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Applied Static Encounter change plan to the configured LayeredFS output root.'
+      )
     ).toBeInTheDocument();
   });
 
@@ -2285,6 +2340,232 @@ function createMockProjectBridge(
     },
     summary: giftPokemonWorkflowSummary
   };
+  const staticEncountersWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Scripted overworld and story encounter records, IV modes, moves, rules, and source provenance.',
+    diagnostics: [],
+    id: 'staticEncounters',
+    label: 'Static Encounters'
+  };
+  const staticEncountersWorkflow: StaticEncountersWorkflow = {
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'species',
+        label: 'Species',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '001 Bulbasaur', value: 1 },
+          { label: '810 Grookey', value: 810 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'form',
+        label: 'Form',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'level',
+        label: 'Level',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'heldItemId',
+        label: 'Held item',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Potion', value: 1 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ability',
+        label: 'Ability slot',
+        maximumValue: 3,
+        minimumValue: 0,
+        options: [
+          { label: 'Default', value: 0 },
+          { label: 'Ability 1', value: 1 },
+          { label: 'Hidden Ability', value: 3 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'nature',
+        label: 'Nature',
+        maximumValue: 25,
+        minimumValue: 0,
+        options: [
+          { label: 'Hardy', value: 0 },
+          { label: 'Random', value: 25 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'gender',
+        label: 'Gender',
+        maximumValue: 2,
+        minimumValue: 0,
+        options: [
+          { label: 'Random', value: 0 },
+          { label: 'Male', value: 1 },
+          { label: 'Female', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'shinyLock',
+        label: 'Shiny lock',
+        maximumValue: 2,
+        minimumValue: 0,
+        options: [
+          { label: 'Random', value: 0 },
+          { label: 'Never Shiny', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'encounterScenario',
+        label: 'Scenario',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: 'None', value: 0 },
+          { label: 'Calyrex', value: 17 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'dynamaxLevel',
+        label: 'Dynamax level',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'canGigantamax',
+        label: 'Can Gigantamax',
+        maximumValue: 1,
+        minimumValue: 0,
+        options: [
+          { label: 'No', value: 0 },
+          { label: 'Yes', value: 1 }
+        ],
+        valueKind: 'boolean'
+      },
+      {
+        field: 'move0Id',
+        label: 'Move 1',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Scratch', value: 1 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivHp',
+        label: 'HP IV',
+        maximumValue: 31,
+        minimumValue: -4,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivAttack',
+        label: 'Attack IV',
+        maximumValue: 31,
+        minimumValue: -1,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'flawlessIvCount',
+        label: 'IV preset',
+        maximumValue: 6,
+        minimumValue: 0,
+        options: [
+          { label: 'Random IVs', value: 0 },
+          { label: '3 Guaranteed Perfect IVs', value: 3 },
+          { label: '6 Perfect IVs', value: 6 }
+        ],
+        valueKind: 'integer'
+      }
+    ],
+    encounters: [
+      {
+        ability: 3,
+        abilityLabel: 'Hidden Ability',
+        canGigantamax: true,
+        dynamaxLevel: 10,
+        encounterId: '0x0102030405060708',
+        encounterIndex: 0,
+        encounterScenario: 17,
+        encounterScenarioLabel: 'Calyrex',
+        evs: {
+          attack: 2,
+          defense: 3,
+          hp: 1,
+          specialAttack: 4,
+          specialDefense: 5,
+          speed: 6
+        },
+        flawlessIvCount: null,
+        form: 1,
+        gender: 1,
+        genderLabel: 'Male',
+        heldItem: 'Potion',
+        heldItemId: 1,
+        ivs: {
+          attack: 30,
+          defense: 29,
+          hp: 31,
+          specialAttack: 27,
+          specialDefense: 26,
+          speed: 28
+        },
+        ivSummary: 'HP 31 / Atk 30 / Def 29 / SpA 27 / SpD 26 / Spe 28',
+        label: 'Static 001: Grookey-1 Lv. 50 | Calyrex',
+        level: 50,
+        moves: [
+          { move: 'Scratch', moveId: 1, slot: 0 },
+          { move: 'Growl', moveId: 2, slot: 1 },
+          { move: null, moveId: 0, slot: 2 },
+          { move: null, moveId: 0, slot: 3 }
+        ],
+        nature: 25,
+        natureLabel: 'Random',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/script_event_data/event_encount_data.bin',
+          sourceLayer: 'base'
+        },
+        shinyLock: 2,
+        shinyLockLabel: 'Never Shiny',
+        species: 'Grookey',
+        speciesId: 810
+      }
+    ],
+    stats: {
+      fixedIvEncounterCount: 1,
+      gigantamaxEncounterCount: 1,
+      sourceFileCount: 1,
+      totalEncounterCount: 1
+    },
+    summary: staticEncountersWorkflowSummary
+  };
   const shopsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Shop inventories, item metadata, and source provenance.',
@@ -2874,6 +3155,22 @@ function createMockProjectBridge(
                         targetRelativePath: 'romfs/bin/script_event_data/add_poke.bin'
                       }
                     ]
+                : request.session.pendingEdits[0]?.domain === 'workflow.staticEncounters'
+                  ? [
+                      {
+                        reason: 'Apply pending Static Encounter edit: Set Static 001 HP IV to 0.',
+                        replacesExistingOutput: false,
+                        sources: [
+                          {
+                            layer: 'base',
+                            relativePath:
+                              'romfs/bin/script_event_data/event_encount_data.bin'
+                          }
+                        ],
+                        targetRelativePath:
+                          'romfs/bin/script_event_data/event_encount_data.bin'
+                      }
+                    ]
                 : request.session.pendingEdits[0]?.domain === 'workflow.shops'
                   ? [
                       {
@@ -2976,6 +3273,7 @@ function createMockProjectBridge(
           textWorkflowSummary,
           trainersWorkflowSummary,
           giftPokemonWorkflowSummary,
+          staticEncountersWorkflowSummary,
           shopsWorkflowSummary,
           encountersWorkflowSummary,
           raidRewardsWorkflowSummary,
@@ -3332,6 +3630,10 @@ function createMockProjectBridge(
     loadGiftPokemonWorkflow: () =>
       Promise.resolve({
         workflow: giftPokemonWorkflow
+      }),
+    loadStaticEncountersWorkflow: () =>
+      Promise.resolve({
+        workflow: staticEncountersWorkflow
       }),
     loadShopsWorkflow: () =>
       Promise.resolve({
@@ -3876,6 +4178,54 @@ function createMockProjectBridge(
         }
       });
     },
+    updateStaticEncounterField: (request) => {
+      const value = Number.parseInt(request.value, 10);
+
+      return Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.staticEncounters',
+              field: request.field,
+              newValue: request.value,
+              recordId: `static:${request.encounterIndex}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/script_event_data/event_encount_data.bin'
+                }
+              ],
+              summary: `Set Static 001 ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...staticEncountersWorkflow,
+          encounters: staticEncountersWorkflow.encounters.map((encounter) =>
+            encounter.encounterIndex === request.encounterIndex
+              ? {
+                  ...encounter,
+                  ivs:
+                    request.field === 'ivHp'
+                      ? {
+                          ...encounter.ivs,
+                          hp: value
+                        }
+                      : encounter.ivs,
+                  ivSummary:
+                    request.field === 'ivHp'
+                      ? `HP ${value} / Atk 30 / Def 29 / SpA 27 / SpD 26 / Spe 28`
+                      : encounter.ivSummary,
+                  level: request.field === 'level' ? value : encounter.level
+                }
+              : encounter
+          )
+        }
+      });
+    },
     updateShopInventoryItem: (request) =>
       Promise.resolve({
         diagnostics: [],
@@ -4063,6 +4413,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Gift Pokemon change plan to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.staticEncounters') {
+    return 'Applied Static Encounter change plan to the configured LayeredFS output root.';
+  }
+
   if (targetRelativePath.includes('/shop/')) {
     return 'Applied Shops change plan to the configured LayeredFS output root.';
   }
@@ -4118,6 +4472,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending trainer change is valid.';
     case 'workflow.giftPokemon':
       return 'Pending gift Pokemon change is valid.';
+    case 'workflow.staticEncounters':
+      return 'Pending static encounter change is valid.';
     case 'workflow.shops':
       return 'Pending shop change is valid.';
     case 'workflow.encounters':

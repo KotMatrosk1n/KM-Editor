@@ -23,6 +23,7 @@ KM Editor already has the project and workflow spine needed for safer feature wo
 - Items price editing, text/dialogue editing, trainer basics, wild encounter basics, shops inventory basics, raid rewards basics, placement item basics, spreadsheet import, flagwork/save inspection, ExeFS patch readiness, and Royal Candy workflow guidance.
 - Pokemon Data coverage for personal records, editable Personal scalar/flag fields, named Personal reference selectors, TM/TR/tutor compatibility flags, editable level-up learnset rows, editable evolution rows, names, search, provenance, diagnostics, and output-root apply.
 - Moves Data coverage for move metadata, scalar/effect/stat/flag editing, search, provenance, diagnostics, and output-root apply.
+- Gift Pokemon and Static Encounters coverage for scripted individual Pokemon records, named selectors, EV/IV controls, sentinel/preset validation, search, provenance, diagnostics, and output-root apply.
 
 This coverage is not complete yet. Many editor families still need more fields, linked tables, validations, and bulk operations before KM Editor can be considered a full replacement workflow.
 
@@ -35,8 +36,8 @@ This coverage is not complete yet. Many editor families still need more fields, 
 | Wild Encounters | Symbol and hidden encounter tables, species/form/probability/level ranges, map/table context, randomize current map | Basic wild table/slot editing | Expand table context, labels, filters, and batch-safe encounter transforms |
 | Raid Battles | Den tables, game version, species/form, star probabilities, level table, ability roll, gender, Gigantamax, flawless IV count, drop/bonus reward links, placement usage labels | Raid rewards only, not battle slots | Add raid battle workflow with linked rewards and placement usage diagnostics |
 | Raid Rewards | Drop chances and bonus quantities by star rank, item IDs, reward table IDs, usage labels | Basic reward editing | Split drop rewards and bonus quantities clearly, add usage labels and linked raid-slot provenance |
-| Static Encounters | Species/form/level, held item, ability, nature, gender, shiny lock, moves, EVs, IVs, Dynamax/Gigantamax, scenario/reference hashes | Not covered as static workflow | Add static encounter inspector first, then validated editing for stable fields |
-| Gifts | Gift/egg flag, species/form/level, ball, held item, ability, nature, gender, shiny lock, IVs and flawless/random sentinels, Dynamax/Gigantamax, OT/memory fields, starter placement side effects | Not covered | Add gift workflow with IV sentinel handling and explicit linked placement-text side effects |
+| Static Encounters | Species/form/level, held item, ability, nature, gender, shiny lock, moves, EVs, IVs, Dynamax/Gigantamax, scenario/reference hashes | Backend-owned workflow with searchable records, scenario labels, species/item/move selectors, editable stable fields, EV/IV controls, IV presets/sentinels, provenance, diagnostics, and output-root apply | Add linked placement/script reference diagnostics and safer scenario-specific guidance |
+| Gifts | Gift/egg flag, species/form/level, ball, held item, ability, nature, gender, shiny lock, IVs and flawless/random sentinels, Dynamax/Gigantamax, OT/memory fields, starter placement side effects | Backend-owned workflow with searchable records, species/item/move selectors, editable stable fields, signed IV controls, IV presets/sentinels, provenance, diagnostics, and output-root apply | Add OT/memory fields when their structures are stable, plus stronger linked placement-text side-effect guidance |
 | Trades | Received Pokemon, required Pokemon, level/form/item/ball/ability/nature/gender/shiny lock/relearn moves/IVs, OT/memory fields, dialogue text updates | Not covered | Add trade workflow with linked dialogue preview/update support |
 | Rentals | Species/form/level, ball, item, nature, gender, ability, moves, EVs, IVs | Not covered | Add rental Pokemon workflow using shared individual-Pokemon stat controls |
 | Dynamax Adventures | Species/form/level, ball, ability roll, Gigantamax state, game version, shiny roll, moves, guaranteed perfect IVs, IV overrides, single-capture flags, story gates, UI message IDs | Not covered | Add Dynamax Adventure workflow with IV sentinel validation and encounter-rule grouping |
@@ -91,15 +92,24 @@ IV editing is a mandatory P9 capability, but it is not species personal data. It
 - Static encounters and rentals expose fixed IVs, EVs, nature, gender, ability, held item, and moves.
 - Dynamax Adventures and raid battles expose guaranteed perfect IV counts or IV override sentinels.
 
-KM should implement a shared individual-Pokemon stats model for IVs, EVs, nature, gender, ability, shiny, Dynamax, Gigantamax, and moves, while keeping each workflow's binary layout and sentinel validation in the backend.
+KM should implement a shared individual-Pokemon stats model for IVs, EVs, nature, gender, ability, shiny, Dynamax, Gigantamax, and moves, while keeping each workflow's binary layout and sentinel validation in the backend. Trainer parties, gifts, and static encounters now cover IV editing through guarded backend edit sessions; trades, rentals, Dynamax Adventures, and raid battle records remain in the queue.
+
+## Scripted Individual Pokemon Field Inventory
+
+Gift Pokemon and Static Encounters are high-value P9 workflows because they carry individual Pokemon IV data and visible story/gameplay outcomes.
+
+| Workflow | Backing data | Covered fields | Remaining follow-up |
+| --- | --- | --- | --- |
+| Gift Pokemon | Script event gift Pokemon records, plus species/item/move lookup text | Species, form, level, held item, ball item, ability, nature, gender, shiny lock, Dynamax level, Gigantamax flag, special move, signed per-stat IVs, IV presets, provenance, diagnostics, and output-root apply | OT/memory fields, richer starter/link side-effect guidance, and any text or placement companion edits once their references are modeled |
+| Static Encounters | Script event static encounter records, plus species/item/move lookup text | Species, form, level, held item, ability, nature, gender, shiny lock, encounter scenario, Dynamax/Gigantamax, moves, EVs, signed per-stat IVs, IV presets, provenance, diagnostics, and output-root apply | Scenario-specific guidance, linked placement/script usage labels, and safe grouped filters for story, overworld, and special battle records |
 
 ## Ordered P9 Implementation Queue
 
 1. Pokemon Data editable parity foundation: personal fields, TM/TR/tutor compatibility flags, core enum/reference selectors, level-up learnset row editing, evolution row editing, and evolution method/context selectors are covered with guarded edit sessions; continue with previewed bulk transforms.
-2. Individual Pokemon stat editing across trainer parties first, then gifts/trades/statics/rentals/Dynamax Adventures, with IV handling treated as a required shared capability. Trainer-party IV/stat editing, trainer metadata editing, core class/species/item/move selectors, and guarded class-level ball editing are covered; continue with stronger trainer labels, safe bulk helpers, and other individual-Pokemon workflows.
+2. Individual Pokemon stat editing across trainer parties first, then gifts/trades/statics/rentals/Dynamax Adventures, with IV handling treated as a required shared capability. Trainer-party, gift, and static encounter IV/stat editing are covered; continue with trades, rentals, Dynamax Adventures, raid battle records, stronger trainer labels, and safe bulk helpers.
 3. Moves Data workflow with grouped move metadata, battle-behavior flags, and guarded edit-session writes.
 4. Expanded Items workflow beyond prices, including field-use behavior, Pokemon effects, battle boosts, and TM/TR machine metadata.
-5. Gift, trade, static, rental, and Dynamax Adventure encounter workflows, including linked text/placement side effects.
+5. Gift, trade, static, rental, and Dynamax Adventure encounter workflows, including linked text/placement side effects. Gift and static encounter editing are covered for stable fields; continue with trades, rentals, Dynamax Adventures, and linked side-effect modeling.
 6. Raid battle workflow and stronger raid reward/bonus reward linking, usage labels, and placement provenance.
 7. Shops and placement expansion for multi-inventory shops, static spawns, trainer refs, nest refs, and richer hash labels.
 8. Shiny-rate ExeFS patch workflow and any other focused ExeFS tuning patch with stable anchors.

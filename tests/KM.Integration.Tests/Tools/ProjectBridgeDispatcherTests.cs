@@ -15,6 +15,7 @@ using KM.Api.Raids;
 using KM.Api.RoyalCandy;
 using KM.Api.Shops;
 using KM.Api.SpreadsheetImport;
+using KM.Api.StaticEncounters;
 using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
@@ -150,6 +151,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("giftPokemon", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("staticEncounters", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             },
             workflow =>
@@ -461,6 +467,74 @@ public sealed class ProjectBridgeDispatcherTests
             "romfs/bin/pml/personal/personal_total.bin".Replace('/', Path.DirectorySeparatorChar));
         var output = SwShPersonalTable.Parse(File.ReadAllBytes(outputPath));
         Assert.True(output.Records[1].CanNotDynamax);
+    }
+
+    [Fact]
+    public void DispatchLoadStaticEncountersWorkflowReturnsRealStaticEncounterRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteStaticEncounterBridgeFixture(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadStaticEncountersWorkflow,
+            new LoadStaticEncountersWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-static-encounters");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadStaticEncountersWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-static-encounters", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Equal(2, response.Payload.Workflow.Encounters.Count);
+        var encounter = response.Payload.Workflow.Encounters[0];
+        Assert.Equal(0, encounter.EncounterIndex);
+        Assert.Equal("Grookey", encounter.Species);
+        Assert.Equal(50, encounter.Level);
+        Assert.Equal("Hidden Ability", encounter.AbilityLabel);
+        Assert.Equal("Never Shiny", encounter.ShinyLockLabel);
+        Assert.Equal("Calyrex", encounter.EncounterScenarioLabel);
+        Assert.Equal("0x0102030405060708", encounter.EncounterId);
+        Assert.Equal("romfs/bin/script_event_data/event_encount_data.bin", encounter.Provenance.SourceFile);
+        Assert.Equal(ProjectFileLayerDto.Base, encounter.Provenance.SourceLayer);
+        Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "ivHp");
+    }
+
+    [Fact]
+    public void DispatchApplyStaticEncounterChangePlanWritesStaticTable()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteStaticEncounterBridgeFixture(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateStaticEncounterField,
+            new UpdateStaticEncounterFieldRequest(
+                temp.Paths,
+                Session: null,
+                EncounterIndex: 0,
+                Field: "ivAttack",
+                Value: "12"),
+            requestId: "request-static-encounter-update");
+        var update = DeserializeResponse<UpdateStaticEncounterFieldResponse>(dispatcher.Dispatch(updateJson)).Payload!;
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, update.Session),
+            requestId: "request-static-encounter-plan");
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson)).Payload!.ChangePlan;
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, update.Session, plan),
+            requestId: "request-static-encounter-apply");
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson)).Payload!.ApplyResult;
+
+        Assert.Contains("romfs/bin/script_event_data/event_encount_data.bin", apply.WrittenFiles);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs/bin/script_event_data/event_encount_data.bin".Replace('/', Path.DirectorySeparatorChar));
+        var output = SwShStaticEncounterArchive.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal(12, output.Encounters[0].Ivs.Attack);
     }
 
     [Fact]
@@ -1856,6 +1930,85 @@ public sealed class ProjectBridgeDispatcherTests
     private static uint EncodeCmpImmediate(int register, int immediate)
     {
         return (uint)(0x7100001F | ((immediate & 0xFFF) << 10) | ((register & 0x1F) << 5));
+    }
+
+    private static void WriteStaticEncounterBridgeFixture(TemporaryBridgeProject temp)
+    {
+        temp.WriteBaseRomFsFile(
+            "bin/script_event_data/event_encount_data.bin",
+            CreateStaticEncounterTable(new SwShStaticEncounterStats(31, 30, 29, 27, 26, 28)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateIndexedTextTable(810, (25, "Pikachu"), (810, "Grookey")));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            CreateIndexedTextTable(4, (1, "Potion"), (4, "Poke Ball")));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            CreateIndexedTextTable(75, (1, "Scratch"), (2, "Growl"), (22, "Vine Whip"), (75, "Razor Leaf")));
+    }
+
+    private static byte[] CreateStaticEncounterTable(SwShStaticEncounterStats firstEncounterIvs)
+    {
+        return new SwShStaticEncounterArchive(
+        [
+            new SwShStaticEncounterRecord(
+                0,
+                0x1122334455667788,
+                0x8877665544332211,
+                new SwShStaticEncounterStats(1, 2, 3, 4, 5, 6),
+                1,
+                10,
+                0,
+                0x0102030405060708,
+                0,
+                true,
+                1,
+                50,
+                17,
+                810,
+                2,
+                25,
+                1,
+                firstEncounterIvs,
+                3,
+                [1, 2, 22, 75]),
+            new SwShStaticEncounterRecord(
+                1,
+                0,
+                0,
+                new SwShStaticEncounterStats(0, 0, 0, 0, 0, 0),
+                0,
+                0,
+                0,
+                0x1111111111111111,
+                0,
+                false,
+                0,
+                25,
+                0,
+                25,
+                0,
+                0,
+                0,
+                new SwShStaticEncounterStats(-1, -1, -1, -1, -1, -1),
+                0,
+                [0, 0, 0, 0]),
+        ]).Write();
+    }
+
+    private static byte[] CreateIndexedTextTable(int highestIndex, params (int index, string value)[] entries)
+    {
+        var lines = Enumerable.Range(0, highestIndex + 1)
+            .Select(_ => new SwShGameTextLine(string.Empty, Flags: 0))
+            .ToArray();
+
+        foreach (var (index, value) in entries)
+        {
+            lines[index] = new SwShGameTextLine(value, Flags: 0);
+        }
+
+        return SwShGameTextFile.Write(lines);
     }
 
     private static void WriteRoyalCandyApplyInputs(TemporaryBridgeProject temp)

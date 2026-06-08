@@ -12,6 +12,7 @@ using KM.Api.Pokemon;
 using KM.Api.Shops;
 using KM.Api.Raids;
 using KM.Api.RoyalCandy;
+using KM.Api.StaticEncounters;
 using KM.Api.Text;
 using KM.Api.SpreadsheetImport;
 using KM.Api.Trainers;
@@ -27,6 +28,7 @@ using KM.SwSh.Pokemon;
 using KM.SwSh.Shops;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
+using KM.SwSh.StaticEncounters;
 using KM.SwSh.Text;
 using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.Trainers;
@@ -130,6 +132,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadGiftPokemonWorkflowResponse(ToGiftPokemonWorkflowDto(workflow));
+    }
+
+    public static LoadStaticEncountersWorkflowResponse ToDto(SwShStaticEncountersWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadStaticEncountersWorkflowResponse(ToStaticEncountersWorkflowDto(workflow));
     }
 
     public static LoadEncountersWorkflowResponse ToDto(SwShEncountersWorkflow workflow)
@@ -258,6 +267,16 @@ public static class SwShBridgeMapper
 
         return new UpdateGiftPokemonFieldResponse(
             ToGiftPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateStaticEncounterFieldResponse ToDto(SwShStaticEncountersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateStaticEncounterFieldResponse(
+            ToStaticEncountersWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -427,6 +446,90 @@ public static class SwShBridgeMapper
     private static GiftPokemonEditableFieldOptionDto ToDto(SwShGiftPokemonEditableFieldOption option)
     {
         return new GiftPokemonEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static StaticEncountersWorkflowDto ToStaticEncountersWorkflowDto(SwShStaticEncountersWorkflow workflow)
+    {
+        return new StaticEncountersWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Encounters.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new StaticEncountersWorkflowStatsDto(
+                workflow.Stats.TotalEncounterCount,
+                workflow.Stats.GigantamaxEncounterCount,
+                workflow.Stats.FixedIvEncounterCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static StaticEncounterRecordDto ToDto(SwShStaticEncounterEntry encounter)
+    {
+        return new StaticEncounterRecordDto(
+            encounter.EncounterIndex,
+            encounter.Label,
+            encounter.EncounterId,
+            encounter.SpeciesId,
+            encounter.Species,
+            encounter.Form,
+            encounter.Level,
+            encounter.HeldItemId,
+            encounter.HeldItem,
+            encounter.Ability,
+            encounter.AbilityLabel,
+            encounter.Nature,
+            encounter.NatureLabel,
+            encounter.Gender,
+            encounter.GenderLabel,
+            encounter.ShinyLock,
+            encounter.ShinyLockLabel,
+            encounter.EncounterScenario,
+            encounter.EncounterScenarioLabel,
+            encounter.DynamaxLevel,
+            encounter.CanGigantamax,
+            ToDto(encounter.Evs),
+            ToDto(encounter.Ivs),
+            encounter.FlawlessIvCount,
+            encounter.IvSummary,
+            encounter.Moves.Select(ToDto).ToArray(),
+            new StaticEncounterProvenanceDto(
+                encounter.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(encounter.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(encounter.Provenance.FileState)));
+    }
+
+    private static StaticEncounterStatsDto ToDto(SwShStaticEncounterStatsRecord stats)
+    {
+        return new StaticEncounterStatsDto(
+            stats.HP,
+            stats.Attack,
+            stats.Defense,
+            stats.SpecialAttack,
+            stats.SpecialDefense,
+            stats.Speed);
+    }
+
+    private static StaticEncounterMoveDto ToDto(SwShStaticEncounterMoveRecord move)
+    {
+        return new StaticEncounterMoveDto(
+            move.Slot,
+            move.MoveId,
+            move.Move);
+    }
+
+    private static StaticEncounterEditableFieldDto ToDto(SwShStaticEncounterEditableField field)
+    {
+        return new StaticEncounterEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static StaticEncounterEditableFieldOptionDto ToDto(SwShStaticEncounterEditableFieldOption option)
+    {
+        return new StaticEncounterEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static TrainersWorkflowDto ToTrainersWorkflowDto(SwShTrainersWorkflow workflow)
