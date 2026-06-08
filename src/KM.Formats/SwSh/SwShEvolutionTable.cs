@@ -21,6 +21,7 @@ public sealed record SwShEvolutionSet(IReadOnlyList<SwShEvolutionRecord> Evoluti
         var evolutions = new List<SwShEvolutionRecord>();
         for (var offset = 0; offset < FileSize; offset += RecordSize)
         {
+            var slot = offset / RecordSize;
             var entry = data.Slice(offset, RecordSize);
             var method = BinaryPrimitives.ReadUInt16LittleEndian(entry);
             var argument = BinaryPrimitives.ReadUInt16LittleEndian(entry[2..]);
@@ -33,14 +34,56 @@ public sealed record SwShEvolutionSet(IReadOnlyList<SwShEvolutionRecord> Evoluti
                 continue;
             }
 
-            evolutions.Add(new SwShEvolutionRecord(method, argument, species, form, level));
+            evolutions.Add(new SwShEvolutionRecord(slot, method, argument, species, form, level));
         }
 
         return new SwShEvolutionSet(evolutions);
     }
+
+    public static byte[] Write(IReadOnlyList<SwShEvolutionRecord> evolutions)
+    {
+        ArgumentNullException.ThrowIfNull(evolutions);
+
+        if (evolutions.Count > MaxEvolutionCount)
+        {
+            throw new InvalidDataException($"Evolution files support at most {MaxEvolutionCount} rows.");
+        }
+
+        var output = new byte[FileSize];
+        for (var index = 0; index < evolutions.Count; index++)
+        {
+            WriteRecord(evolutions[index], output.AsSpan(index * RecordSize, RecordSize));
+        }
+
+        return output;
+    }
+
+    private static void WriteRecord(SwShEvolutionRecord evolution, Span<byte> destination)
+    {
+        if (destination.Length != RecordSize)
+        {
+            throw new InvalidDataException($"Evolution record length must be {RecordSize} bytes.");
+        }
+
+        if ((uint)evolution.Method > ushort.MaxValue
+            || (uint)evolution.Argument > ushort.MaxValue
+            || (uint)evolution.Species > ushort.MaxValue
+            || (uint)evolution.Form > byte.MaxValue
+            || (uint)evolution.Level > byte.MaxValue)
+        {
+            throw new InvalidDataException("Evolution row values must fit the Sword/Shield evolution record layout.");
+        }
+
+        BinaryPrimitives.WriteUInt16LittleEndian(destination, checked((ushort)evolution.Method));
+        BinaryPrimitives.WriteUInt16LittleEndian(destination[2..], checked((ushort)evolution.Argument));
+        BinaryPrimitives.WriteUInt16LittleEndian(destination[4..], checked((ushort)evolution.Species));
+        destination[6] = checked((byte)evolution.Form);
+        destination[7] = checked((byte)evolution.Level);
+    }
 }
 
 public sealed record SwShEvolutionRecord(
+    int Slot,
     int Method,
     int Argument,
     int Species,

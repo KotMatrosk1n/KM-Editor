@@ -239,18 +239,52 @@ public sealed class SwShPokemonDataTableTests
             parsed.Evolutions,
             evolution =>
             {
+                Assert.Equal(0, evolution.Slot);
                 Assert.Equal(4, evolution.Method);
                 Assert.Equal(2, evolution.Species);
                 Assert.Equal(16, evolution.Level);
             },
             evolution =>
             {
+                Assert.Equal(2, evolution.Slot);
                 Assert.Equal(7, evolution.Method);
                 Assert.Equal(25, evolution.Argument);
                 Assert.Equal(3, evolution.Species);
                 Assert.Equal(1, evolution.Form);
                 Assert.Equal(32, evolution.Level);
             });
+    }
+
+    [Fact]
+    public void EvolutionSetWritesCompactedRowsAndClearsTrailingSlots()
+    {
+        var written = SwShEvolutionSet.Write(
+        [
+            new SwShEvolutionRecord(2, 4, 0, 2, 0, 16),
+            new SwShEvolutionRecord(7, 7, 25, 3, 1, 32),
+        ]);
+
+        Assert.Equal(SwShEvolutionSet.FileSize, written.Length);
+        var parsed = SwShEvolutionSet.Parse(written);
+        Assert.Collection(
+            parsed.Evolutions,
+            evolution =>
+            {
+                Assert.Equal(0, evolution.Slot);
+                Assert.Equal(4, evolution.Method);
+                Assert.Equal(2, evolution.Species);
+                Assert.Equal(16, evolution.Level);
+            },
+            evolution =>
+            {
+                Assert.Equal(1, evolution.Slot);
+                Assert.Equal(7, evolution.Method);
+                Assert.Equal(25, evolution.Argument);
+                Assert.Equal(3, evolution.Species);
+                Assert.Equal(1, evolution.Form);
+                Assert.Equal(32, evolution.Level);
+            });
+        Assert.Equal(0, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(SwShEvolutionSet.RecordSize * 2)));
     }
 
     private static void WriteEvolution(

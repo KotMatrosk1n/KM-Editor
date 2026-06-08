@@ -285,6 +285,7 @@ describe('projectBridge', () => {
                       form: 0,
                       level: 16,
                       method: 4,
+                      slot: 0,
                       species: 2
                     }
                   ],
@@ -1817,6 +1818,76 @@ describe('projectBridge', () => {
 
     expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.pokemon');
     expect(updated.session.pendingEdits[0]?.field).toBe('learnset:upsert:1');
+  });
+
+  it('runs pokemon evolution update command', async () => {
+    const bridge = createProjectBridge(async (requestJson) => {
+      const request = JSON.parse(requestJson) as { command: string };
+
+      expect(request.command).toBe('pokemon.evolution.update');
+
+      return JSON.stringify({
+        error: null,
+        payload: {
+          diagnostics: [],
+          session: {
+            hasPendingChanges: true,
+            pendingEdits: [
+              {
+                domain: 'workflow.pokemon',
+                field: 'evolution:upsert:0',
+                newValue: '8:25:2:1:32',
+                recordId: '1',
+                sources: [
+                  {
+                    layer: 'base',
+                    relativePath: 'romfs/bin/pml/evolution/evo_001.bin'
+                  }
+                ],
+                summary: 'Set Bulbasaur evolution slot 0 to species 2 at level 32.'
+              }
+            ],
+            sessionId: 'session-1'
+          },
+          workflow: {
+            diagnostics: [],
+            editableFields: [],
+            pokemon: [],
+            stats: {
+              presentPokemonCount: 0,
+              sourceFileCount: 1,
+              totalEvolutionCount: 0,
+              totalLearnsetMoveCount: 0,
+              totalPokemonCount: 0
+            },
+            summary: {
+              availability: 'available',
+              description:
+                'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
+              diagnostics: [],
+              id: 'pokemon',
+              label: 'Pokemon Data'
+            }
+          }
+        }
+      });
+    });
+
+    const updated = await bridge.updatePokemonEvolution({
+      action: 'upsert',
+      argument: 25,
+      form: 1,
+      level: 32,
+      method: 8,
+      paths: editableProjectPaths,
+      personalId: 1,
+      session: null,
+      slot: 0,
+      species: 2
+    });
+
+    expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.pokemon');
+    expect(updated.session.pendingEdits[0]?.field).toBe('evolution:upsert:0');
   });
 
   it('runs move field update command', async () => {

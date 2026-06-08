@@ -516,6 +516,7 @@ public sealed class SwShPokemonWorkflowService
         var evolutionRecords = evolutions.TryGetValue(personal.PersonalId, out var evolutionRecord)
             ? evolutionRecord
                 .Select(evolution => new SwShPokemonEvolutionRecord(
+                    evolution.Slot,
                     evolution.Method,
                     evolution.Argument,
                     evolution.Species,
@@ -745,6 +746,18 @@ public sealed class SwShPokemonWorkflowService
     internal static WorkflowFileSource? ResolveLearnsetDataSource(OpenedProject project)
     {
         return ResolveWorkflowFile(project, LearnsetDataPath);
+    }
+
+    internal static WorkflowFileSource? ResolveEvolutionDataSource(OpenedProject project, int personalId)
+    {
+        return ResolveWorkflowFile(project, CreateEvolutionDataPath(personalId));
+    }
+
+    public static string CreateEvolutionDataPath(int personalId)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{EvolutionDataDirectory}/evo_{personalId:000}.bin");
     }
 
     internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)

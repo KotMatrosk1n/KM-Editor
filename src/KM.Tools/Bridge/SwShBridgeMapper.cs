@@ -75,6 +75,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdatePokemonEvolutionResponse ToDtoEvolutionUpdate(SwShPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonEvolutionResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadMovesWorkflowResponse ToDto(SwShMovesWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -588,6 +598,7 @@ public static class SwShBridgeMapper
     private static PokemonEvolutionRecordDto ToDto(SwShPokemonEvolutionRecord evolution)
     {
         return new PokemonEvolutionRecordDto(
+            evolution.Slot,
             evolution.Method,
             evolution.Argument,
             evolution.Species,

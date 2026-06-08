@@ -1174,6 +1174,43 @@ export function App({
     }
   };
 
+  const handleUpdatePokemonEvolution = async (
+    personalId: number,
+    action: string,
+    slot: number | null,
+    method: number | null,
+    argument: number | null,
+    species: number | null,
+    form: number | null,
+    level: number | null
+  ) => {
+    setIsPokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updatePokemonEvolution({
+        action,
+        argument,
+        form,
+        level,
+        method,
+        paths: toProjectPaths(draftPaths),
+        personalId,
+        session: editSession,
+        slot,
+        species
+      });
+      setPokemonWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsPokemonUpdating(false);
+    }
+  };
+
   const handleUpdateMoveField = async (moveId: number, field: string, value: string) => {
     setIsMoveUpdating(true);
     setBridgeDiagnostics([]);
@@ -1586,6 +1623,7 @@ export function App({
                 onSelectPokemon={setSelectedPokemonPersonalId}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePokemonField={handleUpdatePokemonField}
+                onUpdatePokemonEvolution={handleUpdatePokemonEvolution}
                 onUpdatePokemonLearnset={handleUpdatePokemonLearnset}
                 searchText={pokemonSearchText}
                 selectedPokemonPersonalId={selectedPokemonPersonalId}
@@ -2568,6 +2606,7 @@ function PokemonSection({
   onSelectPokemon,
   onStartEditSession,
   onUpdatePokemonField,
+  onUpdatePokemonEvolution,
   onUpdatePokemonLearnset,
   searchText,
   selectedPokemonPersonalId,
@@ -2580,6 +2619,16 @@ function PokemonSection({
   onSelectPokemon: (personalId: number | null) => void;
   onStartEditSession: () => void;
   onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
+  onUpdatePokemonEvolution: (
+    personalId: number,
+    action: string,
+    slot: number | null,
+    method: number | null,
+    argument: number | null,
+    species: number | null,
+    form: number | null,
+    level: number | null
+  ) => void;
   onUpdatePokemonLearnset: (
     personalId: number,
     action: string,
@@ -2694,6 +2743,7 @@ function PokemonSection({
               isPokemonUpdating={isPokemonUpdating}
               onStartEditSession={onStartEditSession}
               onUpdatePokemonField={onUpdatePokemonField}
+              onUpdatePokemonEvolution={onUpdatePokemonEvolution}
               onUpdatePokemonLearnset={onUpdatePokemonLearnset}
               pokemon={selectedPokemon}
             />
@@ -2716,6 +2766,7 @@ function SelectedPokemonPanel({
   isPokemonUpdating,
   onStartEditSession,
   onUpdatePokemonField,
+  onUpdatePokemonEvolution,
   onUpdatePokemonLearnset,
   pokemon
 }: {
@@ -2726,6 +2777,16 @@ function SelectedPokemonPanel({
   isPokemonUpdating: boolean;
   onStartEditSession: () => void;
   onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
+  onUpdatePokemonEvolution: (
+    personalId: number,
+    action: string,
+    slot: number | null,
+    method: number | null,
+    argument: number | null,
+    species: number | null,
+    form: number | null,
+    level: number | null
+  ) => void;
   onUpdatePokemonLearnset: (
     personalId: number,
     action: string,
@@ -2747,6 +2808,33 @@ function SelectedPokemonPanel({
     pokemon?.compatibility[0]?.groupId ?? ''
   );
   const [compatibilitySearchText, setCompatibilitySearchText] = useState('');
+  const [selectedEvolutionSlot, setSelectedEvolutionSlot] = useState(
+    pokemon?.evolutions[0]?.slot ?? 0
+  );
+  const selectedEvolution =
+    pokemon?.evolutions.find((evolution) => evolution.slot === selectedEvolutionSlot) ??
+    pokemon?.evolutions[0] ??
+    null;
+  const [evolutionMethodDraft, setEvolutionMethodDraft] = useState(
+    selectedEvolution?.method.toString() ?? ''
+  );
+  const [evolutionArgumentDraft, setEvolutionArgumentDraft] = useState(
+    selectedEvolution?.argument.toString() ?? ''
+  );
+  const [evolutionSpeciesDraft, setEvolutionSpeciesDraft] = useState(
+    selectedEvolution?.species.toString() ?? ''
+  );
+  const [evolutionFormDraft, setEvolutionFormDraft] = useState(
+    selectedEvolution?.form.toString() ?? ''
+  );
+  const [evolutionLevelDraft, setEvolutionLevelDraft] = useState(
+    selectedEvolution?.level.toString() ?? ''
+  );
+  const [newEvolutionMethodDraft, setNewEvolutionMethodDraft] = useState('');
+  const [newEvolutionArgumentDraft, setNewEvolutionArgumentDraft] = useState('0');
+  const [newEvolutionSpeciesDraft, setNewEvolutionSpeciesDraft] = useState('');
+  const [newEvolutionFormDraft, setNewEvolutionFormDraft] = useState('0');
+  const [newEvolutionLevelDraft, setNewEvolutionLevelDraft] = useState('');
   const [selectedLearnsetSlot, setSelectedLearnsetSlot] = useState(
     pokemon?.learnset[0]?.slot ?? 0
   );
@@ -2799,12 +2887,38 @@ function SelectedPokemonPanel({
   }, [pokemon, selectedLearnsetSlot]);
 
   useEffect(() => {
+    if (!pokemon || pokemon.evolutions.length === 0) {
+      setSelectedEvolutionSlot(0);
+      return;
+    }
+
+    if (!pokemon.evolutions.some((evolution) => evolution.slot === selectedEvolutionSlot)) {
+      setSelectedEvolutionSlot(pokemon.evolutions[0].slot);
+    }
+  }, [pokemon, selectedEvolutionSlot]);
+
+  useEffect(() => {
     setLearnsetMoveIdDraft(selectedLearnsetMove?.moveId.toString() ?? '');
     setLearnsetLevelDraft(selectedLearnsetMove?.level.toString() ?? '');
   }, [
     selectedLearnsetMove?.level,
     selectedLearnsetMove?.moveId,
     selectedLearnsetMove?.slot
+  ]);
+
+  useEffect(() => {
+    setEvolutionMethodDraft(selectedEvolution?.method.toString() ?? '');
+    setEvolutionArgumentDraft(selectedEvolution?.argument.toString() ?? '');
+    setEvolutionSpeciesDraft(selectedEvolution?.species.toString() ?? '');
+    setEvolutionFormDraft(selectedEvolution?.form.toString() ?? '');
+    setEvolutionLevelDraft(selectedEvolution?.level.toString() ?? '');
+  }, [
+    selectedEvolution?.argument,
+    selectedEvolution?.form,
+    selectedEvolution?.level,
+    selectedEvolution?.method,
+    selectedEvolution?.slot,
+    selectedEvolution?.species
   ]);
 
   const isBooleanField = selectedField?.valueKind === 'boolean';
@@ -2824,7 +2938,18 @@ function SelectedPokemonPanel({
     [compatibilitySearchText, selectedCompatibilityGroup]
   );
   const canToggleCompatibility = canEditPokemon && editSession !== null && !isPokemonUpdating;
+  const canEditEvolution = canEditPokemon && editSession !== null && !isPokemonUpdating;
   const canEditLearnset = canEditPokemon && editSession !== null && !isPokemonUpdating;
+  const parsedEvolutionMethod = Number.parseInt(evolutionMethodDraft, 10);
+  const parsedEvolutionArgument = Number.parseInt(evolutionArgumentDraft, 10);
+  const parsedEvolutionSpecies = Number.parseInt(evolutionSpeciesDraft, 10);
+  const parsedEvolutionForm = Number.parseInt(evolutionFormDraft, 10);
+  const parsedEvolutionLevel = Number.parseInt(evolutionLevelDraft, 10);
+  const parsedNewEvolutionMethod = Number.parseInt(newEvolutionMethodDraft, 10);
+  const parsedNewEvolutionArgument = Number.parseInt(newEvolutionArgumentDraft, 10);
+  const parsedNewEvolutionSpecies = Number.parseInt(newEvolutionSpeciesDraft, 10);
+  const parsedNewEvolutionForm = Number.parseInt(newEvolutionFormDraft, 10);
+  const parsedNewEvolutionLevel = Number.parseInt(newEvolutionLevelDraft, 10);
   const parsedLearnsetMoveId = Number.parseInt(learnsetMoveIdDraft, 10);
   const parsedLearnsetLevel = Number.parseInt(learnsetLevelDraft, 10);
   const parsedNewLearnsetMoveId = Number.parseInt(newLearnsetMoveIdDraft, 10);
@@ -2838,6 +2963,21 @@ function SelectedPokemonPanel({
     canEditLearnset &&
     Number.isInteger(parsedNewLearnsetMoveId) &&
     Number.isInteger(parsedNewLearnsetLevel);
+  const canSaveEvolution =
+    canEditEvolution &&
+    selectedEvolution !== null &&
+    Number.isInteger(parsedEvolutionMethod) &&
+    Number.isInteger(parsedEvolutionArgument) &&
+    Number.isInteger(parsedEvolutionSpecies) &&
+    Number.isInteger(parsedEvolutionForm) &&
+    Number.isInteger(parsedEvolutionLevel);
+  const canAddEvolution =
+    canEditEvolution &&
+    Number.isInteger(parsedNewEvolutionMethod) &&
+    Number.isInteger(parsedNewEvolutionArgument) &&
+    Number.isInteger(parsedNewEvolutionSpecies) &&
+    Number.isInteger(parsedNewEvolutionForm) &&
+    Number.isInteger(parsedNewEvolutionLevel);
 
   return (
     <aside aria-label="Selected Pokemon provenance" className="item-inspector">
@@ -3110,18 +3250,264 @@ function SelectedPokemonPanel({
 
           <div className="inspector-block">
             <h4>Evolutions</h4>
-            {pokemon.evolutions.length > 0 ? (
-              <ul className="inspector-list">
-                {pokemon.evolutions.map((evolution, index) => (
-                  <li key={`${evolution.method}-${evolution.species}-${index}`}>
-                    Method {evolution.method}, target {evolution.species}, level{' '}
-                    {evolution.level}, arg {evolution.argument}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="empty-copy">No evolution entries.</p>
-            )}
+            <div className="learnset-editor">
+              {pokemon.evolutions.length > 0 ? (
+                <ul className="learnset-list">
+                  {pokemon.evolutions.map((evolution) => (
+                    <li key={evolution.slot}>
+                      <button
+                        className={`learnset-row evolution-row ${
+                          selectedEvolution?.slot === evolution.slot ? 'learnset-row-selected' : ''
+                        }`}
+                        onClick={() => setSelectedEvolutionSlot(evolution.slot)}
+                        type="button"
+                      >
+                        <span>#{evolution.slot + 1}</span>
+                        <span>M {evolution.method}</span>
+                        <strong>Species {evolution.species}</strong>
+                        <span>F {evolution.form}</span>
+                        <span>Lv. {evolution.level}</span>
+                        <span>Arg {evolution.argument}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="empty-copy">No evolution entries.</p>
+              )}
+
+              {selectedEvolution ? (
+                <div className="learnset-edit-grid evolution-edit-grid">
+                  <label className="path-field">
+                    <span>Method</span>
+                    <input
+                      disabled={!canEditEvolution}
+                      max={65535}
+                      min={0}
+                      onChange={(event) => setEvolutionMethodDraft(event.target.value)}
+                      type="number"
+                      value={evolutionMethodDraft}
+                    />
+                  </label>
+                  <label className="path-field">
+                    <span>Argument</span>
+                    <input
+                      disabled={!canEditEvolution}
+                      max={65535}
+                      min={0}
+                      onChange={(event) => setEvolutionArgumentDraft(event.target.value)}
+                      type="number"
+                      value={evolutionArgumentDraft}
+                    />
+                  </label>
+                  <label className="path-field">
+                    <span>Species</span>
+                    <input
+                      disabled={!canEditEvolution}
+                      max={65535}
+                      min={0}
+                      onChange={(event) => setEvolutionSpeciesDraft(event.target.value)}
+                      type="number"
+                      value={evolutionSpeciesDraft}
+                    />
+                  </label>
+                  <label className="path-field">
+                    <span>Form</span>
+                    <input
+                      disabled={!canEditEvolution}
+                      max={255}
+                      min={0}
+                      onChange={(event) => setEvolutionFormDraft(event.target.value)}
+                      type="number"
+                      value={evolutionFormDraft}
+                    />
+                  </label>
+                  <label className="path-field">
+                    <span>Level</span>
+                    <input
+                      disabled={!canEditEvolution}
+                      max={255}
+                      min={0}
+                      onChange={(event) => setEvolutionLevelDraft(event.target.value)}
+                      type="number"
+                      value={evolutionLevelDraft}
+                    />
+                  </label>
+                  <div className="learnset-button-row">
+                    <button
+                      aria-label="Save evolution row"
+                      className="secondary-button icon-button"
+                      disabled={!canSaveEvolution}
+                      onClick={() =>
+                        onUpdatePokemonEvolution(
+                          pokemon.personalId,
+                          'upsert',
+                          selectedEvolution.slot,
+                          parsedEvolutionMethod,
+                          parsedEvolutionArgument,
+                          parsedEvolutionSpecies,
+                          parsedEvolutionForm,
+                          parsedEvolutionLevel
+                        )
+                      }
+                      title="Save evolution row"
+                      type="button"
+                    >
+                      <Save aria-hidden="true" size={16} />
+                    </button>
+                    <button
+                      aria-label="Move evolution row up"
+                      className="secondary-button icon-button"
+                      disabled={!canEditEvolution || selectedEvolution.slot === 0}
+                      onClick={() =>
+                        onUpdatePokemonEvolution(
+                          pokemon.personalId,
+                          'moveUp',
+                          selectedEvolution.slot,
+                          null,
+                          null,
+                          null,
+                          null,
+                          null
+                        )
+                      }
+                      title="Move evolution row up"
+                      type="button"
+                    >
+                      <ArrowUp aria-hidden="true" size={16} />
+                    </button>
+                    <button
+                      aria-label="Move evolution row down"
+                      className="secondary-button icon-button"
+                      disabled={
+                        !canEditEvolution || selectedEvolution.slot >= pokemon.evolutions.length - 1
+                      }
+                      onClick={() =>
+                        onUpdatePokemonEvolution(
+                          pokemon.personalId,
+                          'moveDown',
+                          selectedEvolution.slot,
+                          null,
+                          null,
+                          null,
+                          null,
+                          null
+                        )
+                      }
+                      title="Move evolution row down"
+                      type="button"
+                    >
+                      <ArrowDown aria-hidden="true" size={16} />
+                    </button>
+                    <button
+                      aria-label="Remove evolution row"
+                      className="secondary-button icon-button danger-icon-button"
+                      disabled={!canEditEvolution}
+                      onClick={() =>
+                        onUpdatePokemonEvolution(
+                          pokemon.personalId,
+                          'remove',
+                          selectedEvolution.slot,
+                          null,
+                          null,
+                          null,
+                          null,
+                          null
+                        )
+                      }
+                      title="Remove evolution row"
+                      type="button"
+                    >
+                      <Trash2 aria-hidden="true" size={16} />
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="learnset-edit-grid evolution-edit-grid">
+                <label className="path-field">
+                  <span>New method</span>
+                  <input
+                    disabled={!canEditEvolution}
+                    max={65535}
+                    min={0}
+                    onChange={(event) => setNewEvolutionMethodDraft(event.target.value)}
+                    type="number"
+                    value={newEvolutionMethodDraft}
+                  />
+                </label>
+                <label className="path-field">
+                  <span>New argument</span>
+                  <input
+                    disabled={!canEditEvolution}
+                    max={65535}
+                    min={0}
+                    onChange={(event) => setNewEvolutionArgumentDraft(event.target.value)}
+                    type="number"
+                    value={newEvolutionArgumentDraft}
+                  />
+                </label>
+                <label className="path-field">
+                  <span>New species</span>
+                  <input
+                    disabled={!canEditEvolution}
+                    max={65535}
+                    min={0}
+                    onChange={(event) => setNewEvolutionSpeciesDraft(event.target.value)}
+                    type="number"
+                    value={newEvolutionSpeciesDraft}
+                  />
+                </label>
+                <label className="path-field">
+                  <span>New form</span>
+                  <input
+                    disabled={!canEditEvolution}
+                    max={255}
+                    min={0}
+                    onChange={(event) => setNewEvolutionFormDraft(event.target.value)}
+                    type="number"
+                    value={newEvolutionFormDraft}
+                  />
+                </label>
+                <label className="path-field">
+                  <span>New level</span>
+                  <input
+                    disabled={!canEditEvolution}
+                    max={255}
+                    min={0}
+                    onChange={(event) => setNewEvolutionLevelDraft(event.target.value)}
+                    type="number"
+                    value={newEvolutionLevelDraft}
+                  />
+                </label>
+                <button
+                  aria-label="Add evolution row"
+                  className="secondary-button learnset-add-button"
+                  disabled={!canAddEvolution}
+                  onClick={() => {
+                    onUpdatePokemonEvolution(
+                      pokemon.personalId,
+                      'add',
+                      null,
+                      parsedNewEvolutionMethod,
+                      parsedNewEvolutionArgument,
+                      parsedNewEvolutionSpecies,
+                      parsedNewEvolutionForm,
+                      parsedNewEvolutionLevel
+                    );
+                    setNewEvolutionMethodDraft('');
+                    setNewEvolutionArgumentDraft('0');
+                    setNewEvolutionSpeciesDraft('');
+                    setNewEvolutionFormDraft('0');
+                    setNewEvolutionLevelDraft('');
+                  }}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={16} />
+                  <span>Add Row</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="inspector-block">
@@ -7176,6 +7562,7 @@ function filterPokemon(pokemon: PokemonRecord[], searchText: string) {
         ])
       ]),
       ...record.evolutions.flatMap((evolution) => [
+        evolution.slot.toString(),
         evolution.method.toString(),
         evolution.argument.toString(),
         evolution.species.toString(),

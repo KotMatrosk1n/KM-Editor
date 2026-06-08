@@ -50,6 +50,7 @@ public sealed class SwShPokemonWorkflowServiceTests
         var typeTutorGroup = pokemon.Compatibility.Single(group => group.GroupId == SwShPokemonWorkflowService.TypeTutorCompatibilityGroupId);
         Assert.True(typeTutorGroup.Entries[0].CanLearn);
         var evolution = Assert.Single(pokemon.Evolutions);
+        Assert.Equal(0, evolution.Slot);
         Assert.Equal(4, evolution.Method);
         Assert.Equal(2, evolution.Species);
         Assert.Equal(16, evolution.Level);

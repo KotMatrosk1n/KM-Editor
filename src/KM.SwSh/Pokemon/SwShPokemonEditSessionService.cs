@@ -20,6 +20,12 @@ public sealed class SwShPokemonEditSessionService
     private const string LearnsetRemoveAction = "remove";
     private const string LearnsetMoveUpAction = "moveUp";
     private const string LearnsetMoveDownAction = "moveDown";
+    private const string EvolutionFieldPrefix = "evolution";
+    private const string EvolutionAddAction = "add";
+    private const string EvolutionUpsertAction = "upsert";
+    private const string EvolutionRemoveAction = "remove";
+    private const string EvolutionMoveUpAction = "moveUp";
+    private const string EvolutionMoveDownAction = "moveDown";
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShPokemonWorkflowService pokemonWorkflowService;
@@ -152,6 +158,79 @@ public sealed class SwShPokemonEditSessionService
             diagnostics);
     }
 
+    public SwShPokemonEditResult UpdateEvolution(
+        ProjectPaths paths,
+        EditSession? session,
+        int personalId,
+        string action,
+        int? slot,
+        int? method,
+        int? argument,
+        int? species,
+        int? form,
+        int? level)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(action);
+
+        var currentSession = session ?? StartSession();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!CanEditPokemon(project, workflow, diagnostics)
+            || !CanEditEvolutionData(project, personalId, diagnostics))
+        {
+            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var selectedPokemon = workflow.Pokemon.FirstOrDefault(pokemon => pokemon.PersonalId == personalId);
+        if (selectedPokemon is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon personal record {personalId} is not present in the loaded Pokemon Data workflow.",
+                field: "personalId",
+                expected: "Existing Pokemon personal record"));
+            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var source = SwShPokemonWorkflowService.ResolveEvolutionDataSource(project, personalId);
+        if (source is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokemon evolution data source could not be resolved for editing.",
+                file: SwShPokemonWorkflowService.CreateEvolutionDataPath(personalId),
+                expected: "Loaded Sword/Shield evo_###.bin"));
+            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var pendingEdit = CreateEvolutionPendingEdit(
+            selectedPokemon,
+            source,
+            action,
+            slot,
+            method,
+            argument,
+            species,
+            form,
+            level,
+            diagnostics);
+        if (pendingEdit is null)
+        {
+            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = ReplacePendingPokemonEdit(currentSession, pendingEdit);
+
+        return new SwShPokemonEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -165,6 +244,14 @@ public sealed class SwShPokemonEditSessionService
         if (session.PendingEdits.Any(IsLearnsetEdit))
         {
             CanEditLearnsetData(project, diagnostics);
+        }
+
+        foreach (var edit in session.PendingEdits.Where(IsEvolutionEdit))
+        {
+            if (int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
+            {
+                CanEditEvolutionData(project, personalId, diagnostics);
+            }
         }
 
         var validationWorkflow = workflow;
@@ -247,6 +334,31 @@ public sealed class SwShPokemonEditSessionService
             }
         }
 
+        var evolutionEdits = session.PendingEdits.Where(IsEvolutionEdit).ToArray();
+        foreach (var evolutionGroup in evolutionEdits.GroupBy(edit => edit.RecordId, StringComparer.Ordinal))
+        {
+            if (!int.TryParse(evolutionGroup.Key, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending Pokemon Data edit targets an evolution record that is not loaded.",
+                    field: "personalId",
+                    expected: "Existing Pokemon evolution record"));
+                continue;
+            }
+
+            var evolutionWrite = CreatePlannedWrite(
+                paths,
+                SwShPokemonWorkflowService.CreateEvolutionDataPath(personalId),
+                evolutionGroup.ToArray(),
+                reason,
+                diagnostics);
+            if (evolutionWrite is not null)
+            {
+                writes.Add(evolutionWrite);
+            }
+        }
+
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
@@ -295,6 +407,12 @@ public sealed class SwShPokemonEditSessionService
         if (learnsetEdits.Length > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             ApplyLearnsetEdits(paths, project, learnsetEdits, writtenFiles, diagnostics);
+        }
+
+        var evolutionEdits = session.PendingEdits.Where(IsEvolutionEdit).ToArray();
+        if (evolutionEdits.Length > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            ApplyEvolutionEdits(paths, project, evolutionEdits, writtenFiles, diagnostics);
         }
 
         if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error) && writtenFiles.Count > 0)
@@ -346,6 +464,24 @@ public sealed class SwShPokemonEditSessionService
         return false;
     }
 
+    private static bool CanEditEvolutionData(
+        OpenedProject project,
+        int personalId,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (SwShPokemonWorkflowService.ResolveEvolutionDataSource(project, personalId) is not null)
+        {
+            return true;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "Pokemon evolution edit sessions require a supported evolution data file.",
+            file: SwShPokemonWorkflowService.CreateEvolutionDataPath(personalId),
+            expected: "Loaded Sword/Shield evo_###.bin"));
+        return false;
+    }
+
     private static void ValidatePendingEdit(
         SwShPokemonWorkflow workflow,
         PendingEdit edit,
@@ -384,6 +520,12 @@ public sealed class SwShPokemonEditSessionService
         if (IsLearnsetEdit(edit))
         {
             TryParseLearnsetPendingEdit(edit, pokemon, diagnostics);
+            return;
+        }
+
+        if (IsEvolutionEdit(edit))
+        {
+            TryParseEvolutionPendingEdit(edit, pokemon, diagnostics);
             return;
         }
 
@@ -464,6 +606,56 @@ public sealed class SwShPokemonEditSessionService
         return pendingEdit with
         {
             Summary = CreateLearnsetPendingEditSummary(selectedPokemon, operation, moveName),
+        };
+    }
+
+    private static PendingEdit? CreateEvolutionPendingEdit(
+        SwShPokemonRecord selectedPokemon,
+        SwShPokemonWorkflowService.WorkflowFileSource source,
+        string action,
+        int? slot,
+        int? method,
+        int? argument,
+        int? species,
+        int? form,
+        int? level,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var normalizedAction = NormalizeEvolutionAction(action);
+        if (normalizedAction is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon evolution action '{action}' is not supported.",
+                field: "action",
+                expected: "add, upsert, remove, moveUp, or moveDown"));
+            return null;
+        }
+
+        var normalizedSlot = normalizedAction == EvolutionAddAction
+            ? selectedPokemon.Evolutions.Count
+            : slot;
+        var fieldAction = normalizedAction == EvolutionAddAction
+            ? EvolutionUpsertAction
+            : normalizedAction;
+        var pendingEdit = new PendingEdit(
+            PokemonEditDomain,
+            Summary: string.Empty,
+            Sources: [CreateSourceReference(source)],
+            RecordId: selectedPokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
+            Field: CreateEvolutionFieldId(fieldAction, normalizedSlot),
+            NewValue: normalizedAction is EvolutionAddAction or EvolutionUpsertAction
+                ? CreateEvolutionValue(method, argument, species, form, level)
+                : "1");
+        var operation = TryParseEvolutionPendingEdit(pendingEdit, selectedPokemon, diagnostics);
+        if (operation is null)
+        {
+            return null;
+        }
+
+        return pendingEdit with
+        {
+            Summary = CreateEvolutionPendingEditSummary(selectedPokemon, operation),
         };
     }
 
@@ -738,6 +930,251 @@ public sealed class SwShPokemonEditSessionService
             : string.Create(CultureInfo.InvariantCulture, $"{moveId.Value}:{level.Value}");
     }
 
+    private static EvolutionPendingOperation? TryParseEvolutionPendingEdit(
+        PendingEdit edit,
+        SwShPokemonRecord? pokemon,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!TryParseEvolutionFieldId(edit.Field, out var action, out var slot))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon evolution field '{edit.Field ?? "(missing)"}' is not supported.",
+                field: "field",
+                expected: "Supported Pokemon evolution row field"));
+            return null;
+        }
+
+        if (slot < 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokemon evolution slot must be zero or greater.",
+                field: "slot",
+                expected: "Safe Pokemon evolution slot"));
+            return null;
+        }
+
+        var method = (int?)null;
+        var argument = (int?)null;
+        var species = (int?)null;
+        var form = (int?)null;
+        var level = (int?)null;
+        if (action == EvolutionUpsertAction)
+        {
+            if (!TryParseEvolutionValue(edit.NewValue, out var parsedMethod, out var parsedArgument, out var parsedSpecies, out var parsedForm, out var parsedLevel))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon evolution rows require valid method, argument, target species, form, and level values.",
+                    field: "evolution",
+                    expected: "method:argument:species:form:level"));
+                return null;
+            }
+
+            method = parsedMethod;
+            argument = parsedArgument;
+            species = parsedSpecies;
+            form = parsedForm;
+            level = parsedLevel;
+        }
+
+        var operation = new EvolutionPendingOperation(action, slot, method, argument, species, form, level);
+        var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        ValidateEvolutionOperation(pokemon, operation, diagnostics);
+        return diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) > errorCount
+            ? null
+            : operation;
+    }
+
+    private static void ValidateEvolutionOperation(
+        SwShPokemonRecord? pokemon,
+        EvolutionPendingOperation operation,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (operation.Method is not null && (uint)operation.Method.Value > ushort.MaxValue)
+        {
+            diagnostics.Add(CreateEvolutionRangeDiagnostic("method", "method", ushort.MaxValue));
+        }
+
+        if (operation.Argument is not null && (uint)operation.Argument.Value > ushort.MaxValue)
+        {
+            diagnostics.Add(CreateEvolutionRangeDiagnostic("argument", "argument", ushort.MaxValue));
+        }
+
+        if (operation.Species is not null && (uint)operation.Species.Value > ushort.MaxValue)
+        {
+            diagnostics.Add(CreateEvolutionRangeDiagnostic("target species", "species", ushort.MaxValue));
+        }
+
+        if (operation.Form is not null && (uint)operation.Form.Value > byte.MaxValue)
+        {
+            diagnostics.Add(CreateEvolutionRangeDiagnostic("target form", "form", byte.MaxValue));
+        }
+
+        if (operation.Level is not null && (uint)operation.Level.Value > byte.MaxValue)
+        {
+            diagnostics.Add(CreateEvolutionRangeDiagnostic("level", "level", byte.MaxValue));
+        }
+
+        if (pokemon is null)
+        {
+            return;
+        }
+
+        var count = pokemon.Evolutions.Count;
+        switch (operation.Action)
+        {
+            case EvolutionUpsertAction when operation.Slot > count:
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon evolution row edits must target an existing row or the next empty row.",
+                    field: "slot",
+                    expected: "Existing or next Pokemon evolution row"));
+                break;
+            case EvolutionUpsertAction when operation.Slot == count && count >= SwShEvolutionSet.MaxEvolutionCount:
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon evolution files support at most {SwShEvolutionSet.MaxEvolutionCount} rows.",
+                    field: "slot",
+                    expected: "Pokemon evolution file with room for another row"));
+                break;
+            case EvolutionRemoveAction when operation.Slot >= count:
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon evolution remove must target an existing row.",
+                    field: "slot",
+                    expected: "Existing Pokemon evolution row"));
+                break;
+            case EvolutionMoveUpAction when operation.Slot <= 0 || operation.Slot >= count:
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon evolution move-up must target a row below the first row.",
+                    field: "slot",
+                    expected: "Pokemon evolution row that can move up"));
+                break;
+            case EvolutionMoveDownAction when operation.Slot < 0 || operation.Slot >= count - 1:
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon evolution move-down must target a row above the last row.",
+                    field: "slot",
+                    expected: "Pokemon evolution row that can move down"));
+                break;
+        }
+    }
+
+    private static ValidationDiagnostic CreateEvolutionRangeDiagnostic(string label, string field, int maximum)
+    {
+        return CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"Pokemon evolution {label} must be between 0 and {maximum}.",
+            field: field,
+            expected: $"Safe Pokemon evolution {label}");
+    }
+
+    private static bool TryParseEvolutionFieldId(string? field, out string action, out int slot)
+    {
+        action = string.Empty;
+        slot = -1;
+
+        if (string.IsNullOrWhiteSpace(field))
+        {
+            return false;
+        }
+
+        var parts = field.Split(':');
+        if (parts.Length != 3
+            || !string.Equals(parts[0], EvolutionFieldPrefix, StringComparison.Ordinal)
+            || !int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out slot))
+        {
+            return false;
+        }
+
+        var normalizedAction = NormalizeEvolutionAction(parts[1]);
+        if (normalizedAction is not (EvolutionUpsertAction or EvolutionRemoveAction or EvolutionMoveUpAction or EvolutionMoveDownAction))
+        {
+            return false;
+        }
+
+        action = normalizedAction;
+        return true;
+    }
+
+    private static bool TryParseEvolutionValue(
+        string? value,
+        out int method,
+        out int argument,
+        out int species,
+        out int form,
+        out int level)
+    {
+        method = 0;
+        argument = 0;
+        species = 0;
+        form = 0;
+        level = 0;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var parts = value.Split(':');
+        return parts.Length == 5
+            && int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out method)
+            && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out argument)
+            && int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out species)
+            && int.TryParse(parts[3], NumberStyles.None, CultureInfo.InvariantCulture, out form)
+            && int.TryParse(parts[4], NumberStyles.None, CultureInfo.InvariantCulture, out level);
+    }
+
+    private static string? NormalizeEvolutionAction(string action)
+    {
+        var trimmed = action.Trim();
+        if (string.Equals(trimmed, EvolutionAddAction, StringComparison.OrdinalIgnoreCase))
+        {
+            return EvolutionAddAction;
+        }
+
+        if (string.Equals(trimmed, EvolutionUpsertAction, StringComparison.OrdinalIgnoreCase))
+        {
+            return EvolutionUpsertAction;
+        }
+
+        if (string.Equals(trimmed, EvolutionRemoveAction, StringComparison.OrdinalIgnoreCase))
+        {
+            return EvolutionRemoveAction;
+        }
+
+        if (string.Equals(trimmed, EvolutionMoveUpAction, StringComparison.OrdinalIgnoreCase))
+        {
+            return EvolutionMoveUpAction;
+        }
+
+        return string.Equals(trimmed, EvolutionMoveDownAction, StringComparison.OrdinalIgnoreCase)
+            ? EvolutionMoveDownAction
+            : null;
+    }
+
+    private static string CreateEvolutionFieldId(string action, int? slot)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{EvolutionFieldPrefix}:{action}:{slot?.ToString(CultureInfo.InvariantCulture) ?? string.Empty}");
+    }
+
+    private static string CreateEvolutionValue(
+        int? method,
+        int? argument,
+        int? species,
+        int? form,
+        int? level)
+    {
+        return method is null || argument is null || species is null || form is null || level is null
+            ? string.Empty
+            : string.Create(CultureInfo.InvariantCulture, $"{method.Value}:{argument.Value}:{species.Value}:{form.Value}:{level.Value}");
+    }
+
     private static bool TryParseBooleanValue(string? value, out int parsedValue)
     {
         parsedValue = 0;
@@ -809,6 +1246,18 @@ public sealed class SwShPokemonEditSessionService
                 continue;
             }
 
+            if (IsEvolutionEdit(edit))
+            {
+                var parseDiagnostics = new List<ValidationDiagnostic>();
+                var operation = TryParseEvolutionPendingEdit(edit, pokemon, parseDiagnostics);
+                if (operation is not null)
+                {
+                    overlaid[personalId] = ApplyPokemonEvolutionViewOperation(pokemon, operation);
+                }
+
+                continue;
+            }
+
             if (!int.TryParse(edit.NewValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
             {
                 continue;
@@ -822,6 +1271,38 @@ public sealed class SwShPokemonEditSessionService
             Pokemon = workflow.Pokemon
                 .Select(pokemon => overlaid.TryGetValue(pokemon.PersonalId, out var updated) ? updated : pokemon)
                 .ToArray(),
+        };
+    }
+
+    private static SwShPokemonRecord ApplyPokemonEvolutionViewOperation(
+        SwShPokemonRecord pokemon,
+        EvolutionPendingOperation operation)
+    {
+        var updatedEvolutions = ApplyEvolutionOperation(
+            new SwShEvolutionSet(
+                pokemon.Evolutions
+                    .Select(evolution => new SwShEvolutionRecord(
+                        evolution.Slot,
+                        evolution.Method,
+                        evolution.Argument,
+                        evolution.Species,
+                        evolution.Form,
+                        evolution.Level))
+                    .ToArray()),
+            operation)
+            .Evolutions
+            .Select(evolution => new SwShPokemonEvolutionRecord(
+                evolution.Slot,
+                evolution.Method,
+                evolution.Argument,
+                evolution.Species,
+                evolution.Form,
+                evolution.Level))
+            .ToArray();
+
+        return pokemon with
+        {
+            Evolutions = updatedEvolutions,
         };
     }
 
@@ -1075,6 +1556,83 @@ public sealed class SwShPokemonEditSessionService
         return updated;
     }
 
+    private static SwShEvolutionSet ApplyEvolutionOperation(
+        SwShEvolutionSet record,
+        EvolutionPendingOperation operation)
+    {
+        var evolutions = record.Evolutions
+            .Select(evolution => new SwShEvolutionRecord(
+                evolution.Slot,
+                evolution.Method,
+                evolution.Argument,
+                evolution.Species,
+                evolution.Form,
+                evolution.Level))
+            .ToList();
+
+        switch (operation.Action)
+        {
+            case EvolutionUpsertAction
+                when operation.Method is not null
+                    && operation.Argument is not null
+                    && operation.Species is not null
+                    && operation.Form is not null
+                    && operation.Level is not null
+                    && operation.Slot < evolutions.Count:
+                evolutions[operation.Slot] = new SwShEvolutionRecord(
+                    operation.Slot,
+                    operation.Method.Value,
+                    operation.Argument.Value,
+                    operation.Species.Value,
+                    operation.Form.Value,
+                    operation.Level.Value);
+                break;
+            case EvolutionUpsertAction
+                when operation.Method is not null
+                    && operation.Argument is not null
+                    && operation.Species is not null
+                    && operation.Form is not null
+                    && operation.Level is not null
+                    && operation.Slot == evolutions.Count:
+                evolutions.Add(new SwShEvolutionRecord(
+                    operation.Slot,
+                    operation.Method.Value,
+                    operation.Argument.Value,
+                    operation.Species.Value,
+                    operation.Form.Value,
+                    operation.Level.Value));
+                break;
+            case EvolutionRemoveAction when operation.Slot < evolutions.Count:
+                evolutions.RemoveAt(operation.Slot);
+                break;
+            case EvolutionMoveUpAction when operation.Slot > 0 && operation.Slot < evolutions.Count:
+                (evolutions[operation.Slot - 1], evolutions[operation.Slot]) = (evolutions[operation.Slot], evolutions[operation.Slot - 1]);
+                break;
+            case EvolutionMoveDownAction when operation.Slot >= 0 && operation.Slot < evolutions.Count - 1:
+                (evolutions[operation.Slot + 1], evolutions[operation.Slot]) = (evolutions[operation.Slot], evolutions[operation.Slot + 1]);
+                break;
+        }
+
+        return record with
+        {
+            Evolutions = NormalizeEvolutionSlots(evolutions),
+        };
+    }
+
+    private static IReadOnlyList<SwShEvolutionRecord> NormalizeEvolutionSlots(
+        IReadOnlyList<SwShEvolutionRecord> evolutions)
+    {
+        return evolutions
+            .Select((evolution, index) => new SwShEvolutionRecord(
+                index,
+                evolution.Method,
+                evolution.Argument,
+                evolution.Species,
+                evolution.Form,
+                evolution.Level))
+            .ToArray();
+    }
+
     private static SwShPokemonLearnsetRecord ApplyLearnsetOperation(
         SwShPokemonLearnsetRecord record,
         LearnsetPendingOperation operation)
@@ -1293,7 +1851,97 @@ public sealed class SwShPokemonEditSessionService
                 DiagnosticSeverity.Error,
                 $"Pokemon learnset output file could not be read or written: {exception.Message}",
                 file: SwShPokemonWorkflowService.LearnsetDataPath,
-                expected: "Readable source and writable output root"));
+            expected: "Readable source and writable output root"));
+        }
+    }
+
+    private static void ApplyEvolutionEdits(
+        ProjectPaths paths,
+        OpenedProject project,
+        IReadOnlyList<PendingEdit> edits,
+        ICollection<ProjectFileReference> writtenFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var evolutionGroup in edits.GroupBy(edit => edit.RecordId, StringComparer.Ordinal))
+        {
+            if (!int.TryParse(evolutionGroup.Key, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending Pokemon Data edit targets an evolution record that is not loaded.",
+                    field: "personalId",
+                    expected: "Existing Pokemon evolution record"));
+                continue;
+            }
+
+            var targetRelativePath = SwShPokemonWorkflowService.CreateEvolutionDataPath(personalId);
+            var source = SwShPokemonWorkflowService.ResolveEvolutionDataSource(project, personalId);
+            if (source is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon evolution data source could not be resolved for apply.",
+                    file: targetRelativePath,
+                    expected: "Loaded Sword/Shield evo_###.bin"));
+                continue;
+            }
+
+            var targetPath = ResolveOutputPath(paths, targetRelativePath, diagnostics);
+            if (targetPath is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+                var record = SwShEvolutionSet.Parse(sourceBytes);
+
+                foreach (var edit in evolutionGroup)
+                {
+                    var operation = TryParseEvolutionPendingEdit(edit, pokemon: null, diagnostics: diagnostics);
+                    if (operation is null)
+                    {
+                        continue;
+                    }
+
+                    record = ApplyEvolutionOperation(record, operation);
+                }
+
+                if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                {
+                    return;
+                }
+
+                var outputBytes = SwShEvolutionSet.Write(record.Evolutions);
+                Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+                File.WriteAllBytes(targetPath, outputBytes);
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, targetRelativePath));
+            }
+            catch (InvalidDataException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon evolution data source could not be decoded: {exception.Message}",
+                    file: source.GraphEntry.RelativePath,
+                    expected: "Sword/Shield evo_###.bin"));
+            }
+            catch (IOException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon evolution output file could not be read or written: {exception.Message}",
+                    file: targetRelativePath,
+                    expected: "Readable source and writable output root"));
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon evolution output file could not be read or written: {exception.Message}",
+                    file: targetRelativePath,
+                    expected: "Readable source and writable output root"));
+            }
         }
     }
 
@@ -1405,6 +2053,34 @@ public sealed class SwShPokemonEditSessionService
         return $"Set {pokemon.Name} {label.ToLowerInvariant()} to {displayValue}.";
     }
 
+    private static string CreateEvolutionPendingEditSummary(
+        SwShPokemonRecord pokemon,
+        EvolutionPendingOperation operation)
+    {
+        var existingEvolution = pokemon.Evolutions.FirstOrDefault(evolution => evolution.Slot == operation.Slot);
+        return operation.Action switch
+        {
+            EvolutionUpsertAction when operation.Slot >= pokemon.Evolutions.Count =>
+                $"Add {pokemon.Name} evolution to species {operation.Species} at level {operation.Level}.",
+            EvolutionUpsertAction =>
+                $"Set {pokemon.Name} evolution slot {operation.Slot} to species {operation.Species} at level {operation.Level}.",
+            EvolutionRemoveAction =>
+                $"Remove {pokemon.Name} evolution slot {operation.Slot}{FormatEvolutionSuffix(existingEvolution)}.",
+            EvolutionMoveUpAction =>
+                $"Move {pokemon.Name} evolution slot {operation.Slot} up.",
+            EvolutionMoveDownAction =>
+                $"Move {pokemon.Name} evolution slot {operation.Slot} down.",
+            _ => $"Update {pokemon.Name} evolution slot {operation.Slot}.",
+        };
+    }
+
+    private static string FormatEvolutionSuffix(SwShPokemonEvolutionRecord? evolution)
+    {
+        return evolution is null
+            ? string.Empty
+            : $" (method {evolution.Method}, species {evolution.Species}, level {evolution.Level})";
+    }
+
     private static string CreateLearnsetPendingEditSummary(
         SwShPokemonRecord pokemon,
         LearnsetPendingOperation operation,
@@ -1437,13 +2113,20 @@ public sealed class SwShPokemonEditSessionService
     private static bool IsPersonalDataEdit(PendingEdit edit)
     {
         return string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal)
-            && !IsLearnsetEdit(edit);
+            && !IsLearnsetEdit(edit)
+            && !IsEvolutionEdit(edit);
     }
 
     private static bool IsLearnsetEdit(PendingEdit edit)
     {
         return string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal)
             && edit.Field?.StartsWith($"{LearnsetFieldPrefix}:", StringComparison.Ordinal) == true;
+    }
+
+    private static bool IsEvolutionEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal)
+            && edit.Field?.StartsWith($"{EvolutionFieldPrefix}:", StringComparison.Ordinal) == true;
     }
 
     private static ProjectFileReference CreateSourceReference(
@@ -1555,5 +2238,14 @@ public sealed class SwShPokemonEditSessionService
         string Action,
         int Slot,
         int? MoveId,
+        int? Level);
+
+    private sealed record EvolutionPendingOperation(
+        string Action,
+        int Slot,
+        int? Method,
+        int? Argument,
+        int? Species,
+        int? Form,
         int? Level);
 }

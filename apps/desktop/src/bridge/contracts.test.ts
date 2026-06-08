@@ -49,6 +49,8 @@ import {
   updateItemFieldResponseSchema,
   updatePokemonFieldRequestSchema,
   updatePokemonFieldResponseSchema,
+  updatePokemonEvolutionRequestSchema,
+  updatePokemonEvolutionResponseSchema,
   updatePokemonLearnsetRequestSchema,
   updatePokemonLearnsetResponseSchema,
   updateMoveFieldRequestSchema,
@@ -401,6 +403,7 @@ describe('bridge contracts', () => {
               form: 0,
               level: 16,
               method: 4,
+              slot: 0,
               species: 2
             }
           ],
@@ -1571,6 +1574,12 @@ describe('bridge contracts', () => {
     const updatePokemonLearnsetBridgeResponseSchema = createBridgeResponseSchema(
       updatePokemonLearnsetResponseSchema
     );
+    const updatePokemonEvolutionBridgeRequestSchema = createBridgeRequestSchema(
+      updatePokemonEvolutionRequestSchema
+    );
+    const updatePokemonEvolutionBridgeResponseSchema = createBridgeResponseSchema(
+      updatePokemonEvolutionResponseSchema
+    );
     const updateMoveRequestSchema = createBridgeRequestSchema(updateMoveFieldRequestSchema);
     const updateMoveResponseSchema = createBridgeResponseSchema(updateMoveFieldResponseSchema);
     const updateTextRequestSchema = createBridgeRequestSchema(updateTextEntryRequestSchema);
@@ -2364,6 +2373,39 @@ describe('bridge contracts', () => {
 
     expect(
       updatePokemonLearnsetBridgeResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: pokemonSession,
+          workflow: pokemonWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updatePokemonEvolutionBridgeRequestSchema.safeParse({
+        command: kmCommandNames.updatePokemonEvolution,
+        payload: {
+          action: 'upsert',
+          argument: 25,
+          form: 1,
+          level: 32,
+          method: 8,
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output',
+            saveFilePath: null
+          },
+          personalId: 1,
+          session: editSession,
+          slot: 0,
+          species: 2
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updatePokemonEvolutionBridgeResponseSchema.safeParse({
         payload: {
           diagnostics: [],
           session: pokemonSession,
