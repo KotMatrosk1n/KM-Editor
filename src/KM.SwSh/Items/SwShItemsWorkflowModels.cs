@@ -11,6 +11,14 @@ public sealed record SwShItemProvenance(
     ProjectFileLayer SourceLayer,
     ProjectFileGraphEntryState FileState);
 
+public sealed record SwShItemDetail(
+    string Label,
+    string Value);
+
+public sealed record SwShItemDetailGroup(
+    string Label,
+    IReadOnlyList<SwShItemDetail> Details);
+
 public sealed record SwShItemRecord(
     int ItemId,
     string Name,
@@ -20,6 +28,7 @@ public sealed record SwShItemRecord(
     int WattsPrice,
     int AlternatePrice,
     IReadOnlyList<int> SharedItemIds,
+    IReadOnlyList<SwShItemDetailGroup> DetailGroups,
     SwShItemProvenance Provenance);
 
 public sealed record SwShItemEditableField(

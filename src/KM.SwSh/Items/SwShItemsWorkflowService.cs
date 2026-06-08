@@ -5,6 +5,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Workflows;
+using System.Globalization;
 
 namespace KM.SwSh.Items;
 
@@ -20,6 +21,11 @@ public sealed class SwShItemsWorkflowService
     public const int MaximumAlternatePrice = 999_999;
     public const string ItemDataPath = SwShItemTable.ItemDataRelativePath;
     public const string EnglishItemNamePath = "romfs/bin/message/English/common/itemname.dat";
+
+    private const int TechnicalRecordMachineGroup = 4;
+    private const int TechnicalRecordFieldUseType = 2;
+    private const int TechnicalRecordTrSlotStart = 100;
+    private const int TechnicalRecordLastSlot = 199;
 
     private static readonly IReadOnlyList<SwShItemEditableField> EditableFields =
     [
@@ -305,6 +311,7 @@ public sealed class SwShItemsWorkflowService
             checked((int)item.WattsPrice),
             checked((int)item.AlternatePrice),
             item.SharedItemIds,
+            CreateDetailGroups(item),
             provenance);
     }
 
@@ -333,6 +340,213 @@ public sealed class SwShItemsWorkflowService
             SwShItemPouch.KeyItems => "Key Items",
             _ => $"Pouch {(byte)pouch}",
         };
+    }
+
+    private static IReadOnlyList<SwShItemDetailGroup> CreateDetailGroups(SwShItemTableRecord item)
+    {
+        return
+        [
+            new SwShItemDetailGroup(
+                "Inventory",
+                [
+                    new SwShItemDetail("Pouch", $"{FormatPouch(item.Pouch)} ({(byte)item.Pouch})"),
+                    new SwShItemDetail("Pouch flags", FormatHex(item.PouchFlags)),
+                    new SwShItemDetail("Item type", item.ItemType.ToString(CultureInfo.InvariantCulture)),
+                    new SwShItemDetail("Sort index", item.SortIndex.ToString(CultureInfo.InvariantCulture)),
+                    new SwShItemDetail("Sprite", item.ItemSprite.ToString(CultureInfo.InvariantCulture)),
+                    new SwShItemDetail("Group", $"{FormatGroupType(item.GroupType)} ({item.GroupType.ToString(CultureInfo.InvariantCulture)})"),
+                    new SwShItemDetail("Group index", item.GroupIndex.ToString(CultureInfo.InvariantCulture)),
+                    new SwShItemDetail("Machine", FormatMachineSummary(item)),
+                ]),
+            new SwShItemDetailGroup(
+                "Field Use",
+                [
+                    new SwShItemDetail("Field use type", $"{FormatFieldUseType(item.FieldUseType)} ({item.FieldUseType.ToString(CultureInfo.InvariantCulture)})"),
+                    new SwShItemDetail("Field flags", FormatHex(item.FieldFlags)),
+                    new SwShItemDetail("Can use on Pokemon", FormatBool(item.CanUseOnPokemon)),
+                    new SwShItemDetail("Can target fainted Pokemon", FormatBool((item.Boost0 & 0x01) != 0)),
+                    new SwShItemDetail("Revives whole party", FormatBool((item.Boost0 & 0x02) != 0)),
+                    new SwShItemDetail("Level up item", FormatBool((item.Boost0 & 0x04) != 0)),
+                    new SwShItemDetail("Evolution item", FormatBool((item.Boost0 & 0x08) != 0)),
+                    new SwShItemDetail("Use flags 1", FormatFlags(
+                        item.UseFlags1,
+                        (0x01, "Restore PP"),
+                        (0x02, "Restore all PP"),
+                        (0x04, "Restore HP"),
+                        (0x08, "HP EV"),
+                        (0x10, "Attack EV"),
+                        (0x20, "Defense EV"),
+                        (0x40, "Speed EV"),
+                        (0x80, "Sp. Atk EV"))),
+                    new SwShItemDetail("Use flags 2", FormatFlags(
+                        item.UseFlags2,
+                        (0x01, "Sp. Def EV"),
+                        (0x02, "EV above 100"),
+                        (0x04, "Friendship 1"),
+                        (0x08, "Friendship 2"),
+                        (0x10, "Friendship 3"),
+                        (0x20, "Unknown 5"),
+                        (0x40, "Unknown 6"),
+                        (0x80, "Unknown 7"))),
+                ]),
+            new SwShItemDetailGroup(
+                "Battle",
+                [
+                    new SwShItemDetail("Fling power", item.FlingPower.ToString(CultureInfo.InvariantCulture)),
+                    new SwShItemDetail("Cures status", FormatFlags(
+                        item.CureStatusFlags,
+                        (0x01, "Sleep"),
+                        (0x02, "Poison"),
+                        (0x04, "Burn"),
+                        (0x08, "Freeze"),
+                        (0x10, "Paralysis"),
+                        (0x20, "Confusion"),
+                        (0x40, "Infatuation"),
+                        (0x80, "Guard Spec."))),
+                    new SwShItemDetail("Battle boosts", FormatBattleBoosts(item)),
+                    new SwShItemDetail("Critical hit boost", ((item.Boost3 >> 4) & 0x03).ToString(CultureInfo.InvariantCulture)),
+                    new SwShItemDetail("PP Up flag", FormatBool((item.Boost3 & 0x40) != 0)),
+                    new SwShItemDetail("PP Max flag", FormatBool((item.Boost3 & 0x80) != 0)),
+                ]),
+            new SwShItemDetailGroup(
+                "Pokemon Effects",
+                [
+                    new SwShItemDetail("EV gain", FormatEvGain(item)),
+                    new SwShItemDetail("Heal", FormatHealAmount(item.HealAmount)),
+                    new SwShItemDetail("PP gain", item.PpGain.ToString(CultureInfo.InvariantCulture)),
+                    new SwShItemDetail("Friendship gains", FormatFriendshipGains(item)),
+                ]),
+        ];
+    }
+
+    private static string FormatGroupType(byte value)
+    {
+        return value switch
+        {
+            0 => "None",
+            1 => "Ball",
+            3 => "Berries",
+            4 => "TM/TR",
+            5 => "Gems",
+            _ => $"Group {value.ToString(CultureInfo.InvariantCulture)}",
+        };
+    }
+
+    private static string FormatFieldUseType(byte value)
+    {
+        return value switch
+        {
+            0 => "Inert",
+            1 => "Medicine",
+            2 => "TM/TR",
+            5 => "Spray",
+            6 => "Evolution",
+            7 => "Escape Rope",
+            12 => "Berry",
+            15 => "Form Change",
+            _ => $"Field use {value.ToString(CultureInfo.InvariantCulture)}",
+        };
+    }
+
+    private static string FormatMachineSummary(SwShItemTableRecord item)
+    {
+        if (item.GroupType != TechnicalRecordMachineGroup
+            || item.FieldUseType != TechnicalRecordFieldUseType
+            || item.GroupIndex > TechnicalRecordLastSlot)
+        {
+            return "No machine link";
+        }
+
+        var isTr = item.GroupIndex >= TechnicalRecordTrSlotStart;
+        var number = isTr ? item.GroupIndex - TechnicalRecordTrSlotStart : item.GroupIndex;
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{(isTr ? "TR" : "TM")}{number:00} (slot {item.GroupIndex})");
+    }
+
+    private static string FormatFlags(byte value, params (int Flag, string Label)[] flags)
+    {
+        if (value == 0)
+        {
+            return "None";
+        }
+
+        var labels = flags
+            .Where(flag => (value & flag.Flag) != 0)
+            .Select(flag => flag.Label)
+            .ToArray();
+
+        return labels.Length == 0
+            ? FormatHex(value)
+            : string.Join(", ", labels);
+    }
+
+    private static string FormatBattleBoosts(SwShItemTableRecord item)
+    {
+        return string.Join(
+            " / ",
+            [
+                $"Atk {(item.Boost0 >> 4).ToString(CultureInfo.InvariantCulture)}",
+                $"Def {(item.Boost1 & 0x0F).ToString(CultureInfo.InvariantCulture)}",
+                $"SpA {(item.Boost1 >> 4).ToString(CultureInfo.InvariantCulture)}",
+                $"SpD {(item.Boost2 & 0x0F).ToString(CultureInfo.InvariantCulture)}",
+                $"Spe {(item.Boost2 >> 4).ToString(CultureInfo.InvariantCulture)}",
+                $"Acc {(item.Boost3 & 0x0F).ToString(CultureInfo.InvariantCulture)}",
+            ]);
+    }
+
+    private static string FormatEvGain(SwShItemTableRecord item)
+    {
+        var values = new (string Label, sbyte Value)[]
+        {
+            ("HP", item.EvHp),
+            ("Atk", item.EvAttack),
+            ("Def", item.EvDefense),
+            ("Spe", item.EvSpeed),
+            ("SpA", item.EvSpecialAttack),
+            ("SpD", item.EvSpecialDefense),
+        };
+        var gains = values
+            .Where(value => value.Value != 0)
+            .Select(value => $"{value.Label} {FormatSigned(value.Value)}")
+            .ToArray();
+
+        return gains.Length == 0 ? "None" : string.Join(", ", gains);
+    }
+
+    private static string FormatHealAmount(byte value)
+    {
+        return value switch
+        {
+            253 => "Quarter HP",
+            254 => "Half HP",
+            255 => "Full HP",
+            _ => $"{value.ToString(CultureInfo.InvariantCulture)} HP",
+        };
+    }
+
+    private static string FormatFriendshipGains(SwShItemTableRecord item)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{FormatSigned(item.FriendshipGain1)} / {FormatSigned(item.FriendshipGain2)} / {FormatSigned(item.FriendshipGain3)}");
+    }
+
+    private static string FormatSigned(sbyte value)
+    {
+        return value > 0
+            ? $"+{value.ToString(CultureInfo.InvariantCulture)}"
+            : value.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatBool(bool value)
+    {
+        return value ? "Yes" : "No";
+    }
+
+    private static string FormatHex(byte value)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"0x{value:X2}");
     }
 
     private static SwShWorkflowSummary CreateSummary(

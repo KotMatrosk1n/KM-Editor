@@ -361,10 +361,21 @@ export const itemProvenanceSchema = z.strictObject({
   sourceLayer: projectFileLayerSchema
 });
 
+export const itemDetailSchema = z.strictObject({
+  label: z.string(),
+  value: z.string()
+});
+
+export const itemDetailGroupSchema = z.strictObject({
+  details: z.array(itemDetailSchema),
+  label: z.string()
+});
+
 export const itemRecordSchema = z.strictObject({
   alternatePrice: z.number().int().nonnegative(),
   buyPrice: z.number().int().nonnegative(),
   category: z.string(),
+  detailGroups: z.array(itemDetailGroupSchema),
   itemId: z.number().int().nonnegative(),
   name: z.string(),
   provenance: itemProvenanceSchema,

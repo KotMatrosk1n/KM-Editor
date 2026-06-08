@@ -34,7 +34,34 @@ internal static class SwShItemBridgeFixtures
             BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rowOffset), checked((uint)record.BuyPrice));
             BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rowOffset + 0x04), checked((uint)record.WattsPrice));
             BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rowOffset + 0x08), checked((uint)record.AlternatePrice));
-            data[rowOffset + 0x11] = (byte)record.Pouch;
+            data[rowOffset + 0x11] = (byte)(((record.PouchFlags & 0x0F) << 4) | ((byte)record.Pouch & 0x0F));
+            data[rowOffset + 0x12] = record.FlingPower;
+            data[rowOffset + 0x13] = record.FieldUseType;
+            data[rowOffset + 0x14] = record.FieldFlags;
+            data[rowOffset + 0x15] = (byte)(record.CanUseOnPokemon ? 1 : 0);
+            data[rowOffset + 0x16] = record.ItemType;
+            data[rowOffset + 0x18] = record.SortIndex;
+            BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(rowOffset + 0x1A), record.ItemSprite);
+            data[rowOffset + 0x1C] = record.GroupType;
+            data[rowOffset + 0x1D] = record.GroupIndex;
+            data[rowOffset + 0x1E] = record.CureStatusFlags;
+            data[rowOffset + 0x1F] = record.Boost0;
+            data[rowOffset + 0x20] = record.Boost1;
+            data[rowOffset + 0x21] = record.Boost2;
+            data[rowOffset + 0x22] = record.Boost3;
+            data[rowOffset + 0x23] = record.UseFlags1;
+            data[rowOffset + 0x24] = record.UseFlags2;
+            data[rowOffset + 0x25] = unchecked((byte)record.EvHp);
+            data[rowOffset + 0x26] = unchecked((byte)record.EvAttack);
+            data[rowOffset + 0x27] = unchecked((byte)record.EvDefense);
+            data[rowOffset + 0x28] = unchecked((byte)record.EvSpeed);
+            data[rowOffset + 0x29] = unchecked((byte)record.EvSpecialAttack);
+            data[rowOffset + 0x2A] = unchecked((byte)record.EvSpecialDefense);
+            data[rowOffset + 0x2B] = record.HealAmount;
+            data[rowOffset + 0x2C] = record.PpGain;
+            data[rowOffset + 0x2D] = unchecked((byte)record.FriendshipGain1);
+            data[rowOffset + 0x2E] = unchecked((byte)record.FriendshipGain2);
+            data[rowOffset + 0x2F] = unchecked((byte)record.FriendshipGain3);
         }
 
         return data;
@@ -51,7 +78,24 @@ internal static class SwShItemBridgeFixtures
             "bin/pml/item/item.dat",
             CreateItemTable(
                 new ItemBridgeFixtureRecord(0, 0, 0, 0, 0, SwShItemPouch.Items),
-                new ItemBridgeFixtureRecord(1, 1, 300, 15, 3, SwShItemPouch.Medicine),
+                new ItemBridgeFixtureRecord(
+                    1,
+                    1,
+                    300,
+                    15,
+                    3,
+                    SwShItemPouch.Medicine,
+                    FlingPower: 30,
+                    FieldUseType: 1,
+                    FieldFlags: 2,
+                    CanUseOnPokemon: true,
+                    ItemType: 9,
+                    SortIndex: 5,
+                    ItemSprite: 12,
+                    UseFlags1: 4,
+                    HealAmount: 20,
+                    FriendshipGain1: 1,
+                    FriendshipGain2: 1),
                 new ItemBridgeFixtureRecord(2, 2, 200, 10, 5, SwShItemPouch.Medicine)));
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/itemname.dat",
@@ -65,4 +109,32 @@ internal sealed record ItemBridgeFixtureRecord(
     int BuyPrice,
     int WattsPrice,
     int AlternatePrice,
-    SwShItemPouch Pouch);
+    SwShItemPouch Pouch,
+    byte PouchFlags = 0,
+    byte FlingPower = 0,
+    byte FieldUseType = 0,
+    byte FieldFlags = 0,
+    bool CanUseOnPokemon = false,
+    byte ItemType = 0,
+    byte SortIndex = 0,
+    short ItemSprite = 0,
+    byte GroupType = 0,
+    byte GroupIndex = 0,
+    byte CureStatusFlags = 0,
+    byte Boost0 = 0,
+    byte Boost1 = 0,
+    byte Boost2 = 0,
+    byte Boost3 = 0,
+    byte UseFlags1 = 0,
+    byte UseFlags2 = 0,
+    sbyte EvHp = 0,
+    sbyte EvAttack = 0,
+    sbyte EvDefense = 0,
+    sbyte EvSpeed = 0,
+    sbyte EvSpecialAttack = 0,
+    sbyte EvSpecialDefense = 0,
+    byte HealAmount = 0,
+    byte PpGain = 0,
+    sbyte FriendshipGain1 = 0,
+    sbyte FriendshipGain2 = 0,
+    sbyte FriendshipGain3 = 0);

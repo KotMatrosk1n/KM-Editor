@@ -198,6 +198,9 @@ describe('App', () => {
     expect(screen.queryByText('Potion')).not.toBeInTheDocument();
     expect(screen.getByText('romfs/bin/pml/item/item.dat')).toBeInTheDocument();
     expect(screen.getByText('Base only')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 4, name: 'Field Use' })).toBeInTheDocument();
+    expect(screen.getByText('Restore HP')).toBeInTheDocument();
+    expect(screen.getByText('20 HP')).toBeInTheDocument();
   });
 
   it('opens Pokemon Data, searches records, and shows selected details', async () => {
@@ -1325,6 +1328,41 @@ function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): De
   };
 }
 
+function createItemDetailGroups() {
+  return [
+    {
+      details: [
+        { label: 'Pouch', value: 'Medicine (0)' },
+        { label: 'Sprite', value: '12' },
+        { label: 'Machine', value: 'No machine link' }
+      ],
+      label: 'Inventory'
+    },
+    {
+      details: [
+        { label: 'Field use type', value: 'Medicine (1)' },
+        { label: 'Can use on Pokemon', value: 'Yes' },
+        { label: 'Use flags 1', value: 'Restore HP' }
+      ],
+      label: 'Field Use'
+    },
+    {
+      details: [
+        { label: 'Fling power', value: '30' },
+        { label: 'Cures status', value: 'None' }
+      ],
+      label: 'Battle'
+    },
+    {
+      details: [
+        { label: 'Heal', value: '20 HP' },
+        { label: 'Friendship gains', value: '+1 / +1 / 0' }
+      ],
+      label: 'Pokemon Effects'
+    }
+  ];
+}
+
 function createMockProjectBridge(
   overrides: Partial<ProjectBridge> = {},
   canEdit = false
@@ -1412,6 +1450,7 @@ function createMockProjectBridge(
         alternatePrice: 3,
         buyPrice: 300,
         category: 'Medicine',
+        detailGroups: createItemDetailGroups(),
         itemId: 1,
         name: 'Potion',
         provenance: {
@@ -1427,6 +1466,7 @@ function createMockProjectBridge(
         alternatePrice: 5,
         buyPrice: 200,
         category: 'Medicine',
+        detailGroups: createItemDetailGroups(),
         itemId: 2,
         name: 'Antidote',
         provenance: {

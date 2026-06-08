@@ -1034,10 +1034,23 @@ public static class SwShBridgeMapper
             item.WattsPrice,
             item.AlternatePrice,
             item.SharedItemIds,
+            item.DetailGroups.Select(ToDto).ToArray(),
             new ItemProvenanceDto(
                 item.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(item.Provenance.SourceLayer),
                 ProjectBridgeMapper.ToDto(item.Provenance.FileState)));
+    }
+
+    private static ItemDetailGroupDto ToDto(SwShItemDetailGroup group)
+    {
+        return new ItemDetailGroupDto(
+            group.Label,
+            group.Details.Select(ToDto).ToArray());
+    }
+
+    private static ItemDetailDto ToDto(SwShItemDetail detail)
+    {
+        return new ItemDetailDto(detail.Label, detail.Value);
     }
 
     private static ItemEditableFieldDto ToDto(SwShItemEditableField field)
