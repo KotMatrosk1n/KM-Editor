@@ -64,7 +64,7 @@ public sealed class SwShTrainerDataFileTests
 
         var record = SwShTrainerDataFile.Parse(output).Record;
         Assert.Equal([10, 11, 12, 13], record.Items);
-        Assert.Equal(0xAABBCC3Fu, record.AiFlags);
+        Assert.Equal(0xAABBC03Fu, record.AiFlags);
         Assert.False(record.Heal);
         Assert.Equal(99, record.Money);
         Assert.Equal(4321, record.Gift);

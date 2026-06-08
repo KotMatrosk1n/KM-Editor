@@ -22,8 +22,11 @@ public sealed record SwShPokemonBaseStats(
 
 public sealed record SwShPokemonAbilitySet(
     int Ability1,
+    string Ability1Label,
     int Ability2,
-    int HiddenAbility);
+    string Ability2Label,
+    int HiddenAbility,
+    string HiddenAbilityLabel);
 
 public sealed record SwShPokemonDexPresence(
     bool IsPresentInGame,
@@ -123,6 +126,7 @@ public sealed record SwShPokemonRecord(
     int CatchRate,
     int EvolutionStage,
     int GenderRatio,
+    string GenderRatioLabel,
     int BaseExperience,
     int Height,
     int Weight,

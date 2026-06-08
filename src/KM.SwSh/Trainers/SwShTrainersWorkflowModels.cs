@@ -28,8 +28,11 @@ public sealed record SwShTrainerPokemonRecord(
     IReadOnlyList<int> MoveIds,
     IReadOnlyList<string> Moves,
     int Gender,
+    string GenderLabel,
     int Ability,
+    string AbilityLabel,
     int Nature,
+    string NatureLabel,
     SwShTrainerPokemonStatsRecord Evs,
     int DynamaxLevel,
     bool CanGigantamax,
@@ -56,6 +59,7 @@ public sealed record SwShTrainerRecord(
     IReadOnlyList<int> ItemIds,
     IReadOnlyList<string> Items,
     int AiFlags,
+    IReadOnlyList<SwShTrainerAiFlagState> AiFlagStates,
     bool Heal,
     int Money,
     int Gift,
@@ -65,6 +69,13 @@ public sealed record SwShTrainerRecord(
     string ClassBallScope,
     IReadOnlyList<SwShTrainerPokemonRecord> Team,
     SwShTrainerProvenance Provenance);
+
+public sealed record SwShTrainerAiFlagState(
+    int Bit,
+    int Mask,
+    string Label,
+    string Description,
+    bool Enabled);
 
 public sealed record SwShTrainerEditableField(
     string Field,

@@ -643,10 +643,21 @@ describe('App', () => {
     expect(screen.getByLabelText('Class ball')).toHaveDisplayValue('4 Poke Ball');
     expect(screen.getByLabelText('Battle type')).toHaveDisplayValue('1 Doubles');
     expect(screen.getByLabelText('Trainer item 1 ID')).toHaveDisplayValue('001 Potion');
+    expect(screen.getByText('AI Flags')).toBeInTheDocument();
+    expect(screen.getByLabelText(/Basic/)).toBeChecked();
+    expect(screen.getByLabelText(/Fire Gym \(1\)/)).not.toBeChecked();
+    expect(screen.getByLabelText(/Fire Gym \(2\)/)).not.toBeChecked();
+    expect(screen.getByLabelText(/Fire Gym \(3\)/)).not.toBeChecked();
+    expect(screen.getByLabelText('Heal flag')).toHaveDisplayValue('Yes');
     expect(screen.getByLabelText('Money')).toHaveDisplayValue('24');
     expect(screen.getByLabelText('Species ID')).toHaveDisplayValue('810 Grookey');
     expect(screen.getByLabelText('Held item ID')).toHaveDisplayValue('001 Potion');
     expect(screen.getByLabelText('Move 1 ID')).toHaveDisplayValue('001 Scratch');
+    expect(screen.getByLabelText('Gender')).toHaveDisplayValue('Male');
+    expect(screen.getByLabelText('Ability')).toHaveDisplayValue('Ability 2');
+    expect(screen.getByLabelText('Nature')).toHaveDisplayValue('Jolly');
+    expect(screen.getByLabelText('Can Gigantamax')).toHaveDisplayValue('Yes');
+    expect(screen.getByLabelText('Can Dynamax')).toHaveDisplayValue('No');
     const levelInput = screen.getByLabelText('Level');
     await user.clear(levelInput);
     await user.type(levelInput, '25');
@@ -1723,8 +1734,11 @@ function createMockProjectBridge(
       {
         abilities: {
           ability1: 65,
+          ability1Label: 'Overgrow',
           ability2: 0,
-          hiddenAbility: 34
+          ability2Label: 'None',
+          hiddenAbility: 34,
+          hiddenAbilityLabel: 'Chlorophyll'
         },
         baseExperience: 64,
         baseStats: {
@@ -1799,6 +1813,7 @@ function createMockProjectBridge(
         form: 0,
         formLabel: 'Base',
         genderRatio: 31,
+        genderRatioLabel: '031 Male 87.5% / Female 12.5%',
         height: 7,
         learnset: [
           {
@@ -1861,8 +1876,11 @@ function createMockProjectBridge(
       {
         abilities: {
           ability1: 66,
+          ability1Label: 'Blaze',
           ability2: 0,
-          hiddenAbility: 94
+          ability2Label: 'None',
+          hiddenAbility: 94,
+          hiddenAbilityLabel: 'Solar Power'
         },
         baseExperience: 62,
         baseStats: {
@@ -1903,6 +1921,7 @@ function createMockProjectBridge(
         form: 0,
         formLabel: 'Base',
         genderRatio: 31,
+        genderRatioLabel: '031 Male 87.5% / Female 12.5%',
         height: 6,
         learnset: [
           {
@@ -2303,7 +2322,7 @@ function createMockProjectBridge(
       {
         field: 'aiFlags',
         label: 'AI flags',
-        maximumValue: 255,
+        maximumValue: 8191,
         minimumValue: 0,
         options: [],
         valueKind: 'integer'
@@ -2314,10 +2333,10 @@ function createMockProjectBridge(
         maximumValue: 1,
         minimumValue: 0,
         options: [
-          { label: '0 Off', value: 0 },
-          { label: '1 On', value: 1 }
+          { label: 'No', value: 0 },
+          { label: 'Yes', value: 1 }
         ],
-        valueKind: 'integer'
+        valueKind: 'boolean'
       },
       {
         field: 'money',
@@ -2412,6 +2431,76 @@ function createMockProjectBridge(
           { label: '002 Growl', value: 2 }
         ],
         valueKind: 'integer'
+      },
+      {
+        field: 'gender',
+        label: 'Gender',
+        maximumValue: 3,
+        minimumValue: 0,
+        options: [
+          { label: 'Random', value: 0 },
+          { label: 'Male', value: 1 },
+          { label: 'Female', value: 2 },
+          { label: 'Genderless', value: 3 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ability',
+        label: 'Ability',
+        maximumValue: 3,
+        minimumValue: 0,
+        options: [
+          { label: 'Default', value: 0 },
+          { label: 'Ability 1', value: 1 },
+          { label: 'Ability 2', value: 2 },
+          { label: 'Hidden Ability', value: 3 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'nature',
+        label: 'Nature',
+        maximumValue: 24,
+        minimumValue: 0,
+        options: [
+          { label: 'Hardy', value: 0 },
+          { label: 'Jolly', value: 13 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'canGigantamax',
+        label: 'Can Gigantamax',
+        maximumValue: 1,
+        minimumValue: 0,
+        options: [
+          { label: 'No', value: 0 },
+          { label: 'Yes', value: 1 }
+        ],
+        valueKind: 'boolean'
+      },
+      {
+        field: 'shiny',
+        label: 'Shiny',
+        maximumValue: 1,
+        minimumValue: 0,
+        options: [
+          { label: 'No', value: 0 },
+          { label: 'Yes', value: 1 }
+        ],
+        valueKind: 'boolean'
+      },
+      {
+        field: 'canDynamax',
+        label: 'Can Dynamax',
+        maximumValue: 1,
+        minimumValue: 0,
+        options: [
+          { label: 'No', value: 0 },
+          { label: 'Yes', value: 1 }
+        ],
+        valueKind: 'boolean'
       }
     ],
     stats: {
@@ -2423,6 +2512,21 @@ function createMockProjectBridge(
     trainers: [
       {
         aiFlags: 77,
+        aiFlagStates: [
+          { bit: 0, description: 'Enables basic battle decision logic.', enabled: true, label: 'Basic', mask: 1 },
+          { bit: 1, description: 'Enables stronger move and target choices.', enabled: false, label: 'Strong', mask: 2 },
+          { bit: 2, description: 'Enables expert battle decision logic.', enabled: true, label: 'Expert', mask: 4 },
+          { bit: 3, description: 'Enables double-battle-aware decision logic.', enabled: true, label: 'Double', mask: 8 },
+          { bit: 4, description: 'Enables raid-battle-specific decision logic.', enabled: false, label: 'Raid', mask: 16 },
+          { bit: 5, description: 'Allows additional AI-controlled action checks.', enabled: false, label: 'Allowance', mask: 32 },
+          { bit: 6, description: 'Allows AI-driven Pokemon switching.', enabled: true, label: 'PokeChange', mask: 64 },
+          { bit: 7, description: 'Enables the first Fire Gym behavior bit.', enabled: false, label: 'Fire Gym (1)', mask: 128 },
+          { bit: 8, description: 'Enables the second Fire Gym behavior bit.', enabled: false, label: 'Fire Gym (2)', mask: 256 },
+          { bit: 9, description: 'Reserved trainer AI bit.', enabled: false, label: 'Unused 1', mask: 512 },
+          { bit: 10, description: 'Allows AI-driven trainer item usage.', enabled: false, label: 'Item', mask: 1024 },
+          { bit: 11, description: 'Enables the third Fire Gym behavior bit.', enabled: false, label: 'Fire Gym (3)', mask: 2048 },
+          { bit: 12, description: 'Reserved trainer AI bit.', enabled: false, label: 'Unused 2', mask: 4096 }
+        ],
         battleType: 'Doubles',
         battleTypeValue: 1,
         canEditClassBall: true,
@@ -2450,6 +2554,7 @@ function createMockProjectBridge(
         team: [
           {
             ability: 2,
+            abilityLabel: 'Ability 2',
             canDynamax: false,
             canGigantamax: true,
             dynamaxLevel: 7,
@@ -2463,6 +2568,7 @@ function createMockProjectBridge(
             },
             form: 0,
             gender: 1,
+            genderLabel: 'Male',
             heldItem: 'Potion',
             heldItemId: 1,
             ivs: {
@@ -2477,6 +2583,7 @@ function createMockProjectBridge(
             moveIds: [1, 2, 0, 0],
             moves: ['Scratch', 'Growl', 'None', 'None'],
             nature: 13,
+            natureLabel: 'Jolly',
             shiny: true,
             slot: 1,
             species: 'Grookey',

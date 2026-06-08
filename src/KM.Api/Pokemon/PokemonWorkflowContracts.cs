@@ -53,8 +53,11 @@ public sealed record PokemonBaseStatsDto(
 
 public sealed record PokemonAbilitySetDto(
     int Ability1,
+    string Ability1Label,
     int Ability2,
-    int HiddenAbility);
+    string Ability2Label,
+    int HiddenAbility,
+    string HiddenAbilityLabel);
 
 public sealed record PokemonDexPresenceDto(
     bool IsPresentInGame,
@@ -148,6 +151,7 @@ public sealed record PokemonRecordDto(
     int CatchRate,
     int EvolutionStage,
     int GenderRatio,
+    string GenderRatioLabel,
     int BaseExperience,
     int Height,
     int Weight,

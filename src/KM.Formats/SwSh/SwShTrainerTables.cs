@@ -116,7 +116,8 @@ public sealed class SwShTrainerDataFile
     public const int MaximumClassId = ushort.MaxValue;
     public const int MaximumBattleMode = 2;
     public const int MaximumItemId = ushort.MaxValue;
-    public const int MaximumAiFlags = byte.MaxValue;
+    public const int KnownAiFlagsMask = 0x1FFF;
+    public const int MaximumAiFlags = KnownAiFlagsMask;
     public const int MaximumMoney = byte.MaxValue;
     public const int MaximumGiftId = ushort.MaxValue;
 
@@ -198,7 +199,7 @@ public sealed class SwShTrainerDataFile
                 case SwShTrainerDataField.AiFlags:
                     ValidateRange(edit.Value, 0, MaximumAiFlags, nameof(edits));
                     var currentAiFlags = BinaryPrimitives.ReadUInt32LittleEndian(result.AsSpan(AiOffset));
-                    var updatedAiFlags = (currentAiFlags & 0xFFFFFF00u) | (uint)edit.Value;
+                    var updatedAiFlags = (currentAiFlags & ~(uint)KnownAiFlagsMask) | (uint)edit.Value;
                     BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(AiOffset), updatedAiFlags);
                     break;
                 case SwShTrainerDataField.Heal:

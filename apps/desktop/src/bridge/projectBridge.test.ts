@@ -292,8 +292,11 @@ describe('projectBridge', () => {
                 {
                   abilities: {
                     ability1: 65,
+                    ability1Label: 'Overgrow',
                     ability2: 0,
-                    hiddenAbility: 34
+                    ability2Label: 'None',
+                    hiddenAbility: 34,
+                    hiddenAbilityLabel: 'Chlorophyll'
                   },
                   baseExperience: 64,
                   baseStats: {
@@ -343,6 +346,7 @@ describe('projectBridge', () => {
                   form: 0,
                   formLabel: 'Base',
                   genderRatio: 31,
+                  genderRatioLabel: '031 Male 87.5% / Female 12.5%',
                   height: 7,
                   learnset: [
                     {
@@ -616,6 +620,7 @@ describe('projectBridge', () => {
                   team: [
                     {
                       ability: 2,
+                      abilityLabel: 'Ability 2',
                       canDynamax: false,
                       canGigantamax: true,
                       dynamaxLevel: 7,
@@ -629,6 +634,7 @@ describe('projectBridge', () => {
                       },
                       form: 0,
                       gender: 1,
+                      genderLabel: 'Male',
                       heldItem: 'Potion',
                       heldItemId: 1,
                       ivs: {
@@ -643,6 +649,7 @@ describe('projectBridge', () => {
                       moveIds: [1, 2, 0, 0],
                       moves: ['Scratch', 'Growl', 'None', 'None'],
                       nature: 13,
+                      natureLabel: 'Jolly',
                       shiny: true,
                       slot: 1,
                       species: 'Grookey',
@@ -2569,6 +2576,7 @@ describe('projectBridge', () => {
                 team: [
                   {
                     ability: 2,
+                    abilityLabel: 'Ability 2',
                     canDynamax: false,
                     canGigantamax: true,
                     dynamaxLevel: 7,
@@ -2582,6 +2590,7 @@ describe('projectBridge', () => {
                     },
                     form: 0,
                     gender: 1,
+                    genderLabel: 'Male',
                     heldItem: 'Potion',
                     heldItemId: 1,
                     ivs: {
@@ -2596,6 +2605,7 @@ describe('projectBridge', () => {
                     moveIds: [1, 2, 0, 0],
                     moves: ['Scratch', 'Growl', 'None', 'None'],
                     nature: 13,
+                    natureLabel: 'Jolly',
                     shiny: true,
                     slot: 1,
                     species: 'Grookey',
