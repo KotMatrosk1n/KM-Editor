@@ -583,6 +583,9 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
     expect(screen.getByLabelText('Trainer class ID')).toHaveDisplayValue('005 Pokemon Trainer');
+    expect(screen.getByLabelText('Battle type')).toHaveDisplayValue('1 Doubles');
+    expect(screen.getByLabelText('Trainer item 1 ID')).toHaveDisplayValue('001 Potion');
+    expect(screen.getByLabelText('Money')).toHaveDisplayValue('24');
     expect(screen.getByLabelText('Species ID')).toHaveDisplayValue('810 Grookey');
     expect(screen.getByLabelText('Held item ID')).toHaveDisplayValue('001 Potion');
     expect(screen.getByLabelText('Move 1 ID')).toHaveDisplayValue('001 Scratch');
@@ -1700,6 +1703,93 @@ function createMockProjectBridge(
         label: 'Battle type',
         maximumValue: 2,
         minimumValue: 0,
+        options: [
+          { label: '0 Singles', value: 0 },
+          { label: '1 Doubles', value: 1 },
+          { label: '2 Multi', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'trainerItem1Id',
+        label: 'Trainer item 1 ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Potion', value: 1 },
+          { label: '002 Antidote', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'trainerItem2Id',
+        label: 'Trainer item 2 ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Potion', value: 1 },
+          { label: '002 Antidote', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'trainerItem3Id',
+        label: 'Trainer item 3 ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Potion', value: 1 },
+          { label: '002 Antidote', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'trainerItem4Id',
+        label: 'Trainer item 4 ID',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Potion', value: 1 },
+          { label: '002 Antidote', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'aiFlags',
+        label: 'AI flags',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'heal',
+        label: 'Heal flag',
+        maximumValue: 1,
+        minimumValue: 0,
+        options: [
+          { label: '0 Off', value: 0 },
+          { label: '1 On', value: 1 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'money',
+        label: 'Money',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'gift',
+        label: 'Gift ID',
+        maximumValue: 65535,
+        minimumValue: 0,
         options: [],
         valueKind: 'integer'
       },
@@ -1790,9 +1880,15 @@ function createMockProjectBridge(
     summary: trainersWorkflowSummary,
     trainers: [
       {
+        aiFlags: 77,
         battleType: 'Doubles',
         battleTypeValue: 1,
+        gift: 7,
+        heal: true,
+        itemIds: [1, 2, 0, 0],
+        items: ['Potion', 'Antidote', 'None', 'None'],
         location: 'Trainer 10',
+        money: 24,
         name: 'Avery',
         provenance: {
           fileState: 'baseOnly',

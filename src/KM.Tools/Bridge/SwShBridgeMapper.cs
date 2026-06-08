@@ -762,6 +762,12 @@ public static class SwShBridgeMapper
             trainer.Location,
             trainer.BattleTypeValue,
             trainer.BattleType,
+            trainer.ItemIds,
+            trainer.Items,
+            trainer.AiFlags,
+            trainer.Heal,
+            trainer.Money,
+            trainer.Gift,
             trainer.Team.Select(ToDto).ToArray(),
             ToDto(trainer.Provenance));
     }

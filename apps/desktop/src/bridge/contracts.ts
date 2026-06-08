@@ -739,9 +739,15 @@ export const trainerPokemonRecordSchema = z.strictObject({
 });
 
 export const trainerRecordSchema = z.strictObject({
+  aiFlags: z.number().int().nonnegative().default(0),
   battleType: z.string(),
   battleTypeValue: z.number().int().nonnegative(),
+  gift: z.number().int().nonnegative().default(0),
+  heal: z.boolean().default(false),
+  itemIds: z.array(z.number().int().nonnegative()).default([]),
+  items: z.array(z.string()).default([]),
   location: z.string(),
+  money: z.number().int().nonnegative().default(0),
   name: z.string(),
   provenance: trainerProvenanceSchema,
   team: z.array(trainerPokemonRecordSchema),

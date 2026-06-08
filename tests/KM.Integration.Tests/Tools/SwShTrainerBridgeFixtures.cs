@@ -8,23 +8,50 @@ internal static class SwShTrainerBridgeFixtures
 {
     public static void WriteBaseTrainers(TemporaryBridgeProject temp)
     {
-        temp.WriteBaseRomFsFile("bin/trainer/trainer_data/trainer_010.bin", CreateTrainerData(classId: 5, battleMode: 1, pokemonCount: 1));
+        temp.WriteBaseRomFsFile(
+            "bin/trainer/trainer_data/trainer_010.bin",
+            CreateTrainerData(
+                classId: 5,
+                battleMode: 1,
+                pokemonCount: 1,
+                items: [1, 2, 0, 0],
+                aiFlags: 0x4D,
+                heal: true,
+                money: 24,
+                gift: 7));
         temp.WriteBaseRomFsFile(
             "bin/trainer/trainer_poke/trainer_010.bin",
             CreateTrainerTeam((speciesId: 810, level: 12, heldItemId: 1, moves: new[] { 1, 2, 0, 0 })));
         temp.WriteBaseRomFsFile("bin/message/English/common/trname.dat", CreateTextTable(10, (10, "Avery")));
         temp.WriteBaseRomFsFile("bin/message/English/common/trtype.dat", CreateTextTable(5, (5, "Pokemon Trainer")));
         temp.WriteBaseRomFsFile("bin/message/English/common/monsname.dat", CreateTextTable(810, (810, "Grookey")));
-        temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", CreateTextTable(1, (1, "Potion")));
+        temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", CreateTextTable(2, (1, "Potion"), (2, "Antidote")));
         temp.WriteBaseRomFsFile("bin/message/English/common/wazaname.dat", CreateTextTable(2, (1, "Scratch"), (2, "Growl")));
     }
 
-    public static byte[] CreateTrainerData(int classId, int battleMode, int pokemonCount)
+    public static byte[] CreateTrainerData(
+        int classId,
+        int battleMode,
+        int pokemonCount,
+        int[]? items = null,
+        int aiFlags = 0,
+        bool heal = false,
+        int money = 0,
+        int gift = 0)
     {
         var data = new byte[SwShTrainerDataFile.Size];
+        var itemIds = items ?? [0, 0, 0, 0];
         WriteUInt16(data, 0x00, classId);
         data[0x02] = checked((byte)battleMode);
         data[0x03] = checked((byte)pokemonCount);
+        WriteUInt16(data, 0x04, itemIds[0]);
+        WriteUInt16(data, 0x06, itemIds[1]);
+        WriteUInt16(data, 0x08, itemIds[2]);
+        WriteUInt16(data, 0x0A, itemIds[3]);
+        WriteUInt32(data, 0x0C, checked((uint)aiFlags));
+        data[0x10] = heal ? (byte)1 : (byte)0;
+        data[0x11] = checked((byte)money);
+        WriteUInt16(data, 0x12, gift);
 
         return data;
     }

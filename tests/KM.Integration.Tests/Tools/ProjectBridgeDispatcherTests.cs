@@ -613,6 +613,12 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("Pokemon Trainer", trainer.TrainerClass);
         Assert.Equal(1, trainer.BattleTypeValue);
         Assert.Equal("Doubles", trainer.BattleType);
+        Assert.Equal([1, 2, 0, 0], trainer.ItemIds);
+        Assert.Equal(["Potion", "Antidote", "None", "None"], trainer.Items);
+        Assert.Equal(0x4D, trainer.AiFlags);
+        Assert.True(trainer.Heal);
+        Assert.Equal(24, trainer.Money);
+        Assert.Equal(7, trainer.Gift);
         Assert.Equal(ProjectFileLayerDto.Base, trainer.Provenance.SourceLayer);
         Assert.Equal(ProjectFileLayerDto.Base, trainer.Provenance.TeamSourceLayer);
         var pokemon = Assert.Single(trainer.Team);
@@ -632,10 +638,16 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(5, pokemon.Ivs.SpecialAttack);
         Assert.True(pokemon.Shiny);
         Assert.False(pokemon.CanDynamax);
-        Assert.Equal(29, response.Payload.Workflow.EditableFields.Count);
+        Assert.Equal(37, response.Payload.Workflow.EditableFields.Count);
         Assert.Contains(
             response.Payload.Workflow.EditableFields.Single(field => field.Field == "trainerClassId").Options,
             option => option.Value == 5 && option.Label == "005 Pokemon Trainer");
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "battleType").Options,
+            option => option.Value == 1 && option.Label == "1 Doubles");
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "trainerItem1Id").Options,
+            option => option.Value == 2 && option.Label == "002 Antidote");
         Assert.Contains(
             response.Payload.Workflow.EditableFields.Single(field => field.Field == "speciesId").Options,
             option => option.Value == 810 && option.Label == "810 Grookey");

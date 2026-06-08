@@ -31,6 +31,12 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Equal("Pokemon Trainer", trainer.TrainerClass);
         Assert.Equal(1, trainer.BattleTypeValue);
         Assert.Equal("Doubles", trainer.BattleType);
+        Assert.Equal([1, 2, 0, 0], trainer.ItemIds);
+        Assert.Equal(["Potion", "Antidote", "None", "None"], trainer.Items);
+        Assert.Equal(0x4D, trainer.AiFlags);
+        Assert.True(trainer.Heal);
+        Assert.Equal(24, trainer.Money);
+        Assert.Equal(7, trainer.Gift);
         Assert.Equal(2, trainer.Team.Count);
         Assert.Equal(810, trainer.Team[0].SpeciesId);
         Assert.Equal("Grookey", trainer.Team[0].Species);
@@ -65,6 +71,9 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.HeldItemIdField).Options,
             option => option.Value == 1 && option.Label == "001 Potion");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.TrainerItem1IdField).Options,
+            option => option.Value == 2 && option.Label == "002 Antidote");
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.Move1IdField).Options,
             option => option.Value == 1 && option.Label == "001 Scratch");
@@ -108,7 +117,17 @@ public sealed class SwShTrainersWorkflowServiceTests
 
     internal static void WriteTrainerFixture(TemporarySwShProject temp)
     {
-        temp.WriteBaseRomFsFile("bin/trainer/trainer_data/trainer_010.bin", CreateTrainerData(classId: 5, battleMode: 1, pokemonCount: 2));
+        temp.WriteBaseRomFsFile(
+            "bin/trainer/trainer_data/trainer_010.bin",
+            CreateTrainerData(
+                classId: 5,
+                battleMode: 1,
+                pokemonCount: 2,
+                items: [1, 2, 0, 0],
+                aiFlags: 0x4D,
+                heal: true,
+                money: 24,
+                gift: 7));
         temp.WriteBaseRomFsFile(
             "bin/trainer/trainer_poke/trainer_010.bin",
             CreateTrainerTeam(
@@ -117,16 +136,33 @@ public sealed class SwShTrainersWorkflowServiceTests
         temp.WriteBaseRomFsFile("bin/message/English/common/trname.dat", CreateTextTable(10, (10, "Avery")));
         temp.WriteBaseRomFsFile("bin/message/English/common/trtype.dat", CreateTextTable(5, (5, "Pokemon Trainer")));
         temp.WriteBaseRomFsFile("bin/message/English/common/monsname.dat", CreateTextTable(821, (810, "Grookey"), (821, "Rookidee")));
-        temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", CreateTextTable(1, (1, "Potion")));
+        temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", CreateTextTable(2, (1, "Potion"), (2, "Antidote")));
         temp.WriteBaseRomFsFile("bin/message/English/common/wazaname.dat", CreateTextTable(3, (1, "Scratch"), (2, "Growl"), (3, "Peck")));
     }
 
-    internal static byte[] CreateTrainerData(int classId, int battleMode, int pokemonCount)
+    internal static byte[] CreateTrainerData(
+        int classId,
+        int battleMode,
+        int pokemonCount,
+        int[]? items = null,
+        int aiFlags = 0,
+        bool heal = false,
+        int money = 0,
+        int gift = 0)
     {
         var data = new byte[SwShTrainerDataFile.Size];
+        var itemIds = items ?? [0, 0, 0, 0];
         WriteUInt16(data, 0x00, classId);
         data[0x02] = checked((byte)battleMode);
         data[0x03] = checked((byte)pokemonCount);
+        WriteUInt16(data, 0x04, itemIds[0]);
+        WriteUInt16(data, 0x06, itemIds[1]);
+        WriteUInt16(data, 0x08, itemIds[2]);
+        WriteUInt16(data, 0x0A, itemIds[3]);
+        WriteUInt32(data, 0x0C, checked((uint)aiFlags));
+        data[0x10] = heal ? (byte)1 : (byte)0;
+        data[0x11] = checked((byte)money);
+        WriteUInt16(data, 0x12, gift);
 
         return data;
     }
