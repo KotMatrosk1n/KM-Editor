@@ -35,10 +35,20 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Equal(810, trainer.Team[0].SpeciesId);
         Assert.Equal("Grookey", trainer.Team[0].Species);
         Assert.Equal(12, trainer.Team[0].Level);
+        Assert.Equal(0, trainer.Team[0].Form);
         Assert.Equal(1, trainer.Team[0].HeldItemId);
         Assert.Equal("Potion", trainer.Team[0].HeldItem);
         Assert.Equal([1, 2, 0, 0], trainer.Team[0].MoveIds);
         Assert.Equal(["Scratch", "Growl", "None", "None"], trainer.Team[0].Moves);
+        Assert.Equal(1, trainer.Team[0].Gender);
+        Assert.Equal(2, trainer.Team[0].Ability);
+        Assert.Equal(13, trainer.Team[0].Nature);
+        Assert.Equal(new SwShTrainerPokemonStatsRecord(10, 20, 30, 40, 50, 60), trainer.Team[0].Evs);
+        Assert.Equal(7, trainer.Team[0].DynamaxLevel);
+        Assert.True(trainer.Team[0].CanGigantamax);
+        Assert.Equal(new SwShTrainerPokemonStatsRecord(1, 2, 3, 5, 6, 4), trainer.Team[0].Ivs);
+        Assert.True(trainer.Team[0].Shiny);
+        Assert.False(trainer.Team[0].CanDynamax);
         Assert.Equal(ProjectFileLayer.Base, trainer.Provenance.SourceLayer);
         Assert.Equal(ProjectFileLayer.Base, trainer.Provenance.TeamSourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.BaseOnly, trainer.Provenance.FileState);
@@ -117,6 +127,21 @@ public sealed class SwShTrainersWorkflowServiceTests
         {
             var rowOffset = index * SwShTrainerTeamFile.RowSize;
             var record = pokemon[index];
+            if (index == 0)
+            {
+                data[rowOffset] = 0x21;
+                data[rowOffset + 0x01] = 13;
+                data[rowOffset + 0x02] = 10;
+                data[rowOffset + 0x03] = 20;
+                data[rowOffset + 0x04] = 30;
+                data[rowOffset + 0x05] = 40;
+                data[rowOffset + 0x06] = 50;
+                data[rowOffset + 0x07] = 60;
+                data[rowOffset + 0x08] = 7;
+                data[rowOffset + 0x09] = 1;
+                WriteUInt32(data, rowOffset + 0x1C, PackIvs(1, 2, 3, 4, 5, 6, shiny: true, canDynamax: false));
+            }
+
             WriteUInt16(data, rowOffset + 0x0A, record.level);
             WriteUInt16(data, rowOffset + 0x0C, record.speciesId);
             WriteUInt16(data, rowOffset + 0x10, record.heldItemId);
@@ -147,5 +172,33 @@ public sealed class SwShTrainersWorkflowServiceTests
     {
         data[offset] = checked((byte)(value & 0xFF));
         data[offset + 1] = checked((byte)(value >> 8));
+    }
+
+    private static void WriteUInt32(byte[] data, int offset, uint value)
+    {
+        data[offset] = checked((byte)(value & 0xFF));
+        data[offset + 1] = checked((byte)((value >> 8) & 0xFF));
+        data[offset + 2] = checked((byte)((value >> 16) & 0xFF));
+        data[offset + 3] = checked((byte)(value >> 24));
+    }
+
+    private static uint PackIvs(
+        int hp,
+        int attack,
+        int defense,
+        int speed,
+        int specialAttack,
+        int specialDefense,
+        bool shiny,
+        bool canDynamax)
+    {
+        return (uint)hp
+            | ((uint)attack << 5)
+            | ((uint)defense << 10)
+            | ((uint)speed << 15)
+            | ((uint)specialAttack << 20)
+            | ((uint)specialDefense << 25)
+            | (shiny ? 1u << 30 : 0)
+            | (canDynamax ? 1u << 31 : 0);
     }
 }

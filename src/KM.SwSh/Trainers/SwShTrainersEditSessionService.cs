@@ -605,6 +605,7 @@ public sealed class SwShTrainersEditSessionService
                 SpeciesId = value,
                 Species = $"Species {value}",
             },
+            SwShTrainersWorkflowService.FormField => pokemon with { Form = value },
             SwShTrainersWorkflowService.LevelField => pokemon with { Level = value },
             SwShTrainersWorkflowService.HeldItemIdField => pokemon with
             {
@@ -615,6 +616,25 @@ public sealed class SwShTrainersEditSessionService
             SwShTrainersWorkflowService.Move2IdField => OverlayMove(pokemon, 1, value),
             SwShTrainersWorkflowService.Move3IdField => OverlayMove(pokemon, 2, value),
             SwShTrainersWorkflowService.Move4IdField => OverlayMove(pokemon, 3, value),
+            SwShTrainersWorkflowService.GenderField => pokemon with { Gender = value },
+            SwShTrainersWorkflowService.AbilityField => pokemon with { Ability = value },
+            SwShTrainersWorkflowService.NatureField => pokemon with { Nature = value },
+            SwShTrainersWorkflowService.EvHpField => pokemon with { Evs = pokemon.Evs with { HP = value } },
+            SwShTrainersWorkflowService.EvAttackField => pokemon with { Evs = pokemon.Evs with { Attack = value } },
+            SwShTrainersWorkflowService.EvDefenseField => pokemon with { Evs = pokemon.Evs with { Defense = value } },
+            SwShTrainersWorkflowService.EvSpecialAttackField => pokemon with { Evs = pokemon.Evs with { SpecialAttack = value } },
+            SwShTrainersWorkflowService.EvSpecialDefenseField => pokemon with { Evs = pokemon.Evs with { SpecialDefense = value } },
+            SwShTrainersWorkflowService.EvSpeedField => pokemon with { Evs = pokemon.Evs with { Speed = value } },
+            SwShTrainersWorkflowService.DynamaxLevelField => pokemon with { DynamaxLevel = value },
+            SwShTrainersWorkflowService.CanGigantamaxField => pokemon with { CanGigantamax = value != 0 },
+            SwShTrainersWorkflowService.IvHpField => pokemon with { Ivs = pokemon.Ivs with { HP = value } },
+            SwShTrainersWorkflowService.IvAttackField => pokemon with { Ivs = pokemon.Ivs with { Attack = value } },
+            SwShTrainersWorkflowService.IvDefenseField => pokemon with { Ivs = pokemon.Ivs with { Defense = value } },
+            SwShTrainersWorkflowService.IvSpecialAttackField => pokemon with { Ivs = pokemon.Ivs with { SpecialAttack = value } },
+            SwShTrainersWorkflowService.IvSpecialDefenseField => pokemon with { Ivs = pokemon.Ivs with { SpecialDefense = value } },
+            SwShTrainersWorkflowService.IvSpeedField => pokemon with { Ivs = pokemon.Ivs with { Speed = value } },
+            SwShTrainersWorkflowService.ShinyField => pokemon with { Shiny = value != 0 },
+            SwShTrainersWorkflowService.CanDynamaxField => pokemon with { CanDynamax = value != 0 },
             _ => pokemon,
         };
     }
@@ -844,12 +864,32 @@ public sealed class SwShTrainersEditSessionService
         var field = edit.Field switch
         {
             SwShTrainersWorkflowService.SpeciesIdField => SwShTrainerPokemonField.SpeciesId,
+            SwShTrainersWorkflowService.FormField => SwShTrainerPokemonField.Form,
             SwShTrainersWorkflowService.LevelField => SwShTrainerPokemonField.Level,
             SwShTrainersWorkflowService.HeldItemIdField => SwShTrainerPokemonField.HeldItemId,
             SwShTrainersWorkflowService.Move1IdField => SwShTrainerPokemonField.Move1Id,
             SwShTrainersWorkflowService.Move2IdField => SwShTrainerPokemonField.Move2Id,
             SwShTrainersWorkflowService.Move3IdField => SwShTrainerPokemonField.Move3Id,
             SwShTrainersWorkflowService.Move4IdField => SwShTrainerPokemonField.Move4Id,
+            SwShTrainersWorkflowService.GenderField => SwShTrainerPokemonField.Gender,
+            SwShTrainersWorkflowService.AbilityField => SwShTrainerPokemonField.Ability,
+            SwShTrainersWorkflowService.NatureField => SwShTrainerPokemonField.Nature,
+            SwShTrainersWorkflowService.EvHpField => SwShTrainerPokemonField.EvHp,
+            SwShTrainersWorkflowService.EvAttackField => SwShTrainerPokemonField.EvAttack,
+            SwShTrainersWorkflowService.EvDefenseField => SwShTrainerPokemonField.EvDefense,
+            SwShTrainersWorkflowService.EvSpecialAttackField => SwShTrainerPokemonField.EvSpecialAttack,
+            SwShTrainersWorkflowService.EvSpecialDefenseField => SwShTrainerPokemonField.EvSpecialDefense,
+            SwShTrainersWorkflowService.EvSpeedField => SwShTrainerPokemonField.EvSpeed,
+            SwShTrainersWorkflowService.DynamaxLevelField => SwShTrainerPokemonField.DynamaxLevel,
+            SwShTrainersWorkflowService.CanGigantamaxField => SwShTrainerPokemonField.CanGigantamax,
+            SwShTrainersWorkflowService.IvHpField => SwShTrainerPokemonField.IvHp,
+            SwShTrainersWorkflowService.IvAttackField => SwShTrainerPokemonField.IvAttack,
+            SwShTrainersWorkflowService.IvDefenseField => SwShTrainerPokemonField.IvDefense,
+            SwShTrainersWorkflowService.IvSpecialAttackField => SwShTrainerPokemonField.IvSpecialAttack,
+            SwShTrainersWorkflowService.IvSpecialDefenseField => SwShTrainerPokemonField.IvSpecialDefense,
+            SwShTrainersWorkflowService.IvSpeedField => SwShTrainerPokemonField.IvSpeed,
+            SwShTrainersWorkflowService.ShinyField => SwShTrainerPokemonField.Shiny,
+            SwShTrainersWorkflowService.CanDynamaxField => SwShTrainerPokemonField.CanDynamax,
             _ => (SwShTrainerPokemonField?)null,
         };
 
@@ -920,7 +960,7 @@ public sealed class SwShTrainersEditSessionService
             DiagnosticSeverity.Error,
             $"Trainer field '{field}' is not supported by the Trainers workflow yet.",
             field: "field",
-            expected: "trainerClassId, battleType, speciesId, level, heldItemId, or move IDs");
+            expected: "Supported trainer data or trainer party field");
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

@@ -315,9 +315,49 @@ const alternatePriceFieldName = 'alternatePrice';
 const trainerClassIdFieldName = 'trainerClassId';
 const battleTypeFieldName = 'battleType';
 const speciesIdFieldName = 'speciesId';
+const formFieldName = 'form';
 const levelFieldName = 'level';
 const heldItemIdFieldName = 'heldItemId';
 const moveFieldNames = ['move1Id', 'move2Id', 'move3Id', 'move4Id'] as const;
+const genderFieldName = 'gender';
+const abilityFieldName = 'ability';
+const natureFieldName = 'nature';
+const evFieldNames = [
+  'evHp',
+  'evAttack',
+  'evDefense',
+  'evSpecialAttack',
+  'evSpecialDefense',
+  'evSpeed'
+] as const;
+const dynamaxLevelFieldName = 'dynamaxLevel';
+const canGigantamaxFieldName = 'canGigantamax';
+const ivFieldNames = [
+  'ivHp',
+  'ivAttack',
+  'ivDefense',
+  'ivSpecialAttack',
+  'ivSpecialDefense',
+  'ivSpeed'
+] as const;
+const shinyFieldName = 'shiny';
+const canDynamaxFieldName = 'canDynamax';
+const trainerPokemonFieldNames = [
+  speciesIdFieldName,
+  formFieldName,
+  levelFieldName,
+  heldItemIdFieldName,
+  ...moveFieldNames,
+  genderFieldName,
+  abilityFieldName,
+  natureFieldName,
+  ...evFieldNames,
+  dynamaxLevelFieldName,
+  canGigantamaxFieldName,
+  ...ivFieldNames,
+  shinyFieldName,
+  canDynamaxFieldName
+] as const;
 const shopItemIdFieldName = 'itemId';
 const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
@@ -3052,9 +3092,7 @@ function SelectedTrainerPanel({
     [trainerClassIdFieldName, battleTypeFieldName].includes(field.field)
   );
   const pokemonFields = editableFields.filter((field) =>
-    [speciesIdFieldName, levelFieldName, heldItemIdFieldName, ...moveFieldNames].includes(
-      field.field as (typeof moveFieldNames)[number]
-    )
+    trainerPokemonFieldNames.includes(field.field as (typeof trainerPokemonFieldNames)[number])
   );
 
   useEffect(() => {
@@ -3087,14 +3125,7 @@ function SelectedTrainerPanel({
         ])
       )
     );
-  }, [
-    editableFields,
-    selectedPokemon?.heldItemId,
-    selectedPokemon?.level,
-    selectedPokemon?.moveIds,
-    selectedPokemon?.slot,
-    selectedPokemon?.speciesId
-  ]);
+  }, [editableFields, selectedPokemon]);
 
   return (
     <aside aria-label="Selected trainer provenance" className="trainer-inspector">
@@ -6409,6 +6440,8 @@ function getEditablePokemonFieldValue(pokemon: TrainerPokemonRecord, field: stri
   switch (field) {
     case speciesIdFieldName:
       return pokemon.speciesId;
+    case formFieldName:
+      return pokemon.form;
     case levelFieldName:
       return pokemon.level;
     case heldItemIdFieldName:
@@ -6421,6 +6454,44 @@ function getEditablePokemonFieldValue(pokemon: TrainerPokemonRecord, field: stri
       return pokemon.moveIds[2] ?? null;
     case moveFieldNames[3]:
       return pokemon.moveIds[3] ?? null;
+    case genderFieldName:
+      return pokemon.gender;
+    case abilityFieldName:
+      return pokemon.ability;
+    case natureFieldName:
+      return pokemon.nature;
+    case evFieldNames[0]:
+      return pokemon.evs.hp;
+    case evFieldNames[1]:
+      return pokemon.evs.attack;
+    case evFieldNames[2]:
+      return pokemon.evs.defense;
+    case evFieldNames[3]:
+      return pokemon.evs.specialAttack;
+    case evFieldNames[4]:
+      return pokemon.evs.specialDefense;
+    case evFieldNames[5]:
+      return pokemon.evs.speed;
+    case dynamaxLevelFieldName:
+      return pokemon.dynamaxLevel;
+    case canGigantamaxFieldName:
+      return pokemon.canGigantamax ? 1 : 0;
+    case ivFieldNames[0]:
+      return pokemon.ivs.hp;
+    case ivFieldNames[1]:
+      return pokemon.ivs.attack;
+    case ivFieldNames[2]:
+      return pokemon.ivs.defense;
+    case ivFieldNames[3]:
+      return pokemon.ivs.specialAttack;
+    case ivFieldNames[4]:
+      return pokemon.ivs.specialDefense;
+    case ivFieldNames[5]:
+      return pokemon.ivs.speed;
+    case shinyFieldName:
+      return pokemon.shiny ? 1 : 0;
+    case canDynamaxFieldName:
+      return pokemon.canDynamax ? 1 : 0;
     default:
       return null;
   }

@@ -344,10 +344,20 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(810, pokemon.SpeciesId);
         Assert.Equal("Grookey", pokemon.Species);
         Assert.Equal(12, pokemon.Level);
+        Assert.Equal(0, pokemon.Form);
         Assert.Equal(1, pokemon.HeldItemId);
         Assert.Equal("Potion", pokemon.HeldItem);
         Assert.Equal([1, 2, 0, 0], pokemon.MoveIds);
-        Assert.Equal(9, response.Payload.Workflow.EditableFields.Count);
+        Assert.Equal(1, pokemon.Gender);
+        Assert.Equal(2, pokemon.Ability);
+        Assert.Equal(13, pokemon.Nature);
+        Assert.Equal(10, pokemon.Evs.HP);
+        Assert.Equal(1, pokemon.Ivs.HP);
+        Assert.Equal(2, pokemon.Ivs.Attack);
+        Assert.Equal(5, pokemon.Ivs.SpecialAttack);
+        Assert.True(pokemon.Shiny);
+        Assert.False(pokemon.CanDynamax);
+        Assert.Equal(29, response.Payload.Workflow.EditableFields.Count);
         Assert.Equal(2, response.Payload.Workflow.Stats.SourceFileCount);
     }
 
