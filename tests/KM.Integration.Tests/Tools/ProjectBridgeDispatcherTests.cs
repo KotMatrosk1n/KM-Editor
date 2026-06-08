@@ -1937,6 +1937,7 @@ public sealed class ProjectBridgeDispatcherTests
     {
         using var temp = TemporaryBridgeProject.Create();
         WriteRoyalCandyApplyInputs(temp);
+        File.Delete(Path.Combine(temp.BaseRomFsPath, "bin", "pml", "item", "item_hash_to_index.dat"));
         temp.WriteOutputFile("exefs/main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
         temp.WriteOutputFile(
             SwShRoyalCandyWorkflowService.BagEventScriptPath,
@@ -1956,6 +1957,9 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotNull(stageResponse.Payload);
         Assert.Single(stageResponse.Payload.Session.PendingEdits);
         Assert.Equal("royal-candy-uninstall", stageResponse.Payload.Session.PendingEdits[0].RecordId);
+        Assert.Contains(
+            stageResponse.Payload.Workflow.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("preflight is blocked", StringComparison.Ordinal));
         Assert.DoesNotContain(
             stageResponse.Payload.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);

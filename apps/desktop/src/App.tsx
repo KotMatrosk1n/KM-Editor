@@ -10247,6 +10247,12 @@ function RoyalCandySection({
   const visibleOutputs = selectedWorkflow
     ? filteredOutputs.filter((output) => output.workflowId === selectedWorkflow.workflowId)
     : filteredOutputs;
+  const visibleDiagnostics =
+    selectedWorkflow?.workflowId === 'royal-candy-uninstall'
+      ? (workflow?.diagnostics ?? []).filter(
+          (diagnostic) => !diagnostic.message.includes('preflight is blocked')
+        )
+      : (workflow?.diagnostics ?? []);
 
   useEffect(() => {
     if (selectedWorkflow && selectedWorkflow.workflowId !== selectedWorkflowId) {
@@ -10383,7 +10389,7 @@ function RoyalCandySection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      <DiagnosticsSection diagnostics={visibleDiagnostics} />
     </>
   );
 }
