@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { App } from './App';
 import {
@@ -245,7 +245,11 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: /Growl/ }));
     await user.clear(screen.getByLabelText('Move ID'));
     await user.type(screen.getByLabelText('Move ID'), '345');
-    const learnsetLevelInput = screen.getAllByLabelText('Level')[1]!;
+    const learnsetBlock = screen
+      .getByRole('heading', { level: 4, name: 'Learnset' })
+      .closest('.inspector-block') as HTMLElement | null;
+    expect(learnsetBlock).not.toBeNull();
+    const learnsetLevelInput = within(learnsetBlock!).getAllByLabelText('Level')[0]!;
     await user.clear(learnsetLevelInput);
     await user.type(learnsetLevelInput, '9');
     await user.click(screen.getByRole('button', { name: 'Save learnset row' }));
@@ -271,10 +275,8 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
     await user.click(screen.getByRole('button', { name: /002 Ivysaur/ }));
-    await user.clear(screen.getByLabelText('Method'));
-    await user.type(screen.getByLabelText('Method'), '8');
-    await user.clear(screen.getByLabelText('Argument'));
-    await user.type(screen.getByLabelText('Argument'), '25');
+    await user.selectOptions(screen.getByLabelText('Method'), '8');
+    await user.selectOptions(screen.getByLabelText('Item'), '25');
     await user.clear(screen.getByLabelText('Form'));
     await user.type(screen.getByLabelText('Form'), '1');
     const evolutionLevelInput = screen.getAllByLabelText('Level')[0]!;
@@ -282,7 +284,7 @@ describe('App', () => {
     await user.type(evolutionLevelInput, '32');
     await user.click(screen.getByRole('button', { name: 'Save evolution row' }));
 
-    expect(await screen.findByRole('button', { name: /M 8/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /008 Use Item/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
@@ -1194,6 +1196,26 @@ function createMockProjectBridge(
         valueKind: 'boolean'
       }
     ],
+    evolutionMethodOptions: [
+      {
+        argumentKind: 'level',
+        argumentLabel: 'Level',
+        argumentOptions: [],
+        label: '004 Level Up',
+        value: 4
+      },
+      {
+        argumentKind: 'item',
+        argumentLabel: 'Item',
+        argumentOptions: [
+          { label: '000 None', value: 0 },
+          { label: '001 Potion', value: 1 },
+          { label: '025 Thunder Stone', value: 25 }
+        ],
+        label: '008 Use Item',
+        value: 8
+      }
+    ],
     pokemon: [
       {
         abilities: {
@@ -1260,9 +1282,13 @@ function createMockProjectBridge(
         evolutions: [
           {
             argument: 0,
+            argumentKind: 'level',
+            argumentLabel: 'Level',
+            argumentValue: 'None',
             form: 0,
             level: 16,
             method: 4,
+            methodName: 'Level Up',
             slot: 0,
             species: 2
           }
@@ -3304,11 +3330,30 @@ function createMockProjectBridge(
               request.form !== null &&
               request.level !== null
             ) {
+              const methodOption =
+                pokemonWorkflow.evolutionMethodOptions.find(
+                  (option) => option.value === request.method
+                ) ?? null;
+              const methodPrefix = request.method.toString().padStart(3, '0');
+              const methodName =
+                methodOption?.label.startsWith(`${methodPrefix} `)
+                  ? methodOption.label.slice(methodPrefix.length + 1)
+                  : methodOption?.label ?? `Method ${request.method}`;
+              const argumentKind = methodOption?.argumentKind ?? 'value';
+              const argumentValue =
+                argumentKind === 'none' || argumentKind === 'level'
+                  ? 'None'
+                  : methodOption?.argumentOptions.find((option) => option.value === request.argument)
+                      ?.label ?? request.argument.toString();
               const row = {
                 argument: request.argument,
+                argumentKind,
+                argumentLabel: methodOption?.argumentLabel ?? 'Argument',
+                argumentValue,
                 form: request.form,
                 level: request.level,
                 method: request.method,
+                methodName,
                 slot: targetSlot,
                 species: request.species
               };

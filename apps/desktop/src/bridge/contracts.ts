@@ -424,9 +424,13 @@ export const pokemonPersonalDetailsSchema = z.strictObject({
 
 export const pokemonEvolutionRecordSchema = z.strictObject({
   argument: z.number().int().nonnegative(),
+  argumentKind: z.string().default('value'),
+  argumentLabel: z.string().default('Argument'),
+  argumentValue: z.string().default(''),
   form: z.number().int().nonnegative(),
   level: z.number().int().nonnegative(),
   method: z.number().int().nonnegative(),
+  methodName: z.string().default(''),
   slot: z.number().int().nonnegative(),
   species: z.number().int().nonnegative()
 });
@@ -468,6 +472,14 @@ export const pokemonEditableFieldSchema = z.strictObject({
   valueKind: z.string()
 });
 
+export const pokemonEvolutionMethodOptionSchema = z.strictObject({
+  argumentKind: z.string(),
+  argumentLabel: z.string(),
+  argumentOptions: z.array(pokemonEditableFieldOptionSchema),
+  label: z.string(),
+  value: z.number().int()
+});
+
 export const pokemonRecordSchema = z.strictObject({
   abilities: pokemonAbilitySetSchema,
   baseExperience: z.number().int().nonnegative(),
@@ -503,6 +515,7 @@ export const pokemonWorkflowStatsSchema = z.strictObject({
 export const pokemonWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(pokemonEditableFieldSchema),
+  evolutionMethodOptions: z.array(pokemonEvolutionMethodOptionSchema).default([]),
   pokemon: z.array(pokemonRecordSchema),
   stats: pokemonWorkflowStatsSchema,
   summary: workflowSummarySchema
@@ -1503,6 +1516,10 @@ export type ItemEditableField = z.infer<typeof itemEditableFieldSchema>;
 export type ItemRecord = z.infer<typeof itemRecordSchema>;
 export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
 export type PokemonEditableField = z.infer<typeof pokemonEditableFieldSchema>;
+export type PokemonEditableFieldOption = z.infer<typeof pokemonEditableFieldOptionSchema>;
+export type PokemonEvolutionMethodOption = z.infer<
+  typeof pokemonEvolutionMethodOptionSchema
+>;
 export type PokemonEvolutionRecord = z.infer<typeof pokemonEvolutionRecordSchema>;
 export type PokemonLearnsetMove = z.infer<typeof pokemonLearnsetMoveSchema>;
 export type PokemonCompatibilityEntry = z.infer<typeof pokemonCompatibilityEntrySchema>;

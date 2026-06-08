@@ -76,7 +76,18 @@ public sealed record SwShPokemonEvolutionRecord(
     int Argument,
     int Species,
     int Form,
-    int Level);
+    int Level,
+    string MethodName,
+    string ArgumentKind,
+    string ArgumentLabel,
+    string ArgumentValue);
+
+public sealed record SwShPokemonEvolutionMethodOption(
+    int Value,
+    string Label,
+    string ArgumentKind,
+    string ArgumentLabel,
+    IReadOnlyList<SwShPokemonEditableFieldOption> ArgumentOptions);
 
 public sealed record SwShPokemonLearnsetMove(
     int Slot,
@@ -131,6 +142,7 @@ public sealed record SwShPokemonWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShPokemonRecord> Pokemon,
     SwShPokemonWorkflowStats Stats,
+    IReadOnlyList<SwShPokemonEvolutionMethodOption> EvolutionMethodOptions,
     IReadOnlyList<SwShPokemonEditableField> EditableFields,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
 
