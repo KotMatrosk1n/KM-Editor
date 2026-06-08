@@ -55,14 +55,19 @@ internal static class SwShSpeciesFormLabels
             return speciesName;
         }
 
+        var formLabel = ResolveKnownRegionalFormLabel(speciesId, localFormIndex)
+            ?? ResolveOnlyRegionalFormLabel(speciesId)
+            ?? string.Create(CultureInfo.InvariantCulture, $"Form {localFormIndex}");
+
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{speciesName} ({ResolveKnownRegionalFormLabel(speciesId, localFormIndex) ?? $"Form {localFormIndex}"})");
+            $"{speciesName} ({formLabel})");
     }
 
     internal static string ResolveRegionalFormLabel(int speciesId, int localFormIndex)
     {
         return ResolveKnownRegionalFormLabel(speciesId, localFormIndex)
+            ?? ResolveOnlyRegionalFormLabel(speciesId)
             ?? (localFormIndex == 0
                 ? "Regional Form"
                 : string.Create(CultureInfo.InvariantCulture, $"Regional Form {localFormIndex}"));
@@ -73,5 +78,31 @@ internal static class SwShSpeciesFormLabels
         return RegionalFormLabels.TryGetValue((speciesId, localFormIndex), out var label)
             ? label
             : null;
+    }
+
+    private static string? ResolveOnlyRegionalFormLabel(int speciesId)
+    {
+        string? label = null;
+
+        foreach (var entry in RegionalFormLabels)
+        {
+            if (entry.Key.SpeciesId != speciesId)
+            {
+                continue;
+            }
+
+            if (label is null)
+            {
+                label = entry.Value;
+                continue;
+            }
+
+            if (!string.Equals(label, entry.Value, StringComparison.Ordinal))
+            {
+                return null;
+            }
+        }
+
+        return label;
     }
 }

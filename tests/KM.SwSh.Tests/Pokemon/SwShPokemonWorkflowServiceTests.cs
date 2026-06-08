@@ -188,6 +188,47 @@ public sealed class SwShPokemonWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadInfersKnownRegionalLabelsWhenRegionalRowsHaveMissingOrMismatchedFormIndexes()
+    {
+        using var temp = TemporaryPokemonProject.Create();
+        WriteBasePokemonData(temp);
+        var records = Enumerable.Range(0, 54)
+            .Select(_ => CreateEmptyPersonalRecord())
+            .ToArray();
+        records[50] = CreateBulbasaurPersonalRecord(
+            hp: 40,
+            hatchedSpecies: 50,
+            isRegionalForm: true);
+        records[51] = CreateBulbasaurPersonalRecord(
+            hp: 50,
+            hatchedSpecies: 51,
+            isRegionalForm: true);
+        records[53] = CreateBulbasaurPersonalRecord(
+            hp: 60,
+            hatchedSpecies: 53,
+            localFormIndex: 2,
+            form: 2,
+            isRegionalForm: true);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(records));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateNamedPokemonNames(54, (50, "Diglett"), (51, "Dugtrio"), (53, "Persian")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShPokemonWorkflowService().Load(project);
+
+        Assert.Equal("Diglett (Alolan)", workflow.Pokemon[50].Name);
+        Assert.Equal("Alolan", workflow.Pokemon[50].FormLabel);
+        Assert.Equal("Dugtrio (Alolan)", workflow.Pokemon[51].Name);
+        Assert.Equal("Alolan", workflow.Pokemon[51].FormLabel);
+        Assert.Equal("Persian (Alolan)", workflow.Pokemon[53].Name);
+        Assert.Equal("Alolan", workflow.Pokemon[53].FormLabel);
+    }
+
+    [Fact]
     public void LoadLabelsEmptyPersonalRowsAsUnused()
     {
         using var temp = TemporaryPokemonProject.Create();
