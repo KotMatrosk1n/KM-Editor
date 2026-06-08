@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Workflows;
 using System.Buffers.Binary;
@@ -260,47 +261,59 @@ public sealed class SwShRoyalCandyWorkflowService
 
         try
         {
-            var length = new FileInfo(sourcePath).Length;
-            var rowCount = length / ItemRawRowSize;
-            var hasExpectedStride = length % ItemRawRowSize == 0;
+            var table = SwShItemTable.Parse(File.ReadAllBytes(sourcePath));
             var provenance = CreateProvenance(entry);
             sourceEntries.Add(entry);
+            var hasRareCandy = table.Records.Any(record => record.ItemId == RareCandyItemId);
+            var hasRoyalCandy = table.Records.Any(record => record.ItemId == RoyalCandyItemId);
 
             AddCheck(
                 checks,
                 $"{PreflightWorkflowId}:item-data-stride",
                 PreflightWorkflowId,
-                hasExpectedStride ? "Pass" : "Warning",
+                "Pass",
                 "RomFS",
                 entry.RelativePath,
-                hasExpectedStride
-                    ? string.Create(CultureInfo.InvariantCulture, $"Item table contains {rowCount:N0} rows at 0x{ItemRawRowSize:X} bytes each.")
-                    : string.Create(CultureInfo.InvariantCulture, $"Item table size 0x{length:X} is not aligned to 0x{ItemRawRowSize:X}."),
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Item table decoded with {table.Records.Count:N0} item id(s); 0x{ItemRawRowSize:X}-byte rows are validated from the table header."),
                 provenance);
 
             AddCheck(
                 checks,
                 $"{PreflightWorkflowId}:item-template-row",
                 PreflightWorkflowId,
-                rowCount > RareCandyItemId ? "Pass" : "Fail",
+                hasRareCandy ? "Pass" : "Fail",
                 "RomFS",
                 entry.RelativePath,
-                rowCount > RareCandyItemId
-                    ? "Rare Candy template item row is present."
-                    : "Rare Candy template item row is outside the item table.",
+                hasRareCandy
+                    ? "Rare Candy template item id is present."
+                    : "Rare Candy template item id is outside the item table.",
                 provenance);
 
             AddCheck(
                 checks,
                 $"{PreflightWorkflowId}:royal-candy-row",
                 PreflightWorkflowId,
-                rowCount > RoyalCandyItemId ? "Pass" : "Fail",
+                hasRoyalCandy ? "Pass" : "Fail",
                 "RomFS",
                 entry.RelativePath,
-                rowCount > RoyalCandyItemId
-                    ? "Royal Candy target item row is present."
-                    : "Royal Candy target item row is outside the item table.",
+                hasRoyalCandy
+                    ? "Royal Candy target item id is present."
+                    : "Royal Candy target item id is outside the item table.",
                 provenance);
+        }
+        catch (InvalidDataException exception)
+        {
+            AddCheck(
+                checks,
+                $"{PreflightWorkflowId}:item-data-shape",
+                PreflightWorkflowId,
+                "Fail",
+                "RomFS",
+                entry.RelativePath,
+                $"Item table could not be decoded: {exception.Message}",
+                CreateProvenance(entry));
         }
         catch (IOException exception)
         {

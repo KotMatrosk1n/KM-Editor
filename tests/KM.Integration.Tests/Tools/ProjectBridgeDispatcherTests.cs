@@ -1734,7 +1734,7 @@ public sealed class ProjectBridgeDispatcherTests
         using var temp = TemporaryBridgeProject.Create();
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.ItemPath["romfs/".Length..],
-            new byte[(1128 + 1) * 0x30]);
+            CreateRoyalCandyItemTable());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.ItemHashPath["romfs/".Length..],
             [0x01]);
@@ -1771,6 +1771,11 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("available", workflow.Status);
         Assert.Equal(1128, workflow.ItemId);
         Assert.Equal(ProjectFileLayerDto.Base, workflow.Provenance.SourceLayer);
+        Assert.Contains(
+            response.Payload.Workflow.Checks,
+            check => check.CheckId.EndsWith(":item-data-stride", StringComparison.Ordinal)
+                && check.Status == "Pass"
+                && check.Message.Contains("1,129 item id", StringComparison.Ordinal));
         Assert.Contains(
             response.Payload.Workflow.Checks,
             check => check.CheckId.EndsWith(":game-flavor", StringComparison.Ordinal)
