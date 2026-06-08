@@ -19,6 +19,37 @@ public sealed record SwShItemDetailGroup(
     string Label,
     IReadOnlyList<SwShItemDetail> Details);
 
+public sealed record SwShItemMetadata(
+    int Pouch,
+    int PouchFlags,
+    int FlingPower,
+    int FieldUseType,
+    int FieldFlags,
+    bool CanUseOnPokemon,
+    int ItemType,
+    int SortIndex,
+    int ItemSprite,
+    int GroupType,
+    int GroupIndex,
+    int CureStatusFlags,
+    int Boost0,
+    int Boost1,
+    int Boost2,
+    int Boost3,
+    int UseFlags1,
+    int UseFlags2,
+    int EvHp,
+    int EvAttack,
+    int EvDefense,
+    int EvSpeed,
+    int EvSpecialAttack,
+    int EvSpecialDefense,
+    int HealAmount,
+    int PpGain,
+    int FriendshipGain1,
+    int FriendshipGain2,
+    int FriendshipGain3);
+
 public sealed record SwShItemRecord(
     int ItemId,
     string Name,
@@ -27,16 +58,22 @@ public sealed record SwShItemRecord(
     int SellPrice,
     int WattsPrice,
     int AlternatePrice,
+    SwShItemMetadata Metadata,
     IReadOnlyList<int> SharedItemIds,
     IReadOnlyList<SwShItemDetailGroup> DetailGroups,
     SwShItemProvenance Provenance);
+
+public sealed record SwShItemEditableFieldOption(
+    int Value,
+    string Label);
 
 public sealed record SwShItemEditableField(
     string Field,
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<SwShItemEditableFieldOption> Options);
 
 public sealed record SwShItemsWorkflowStats(
     int TotalItemCount,

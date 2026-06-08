@@ -555,6 +555,26 @@ describe('App', () => {
     expect(screen.getByText('Applied Items change plan to the configured LayeredFS output root.')).toBeInTheDocument();
   });
 
+  it('saves item metadata edits from backend-provided selectors', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Items' }));
+    await user.click(await screen.findByRole('button', { name: 'Start Edit Session' }));
+
+    await user.selectOptions(screen.getByLabelText('Pouch'), '4');
+    await user.click(screen.getByRole('button', { name: 'Save pouch' }));
+
+    expect(await screen.findByText('Items (4)')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+    expect(screen.getByText('Set Potion pouch to 4.')).toBeInTheDocument();
+  });
+
   it('opens Text, edits a line, reviews a message table plan, and applies it', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
@@ -1328,11 +1348,19 @@ function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): De
   };
 }
 
-function createItemDetailGroups() {
+function createItemDetailGroups(metadata = createItemMetadata()) {
+  const pouchLabel = metadata.pouch === 4 ? 'Items (4)' : 'Medicine (0)';
+  const healLabel =
+    metadata.healAmount === 254
+      ? 'Half HP'
+      : metadata.healAmount === 255
+      ? 'Full HP'
+      : `${metadata.healAmount} HP`;
+
   return [
     {
       details: [
-        { label: 'Pouch', value: 'Medicine (0)' },
+        { label: 'Pouch', value: pouchLabel },
         { label: 'Sprite', value: '12' },
         { label: 'Machine', value: 'No machine link' }
       ],
@@ -1355,12 +1383,46 @@ function createItemDetailGroups() {
     },
     {
       details: [
-        { label: 'Heal', value: '20 HP' },
+        { label: 'Heal', value: healLabel },
         { label: 'Friendship gains', value: '+1 / +1 / 0' }
       ],
       label: 'Pokemon Effects'
     }
   ];
+}
+
+function createItemMetadata() {
+  return {
+    boost0: 0,
+    boost1: 0,
+    boost2: 0,
+    boost3: 0,
+    canUseOnPokemon: true,
+    cureStatusFlags: 0,
+    evAttack: 0,
+    evDefense: 0,
+    evHp: 0,
+    evSpecialAttack: 0,
+    evSpecialDefense: 0,
+    evSpeed: 0,
+    fieldFlags: 2,
+    fieldUseType: 1,
+    flingPower: 30,
+    friendshipGain1: 1,
+    friendshipGain2: 1,
+    friendshipGain3: 0,
+    groupIndex: 0,
+    groupType: 0,
+    healAmount: 20,
+    itemSprite: 12,
+    itemType: 9,
+    pouch: 0,
+    pouchFlags: 0,
+    ppGain: 0,
+    sortIndex: 5,
+    useFlags1: 4,
+    useFlags2: 0
+  };
 }
 
 function createMockProjectBridge(
@@ -1421,6 +1483,7 @@ function createMockProjectBridge(
         label: 'Buy price',
         maximumValue: 999_999,
         minimumValue: 0,
+        options: [],
         valueKind: 'integer'
       },
       {
@@ -1428,6 +1491,7 @@ function createMockProjectBridge(
         label: 'Sell price',
         maximumValue: 499_999,
         minimumValue: 0,
+        options: [],
         valueKind: 'integer'
       },
       {
@@ -1435,6 +1499,7 @@ function createMockProjectBridge(
         label: 'Watts price',
         maximumValue: 999_999,
         minimumValue: 0,
+        options: [],
         valueKind: 'integer'
       },
       {
@@ -1442,7 +1507,46 @@ function createMockProjectBridge(
         label: 'Alternate price',
         maximumValue: 999_999,
         minimumValue: 0,
+        options: [],
         valueKind: 'integer'
+      },
+      {
+        field: 'pouch',
+        label: 'Pouch',
+        maximumValue: 8,
+        minimumValue: 0,
+        options: [
+          { label: 'Medicine', value: 0 },
+          { label: 'Items', value: 4 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'healAmount',
+        label: 'Heal amount',
+        maximumValue: 255,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'evAttack',
+        label: 'Attack EV gain',
+        maximumValue: 127,
+        minimumValue: -128,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'canUseOnPokemon',
+        label: 'Can use on Pokemon',
+        maximumValue: 1,
+        minimumValue: 0,
+        options: [
+          { label: 'No', value: 0 },
+          { label: 'Yes', value: 1 }
+        ],
+        valueKind: 'boolean'
       }
     ],
     items: [
@@ -1452,6 +1556,7 @@ function createMockProjectBridge(
         category: 'Medicine',
         detailGroups: createItemDetailGroups(),
         itemId: 1,
+        metadata: createItemMetadata(),
         name: 'Potion',
         provenance: {
           fileState: 'baseOnly',
@@ -1468,6 +1573,7 @@ function createMockProjectBridge(
         category: 'Medicine',
         detailGroups: createItemDetailGroups(),
         itemId: 2,
+        metadata: createItemMetadata(),
         name: 'Antidote',
         provenance: {
           fileState: 'baseOnly',
@@ -4904,7 +5010,17 @@ function createMockProjectBridge(
         }
       }),
     updateItemField: (request) => {
-      const fieldLabel = request.field === 'sellPrice' ? 'sell price' : 'buy price';
+      const fieldLabels: Record<string, string> = {
+        buyPrice: 'buy price',
+        canUseOnPokemon: 'can use on Pokemon',
+        evAttack: 'Attack EV gain',
+        healAmount: 'heal amount',
+        pouch: 'pouch',
+        sellPrice: 'sell price',
+        wattsPrice: 'Watts price',
+        alternatePrice: 'alternate price'
+      };
+      const fieldLabel = fieldLabels[request.field] ?? request.field;
 
       return Promise.resolve({
         diagnostics: [],
@@ -4942,6 +5058,30 @@ function createMockProjectBridge(
                 return { ...item, wattsPrice: value };
               case 'alternatePrice':
                 return { ...item, alternatePrice: value };
+              case 'pouch': {
+                const metadata = { ...item.metadata, pouch: value };
+                return {
+                  ...item,
+                  category: value === 4 ? 'Items' : item.category,
+                  detailGroups: createItemDetailGroups(metadata),
+                  metadata
+                };
+              }
+              case 'healAmount': {
+                const metadata = { ...item.metadata, healAmount: value };
+                return {
+                  ...item,
+                  detailGroups: createItemDetailGroups(metadata),
+                  metadata
+                };
+              }
+              case 'evAttack':
+                return { ...item, metadata: { ...item.metadata, evAttack: value } };
+              case 'canUseOnPokemon':
+                return {
+                  ...item,
+                  metadata: { ...item.metadata, canUseOnPokemon: value !== 0 }
+                };
               default:
                 return { ...item, buyPrice: value, sellPrice: Math.floor(value / 2) };
             }

@@ -120,6 +120,32 @@ public sealed class SwShItemsEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateFieldAddsPendingMetadataEditAndPreviewsInspectorDetails()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.PouchField,
+            value: "4");
+
+        Assert.Empty(result.Diagnostics);
+        Assert.True(result.Session.HasPendingChanges);
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal(SwShItemsEditSessionService.PouchField, edit.Field);
+        Assert.Equal("4", edit.NewValue);
+        var item = result.Workflow.Items[1];
+        Assert.Equal("Items", item.Category);
+        Assert.Equal(4, item.Metadata.Pouch);
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Inventory").Details,
+            detail => detail.Label == "Pouch" && detail.Value == "Items (4)");
+    }
+
+    [Fact]
     public void UpdateFieldRejectsUnsupportedItemField()
     {
         using var temp = CreateEditableProject();
@@ -274,6 +300,50 @@ public sealed class SwShItemsEditSessionServiceTests
         Assert.Single(changePlan.Writes);
         Assert.Equal(450u, item.BuyPrice);
         Assert.Equal(40u, item.WattsPrice);
+        Assert.DoesNotContain(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ApplyChangePlanWritesItemMetadataToOutputRoot()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShItemsEditSessionService();
+        var pouchResult = service.UpdateField(
+            temp.Paths,
+            session: null,
+            itemId: 1,
+            field: SwShItemsWorkflowService.PouchField,
+            value: "4");
+        var healResult = service.UpdateField(
+            temp.Paths,
+            pouchResult.Session,
+            itemId: 1,
+            field: SwShItemsWorkflowService.HealAmountField,
+            value: "254");
+        var evResult = service.UpdateField(
+            temp.Paths,
+            healResult.Session,
+            itemId: 1,
+            field: SwShItemsWorkflowService.EvAttackField,
+            value: "-10");
+        var canUseResult = service.UpdateField(
+            temp.Paths,
+            evResult.Session,
+            itemId: 1,
+            field: SwShItemsWorkflowService.CanUseOnPokemonField,
+            value: "0");
+        var changePlan = service.CreateChangePlan(temp.Paths, canUseResult.Session);
+
+        var applyResult = service.ApplyChangePlan(temp.Paths, canUseResult.Session, changePlan);
+
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        var item = SwShItemTable.Parse(File.ReadAllBytes(outputPath)).Records[1];
+        Assert.Single(changePlan.Writes);
+        Assert.Equal(SwShItemPouch.Items, item.Pouch);
+        Assert.Equal(254, item.HealAmount);
+        Assert.Equal(-10, item.EvAttack);
+        Assert.False(item.CanUseOnPokemon);
+        Assert.Equal(300u, item.BuyPrice);
         Assert.DoesNotContain(applyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 

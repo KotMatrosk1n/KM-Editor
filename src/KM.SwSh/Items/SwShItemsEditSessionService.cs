@@ -16,6 +16,31 @@ public sealed class SwShItemsEditSessionService
     public const string SellPriceField = SwShItemsWorkflowService.SellPriceField;
     public const string WattsPriceField = SwShItemsWorkflowService.WattsPriceField;
     public const string AlternatePriceField = SwShItemsWorkflowService.AlternatePriceField;
+    public const string PouchField = SwShItemsWorkflowService.PouchField;
+    public const string PouchFlagsField = SwShItemsWorkflowService.PouchFlagsField;
+    public const string FlingPowerField = SwShItemsWorkflowService.FlingPowerField;
+    public const string FieldUseTypeField = SwShItemsWorkflowService.FieldUseTypeField;
+    public const string FieldFlagsField = SwShItemsWorkflowService.FieldFlagsField;
+    public const string CanUseOnPokemonField = SwShItemsWorkflowService.CanUseOnPokemonField;
+    public const string ItemTypeField = SwShItemsWorkflowService.ItemTypeField;
+    public const string SortIndexField = SwShItemsWorkflowService.SortIndexField;
+    public const string ItemSpriteField = SwShItemsWorkflowService.ItemSpriteField;
+    public const string GroupTypeField = SwShItemsWorkflowService.GroupTypeField;
+    public const string GroupIndexField = SwShItemsWorkflowService.GroupIndexField;
+    public const string CureStatusFlagsField = SwShItemsWorkflowService.CureStatusFlagsField;
+    public const string UseFlags1Field = SwShItemsWorkflowService.UseFlags1Field;
+    public const string UseFlags2Field = SwShItemsWorkflowService.UseFlags2Field;
+    public const string EvHpField = SwShItemsWorkflowService.EvHpField;
+    public const string EvAttackField = SwShItemsWorkflowService.EvAttackField;
+    public const string EvDefenseField = SwShItemsWorkflowService.EvDefenseField;
+    public const string EvSpeedField = SwShItemsWorkflowService.EvSpeedField;
+    public const string EvSpecialAttackField = SwShItemsWorkflowService.EvSpecialAttackField;
+    public const string EvSpecialDefenseField = SwShItemsWorkflowService.EvSpecialDefenseField;
+    public const string HealAmountField = SwShItemsWorkflowService.HealAmountField;
+    public const string PpGainField = SwShItemsWorkflowService.PpGainField;
+    public const string FriendshipGain1Field = SwShItemsWorkflowService.FriendshipGain1Field;
+    public const string FriendshipGain2Field = SwShItemsWorkflowService.FriendshipGain2Field;
+    public const string FriendshipGain3Field = SwShItemsWorkflowService.FriendshipGain3Field;
 
     private const string ItemsEditDomain = "workflow.items";
 
@@ -293,7 +318,7 @@ public sealed class SwShItemsEditSessionService
             return null;
         }
 
-        if (!TryParseItemValue(value, itemField.MaximumValue, out var itemValue))
+        if (!TryParseItemValue(value, itemField.MinimumValue, itemField.MaximumValue, out var itemValue))
         {
             diagnostics.Add(CreateItemValueRangeDiagnostic(itemField));
             return null;
@@ -319,7 +344,7 @@ public sealed class SwShItemsEditSessionService
             return null;
         }
 
-        if (!TryParseItemValue(edit.NewValue, itemField.MaximumValue, out var itemValue))
+        if (!TryParseItemValue(edit.NewValue, itemField.MinimumValue, itemField.MaximumValue, out var itemValue))
         {
             diagnostics.Add(CreateItemValueRangeDiagnostic(itemField));
             return null;
@@ -328,10 +353,10 @@ public sealed class SwShItemsEditSessionService
         return itemValue;
     }
 
-    private static bool TryParseItemValue(string? value, int maximumValue, out int itemValue)
+    private static bool TryParseItemValue(string? value, int minimumValue, int maximumValue, out int itemValue)
     {
-        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out itemValue)
-            && itemValue >= 0
+        return int.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out itemValue)
+            && itemValue >= minimumValue
             && itemValue <= maximumValue;
     }
 
@@ -342,29 +367,132 @@ public sealed class SwShItemsEditSessionService
             BuyPriceField => new ItemField(
                 BuyPriceField,
                 "buy price",
-                SwShItemsWorkflowService.MaximumBuyPrice,
-                SwShItemTableField.BuyPrice,
+                MinimumValue: 0,
+                MaximumValue: SwShItemsWorkflowService.MaximumBuyPrice,
+                TableField: SwShItemTableField.BuyPrice,
                 ActualValueMultiplier: 1),
             SellPriceField => new ItemField(
                 SellPriceField,
                 "sell price",
-                SwShItemsWorkflowService.MaximumSellPrice,
-                SwShItemTableField.BuyPrice,
+                MinimumValue: 0,
+                MaximumValue: SwShItemsWorkflowService.MaximumSellPrice,
+                TableField: SwShItemTableField.BuyPrice,
                 ActualValueMultiplier: 2),
             WattsPriceField => new ItemField(
                 WattsPriceField,
                 "Watts price",
-                SwShItemsWorkflowService.MaximumWattsPrice,
-                SwShItemTableField.WattsPrice,
+                MinimumValue: 0,
+                MaximumValue: SwShItemsWorkflowService.MaximumWattsPrice,
+                TableField: SwShItemTableField.WattsPrice,
                 ActualValueMultiplier: 1),
             AlternatePriceField => new ItemField(
                 AlternatePriceField,
                 "alternate price",
-                SwShItemsWorkflowService.MaximumAlternatePrice,
-                SwShItemTableField.AlternatePrice,
+                MinimumValue: 0,
+                MaximumValue: SwShItemsWorkflowService.MaximumAlternatePrice,
+                TableField: SwShItemTableField.AlternatePrice,
                 ActualValueMultiplier: 1),
+            PouchField => CreateByteField(
+                PouchField,
+                "pouch",
+                SwShItemTableField.Pouch,
+                maximumValue: SwShItemsWorkflowService.MaximumPouchValue),
+            PouchFlagsField => CreateByteField(
+                PouchFlagsField,
+                "pouch flags",
+                SwShItemTableField.PouchFlags,
+                maximumValue: SwShItemsWorkflowService.MaximumPouchFlagsValue),
+            FlingPowerField => CreateByteField(FlingPowerField, "fling power", SwShItemTableField.FlingPower),
+            FieldUseTypeField => CreateByteField(
+                FieldUseTypeField,
+                "field use type",
+                SwShItemTableField.FieldUseType),
+            FieldFlagsField => CreateByteField(FieldFlagsField, "field flags", SwShItemTableField.FieldFlags),
+            CanUseOnPokemonField => CreateByteField(
+                CanUseOnPokemonField,
+                "can use on Pokemon",
+                SwShItemTableField.CanUseOnPokemon,
+                maximumValue: 1),
+            ItemTypeField => CreateByteField(ItemTypeField, "item type", SwShItemTableField.ItemType),
+            SortIndexField => CreateByteField(SortIndexField, "sort index", SwShItemTableField.SortIndex),
+            ItemSpriteField => new ItemField(
+                ItemSpriteField,
+                "sprite",
+                MinimumValue: short.MinValue,
+                MaximumValue: short.MaxValue,
+                TableField: SwShItemTableField.ItemSprite,
+                ActualValueMultiplier: 1),
+            GroupTypeField => CreateByteField(GroupTypeField, "group type", SwShItemTableField.GroupType),
+            GroupIndexField => CreateByteField(GroupIndexField, "group index", SwShItemTableField.GroupIndex),
+            CureStatusFlagsField => CreateByteField(
+                CureStatusFlagsField,
+                "cure status flags",
+                SwShItemTableField.CureStatusFlags),
+            UseFlags1Field => CreateByteField(UseFlags1Field, "use flags 1", SwShItemTableField.UseFlags1),
+            UseFlags2Field => CreateByteField(UseFlags2Field, "use flags 2", SwShItemTableField.UseFlags2),
+            EvHpField => CreateSignedByteField(EvHpField, "HP EV gain", SwShItemTableField.EvHp),
+            EvAttackField => CreateSignedByteField(
+                EvAttackField,
+                "Attack EV gain",
+                SwShItemTableField.EvAttack),
+            EvDefenseField => CreateSignedByteField(
+                EvDefenseField,
+                "Defense EV gain",
+                SwShItemTableField.EvDefense),
+            EvSpeedField => CreateSignedByteField(EvSpeedField, "Speed EV gain", SwShItemTableField.EvSpeed),
+            EvSpecialAttackField => CreateSignedByteField(
+                EvSpecialAttackField,
+                "Sp. Atk EV gain",
+                SwShItemTableField.EvSpecialAttack),
+            EvSpecialDefenseField => CreateSignedByteField(
+                EvSpecialDefenseField,
+                "Sp. Def EV gain",
+                SwShItemTableField.EvSpecialDefense),
+            HealAmountField => CreateByteField(HealAmountField, "heal amount", SwShItemTableField.HealAmount),
+            PpGainField => CreateByteField(PpGainField, "PP gain", SwShItemTableField.PpGain),
+            FriendshipGain1Field => CreateSignedByteField(
+                FriendshipGain1Field,
+                "friendship gain 1",
+                SwShItemTableField.FriendshipGain1),
+            FriendshipGain2Field => CreateSignedByteField(
+                FriendshipGain2Field,
+                "friendship gain 2",
+                SwShItemTableField.FriendshipGain2),
+            FriendshipGain3Field => CreateSignedByteField(
+                FriendshipGain3Field,
+                "friendship gain 3",
+                SwShItemTableField.FriendshipGain3),
             _ => null,
         };
+    }
+
+    private static ItemField CreateByteField(
+        string field,
+        string displayName,
+        SwShItemTableField tableField,
+        int maximumValue = SwShItemsWorkflowService.MaximumByteValue)
+    {
+        return new ItemField(
+            field,
+            displayName,
+            MinimumValue: 0,
+            MaximumValue: maximumValue,
+            TableField: tableField,
+            ActualValueMultiplier: 1);
+    }
+
+    private static ItemField CreateSignedByteField(
+        string field,
+        string displayName,
+        SwShItemTableField tableField)
+    {
+        return new ItemField(
+            field,
+            displayName,
+            MinimumValue: SwShItemsWorkflowService.MinimumSignedByteValue,
+            MaximumValue: SwShItemsWorkflowService.MaximumSignedByteValue,
+            TableField: tableField,
+            ActualValueMultiplier: 1);
     }
 
     private static EditSession ReplacePendingItemEdit(EditSession session, PendingEdit pendingEdit)
@@ -396,7 +524,7 @@ public sealed class SwShItemsEditSessionService
         var itemField = GetEditableField(edit.Field);
         if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
             || itemField is null
-            || !TryParseItemValue(edit.NewValue, itemField.MaximumValue, out var itemValue))
+            || !TryParseItemValue(edit.NewValue, itemField.MinimumValue, itemField.MaximumValue, out var itemValue))
         {
             return workflow;
         }
@@ -415,6 +543,52 @@ public sealed class SwShItemsEditSessionService
             }),
             WattsPriceField => OverlayItem(workflow, itemId, item => item with { WattsPrice = itemValue }),
             AlternatePriceField => OverlayItem(workflow, itemId, item => item with { AlternatePrice = itemValue }),
+            PouchField => OverlayItemMetadata(workflow, itemId, item => item with { Pouch = itemValue }),
+            PouchFlagsField => OverlayItemMetadata(workflow, itemId, item => item with { PouchFlags = itemValue }),
+            FlingPowerField => OverlayItemMetadata(workflow, itemId, item => item with { FlingPower = itemValue }),
+            FieldUseTypeField => OverlayItemMetadata(workflow, itemId, item => item with { FieldUseType = itemValue }),
+            FieldFlagsField => OverlayItemMetadata(workflow, itemId, item => item with { FieldFlags = itemValue }),
+            CanUseOnPokemonField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { CanUseOnPokemon = itemValue != 0 }),
+            ItemTypeField => OverlayItemMetadata(workflow, itemId, item => item with { ItemType = itemValue }),
+            SortIndexField => OverlayItemMetadata(workflow, itemId, item => item with { SortIndex = itemValue }),
+            ItemSpriteField => OverlayItemMetadata(workflow, itemId, item => item with { ItemSprite = itemValue }),
+            GroupTypeField => OverlayItemMetadata(workflow, itemId, item => item with { GroupType = itemValue }),
+            GroupIndexField => OverlayItemMetadata(workflow, itemId, item => item with { GroupIndex = itemValue }),
+            CureStatusFlagsField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { CureStatusFlags = itemValue }),
+            UseFlags1Field => OverlayItemMetadata(workflow, itemId, item => item with { UseFlags1 = itemValue }),
+            UseFlags2Field => OverlayItemMetadata(workflow, itemId, item => item with { UseFlags2 = itemValue }),
+            EvHpField => OverlayItemMetadata(workflow, itemId, item => item with { EvHp = itemValue }),
+            EvAttackField => OverlayItemMetadata(workflow, itemId, item => item with { EvAttack = itemValue }),
+            EvDefenseField => OverlayItemMetadata(workflow, itemId, item => item with { EvDefense = itemValue }),
+            EvSpeedField => OverlayItemMetadata(workflow, itemId, item => item with { EvSpeed = itemValue }),
+            EvSpecialAttackField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { EvSpecialAttack = itemValue }),
+            EvSpecialDefenseField => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { EvSpecialDefense = itemValue }),
+            HealAmountField => OverlayItemMetadata(workflow, itemId, item => item with { HealAmount = itemValue }),
+            PpGainField => OverlayItemMetadata(workflow, itemId, item => item with { PpGain = itemValue }),
+            FriendshipGain1Field => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { FriendshipGain1 = itemValue }),
+            FriendshipGain2Field => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { FriendshipGain2 = itemValue }),
+            FriendshipGain3Field => OverlayItemMetadata(
+                workflow,
+                itemId,
+                item => item with { FriendshipGain3 = itemValue }),
             _ => workflow,
         };
     }
@@ -429,6 +603,23 @@ public sealed class SwShItemsEditSessionService
             .ToArray();
 
         return workflow with { Items = items };
+    }
+
+    private static SwShItemsWorkflow OverlayItemMetadata(
+        SwShItemsWorkflow workflow,
+        int itemId,
+        Func<SwShItemMetadata, SwShItemMetadata> update)
+    {
+        return OverlayItem(workflow, itemId, item =>
+        {
+            var metadata = update(item.Metadata);
+            return item with
+            {
+                Category = SwShItemsWorkflowService.FormatPouch(metadata.Pouch),
+                Metadata = metadata,
+                DetailGroups = SwShItemsWorkflowService.CreateDetailGroups(metadata),
+            };
+        });
     }
 
     private static SwShItemsWorkflow OverlayPendingEdits(
@@ -524,7 +715,7 @@ public sealed class SwShItemsEditSessionService
         return new SwShItemTableEdit(
             itemId,
             itemField.TableField,
-            checked((uint)(itemValue.Value * itemField.ActualValueMultiplier)));
+            checked(itemValue.Value * itemField.ActualValueMultiplier));
     }
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
@@ -582,7 +773,7 @@ public sealed class SwShItemsEditSessionService
     {
         return CreateDiagnostic(
             DiagnosticSeverity.Error,
-            $"Item {itemField.DisplayName} must be between 0 and {itemField.MaximumValue}.",
+            $"Item {itemField.DisplayName} must be between {itemField.MinimumValue} and {itemField.MaximumValue}.",
             field: itemField.Field,
             expected: $"Safe item {itemField.DisplayName}");
     }
@@ -593,7 +784,43 @@ public sealed class SwShItemsEditSessionService
             DiagnosticSeverity.Error,
             $"Item field '{field}' is not supported by the Items workflow yet.",
             field: "field",
-            expected: $"{BuyPriceField}, {SellPriceField}, {WattsPriceField}, or {AlternatePriceField}");
+            expected: string.Join(", ", SupportedFieldNames()));
+    }
+
+    private static IReadOnlyList<string> SupportedFieldNames()
+    {
+        return
+        [
+            BuyPriceField,
+            SellPriceField,
+            WattsPriceField,
+            AlternatePriceField,
+            PouchField,
+            PouchFlagsField,
+            FlingPowerField,
+            FieldUseTypeField,
+            FieldFlagsField,
+            CanUseOnPokemonField,
+            ItemTypeField,
+            SortIndexField,
+            ItemSpriteField,
+            GroupTypeField,
+            GroupIndexField,
+            CureStatusFlagsField,
+            UseFlags1Field,
+            UseFlags2Field,
+            EvHpField,
+            EvAttackField,
+            EvDefenseField,
+            EvSpeedField,
+            EvSpecialAttackField,
+            EvSpecialDefenseField,
+            HealAmountField,
+            PpGainField,
+            FriendshipGain1Field,
+            FriendshipGain2Field,
+            FriendshipGain3Field,
+        ];
     }
 
     private static ValidationDiagnostic CreateDiagnostic(
@@ -613,6 +840,7 @@ public sealed class SwShItemsEditSessionService
     private sealed record ItemField(
         string Field,
         string DisplayName,
+        int MinimumValue,
         int MaximumValue,
         SwShItemTableField TableField,
         int ActualValueMultiplier);

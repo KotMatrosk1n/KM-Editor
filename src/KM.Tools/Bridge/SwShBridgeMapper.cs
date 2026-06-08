@@ -1033,6 +1033,36 @@ public static class SwShBridgeMapper
             item.SellPrice,
             item.WattsPrice,
             item.AlternatePrice,
+            new ItemMetadataDto(
+                item.Metadata.Pouch,
+                item.Metadata.PouchFlags,
+                item.Metadata.FlingPower,
+                item.Metadata.FieldUseType,
+                item.Metadata.FieldFlags,
+                item.Metadata.CanUseOnPokemon,
+                item.Metadata.ItemType,
+                item.Metadata.SortIndex,
+                item.Metadata.ItemSprite,
+                item.Metadata.GroupType,
+                item.Metadata.GroupIndex,
+                item.Metadata.CureStatusFlags,
+                item.Metadata.Boost0,
+                item.Metadata.Boost1,
+                item.Metadata.Boost2,
+                item.Metadata.Boost3,
+                item.Metadata.UseFlags1,
+                item.Metadata.UseFlags2,
+                item.Metadata.EvHp,
+                item.Metadata.EvAttack,
+                item.Metadata.EvDefense,
+                item.Metadata.EvSpeed,
+                item.Metadata.EvSpecialAttack,
+                item.Metadata.EvSpecialDefense,
+                item.Metadata.HealAmount,
+                item.Metadata.PpGain,
+                item.Metadata.FriendshipGain1,
+                item.Metadata.FriendshipGain2,
+                item.Metadata.FriendshipGain3),
             item.SharedItemIds,
             item.DetailGroups.Select(ToDto).ToArray(),
             new ItemProvenanceDto(
@@ -1060,7 +1090,8 @@ public static class SwShBridgeMapper
             field.Label,
             field.ValueKind,
             field.MinimumValue,
-            field.MaximumValue);
+            field.MaximumValue,
+            field.Options.Select(option => new ItemEditableFieldOptionDto(option.Value, option.Label)).ToArray());
     }
 
     private static PokemonRecordDto ToDto(SwShPokemonRecord pokemon)
