@@ -233,6 +233,7 @@ describe('projectBridge', () => {
                   label: 'HP',
                   maximumValue: 255,
                   minimumValue: 0,
+                  options: [],
                   valueKind: 'integer'
                 }
               ],
@@ -1697,6 +1698,7 @@ describe('projectBridge', () => {
                 label: 'HP',
                 maximumValue: 255,
                 minimumValue: 0,
+                options: [],
                 valueKind: 'integer'
               }
             ],

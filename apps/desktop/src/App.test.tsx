@@ -206,6 +206,9 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'type1');
+    expect(screen.getByLabelText('Type 1')).toHaveDisplayValue('Grass');
+    await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'hp');
     const hpInput = screen.getByLabelText('HP');
     await user.clear(hpInput);
     await user.type(hpInput, '99');
@@ -1050,6 +1053,20 @@ function createMockProjectBridge(
         label: 'HP',
         maximumValue: 255,
         minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'type1',
+        group: 'Traits',
+        label: 'Type 1',
+        maximumValue: 17,
+        minimumValue: 0,
+        options: [
+          { label: 'Normal', value: 0 },
+          { label: 'Grass', value: 11 },
+          { label: 'Fire', value: 9 }
+        ],
         valueKind: 'integer'
       },
       {
@@ -1058,6 +1075,7 @@ function createMockProjectBridge(
         label: 'Cannot Dynamax',
         maximumValue: 1,
         minimumValue: 0,
+        options: [],
         valueKind: 'boolean'
       }
     ],

@@ -565,7 +565,13 @@ public static class SwShBridgeMapper
             field.Group,
             field.ValueKind,
             field.MinimumValue,
-            field.MaximumValue);
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static PokemonEditableFieldOptionDto ToDto(SwShPokemonEditableFieldOption option)
+    {
+        return new PokemonEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static PokemonEvolutionRecordDto ToDto(SwShPokemonEvolutionRecord evolution)

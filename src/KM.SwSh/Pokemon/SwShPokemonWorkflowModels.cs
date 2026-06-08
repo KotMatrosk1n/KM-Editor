@@ -124,4 +124,9 @@ public sealed record SwShPokemonEditableField(
     string Group,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<SwShPokemonEditableFieldOption> Options);
+
+public sealed record SwShPokemonEditableFieldOption(
+    int Value,
+    string Label);

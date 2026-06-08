@@ -2701,6 +2701,7 @@ function SelectedPokemonPanel({
   }, [draftState?.field, draftState?.recordId, draftState?.value]);
 
   const isBooleanField = selectedField?.valueKind === 'boolean';
+  const isOptionField = Boolean(selectedField && selectedField.options.length > 0);
   const canSubmit =
     Boolean(pokemon && selectedField && editSession && canEditPokemon) &&
     (isBooleanField || draftValue.trim().length > 0);
@@ -2850,6 +2851,21 @@ function SelectedPokemonPanel({
                         type="checkbox"
                       />
                       <span>{selectedField.label}</span>
+                    </label>
+                  ) : isOptionField ? (
+                    <label className="path-field">
+                      <span>{selectedField.label}</span>
+                      <select
+                        disabled={!canEditPokemon || editSession === null || isPokemonUpdating}
+                        onChange={(event) => setDraftValue(event.target.value)}
+                        value={draftValue}
+                      >
+                        {selectedField.options.map((option) => (
+                          <option key={option.value} value={option.value.toString()}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                   ) : (
                     <label className="path-field">
