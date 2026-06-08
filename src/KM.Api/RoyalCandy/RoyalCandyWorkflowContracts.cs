@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
 
 namespace KM.Api.RoyalCandy;
 
 public sealed record LoadRoyalCandyWorkflowRequest(ProjectPathsDto Paths);
+
+public sealed record StageRoyalCandyWorkflowRequest(
+    ProjectPathsDto Paths,
+    string WorkflowId,
+    EditSessionDto? Session);
 
 public sealed record RoyalCandyProvenanceDto(
     string SourceFile,
@@ -69,3 +75,8 @@ public sealed record RoyalCandyWorkflowDto(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record LoadRoyalCandyWorkflowResponse(RoyalCandyWorkflowDto Workflow);
+
+public sealed record StageRoyalCandyWorkflowResponse(
+    RoyalCandyWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);

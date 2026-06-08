@@ -1390,6 +1390,12 @@ h2 {
   border-top: 1px solid #d7ddd5;
 }
 
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .encounter-slot-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

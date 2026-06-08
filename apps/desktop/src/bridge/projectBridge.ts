@@ -24,6 +24,8 @@ import {
   type LoadRaidRewardsWorkflowResponse,
   type LoadRoyalCandyWorkflowRequest,
   type LoadRoyalCandyWorkflowResponse,
+  type StageRoyalCandyWorkflowRequest,
+  type StageRoyalCandyWorkflowResponse,
   type LoadSpreadsheetImportWorkflowRequest,
   type LoadSpreadsheetImportWorkflowResponse,
   type PreviewSpreadsheetImportRequest,
@@ -71,6 +73,7 @@ import {
   loadPlacementWorkflowResponseSchema,
   loadRaidRewardsWorkflowResponseSchema,
   loadRoyalCandyWorkflowResponseSchema,
+  stageRoyalCandyWorkflowResponseSchema,
   loadSpreadsheetImportWorkflowResponseSchema,
   previewSpreadsheetImportResponseSchema,
   loadShopsWorkflowResponseSchema,
@@ -113,6 +116,9 @@ export type ProjectBridge = {
   loadRoyalCandyWorkflow: (
     request: LoadRoyalCandyWorkflowRequest
   ) => Promise<LoadRoyalCandyWorkflowResponse>;
+  stageRoyalCandyWorkflow: (
+    request: StageRoyalCandyWorkflowRequest
+  ) => Promise<StageRoyalCandyWorkflowResponse>;
   loadSpreadsheetImportWorkflow: (
     request: LoadSpreadsheetImportWorkflowRequest
   ) => Promise<LoadSpreadsheetImportWorkflowResponse>;
@@ -243,6 +249,13 @@ export function createProjectBridge(
         kmCommandNames.loadRoyalCandyWorkflow,
         request,
         loadRoyalCandyWorkflowResponseSchema
+      ),
+    stageRoyalCandyWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageRoyalCandyWorkflow,
+        request,
+        stageRoyalCandyWorkflowResponseSchema
       ),
     loadSpreadsheetImportWorkflow: (request) =>
       sendProjectBridgeRequest(

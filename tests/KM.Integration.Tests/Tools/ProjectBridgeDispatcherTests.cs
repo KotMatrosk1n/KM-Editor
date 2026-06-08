@@ -870,6 +870,121 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchRoyalCandyStageValidatePlanAndApplyWritesLayeredOutputs()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteRoyalCandyApplyInputs(temp);
+        var baseItemPath = Path.Combine(temp.BaseRomFsPath, "bin", "pml", "item", "item.dat");
+        var baseItemBytes = File.ReadAllBytes(baseItemPath);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageRoyalCandyWorkflow,
+            new StageRoyalCandyWorkflowRequest(
+                temp.Paths,
+                WorkflowId: "royal-candy-unlimited",
+                Session: null),
+            requestId: "request-royal-candy-stage");
+
+        var stageResponse = DeserializeResponse<StageRoyalCandyWorkflowResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+        Assert.Single(stageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.royalCandy", stageResponse.Payload.Session.PendingEdits[0].Domain);
+        Assert.Equal("royal-candy-unlimited", stageResponse.Payload.Session.PendingEdits[0].RecordId);
+        Assert.DoesNotContain(
+            stageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-royal-candy-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-royal-candy-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.True(planResponse.Payload.ChangePlan.CanApply);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ItemPath);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ItemHashPath);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == "romfs/bin/message/English/common/itemname.dat");
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == "romfs/bin/message/English/common/iteminfo.dat");
+        Assert.DoesNotContain(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ExeFsMainPath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageResponse.Payload.Session,
+                planResponse.Payload.ChangePlan),
+            requestId: "request-royal-candy-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.DoesNotContain(
+            applyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShRoyalCandyWorkflowService.ItemPath);
+        Assert.Equal(baseItemBytes, File.ReadAllBytes(baseItemPath));
+
+        var outputItemPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        var outputItemTable = SwShItemTable.Parse(File.ReadAllBytes(outputItemPath));
+        var royalCandy = outputItemTable.Records.Single(record => record.ItemId == 1128);
+        Assert.Equal(300u, royalCandy.BuyPrice);
+        Assert.Equal(15u, royalCandy.WattsPrice);
+        Assert.Equal(SwShItemPouch.Medicine, royalCandy.Pouch);
+
+        var outputNames = SwShGameTextFile.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "message",
+            "English",
+            "common",
+            "itemname.dat")));
+        Assert.Equal("Royal Candy", outputNames.Lines[1128].Text);
+
+        var outputInfo = SwShGameTextFile.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "message",
+            "English",
+            "common",
+            "iteminfo.dat")));
+        Assert.Contains("strange energy", outputInfo.Lines[1128].Text, StringComparison.Ordinal);
+
+        var outputHashTable = SwShItemHashTable.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "pml",
+            "item",
+            "item_hash_to_index.dat")));
+        Assert.Contains(outputHashTable.Entries, entry => entry.ItemId == 1128);
+    }
+
+    [Fact]
     public void DispatchLoadSpreadsheetImportWorkflowReturnsGeneratedImportProfiles()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -1255,6 +1370,84 @@ public sealed class ProjectBridgeDispatcherTests
         var data = new byte[0x298];
         BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(0x290, 8), titleId);
         return data;
+    }
+
+    private static void WriteRoyalCandyApplyInputs(TemporaryBridgeProject temp)
+    {
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ItemPath["romfs/".Length..],
+            CreateRoyalCandyItemTable());
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ItemHashPath["romfs/".Length..],
+            new SwShItemHashTable(
+            [
+                new SwShItemHashEntry(50, 0xAABBCCDD00112233),
+                new SwShItemHashEntry(1128, 0xAABBCCDD00112800),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
+            [0x02]);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.NestDataPath["romfs/".Length..],
+            [0x03]);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.PlacementPath["romfs/".Length..],
+            [0x04]);
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.BagEventScriptPath["romfs/".Length..],
+            [0x05]);
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            CreateRoyalCandyTextTable(itemId => itemId == 50 ? "Rare Candy" : $"Item {itemId}"));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/iteminfo.dat",
+            CreateRoyalCandyTextTable(itemId => itemId == 50 ? "A candy that raises level." : $"Info {itemId}"));
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+    }
+
+    private static byte[] CreateRoyalCandyItemTable()
+    {
+        const int itemCount = 1129;
+        const int rowSize = 0x30;
+        const int headerSize = 0x44;
+        const int entryTableOffset = 0x44;
+        const int rowsStartOffset = 0x40;
+
+        var rowsStart = headerSize + (itemCount * sizeof(ushort));
+        var data = new byte[rowsStart + (itemCount * rowSize)];
+
+        BinaryPrimitives.WriteUInt16LittleEndian(data, itemCount);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x04), itemCount);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(rowsStartOffset), rowsStart);
+
+        for (var itemId = 0; itemId < itemCount; itemId++)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                data.AsSpan(entryTableOffset + (itemId * sizeof(ushort))),
+                checked((ushort)itemId));
+            var rowOffset = rowsStart + (itemId * rowSize);
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rowOffset), itemId == 1128 ? 1u : 10u);
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rowOffset + 0x04), 1u);
+            BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rowOffset + 0x08), 1u);
+            data[rowOffset + 0x11] = (byte)SwShItemPouch.Items;
+        }
+
+        var rareCandyOffset = rowsStart + (50 * rowSize);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rareCandyOffset), 300u);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rareCandyOffset + 0x04), 15u);
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rareCandyOffset + 0x08), 3u);
+        data[rareCandyOffset + 0x11] = (byte)SwShItemPouch.Medicine;
+
+        return data;
+    }
+
+    private static byte[] CreateRoyalCandyTextTable(Func<int, string> getLine)
+    {
+        return SwShGameTextFile.Write(
+            Enumerable.Range(0, 1129)
+                .Select(itemId => new SwShGameTextLine(getLine(itemId), Flags: 0))
+                .ToArray());
     }
 
     private static BridgeResponse<TPayload> DeserializeResponse<TPayload>(string responseJson)

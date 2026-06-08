@@ -18,6 +18,10 @@ public sealed record SwShItemTableEdit(
     SwShItemTableField Field,
     uint Value);
 
+public sealed record SwShItemTableCloneEdit(
+    int TemplateItemId,
+    int TargetItemId);
+
 public enum SwShItemTableField
 {
     BuyPrice,
@@ -150,6 +154,35 @@ public sealed class SwShItemTable
                 default:
                     throw new ArgumentOutOfRangeException(nameof(edits), $"Item field '{edit.Field}' is not supported.");
             }
+        }
+
+        return result;
+    }
+
+    public byte[] WriteClonedRows(IReadOnlyList<SwShItemTableCloneEdit> edits)
+    {
+        ArgumentNullException.ThrowIfNull(edits);
+
+        var result = data.ToArray();
+        foreach (var edit in edits)
+        {
+            if (!recordsByItemId.TryGetValue(edit.TemplateItemId, out var templateRecord))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(edits),
+                    $"Template item {edit.TemplateItemId} is not present in the item table.");
+            }
+
+            if (!recordsByItemId.TryGetValue(edit.TargetItemId, out var targetRecord))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(edits),
+                    $"Target item {edit.TargetItemId} is not present in the item table.");
+            }
+
+            var templateRowOffset = RowsStart + (templateRecord.RawRowIndex * RowSize);
+            var targetRowOffset = RowsStart + (targetRecord.RawRowIndex * RowSize);
+            result.AsSpan(templateRowOffset, RowSize).CopyTo(result.AsSpan(targetRowOffset, RowSize));
         }
 
         return result;

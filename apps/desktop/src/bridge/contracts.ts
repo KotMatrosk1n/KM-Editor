@@ -24,6 +24,7 @@ export const kmCommandNameValues = [
   'flagworkSave.load',
   'exefsPatches.load',
   'royalCandy.load',
+  'royalCandy.workflow.stage',
   'spreadsheetImport.load',
   'spreadsheetImport.preview',
   'editSession.start',
@@ -59,6 +60,7 @@ export const kmCommandNames = {
   loadFlagworkSaveWorkflow: 'flagworkSave.load',
   loadExeFsPatchWorkflow: 'exefsPatches.load',
   loadRoyalCandyWorkflow: 'royalCandy.load',
+  stageRoyalCandyWorkflow: 'royalCandy.workflow.stage',
   loadSpreadsheetImportWorkflow: 'spreadsheetImport.load',
   previewSpreadsheetImport: 'spreadsheetImport.preview',
   openProject: 'project.open',
@@ -837,6 +839,18 @@ export const loadRoyalCandyWorkflowResponseSchema = z.strictObject({
   workflow: royalCandyWorkflowSchema
 });
 
+export const stageRoyalCandyWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  workflowId: z.string()
+});
+
+export const stageRoyalCandyWorkflowResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: royalCandyWorkflowSchema
+});
+
 export const spreadsheetImportProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -1167,6 +1181,12 @@ export type LoadExeFsPatchWorkflowRequest = z.infer<typeof loadExeFsPatchWorkflo
 export type LoadExeFsPatchWorkflowResponse = z.infer<typeof loadExeFsPatchWorkflowResponseSchema>;
 export type LoadRoyalCandyWorkflowRequest = z.infer<typeof loadRoyalCandyWorkflowRequestSchema>;
 export type LoadRoyalCandyWorkflowResponse = z.infer<typeof loadRoyalCandyWorkflowResponseSchema>;
+export type StageRoyalCandyWorkflowRequest = z.infer<
+  typeof stageRoyalCandyWorkflowRequestSchema
+>;
+export type StageRoyalCandyWorkflowResponse = z.infer<
+  typeof stageRoyalCandyWorkflowResponseSchema
+>;
 export type LoadSpreadsheetImportWorkflowRequest = z.infer<
   typeof loadSpreadsheetImportWorkflowRequestSchema
 >;
