@@ -25,6 +25,8 @@ export const kmCommandNameValues = [
   'tradePokemon.field.update',
   'staticEncounters.load',
   'staticEncounters.field.update',
+  'rentalPokemon.load',
+  'rentalPokemon.field.update',
   'shops.load',
   'shops.inventory.update',
   'encounters.load',
@@ -74,6 +76,8 @@ export const kmCommandNames = {
   updateTradePokemonField: 'tradePokemon.field.update',
   loadStaticEncountersWorkflow: 'staticEncounters.load',
   updateStaticEncounterField: 'staticEncounters.field.update',
+  loadRentalPokemonWorkflow: 'rentalPokemon.load',
+  updateRentalPokemonField: 'rentalPokemon.field.update',
   loadShopsWorkflow: 'shops.load',
   updateShopInventoryItem: 'shops.inventory.update',
   loadEncountersWorkflow: 'encounters.load',
@@ -166,6 +170,10 @@ export const loadTradePokemonWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadStaticEncountersWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadRentalPokemonWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -1092,6 +1100,87 @@ export const loadStaticEncountersWorkflowResponseSchema = z.strictObject({
   workflow: staticEncountersWorkflowSchema
 });
 
+export const rentalPokemonProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const rentalPokemonStatsSchema = z.strictObject({
+  attack: z.number().int(),
+  defense: z.number().int(),
+  hp: z.number().int(),
+  specialAttack: z.number().int(),
+  specialDefense: z.number().int(),
+  speed: z.number().int()
+});
+
+export const rentalPokemonMoveSchema = z.strictObject({
+  move: z.string().nullable(),
+  moveId: z.number().int().nonnegative(),
+  slot: z.number().int().nonnegative()
+});
+
+export const rentalPokemonEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
+export const rentalPokemonEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  options: z.array(rentalPokemonEditableFieldOptionSchema),
+  valueKind: z.string()
+});
+
+export const rentalPokemonRecordSchema = z.strictObject({
+  ability: z.number().int().nonnegative(),
+  abilityLabel: z.string(),
+  ballItem: z.string(),
+  ballItemId: z.number().int().nonnegative(),
+  evs: rentalPokemonStatsSchema,
+  form: z.number().int().nonnegative(),
+  gender: z.number().int().nonnegative(),
+  genderLabel: z.string(),
+  hash1: z.string(),
+  hash2: z.string(),
+  hasPerfectIvs: z.boolean(),
+  heldItem: z.string().nullable(),
+  heldItemId: z.number().int().nonnegative(),
+  ivs: rentalPokemonStatsSchema,
+  ivSummary: z.string(),
+  label: z.string(),
+  level: z.number().int().nonnegative(),
+  moves: z.array(rentalPokemonMoveSchema),
+  nature: z.number().int().nonnegative(),
+  natureLabel: z.string(),
+  provenance: rentalPokemonProvenanceSchema,
+  rentalIndex: z.number().int().nonnegative(),
+  species: z.string(),
+  speciesId: z.number().int().nonnegative(),
+  trainerId: z.number().int().nonnegative()
+});
+
+export const rentalPokemonWorkflowStatsSchema = z.strictObject({
+  perfectIvRentalCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative(),
+  totalRentalCount: z.number().int().nonnegative()
+});
+
+export const rentalPokemonWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(rentalPokemonEditableFieldSchema),
+  rentals: z.array(rentalPokemonRecordSchema),
+  stats: rentalPokemonWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadRentalPokemonWorkflowResponseSchema = z.strictObject({
+  workflow: rentalPokemonWorkflowSchema
+});
+
 export const shopProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -1699,6 +1788,20 @@ export const updateStaticEncounterFieldResponseSchema = z.strictObject({
   workflow: staticEncountersWorkflowSchema
 });
 
+export const updateRentalPokemonFieldRequestSchema = z.strictObject({
+  field: z.string(),
+  paths: projectPathsSchema,
+  rentalIndex: z.number().int().nonnegative(),
+  session: editSessionSchema.nullable(),
+  value: z.string()
+});
+
+export const updateRentalPokemonFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: rentalPokemonWorkflowSchema
+});
+
 export const updateShopInventoryItemRequestSchema = z.strictObject({
   field: z.string(),
   paths: projectPathsSchema,
@@ -1884,6 +1987,13 @@ export type StaticEncounterEditableFieldOption = z.infer<
 export type StaticEncounterMoveRecord = z.infer<typeof staticEncounterMoveSchema>;
 export type StaticEncounterRecord = z.infer<typeof staticEncounterRecordSchema>;
 export type StaticEncountersWorkflow = z.infer<typeof staticEncountersWorkflowSchema>;
+export type RentalPokemonEditableField = z.infer<typeof rentalPokemonEditableFieldSchema>;
+export type RentalPokemonEditableFieldOption = z.infer<
+  typeof rentalPokemonEditableFieldOptionSchema
+>;
+export type RentalPokemonMoveRecord = z.infer<typeof rentalPokemonMoveSchema>;
+export type RentalPokemonRecord = z.infer<typeof rentalPokemonRecordSchema>;
+export type RentalPokemonWorkflow = z.infer<typeof rentalPokemonWorkflowSchema>;
 export type ShopEditableField = z.infer<typeof shopEditableFieldSchema>;
 export type ShopInventoryRecord = z.infer<typeof shopInventoryRecordSchema>;
 export type ShopRecord = z.infer<typeof shopRecordSchema>;
@@ -1955,6 +2065,12 @@ export type LoadStaticEncountersWorkflowRequest = z.infer<
 >;
 export type LoadStaticEncountersWorkflowResponse = z.infer<
   typeof loadStaticEncountersWorkflowResponseSchema
+>;
+export type LoadRentalPokemonWorkflowRequest = z.infer<
+  typeof loadRentalPokemonWorkflowRequestSchema
+>;
+export type LoadRentalPokemonWorkflowResponse = z.infer<
+  typeof loadRentalPokemonWorkflowResponseSchema
 >;
 export type LoadShopsWorkflowRequest = z.infer<typeof loadShopsWorkflowRequestSchema>;
 export type LoadShopsWorkflowResponse = z.infer<typeof loadShopsWorkflowResponseSchema>;
@@ -2031,6 +2147,12 @@ export type UpdateStaticEncounterFieldRequest = z.infer<
 >;
 export type UpdateStaticEncounterFieldResponse = z.infer<
   typeof updateStaticEncounterFieldResponseSchema
+>;
+export type UpdateRentalPokemonFieldRequest = z.infer<
+  typeof updateRentalPokemonFieldRequestSchema
+>;
+export type UpdateRentalPokemonFieldResponse = z.infer<
+  typeof updateRentalPokemonFieldResponseSchema
 >;
 export type UpdateShopInventoryItemRequest = z.infer<
   typeof updateShopInventoryItemRequestSchema

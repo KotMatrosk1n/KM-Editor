@@ -9,6 +9,7 @@ using KM.Api.Gifts;
 using KM.Api.Placement;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
+using KM.Api.Rentals;
 using KM.Api.Shops;
 using KM.Api.Raids;
 using KM.Api.RoyalCandy;
@@ -26,6 +27,7 @@ using KM.SwSh.Gifts;
 using KM.SwSh.Placement;
 using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
+using KM.SwSh.Rentals;
 using KM.SwSh.Shops;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
@@ -148,6 +150,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadStaticEncountersWorkflowResponse(ToStaticEncountersWorkflowDto(workflow));
+    }
+
+    public static LoadRentalPokemonWorkflowResponse ToDto(SwShRentalPokemonWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadRentalPokemonWorkflowResponse(ToRentalPokemonWorkflowDto(workflow));
     }
 
     public static LoadEncountersWorkflowResponse ToDto(SwShEncountersWorkflow workflow)
@@ -296,6 +305,16 @@ public static class SwShBridgeMapper
 
         return new UpdateStaticEncounterFieldResponse(
             ToStaticEncountersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateRentalPokemonFieldResponse ToDto(SwShRentalPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateRentalPokemonFieldResponse(
+            ToRentalPokemonWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -647,6 +666,87 @@ public static class SwShBridgeMapper
     private static StaticEncounterEditableFieldOptionDto ToDto(SwShStaticEncounterEditableFieldOption option)
     {
         return new StaticEncounterEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static RentalPokemonWorkflowDto ToRentalPokemonWorkflowDto(SwShRentalPokemonWorkflow workflow)
+    {
+        return new RentalPokemonWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Rentals.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new RentalPokemonWorkflowStatsDto(
+                workflow.Stats.TotalRentalCount,
+                workflow.Stats.PerfectIvRentalCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static RentalPokemonRecordDto ToDto(SwShRentalPokemonEntry rental)
+    {
+        return new RentalPokemonRecordDto(
+            rental.RentalIndex,
+            rental.Label,
+            rental.SpeciesId,
+            rental.Species,
+            rental.Form,
+            rental.Level,
+            rental.HeldItemId,
+            rental.HeldItem,
+            rental.BallItemId,
+            rental.BallItem,
+            rental.Ability,
+            rental.AbilityLabel,
+            rental.Nature,
+            rental.NatureLabel,
+            rental.Gender,
+            rental.GenderLabel,
+            rental.TrainerId,
+            rental.Hash1,
+            rental.Hash2,
+            rental.Moves.Select(ToDto).ToArray(),
+            ToDto(rental.Evs),
+            ToDto(rental.Ivs),
+            rental.HasPerfectIvs,
+            rental.IvSummary,
+            new RentalPokemonProvenanceDto(
+                rental.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(rental.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(rental.Provenance.FileState)));
+    }
+
+    private static RentalPokemonStatsDto ToDto(SwShRentalPokemonStatsRecord stats)
+    {
+        return new RentalPokemonStatsDto(
+            stats.HP,
+            stats.Attack,
+            stats.Defense,
+            stats.SpecialAttack,
+            stats.SpecialDefense,
+            stats.Speed);
+    }
+
+    private static RentalPokemonMoveRecordDto ToDto(SwShRentalPokemonMoveRecord move)
+    {
+        return new RentalPokemonMoveRecordDto(
+            move.Slot,
+            move.MoveId,
+            move.Move);
+    }
+
+    private static RentalPokemonEditableFieldDto ToDto(SwShRentalPokemonEditableField field)
+    {
+        return new RentalPokemonEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static RentalPokemonEditableFieldOptionDto ToDto(SwShRentalPokemonEditableFieldOption option)
+    {
+        return new RentalPokemonEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static TrainersWorkflowDto ToTrainersWorkflowDto(SwShTrainersWorkflow workflow)

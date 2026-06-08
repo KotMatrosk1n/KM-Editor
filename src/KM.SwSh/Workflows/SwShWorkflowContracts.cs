@@ -14,6 +14,7 @@ public static class SwShWorkflowIds
     public const string GiftPokemon = "giftPokemon";
     public const string TradePokemon = "tradePokemon";
     public const string StaticEncounters = "staticEncounters";
+    public const string RentalPokemon = "rentalPokemon";
     public const string Shops = "shops";
     public const string Encounters = "encounters";
     public const string RaidRewards = "raidRewards";

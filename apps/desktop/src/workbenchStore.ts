@@ -17,6 +17,7 @@ import {
   type ProjectFileGraph,
   type ProjectHealth,
   type RaidRewardsWorkflow,
+  type RentalPokemonWorkflow,
   type RoyalCandyWorkflow,
   type SpreadsheetImportPreview,
   type SpreadsheetImportWorkflow,
@@ -39,6 +40,7 @@ export type WorkbenchSection =
   | 'giftPokemon'
   | 'tradePokemon'
   | 'staticEncounters'
+  | 'rentalPokemon'
   | 'shops'
   | 'encounters'
   | 'raidRewards'
@@ -83,6 +85,8 @@ type WorkbenchState = {
   tradePokemonWorkflow: TradePokemonWorkflow | null;
   staticEncounterSearchText: string;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
+  rentalPokemonSearchText: string;
+  rentalPokemonWorkflow: RentalPokemonWorkflow | null;
   itemSearchText: string;
   itemsWorkflow: ItemsWorkflow | null;
   movesSearchText: string;
@@ -110,6 +114,7 @@ type WorkbenchState = {
   selectedGiftPokemonIndex: number | null;
   selectedTradePokemonIndex: number | null;
   selectedStaticEncounterIndex: number | null;
+  selectedRentalPokemonIndex: number | null;
   selectedRoyalCandyCheckId: string | null;
   selectedRoyalCandyWorkflowId: string | null;
   selectedSpreadsheetImportProfileId: string | null;
@@ -145,6 +150,8 @@ type WorkbenchState = {
   setTradePokemonWorkflow: (tradePokemonWorkflow: TradePokemonWorkflow) => void;
   setStaticEncounterSearchText: (staticEncounterSearchText: string) => void;
   setStaticEncountersWorkflow: (staticEncountersWorkflow: StaticEncountersWorkflow) => void;
+  setRentalPokemonSearchText: (rentalPokemonSearchText: string) => void;
+  setRentalPokemonWorkflow: (rentalPokemonWorkflow: RentalPokemonWorkflow) => void;
   setItemsWorkflow: (itemsWorkflow: ItemsWorkflow) => void;
   setItemSearchText: (itemSearchText: string) => void;
   setMovesSearchText: (movesSearchText: string) => void;
@@ -173,6 +180,7 @@ type WorkbenchState = {
   setSelectedGiftPokemonIndex: (selectedGiftPokemonIndex: number | null) => void;
   setSelectedTradePokemonIndex: (selectedTradePokemonIndex: number | null) => void;
   setSelectedStaticEncounterIndex: (selectedStaticEncounterIndex: number | null) => void;
+  setSelectedRentalPokemonIndex: (selectedRentalPokemonIndex: number | null) => void;
   setSelectedRoyalCandyCheckId: (selectedRoyalCandyCheckId: string | null) => void;
   setSelectedRoyalCandyWorkflowId: (selectedRoyalCandyWorkflowId: string | null) => void;
   setSelectedSpreadsheetImportProfileId: (
@@ -220,6 +228,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   tradePokemonWorkflow: null,
   staticEncounterSearchText: '',
   staticEncountersWorkflow: null,
+  rentalPokemonSearchText: '',
+  rentalPokemonWorkflow: null,
   itemSearchText: '',
   itemsWorkflow: null,
   movesSearchText: '',
@@ -246,6 +256,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedGiftPokemonIndex: null,
   selectedTradePokemonIndex: null,
   selectedStaticEncounterIndex: null,
+  selectedRentalPokemonIndex: null,
   selectedRoyalCandyCheckId: null,
   selectedRoyalCandyWorkflowId: null,
   selectedSpreadsheetImportProfileId: null,
@@ -286,6 +297,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setTradePokemonSearchText: (tradePokemonSearchText) => set({ tradePokemonSearchText }),
   setStaticEncounterSearchText: (staticEncounterSearchText) =>
     set({ staticEncounterSearchText }),
+  setRentalPokemonSearchText: (rentalPokemonSearchText) => set({ rentalPokemonSearchText }),
   setPlacementSearchText: (placementSearchText) => set({ placementSearchText }),
   setPokemonSearchText: (pokemonSearchText) => set({ pokemonSearchText }),
   setRaidRewardSearchText: (raidRewardSearchText) => set({ raidRewardSearchText }),
@@ -410,6 +422,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         staticEncountersWorkflow
       };
     }),
+  setRentalPokemonWorkflow: (rentalPokemonWorkflow) =>
+    set((state) => {
+      const selectedRentalPokemonIndex = rentalPokemonWorkflow.rentals.some(
+        (rental) => rental.rentalIndex === state.selectedRentalPokemonIndex
+      )
+        ? state.selectedRentalPokemonIndex
+        : (rentalPokemonWorkflow.rentals[0]?.rentalIndex ?? null);
+
+      return {
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'rentalPokemon'),
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        rentalPokemonSearchText: '',
+        rentalPokemonWorkflow,
+        selectedRentalPokemonIndex
+      };
+    }),
   setItemSearchText: (itemSearchText) => set({ itemSearchText }),
   setMovesSearchText: (movesSearchText) => set({ movesSearchText }),
   setShopSearchText: (shopSearchText) => set({ shopSearchText }),
@@ -433,6 +464,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       tradePokemonWorkflow: null,
       staticEncounterSearchText: '',
       staticEncountersWorkflow: null,
+      rentalPokemonSearchText: '',
+      rentalPokemonWorkflow: null,
       itemSearchText: '',
       itemsWorkflow: null,
       movesSearchText: '',
@@ -457,6 +490,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       selectedGiftPokemonIndex: null,
       selectedTradePokemonIndex: null,
       selectedStaticEncounterIndex: null,
+      selectedRentalPokemonIndex: null,
       selectedRoyalCandyCheckId: null,
       selectedRoyalCandyWorkflowId: null,
       selectedSpreadsheetImportProfileId: null,
@@ -509,6 +543,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set({ selectedTradePokemonIndex }),
   setSelectedStaticEncounterIndex: (selectedStaticEncounterIndex) =>
     set({ selectedStaticEncounterIndex }),
+  setSelectedRentalPokemonIndex: (selectedRentalPokemonIndex) =>
+    set({ selectedRentalPokemonIndex }),
   setSelectedRoyalCandyCheckId: (selectedRoyalCandyCheckId) =>
     set({ selectedRoyalCandyCheckId }),
   setSelectedRoyalCandyWorkflowId: (selectedRoyalCandyWorkflowId) =>

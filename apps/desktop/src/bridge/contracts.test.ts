@@ -19,6 +19,8 @@ import {
   loadFlagworkSaveWorkflowResponseSchema,
   loadGiftPokemonWorkflowRequestSchema,
   loadGiftPokemonWorkflowResponseSchema,
+  loadRentalPokemonWorkflowRequestSchema,
+  loadRentalPokemonWorkflowResponseSchema,
   loadTradePokemonWorkflowRequestSchema,
   loadTradePokemonWorkflowResponseSchema,
   loadItemsWorkflowRequestSchema,
@@ -53,6 +55,8 @@ import {
   updateItemFieldResponseSchema,
   updateGiftPokemonFieldRequestSchema,
   updateGiftPokemonFieldResponseSchema,
+  updateRentalPokemonFieldRequestSchema,
+  updateRentalPokemonFieldResponseSchema,
   updateTradePokemonFieldRequestSchema,
   updateTradePokemonFieldResponseSchema,
   updatePokemonFieldRequestSchema,
@@ -252,6 +256,12 @@ describe('bridge contracts', () => {
     const tradePokemonRequestSchema = createBridgeRequestSchema(loadTradePokemonWorkflowRequestSchema);
     const tradePokemonResponseSchema = createBridgeResponseSchema(
       loadTradePokemonWorkflowResponseSchema
+    );
+    const rentalPokemonRequestSchema = createBridgeRequestSchema(
+      loadRentalPokemonWorkflowRequestSchema
+    );
+    const rentalPokemonResponseSchema = createBridgeResponseSchema(
+      loadRentalPokemonWorkflowResponseSchema
     );
     const shopsRequestSchema = createBridgeRequestSchema(loadShopsWorkflowRequestSchema);
     const shopsResponseSchema = createBridgeResponseSchema(loadShopsWorkflowResponseSchema);
@@ -921,6 +931,97 @@ describe('bridge contracts', () => {
         }
       ]
     } as const;
+    const rentalPokemonWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'ivHp',
+          label: 'HP IV',
+          maximumValue: 31,
+          minimumValue: 0,
+          options: [],
+          valueKind: 'integer'
+        },
+        {
+          field: 'fixedIvPreset',
+          label: 'Fixed IV preset',
+          maximumValue: 31,
+          minimumValue: 0,
+          options: [
+            {
+              label: '31 IVs',
+              value: 31
+            }
+          ],
+          valueKind: 'integer'
+        }
+      ],
+      rentals: [
+        {
+          ability: 1,
+          abilityLabel: 'Ability 1',
+          ballItem: 'Poke Ball',
+          ballItemId: 4,
+          evs: {
+            attack: 252,
+            defense: 0,
+            hp: 4,
+            specialAttack: 0,
+            specialDefense: 0,
+            speed: 252
+          },
+          form: 0,
+          gender: 1,
+          genderLabel: 'Male',
+          hash1: '0x1122334455667788',
+          hash2: '0x8877665544332211',
+          hasPerfectIvs: true,
+          heldItem: 'Potion',
+          heldItemId: 1,
+          ivs: {
+            attack: 31,
+            defense: 31,
+            hp: 31,
+            specialAttack: 31,
+            specialDefense: 31,
+            speed: 31
+          },
+          ivSummary: 'HP 31 / Atk 31 / Def 31 / SpA 31 / SpD 31 / Spe 31',
+          label: 'Rental 001: Grookey Lv. 50',
+          level: 50,
+          moves: [
+            {
+              move: 'Scratch',
+              moveId: 1,
+              slot: 0
+            }
+          ],
+          nature: 0,
+          natureLabel: 'Hardy',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/script_event_data/rental.bin',
+            sourceLayer: 'base'
+          },
+          rentalIndex: 0,
+          species: 'Grookey',
+          speciesId: 810,
+          trainerId: 123456
+        }
+      ],
+      stats: {
+        perfectIvRentalCount: 1,
+        sourceFileCount: 1,
+        totalRentalCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Rental Pokemon records, fixed IVs, EVs, items, moves, and source provenance.',
+        diagnostics: [],
+        id: 'rentalPokemon',
+        label: 'Rental Pokemon'
+      }
+    } as const;
     const shopsWorkflow = {
       diagnostics: [],
       editableFields: [
@@ -1568,6 +1669,28 @@ describe('bridge contracts', () => {
     ).toBe(true);
 
     expect(
+      rentalPokemonRequestSchema.safeParse({
+        command: kmCommandNames.loadRentalPokemonWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null,
+            saveFilePath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      rentalPokemonResponseSchema.safeParse({
+        payload: {
+          workflow: rentalPokemonWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
       shopsRequestSchema.safeParse({
         command: kmCommandNames.loadShopsWorkflow,
         payload: {
@@ -1851,6 +1974,12 @@ describe('bridge contracts', () => {
     );
     const updateTradePokemonResponseSchema = createBridgeResponseSchema(
       updateTradePokemonFieldResponseSchema
+    );
+    const updateRentalPokemonRequestSchema = createBridgeRequestSchema(
+      updateRentalPokemonFieldRequestSchema
+    );
+    const updateRentalPokemonResponseSchema = createBridgeResponseSchema(
+      updateRentalPokemonFieldResponseSchema
     );
     const updateShopRequestSchema = createBridgeRequestSchema(
       updateShopInventoryItemRequestSchema
@@ -2533,6 +2662,103 @@ describe('bridge contracts', () => {
         }
       ]
     } as const;
+    const rentalPokemonSession = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.rentalPokemon',
+          field: 'ivHp',
+          newValue: '0',
+          recordId: 'rental:0',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/bin/script_event_data/rental.bin'
+            }
+          ],
+          summary: 'Set Rental 001 HP IV to 0.'
+        }
+      ],
+      sessionId: 'session-1'
+    } as const;
+    const rentalPokemonWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'ivHp',
+          label: 'HP IV',
+          maximumValue: 31,
+          minimumValue: 0,
+          options: [],
+          valueKind: 'integer'
+        }
+      ],
+      rentals: [
+        {
+          ability: 1,
+          abilityLabel: 'Ability 1',
+          ballItem: 'Poke Ball',
+          ballItemId: 4,
+          evs: {
+            attack: 252,
+            defense: 0,
+            hp: 4,
+            specialAttack: 0,
+            specialDefense: 0,
+            speed: 252
+          },
+          form: 0,
+          gender: 1,
+          genderLabel: 'Male',
+          hash1: '0x1122334455667788',
+          hash2: '0x8877665544332211',
+          hasPerfectIvs: false,
+          heldItem: 'Potion',
+          heldItemId: 1,
+          ivs: {
+            attack: 31,
+            defense: 31,
+            hp: 0,
+            specialAttack: 31,
+            specialDefense: 31,
+            speed: 31
+          },
+          ivSummary: 'HP 0 / Atk 31 / Def 31 / SpA 31 / SpD 31 / Spe 31',
+          label: 'Rental 001: Grookey Lv. 50',
+          level: 50,
+          moves: [
+            {
+              move: 'Scratch',
+              moveId: 1,
+              slot: 0
+            }
+          ],
+          nature: 0,
+          natureLabel: 'Hardy',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/script_event_data/rental.bin',
+            sourceLayer: 'base'
+          },
+          rentalIndex: 0,
+          species: 'Grookey',
+          speciesId: 810,
+          trainerId: 123456
+        }
+      ],
+      stats: {
+        perfectIvRentalCount: 0,
+        sourceFileCount: 1,
+        totalRentalCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Rental Pokemon records, fixed IVs, EVs, items, moves, and source provenance.',
+        diagnostics: [],
+        id: 'rentalPokemon',
+        label: 'Rental Pokemon'
+      }
+    } as const;
     const shopSession = {
       hasPendingChanges: true,
       pendingEdits: [
@@ -3012,6 +3238,34 @@ describe('bridge contracts', () => {
           diagnostics: [],
           session: tradePokemonSession,
           workflow: tradePokemonWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateRentalPokemonRequestSchema.safeParse({
+        command: kmCommandNames.updateRentalPokemonField,
+        payload: {
+          field: 'ivHp',
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output',
+            saveFilePath: null
+          },
+          rentalIndex: 0,
+          session: editSession,
+          value: '0'
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateRentalPokemonResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: rentalPokemonSession,
+          workflow: rentalPokemonWorkflow
         }
       }).success
     ).toBe(true);

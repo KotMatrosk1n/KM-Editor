@@ -78,6 +78,9 @@ import {
   type RaidRewardItemRecord,
   type RaidRewardTableRecord,
   type RaidRewardsWorkflow,
+  type RentalPokemonEditableField,
+  type RentalPokemonRecord,
+  type RentalPokemonWorkflow,
   type RoyalCandyOutputRecord,
   type RoyalCandyWorkflow,
   type RoyalCandyWorkflowCheckRecord,
@@ -175,6 +178,11 @@ const sections: Array<{
     id: 'staticEncounters',
     label: 'Static Encounters',
     icon: MapPin
+  },
+  {
+    id: 'rentalPokemon',
+    label: 'Rental Pokemon',
+    icon: Dna
   },
   {
     id: 'shops',
@@ -276,6 +284,12 @@ const workflowDefinitions: Array<{
     label: 'Static Encounters',
     description: 'Scripted overworld and story encounter records, IV modes, moves, rules, and source provenance.',
     icon: MapPin
+  },
+  {
+    id: 'rentalPokemon',
+    label: 'Rental Pokemon',
+    description: 'Rental Pokemon records, fixed IVs, EVs, items, moves, and source provenance.',
+    icon: Dna
   },
   {
     id: 'shops',
@@ -530,6 +544,22 @@ const staticEncounterFieldNames = [
   ...ivFieldNames,
   giftFlawlessIvCountFieldName
 ] as const;
+const rentalFixedIvPresetFieldName = 'fixedIvPreset';
+const rentalPokemonFieldNames = [
+  giftSpeciesFieldName,
+  formFieldName,
+  levelFieldName,
+  heldItemIdFieldName,
+  giftBallItemIdFieldName,
+  abilityFieldName,
+  natureFieldName,
+  genderFieldName,
+  tradeTrainerIdFieldName,
+  ...staticEncounterMoveFieldNames,
+  ...evFieldNames,
+  ...ivFieldNames,
+  rentalFixedIvPresetFieldName
+] as const;
 const shopItemIdFieldName = 'itemId';
 const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
@@ -592,6 +622,10 @@ export function App({
   const staticEncountersWorkflow = useWorkbenchStore(
     (state) => state.staticEncountersWorkflow
   );
+  const rentalPokemonSearchText = useWorkbenchStore(
+    (state) => state.rentalPokemonSearchText
+  );
+  const rentalPokemonWorkflow = useWorkbenchStore((state) => state.rentalPokemonWorkflow);
   const itemSearchText = useWorkbenchStore((state) => state.itemSearchText);
   const itemsWorkflow = useWorkbenchStore((state) => state.itemsWorkflow);
   const movesSearchText = useWorkbenchStore((state) => state.movesSearchText);
@@ -641,6 +675,9 @@ export function App({
   );
   const selectedStaticEncounterIndex = useWorkbenchStore(
     (state) => state.selectedStaticEncounterIndex
+  );
+  const selectedRentalPokemonIndex = useWorkbenchStore(
+    (state) => state.selectedRentalPokemonIndex
   );
   const selectedRoyalCandyCheckId = useWorkbenchStore(
     (state) => state.selectedRoyalCandyCheckId
@@ -694,6 +731,12 @@ export function App({
   const setStaticEncountersWorkflow = useWorkbenchStore(
     (state) => state.setStaticEncountersWorkflow
   );
+  const setRentalPokemonSearchText = useWorkbenchStore(
+    (state) => state.setRentalPokemonSearchText
+  );
+  const setRentalPokemonWorkflow = useWorkbenchStore(
+    (state) => state.setRentalPokemonWorkflow
+  );
   const setItemSearchText = useWorkbenchStore((state) => state.setItemSearchText);
   const setItemsWorkflow = useWorkbenchStore((state) => state.setItemsWorkflow);
   const setMovesSearchText = useWorkbenchStore((state) => state.setMovesSearchText);
@@ -745,6 +788,9 @@ export function App({
   const setSelectedStaticEncounterIndex = useWorkbenchStore(
     (state) => state.setSelectedStaticEncounterIndex
   );
+  const setSelectedRentalPokemonIndex = useWorkbenchStore(
+    (state) => state.setSelectedRentalPokemonIndex
+  );
   const setSelectedRoyalCandyCheckId = useWorkbenchStore(
     (state) => state.setSelectedRoyalCandyCheckId
   );
@@ -792,6 +838,8 @@ export function App({
   const [isTradePokemonUpdating, setIsTradePokemonUpdating] = useState(false);
   const [isStaticEncountersLoading, setIsStaticEncountersLoading] = useState(false);
   const [isStaticEncounterUpdating, setIsStaticEncounterUpdating] = useState(false);
+  const [isRentalPokemonLoading, setIsRentalPokemonLoading] = useState(false);
+  const [isRentalPokemonUpdating, setIsRentalPokemonUpdating] = useState(false);
   const [isShopsLoading, setIsShopsLoading] = useState(false);
   const [isShopUpdating, setIsShopUpdating] = useState(false);
   const [isEncountersLoading, setIsEncountersLoading] = useState(false);
@@ -1001,6 +1049,22 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsStaticEncountersLoading(false);
+    }
+  };
+
+  const handleOpenRentalPokemonWorkflow = async () => {
+    setIsRentalPokemonLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadRentalPokemonWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setRentalPokemonWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRentalPokemonLoading(false);
     }
   };
 
@@ -1236,6 +1300,12 @@ export function App({
           void handleOpenStaticEncountersWorkflow();
         }
         break;
+      case 'rentalPokemon':
+        if (!rentalPokemonWorkflow && !isRentalPokemonLoading) {
+          markLazyLoadStarted();
+          void handleOpenRentalPokemonWorkflow();
+        }
+        break;
       case 'shops':
         if (!shopsWorkflow && !isShopsLoading) {
           markLazyLoadStarted();
@@ -1298,6 +1368,7 @@ export function App({
     isExeFsPatchLoading,
     isFlagworkSaveLoading,
     isGiftPokemonLoading,
+    isRentalPokemonLoading,
     isTradePokemonLoading,
     isStaticEncountersLoading,
     isItemsLoading,
@@ -1316,6 +1387,7 @@ export function App({
     placementWorkflow,
     pokemonWorkflow,
     raidRewardsWorkflow,
+    rentalPokemonWorkflow,
     royalCandyWorkflow,
     shopsWorkflow,
     spreadsheetImportWorkflow,
@@ -1633,6 +1705,33 @@ export function App({
     }
   };
 
+  const handleUpdateRentalPokemonField = async (
+    rentalIndex: number,
+    field: string,
+    value: string
+  ) => {
+    setIsRentalPokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateRentalPokemonField({
+        field,
+        paths: toProjectPaths(draftPaths),
+        rentalIndex,
+        session: editSession,
+        value
+      });
+      setRentalPokemonWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRentalPokemonUpdating(false);
+    }
+  };
+
   const handleUpdateShopInventoryItem = async (
     shopId: string,
     slot: number,
@@ -1924,6 +2023,7 @@ export function App({
               isGiftPokemonLoading={isGiftPokemonLoading}
               isTradePokemonLoading={isTradePokemonLoading}
               isStaticEncountersLoading={isStaticEncountersLoading}
+              isRentalPokemonLoading={isRentalPokemonLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
               isSpreadsheetImportLoading={isSpreadsheetImportLoading}
@@ -1933,6 +2033,7 @@ export function App({
               onOpenGiftPokemonWorkflow={handleOpenGiftPokemonWorkflow}
               onOpenTradePokemonWorkflow={handleOpenTradePokemonWorkflow}
               onOpenStaticEncountersWorkflow={handleOpenStaticEncountersWorkflow}
+              onOpenRentalPokemonWorkflow={handleOpenRentalPokemonWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
               onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
@@ -2090,6 +2191,24 @@ export function App({
                 searchText={staticEncounterSearchText}
                 selectedEncounterIndex={selectedStaticEncounterIndex}
                 workflow={staticEncountersWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'rentalPokemon' ? (
+            isRentalPokemonLoading && !rentalPokemonWorkflow ? (
+              <WorkflowLoadingPanel label="Rental Pokemon" />
+            ) : (
+              <RentalPokemonSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isRentalPokemonUpdating={isRentalPokemonUpdating}
+                onSearchChange={setRentalPokemonSearchText}
+                onSelectRental={setSelectedRentalPokemonIndex}
+                onStartEditSession={handleStartEditSession}
+                onUpdateRentalPokemonField={handleUpdateRentalPokemonField}
+                searchText={rentalPokemonSearchText}
+                selectedRentalIndex={selectedRentalPokemonIndex}
+                workflow={rentalPokemonWorkflow}
               />
             )
           ) : null}
@@ -2475,6 +2594,7 @@ function WorkflowsSection({
   isGiftPokemonLoading,
   isTradePokemonLoading,
   isStaticEncountersLoading,
+  isRentalPokemonLoading,
   isRoyalCandyLoading,
   isSpreadsheetImportLoading,
   onOpenEncountersWorkflow,
@@ -2483,6 +2603,7 @@ function WorkflowsSection({
   onOpenGiftPokemonWorkflow,
   onOpenTradePokemonWorkflow,
   onOpenStaticEncountersWorkflow,
+  onOpenRentalPokemonWorkflow,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
@@ -2511,6 +2632,7 @@ function WorkflowsSection({
   isGiftPokemonLoading: boolean;
   isTradePokemonLoading: boolean;
   isStaticEncountersLoading: boolean;
+  isRentalPokemonLoading: boolean;
   isRoyalCandyLoading: boolean;
   isSpreadsheetImportLoading: boolean;
   onOpenEncountersWorkflow: () => void;
@@ -2519,6 +2641,7 @@ function WorkflowsSection({
   onOpenGiftPokemonWorkflow: () => void;
   onOpenTradePokemonWorkflow: () => void;
   onOpenStaticEncountersWorkflow: () => void;
+  onOpenRentalPokemonWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
@@ -2552,6 +2675,7 @@ function WorkflowsSection({
           const isGiftPokemonWorkflow = definition.id === 'giftPokemon';
           const isTradePokemonWorkflow = definition.id === 'tradePokemon';
           const isStaticEncountersWorkflow = definition.id === 'staticEncounters';
+          const isRentalPokemonWorkflow = definition.id === 'rentalPokemon';
           const isShopsWorkflow = definition.id === 'shops';
           const isEncountersWorkflow = definition.id === 'encounters';
           const isRaidRewardsWorkflow = definition.id === 'raidRewards';
@@ -2571,6 +2695,8 @@ function WorkflowsSection({
             isTradePokemonWorkflow && workflowState.availability !== 'disabled';
           const canOpenStaticEncounters =
             isStaticEncountersWorkflow && workflowState.availability !== 'disabled';
+          const canOpenRentalPokemon =
+            isRentalPokemonWorkflow && workflowState.availability !== 'disabled';
           const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
           const canOpenEncounters =
             isEncountersWorkflow && workflowState.availability !== 'disabled';
@@ -2688,6 +2814,17 @@ function WorkflowsSection({
                     <span>
                       {isStaticEncountersLoading ? 'Loading' : 'Open Static Encounters'}
                     </span>
+                  </button>
+                ) : null}
+                {isRentalPokemonWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenRentalPokemon || isRentalPokemonLoading}
+                    onClick={onOpenRentalPokemonWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isRentalPokemonLoading ? 'Loading' : 'Open Rentals'}</span>
                   </button>
                 ) : null}
                 {isShopsWorkflow ? (
@@ -6111,6 +6248,376 @@ function TradePokemonFieldInput({
       >
         {!hasDraftOption ? (
           <option value={draftValue}>{draftValue === '' ? 'Custom fixed IVs' : draftValue}</option>
+        ) : null}
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value.toString()}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <input
+      aria-label={field.label}
+      disabled={disabled}
+      max={field.maximumValue ?? undefined}
+      min={field.minimumValue ?? undefined}
+      onChange={(event) => onChange(event.target.value)}
+      type="number"
+      value={draftValue}
+    />
+  );
+}
+
+function RentalPokemonSection({
+  editSession,
+  isEditStarting,
+  isRentalPokemonUpdating,
+  onSearchChange,
+  onSelectRental,
+  onStartEditSession,
+  onUpdateRentalPokemonField,
+  searchText,
+  selectedRentalIndex,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isRentalPokemonUpdating: boolean;
+  onSearchChange: (searchText: string) => void;
+  onSelectRental: (rentalIndex: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateRentalPokemonField: (rentalIndex: number, field: string, value: string) => void;
+  searchText: string;
+  selectedRentalIndex: number | null;
+  workflow: RentalPokemonWorkflow | null;
+}) {
+  const rentals = workflow?.rentals ?? [];
+  const filteredRentals = useMemo(
+    () => filterRentalPokemon(rentals, searchText),
+    [rentals, searchText]
+  );
+  const selectedRental = useMemo(
+    () =>
+      rentals.find((rental) => rental.rentalIndex === selectedRentalIndex) ??
+      filteredRentals[0] ??
+      null,
+    [filteredRentals, rentals, selectedRentalIndex]
+  );
+  const canEditRentals = workflow?.summary.availability === 'available';
+  const pendingRentalIndexes = useMemo(
+    () => getPendingRentalPokemonIndexes(editSession),
+    [editSession]
+  );
+
+  return (
+    <>
+      <section aria-labelledby="rental-pokemon-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Dna aria-hidden="true" size={18} />
+          <h2 id="rental-pokemon-heading">Rental Pokemon</h2>
+        </div>
+
+        <div className="items-toolbar trainers-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search rental Pokemon"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search rental Pokemon"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded rentals"
+            value={workflow ? workflow.stats.totalRentalCount.toString() : '0'}
+          />
+          <Metric
+            label="Perfect IV rows"
+            value={workflow ? workflow.stats.perfectIvRentalCount.toString() : '0'}
+          />
+          <Metric
+            label="Sources"
+            value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="trainers-layout">
+            <div
+              aria-colcount={7}
+              aria-label="Rental Pokemon"
+              aria-rowcount={filteredRentals.length + 1}
+              className="trainers-table"
+              role="table"
+            >
+              <div className="trainers-row rental-pokemon-row trainers-row-heading" role="row">
+                <span role="columnheader">Index</span>
+                <span role="columnheader">Pokemon</span>
+                <span role="columnheader">Level</span>
+                <span role="columnheader">IVs</span>
+                <span role="columnheader">EVs</span>
+                <span role="columnheader">Moves</span>
+                <span role="columnheader">Source</span>
+              </div>
+              <VirtualTableBody
+                getKey={(rental) => rental.rentalIndex}
+                items={filteredRentals}
+                renderRow={(rental) => (
+                  <button
+                    className={`trainers-row rental-pokemon-row ${
+                      selectedRental?.rentalIndex === rental.rentalIndex
+                        ? 'trainers-row-selected'
+                        : ''
+                    } ${
+                      pendingRentalIndexes.has(rental.rentalIndex) ? 'trainers-row-pending' : ''
+                    }`}
+                    onClick={() => onSelectRental(rental.rentalIndex)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{rental.rentalIndex + 1}</span>
+                    <span role="cell">{formatSpeciesFormLabel(rental.species, rental.form)}</span>
+                    <span role="cell">{rental.level}</span>
+                    <span role="cell">{rental.ivSummary}</span>
+                    <span role="cell">{formatRentalPokemonStats(rental.evs)}</span>
+                    <span role="cell">{formatRentalPokemonMoves(rental)}</span>
+                    <span role="cell">{formatSourceLayer(rental.provenance.sourceLayer)}</span>
+                  </button>
+                )}
+              />
+            </div>
+
+            <SelectedRentalPokemonPanel
+              canEditRentals={canEditRentals}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              isEditStarting={isEditStarting}
+              isRentalPokemonUpdating={isRentalPokemonUpdating}
+              onStartEditSession={onStartEditSession}
+              onUpdateRentalPokemonField={onUpdateRentalPokemonField}
+              rental={selectedRental}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Rental Pokemon from Workflows to load backend rental data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedRentalPokemonPanel({
+  canEditRentals,
+  editSession,
+  editableFields,
+  isEditStarting,
+  isRentalPokemonUpdating,
+  onStartEditSession,
+  onUpdateRentalPokemonField,
+  rental
+}: {
+  canEditRentals: boolean;
+  editSession: EditSession | null;
+  editableFields: RentalPokemonEditableField[];
+  isEditStarting: boolean;
+  isRentalPokemonUpdating: boolean;
+  onStartEditSession: () => void;
+  onUpdateRentalPokemonField: (rentalIndex: number, field: string, value: string) => void;
+  rental: RentalPokemonRecord | null;
+}) {
+  const [rentalDrafts, setRentalDrafts] = useState<Record<string, string>>({});
+  const rentalFields = editableFields.filter((field) =>
+    rentalPokemonFieldNames.includes(field.field as (typeof rentalPokemonFieldNames)[number])
+  );
+
+  useEffect(() => {
+    if (!rental) {
+      setRentalDrafts({});
+      return;
+    }
+
+    setRentalDrafts(
+      Object.fromEntries(
+        rentalFields.map((field) => [
+          field.field,
+          (getEditableRentalPokemonFieldValue(rental, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [editableFields, rental]);
+
+  return (
+    <aside aria-label="Selected rental Pokemon provenance" className="trainer-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Rental</h3>
+      </div>
+
+      {rental ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Rental</dt>
+              <dd>{rental.label}</dd>
+            </div>
+            <div>
+              <dt>Data file</dt>
+              <dd>{rental.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(rental.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(rental.provenance.fileState)}</dd>
+            </div>
+            <div>
+              <dt>Pokemon</dt>
+              <dd>{`${formatSpeciesFormLabel(rental.species, rental.form)} Lv. ${rental.level}`}</dd>
+            </div>
+            <div>
+              <dt>Ball</dt>
+              <dd>{rental.ballItem}</dd>
+            </div>
+            <div>
+              <dt>Held item</dt>
+              <dd>{rental.heldItem ?? 'None'}</dd>
+            </div>
+            <div>
+              <dt>Ability</dt>
+              <dd>{rental.abilityLabel}</dd>
+            </div>
+            <div>
+              <dt>Nature / Gender</dt>
+              <dd>{`${rental.natureLabel} / ${rental.genderLabel}`}</dd>
+            </div>
+            <div>
+              <dt>Trainer ID</dt>
+              <dd>{rental.trainerId}</dd>
+            </div>
+            <div>
+              <dt>Identifiers</dt>
+              <dd>{`${rental.hash1} / ${rental.hash2}`}</dd>
+            </div>
+            <div>
+              <dt>Moves</dt>
+              <dd>{formatRentalPokemonMoves(rental)}</dd>
+            </div>
+            <div>
+              <dt>EV detail</dt>
+              <dd>{formatRentalPokemonStats(rental.evs)}</dd>
+            </div>
+            <div>
+              <dt>IV detail</dt>
+              <dd>{formatRentalPokemonIvs(rental)}</dd>
+            </div>
+          </dl>
+
+          <div className="trainer-edit-form">
+            <div className="trainer-field-grid">
+              {rentalFields.map((field) => {
+                const currentValue = getEditableRentalPokemonFieldValue(rental, field.field);
+                const draftValue = rentalDrafts[field.field] ?? '';
+                const draftState = getRentalPokemonDraftState(
+                  draftValue,
+                  currentValue,
+                  field
+                );
+                const canSubmit =
+                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+
+                return (
+                  <div className="trainer-editor-row" key={field.field}>
+                    <label className="path-field">
+                      <span>{field.label}</span>
+                      <RentalPokemonFieldInput
+                        disabled={
+                          !canEditRentals || editSession === null || isRentalPokemonUpdating
+                        }
+                        draftValue={draftValue}
+                        field={field}
+                        onChange={(value) =>
+                          setRentalDrafts((currentDrafts) => ({
+                            ...currentDrafts,
+                            [field.field]: value
+                          }))
+                        }
+                      />
+                    </label>
+                    {editSession ? (
+                      <button
+                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                        className="primary-button compact-button"
+                        disabled={!canSubmit || isRentalPokemonUpdating}
+                        onClick={() =>
+                          onUpdateRentalPokemonField(
+                            rental.rentalIndex,
+                            field.field,
+                            draftState.parsedValue!.toString()
+                          )
+                        }
+                        type="button"
+                      >
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isRentalPokemonUpdating ? 'Saving' : 'Save'}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditRentals || isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No rental selected.</p>
+      )}
+    </aside>
+  );
+}
+
+function RentalPokemonFieldInput({
+  disabled,
+  draftValue,
+  field,
+  onChange
+}: {
+  disabled: boolean;
+  draftValue: string;
+  field: RentalPokemonEditableField;
+  onChange: (value: string) => void;
+}) {
+  if (field.options.length > 0) {
+    const hasDraftOption = field.options.some((option) => option.value.toString() === draftValue);
+
+    return (
+      <select
+        aria-label={field.label}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        value={draftValue}
+      >
+        {!hasDraftOption ? (
+          <option value={draftValue}>{draftValue === '' ? 'Mixed fixed IVs' : draftValue}</option>
         ) : null}
         {field.options.map((option) => (
           <option key={option.value} value={option.value.toString()}>
@@ -9619,6 +10126,45 @@ function filterTradePokemon(trades: TradePokemonRecord[], searchText: string) {
   );
 }
 
+function filterRentalPokemon(rentals: RentalPokemonRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return rentals;
+  }
+
+  return rentals.filter((rental) =>
+    [
+      rental.rentalIndex.toString(),
+      (rental.rentalIndex + 1).toString(),
+      rental.label,
+      rental.species,
+      rental.speciesId.toString(),
+      rental.form.toString(),
+      rental.level.toString(),
+      rental.heldItem ?? 'None',
+      rental.heldItemId.toString(),
+      rental.ballItem,
+      rental.ballItemId.toString(),
+      rental.abilityLabel,
+      rental.ability.toString(),
+      rental.natureLabel,
+      rental.nature.toString(),
+      rental.genderLabel,
+      rental.gender.toString(),
+      rental.trainerId.toString(),
+      rental.hash1,
+      rental.hash2,
+      rental.ivSummary,
+      rental.hasPerfectIvs ? 'perfect ivs' : '',
+      formatRentalPokemonIvs(rental),
+      formatRentalPokemonStats(rental.evs),
+      formatRentalPokemonMoves(rental),
+      rental.provenance.sourceFile
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText: string) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -10387,6 +10933,65 @@ function getEditableStaticEncounterFieldValue(encounter: StaticEncounterRecord, 
   }
 }
 
+function getEditableRentalPokemonFieldValue(rental: RentalPokemonRecord, field: string) {
+  switch (field) {
+    case giftSpeciesFieldName:
+      return rental.speciesId;
+    case formFieldName:
+      return rental.form;
+    case levelFieldName:
+      return rental.level;
+    case heldItemIdFieldName:
+      return rental.heldItemId;
+    case giftBallItemIdFieldName:
+      return rental.ballItemId;
+    case abilityFieldName:
+      return rental.ability;
+    case natureFieldName:
+      return rental.nature;
+    case genderFieldName:
+      return rental.gender;
+    case tradeTrainerIdFieldName:
+      return rental.trainerId;
+    case staticEncounterMoveFieldNames[0]:
+      return rental.moves[0]?.moveId ?? null;
+    case staticEncounterMoveFieldNames[1]:
+      return rental.moves[1]?.moveId ?? null;
+    case staticEncounterMoveFieldNames[2]:
+      return rental.moves[2]?.moveId ?? null;
+    case staticEncounterMoveFieldNames[3]:
+      return rental.moves[3]?.moveId ?? null;
+    case evFieldNames[0]:
+      return rental.evs.hp;
+    case evFieldNames[1]:
+      return rental.evs.attack;
+    case evFieldNames[2]:
+      return rental.evs.defense;
+    case evFieldNames[3]:
+      return rental.evs.specialAttack;
+    case evFieldNames[4]:
+      return rental.evs.specialDefense;
+    case evFieldNames[5]:
+      return rental.evs.speed;
+    case ivFieldNames[0]:
+      return rental.ivs.hp;
+    case ivFieldNames[1]:
+      return rental.ivs.attack;
+    case ivFieldNames[2]:
+      return rental.ivs.defense;
+    case ivFieldNames[3]:
+      return rental.ivs.specialAttack;
+    case ivFieldNames[4]:
+      return rental.ivs.specialDefense;
+    case ivFieldNames[5]:
+      return rental.ivs.speed;
+    case rentalFixedIvPresetFieldName:
+      return getFixedRentalPokemonIvPreset(rental);
+    default:
+      return null;
+  }
+}
+
 function getItemFieldSaveLabel(field: ItemEditableField) {
   return `Save ${field.label.replace(/\s+price$/i, '')}`;
 }
@@ -10571,6 +11176,31 @@ function getStaticEncounterDraftState(
   };
 }
 
+function getRentalPokemonDraftState(
+  draftValue: string,
+  currentValue: number | null,
+  field: RentalPokemonEditableField | undefined
+) {
+  const normalizedValue = draftValue.trim();
+  const parsedValue = /^-?\d+$/.test(normalizedValue)
+    ? Number.parseInt(normalizedValue, 10)
+    : null;
+  const minimumValue = field?.minimumValue ?? null;
+  const maximumValue = field?.maximumValue ?? null;
+  const inRange =
+    parsedValue !== null &&
+    (minimumValue === null || parsedValue >= minimumValue) &&
+    (maximumValue === null || parsedValue <= maximumValue);
+
+  return {
+    canSubmit:
+      field !== undefined &&
+      inRange &&
+      (currentValue === null || parsedValue !== currentValue),
+    parsedValue
+  };
+}
+
 function getPendingItemIds(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
@@ -10648,6 +11278,21 @@ function getPendingStaticEncounterIndexes(editSession: EditSession | null) {
       .map((edit) => {
         const recordId = edit.recordId ?? '';
         const normalizedRecordId = recordId.startsWith('static:')
+          ? recordId.slice(7)
+          : recordId;
+        return Number.parseInt(normalizedRecordId, 10);
+      })
+      .filter(Number.isInteger)
+  );
+}
+
+function getPendingRentalPokemonIndexes(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.rentalPokemon')
+      .map((edit) => {
+        const recordId = edit.recordId ?? '';
+        const normalizedRecordId = recordId.startsWith('rental:')
           ? recordId.slice(7)
           : recordId;
         return Number.parseInt(normalizedRecordId, 10);
@@ -10989,6 +11634,52 @@ function formatStaticEncounterMoves(encounter: StaticEncounterRecord) {
   return moves.length > 0 ? moves.join(' / ') : 'None';
 }
 
+function formatRentalPokemonIvs(rental: RentalPokemonRecord) {
+  return [
+    `HP ${rental.ivs.hp}`,
+    `Atk ${rental.ivs.attack}`,
+    `Def ${rental.ivs.defense}`,
+    `SpA ${rental.ivs.specialAttack}`,
+    `SpD ${rental.ivs.specialDefense}`,
+    `Spe ${rental.ivs.speed}`
+  ].join(' / ');
+}
+
+function formatRentalPokemonStats(stats: RentalPokemonRecord['evs']) {
+  return [
+    `HP ${stats.hp}`,
+    `Atk ${stats.attack}`,
+    `Def ${stats.defense}`,
+    `SpA ${stats.specialAttack}`,
+    `SpD ${stats.specialDefense}`,
+    `Spe ${stats.speed}`
+  ].join(' / ');
+}
+
+function formatRentalPokemonMoves(rental: RentalPokemonRecord) {
+  const moves = rental.moves
+    .filter((move) => move.moveId > 0)
+    .map((move) => move.move ?? `Move ${move.moveId}`);
+
+  return moves.length > 0 ? moves.join(' / ') : 'None';
+}
+
+function getFixedRentalPokemonIvPreset(rental: RentalPokemonRecord) {
+  const values = [
+    rental.ivs.hp,
+    rental.ivs.attack,
+    rental.ivs.defense,
+    rental.ivs.specialAttack,
+    rental.ivs.specialDefense,
+    rental.ivs.speed
+  ];
+  const firstValue = values[0] ?? null;
+
+  return firstValue !== null && values.every((value) => value === firstValue)
+    ? firstValue
+    : null;
+}
+
 function formatMovePower(power: number) {
   return power === 0 ? '-' : power.toString();
 }
@@ -11031,6 +11722,7 @@ function formatSourceLayer(
     | MoveRecord['provenance']['sourceLayer']
     | PokemonRecord['provenance']['sourceLayer']
     | RaidRewardTableRecord['provenance']['sourceLayer']
+    | RentalPokemonRecord['provenance']['sourceLayer']
     | SaveBlockRecord['provenance']['sourceLayer']
     | ShopRecord['provenance']['sourceLayer']
     | SpreadsheetImportProfileRecord['provenance']['sourceLayer']
@@ -11065,6 +11757,7 @@ function formatFileState(
     | MoveRecord['provenance']['fileState']
     | PokemonRecord['provenance']['fileState']
     | RaidRewardTableRecord['provenance']['fileState']
+    | RentalPokemonRecord['provenance']['fileState']
     | SaveBlockRecord['provenance']['fileState']
     | ShopRecord['provenance']['fileState']
     | SpreadsheetImportProfileRecord['provenance']['fileState']
