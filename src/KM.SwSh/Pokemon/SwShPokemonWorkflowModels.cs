@@ -147,6 +147,7 @@ public sealed record SwShPokemonWorkflow(
     IReadOnlyList<SwShPokemonRecord> Pokemon,
     SwShPokemonWorkflowStats Stats,
     IReadOnlyList<SwShPokemonEvolutionMethodOption> EvolutionMethodOptions,
+    IReadOnlyList<SwShPokemonEditableFieldOption> LearnsetMoveOptions,
     IReadOnlyList<SwShPokemonEditableField> EditableFields,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
 

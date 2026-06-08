@@ -386,6 +386,7 @@ public sealed class SwShPokemonWorkflowService
         var evolutions = LoadEvolutions(project, diagnostics);
         var displaySpeciesNames = speciesNames.Count > 0 ? speciesNames : Array.Empty<string>();
         var evolutionMethodOptions = CreateEvolutionMethodOptions(itemNames, moveNames, displaySpeciesNames);
+        var learnsetMoveOptions = CreateIndexedOptions(moveNames, "Move");
 
         try
         {
@@ -419,6 +420,7 @@ public sealed class SwShPokemonWorkflowService
                 pokemon,
                 sourceFileCount,
                 evolutionMethodOptions,
+                learnsetMoveOptions,
                 CreateEditableFields(itemNames, abilityNames, displaySpeciesNames),
                 diagnostics);
         }
@@ -596,6 +598,7 @@ public sealed class SwShPokemonWorkflowService
             pokemon,
             sourceFileCount,
             CreateEvolutionMethodOptions([], [], []),
+            [],
             EditableFields,
             diagnostics);
     }
@@ -605,6 +608,7 @@ public sealed class SwShPokemonWorkflowService
         IReadOnlyList<SwShPokemonRecord> pokemon,
         int sourceFileCount,
         IReadOnlyList<SwShPokemonEvolutionMethodOption> evolutionMethodOptions,
+        IReadOnlyList<SwShPokemonEditableFieldOption> learnsetMoveOptions,
         IReadOnlyList<SwShPokemonEditableField> editableFields,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
@@ -618,6 +622,7 @@ public sealed class SwShPokemonWorkflowService
                 pokemon.Sum(record => record.Learnset.Count),
                 sourceFileCount),
             evolutionMethodOptions,
+            learnsetMoveOptions,
             editableFields,
             diagnostics);
     }

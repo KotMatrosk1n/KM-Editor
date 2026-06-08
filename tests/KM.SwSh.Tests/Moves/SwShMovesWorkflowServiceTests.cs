@@ -70,6 +70,22 @@ public sealed class SwShMovesWorkflowServiceTests
         Assert.Equal(1, workflow.Stats.EnabledMoveCount);
         Assert.Equal(4, workflow.Stats.SourceFileCount);
         Assert.Equal(3, workflow.Stats.ActiveFlagCount);
+        var typeField = Assert.Single(
+            workflow.EditableFields,
+            field => field.Field == SwShMovesWorkflowService.TypeField);
+        Assert.Contains(typeField.Options, option => option.Value == 0 && option.Label == "000 Normal");
+        var categoryField = Assert.Single(
+            workflow.EditableFields,
+            field => field.Field == SwShMovesWorkflowService.CategoryField);
+        Assert.Contains(categoryField.Options, option => option.Value == 1 && option.Label == "001 Physical");
+        var targetField = Assert.Single(
+            workflow.EditableFields,
+            field => field.Field == SwShMovesWorkflowService.TargetField);
+        Assert.Contains(targetField.Options, option => option.Value == 3 && option.Label == "003 Opponent");
+        var inflictField = Assert.Single(
+            workflow.EditableFields,
+            field => field.Field == SwShMovesWorkflowService.InflictField);
+        Assert.Contains(inflictField.Options, option => option.Value == 1 && option.Label == "001 Paralyze");
         Assert.Empty(workflow.Diagnostics);
     }
 

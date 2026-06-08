@@ -69,59 +69,6 @@ public sealed class SwShMovesWorkflowService
     public const string EnglishMoveDescriptionPath = "romfs/bin/message/English/common/wazainfo.dat";
     public const string EnglishTypeNamePath = "romfs/bin/message/English/common/typename.dat";
 
-    private static readonly IReadOnlyList<SwShMoveEditableField> EditableFields =
-    [
-        new(CanUseMoveField, "Can use move", "boolean", 0, 1),
-        new(TypeField, "Type", "integer", 0, 17),
-        new(QualityField, "Quality", "integer", MinimumByteValue, MaximumByteValue),
-        new(CategoryField, "Category", "integer", 0, 2),
-        new(PowerField, "Power", "integer", MinimumByteValue, MaximumByteValue),
-        new(AccuracyField, "Accuracy", "integer", MinimumByteValue, MaximumByteValue),
-        new(PpField, "PP", "integer", MinimumByteValue, MaximumByteValue),
-        new(PriorityField, "Priority", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        new(CritStageField, "Critical stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        new(MaxMovePowerField, "Max Move power", "integer", MinimumByteValue, MaximumByteValue),
-        new(TargetField, "Target", "integer", MinimumByteValue, MaximumByteValue),
-        new(HitMinField, "Minimum hits", "integer", MinimumByteValue, MaximumByteValue),
-        new(HitMaxField, "Maximum hits", "integer", MinimumByteValue, MaximumByteValue),
-        new(TurnMinField, "Minimum turns", "integer", MinimumByteValue, MaximumByteValue),
-        new(TurnMaxField, "Maximum turns", "integer", MinimumByteValue, MaximumByteValue),
-        new(InflictField, "Inflicted condition", "integer", MinimumByteValue, MaximumUnsignedShortValue),
-        new(InflictPercentField, "Inflict percent", "integer", MinimumByteValue, MaximumByteValue),
-        new(RawInflictCountField, "Inflict count", "integer", MinimumByteValue, MaximumByteValue),
-        new(FlinchField, "Flinch percent", "integer", MinimumByteValue, MaximumByteValue),
-        new(EffectSequenceField, "Effect sequence", "integer", MinimumByteValue, MaximumUnsignedShortValue),
-        new(RecoilField, "Recoil", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        new(RawHealingField, "Healing", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        new(Stat1Field, "Stat 1", "integer", MinimumByteValue, MaximumByteValue),
-        new(Stat1StageField, "Stat 1 stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        new(Stat1PercentField, "Stat 1 percent", "integer", MinimumByteValue, MaximumByteValue),
-        new(Stat2Field, "Stat 2", "integer", MinimumByteValue, MaximumByteValue),
-        new(Stat2StageField, "Stat 2 stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        new(Stat2PercentField, "Stat 2 percent", "integer", MinimumByteValue, MaximumByteValue),
-        new(Stat3Field, "Stat 3", "integer", MinimumByteValue, MaximumByteValue),
-        new(Stat3StageField, "Stat 3 stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        new(Stat3PercentField, "Stat 3 percent", "integer", MinimumByteValue, MaximumByteValue),
-        new(MakesContactField, "Makes contact", "boolean", 0, 1),
-        new(ChargeField, "Charge turn", "boolean", 0, 1),
-        new(RechargeField, "Recharge turn", "boolean", 0, 1),
-        new(ProtectField, "Blocked by Protect", "boolean", 0, 1),
-        new(ReflectableField, "Reflectable", "boolean", 0, 1),
-        new(SnatchField, "Snatchable", "boolean", 0, 1),
-        new(MirrorField, "Mirror Move", "boolean", 0, 1),
-        new(PunchField, "Punch move", "boolean", 0, 1),
-        new(SoundField, "Sound move", "boolean", 0, 1),
-        new(GravityField, "Fails under gravity", "boolean", 0, 1),
-        new(DefrostField, "Thaws user", "boolean", 0, 1),
-        new(DistanceTripleField, "Triple battle distance", "boolean", 0, 1),
-        new(HealField, "Heal move", "boolean", 0, 1),
-        new(IgnoreSubstituteField, "Ignores substitute", "boolean", 0, 1),
-        new(FailSkyBattleField, "Fails in Sky Battle", "boolean", 0, 1),
-        new(AnimateAllyField, "Animate ally", "boolean", 0, 1),
-        new(DanceField, "Dance move", "boolean", 0, 1),
-        new(MetronomeField, "Callable by Metronome", "boolean", 0, 1),
-    ];
-
     private static readonly IReadOnlyList<string> FallbackTypeNames =
     [
         "Normal",
@@ -206,6 +153,77 @@ public sealed class SwShMovesWorkflowService
         "Accuracy",
         "Evasion",
         "All",
+    ];
+
+    private static readonly IReadOnlyList<SwShMoveEditableFieldOption> TypeOptions =
+        CreateIndexedOptions(FallbackTypeNames);
+
+    private static readonly IReadOnlyList<SwShMoveEditableFieldOption> CategoryOptions =
+        CreateIndexedOptions(CategoryNames);
+
+    private static readonly IReadOnlyList<SwShMoveEditableFieldOption> TargetOptions =
+        CreateIndexedOptions(TargetNames);
+
+    private static readonly IReadOnlyList<SwShMoveEditableFieldOption> InflictOptions =
+        InflictNames
+            .OrderBy(entry => entry.Key)
+            .Select(entry => new SwShMoveEditableFieldOption(entry.Key, $"{entry.Key:000} {entry.Value}"))
+            .ToArray();
+
+    private static readonly IReadOnlyList<SwShMoveEditableFieldOption> StatOptions =
+        CreateIndexedOptions(StatNames);
+
+    private static readonly IReadOnlyList<SwShMoveEditableField> EditableFields =
+    [
+        CreateField(CanUseMoveField, "Can use move", "boolean", 0, 1),
+        CreateField(TypeField, "Type", "integer", 0, 17, TypeOptions),
+        CreateField(QualityField, "Quality", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(CategoryField, "Category", "integer", 0, 2, CategoryOptions),
+        CreateField(PowerField, "Power", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(AccuracyField, "Accuracy", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(PpField, "PP", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(PriorityField, "Priority", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(CritStageField, "Critical stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(MaxMovePowerField, "Max Move power", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(TargetField, "Target", "integer", MinimumByteValue, MaximumByteValue, TargetOptions),
+        CreateField(HitMinField, "Minimum hits", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(HitMaxField, "Maximum hits", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(TurnMinField, "Minimum turns", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(TurnMaxField, "Maximum turns", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(InflictField, "Inflicted condition", "integer", MinimumByteValue, MaximumUnsignedShortValue, InflictOptions),
+        CreateField(InflictPercentField, "Inflict percent", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(RawInflictCountField, "Inflict count", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(FlinchField, "Flinch percent", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(EffectSequenceField, "Effect sequence", "integer", MinimumByteValue, MaximumUnsignedShortValue),
+        CreateField(RecoilField, "Recoil", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(RawHealingField, "Healing", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(Stat1Field, "Stat 1", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
+        CreateField(Stat1StageField, "Stat 1 stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(Stat1PercentField, "Stat 1 percent", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(Stat2Field, "Stat 2", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
+        CreateField(Stat2StageField, "Stat 2 stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(Stat2PercentField, "Stat 2 percent", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(Stat3Field, "Stat 3", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
+        CreateField(Stat3StageField, "Stat 3 stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(Stat3PercentField, "Stat 3 percent", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(MakesContactField, "Makes contact", "boolean", 0, 1),
+        CreateField(ChargeField, "Charge turn", "boolean", 0, 1),
+        CreateField(RechargeField, "Recharge turn", "boolean", 0, 1),
+        CreateField(ProtectField, "Blocked by Protect", "boolean", 0, 1),
+        CreateField(ReflectableField, "Reflectable", "boolean", 0, 1),
+        CreateField(SnatchField, "Snatchable", "boolean", 0, 1),
+        CreateField(MirrorField, "Mirror Move", "boolean", 0, 1),
+        CreateField(PunchField, "Punch move", "boolean", 0, 1),
+        CreateField(SoundField, "Sound move", "boolean", 0, 1),
+        CreateField(GravityField, "Fails under gravity", "boolean", 0, 1),
+        CreateField(DefrostField, "Thaws user", "boolean", 0, 1),
+        CreateField(DistanceTripleField, "Triple battle distance", "boolean", 0, 1),
+        CreateField(HealField, "Heal move", "boolean", 0, 1),
+        CreateField(IgnoreSubstituteField, "Ignores substitute", "boolean", 0, 1),
+        CreateField(FailSkyBattleField, "Fails in Sky Battle", "boolean", 0, 1),
+        CreateField(AnimateAllyField, "Animate ally", "boolean", 0, 1),
+        CreateField(DanceField, "Dance move", "boolean", 0, 1),
+        CreateField(MetronomeField, "Callable by Metronome", "boolean", 0, 1),
     ];
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -487,6 +505,31 @@ public sealed class SwShMovesWorkflowService
             && !Path.IsPathRooted(pathFromOutputRoot)
             ? targetPath
             : null;
+    }
+
+    private static SwShMoveEditableField CreateField(
+        string field,
+        string label,
+        string valueKind,
+        int? minimumValue,
+        int? maximumValue,
+        IReadOnlyList<SwShMoveEditableFieldOption>? options = null)
+    {
+        return new SwShMoveEditableField(
+            field,
+            label,
+            valueKind,
+            minimumValue,
+            maximumValue,
+            options ?? []);
+    }
+
+    private static IReadOnlyList<SwShMoveEditableFieldOption> CreateIndexedOptions(
+        IReadOnlyList<string> labels)
+    {
+        return labels
+            .Select((label, index) => new SwShMoveEditableFieldOption(index, $"{index:000} {label}"))
+            .ToArray();
     }
 
     private static SwShMovesWorkflow CreateWorkflow(

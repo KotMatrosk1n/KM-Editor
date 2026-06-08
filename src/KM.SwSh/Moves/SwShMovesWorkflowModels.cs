@@ -23,12 +23,17 @@ public sealed record SwShMoveFlagRecord(
     string Label,
     bool Enabled);
 
+public sealed record SwShMoveEditableFieldOption(
+    int Value,
+    string Label);
+
 public sealed record SwShMoveEditableField(
     string Field,
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<SwShMoveEditableFieldOption> Options);
 
 public sealed record SwShMoveRecord(
     int MoveId,

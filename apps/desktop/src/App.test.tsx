@@ -245,17 +245,13 @@ describe('App', () => {
     expect(tm00).not.toBeChecked();
     await user.click(tm00);
     await waitFor(() => expect(tm00).toBeChecked());
-    await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'type1');
     expect(screen.getByLabelText('Type 1')).toHaveDisplayValue('Grass');
-    await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'ability1');
     expect(screen.getByLabelText('Ability 1')).toHaveDisplayValue('065 Overgrow');
-    await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'heldItem1');
     expect(screen.getByLabelText('Held Item 50%')).toHaveDisplayValue('000 None');
-    await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'hp');
     const hpInput = screen.getByLabelText('HP');
     await user.clear(hpInput);
     await user.type(hpInput, '99');
-    await user.click(screen.getByRole('button', { name: 'Save HP' }));
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     expect(await screen.findByDisplayValue('99')).toBeInTheDocument();
 
@@ -278,12 +274,11 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     await user.click(screen.getByRole('button', { name: /Growl/ }));
-    await user.clear(screen.getByLabelText('Move ID'));
-    await user.type(screen.getByLabelText('Move ID'), '345');
     const learnsetBlock = screen
       .getByRole('heading', { level: 4, name: 'Learnset' })
       .closest('.inspector-block') as HTMLElement | null;
     expect(learnsetBlock).not.toBeNull();
+    await user.selectOptions(within(learnsetBlock!).getByLabelText('Move'), '345');
     const learnsetLevelInput = within(learnsetBlock!).getAllByLabelText('Level')[0]!;
     await user.clear(learnsetLevelInput);
     await user.type(learnsetLevelInput, '9');
@@ -367,7 +362,7 @@ describe('App', () => {
     const powerInput = screen.getByLabelText('Power');
     await user.clear(powerInput);
     await user.type(powerInput, '80');
-    await user.click(screen.getByRole('button', { name: 'Save power' }));
+    await user.click(screen.getByRole('button', { name: 'Save Move' }));
 
     expect(await screen.findByDisplayValue('80')).toBeInTheDocument();
 
@@ -534,7 +529,7 @@ describe('App', () => {
     expect(screen.getByLabelText('Sell price')).toBeInTheDocument();
     await user.clear(buyPriceInput);
     await user.type(buyPriceInput, '450');
-    await user.click(screen.getByRole('button', { name: 'Save buy price' }));
+    await user.click(screen.getByRole('button', { name: 'Save Item' }));
 
     expect(await screen.findByDisplayValue('450')).toBeInTheDocument();
 
@@ -570,7 +565,7 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
 
     await user.selectOptions(screen.getByLabelText('Pouch'), '4');
-    await user.click(screen.getByRole('button', { name: 'Save pouch' }));
+    await user.click(screen.getByRole('button', { name: 'Save Item' }));
 
     expect(await screen.findByText('Items (4)')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Changes' }));
@@ -637,7 +632,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Trainers' })).toBeInTheDocument();
     expect(screen.getAllByText('Avery').length).toBeGreaterThan(0);
-    expect(screen.getByRole('option', { name: 'Slot 1: Grookey' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Grookey/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     expect(screen.getByLabelText('Trainer class ID')).toHaveDisplayValue('005 Pokemon Trainer');
@@ -650,7 +645,7 @@ describe('App', () => {
     expect(screen.getByLabelText(/Fire Gym \(2\)/)).not.toBeChecked();
     expect(screen.getByLabelText(/Fire Gym \(3\)/)).not.toBeChecked();
     expect(screen.getByLabelText('Heal flag')).toHaveDisplayValue('Yes');
-    expect(screen.getByLabelText('Money')).toHaveDisplayValue('24');
+    expect(screen.getByLabelText('Money multiplier')).toHaveDisplayValue('24');
     expect(screen.getByLabelText('Species ID')).toHaveDisplayValue('810 Grookey');
     expect(screen.getByLabelText('Held item ID')).toHaveDisplayValue('001 Potion');
     expect(screen.getByLabelText('Move 1 ID')).toHaveDisplayValue('001 Scratch');
@@ -662,7 +657,7 @@ describe('App', () => {
     const levelInput = screen.getByLabelText('Level');
     await user.clear(levelInput);
     await user.type(levelInput, '25');
-    await user.click(screen.getByRole('button', { name: 'Save level' }));
+    await user.click(screen.getByRole('button', { name: 'Save Pokemon' }));
 
     expect(await screen.findByDisplayValue('25')).toBeInTheDocument();
 
@@ -711,7 +706,7 @@ describe('App', () => {
     expect(hpIvInput).toHaveDisplayValue('-4');
     await user.clear(hpIvInput);
     await user.type(hpIvInput, '31');
-    await user.click(screen.getByRole('button', { name: 'Save hp iv' }));
+    await user.click(screen.getByRole('button', { name: 'Save Gift' }));
 
     expect(await screen.findByDisplayValue('31')).toBeInTheDocument();
 
@@ -763,7 +758,7 @@ describe('App', () => {
     expect(hpIvInput).toHaveDisplayValue('-4');
     await user.clear(hpIvInput);
     await user.type(hpIvInput, '31');
-    await user.click(screen.getByRole('button', { name: 'Save hp iv' }));
+    await user.click(screen.getByRole('button', { name: 'Save Trade' }));
 
     expect(await screen.findByDisplayValue('31')).toBeInTheDocument();
 
@@ -812,7 +807,7 @@ describe('App', () => {
     expect(hpIvInput).toHaveDisplayValue('31');
     await user.clear(hpIvInput);
     await user.type(hpIvInput, '0');
-    await user.click(screen.getByRole('button', { name: 'Save hp iv' }));
+    await user.click(screen.getByRole('button', { name: 'Save Encounter' }));
 
     expect(await screen.findByDisplayValue('0')).toBeInTheDocument();
 
@@ -865,7 +860,7 @@ describe('App', () => {
     expect(hpIvInput).toHaveDisplayValue('31');
     await user.clear(hpIvInput);
     await user.type(hpIvInput, '0');
-    await user.click(screen.getByRole('button', { name: 'Save hp iv' }));
+    await user.click(screen.getByRole('button', { name: 'Save Rental' }));
 
     await waitFor(() => expect(screen.getByLabelText('HP IV')).toHaveDisplayValue('0'));
 
@@ -912,7 +907,7 @@ describe('App', () => {
     const guaranteedIvsSelect = screen.getByLabelText('Guaranteed perfect IVs');
     expect(guaranteedIvsSelect).toHaveDisplayValue('5 Guaranteed Perfect IVs');
     await user.selectOptions(guaranteedIvsSelect, '6');
-    await user.click(screen.getByRole('button', { name: 'Save guaranteed perfect ivs' }));
+    await user.click(screen.getByRole('button', { name: 'Save Adventure' }));
 
     await waitFor(() =>
       expect(screen.getByLabelText('Guaranteed perfect IVs')).toHaveDisplayValue('6 Perfect IVs')
@@ -1021,14 +1016,14 @@ describe('App', () => {
       await screen.findByRole('heading', { level: 2, name: 'Encounters and Wild Data' })
     ).toBeInTheDocument();
     expect(screen.getAllByText('Zone 0x1122334455667788').length).toBeGreaterThan(0);
-    expect(screen.getByRole('option', { name: 'Slot 1: Bulbasaur' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /#1.*Bulbasaur/ })).toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText('Encounter slot'), '2');
+    await user.click(screen.getByRole('button', { name: /#2.*Charmander/ }));
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     const probabilityInput = screen.getByLabelText('Probability');
     await user.clear(probabilityInput);
     await user.type(probabilityInput, '40');
-    await user.click(screen.getByRole('button', { name: 'Save probability' }));
+    await user.click(screen.getByRole('button', { name: 'Save Encounter' }));
 
     expect(await screen.findByDisplayValue('40')).toBeInTheDocument();
 
@@ -1078,7 +1073,7 @@ describe('App', () => {
     const starValueInput = screen.getByLabelText('5-star value');
     await user.clear(starValueInput);
     await user.type(starValueInput, '77');
-    await user.click(screen.getByRole('button', { name: 'Save 5-star value' }));
+    await user.click(screen.getByRole('button', { name: 'Save Reward' }));
 
     expect(await screen.findByDisplayValue('77')).toBeInTheDocument();
 
@@ -1131,7 +1126,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     await user.selectOptions(screen.getByLabelText('Guaranteed perfect IVs'), '6');
-    await user.click(screen.getByRole('button', { name: 'Save guaranteed perfect ivs' }));
+    await user.click(screen.getByRole('button', { name: 'Save Battle' }));
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
@@ -1733,6 +1728,12 @@ function createMockProjectBridge(
         value: 8
       }
     ],
+    learnsetMoveOptions: [
+      { label: '033 Tackle', value: 33 },
+      { label: '045 Growl', value: 45 },
+      { label: '075 Razor Leaf', value: 75 },
+      { label: '345 Magical Leaf', value: 345 }
+    ],
     pokemon: [
       {
         abilities: {
@@ -2003,6 +2004,7 @@ function createMockProjectBridge(
         label: 'Power',
         maximumValue: 255,
         minimumValue: 0,
+        options: [],
         valueKind: 'integer'
       },
       {
@@ -2010,6 +2012,7 @@ function createMockProjectBridge(
         label: 'Makes contact',
         maximumValue: 1,
         minimumValue: 0,
+        options: [],
         valueKind: 'boolean'
       }
     ],
@@ -2343,7 +2346,7 @@ function createMockProjectBridge(
       },
       {
         field: 'money',
-        label: 'Money',
+        label: 'Money multiplier',
         maximumValue: 255,
         minimumValue: 0,
         options: [],

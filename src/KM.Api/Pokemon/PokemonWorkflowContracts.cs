@@ -185,6 +185,7 @@ public sealed record PokemonWorkflowDto(
     IReadOnlyList<PokemonRecordDto> Pokemon,
     PokemonWorkflowStatsDto Stats,
     IReadOnlyList<PokemonEvolutionMethodOptionDto> EvolutionMethodOptions,
+    IReadOnlyList<PokemonEditableFieldOptionDto> LearnsetMoveOptions,
     IReadOnlyList<PokemonEditableFieldDto> EditableFields,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 

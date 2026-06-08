@@ -33,12 +33,17 @@ public sealed record MoveFlagRecordDto(
     string Label,
     bool Enabled);
 
+public sealed record MoveEditableFieldOptionDto(
+    int Value,
+    string Label);
+
 public sealed record MoveEditableFieldDto(
     string Field,
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<MoveEditableFieldOptionDto> Options);
 
 public sealed record MoveRecordDto(
     int MoveId,

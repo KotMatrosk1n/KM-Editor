@@ -72,6 +72,12 @@ public sealed class SwShTrainersWorkflowService
         new SwShTrainerEditableFieldOption(1, "Yes"),
     ];
 
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> DynamaxLevelOptions =
+    [
+        ..Enumerable.Range(0, SwShTrainerTeamFile.MaximumDynamaxLevel + 1)
+            .Select(value => new SwShTrainerEditableFieldOption(value, value == 1 ? "1 level" : $"{value} levels")),
+    ];
+
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> AbilityOptions =
     [
         new SwShTrainerEditableFieldOption(0, "Default"),
@@ -226,7 +232,7 @@ public sealed class SwShTrainersWorkflowService
             BooleanOptions),
         new SwShTrainerEditableField(
             MoneyField,
-            "Money",
+            "Money multiplier",
             "integer",
             0,
             SwShTrainerDataFile.MaximumMoney),
@@ -346,7 +352,8 @@ public sealed class SwShTrainersWorkflowService
             "Dynamax level",
             "integer",
             0,
-            SwShTrainerTeamFile.MaximumDynamaxLevel),
+            SwShTrainerTeamFile.MaximumDynamaxLevel,
+            DynamaxLevelOptions),
         new SwShTrainerEditableField(
             CanGigantamaxField,
             "Can Gigantamax",

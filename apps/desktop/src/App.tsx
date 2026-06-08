@@ -523,6 +523,14 @@ const tradeMemoryCodeFieldName = 'memoryCode';
 const tradeMemoryTextVariableFieldName = 'memoryTextVariable';
 const tradeMemoryFeelFieldName = 'memoryFeel';
 const tradeMemoryIntensityFieldName = 'memoryIntensity';
+const lockedTradeFieldNames = [
+  tradeField03FieldName,
+  tradeUnknownRequirementFieldName,
+  tradeMemoryCodeFieldName,
+  tradeMemoryTextVariableFieldName,
+  tradeMemoryFeelFieldName,
+  tradeMemoryIntensityFieldName
+] as const;
 const tradeRelearnMoveFieldNames = [
   'relearnMove0',
   'relearnMove1',
@@ -1620,6 +1628,48 @@ export function App({
     }
   };
 
+  const handleUpdateItemFields = async (
+    itemId: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsItemUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = itemsWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateItemField({
+          field: change.field,
+          itemId,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setItemsWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsItemUpdating(false);
+    }
+  };
+
   const handleUpdatePokemonField = async (personalId: number, field: string, value: string) => {
     setIsPokemonUpdating(true);
     setBridgeDiagnostics([]);
@@ -1636,6 +1686,48 @@ export function App({
       setPokemonWorkflow(response.workflow);
       setEditSession(response.session);
       setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsPokemonUpdating(false);
+    }
+  };
+
+  const handleUpdatePokemonFields = async (
+    personalId: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsPokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = pokemonWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updatePokemonField({
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          personalId,
+          session: nextSession,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setPokemonWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -1734,6 +1826,48 @@ export function App({
     }
   };
 
+  const handleUpdateMoveFields = async (
+    moveId: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsMoveUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = movesWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateMoveField({
+          field: change.field,
+          moveId,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setMovesWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsMoveUpdating(false);
+    }
+  };
+
   const handleUpdateTextEntry = async (textKey: string, value: string) => {
     setIsTextUpdating(true);
     setBridgeDiagnostics([]);
@@ -1785,6 +1919,50 @@ export function App({
     }
   };
 
+  const handleUpdateTrainerFields = async (
+    trainerId: number,
+    slot: number | null,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsTrainerUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = trainersWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateTrainerField({
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          slot,
+          trainerId,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setTrainersWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTrainerUpdating(false);
+    }
+  };
+
   const handleUpdateGiftPokemonField = async (
     giftIndex: number,
     field: string,
@@ -1805,6 +1983,48 @@ export function App({
       setGiftPokemonWorkflow(response.workflow);
       setEditSession(response.session);
       setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsGiftPokemonUpdating(false);
+    }
+  };
+
+  const handleUpdateGiftPokemonFields = async (
+    giftIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsGiftPokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = giftPokemonWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateGiftPokemonField({
+          field: change.field,
+          giftIndex,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setGiftPokemonWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -1839,6 +2059,48 @@ export function App({
     }
   };
 
+  const handleUpdateTradePokemonFields = async (
+    tradeIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsTradePokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = tradePokemonWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateTradePokemonField({
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          tradeIndex,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setTradePokemonWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTradePokemonUpdating(false);
+    }
+  };
+
   const handleUpdateStaticEncounterField = async (
     encounterIndex: number,
     field: string,
@@ -1859,6 +2121,48 @@ export function App({
       setStaticEncountersWorkflow(response.workflow);
       setEditSession(response.session);
       setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsStaticEncounterUpdating(false);
+    }
+  };
+
+  const handleUpdateStaticEncounterFields = async (
+    encounterIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsStaticEncounterUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = staticEncountersWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateStaticEncounterField({
+          encounterIndex,
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setStaticEncountersWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -1893,6 +2197,48 @@ export function App({
     }
   };
 
+  const handleUpdateRentalPokemonFields = async (
+    rentalIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsRentalPokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = rentalPokemonWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateRentalPokemonField({
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          rentalIndex,
+          session: nextSession,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setRentalPokemonWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRentalPokemonUpdating(false);
+    }
+  };
+
   const handleUpdateDynamaxAdventureField = async (
     entryIndex: number,
     field: string,
@@ -1913,6 +2259,48 @@ export function App({
       setDynamaxAdventuresWorkflow(response.workflow);
       setEditSession(response.session);
       setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsDynamaxAdventureUpdating(false);
+    }
+  };
+
+  const handleUpdateDynamaxAdventureFields = async (
+    entryIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsDynamaxAdventureUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = dynamaxAdventuresWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateDynamaxAdventureField({
+          entryIndex,
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setDynamaxAdventuresWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -1984,6 +2372,50 @@ export function App({
     }
   };
 
+  const handleUpdateEncounterSlotFields = async (
+    tableId: string,
+    slot: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsEncounterUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = encountersWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateEncounterSlotField({
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          slot,
+          tableId,
+          value: change.value
+        });
+        nextWorkflow = response.workflow;
+        nextSession = response.session;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setEncountersWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsEncounterUpdating(false);
+    }
+  };
+
   const handleUpdateRaidRewardField = async (
     tableId: string,
     slot: number,
@@ -2006,6 +2438,50 @@ export function App({
       setRaidRewardsWorkflow(response.workflow);
       setEditSession(response.session);
       setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRaidRewardUpdating(false);
+    }
+  };
+
+  const handleUpdateRaidRewardFields = async (
+    tableId: string,
+    slot: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsRaidRewardUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = raidRewardsWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateRaidRewardField({
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          slot,
+          tableId,
+          value: change.value
+        });
+        nextWorkflow = response.workflow;
+        nextSession = response.session;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setRaidRewardsWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -2042,6 +2518,50 @@ export function App({
     }
   };
 
+  const handleUpdateRaidBattleSlotFields = async (
+    tableId: string,
+    slot: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsRaidBattleUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = raidBattlesWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateRaidBattleSlotField({
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          slot,
+          tableId,
+          value: change.value
+        });
+        nextWorkflow = response.workflow;
+        nextSession = response.session;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setRaidBattlesWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRaidBattleUpdating(false);
+    }
+  };
+
   const handleUpdatePlacementObjectField = async (
     objectId: string,
     field: string,
@@ -2062,6 +2582,48 @@ export function App({
       setPlacementWorkflow(response.workflow);
       setEditSession(response.session);
       setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsPlacementUpdating(false);
+    }
+  };
+
+  const handleUpdatePlacementObjectFields = async (
+    objectId: string,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return;
+    }
+
+    setIsPlacementUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = placementWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updatePlacementObjectField({
+          field: change.field,
+          objectId,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          value: change.value
+        });
+        nextWorkflow = response.workflow;
+        nextSession = response.session;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setPlacementWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -2284,6 +2846,7 @@ export function App({
                 onSelectItem={setSelectedItemId}
                 onStartEditSession={handleStartEditSession}
                 onUpdateItemField={handleUpdateItemField}
+                onUpdateItemFields={handleUpdateItemFields}
                 searchText={itemSearchText}
                 selectedItemId={selectedItemId}
                 editSession={editSession}
@@ -2305,6 +2868,7 @@ export function App({
                 onSelectPokemon={setSelectedPokemonPersonalId}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePokemonField={handleUpdatePokemonField}
+                onUpdatePokemonFields={handleUpdatePokemonFields}
                 onUpdatePokemonEvolution={handleUpdatePokemonEvolution}
                 onUpdatePokemonLearnset={handleUpdatePokemonLearnset}
                 searchText={pokemonSearchText}
@@ -2325,6 +2889,7 @@ export function App({
                 onSelectMove={setSelectedMoveId}
                 onStartEditSession={handleStartEditSession}
                 onUpdateMoveField={handleUpdateMoveField}
+                onUpdateMoveFields={handleUpdateMoveFields}
                 searchText={movesSearchText}
                 selectedMoveId={selectedMoveId}
                 workflow={movesWorkflow}
@@ -2361,6 +2926,7 @@ export function App({
                 onSelectTrainer={setSelectedTrainerId}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTrainerField={handleUpdateTrainerField}
+                onUpdateTrainerFields={handleUpdateTrainerFields}
                 searchText={trainerSearchText}
                 selectedTrainerId={selectedTrainerId}
                 workflow={trainersWorkflow}
@@ -2379,6 +2945,7 @@ export function App({
                 onSelectGift={setSelectedGiftPokemonIndex}
                 onStartEditSession={handleStartEditSession}
                 onUpdateGiftPokemonField={handleUpdateGiftPokemonField}
+                onUpdateGiftPokemonFields={handleUpdateGiftPokemonFields}
                 searchText={giftPokemonSearchText}
                 selectedGiftIndex={selectedGiftPokemonIndex}
                 workflow={giftPokemonWorkflow}
@@ -2397,6 +2964,7 @@ export function App({
                 onSelectTrade={setSelectedTradePokemonIndex}
                 onStartEditSession={handleStartEditSession}
                 onUpdateTradePokemonField={handleUpdateTradePokemonField}
+                onUpdateTradePokemonFields={handleUpdateTradePokemonFields}
                 searchText={tradePokemonSearchText}
                 selectedTradeIndex={selectedTradePokemonIndex}
                 workflow={tradePokemonWorkflow}
@@ -2415,6 +2983,7 @@ export function App({
                 onSelectEncounter={setSelectedStaticEncounterIndex}
                 onStartEditSession={handleStartEditSession}
                 onUpdateStaticEncounterField={handleUpdateStaticEncounterField}
+                onUpdateStaticEncounterFields={handleUpdateStaticEncounterFields}
                 searchText={staticEncounterSearchText}
                 selectedEncounterIndex={selectedStaticEncounterIndex}
                 workflow={staticEncountersWorkflow}
@@ -2433,6 +3002,7 @@ export function App({
                 onSelectRental={setSelectedRentalPokemonIndex}
                 onStartEditSession={handleStartEditSession}
                 onUpdateRentalPokemonField={handleUpdateRentalPokemonField}
+                onUpdateRentalPokemonFields={handleUpdateRentalPokemonFields}
                 searchText={rentalPokemonSearchText}
                 selectedRentalIndex={selectedRentalPokemonIndex}
                 workflow={rentalPokemonWorkflow}
@@ -2451,6 +3021,7 @@ export function App({
                 onSelectAdventure={setSelectedDynamaxAdventureEntryIndex}
                 onStartEditSession={handleStartEditSession}
                 onUpdateDynamaxAdventureField={handleUpdateDynamaxAdventureField}
+                onUpdateDynamaxAdventureFields={handleUpdateDynamaxAdventureFields}
                 searchText={dynamaxAdventureSearchText}
                 selectedEntryIndex={selectedDynamaxAdventureEntryIndex}
                 workflow={dynamaxAdventuresWorkflow}
@@ -2488,6 +3059,7 @@ export function App({
                 onSelectTable={setSelectedEncounterTableId}
                 onStartEditSession={handleStartEditSession}
                 onUpdateEncounterSlotField={handleUpdateEncounterSlotField}
+                onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
                 searchText={encounterSearchText}
                 selectedTableId={selectedEncounterTableId}
                 workflow={encountersWorkflow}
@@ -2506,6 +3078,7 @@ export function App({
                 onSelectTable={setSelectedRaidRewardTableId}
                 onStartEditSession={handleStartEditSession}
                 onUpdateRaidRewardField={handleUpdateRaidRewardField}
+                onUpdateRaidRewardFields={handleUpdateRaidRewardFields}
                 searchText={raidRewardSearchText}
                 selectedTableId={selectedRaidRewardTableId}
                 workflow={raidRewardsWorkflow}
@@ -2524,6 +3097,7 @@ export function App({
                 onSelectTable={setSelectedRaidBattleTableId}
                 onStartEditSession={handleStartEditSession}
                 onUpdateRaidBattleSlotField={handleUpdateRaidBattleSlotField}
+                onUpdateRaidBattleSlotFields={handleUpdateRaidBattleSlotFields}
                 searchText={raidBattleSearchText}
                 selectedTableId={selectedRaidBattleTableId}
                 workflow={raidBattlesWorkflow}
@@ -2542,6 +3116,7 @@ export function App({
                 onSelectObject={setSelectedPlacementObjectId}
                 onStartEditSession={handleStartEditSession}
                 onUpdatePlacementObjectField={handleUpdatePlacementObjectField}
+                onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
                 searchText={placementSearchText}
                 selectedObjectId={selectedPlacementObjectId}
                 workflow={placementWorkflow}
@@ -3241,6 +3816,7 @@ function ItemsSection({
   onSelectItem,
   onStartEditSession,
   onUpdateItemField,
+  onUpdateItemFields,
   searchText,
   selectedItemId,
   workflow
@@ -3252,6 +3828,7 @@ function ItemsSection({
   onSelectItem: (itemId: number | null) => void;
   onStartEditSession: () => void;
   onUpdateItemField: (itemId: number, field: string, value: string) => void;
+  onUpdateItemFields: (itemId: number, changes: Array<{ field: string; value: string }>) => void;
   searchText: string;
   selectedItemId: number | null;
   workflow: ItemsWorkflow | null;
@@ -3351,6 +3928,7 @@ function ItemsSection({
               editableFields={workflow.editableFields}
               onStartEditSession={onStartEditSession}
               onUpdateItemField={onUpdateItemField}
+              onUpdateItemFields={onUpdateItemFields}
             />
           </div>
         ) : (
@@ -3371,7 +3949,8 @@ function SelectedItemPanel({
   isItemUpdating,
   item,
   onStartEditSession,
-  onUpdateItemField
+  onUpdateItemField,
+  onUpdateItemFields
 }: {
   canEditItems: boolean;
   editSession: EditSession | null;
@@ -3381,8 +3960,29 @@ function SelectedItemPanel({
   item: ItemRecord | null;
   onStartEditSession: () => void;
   onUpdateItemField: (itemId: number, field: string, value: string) => void;
+  onUpdateItemFields: (itemId: number, changes: Array<{ field: string; value: string }>) => void;
 }) {
   const [fieldDrafts, setFieldDrafts] = useState<Record<string, string>>({});
+  const itemFieldGroups = useMemo(
+    () => groupNumericEditableFields(editableFields, getItemEditableFieldGroup),
+    [editableFields]
+  );
+  const itemDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        editableFields,
+        fieldDrafts,
+        item ? (field) => getEditableItemFieldValue(item, field) : null
+      ),
+    [editableFields, fieldDrafts, item]
+  );
+  const canSaveItemDrafts =
+    item !== null &&
+    editSession !== null &&
+    canEditItems &&
+    !isItemUpdating &&
+    itemDraftSummary.changedFields.length > 0 &&
+    itemDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
     if (!item) {
@@ -3447,87 +4047,78 @@ function SelectedItemPanel({
           ))}
 
           <div className="item-edit-form">
-            <div className="item-price-editor">
-              {editableFields.map((field) => {
-                const currentValue = getEditableItemFieldValue(item, field.field);
-                const draftValue = fieldDrafts[field.field] ?? '';
-                const draftState = getItemPriceDraftState(draftValue, currentValue, field);
-                const canSubmit =
-                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
-                const hasOptions = field.options.length > 0;
-                const hasDraftOption = field.options.some(
-                  (option) => option.value.toString() === draftValue
-                );
+            <div className="editable-field-groups">
+              {itemFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = getEditableItemFieldValue(item, field.field);
+                      const draftValue = fieldDrafts[field.field] ?? '';
+                      const draftState = getTrainerFieldDraftState(
+                        draftValue,
+                        currentValue,
+                        field
+                      );
 
-                return (
-                  <div className="item-price-editor-row" key={field.field}>
-                    <label className="path-field">
-                      <span>{field.label}</span>
-                      {hasOptions ? (
-                        <select
-                          aria-label={field.label}
+                      return (
+                        <GiftPokemonDraftField
+                          currentValue={currentValue}
                           disabled={!canEditItems || editSession === null || isItemUpdating}
-                          title={getEditableFieldHelp(field)}
-                          onChange={(event) =>
+                          draftState={draftState}
+                          draftValue={draftValue}
+                          field={field}
+                          idPrefix="item-field"
+                          key={field.field}
+                          onChange={(value) =>
                             setFieldDrafts((currentDrafts) => ({
                               ...currentDrafts,
-                              [field.field]: event.target.value
+                              [field.field]: value
                             }))
                           }
-                          value={draftValue}
-                        >
-                          {!hasDraftOption && draftValue !== '' ? (
-                            <option value={draftValue}>{`Current ${draftValue}`}</option>
-                          ) : null}
-                          {field.options.map((option) => (
-                            <option key={`${field.field}:${option.value}`} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          aria-label={field.label}
-                          disabled={!canEditItems || editSession === null || isItemUpdating}
-                          max={field.maximumValue ?? undefined}
-                          min={field.minimumValue ?? undefined}
-                          title={getEditableFieldHelp(field)}
-                          onChange={(event) =>
-                            setFieldDrafts((currentDrafts) => ({
-                              ...currentDrafts,
-                              [field.field]: event.target.value
-                            }))
-                          }
-                          type="number"
-                          value={draftValue}
                         />
-                      )}
-                    </label>
-
-                    {editSession ? (
-                      <button
-                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                        className="primary-button compact-button"
-                        disabled={!canSubmit || isItemUpdating}
-                        onClick={() =>
-                          onUpdateItemField(
-                            item.itemId,
-                            field.field,
-                            draftState.parsedValue!.toString()
-                          )
-                        }
-                        type="button"
-                      >
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isItemUpdating ? 'Saving' : getItemFieldSaveLabel(field)}</span>
-                      </button>
-                    ) : null}
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </fieldset>
+              ))}
             </div>
 
-            {!editSession ? (
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSaveItemDrafts}
+                  onClick={() =>
+                    onUpdateItemFields(
+                      item.itemId,
+                      itemDraftSummary.changedFields.map((change) => ({
+                        field: change.field,
+                        value: change.value
+                      }))
+                    )
+                  }
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isItemUpdating ? 'Saving' : 'Save Item'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={isItemUpdating || itemDraftSummary.dirtyFieldCount === 0}
+                  onClick={() =>
+                    setFieldDrafts(createTrainerDrafts(editableFields, (field) =>
+                      getEditableItemFieldValue(item, field)
+                    ))
+                  }
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">{formatDraftSummary(itemDraftSummary)}</span>
+              </div>
+            ) : (
               <button
                 className="secondary-button"
                 disabled={!canEditItems || isEditStarting}
@@ -3537,7 +4128,7 @@ function SelectedItemPanel({
                 <Pencil aria-hidden="true" size={16} />
                 <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
               </button>
-            ) : null}
+            )}
           </div>
         </>
       ) : (
@@ -3555,6 +4146,7 @@ function PokemonSection({
   onSelectPokemon,
   onStartEditSession,
   onUpdatePokemonField,
+  onUpdatePokemonFields,
   onUpdatePokemonEvolution,
   onUpdatePokemonLearnset,
   searchText,
@@ -3568,6 +4160,10 @@ function PokemonSection({
   onSelectPokemon: (personalId: number | null) => void;
   onStartEditSession: () => void;
   onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
+  onUpdatePokemonFields: (
+    personalId: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   onUpdatePokemonEvolution: (
     personalId: number,
     action: string,
@@ -3691,8 +4287,10 @@ function PokemonSection({
               evolutionMethodOptions={workflow.evolutionMethodOptions}
               isEditStarting={isEditStarting}
               isPokemonUpdating={isPokemonUpdating}
+              learnsetMoveOptions={workflow.learnsetMoveOptions}
               onStartEditSession={onStartEditSession}
               onUpdatePokemonField={onUpdatePokemonField}
+              onUpdatePokemonFields={onUpdatePokemonFields}
               onUpdatePokemonEvolution={onUpdatePokemonEvolution}
               onUpdatePokemonLearnset={onUpdatePokemonLearnset}
               pokemon={selectedPokemon}
@@ -3715,8 +4313,10 @@ function SelectedPokemonPanel({
   evolutionMethodOptions,
   isEditStarting,
   isPokemonUpdating,
+  learnsetMoveOptions,
   onStartEditSession,
   onUpdatePokemonField,
+  onUpdatePokemonFields,
   onUpdatePokemonEvolution,
   onUpdatePokemonLearnset,
   pokemon
@@ -3727,8 +4327,13 @@ function SelectedPokemonPanel({
   evolutionMethodOptions: PokemonEvolutionMethodOption[];
   isEditStarting: boolean;
   isPokemonUpdating: boolean;
+  learnsetMoveOptions: PokemonEditableFieldOption[];
   onStartEditSession: () => void;
   onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
+  onUpdatePokemonFields: (
+    personalId: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   onUpdatePokemonEvolution: (
     personalId: number,
     action: string,
@@ -3748,14 +4353,13 @@ function SelectedPokemonPanel({
   ) => void;
   pokemon: PokemonRecord | null;
 }) {
-  const [selectedFieldName, setSelectedFieldName] = useState<string>(
-    editableFields[0]?.field ?? ''
+  const personalDraftDefaults = useMemo(
+    () => createPokemonPersonalDrafts(pokemon, editableFields),
+    [editableFields, pokemon]
   );
-  const selectedField =
-    editableFields.find((field) => field.field === selectedFieldName) ?? editableFields[0] ?? null;
-  const draftState =
-    pokemon && selectedField ? getPokemonDraftState(pokemon, selectedField) : null;
-  const [draftValue, setDraftValue] = useState(draftState?.value ?? '');
+  const [personalDrafts, setPersonalDrafts] = useState<Record<string, string>>(
+    personalDraftDefaults
+  );
   const [selectedCompatibilityGroupId, setSelectedCompatibilityGroupId] = useState(
     pokemon?.compatibility[0]?.groupId ?? ''
   );
@@ -3850,16 +4454,18 @@ function SelectedPokemonPanel({
   );
   const [newLearnsetMoveIdDraft, setNewLearnsetMoveIdDraft] = useState('');
   const [newLearnsetLevelDraft, setNewLearnsetLevelDraft] = useState('');
+  const learnsetMoveOptionsForDraft = useMemo(
+    () => addCurrentPokemonFieldOption(learnsetMoveOptions, learnsetMoveIdDraft, 'Move'),
+    [learnsetMoveIdDraft, learnsetMoveOptions]
+  );
+  const newLearnsetMoveOptions = useMemo(
+    () => addCurrentPokemonFieldOption(learnsetMoveOptions, newLearnsetMoveIdDraft, 'Move'),
+    [learnsetMoveOptions, newLearnsetMoveIdDraft]
+  );
 
   useEffect(() => {
-    if (!selectedField && editableFields[0]) {
-      setSelectedFieldName(editableFields[0].field);
-    }
-  }, [editableFields, selectedField]);
-
-  useEffect(() => {
-    setDraftValue(draftState?.value ?? '');
-  }, [draftState?.field, draftState?.recordId, draftState?.value]);
+    setPersonalDrafts(personalDraftDefaults);
+  }, [personalDraftDefaults]);
 
   useEffect(() => {
     if (!pokemon) {
@@ -3921,11 +4527,21 @@ function SelectedPokemonPanel({
     selectedEvolution?.species
   ]);
 
-  const isBooleanField = selectedField?.valueKind === 'boolean';
-  const isOptionField = Boolean(selectedField && selectedField.options.length > 0);
-  const canSubmit =
-    Boolean(pokemon && selectedField && editSession && canEditPokemon) &&
-    (isBooleanField || draftValue.trim().length > 0);
+  const personalFieldGroups = useMemo(
+    () => groupPokemonEditableFields(editableFields),
+    [editableFields]
+  );
+  const personalDraftSummary = useMemo(
+    () => getPokemonPersonalDraftSummary(pokemon, editableFields, personalDrafts),
+    [editableFields, personalDrafts, pokemon]
+  );
+  const canSavePersonalDrafts =
+    pokemon !== null &&
+    editSession !== null &&
+    canEditPokemon &&
+    !isPokemonUpdating &&
+    personalDraftSummary.changedFields.length > 0 &&
+    personalDraftSummary.invalidFields.length === 0;
   const selectedCompatibilityGroup =
     pokemon?.compatibility.find((group) => group.groupId === selectedCompatibilityGroupId) ??
     pokemon?.compatibility[0] ??
@@ -3988,6 +4604,16 @@ function SelectedPokemonPanel({
 
       {pokemon ? (
         <>
+          <div className="pokemon-summary-card">
+            <PokemonSprite className="pokemon-summary-sprite" name={pokemon.name} />
+            <div>
+              <strong>{pokemon.name}</strong>
+              <span>
+                {pokemon.speciesId} / {pokemon.formLabel}
+              </span>
+            </div>
+          </div>
+
           <dl className="item-provenance-list">
             <div>
               <dt>Name</dt>
@@ -4097,79 +4723,82 @@ function SelectedPokemonPanel({
 
           <div className="inspector-block">
             <h4>Personal Edit</h4>
-            <div className="move-edit-form">
-              <label className="path-field">
-                <span>Pokemon edit field</span>
-                <select
-                  disabled={!canEditPokemon || editableFields.length === 0 || isPokemonUpdating}
-                  onChange={(event) => setSelectedFieldName(event.target.value)}
-                  value={selectedField?.field ?? ''}
-                >
-                  {editableFields.map((field) => (
-                    <option key={field.field} value={field.field}>
-                      {field.group} - {field.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className="editable-field-groups">
+              {personalFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = pokemon
+                        ? getEditablePersonalFieldValue(pokemon, field.field)
+                        : null;
+                      const draftValue = personalDrafts[field.field] ?? '';
+                      const draftState = getPokemonPersonalFieldDraftState(
+                        draftValue,
+                        currentValue,
+                        field
+                      );
 
-              {selectedField ? (
-                <div className="move-field-editor-row">
-                  {isBooleanField ? (
-                    <label className="checkbox-field">
-                      <input
-                        checked={draftValue === '1'}
-                        disabled={!canEditPokemon || editSession === null || isPokemonUpdating}
-                        onChange={(event) => setDraftValue(event.target.checked ? '1' : '0')}
-                        type="checkbox"
-                      />
-                      <span>{selectedField.label}</span>
-                    </label>
-                  ) : isOptionField ? (
-                    <label className="path-field">
-                      <span>{selectedField.label}</span>
-                      <select
-                        disabled={!canEditPokemon || editSession === null || isPokemonUpdating}
-                        onChange={(event) => setDraftValue(event.target.value)}
-                        value={draftValue}
-                      >
-                        {selectedField.options.map((option) => (
-                          <option key={option.value} value={option.value.toString()}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : (
-                    <label className="path-field">
-                      <span>{selectedField.label}</span>
-                      <input
-                        disabled={!canEditPokemon || editSession === null || isPokemonUpdating}
-                        max={selectedField.maximumValue ?? undefined}
-                        min={selectedField.minimumValue ?? undefined}
-                        onChange={(event) => setDraftValue(event.target.value)}
-                        type="number"
-                        value={draftValue}
-                      />
-                    </label>
-                  )}
-                  <button
-                    aria-label={`Save ${selectedField.label}`}
-                    className="secondary-button"
-                    disabled={!canSubmit || isPokemonUpdating}
-                    onClick={() => {
-                      if (pokemon && selectedField) {
-                        onUpdatePokemonField(pokemon.personalId, selectedField.field, draftValue);
-                      }
-                    }}
-                    type="button"
-                  >
-                    <Save aria-hidden="true" size={16} />
-                    <span>{isPokemonUpdating ? 'Saving' : 'Save Field'}</span>
-                  </button>
-                </div>
-              ) : null}
+                      return (
+                        <PokemonPersonalFieldInput
+                          currentValue={currentValue}
+                          disabled={!canEditPokemon || editSession === null || isPokemonUpdating}
+                          draftState={draftState}
+                          draftValue={draftValue}
+                          field={field}
+                          key={field.field}
+                          onChange={(value) =>
+                            setPersonalDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [field.field]: value
+                            }))
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              ))}
             </div>
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSavePersonalDrafts}
+                  onClick={() => {
+                    if (pokemon) {
+                      onUpdatePokemonFields(
+                        pokemon.personalId,
+                        personalDraftSummary.changedFields.map((change) => ({
+                          field: change.field,
+                          value: change.value
+                        }))
+                      );
+                    }
+                  }}
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isPokemonUpdating ? 'Saving' : 'Save Changes'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={isPokemonUpdating || personalDraftSummary.dirtyFieldCount === 0}
+                  onClick={() => setPersonalDrafts(personalDraftDefaults)}
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">
+                  {personalDraftSummary.invalidFields.length > 0
+                    ? `${personalDraftSummary.invalidFields.length} field${
+                        personalDraftSummary.invalidFields.length === 1 ? '' : 's'
+                      } need valid values`
+                    : `${personalDraftSummary.changedFields.length} changed`}
+                </span>
+              </div>
+            ) : null}
             {canEditPokemon && editSession === null ? (
               <button
                 className="secondary-button"
@@ -4253,26 +4882,39 @@ function SelectedPokemonPanel({
             <div className="learnset-editor">
               {pokemon.evolutions.length > 0 ? (
                 <ul className="learnset-list">
-                  {pokemon.evolutions.map((evolution) => (
-                    <li key={evolution.slot}>
-                      <button
-                        className={`learnset-row evolution-row ${
-                          selectedEvolution?.slot === evolution.slot ? 'learnset-row-selected' : ''
-                        }`}
-                        onClick={() => setSelectedEvolutionSlot(evolution.slot)}
-                        type="button"
-                      >
-                        <span>#{evolution.slot + 1}</span>
-                        <span>{formatEvolutionMethodSummary(evolution)}</span>
-                        <strong>
-                          {formatReferenceLabel(pokemonSpeciesLabels, evolution.species, 'Species')}
-                        </strong>
-                        <span>F {evolution.form}</span>
-                        <span>Lv. {evolution.level}</span>
-                        <span>{formatEvolutionArgumentSummary(evolution)}</span>
-                      </button>
-                    </li>
-                  ))}
+                  {pokemon.evolutions.map((evolution) => {
+                    const evolutionSpeciesLabel = formatReferenceLabel(
+                      pokemonSpeciesLabels,
+                      evolution.species,
+                      'Species'
+                    );
+
+                    return (
+                      <li key={evolution.slot}>
+                        <button
+                          className={`learnset-row evolution-row ${
+                            selectedEvolution?.slot === evolution.slot
+                              ? 'learnset-row-selected'
+                              : ''
+                          }`}
+                          onClick={() => setSelectedEvolutionSlot(evolution.slot)}
+                          type="button"
+                        >
+                          <PokemonSprite
+                            className="pokemon-row-sprite"
+                            name={getReferenceSpriteName(evolutionSpeciesLabel)}
+                            preferStatic
+                          />
+                          <span>#{evolution.slot + 1}</span>
+                          <span>{formatEvolutionMethodSummary(evolution)}</span>
+                          <strong>{evolutionSpeciesLabel}</strong>
+                          <span>F {evolution.form}</span>
+                          <span>Lv. {evolution.level}</span>
+                          <span>{formatEvolutionArgumentSummary(evolution)}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <p className="empty-copy">No evolution entries.</p>
@@ -4629,14 +5271,28 @@ function SelectedPokemonPanel({
               {selectedLearnsetMove ? (
                 <div className="learnset-edit-grid">
                   <label className="path-field">
-                    <span>Move ID</span>
-                    <input
-                      disabled={!canEditLearnset}
-                      min={0}
-                      onChange={(event) => setLearnsetMoveIdDraft(event.target.value)}
-                      type="number"
-                      value={learnsetMoveIdDraft}
-                    />
+                    <span>Move</span>
+                    {learnsetMoveOptionsForDraft.length > 0 ? (
+                      <select
+                        disabled={!canEditLearnset}
+                        onChange={(event) => setLearnsetMoveIdDraft(event.target.value)}
+                        value={learnsetMoveIdDraft}
+                      >
+                        {learnsetMoveOptionsForDraft.map((option) => (
+                          <option key={option.value} value={option.value.toString()}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        disabled={!canEditLearnset}
+                        min={0}
+                        onChange={(event) => setLearnsetMoveIdDraft(event.target.value)}
+                        type="number"
+                        value={learnsetMoveIdDraft}
+                      />
+                    )}
                   </label>
                   <label className="path-field">
                     <span>Level</span>
@@ -4729,14 +5385,29 @@ function SelectedPokemonPanel({
 
               <div className="learnset-edit-grid">
                 <label className="path-field">
-                  <span>New move ID</span>
-                  <input
-                    disabled={!canEditLearnset}
-                    min={0}
-                    onChange={(event) => setNewLearnsetMoveIdDraft(event.target.value)}
-                    type="number"
-                    value={newLearnsetMoveIdDraft}
-                  />
+                  <span>New move</span>
+                  {newLearnsetMoveOptions.length > 0 ? (
+                    <select
+                      disabled={!canEditLearnset}
+                      onChange={(event) => setNewLearnsetMoveIdDraft(event.target.value)}
+                      value={newLearnsetMoveIdDraft}
+                    >
+                      <option value="">Select move</option>
+                      {newLearnsetMoveOptions.map((option) => (
+                        <option key={option.value} value={option.value.toString()}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      disabled={!canEditLearnset}
+                      min={0}
+                      onChange={(event) => setNewLearnsetMoveIdDraft(event.target.value)}
+                      type="number"
+                      value={newLearnsetMoveIdDraft}
+                    />
+                  )}
                 </label>
                 <label className="path-field">
                   <span>New level</span>
@@ -4787,6 +5458,7 @@ function MovesSection({
   onSelectMove,
   onStartEditSession,
   onUpdateMoveField,
+  onUpdateMoveFields,
   searchText,
   selectedMoveId,
   workflow
@@ -4798,6 +5470,7 @@ function MovesSection({
   onSelectMove: (moveId: number | null) => void;
   onStartEditSession: () => void;
   onUpdateMoveField: (moveId: number, field: string, value: string) => void;
+  onUpdateMoveFields: (moveId: number, changes: Array<{ field: string; value: string }>) => void;
   searchText: string;
   selectedMoveId: number | null;
   workflow: MovesWorkflow | null;
@@ -4903,6 +5576,7 @@ function MovesSection({
               move={selectedMove}
               onStartEditSession={onStartEditSession}
               onUpdateMoveField={onUpdateMoveField}
+              onUpdateMoveFields={onUpdateMoveFields}
             />
           </div>
         ) : (
@@ -4923,7 +5597,8 @@ function SelectedMovePanel({
   isMoveUpdating,
   move,
   onStartEditSession,
-  onUpdateMoveField
+  onUpdateMoveField,
+  onUpdateMoveFields
 }: {
   canEditMoves: boolean;
   editSession: EditSession | null;
@@ -4933,49 +5608,54 @@ function SelectedMovePanel({
   move: MoveRecord | null;
   onStartEditSession: () => void;
   onUpdateMoveField: (moveId: number, field: string, value: string) => void;
+  onUpdateMoveFields: (moveId: number, changes: Array<{ field: string; value: string }>) => void;
 }) {
-  const [selectedFieldName, setSelectedFieldName] = useState('');
-  const [draftValue, setDraftValue] = useState('');
+  const [moveDrafts, setMoveDrafts] = useState<Record<string, string>>({});
+  const moveFields = useMemo(
+    () => editableFields.map((field) => toNumericEditableField(field)),
+    [editableFields]
+  );
+  const moveFieldGroups = useMemo(
+    () => groupNumericEditableFields(moveFields, getMoveEditableFieldGroup),
+    [moveFields]
+  );
+  const moveDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        moveFields,
+        moveDrafts,
+        move ? (field) => getEditableMoveFieldValue(move, field) : null
+      ),
+    [move, moveDrafts, moveFields]
+  );
   const activeFlags = move?.flags.filter((flag) => flag.enabled) ?? [];
   const visibleStatChanges =
     move?.statChanges.filter(
       (statChange) => statChange.stat !== 0 || statChange.stage !== 0 || statChange.percent !== 0
     ) ?? [];
-  const selectedField = useMemo(
-    () =>
-      editableFields.find((field) => field.field === selectedFieldName) ??
-      editableFields[0] ??
-      null,
-    [editableFields, selectedFieldName]
-  );
-  const currentValue =
-    move && selectedField ? getEditableMoveFieldValue(move, selectedField.field) : null;
-  const draftState = selectedField
-    ? getMoveDraftState(draftValue, currentValue, selectedField)
-    : { canSubmit: false, normalizedValue: null };
-  const canSubmit =
-    editSession !== null && draftState.canSubmit && draftState.normalizedValue !== null;
+  const canSaveMoveDrafts =
+    move !== null &&
+    editSession !== null &&
+    canEditMoves &&
+    !isMoveUpdating &&
+    moveDraftSummary.changedFields.length > 0 &&
+    moveDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
-    if (editableFields.length === 0) {
-      setSelectedFieldName('');
+    if (!move) {
+      setMoveDrafts({});
       return;
     }
 
-    if (!editableFields.some((field) => field.field === selectedFieldName)) {
-      setSelectedFieldName(editableFields[0].field);
-    }
-  }, [editableFields, selectedFieldName]);
-
-  useEffect(() => {
-    if (!move || !selectedField) {
-      setDraftValue('');
-      return;
-    }
-
-    const value = getEditableMoveFieldValue(move, selectedField.field);
-    setDraftValue(value === null ? '' : value.toString());
-  }, [move, selectedField]);
+    setMoveDrafts(
+      Object.fromEntries(
+        moveFields.map((field) => [
+          field.field,
+          (getEditableMoveFieldValue(move, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [move, moveFields]);
 
   return (
     <aside aria-label="Selected move details" className="item-inspector">
@@ -5024,72 +5704,78 @@ function SelectedMovePanel({
           </dl>
 
           <div className="item-edit-form move-edit-form">
-            <label className="path-field">
-              <span>Field</span>
-              <select
-                aria-label="Move edit field"
-                disabled={!canEditMoves || editableFields.length === 0 || isMoveUpdating}
-                onChange={(event) => setSelectedFieldName(event.target.value)}
-                value={selectedField?.field ?? ''}
-              >
-                {editableFields.map((field) => (
-                  <option key={field.field} value={field.field}>
-                    {field.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="editable-field-groups">
+              {moveFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = getEditableMoveFieldValue(move, field.field);
+                      const draftValue = moveDrafts[field.field] ?? '';
+                      const draftState = getTrainerFieldDraftState(
+                        draftValue,
+                        currentValue,
+                        field
+                      );
 
-            {selectedField ? (
-              <div className="move-field-editor-row">
-                {selectedField.valueKind === 'boolean' ? (
-                  <label className="checkbox-field">
-                    <input
-                      aria-label={selectedField.label}
-                      checked={draftValue === '1'}
-                      disabled={!canEditMoves || editSession === null || isMoveUpdating}
-                      onChange={(event) => setDraftValue(event.target.checked ? '1' : '0')}
-                      type="checkbox"
-                    />
-                    <span>{selectedField.label}</span>
-                  </label>
-                ) : (
-                  <label className="path-field">
-                    <span>{selectedField.label}</span>
-                    <input
-                      aria-label={selectedField.label}
-                      disabled={!canEditMoves || editSession === null || isMoveUpdating}
-                      max={selectedField.maximumValue ?? undefined}
-                      min={selectedField.minimumValue ?? undefined}
-                      onChange={(event) => setDraftValue(event.target.value)}
-                      type="number"
-                      value={draftValue}
-                    />
-                  </label>
-                )}
+                      return (
+                        <GiftPokemonDraftField
+                          currentValue={currentValue}
+                          disabled={!canEditMoves || editSession === null || isMoveUpdating}
+                          draftState={draftState}
+                          draftValue={draftValue}
+                          field={field}
+                          idPrefix="move-field"
+                          key={field.field}
+                          onChange={(value) =>
+                            setMoveDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [field.field]: value
+                            }))
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              ))}
+            </div>
 
-                {editSession ? (
-                  <button
-                    aria-label={`Save ${selectedField.label.toLocaleLowerCase()}`}
-                    className="primary-button compact-button"
-                    disabled={!canSubmit || isMoveUpdating}
-                    onClick={() =>
-                      onUpdateMoveField(
-                        move.moveId,
-                        selectedField.field,
-                        draftState.normalizedValue!
-                      )
-                    }
-                    type="button"
-                  >
-                    <Save aria-hidden="true" size={16} />
-                    <span>{isMoveUpdating ? 'Saving' : 'Save Field'}</span>
-                  </button>
-                ) : null}
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSaveMoveDrafts}
+                  onClick={() =>
+                    onUpdateMoveFields(
+                      move.moveId,
+                      moveDraftSummary.changedFields.map((change) => ({
+                        field: change.field,
+                        value: change.value
+                      }))
+                    )
+                  }
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isMoveUpdating ? 'Saving' : 'Save Move'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={isMoveUpdating || moveDraftSummary.dirtyFieldCount === 0}
+                  onClick={() =>
+                    setMoveDrafts(createTrainerDrafts(moveFields, (field) =>
+                      getEditableMoveFieldValue(move, field)
+                    ))
+                  }
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">{formatDraftSummary(moveDraftSummary)}</span>
               </div>
-            ) : null}
-
-            {!editSession ? (
+            ) : (
               <button
                 className="secondary-button"
                 disabled={!canEditMoves || isEditStarting}
@@ -5099,7 +5785,7 @@ function SelectedMovePanel({
                 <Pencil aria-hidden="true" size={16} />
                 <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
               </button>
-            ) : null}
+            )}
           </div>
 
           <div className="inspector-block">
@@ -5472,6 +6158,7 @@ function TrainersSection({
   onSelectTrainer,
   onStartEditSession,
   onUpdateTrainerField,
+  onUpdateTrainerFields,
   searchText,
   selectedTrainerId,
   workflow
@@ -5487,6 +6174,11 @@ function TrainersSection({
     slot: number | null,
     field: string,
     value: string
+  ) => void;
+  onUpdateTrainerFields: (
+    trainerId: number,
+    slot: number | null,
+    changes: Array<{ field: string; value: string }>
   ) => void;
   searchText: string;
   selectedTrainerId: number | null;
@@ -5607,6 +6299,7 @@ function TrainersSection({
               onSelectSlot={setSelectedSlot}
               onStartEditSession={onStartEditSession}
               onUpdateTrainerField={onUpdateTrainerField}
+              onUpdateTrainerFields={onUpdateTrainerFields}
               selectedPokemon={selectedPokemon}
               selectedSlot={selectedSlot}
               trainer={selectedTrainer}
@@ -5631,6 +6324,7 @@ function SelectedTrainerPanel({
   onSelectSlot,
   onStartEditSession,
   onUpdateTrainerField,
+  onUpdateTrainerFields,
   selectedPokemon,
   selectedSlot,
   trainer
@@ -5647,6 +6341,11 @@ function SelectedTrainerPanel({
     slot: number | null,
     field: string,
     value: string
+  ) => void;
+  onUpdateTrainerFields: (
+    trainerId: number,
+    slot: number | null,
+    changes: Array<{ field: string; value: string }>
   ) => void;
   selectedPokemon: TrainerPokemonRecord | null;
   selectedSlot: number | null;
@@ -5666,6 +6365,47 @@ function SelectedTrainerPanel({
   const aiFlagsMaskLabel = trainer
     ? `0x${trainer.aiFlags.toString(16).padStart(4, '0').toLocaleUpperCase()}`
     : '0x0000';
+  const trainerFieldGroups = useMemo(
+    () => groupTrainerEditableFields(trainerFields, getTrainerDataFieldGroup),
+    [trainerFields]
+  );
+  const pokemonFieldGroups = useMemo(
+    () => groupTrainerEditableFields(pokemonFields, getTrainerPokemonFieldGroup),
+    [pokemonFields]
+  );
+  const trainerDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        trainerFields,
+        trainerDrafts,
+        trainer ? (field) => getEditableTrainerFieldValue(trainer, field) : null
+      ),
+    [trainer, trainerDrafts, trainerFields]
+  );
+  const pokemonDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        pokemonFields,
+        pokemonDrafts,
+        selectedPokemon ? (field) => getEditablePokemonFieldValue(selectedPokemon, field) : null
+      ),
+    [pokemonDrafts, pokemonFields, selectedPokemon]
+  );
+  const canSaveTrainerDrafts =
+    trainer !== null &&
+    editSession !== null &&
+    canEditTrainers &&
+    !isTrainerUpdating &&
+    trainerDraftSummary.changedFields.length > 0 &&
+    trainerDraftSummary.invalidFields.length === 0;
+  const canSavePokemonDrafts =
+    trainer !== null &&
+    selectedPokemon !== null &&
+    editSession !== null &&
+    canEditTrainers &&
+    !isTrainerUpdating &&
+    pokemonDraftSummary.changedFields.length > 0 &&
+    pokemonDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
     if (!trainer) {
@@ -5755,155 +6495,231 @@ function SelectedTrainerPanel({
                   <span>{aiFlagsMaskLabel}</span>
                 </div>
                 <div className="trainer-ai-flags-grid">
-                  {trainer.aiFlagStates.map((flag) => (
-                    <label className="trainer-ai-flag" key={flag.bit}>
-                      <input
-                        checked={flag.enabled}
-                        disabled={!canToggleAiFlags}
-                        onChange={(event) => {
-                          const nextValue = event.target.checked
-                            ? trainer.aiFlags | flag.mask
-                            : trainer.aiFlags & ~flag.mask;
-                          onUpdateTrainerField(
-                            trainer.trainerId,
-                            null,
-                            aiFlagsFieldName,
-                            nextValue.toString()
-                          );
-                        }}
-                        type="checkbox"
-                      />
-                      <span>
-                        <strong>{flag.label}</strong>
-                        <small>{flag.description}</small>
-                      </span>
-                    </label>
-                  ))}
+                  {trainer.aiFlagStates.map((flag) => {
+                    const isReserved = flag.label.toLocaleLowerCase().startsWith('unused');
+
+                    return (
+                      <label
+                        className={`trainer-ai-flag ${
+                          isReserved ? 'trainer-ai-flag-disabled' : ''
+                        }`}
+                        key={flag.bit}
+                        title={isReserved ? 'Reserved for later research.' : flag.description}
+                      >
+                        <input
+                          checked={flag.enabled}
+                          disabled={!canToggleAiFlags || isReserved}
+                          onChange={(event) => {
+                            const nextValue = event.target.checked
+                              ? trainer.aiFlags | flag.mask
+                              : trainer.aiFlags & ~flag.mask;
+                            onUpdateTrainerField(
+                              trainer.trainerId,
+                              null,
+                              aiFlagsFieldName,
+                              nextValue.toString()
+                            );
+                          }}
+                          type="checkbox"
+                        />
+                        <span>
+                          <strong>{flag.label}</strong>
+                          <small>{isReserved ? 'Reserved and locked.' : flag.description}</small>
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
 
-            <div className="trainer-field-grid">
-              {trainerFields.map((field) => {
-                const currentValue = getEditableTrainerFieldValue(trainer, field.field);
-                const draftValue = trainerDrafts[field.field] ?? '';
-                const draftState = getIntegerDraftState(draftValue, currentValue, field);
-                const isFieldBlocked =
-                  field.field === classBallIdFieldName && !trainer.canEditClassBall;
-                const canSubmit =
-                  !isFieldBlocked
-                  && editSession !== null
-                  && draftState.canSubmit
-                  && draftState.parsedValue !== null;
+            <div className="editable-field-groups">
+              {trainerFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = getEditableTrainerFieldValue(trainer, field.field);
+                      const draftValue = trainerDrafts[field.field] ?? '';
+                      const draftState = getTrainerFieldDraftState(draftValue, currentValue, field);
+                      const isFieldBlocked =
+                        field.field === classBallIdFieldName && !trainer.canEditClassBall;
 
-                return (
-                  <div className="trainer-editor-row" key={field.field}>
-                    <label className="path-field">
-                      <span>{field.label}</span>
-                      <TrainerFieldInput
-                        disabled={
-                          isFieldBlocked
-                          || !canEditTrainers
-                          || editSession === null
-                          || isTrainerUpdating
-                        }
-                        draftValue={draftValue}
-                        field={field}
-                        onChange={(value) =>
-                          setTrainerDrafts((currentDrafts) => ({
-                            ...currentDrafts,
-                            [field.field]: value
-                          }))
-                        }
-                      />
-                    </label>
-                    {editSession ? (
-                      <button
-                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                        className="primary-button compact-button"
-                        disabled={!canSubmit || isTrainerUpdating}
-                        onClick={() =>
-                          onUpdateTrainerField(
-                            trainer.trainerId,
-                            null,
-                            field.field,
-                            draftState.parsedValue!.toString()
-                          )
-                        }
-                        type="button"
-                      >
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isTrainerUpdating ? 'Saving' : 'Save'}</span>
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="trainer-party-header">
-              <strong>Party</strong>
-              <select
-                aria-label="Trainer party slot"
-                disabled={trainer.team.length === 0}
-                onChange={(event) => onSelectSlot(Number(event.target.value))}
-                value={selectedSlot ?? ''}
-              >
-                {trainer.team.map((pokemon) => (
-                  <option key={pokemon.slot} value={pokemon.slot}>
-                    Slot {pokemon.slot}: {pokemon.species}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {selectedPokemon ? (
-              <div className="trainer-field-grid">
-                {pokemonFields.map((field) => {
-                  const currentValue = getEditablePokemonFieldValue(selectedPokemon, field.field);
-                  const draftValue = pokemonDrafts[field.field] ?? '';
-                  const draftState = getIntegerDraftState(draftValue, currentValue, field);
-                  const canSubmit =
-                    editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
-
-                  return (
-                    <div className="trainer-editor-row" key={field.field}>
-                      <label className="path-field">
-                        <span>{field.label}</span>
-                        <TrainerFieldInput
-                          disabled={!canEditTrainers || editSession === null || isTrainerUpdating}
+                      return (
+                        <TrainerDraftField
+                          currentValue={currentValue}
+                          disabled={
+                            isFieldBlocked ||
+                            !canEditTrainers ||
+                            editSession === null ||
+                            isTrainerUpdating
+                          }
+                          draftState={draftState}
                           draftValue={draftValue}
                           field={field}
+                          key={field.field}
                           onChange={(value) =>
-                            setPokemonDrafts((currentDrafts) => ({
+                            setTrainerDrafts((currentDrafts) => ({
                               ...currentDrafts,
                               [field.field]: value
                             }))
                           }
                         />
-                      </label>
-                      {editSession ? (
-                        <button
-                          aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                          className="primary-button compact-button"
-                          disabled={!canSubmit || isTrainerUpdating}
-                          onClick={() =>
-                            onUpdateTrainerField(
-                              trainer.trainerId,
-                              selectedPokemon.slot,
-                              field.field,
-                              draftState.parsedValue!.toString()
-                            )
-                          }
-                          type="button"
-                        >
-                          <Save aria-hidden="true" size={16} />
-                          <span>{isTrainerUpdating ? 'Saving' : 'Save'}</span>
-                        </button>
-                      ) : null}
-                    </div>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              ))}
+            </div>
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSaveTrainerDrafts}
+                  onClick={() =>
+                    onUpdateTrainerFields(
+                      trainer.trainerId,
+                      null,
+                      trainerDraftSummary.changedFields.map((change) => ({
+                        field: change.field,
+                        value: change.value
+                      }))
+                    )
+                  }
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isTrainerUpdating ? 'Saving' : 'Save Trainer'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={isTrainerUpdating || trainerDraftSummary.dirtyFieldCount === 0}
+                  onClick={() =>
+                    setTrainerDrafts(createTrainerDrafts(trainerFields, (field) =>
+                      getEditableTrainerFieldValue(trainer, field)
+                    ))
+                  }
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">
+                  {formatDraftSummary(trainerDraftSummary)}
+                </span>
+              </div>
+            ) : null}
+
+            <div className="trainer-party-header">
+              <strong>Party</strong>
+            </div>
+
+            {trainer.team.length > 0 ? (
+              <div className="trainer-party-card-grid" aria-label="Trainer party Pokemon">
+                {trainer.team.map((pokemon) => {
+                  const pokemonLabel = formatSpeciesFormLabel(
+                    pokemon.species,
+                    pokemon.form,
+                    pokemon.speciesId
+                  );
+
+                  return (
+                    <button
+                      aria-pressed={selectedSlot === pokemon.slot}
+                      className="trainer-party-card"
+                      key={pokemon.slot}
+                      onClick={() => onSelectSlot(pokemon.slot)}
+                      type="button"
+                    >
+                      <PokemonSprite className="trainer-party-sprite" name={pokemonLabel} />
+                      <strong>{pokemonLabel}</strong>
+                      <span>Lv. {pokemon.level}</span>
+                    </button>
                   );
                 })}
+              </div>
+            ) : null}
+
+            {selectedPokemon ? (
+              <div className="trainer-party-edit-stack">
+                <div className="editable-field-groups">
+                  {pokemonFieldGroups.map((group) => (
+                    <fieldset className="editable-field-group" key={group.group}>
+                      <legend>{group.group}</legend>
+                      <div className="editable-field-grid">
+                        {group.fields.map((field) => {
+                          const currentValue = getEditablePokemonFieldValue(
+                            selectedPokemon,
+                            field.field
+                          );
+                          const draftValue = pokemonDrafts[field.field] ?? '';
+                          const draftState = getTrainerFieldDraftState(
+                            draftValue,
+                            currentValue,
+                            field
+                          );
+
+                          return (
+                            <TrainerDraftField
+                              currentValue={currentValue}
+                              disabled={
+                                !canEditTrainers || editSession === null || isTrainerUpdating
+                              }
+                              draftState={draftState}
+                              draftValue={draftValue}
+                              field={field}
+                              key={field.field}
+                              onChange={(value) =>
+                                setPokemonDrafts((currentDrafts) => ({
+                                  ...currentDrafts,
+                                  [field.field]: value
+                                }))
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </fieldset>
+                  ))}
+                </div>
+                {editSession ? (
+                  <div className="draft-action-row">
+                    <button
+                      className="primary-button"
+                      disabled={!canSavePokemonDrafts}
+                      onClick={() =>
+                        onUpdateTrainerFields(
+                          trainer.trainerId,
+                          selectedPokemon.slot,
+                          pokemonDraftSummary.changedFields.map((change) => ({
+                            field: change.field,
+                            value: change.value
+                          }))
+                        )
+                      }
+                      type="button"
+                    >
+                      <Save aria-hidden="true" size={16} />
+                      <span>{isTrainerUpdating ? 'Saving' : 'Save Pokemon'}</span>
+                    </button>
+                    <button
+                      className="danger-button"
+                      disabled={isTrainerUpdating || pokemonDraftSummary.dirtyFieldCount === 0}
+                      onClick={() =>
+                        setPokemonDrafts(createTrainerDrafts(pokemonFields, (field) =>
+                          getEditablePokemonFieldValue(selectedPokemon, field)
+                        ))
+                      }
+                      type="button"
+                    >
+                      <X aria-hidden="true" size={16} />
+                      <span>Cancel</span>
+                    </button>
+                    <span className="draft-action-summary">
+                      {formatDraftSummary(pokemonDraftSummary)}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p className="empty-copy">No party Pokemon selected.</p>
@@ -5929,51 +6745,759 @@ function SelectedTrainerPanel({
   );
 }
 
-function TrainerFieldInput({
+type TrainerDraftState = {
+  error: string | null;
+  isChanged: boolean;
+  isValid: boolean;
+  normalizedValue: string | null;
+};
+
+type TrainerDraftChange = {
+  field: string;
+  label: string;
+  value: string;
+};
+
+type NumericEditableField = {
+  field: string;
+  label: string;
+  maximumValue: number | null;
+  minimumValue: number | null;
+  options: Array<{ label: string; value: number }>;
+  valueKind: string;
+};
+
+function TrainerDraftField({
+  currentValue,
   disabled,
+  draftState,
   draftValue,
   field,
+  idPrefix = 'trainer-field',
   onChange
 }: {
+  currentValue: number | null;
   disabled: boolean;
+  draftState: TrainerDraftState;
   draftValue: string;
-  field: TrainerEditableField;
+  field: NumericEditableField;
+  idPrefix?: string;
   onChange: (value: string) => void;
 }) {
-  if (field.options.length > 0) {
-    const hasDraftOption = field.options.some((option) => option.value.toString() === draftValue);
-
-    return (
-      <select
-        aria-label={field.label}
-        disabled={disabled}
-        title={getEditableFieldHelp(field)}
-        onChange={(event) => onChange(event.target.value)}
-        value={draftValue}
-      >
-        {!hasDraftOption && draftValue !== '' ? (
-          <option value={draftValue}>{draftValue}</option>
-        ) : null}
-        {field.options.map((option) => (
-          <option key={option.value} value={option.value.toString()}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    );
-  }
+  const inputId = `${idPrefix}-${field.field}`;
+  const statusText = draftState.error ?? (draftState.isChanged ? 'Changed' : null);
 
   return (
-    <input
-      aria-label={field.label}
-      disabled={disabled}
-      max={field.maximumValue ?? undefined}
-      min={field.minimumValue ?? undefined}
-      title={getEditableFieldHelp(field)}
-      onChange={(event) => onChange(event.target.value)}
-      type="number"
-      value={draftValue}
-    />
+    <label
+      className={`path-field editable-field-control ${
+        draftState.isChanged ? 'editable-field-changed' : ''
+      } ${!draftState.isValid ? 'editable-field-invalid' : ''}`}
+      htmlFor={inputId}
+    >
+      <span>{field.label}</span>
+      {field.valueKind === 'boolean' ? (
+        <select
+          aria-label={field.label}
+          disabled={disabled}
+          id={inputId}
+          onChange={(event) => onChange(event.target.value)}
+          title={getEditableFieldHelp(field)}
+          value={draftValue === '1' ? '1' : '0'}
+        >
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </select>
+      ) : field.options.length > 0 ? (
+        <select
+          aria-label={field.label}
+          disabled={disabled}
+          id={inputId}
+          onChange={(event) => onChange(event.target.value)}
+          title={getEditableFieldHelp(field)}
+          value={draftValue}
+        >
+          {!field.options.some((option) => option.value.toString() === draftValue) &&
+          draftValue !== '' ? (
+            <option value={draftValue}>{draftValue}</option>
+          ) : null}
+          {field.options.map((option) => (
+            <option key={option.value} value={option.value.toString()}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          aria-label={field.label}
+          disabled={disabled}
+          id={inputId}
+          max={field.maximumValue ?? undefined}
+          min={field.minimumValue ?? undefined}
+          onChange={(event) => onChange(event.target.value)}
+          title={getEditableFieldHelp(field)}
+          type="number"
+          value={draftValue}
+        />
+      )}
+      {statusText ? (
+        <small className={draftState.error ? 'editable-field-error' : 'editable-field-status'}>
+          {statusText}
+        </small>
+      ) : currentValue !== null ? (
+        <small className="editable-field-status">Current: {currentValue}</small>
+      ) : null}
+    </label>
+  );
+}
+
+function createTrainerDrafts(
+  fields: NumericEditableField[],
+  getValue: (field: string) => number | null
+) {
+  return Object.fromEntries(
+    fields.map((field) => [field.field, (getValue(field.field) ?? '').toString()])
+  );
+}
+
+type NumericEditableFieldSource = EditableFieldWithOptions & {
+  field: string;
+  valueKind: string;
+};
+
+function toNumericEditableControlField(
+  field: NumericEditableFieldSource,
+  optionsOverride?: EditableFieldOption[]
+): NumericEditableField {
+  return {
+    field: field.field,
+    label: field.label,
+    maximumValue: field.maximumValue ?? null,
+    minimumValue: field.minimumValue ?? null,
+    options: optionsOverride ?? field.options ?? [],
+    valueKind: field.valueKind
+  };
+}
+
+function groupTrainerEditableFields(
+  fields: TrainerEditableField[],
+  getGroup: (field: TrainerEditableField) => string
+) {
+  const groups: Array<{ group: string; fields: TrainerEditableField[] }> = [];
+
+  for (const field of fields) {
+    const groupName = getGroup(field);
+    let group = groups.find((candidate) => candidate.group === groupName);
+    if (!group) {
+      group = { group: groupName, fields: [] };
+      groups.push(group);
+    }
+
+    group.fields.push(field);
+  }
+
+  return groups;
+}
+
+function getTrainerDataFieldGroup(field: TrainerEditableField) {
+  if (
+    field.field === trainerClassIdFieldName ||
+    field.field === classBallIdFieldName ||
+    field.field === battleTypeFieldName
+  ) {
+    return 'Trainer Setup';
+  }
+
+  if (trainerItemFieldNames.includes(field.field as (typeof trainerItemFieldNames)[number])) {
+    return 'Battle Items';
+  }
+
+  if (
+    field.field === healFieldName ||
+    field.field === moneyFieldName ||
+    field.field === giftFieldName
+  ) {
+    return 'Battle Rewards';
+  }
+
+  return 'Trainer Data';
+}
+
+function getTrainerPokemonFieldGroup(field: TrainerEditableField) {
+  if (
+    field.field === speciesIdFieldName ||
+    field.field === formFieldName ||
+    field.field === levelFieldName ||
+    field.field === heldItemIdFieldName
+  ) {
+    return 'Pokemon';
+  }
+
+  if (moveFieldNames.includes(field.field as (typeof moveFieldNames)[number])) {
+    return 'Moves';
+  }
+
+  if (
+    field.field === genderFieldName ||
+    field.field === abilityFieldName ||
+    field.field === natureFieldName ||
+    field.field === dynamaxLevelFieldName ||
+    field.field === canGigantamaxFieldName ||
+    field.field === shinyFieldName ||
+    field.field === canDynamaxFieldName
+  ) {
+    return 'Traits';
+  }
+
+  if (evFieldNames.includes(field.field as (typeof evFieldNames)[number])) {
+    return 'Stats - EVs';
+  }
+
+  if (ivFieldNames.includes(field.field as (typeof ivFieldNames)[number])) {
+    return 'Stats - IVs';
+  }
+
+  return 'Pokemon Data';
+}
+
+function getTrainerDraftSummary(
+  fields: NumericEditableField[],
+  drafts: Record<string, string>,
+  getValue: ((field: string) => number | null) | null
+): { changedFields: TrainerDraftChange[]; dirtyFieldCount: number; invalidFields: TrainerDraftChange[] } {
+  const changedFields: TrainerDraftChange[] = [];
+  const invalidFields: TrainerDraftChange[] = [];
+  let dirtyFieldCount = 0;
+
+  if (!getValue) {
+    return { changedFields, dirtyFieldCount, invalidFields };
+  }
+
+  for (const field of fields) {
+    const currentValue = getValue(field.field);
+    const draftValue = drafts[field.field] ?? '';
+    const draftState = getTrainerFieldDraftState(draftValue, currentValue, field);
+
+    if (draftState.isChanged || !draftState.isValid) {
+      dirtyFieldCount += 1;
+    }
+
+    if (!draftState.isValid) {
+      invalidFields.push({ field: field.field, label: field.label, value: draftValue });
+      continue;
+    }
+
+    if (draftState.isChanged && draftState.normalizedValue !== null) {
+      changedFields.push({
+        field: field.field,
+        label: field.label,
+        value: draftState.normalizedValue
+      });
+    }
+  }
+
+  return { changedFields, dirtyFieldCount, invalidFields };
+}
+
+function getTrainerFieldDraftState(
+  draftValue: string,
+  currentValue: number | null,
+  field: NumericEditableField
+): TrainerDraftState {
+  const normalizedValue = draftValue.trim();
+
+  if (currentValue === null && normalizedValue === '') {
+    return {
+      error: null,
+      isChanged: false,
+      isValid: true,
+      normalizedValue: null
+    };
+  }
+
+  const currentText = currentValue?.toString() ?? '';
+
+  if (field.valueKind === 'boolean') {
+    if (normalizedValue !== '0' && normalizedValue !== '1') {
+      return {
+        error: 'Choose Yes or No.',
+        isChanged: normalizedValue !== currentText,
+        isValid: false,
+        normalizedValue: null
+      };
+    }
+
+    return {
+      error: null,
+      isChanged: normalizedValue !== currentText,
+      isValid: true,
+      normalizedValue
+    };
+  }
+
+  const parsedValue = /^-?\d+$/.test(normalizedValue)
+    ? Number.parseInt(normalizedValue, 10)
+    : null;
+
+  if (parsedValue === null) {
+    return {
+      error: 'Enter a whole number.',
+      isChanged: normalizedValue !== currentText,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  const minimumValue = field.minimumValue ?? null;
+  const maximumValue = field.maximumValue ?? null;
+
+  if (minimumValue !== null && parsedValue < minimumValue) {
+    return {
+      error: `Minimum value is ${minimumValue}.`,
+      isChanged: currentValue === null || parsedValue !== currentValue,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  if (maximumValue !== null && parsedValue > maximumValue) {
+    return {
+      error: `Maximum value is ${maximumValue}.`,
+      isChanged: currentValue === null || parsedValue !== currentValue,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  if (
+    field.options.length > 0 &&
+    (currentValue === null || parsedValue !== currentValue) &&
+    !field.options.some((option) => option.value === parsedValue)
+  ) {
+    return {
+      error: 'Choose one of the available options.',
+      isChanged: true,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  return {
+    error: null,
+    isChanged: currentValue === null || parsedValue !== currentValue,
+    isValid: true,
+    normalizedValue: parsedValue.toString()
+  };
+}
+
+function formatDraftSummary(summary: {
+  changedFields: unknown[];
+  dirtyFieldCount: number;
+  invalidFields: unknown[];
+}) {
+  if (summary.invalidFields.length > 0) {
+    return `${summary.invalidFields.length} field${
+      summary.invalidFields.length === 1 ? '' : 's'
+    } need valid values`;
+  }
+
+  return `${summary.changedFields.length} changed`;
+}
+
+function formatPendingEditDomain(domain: string) {
+  const labels: Record<string, string> = {
+    'workflow.dynamaxAdventures': 'Dynamax Adventures',
+    'workflow.encounters': 'Encounters',
+    'workflow.exefs': 'ExeFS Patches',
+    'workflow.giftPokemon': 'Gift Pokemon',
+    'workflow.items': 'Items',
+    'workflow.moves': 'Moves',
+    'workflow.placement': 'Placement',
+    'workflow.pokemon': 'Pokemon Data',
+    'workflow.raidBattles': 'Raid Battles',
+    'workflow.raidRewards': 'Raid Rewards',
+    'workflow.rentalPokemon': 'Rental Pokemon',
+    'workflow.royalCandy': 'Royal Candy',
+    'workflow.shops': 'Shops',
+    'workflow.staticEncounters': 'Static Encounters',
+    'workflow.text': 'Text',
+    'workflow.tradePokemon': 'Trade Pokemon',
+    'workflow.trainers': 'Trainers'
+  };
+
+  return labels[domain] ?? domain;
+}
+
+function groupNumericEditableFields<TField extends NumericEditableField>(
+  fields: TField[],
+  getGroup: (field: TField) => string
+) {
+  const groups: Array<{ group: string; fields: TField[] }> = [];
+
+  for (const field of fields) {
+    const groupName = getGroup(field);
+    let group = groups.find((candidate) => candidate.group === groupName);
+    if (!group) {
+      group = { group: groupName, fields: [] };
+      groups.push(group);
+    }
+
+    group.fields.push(field);
+  }
+
+  return groups;
+}
+
+function getItemEditableFieldGroup(field: ItemEditableField) {
+  const fieldName = field.field.toLocaleLowerCase();
+
+  if (
+    field.field === 'buyPrice' ||
+    field.field === 'sellPrice' ||
+    field.field === 'wattsPrice' ||
+    field.field === 'alternatePrice'
+  ) {
+    return 'Prices';
+  }
+
+  if (
+    field.field === 'pouch' ||
+    fieldName.includes('sort') ||
+    fieldName.includes('category')
+  ) {
+    return 'Bag Metadata';
+  }
+
+  if (
+    fieldName.includes('heal') ||
+    fieldName.startsWith('ev') ||
+    fieldName.includes('friendship') ||
+    fieldName.includes('pp')
+  ) {
+    return 'Use Effects';
+  }
+
+  if (field.valueKind === 'boolean') {
+    return 'Use Flags';
+  }
+
+  return 'Item Data';
+}
+
+function toNumericEditableField(field: MoveEditableField): NumericEditableField {
+  return {
+    field: field.field,
+    label: field.label,
+    maximumValue: field.maximumValue,
+    minimumValue: field.minimumValue,
+    options: field.options,
+    valueKind: field.valueKind
+  };
+}
+
+function getMoveEditableFieldGroup(field: NumericEditableField) {
+  if (
+    field.field === 'type' ||
+    field.field === 'category' ||
+    field.field === 'power' ||
+    field.field === 'accuracy' ||
+    field.field === 'pp' ||
+    field.field === 'priority' ||
+    field.field === 'critStage' ||
+    field.field === 'maxMovePower'
+  ) {
+    return 'Core Stats';
+  }
+
+  if (
+    field.field === 'target' ||
+    field.field === 'hitMin' ||
+    field.field === 'hitMax' ||
+    field.field === 'turnMin' ||
+    field.field === 'turnMax' ||
+    field.field === 'quality'
+  ) {
+    return 'Targeting';
+  }
+
+  if (
+    field.field === 'inflict' ||
+    field.field === 'inflictPercent' ||
+    field.field === 'rawInflictCount' ||
+    field.field === 'flinch' ||
+    field.field === 'effectSequence' ||
+    field.field === 'recoil' ||
+    field.field === 'rawHealing'
+  ) {
+    return 'Secondary Effects';
+  }
+
+  if (field.field.startsWith('stat')) {
+    return 'Stat Changes';
+  }
+
+  if (field.valueKind === 'boolean' || field.field === 'canUseMove') {
+    return 'Flags';
+  }
+
+  return 'Move Data';
+}
+
+function getEncounterEditableFieldGroup(field: NumericEditableField) {
+  if (field.field === raidBattleSpeciesFieldName || field.field === encounterFormFieldName) {
+    return 'Pokemon';
+  }
+
+  if (field.field === encounterLevelMinFieldName || field.field === encounterLevelMaxFieldName) {
+    return 'Levels';
+  }
+
+  if (field.field === encounterProbabilityFieldName) {
+    return 'Probability';
+  }
+
+  return 'Encounter Data';
+}
+
+function getRaidBattleEditableFieldGroup(field: NumericEditableField) {
+  if (field.field === raidBattleSpeciesFieldName || field.field === raidBattleFormFieldName) {
+    return 'Pokemon';
+  }
+
+  if (
+    field.field === raidBattleAbilityFieldName ||
+    field.field === raidBattleGenderFieldName ||
+    field.field === raidBattleIsGigantamaxFieldName ||
+    field.field === raidBattleFlawlessIvsFieldName
+  ) {
+    return 'Traits';
+  }
+
+  if (
+    raidBattleProbabilityFieldNames.includes(
+      field.field as (typeof raidBattleProbabilityFieldNames)[number]
+    )
+  ) {
+    return 'Star Odds';
+  }
+
+  return 'Battle Data';
+}
+
+function getRaidRewardEditableFieldGroup(field: NumericEditableField) {
+  if (field.field === raidRewardItemIdFieldName) {
+    return 'Reward Item';
+  }
+
+  if (
+    raidRewardValueFieldNames.includes(
+      field.field as (typeof raidRewardValueFieldNames)[number]
+    )
+  ) {
+    return 'Reward Values';
+  }
+
+  return 'Reward Data';
+}
+
+function getPlacementEditableFieldGroup(field: PlacementEditableField) {
+  if (
+    field.field === placementItemIdFieldName ||
+    field.field === placementQuantityFieldName ||
+    field.field === placementChanceFieldName
+  ) {
+    return 'Item';
+  }
+
+  if (
+    field.field === placementLocationXFieldName ||
+    field.field === placementLocationYFieldName ||
+    field.field === placementLocationZFieldName ||
+    field.field === placementRotationYFieldName
+  ) {
+    return 'Position';
+  }
+
+  return 'Placement Data';
+}
+
+function getPokemonInstanceFieldGroup(field: NumericEditableField) {
+  if (
+    field.field === giftSpeciesFieldName ||
+    field.field === formFieldName ||
+    field.field === levelFieldName ||
+    field.field === heldItemIdFieldName ||
+    field.field === giftBallItemIdFieldName ||
+    field.field === dynamaxAdventureBallItemIdFieldName
+  ) {
+    return 'Pokemon';
+  }
+
+  if (
+    moveFieldNames.includes(field.field as (typeof moveFieldNames)[number]) ||
+    staticEncounterMoveFieldNames.includes(
+      field.field as (typeof staticEncounterMoveFieldNames)[number]
+    ) ||
+    tradeRelearnMoveFieldNames.includes(field.field as (typeof tradeRelearnMoveFieldNames)[number]) ||
+    field.field === giftSpecialMoveIdFieldName
+  ) {
+    return 'Moves';
+  }
+
+  if (evFieldNames.includes(field.field as (typeof evFieldNames)[number])) {
+    return 'Stats - EVs';
+  }
+
+  if (
+    ivFieldNames.includes(field.field as (typeof ivFieldNames)[number]) ||
+    dynamaxAdventureIvFieldNames.includes(
+      field.field as (typeof dynamaxAdventureIvFieldNames)[number]
+    ) ||
+    field.field === giftFlawlessIvCountFieldName ||
+    field.field === rentalFixedIvPresetFieldName ||
+    field.field === dynamaxAdventureGuaranteedPerfectIvsFieldName
+  ) {
+    return 'Stats - IVs';
+  }
+
+  if (
+    field.field === abilityFieldName ||
+    field.field === natureFieldName ||
+    field.field === genderFieldName ||
+    field.field === giftShinyLockFieldName ||
+    field.field === dynamaxLevelFieldName ||
+    field.field === canGigantamaxFieldName ||
+    field.field === dynamaxAdventureGigantamaxStateFieldName ||
+    field.field === dynamaxAdventureShinyRollFieldName ||
+    field.field === dynamaxAdventureOtGenderFieldName ||
+    field.field === dynamaxAdventureIsSingleCaptureFieldName ||
+    field.field === dynamaxAdventureIsStoryProgressGatedFieldName
+  ) {
+    return 'Traits';
+  }
+
+  if (
+    field.field === tradeRequiredSpeciesFieldName ||
+    field.field === tradeRequiredFormFieldName ||
+    field.field === tradeRequiredNatureFieldName ||
+    field.field === tradeUnknownRequirementFieldName
+  ) {
+    return 'Trade Request';
+  }
+
+  if (
+    field.field === tradeTrainerIdFieldName ||
+    field.field === tradeOtGenderFieldName ||
+    field.field === tradeMemoryCodeFieldName ||
+    field.field === tradeMemoryTextVariableFieldName ||
+    field.field === tradeMemoryFeelFieldName ||
+    field.field === tradeMemoryIntensityFieldName
+  ) {
+    return 'Trade Memory';
+  }
+
+  if (
+    field.field === tradeField03FieldName ||
+    field.field === staticEncounterScenarioFieldName ||
+    field.field === dynamaxAdventureVersionFieldName
+  ) {
+    return 'Advanced';
+  }
+
+  return 'Details';
+}
+
+function getTradeFieldDisabledReason(fieldName: string) {
+  return lockedTradeFieldNames.includes(fieldName as (typeof lockedTradeFieldNames)[number])
+    ? 'Locked until this field has a confirmed editor-safe meaning.'
+    : null;
+}
+
+function GiftPokemonDraftField({
+  currentValue,
+  disabled,
+  disabledReason,
+  draftState,
+  draftValue,
+  field,
+  formOptionContext,
+  idPrefix = 'pokemon-instance',
+  onChange
+}: {
+  currentValue: number | null;
+  disabled: boolean;
+  disabledReason?: string;
+  draftState: TrainerDraftState;
+  draftValue: string;
+  field: NumericEditableField;
+  formOptionContext?: SpeciesFormOptionContext;
+  idPrefix?: string;
+  onChange: (value: string) => void;
+}) {
+  const inputId = `${idPrefix}-${field.field}`;
+  const options = getContextualFieldOptions(field, formOptionContext);
+  const statusText = draftState.error ?? (draftState.isChanged ? 'Changed' : null);
+
+  return (
+    <label
+      className={`path-field editable-field-control ${
+        draftState.isChanged ? 'editable-field-changed' : ''
+      } ${!draftState.isValid ? 'editable-field-invalid' : ''} ${
+        disabledReason ? 'editable-field-disabled' : ''
+      }`}
+      htmlFor={inputId}
+      title={disabledReason ?? getEditableFieldHelp(field)}
+    >
+      <span>{field.label}</span>
+      {field.valueKind === 'boolean' ? (
+        <select
+          aria-label={field.label}
+          disabled={disabled}
+          id={inputId}
+          onChange={(event) => onChange(event.target.value)}
+          title={disabledReason ?? getEditableFieldHelp(field)}
+          value={draftValue === '1' ? '1' : '0'}
+        >
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </select>
+      ) : options.length > 0 ? (
+        <select
+          aria-label={field.label}
+          disabled={disabled}
+          id={inputId}
+          onChange={(event) => onChange(event.target.value)}
+          title={disabledReason ?? getEditableFieldHelp(field)}
+          value={draftValue}
+        >
+          {addCurrentPokemonFieldOption(options, draftValue, field.label).map((option) => (
+            <option key={`${field.field}:${option.value}`} value={option.value.toString()}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          aria-label={field.label}
+          disabled={disabled}
+          id={inputId}
+          max={field.maximumValue ?? undefined}
+          min={field.minimumValue ?? undefined}
+          onChange={(event) => onChange(event.target.value)}
+          title={disabledReason ?? getEditableFieldHelp(field)}
+          type="number"
+          value={draftValue}
+        />
+      )}
+      {disabledReason ? (
+        <small className="editable-field-status">{disabledReason}</small>
+      ) : statusText ? (
+        <small className={draftState.error ? 'editable-field-error' : 'editable-field-status'}>
+          {statusText}
+        </small>
+      ) : currentValue !== null ? (
+        <small className="editable-field-status">Current: {currentValue}</small>
+      ) : null}
+    </label>
   );
 }
 
@@ -5985,6 +7509,7 @@ function GiftPokemonSection({
   onSelectGift,
   onStartEditSession,
   onUpdateGiftPokemonField,
+  onUpdateGiftPokemonFields,
   searchText,
   selectedGiftIndex,
   workflow
@@ -5996,6 +7521,10 @@ function GiftPokemonSection({
   onSelectGift: (giftIndex: number | null) => void;
   onStartEditSession: () => void;
   onUpdateGiftPokemonField: (giftIndex: number, field: string, value: string) => void;
+  onUpdateGiftPokemonFields: (
+    giftIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   searchText: string;
   selectedGiftIndex: number | null;
   workflow: GiftPokemonWorkflow | null;
@@ -6096,6 +7625,7 @@ function GiftPokemonSection({
               isGiftPokemonUpdating={isGiftPokemonUpdating}
               onStartEditSession={onStartEditSession}
               onUpdateGiftPokemonField={onUpdateGiftPokemonField}
+              onUpdateGiftPokemonFields={onUpdateGiftPokemonFields}
             />
           </div>
         ) : (
@@ -6116,7 +7646,8 @@ function SelectedGiftPokemonPanel({
   isEditStarting,
   isGiftPokemonUpdating,
   onStartEditSession,
-  onUpdateGiftPokemonField
+  onUpdateGiftPokemonField,
+  onUpdateGiftPokemonFields
 }: {
   canEditGifts: boolean;
   editSession: EditSession | null;
@@ -6126,11 +7657,35 @@ function SelectedGiftPokemonPanel({
   isGiftPokemonUpdating: boolean;
   onStartEditSession: () => void;
   onUpdateGiftPokemonField: (giftIndex: number, field: string, value: string) => void;
+  onUpdateGiftPokemonFields: (
+    giftIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
 }) {
   const [giftDrafts, setGiftDrafts] = useState<Record<string, string>>({});
   const giftFields = editableFields.filter((field) =>
     giftPokemonFieldNames.includes(field.field as (typeof giftPokemonFieldNames)[number])
   );
+  const giftFieldGroups = useMemo(
+    () => groupNumericEditableFields(giftFields, getPokemonInstanceFieldGroup),
+    [giftFields]
+  );
+  const giftDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        giftFields,
+        giftDrafts,
+        gift ? (field) => getEditableGiftPokemonFieldValue(gift, field) : null
+      ),
+    [gift, giftDrafts, giftFields]
+  );
+  const canSaveGiftDrafts =
+    gift !== null &&
+    editSession !== null &&
+    canEditGifts &&
+    !isGiftPokemonUpdating &&
+    giftDraftSummary.changedFields.length > 0 &&
+    giftDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
     if (!gift) {
@@ -6157,6 +7712,12 @@ function SelectedGiftPokemonPanel({
 
       {gift ? (
         <>
+          <PokemonSummaryCard
+            name={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId)}
+            subtitle={`Gift #${gift.giftIndex} | Lv. ${gift.level}`}
+            title={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId)}
+          />
+
           <dl className="item-provenance-list">
             <div>
               <dt>Gift</dt>
@@ -6193,56 +7754,80 @@ function SelectedGiftPokemonPanel({
           </dl>
 
           <div className="trainer-edit-form">
-            <div className="trainer-field-grid">
-              {giftFields.map((field) => {
-                const currentValue = getEditableGiftPokemonFieldValue(gift, field.field);
-                const draftValue = giftDrafts[field.field] ?? '';
-                const draftState = getGiftPokemonDraftState(draftValue, currentValue, field);
-                const canSubmit =
-                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+            <div className="editable-field-groups">
+              {giftFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = getEditableGiftPokemonFieldValue(gift, field.field);
+                      const draftValue = giftDrafts[field.field] ?? '';
+                      const draftState = getTrainerFieldDraftState(
+                        draftValue,
+                        currentValue,
+                        field
+                      );
 
-                return (
-                  <div className="trainer-editor-row" key={field.field}>
-                    <label className="path-field">
-                      <span>{field.label}</span>
-                      <GiftPokemonFieldInput
-                        disabled={!canEditGifts || editSession === null || isGiftPokemonUpdating}
-                        draftValue={draftValue}
-                        field={field}
-                        formOptionContext={{
-                          species: gift.species,
-                          speciesId: gift.speciesId
-                        }}
-                        onChange={(value) =>
-                          setGiftDrafts((currentDrafts) => ({
-                            ...currentDrafts,
-                            [field.field]: value
-                          }))
-                        }
-                      />
-                    </label>
-                    {editSession ? (
-                      <button
-                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                        className="primary-button compact-button"
-                        disabled={!canSubmit || isGiftPokemonUpdating}
-                        onClick={() =>
-                          onUpdateGiftPokemonField(
-                            gift.giftIndex,
-                            field.field,
-                            draftState.parsedValue!.toString()
-                          )
-                        }
-                        type="button"
-                      >
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isGiftPokemonUpdating ? 'Saving' : 'Save'}</span>
-                      </button>
-                    ) : null}
+                      return (
+                        <GiftPokemonDraftField
+                          currentValue={currentValue}
+                          disabled={!canEditGifts || editSession === null || isGiftPokemonUpdating}
+                          draftState={draftState}
+                          draftValue={draftValue}
+                          field={field}
+                          formOptionContext={{
+                            species: gift.species,
+                            speciesId: gift.speciesId
+                          }}
+                          key={field.field}
+                          onChange={(value) =>
+                            setGiftDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [field.field]: value
+                            }))
+                          }
+                        />
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </fieldset>
+              ))}
             </div>
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSaveGiftDrafts}
+                  onClick={() =>
+                    onUpdateGiftPokemonFields(
+                      gift.giftIndex,
+                      giftDraftSummary.changedFields.map((change) => ({
+                        field: change.field,
+                        value: change.value
+                      }))
+                    )
+                  }
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isGiftPokemonUpdating ? 'Saving' : 'Save Gift'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={isGiftPokemonUpdating || giftDraftSummary.dirtyFieldCount === 0}
+                  onClick={() =>
+                    setGiftDrafts(createTrainerDrafts(giftFields, (field) =>
+                      getEditableGiftPokemonFieldValue(gift, field)
+                    ))
+                  }
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">{formatDraftSummary(giftDraftSummary)}</span>
+              </div>
+            ) : null}
 
             {!editSession ? (
               <button
@@ -6324,6 +7909,7 @@ function TradePokemonSection({
   onSelectTrade,
   onStartEditSession,
   onUpdateTradePokemonField,
+  onUpdateTradePokemonFields,
   searchText,
   selectedTradeIndex,
   workflow
@@ -6335,6 +7921,10 @@ function TradePokemonSection({
   onSelectTrade: (tradeIndex: number | null) => void;
   onStartEditSession: () => void;
   onUpdateTradePokemonField: (tradeIndex: number, field: string, value: string) => void;
+  onUpdateTradePokemonFields: (
+    tradeIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   searchText: string;
   selectedTradeIndex: number | null;
   workflow: TradePokemonWorkflow | null;
@@ -6453,6 +8043,7 @@ function TradePokemonSection({
               isTradePokemonUpdating={isTradePokemonUpdating}
               onStartEditSession={onStartEditSession}
               onUpdateTradePokemonField={onUpdateTradePokemonField}
+              onUpdateTradePokemonFields={onUpdateTradePokemonFields}
               trade={selectedTrade}
             />
           </div>
@@ -6474,6 +8065,7 @@ function SelectedTradePokemonPanel({
   isTradePokemonUpdating,
   onStartEditSession,
   onUpdateTradePokemonField,
+  onUpdateTradePokemonFields,
   trade
 }: {
   canEditTrades: boolean;
@@ -6483,12 +8075,36 @@ function SelectedTradePokemonPanel({
   isTradePokemonUpdating: boolean;
   onStartEditSession: () => void;
   onUpdateTradePokemonField: (tradeIndex: number, field: string, value: string) => void;
+  onUpdateTradePokemonFields: (
+    tradeIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   trade: TradePokemonRecord | null;
 }) {
   const [tradeDrafts, setTradeDrafts] = useState<Record<string, string>>({});
   const tradeFields = editableFields.filter((field) =>
     tradePokemonFieldNames.includes(field.field as (typeof tradePokemonFieldNames)[number])
   );
+  const tradeFieldGroups = useMemo(
+    () => groupNumericEditableFields(tradeFields, getPokemonInstanceFieldGroup),
+    [tradeFields]
+  );
+  const tradeDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        tradeFields,
+        tradeDrafts,
+        trade ? (field) => getEditableTradePokemonFieldValue(trade, field) : null
+      ),
+    [trade, tradeDrafts, tradeFields]
+  );
+  const canSaveTradeDrafts =
+    trade !== null &&
+    editSession !== null &&
+    canEditTrades &&
+    !isTradePokemonUpdating &&
+    tradeDraftSummary.changedFields.length > 0 &&
+    tradeDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
     if (!trade) {
@@ -6515,6 +8131,27 @@ function SelectedTradePokemonPanel({
 
       {trade ? (
         <>
+          <div className="pokemon-summary-grid">
+            <PokemonSummaryCard
+              name={formatSpeciesFormLabel(
+                trade.requiredSpecies,
+                trade.requiredForm,
+                trade.requiredSpeciesId
+              )}
+              subtitle="Requested"
+              title={formatSpeciesFormLabel(
+                trade.requiredSpecies,
+                trade.requiredForm,
+                trade.requiredSpeciesId
+              )}
+            />
+            <PokemonSummaryCard
+              name={formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId)}
+              subtitle={`Received | Lv. ${trade.level}`}
+              title={formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId)}
+            />
+          </div>
+
           <dl className="item-provenance-list">
             <div>
               <dt>Trade</dt>
@@ -6573,63 +8210,94 @@ function SelectedTradePokemonPanel({
           </dl>
 
           <div className="trainer-edit-form">
-            <div className="trainer-field-grid">
-              {tradeFields.map((field) => {
-                const currentValue = getEditableTradePokemonFieldValue(trade, field.field);
-                const draftValue = tradeDrafts[field.field] ?? '';
-                const draftState = getTradePokemonDraftState(draftValue, currentValue, field);
-                const canSubmit =
-                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+            <div className="editable-field-groups">
+              {tradeFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = getEditableTradePokemonFieldValue(trade, field.field);
+                      const draftValue = tradeDrafts[field.field] ?? '';
+                      const draftState = getTrainerFieldDraftState(
+                        draftValue,
+                        currentValue,
+                        field
+                      );
+                      const disabledReason = getTradeFieldDisabledReason(field.field);
 
-                return (
-                  <div className="trainer-editor-row" key={field.field}>
-                    <label className="path-field">
-                      <span>{field.label}</span>
-                      <TradePokemonFieldInput
-                        disabled={!canEditTrades || editSession === null || isTradePokemonUpdating}
-                        draftValue={draftValue}
-                        field={field}
-                        formOptionContext={
-                          field.field === tradeRequiredFormFieldName
-                            ? {
-                                species: trade.requiredSpecies,
-                                speciesId: trade.requiredSpeciesId
-                              }
-                            : {
-                                species: trade.species,
-                                speciesId: trade.speciesId
-                              }
-                        }
-                        onChange={(value) =>
-                          setTradeDrafts((currentDrafts) => ({
-                            ...currentDrafts,
-                            [field.field]: value
-                          }))
-                        }
-                      />
-                    </label>
-                    {editSession ? (
-                      <button
-                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                        className="primary-button compact-button"
-                        disabled={!canSubmit || isTradePokemonUpdating}
-                        onClick={() =>
-                          onUpdateTradePokemonField(
-                            trade.tradeIndex,
-                            field.field,
-                            draftState.parsedValue!.toString()
-                          )
-                        }
-                        type="button"
-                      >
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isTradePokemonUpdating ? 'Saving' : 'Save'}</span>
-                      </button>
-                    ) : null}
+                      return (
+                        <GiftPokemonDraftField
+                          currentValue={currentValue}
+                          disabled={
+                            !canEditTrades ||
+                            editSession === null ||
+                            isTradePokemonUpdating ||
+                            disabledReason !== null
+                          }
+                          disabledReason={disabledReason ?? undefined}
+                          draftState={draftState}
+                          draftValue={draftValue}
+                          field={field}
+                          formOptionContext={
+                            field.field === tradeRequiredFormFieldName
+                              ? {
+                                  species: trade.requiredSpecies,
+                                  speciesId: trade.requiredSpeciesId
+                                }
+                              : {
+                                  species: trade.species,
+                                  speciesId: trade.speciesId
+                                }
+                          }
+                          key={field.field}
+                          onChange={(value) =>
+                            setTradeDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [field.field]: value
+                            }))
+                          }
+                        />
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </fieldset>
+              ))}
             </div>
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSaveTradeDrafts}
+                  onClick={() =>
+                    onUpdateTradePokemonFields(
+                      trade.tradeIndex,
+                      tradeDraftSummary.changedFields.map((change) => ({
+                        field: change.field,
+                        value: change.value
+                      }))
+                    )
+                  }
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isTradePokemonUpdating ? 'Saving' : 'Save Trade'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={isTradePokemonUpdating || tradeDraftSummary.dirtyFieldCount === 0}
+                  onClick={() =>
+                    setTradeDrafts(createTrainerDrafts(tradeFields, (field) =>
+                      getEditableTradePokemonFieldValue(trade, field)
+                    ))
+                  }
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">{formatDraftSummary(tradeDraftSummary)}</span>
+              </div>
+            ) : null}
 
             {!editSession ? (
               <button
@@ -6711,6 +8379,7 @@ function RentalPokemonSection({
   onSelectRental,
   onStartEditSession,
   onUpdateRentalPokemonField,
+  onUpdateRentalPokemonFields,
   searchText,
   selectedRentalIndex,
   workflow
@@ -6722,6 +8391,10 @@ function RentalPokemonSection({
   onSelectRental: (rentalIndex: number | null) => void;
   onStartEditSession: () => void;
   onUpdateRentalPokemonField: (rentalIndex: number, field: string, value: string) => void;
+  onUpdateRentalPokemonFields: (
+    rentalIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   searchText: string;
   selectedRentalIndex: number | null;
   workflow: RentalPokemonWorkflow | null;
@@ -6834,6 +8507,7 @@ function RentalPokemonSection({
               isRentalPokemonUpdating={isRentalPokemonUpdating}
               onStartEditSession={onStartEditSession}
               onUpdateRentalPokemonField={onUpdateRentalPokemonField}
+              onUpdateRentalPokemonFields={onUpdateRentalPokemonFields}
               rental={selectedRental}
             />
           </div>
@@ -6855,6 +8529,7 @@ function SelectedRentalPokemonPanel({
   isRentalPokemonUpdating,
   onStartEditSession,
   onUpdateRentalPokemonField,
+  onUpdateRentalPokemonFields,
   rental
 }: {
   canEditRentals: boolean;
@@ -6864,12 +8539,36 @@ function SelectedRentalPokemonPanel({
   isRentalPokemonUpdating: boolean;
   onStartEditSession: () => void;
   onUpdateRentalPokemonField: (rentalIndex: number, field: string, value: string) => void;
+  onUpdateRentalPokemonFields: (
+    rentalIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   rental: RentalPokemonRecord | null;
 }) {
   const [rentalDrafts, setRentalDrafts] = useState<Record<string, string>>({});
   const rentalFields = editableFields.filter((field) =>
     rentalPokemonFieldNames.includes(field.field as (typeof rentalPokemonFieldNames)[number])
   );
+  const rentalFieldGroups = useMemo(
+    () => groupNumericEditableFields(rentalFields, getPokemonInstanceFieldGroup),
+    [rentalFields]
+  );
+  const rentalDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        rentalFields,
+        rentalDrafts,
+        rental ? (field) => getEditableRentalPokemonFieldValue(rental, field) : null
+      ),
+    [rental, rentalDrafts, rentalFields]
+  );
+  const canSaveRentalDrafts =
+    rental !== null &&
+    editSession !== null &&
+    canEditRentals &&
+    !isRentalPokemonUpdating &&
+    rentalDraftSummary.changedFields.length > 0 &&
+    rentalDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
     if (!rental) {
@@ -6896,6 +8595,12 @@ function SelectedRentalPokemonPanel({
 
       {rental ? (
         <>
+          <PokemonSummaryCard
+            name={formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)}
+            subtitle={`Rental #${rental.rentalIndex} | Lv. ${rental.level}`}
+            title={formatSpeciesFormLabel(rental.species, rental.form, rental.speciesId)}
+          />
+
           <dl className="item-provenance-list">
             <div>
               <dt>Rental</dt>
@@ -6956,62 +8661,87 @@ function SelectedRentalPokemonPanel({
           </dl>
 
           <div className="trainer-edit-form">
-            <div className="trainer-field-grid">
-              {rentalFields.map((field) => {
-                const currentValue = getEditableRentalPokemonFieldValue(rental, field.field);
-                const draftValue = rentalDrafts[field.field] ?? '';
-                const draftState = getRentalPokemonDraftState(
-                  draftValue,
-                  currentValue,
-                  field
-                );
-                const canSubmit =
-                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+            <div className="editable-field-groups">
+              {rentalFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = getEditableRentalPokemonFieldValue(
+                        rental,
+                        field.field
+                      );
+                      const draftValue = rentalDrafts[field.field] ?? '';
+                      const draftState = getTrainerFieldDraftState(
+                        draftValue,
+                        currentValue,
+                        field
+                      );
 
-                return (
-                  <div className="trainer-editor-row" key={field.field}>
-                    <label className="path-field">
-                      <span>{field.label}</span>
-                      <RentalPokemonFieldInput
-                        disabled={
-                          !canEditRentals || editSession === null || isRentalPokemonUpdating
-                        }
-                        draftValue={draftValue}
-                        field={field}
-                        formOptionContext={{
-                          species: rental.species,
-                          speciesId: rental.speciesId
-                        }}
-                        onChange={(value) =>
-                          setRentalDrafts((currentDrafts) => ({
-                            ...currentDrafts,
-                            [field.field]: value
-                          }))
-                        }
-                      />
-                    </label>
-                    {editSession ? (
-                      <button
-                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                        className="primary-button compact-button"
-                        disabled={!canSubmit || isRentalPokemonUpdating}
-                        onClick={() =>
-                          onUpdateRentalPokemonField(
-                            rental.rentalIndex,
-                            field.field,
-                            draftState.parsedValue!.toString()
-                          )
-                        }
-                        type="button"
-                      >
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isRentalPokemonUpdating ? 'Saving' : 'Save'}</span>
-                      </button>
-                    ) : null}
+                      return (
+                        <GiftPokemonDraftField
+                          currentValue={currentValue}
+                          disabled={
+                            !canEditRentals || editSession === null || isRentalPokemonUpdating
+                          }
+                          draftState={draftState}
+                          draftValue={draftValue}
+                          field={field}
+                          formOptionContext={{
+                            species: rental.species,
+                            speciesId: rental.speciesId
+                          }}
+                          key={field.field}
+                          onChange={(value) =>
+                            setRentalDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [field.field]: value
+                            }))
+                          }
+                        />
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </fieldset>
+              ))}
             </div>
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSaveRentalDrafts}
+                  onClick={() =>
+                    onUpdateRentalPokemonFields(
+                      rental.rentalIndex,
+                      rentalDraftSummary.changedFields.map((change) => ({
+                        field: change.field,
+                        value: change.value
+                      }))
+                    )
+                  }
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isRentalPokemonUpdating ? 'Saving' : 'Save Rental'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={isRentalPokemonUpdating || rentalDraftSummary.dirtyFieldCount === 0}
+                  onClick={() =>
+                    setRentalDrafts(createTrainerDrafts(rentalFields, (field) =>
+                      getEditableRentalPokemonFieldValue(rental, field)
+                    ))
+                  }
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">
+                  {formatDraftSummary(rentalDraftSummary)}
+                </span>
+              </div>
+            ) : null}
 
             {!editSession ? (
               <button
@@ -7093,6 +8823,7 @@ function DynamaxAdventuresSection({
   onSelectAdventure,
   onStartEditSession,
   onUpdateDynamaxAdventureField,
+  onUpdateDynamaxAdventureFields,
   searchText,
   selectedEntryIndex,
   workflow
@@ -7104,6 +8835,10 @@ function DynamaxAdventuresSection({
   onSelectAdventure: (entryIndex: number | null) => void;
   onStartEditSession: () => void;
   onUpdateDynamaxAdventureField: (entryIndex: number, field: string, value: string) => void;
+  onUpdateDynamaxAdventureFields: (
+    entryIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   searchText: string;
   selectedEntryIndex: number | null;
   workflow: DynamaxAdventuresWorkflow | null;
@@ -7227,6 +8962,7 @@ function DynamaxAdventuresSection({
               isEditStarting={isEditStarting}
               onStartEditSession={onStartEditSession}
               onUpdateDynamaxAdventureField={onUpdateDynamaxAdventureField}
+              onUpdateDynamaxAdventureFields={onUpdateDynamaxAdventureFields}
             />
           </div>
         ) : (
@@ -7247,7 +8983,8 @@ function SelectedDynamaxAdventurePanel({
   isDynamaxAdventureUpdating,
   isEditStarting,
   onStartEditSession,
-  onUpdateDynamaxAdventureField
+  onUpdateDynamaxAdventureField,
+  onUpdateDynamaxAdventureFields
 }: {
   canEditDynamaxAdventures: boolean;
   editSession: EditSession | null;
@@ -7257,6 +8994,10 @@ function SelectedDynamaxAdventurePanel({
   isEditStarting: boolean;
   onStartEditSession: () => void;
   onUpdateDynamaxAdventureField: (entryIndex: number, field: string, value: string) => void;
+  onUpdateDynamaxAdventureFields: (
+    entryIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const adventureFields = editableFields.filter((field) =>
@@ -7264,6 +9005,26 @@ function SelectedDynamaxAdventurePanel({
       field.field as (typeof dynamaxAdventureFieldNames)[number]
     )
   );
+  const adventureFieldGroups = useMemo(
+    () => groupNumericEditableFields(adventureFields, getPokemonInstanceFieldGroup),
+    [adventureFields]
+  );
+  const adventureDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        adventureFields,
+        drafts,
+        encounter ? (field) => getEditableDynamaxAdventureFieldValue(encounter, field) : null
+      ),
+    [adventureFields, drafts, encounter]
+  );
+  const canSaveAdventureDrafts =
+    encounter !== null &&
+    editSession !== null &&
+    canEditDynamaxAdventures &&
+    !isDynamaxAdventureUpdating &&
+    adventureDraftSummary.changedFields.length > 0 &&
+    adventureDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
     if (!encounter) {
@@ -7290,6 +9051,12 @@ function SelectedDynamaxAdventurePanel({
 
       {encounter ? (
         <>
+          <PokemonSummaryCard
+            name={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
+            subtitle={`Adventure #${encounter.adventureIndex} | Lv. ${encounter.level}`}
+            title={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
+          />
+
           <dl className="item-provenance-list">
             <div>
               <dt>Encounter</dt>
@@ -7354,67 +9121,91 @@ function SelectedDynamaxAdventurePanel({
           </dl>
 
           <div className="trainer-edit-form">
-            <div className="trainer-field-grid">
-              {adventureFields.map((field) => {
-                const currentValue = getEditableDynamaxAdventureFieldValue(
-                  encounter,
-                  field.field
-                );
-                const draftValue = drafts[field.field] ?? '';
-                const draftState = getDynamaxAdventureDraftState(
-                  draftValue,
-                  currentValue,
-                  field
-                );
-                const canSubmit =
-                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+            <div className="editable-field-groups">
+              {adventureFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = getEditableDynamaxAdventureFieldValue(
+                        encounter,
+                        field.field
+                      );
+                      const draftValue = drafts[field.field] ?? '';
+                      const draftState = getTrainerFieldDraftState(
+                        draftValue,
+                        currentValue,
+                        field
+                      );
 
-                return (
-                  <div className="trainer-editor-row" key={field.field}>
-                    <label className="path-field">
-                      <span>{field.label}</span>
-                      <DynamaxAdventureFieldInput
-                        disabled={
-                          !canEditDynamaxAdventures ||
-                          editSession === null ||
-                          isDynamaxAdventureUpdating
-                        }
-                        draftValue={draftValue}
-                        field={field}
-                        formOptionContext={{
-                          species: encounter.species,
-                          speciesId: encounter.speciesId
-                        }}
-                        onChange={(value) =>
-                          setDrafts((currentDrafts) => ({
-                            ...currentDrafts,
-                            [field.field]: value
-                          }))
-                        }
-                      />
-                    </label>
-                    {editSession ? (
-                      <button
-                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                        className="primary-button compact-button"
-                        disabled={!canSubmit || isDynamaxAdventureUpdating}
-                        onClick={() =>
-                          onUpdateDynamaxAdventureField(
-                            encounter.entryIndex,
-                            field.field,
-                            draftState.parsedValue!.toString()
-                          )
-                        }
-                        type="button"
-                      >
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isDynamaxAdventureUpdating ? 'Saving' : 'Save'}</span>
-                      </button>
-                    ) : null}
+                      return (
+                        <GiftPokemonDraftField
+                          currentValue={currentValue}
+                          disabled={
+                            !canEditDynamaxAdventures ||
+                            editSession === null ||
+                            isDynamaxAdventureUpdating
+                          }
+                          draftState={draftState}
+                          draftValue={draftValue}
+                          field={field}
+                          formOptionContext={{
+                            species: encounter.species,
+                            speciesId: encounter.speciesId
+                          }}
+                          key={field.field}
+                          onChange={(value) =>
+                            setDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [field.field]: value
+                            }))
+                          }
+                        />
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </fieldset>
+              ))}
             </div>
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSaveAdventureDrafts}
+                  onClick={() =>
+                    onUpdateDynamaxAdventureFields(
+                      encounter.entryIndex,
+                      adventureDraftSummary.changedFields.map((change) => ({
+                        field: change.field,
+                        value: change.value
+                      }))
+                    )
+                  }
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isDynamaxAdventureUpdating ? 'Saving' : 'Save Adventure'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={
+                    isDynamaxAdventureUpdating || adventureDraftSummary.dirtyFieldCount === 0
+                  }
+                  onClick={() =>
+                    setDrafts(createTrainerDrafts(adventureFields, (field) =>
+                      getEditableDynamaxAdventureFieldValue(encounter, field)
+                    ))
+                  }
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">
+                  {formatDraftSummary(adventureDraftSummary)}
+                </span>
+              </div>
+            ) : null}
 
             {!editSession ? (
               <button
@@ -7496,6 +9287,7 @@ function StaticEncountersSection({
   onSelectEncounter,
   onStartEditSession,
   onUpdateStaticEncounterField,
+  onUpdateStaticEncounterFields,
   searchText,
   selectedEncounterIndex,
   workflow
@@ -7507,6 +9299,10 @@ function StaticEncountersSection({
   onSelectEncounter: (encounterIndex: number | null) => void;
   onStartEditSession: () => void;
   onUpdateStaticEncounterField: (encounterIndex: number, field: string, value: string) => void;
+  onUpdateStaticEncounterFields: (
+    encounterIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   searchText: string;
   selectedEncounterIndex: number | null;
   workflow: StaticEncountersWorkflow | null;
@@ -7620,6 +9416,7 @@ function StaticEncountersSection({
               isStaticEncounterUpdating={isStaticEncounterUpdating}
               onStartEditSession={onStartEditSession}
               onUpdateStaticEncounterField={onUpdateStaticEncounterField}
+              onUpdateStaticEncounterFields={onUpdateStaticEncounterFields}
             />
           </div>
         ) : (
@@ -7640,7 +9437,8 @@ function SelectedStaticEncounterPanel({
   isEditStarting,
   isStaticEncounterUpdating,
   onStartEditSession,
-  onUpdateStaticEncounterField
+  onUpdateStaticEncounterField,
+  onUpdateStaticEncounterFields
 }: {
   canEditStaticEncounters: boolean;
   editSession: EditSession | null;
@@ -7650,6 +9448,10 @@ function SelectedStaticEncounterPanel({
   isStaticEncounterUpdating: boolean;
   onStartEditSession: () => void;
   onUpdateStaticEncounterField: (encounterIndex: number, field: string, value: string) => void;
+  onUpdateStaticEncounterFields: (
+    encounterIndex: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
 }) {
   const [encounterDrafts, setEncounterDrafts] = useState<Record<string, string>>({});
   const encounterFields = editableFields.filter((field) =>
@@ -7657,6 +9459,26 @@ function SelectedStaticEncounterPanel({
       field.field as (typeof staticEncounterFieldNames)[number]
     )
   );
+  const encounterFieldGroups = useMemo(
+    () => groupNumericEditableFields(encounterFields, getPokemonInstanceFieldGroup),
+    [encounterFields]
+  );
+  const encounterDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        encounterFields,
+        encounterDrafts,
+        encounter ? (field) => getEditableStaticEncounterFieldValue(encounter, field) : null
+      ),
+    [encounter, encounterDrafts, encounterFields]
+  );
+  const canSaveEncounterDrafts =
+    encounter !== null &&
+    editSession !== null &&
+    canEditStaticEncounters &&
+    !isStaticEncounterUpdating &&
+    encounterDraftSummary.changedFields.length > 0 &&
+    encounterDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
     if (!encounter) {
@@ -7683,6 +9505,12 @@ function SelectedStaticEncounterPanel({
 
       {encounter ? (
         <>
+          <PokemonSummaryCard
+            name={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
+            subtitle={`Static #${encounter.encounterIndex} | Lv. ${encounter.level}`}
+            title={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
+          />
+
           <dl className="item-provenance-list">
             <div>
               <dt>Encounter</dt>
@@ -7727,67 +9555,91 @@ function SelectedStaticEncounterPanel({
           </dl>
 
           <div className="trainer-edit-form">
-            <div className="trainer-field-grid">
-              {encounterFields.map((field) => {
-                const currentValue = getEditableStaticEncounterFieldValue(
-                  encounter,
-                  field.field
-                );
-                const draftValue = encounterDrafts[field.field] ?? '';
-                const draftState = getStaticEncounterDraftState(
-                  draftValue,
-                  currentValue,
-                  field
-                );
-                const canSubmit =
-                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+            <div className="editable-field-groups">
+              {encounterFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = getEditableStaticEncounterFieldValue(
+                        encounter,
+                        field.field
+                      );
+                      const draftValue = encounterDrafts[field.field] ?? '';
+                      const draftState = getTrainerFieldDraftState(
+                        draftValue,
+                        currentValue,
+                        field
+                      );
 
-                return (
-                  <div className="trainer-editor-row" key={field.field}>
-                    <label className="path-field">
-                      <span>{field.label}</span>
-                      <StaticEncounterFieldInput
-                        disabled={
-                          !canEditStaticEncounters ||
-                          editSession === null ||
-                          isStaticEncounterUpdating
-                        }
-                        draftValue={draftValue}
-                        field={field}
-                        formOptionContext={{
-                          species: encounter.species,
-                          speciesId: encounter.speciesId
-                        }}
-                        onChange={(value) =>
-                          setEncounterDrafts((currentDrafts) => ({
-                            ...currentDrafts,
-                            [field.field]: value
-                          }))
-                        }
-                      />
-                    </label>
-                    {editSession ? (
-                      <button
-                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                        className="primary-button compact-button"
-                        disabled={!canSubmit || isStaticEncounterUpdating}
-                        onClick={() =>
-                          onUpdateStaticEncounterField(
-                            encounter.encounterIndex,
-                            field.field,
-                            draftState.parsedValue!.toString()
-                          )
-                        }
-                        type="button"
-                      >
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isStaticEncounterUpdating ? 'Saving' : 'Save'}</span>
-                      </button>
-                    ) : null}
+                      return (
+                        <GiftPokemonDraftField
+                          currentValue={currentValue}
+                          disabled={
+                            !canEditStaticEncounters ||
+                            editSession === null ||
+                            isStaticEncounterUpdating
+                          }
+                          draftState={draftState}
+                          draftValue={draftValue}
+                          field={field}
+                          formOptionContext={{
+                            species: encounter.species,
+                            speciesId: encounter.speciesId
+                          }}
+                          key={field.field}
+                          onChange={(value) =>
+                            setEncounterDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [field.field]: value
+                            }))
+                          }
+                        />
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </fieldset>
+              ))}
             </div>
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSaveEncounterDrafts}
+                  onClick={() =>
+                    onUpdateStaticEncounterFields(
+                      encounter.encounterIndex,
+                      encounterDraftSummary.changedFields.map((change) => ({
+                        field: change.field,
+                        value: change.value
+                      }))
+                    )
+                  }
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isStaticEncounterUpdating ? 'Saving' : 'Save Encounter'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={
+                    isStaticEncounterUpdating || encounterDraftSummary.dirtyFieldCount === 0
+                  }
+                  onClick={() =>
+                    setEncounterDrafts(createTrainerDrafts(encounterFields, (field) =>
+                      getEditableStaticEncounterFieldValue(encounter, field)
+                    ))
+                  }
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">
+                  {formatDraftSummary(encounterDraftSummary)}
+                </span>
+              </div>
+            ) : null}
 
             {!editSession ? (
               <button
@@ -8051,6 +9903,8 @@ function SelectedShopPanel({
   const itemIdOptions = itemIdField?.options ?? [];
   const hasItemIdOptions = itemIdOptions.length > 0;
   const hasDraftOption = itemIdOptions.some((option) => option.value.toString() === itemIdDraft);
+  const hasShopDraftChange =
+    inventoryItem !== null && itemIdDraft !== inventoryItem.itemId.toString();
   const canSubmit =
     editSession !== null && inventoryItem !== null && draftState.canSubmit && draftState.parsedValue !== null;
 
@@ -8178,9 +10032,11 @@ function SelectedShopPanel({
                       />
                     )}
                   </label>
-                  {editSession ? (
+                </div>
+                {editSession ? (
+                  <div className="draft-action-row">
                     <button
-                      className="primary-button compact-button"
+                      className="primary-button"
                       disabled={!canSubmit || isShopUpdating}
                       onClick={() =>
                         onUpdateShopInventoryItem(
@@ -8195,8 +10051,20 @@ function SelectedShopPanel({
                       <Save aria-hidden="true" size={16} />
                       <span>{isShopUpdating ? 'Saving' : 'Save Item'}</span>
                     </button>
-                  ) : null}
-                </div>
+                    <button
+                      className="danger-button"
+                      disabled={isShopUpdating || !hasShopDraftChange}
+                      onClick={() => setItemIdDraft(inventoryItem.itemId.toString())}
+                      type="button"
+                    >
+                      <X aria-hidden="true" size={16} />
+                      <span>Cancel</span>
+                    </button>
+                    <span className="draft-action-summary">
+                      {hasShopDraftChange ? '1 changed' : '0 changed'}
+                    </span>
+                  </div>
+                ) : null}
               </>
             ) : (
               <p className="empty-copy">No inventory slot selected.</p>
@@ -8230,6 +10098,7 @@ function EncountersSection({
   onSelectTable,
   onStartEditSession,
   onUpdateEncounterSlotField,
+  onUpdateEncounterSlotFields,
   searchText,
   selectedTableId,
   workflow
@@ -8245,6 +10114,11 @@ function EncountersSection({
     slot: number,
     field: string,
     value: string
+  ) => void;
+  onUpdateEncounterSlotFields: (
+    tableId: string,
+    slot: number,
+    changes: Array<{ field: string; value: string }>
   ) => void;
   searchText: string;
   selectedTableId: string | null;
@@ -8367,6 +10241,7 @@ function EncountersSection({
               onSelectTable={onSelectTable}
               onStartEditSession={onStartEditSession}
               onUpdateEncounterSlotField={onUpdateEncounterSlotField}
+              onUpdateEncounterSlotFields={onUpdateEncounterSlotFields}
               selectedSlot={selectedSlot}
               table={selectedTable}
             />
@@ -8393,6 +10268,7 @@ function SelectedEncounterPanel({
   onSelectTable,
   onStartEditSession,
   onUpdateEncounterSlotField,
+  onUpdateEncounterSlotFields,
   selectedSlot,
   table
 }: {
@@ -8412,35 +10288,75 @@ function SelectedEncounterPanel({
     field: string,
     value: string
   ) => void;
+  onUpdateEncounterSlotFields: (
+    tableId: string,
+    slot: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   selectedSlot: number | null;
   table: EncounterTableRecord | null;
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const encounterFields = useMemo(
+    () =>
+      editableFields.map((field) =>
+        toNumericEditableControlField(
+          field,
+          encounterSlot
+            ? getContextualFieldOptions(field, {
+                species: encounterSlot.species,
+                speciesId: encounterSlot.speciesId
+              })
+            : undefined
+        )
+      ),
+    [editableFields, encounterSlot?.species, encounterSlot?.speciesId]
+  );
+  const encounterFieldGroups = useMemo(
+    () => groupNumericEditableFields(encounterFields, getEncounterEditableFieldGroup),
+    [encounterFields]
+  );
+  const encounterDraftDefaults = useMemo(
+    () =>
+      encounterSlot
+        ? createTrainerDrafts(encounterFields, (field) =>
+            getEditableEncounterFieldValue(encounterSlot, field)
+          )
+        : {},
+    [
+      encounterFields,
+      encounterSlot?.form,
+      encounterSlot?.levelMax,
+      encounterSlot?.levelMin,
+      encounterSlot?.slot,
+      encounterSlot?.speciesId,
+      encounterSlot?.weight,
+      table?.tableId
+    ]
+  );
+  const encounterDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        encounterFields,
+        drafts,
+        encounterSlot ? (field) => getEditableEncounterFieldValue(encounterSlot, field) : null
+      ),
+    [drafts, encounterFields, encounterSlot]
+  );
+  const canSaveEncounterDrafts =
+    table !== null &&
+    encounterSlot !== null &&
+    editSession !== null &&
+    canEditEncounters &&
+    !isEncounterUpdating &&
+    encounterDraftSummary.changedFields.length > 0 &&
+    encounterDraftSummary.invalidFields.length === 0;
+  const encounterProbabilityTotal =
+    table?.slots.slice(0, 10).reduce((total, slot) => total + slot.weight, 0) ?? 0;
 
   useEffect(() => {
-    if (!encounterSlot) {
-      setDrafts({});
-      return;
-    }
-
-    setDrafts(
-      Object.fromEntries(
-        editableFields.map((field) => [
-          field.field,
-          (getEditableEncounterFieldValue(encounterSlot, field.field) ?? '').toString()
-        ])
-      )
-    );
-  }, [
-    editableFields,
-    encounterSlot?.form,
-    encounterSlot?.levelMax,
-    encounterSlot?.levelMin,
-    encounterSlot?.slot,
-    encounterSlot?.speciesId,
-    encounterSlot?.weight,
-    table?.tableId
-  ]);
+    setDrafts(encounterDraftDefaults);
+  }, [encounterDraftDefaults]);
 
   return (
     <aside aria-label="Selected encounter provenance" className="encounter-inspector">
@@ -8498,36 +10414,42 @@ function SelectedEncounterPanel({
 
             <div className="encounter-slot-header">
               <strong>Slots</strong>
-              <select
-                aria-label="Encounter slot"
-                disabled={table.slots.length === 0}
-                onChange={(event) => onSelectSlot(Number(event.target.value))}
-                value={selectedSlot ?? ''}
+              <span
+                className={
+                  encounterProbabilityTotal === 100
+                    ? 'encounter-total-status'
+                    : 'encounter-total-status encounter-total-warning'
+                }
               >
-                {table.slots.map((slot) => (
-                  <option key={slot.slot} value={slot.slot}>
-                    Slot {slot.slot}: {formatSpeciesFormLabel(slot.species, slot.form, slot.speciesId)}
-                  </option>
-                ))}
-              </select>
+                Total chance: {encounterProbabilityTotal}%
+              </span>
             </div>
 
             {encounterSlot ? (
               <>
                 <div className="encounter-slot-tabs" aria-label="Encounter slot list">
-                  {table.slots.slice(0, 10).map((slot) => (
-                    <button
-                      aria-pressed={slot.slot === selectedSlot}
-                      className="slot-tab-button"
-                      key={slot.slot}
-                      onClick={() => onSelectSlot(slot.slot)}
-                      type="button"
-                    >
-                      <strong>{`#${slot.slot}`}</strong>
-                      <span>{formatSpeciesFormLabel(slot.species, slot.form, slot.speciesId)}</span>
-                      <small>{`${slot.levelMin}-${slot.levelMax} / ${slot.weight}%`}</small>
-                    </button>
-                  ))}
+                  {table.slots.slice(0, 10).map((slot) => {
+                    const slotLabel = formatSpeciesFormLabel(
+                      slot.species,
+                      slot.form,
+                      slot.speciesId
+                    );
+
+                    return (
+                      <button
+                        aria-pressed={slot.slot === selectedSlot}
+                        className="slot-tab-button"
+                        key={slot.slot}
+                        onClick={() => onSelectSlot(slot.slot)}
+                        type="button"
+                      >
+                        <PokemonSprite className="slot-tab-sprite" name={slotLabel} preferStatic />
+                        <strong>{`#${slot.slot}`}</strong>
+                        <span>{slotLabel}</span>
+                        <small>{`${slot.levelMin}-${slot.levelMax} / ${slot.weight}%`}</small>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <dl className="encounter-slot-detail">
@@ -8553,101 +10475,85 @@ function SelectedEncounterPanel({
                   </div>
                 </dl>
 
-                <div className="encounter-field-grid">
-                  {editableFields.map((field) => {
-                    const currentValue = getEditableEncounterFieldValue(
-                      encounterSlot,
-                      field.field
-                    );
-                    const draftValue = drafts[field.field] ?? '';
-                    const draftState = getIntegerDraftState(draftValue, currentValue, field);
-                    const canSubmit =
-                      editSession !== null &&
-                      draftState.canSubmit &&
-                      draftState.parsedValue !== null;
-                    const fieldOptions = getContextualFieldOptions(field, {
-                      species: encounterSlot.species,
-                      speciesId: encounterSlot.speciesId
-                    });
-                    const hasDraftOption = fieldOptions.some(
-                      (option) => option.value.toString() === draftValue
-                    );
+                <div className="editable-field-groups">
+                  {encounterFieldGroups.map((group) => (
+                    <fieldset className="editable-field-group" key={group.group}>
+                      <legend>{group.group}</legend>
+                      <div className="editable-field-grid">
+                        {group.fields.map((field) => {
+                          const currentValue = getEditableEncounterFieldValue(
+                            encounterSlot,
+                            field.field
+                          );
+                          const draftValue = drafts[field.field] ?? '';
+                          const draftState = getTrainerFieldDraftState(
+                            draftValue,
+                            currentValue,
+                            field
+                          );
 
-                    return (
-                      <div className="trainer-editor-row" key={field.field}>
-                        <label className="path-field">
-                          <span>{field.label}</span>
-                          {fieldOptions.length > 0 ? (
-                            <select
-                              aria-label={field.label}
+                          return (
+                            <TrainerDraftField
+                              currentValue={currentValue}
                               disabled={
                                 !canEditEncounters ||
                                 editSession === null ||
                                 isEncounterUpdating
                               }
-                              onChange={(event) =>
+                              draftState={draftState}
+                              draftValue={draftValue}
+                              field={field}
+                              idPrefix="encounter-field"
+                              key={field.field}
+                              onChange={(value) =>
                                 setDrafts((currentDrafts) => ({
                                   ...currentDrafts,
-                                  [field.field]: event.target.value
+                                  [field.field]: value
                                 }))
                               }
-                              title={getEditableFieldHelp(field)}
-                              value={draftValue}
-                            >
-                              {!hasDraftOption && draftValue !== '' ? (
-                                <option value={draftValue}>{`Current ${draftValue}`}</option>
-                              ) : null}
-                              {fieldOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              aria-label={field.label}
-                              disabled={
-                                !canEditEncounters ||
-                                editSession === null ||
-                                isEncounterUpdating
-                              }
-                              max={field.maximumValue ?? undefined}
-                              min={field.minimumValue ?? undefined}
-                              onChange={(event) =>
-                                setDrafts((currentDrafts) => ({
-                                  ...currentDrafts,
-                                  [field.field]: event.target.value
-                                }))
-                              }
-                              title={getEditableFieldHelp(field)}
-                              type="number"
-                              value={draftValue}
                             />
-                          )}
-                        </label>
-                        {editSession ? (
-                          <button
-                            aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                            className="primary-button compact-button"
-                            disabled={!canSubmit || isEncounterUpdating}
-                            onClick={() =>
-                              onUpdateEncounterSlotField(
-                                table.tableId,
-                                encounterSlot.slot,
-                                field.field,
-                                draftState.parsedValue!.toString()
-                              )
-                            }
-                            type="button"
-                          >
-                            <Save aria-hidden="true" size={16} />
-                            <span>{isEncounterUpdating ? 'Saving' : 'Save'}</span>
-                          </button>
-                        ) : null}
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </fieldset>
+                  ))}
                 </div>
+                {editSession ? (
+                  <div className="draft-action-row">
+                    <button
+                      className="primary-button"
+                      disabled={!canSaveEncounterDrafts}
+                      onClick={() =>
+                        table &&
+                        encounterSlot &&
+                        onUpdateEncounterSlotFields(
+                          table.tableId,
+                          encounterSlot.slot,
+                          encounterDraftSummary.changedFields.map((change) => ({
+                            field: change.field,
+                            value: change.value
+                          }))
+                        )
+                      }
+                      type="button"
+                    >
+                      <Save aria-hidden="true" size={16} />
+                      <span>{isEncounterUpdating ? 'Saving' : 'Save Encounter'}</span>
+                    </button>
+                    <button
+                      className="danger-button"
+                      disabled={isEncounterUpdating || encounterDraftSummary.dirtyFieldCount === 0}
+                      onClick={() => setDrafts(encounterDraftDefaults)}
+                      type="button"
+                    >
+                      <X aria-hidden="true" size={16} />
+                      <span>Cancel</span>
+                    </button>
+                    <span className="draft-action-summary">
+                      {formatDraftSummary(encounterDraftSummary)}
+                    </span>
+                  </div>
+                ) : null}
               </>
             ) : (
               <p className="empty-copy">No encounter slot selected.</p>
@@ -8681,6 +10587,7 @@ function RaidBattlesSection({
   onSelectTable,
   onStartEditSession,
   onUpdateRaidBattleSlotField,
+  onUpdateRaidBattleSlotFields,
   searchText,
   selectedTableId,
   workflow
@@ -8696,6 +10603,11 @@ function RaidBattlesSection({
     slot: number,
     field: string,
     value: string
+  ) => void;
+  onUpdateRaidBattleSlotFields: (
+    tableId: string,
+    slot: number,
+    changes: Array<{ field: string; value: string }>
   ) => void;
   searchText: string;
   selectedTableId: string | null;
@@ -8835,6 +10747,7 @@ function RaidBattlesSection({
               onSelectSlot={setSelectedSlot}
               onStartEditSession={onStartEditSession}
               onUpdateRaidBattleSlotField={onUpdateRaidBattleSlotField}
+              onUpdateRaidBattleSlotFields={onUpdateRaidBattleSlotFields}
               selectedSlot={selectedSlot}
               table={selectedTable}
             />
@@ -8859,6 +10772,7 @@ function SelectedRaidBattlePanel({
   onSelectSlot,
   onStartEditSession,
   onUpdateRaidBattleSlotField,
+  onUpdateRaidBattleSlotFields,
   selectedSlot,
   table
 }: {
@@ -8876,37 +10790,75 @@ function SelectedRaidBattlePanel({
     field: string,
     value: string
   ) => void;
+  onUpdateRaidBattleSlotFields: (
+    tableId: string,
+    slot: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   selectedSlot: number | null;
   table: RaidBattleTableRecord | null;
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const raidBattleFields = useMemo(
+    () =>
+      editableFields.map((field) =>
+        toNumericEditableControlField(
+          field,
+          battleSlot
+            ? getContextualFieldOptions(field, {
+                species: battleSlot.species,
+                speciesId: battleSlot.speciesId
+              })
+            : undefined
+        )
+      ),
+    [battleSlot?.species, battleSlot?.speciesId, editableFields]
+  );
+  const raidBattleFieldGroups = useMemo(
+    () => groupNumericEditableFields(raidBattleFields, getRaidBattleEditableFieldGroup),
+    [raidBattleFields]
+  );
+  const raidBattleDraftDefaults = useMemo(
+    () =>
+      battleSlot
+        ? createTrainerDrafts(raidBattleFields, (field) =>
+            getEditableRaidBattleFieldValue(battleSlot, field)
+          )
+        : {},
+    [
+      battleSlot?.ability,
+      battleSlot?.flawlessIvs,
+      battleSlot?.form,
+      battleSlot?.gender,
+      battleSlot?.isGigantamax,
+      battleSlot?.probabilities.join('|'),
+      battleSlot?.slot,
+      battleSlot?.speciesId,
+      raidBattleFields,
+      table?.tableId
+    ]
+  );
+  const raidBattleDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        raidBattleFields,
+        drafts,
+        battleSlot ? (field) => getEditableRaidBattleFieldValue(battleSlot, field) : null
+      ),
+    [battleSlot, drafts, raidBattleFields]
+  );
+  const canSaveRaidBattleDrafts =
+    table !== null &&
+    battleSlot !== null &&
+    editSession !== null &&
+    canEditRaidBattles &&
+    !isRaidBattleUpdating &&
+    raidBattleDraftSummary.changedFields.length > 0 &&
+    raidBattleDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
-    if (!battleSlot) {
-      setDrafts({});
-      return;
-    }
-
-    setDrafts(
-      Object.fromEntries(
-        editableFields.map((field) => [
-          field.field,
-          (getEditableRaidBattleFieldValue(battleSlot, field.field) ?? '').toString()
-        ])
-      )
-    );
-  }, [
-    battleSlot?.ability,
-    battleSlot?.flawlessIvs,
-    battleSlot?.form,
-    battleSlot?.gender,
-    battleSlot?.isGigantamax,
-    battleSlot?.probabilities.join('|'),
-    battleSlot?.slot,
-    battleSlot?.speciesId,
-    editableFields,
-    table?.tableId
-  ]);
+    setDrafts(raidBattleDraftDefaults);
+  }, [raidBattleDraftDefaults]);
 
   return (
     <aside aria-label="Selected raid battle provenance" className="encounter-inspector">
@@ -8963,6 +10915,31 @@ function SelectedRaidBattlePanel({
 
             {battleSlot ? (
               <>
+                <div className="encounter-slot-tabs" aria-label="Raid battle slot list">
+                  {table.slots.slice(0, 10).map((candidate) => {
+                    const slotLabel = formatSpeciesFormLabel(
+                      candidate.species,
+                      candidate.form,
+                      candidate.speciesId
+                    );
+
+                    return (
+                      <button
+                        aria-pressed={candidate.slot === selectedSlot}
+                        className="slot-tab-button"
+                        key={candidate.slot}
+                        onClick={() => onSelectSlot(candidate.slot)}
+                        type="button"
+                      >
+                        <PokemonSprite className="slot-tab-sprite" name={slotLabel} preferStatic />
+                        <strong>{`#${candidate.slot}`}</strong>
+                        <span>{slotLabel}</span>
+                        <small>{candidate.probabilitySummary}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <dl className="encounter-slot-detail">
                   <div>
                     <dt>Pokemon</dt>
@@ -9016,98 +10993,85 @@ function SelectedRaidBattlePanel({
                   </div>
                 </dl>
 
-                <div className="encounter-field-grid">
-                  {editableFields.map((field) => {
-                    const currentValue = getEditableRaidBattleFieldValue(battleSlot, field.field);
-                    const draftValue = drafts[field.field] ?? '';
-                    const draftState = getIntegerDraftState(draftValue, currentValue, field);
-                    const canSubmit =
-                      editSession !== null &&
-                      draftState.canSubmit &&
-                      draftState.parsedValue !== null;
-                    const fieldOptions = getContextualFieldOptions(field, {
-                      species: battleSlot.species,
-                      speciesId: battleSlot.speciesId
-                    });
-                    const hasDraftOption = fieldOptions.some(
-                      (option) => option.value.toString() === draftValue
-                    );
+                <div className="editable-field-groups">
+                  {raidBattleFieldGroups.map((group) => (
+                    <fieldset className="editable-field-group" key={group.group}>
+                      <legend>{group.group}</legend>
+                      <div className="editable-field-grid">
+                        {group.fields.map((field) => {
+                          const currentValue = getEditableRaidBattleFieldValue(
+                            battleSlot,
+                            field.field
+                          );
+                          const draftValue = drafts[field.field] ?? '';
+                          const draftState = getTrainerFieldDraftState(
+                            draftValue,
+                            currentValue,
+                            field
+                          );
 
-                    return (
-                      <div className="trainer-editor-row" key={field.field}>
-                        <label className="path-field">
-                          <span>{field.label}</span>
-                          {fieldOptions.length > 0 ? (
-                            <select
-                              aria-label={field.label}
+                          return (
+                            <TrainerDraftField
+                              currentValue={currentValue}
                               disabled={
                                 !canEditRaidBattles ||
                                 editSession === null ||
                                 isRaidBattleUpdating
                               }
-                              onChange={(event) =>
+                              draftState={draftState}
+                              draftValue={draftValue}
+                              field={field}
+                              idPrefix="raid-battle-field"
+                              key={field.field}
+                              onChange={(value) =>
                                 setDrafts((currentDrafts) => ({
                                   ...currentDrafts,
-                                  [field.field]: event.target.value
+                                  [field.field]: value
                                 }))
                               }
-                              title={getEditableFieldHelp(field)}
-                              value={draftValue}
-                            >
-                              {!hasDraftOption && draftValue !== '' ? (
-                                <option value={draftValue}>{`Current ${draftValue}`}</option>
-                              ) : null}
-                              {fieldOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              aria-label={field.label}
-                              disabled={
-                                !canEditRaidBattles ||
-                                editSession === null ||
-                                isRaidBattleUpdating
-                              }
-                              max={field.maximumValue ?? undefined}
-                              min={field.minimumValue ?? undefined}
-                              title={getEditableFieldHelp(field)}
-                              onChange={(event) =>
-                                setDrafts((currentDrafts) => ({
-                                  ...currentDrafts,
-                                  [field.field]: event.target.value
-                                }))
-                              }
-                              type="number"
-                              value={draftValue}
                             />
-                          )}
-                        </label>
-                        {editSession ? (
-                          <button
-                            aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                            className="primary-button compact-button"
-                            disabled={!canSubmit || isRaidBattleUpdating}
-                            onClick={() =>
-                              onUpdateRaidBattleSlotField(
-                                table.tableId,
-                                battleSlot.slot,
-                                field.field,
-                                draftState.parsedValue!.toString()
-                              )
-                            }
-                            type="button"
-                          >
-                            <Save aria-hidden="true" size={16} />
-                            <span>{isRaidBattleUpdating ? 'Saving' : 'Save'}</span>
-                          </button>
-                        ) : null}
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </fieldset>
+                  ))}
                 </div>
+                {editSession ? (
+                  <div className="draft-action-row">
+                    <button
+                      className="primary-button"
+                      disabled={!canSaveRaidBattleDrafts}
+                      onClick={() =>
+                        table &&
+                        battleSlot &&
+                        onUpdateRaidBattleSlotFields(
+                          table.tableId,
+                          battleSlot.slot,
+                          raidBattleDraftSummary.changedFields.map((change) => ({
+                            field: change.field,
+                            value: change.value
+                          }))
+                        )
+                      }
+                      type="button"
+                    >
+                      <Save aria-hidden="true" size={16} />
+                      <span>{isRaidBattleUpdating ? 'Saving' : 'Save Battle'}</span>
+                    </button>
+                    <button
+                      className="danger-button"
+                      disabled={isRaidBattleUpdating || raidBattleDraftSummary.dirtyFieldCount === 0}
+                      onClick={() => setDrafts(raidBattleDraftDefaults)}
+                      type="button"
+                    >
+                      <X aria-hidden="true" size={16} />
+                      <span>Cancel</span>
+                    </button>
+                    <span className="draft-action-summary">
+                      {formatDraftSummary(raidBattleDraftSummary)}
+                    </span>
+                  </div>
+                ) : null}
               </>
             ) : (
               <p className="empty-copy">No raid battle selected.</p>
@@ -9141,6 +11105,7 @@ function RaidRewardsSection({
   onSelectTable,
   onStartEditSession,
   onUpdateRaidRewardField,
+  onUpdateRaidRewardFields,
   searchText,
   selectedTableId,
   workflow
@@ -9156,6 +11121,11 @@ function RaidRewardsSection({
     slot: number,
     field: string,
     value: string
+  ) => void;
+  onUpdateRaidRewardFields: (
+    tableId: string,
+    slot: number,
+    changes: Array<{ field: string; value: string }>
   ) => void;
   searchText: string;
   selectedTableId: string | null;
@@ -9277,6 +11247,7 @@ function RaidRewardsSection({
               onSelectSlot={setSelectedSlot}
               onStartEditSession={onStartEditSession}
               onUpdateRaidRewardField={onUpdateRaidRewardField}
+              onUpdateRaidRewardFields={onUpdateRaidRewardFields}
               reward={selectedReward}
               selectedSlot={selectedSlot}
               table={selectedTable}
@@ -9301,6 +11272,7 @@ function SelectedRaidRewardPanel({
   onSelectSlot,
   onStartEditSession,
   onUpdateRaidRewardField,
+  onUpdateRaidRewardFields,
   reward,
   selectedSlot,
   table
@@ -9318,27 +11290,54 @@ function SelectedRaidRewardPanel({
     field: string,
     value: string
   ) => void;
+  onUpdateRaidRewardFields: (
+    tableId: string,
+    slot: number,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   reward: RaidRewardItemRecord | null;
   selectedSlot: number | null;
   table: RaidRewardTableRecord | null;
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const raidRewardFields = useMemo(
+    () => editableFields.map((field) => toNumericEditableControlField(field)),
+    [editableFields]
+  );
+  const raidRewardFieldGroups = useMemo(
+    () => groupNumericEditableFields(raidRewardFields, getRaidRewardEditableFieldGroup),
+    [raidRewardFields]
+  );
+  const raidRewardDraftDefaults = useMemo(
+    () =>
+      reward
+        ? createTrainerDrafts(raidRewardFields, (field) =>
+            getEditableRaidRewardFieldValue(reward, field)
+          )
+        : {},
+    [raidRewardFields, reward?.itemId, reward?.slot, reward?.values.join('|'), table?.tableId]
+  );
+  const raidRewardDraftSummary = useMemo(
+    () =>
+      getTrainerDraftSummary(
+        raidRewardFields,
+        drafts,
+        reward ? (field) => getEditableRaidRewardFieldValue(reward, field) : null
+      ),
+    [drafts, raidRewardFields, reward]
+  );
+  const canSaveRaidRewardDrafts =
+    table !== null &&
+    reward !== null &&
+    editSession !== null &&
+    canEditRaidRewards &&
+    !isRaidRewardUpdating &&
+    raidRewardDraftSummary.changedFields.length > 0 &&
+    raidRewardDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
-    if (!reward) {
-      setDrafts({});
-      return;
-    }
-
-    setDrafts(
-      Object.fromEntries(
-        editableFields.map((field) => [
-          field.field,
-          (getEditableRaidRewardFieldValue(reward, field.field) ?? '').toString()
-        ])
-      )
-    );
-  }, [editableFields, reward?.itemId, reward?.slot, reward?.values.join('|'), table?.tableId]);
+    setDrafts(raidRewardDraftDefaults);
+  }, [raidRewardDraftDefaults]);
 
   return (
     <aside aria-label="Selected raid reward provenance" className="encounter-inspector">
@@ -9412,95 +11411,101 @@ function SelectedRaidRewardPanel({
                   </div>
                 </dl>
 
-                <div className="encounter-field-grid">
-                  {editableFields.map((field) => {
-                    const currentValue = getEditableRaidRewardFieldValue(reward, field.field);
-                    const draftValue = drafts[field.field] ?? '';
-                    const draftState = getIntegerDraftState(draftValue, currentValue, field);
-                    const canSubmit =
-                      editSession !== null &&
-                      draftState.canSubmit &&
-                      draftState.parsedValue !== null;
-                    const fieldOptions = field.options ?? [];
-                    const hasDraftOption = fieldOptions.some(
-                      (option) => option.value.toString() === draftValue
-                    );
-
-                    return (
-                      <div className="trainer-editor-row" key={field.field}>
-                        <label className="path-field">
-                          <span>{field.label}</span>
-                          {fieldOptions.length > 0 ? (
-                            <select
-                              aria-label={field.label}
-                              disabled={
-                                !canEditRaidRewards ||
-                                editSession === null ||
-                                isRaidRewardUpdating
-                              }
-                              onChange={(event) =>
-                                setDrafts((currentDrafts) => ({
-                                  ...currentDrafts,
-                                  [field.field]: event.target.value
-                                }))
-                              }
-                              title={getEditableFieldHelp(field)}
-                              value={draftValue}
-                            >
-                              {!hasDraftOption && draftValue !== '' ? (
-                                <option value={draftValue}>{`Current ${draftValue}`}</option>
-                              ) : null}
-                              {fieldOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              aria-label={field.label}
-                              disabled={
-                                !canEditRaidRewards ||
-                                editSession === null ||
-                                isRaidRewardUpdating
-                              }
-                              max={field.maximumValue ?? undefined}
-                              min={field.minimumValue ?? undefined}
-                              title={getEditableFieldHelp(field)}
-                              onChange={(event) =>
-                                setDrafts((currentDrafts) => ({
-                                  ...currentDrafts,
-                                  [field.field]: event.target.value
-                                }))
-                              }
-                              type="number"
-                              value={draftValue}
-                            />
-                          )}
-                        </label>
-                        {editSession ? (
-                          <button
-                            aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                            className="primary-button compact-button"
-                            disabled={!canSubmit || isRaidRewardUpdating}
-                            onClick={() =>
-                              onUpdateRaidRewardField(
-                                table.tableId,
-                                reward.slot,
-                                field.field,
-                                draftState.parsedValue!.toString()
-                              )
-                            }
-                            type="button"
-                          >
-                            <Save aria-hidden="true" size={16} />
-                            <span>{isRaidRewardUpdating ? 'Saving' : 'Save'}</span>
-                          </button>
-                        ) : null}
-                      </div>
-                    );
-                  })}
+                <div className="raid-reward-slot-grid" aria-label="Raid reward slots">
+                  {table.rewards.slice(0, 10).map((candidate) => (
+                    <button
+                      aria-pressed={candidate.slot === selectedSlot}
+                      className="slot-tab-button"
+                      key={candidate.slot}
+                      onClick={() => onSelectSlot(candidate.slot)}
+                      type="button"
+                    >
+                      <strong>{`#${candidate.slot}`}</strong>
+                      <span>{candidate.itemName}</span>
+                      <small>{`Qty ${candidate.quantity} / Wt ${candidate.weight}`}</small>
+                    </button>
+                  ))}
                 </div>
+
+                <div className="editable-field-groups">
+                  {raidRewardFieldGroups.map((group) => (
+                    <fieldset className="editable-field-group" key={group.group}>
+                      <legend>{group.group}</legend>
+                      <div className="editable-field-grid">
+                        {group.fields.map((field) => {
+                          const currentValue = getEditableRaidRewardFieldValue(
+                            reward,
+                            field.field
+                          );
+                          const draftValue = drafts[field.field] ?? '';
+                          const draftState = getTrainerFieldDraftState(
+                            draftValue,
+                            currentValue,
+                            field
+                          );
+
+                          return (
+                            <TrainerDraftField
+                              currentValue={currentValue}
+                              disabled={
+                                !canEditRaidRewards ||
+                                editSession === null ||
+                                isRaidRewardUpdating
+                              }
+                              draftState={draftState}
+                              draftValue={draftValue}
+                              field={field}
+                              idPrefix="raid-reward-field"
+                              key={field.field}
+                              onChange={(value) =>
+                                setDrafts((currentDrafts) => ({
+                                  ...currentDrafts,
+                                  [field.field]: value
+                                }))
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </fieldset>
+                  ))}
+                </div>
+                {editSession ? (
+                  <div className="draft-action-row">
+                    <button
+                      className="primary-button"
+                      disabled={!canSaveRaidRewardDrafts}
+                      onClick={() =>
+                        table &&
+                        reward &&
+                        onUpdateRaidRewardFields(
+                          table.tableId,
+                          reward.slot,
+                          raidRewardDraftSummary.changedFields.map((change) => ({
+                            field: change.field,
+                            value: change.value
+                          }))
+                        )
+                      }
+                      type="button"
+                    >
+                      <Save aria-hidden="true" size={16} />
+                      <span>{isRaidRewardUpdating ? 'Saving' : 'Save Reward'}</span>
+                    </button>
+                    <button
+                      className="danger-button"
+                      disabled={isRaidRewardUpdating || raidRewardDraftSummary.dirtyFieldCount === 0}
+                      onClick={() => setDrafts(raidRewardDraftDefaults)}
+                      type="button"
+                    >
+                      <X aria-hidden="true" size={16} />
+                      <span>Cancel</span>
+                    </button>
+                    <span className="draft-action-summary">
+                      {formatDraftSummary(raidRewardDraftSummary)}
+                    </span>
+                  </div>
+                ) : null}
               </>
             ) : (
               <p className="empty-copy">No raid reward selected.</p>
@@ -9534,6 +11539,7 @@ function PlacementSection({
   onSelectObject,
   onStartEditSession,
   onUpdatePlacementObjectField,
+  onUpdatePlacementObjectFields,
   searchText,
   selectedObjectId,
   workflow
@@ -9545,6 +11551,10 @@ function PlacementSection({
   onSelectObject: (objectId: string | null) => void;
   onStartEditSession: () => void;
   onUpdatePlacementObjectField: (objectId: string, field: string, value: string) => void;
+  onUpdatePlacementObjectFields: (
+    objectId: string,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   searchText: string;
   selectedObjectId: string | null;
   workflow: PlacementWorkflow | null;
@@ -9660,6 +11670,7 @@ function PlacementSection({
               isPlacementUpdating={isPlacementUpdating}
               onStartEditSession={onStartEditSession}
               onUpdatePlacementObjectField={onUpdatePlacementObjectField}
+              onUpdatePlacementObjectFields={onUpdatePlacementObjectFields}
               placedObject={selectedObject}
             />
           </div>
@@ -9681,6 +11692,7 @@ function SelectedPlacementPanel({
   isPlacementUpdating,
   onStartEditSession,
   onUpdatePlacementObjectField,
+  onUpdatePlacementObjectFields,
   placedObject
 }: {
   canEditPlacement: boolean;
@@ -9690,38 +11702,72 @@ function SelectedPlacementPanel({
   isPlacementUpdating: boolean;
   onStartEditSession: () => void;
   onUpdatePlacementObjectField: (objectId: string, field: string, value: string) => void;
+  onUpdatePlacementObjectFields: (
+    objectId: string,
+    changes: Array<{ field: string; value: string }>
+  ) => void;
   placedObject: PlacedObjectRecord | null;
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const visibleFields = editableFields.filter((field) =>
     placedObject ? isPlacementFieldVisible(placedObject, field.field) : false
   );
+  const placementFieldGroups = useMemo(() => {
+    const groups: Array<{ group: string; fields: PlacementEditableField[] }> = [];
 
-  useEffect(() => {
-    if (!placedObject) {
-      setDrafts({});
-      return;
+    for (const field of visibleFields) {
+      const groupName = getPlacementEditableFieldGroup(field);
+      let group = groups.find((candidate) => candidate.group === groupName);
+      if (!group) {
+        group = { group: groupName, fields: [] };
+        groups.push(group);
+      }
+
+      group.fields.push(field);
     }
 
-    setDrafts(
-      Object.fromEntries(
-        visibleFields.map((field) => [
-          field.field,
-          (getEditablePlacementFieldValue(placedObject, field.field) ?? '').toString()
-        ])
-      )
-    );
-  }, [
-    placedObject?.chance,
-    placedObject?.itemId,
-    placedObject?.objectId,
-    placedObject?.quantity,
-    placedObject?.rotationY,
-    placedObject?.x,
-    placedObject?.y,
-    placedObject?.z,
-    visibleFields.map((field) => field.field).join('|')
-  ]);
+    return groups;
+  }, [visibleFields]);
+  const placementDraftDefaults = useMemo(
+    () =>
+      placedObject
+        ? createTrainerDrafts(
+            visibleFields.map((field) => toNumericEditableControlField(field)),
+            (field) => getEditablePlacementFieldValue(placedObject, field)
+          )
+        : {},
+    [
+      placedObject?.chance,
+      placedObject?.itemId,
+      placedObject?.objectId,
+      placedObject?.quantity,
+      placedObject?.rotationY,
+      placedObject?.x,
+      placedObject?.y,
+      placedObject?.z,
+      visibleFields.map((field) => field.field).join('|')
+    ]
+  );
+  const placementDraftSummary = useMemo(
+    () =>
+      getPlacementDraftSummary(
+        visibleFields,
+        drafts,
+        placedObject ? (field) => getEditablePlacementFieldValue(placedObject, field) : null
+      ),
+    [drafts, placedObject, visibleFields]
+  );
+  const canSavePlacementDrafts =
+    placedObject !== null &&
+    editSession !== null &&
+    canEditPlacement &&
+    !isPlacementUpdating &&
+    placementDraftSummary.changedFields.length > 0 &&
+    placementDraftSummary.invalidFields.length === 0;
+
+  useEffect(() => {
+    setDrafts(placementDraftDefaults);
+  }, [placementDraftDefaults]);
 
   return (
     <aside aria-label="Selected placement object provenance" className="encounter-inspector">
@@ -9787,91 +11833,142 @@ function SelectedPlacementPanel({
               </div>
             </dl>
 
-            <div className="encounter-field-grid">
-              {visibleFields.map((field) => {
-                const currentValue = getEditablePlacementFieldValue(placedObject, field.field);
-                const draftValue = drafts[field.field] ?? '';
-                const draftState = getPlacementDraftState(draftValue, currentValue, field);
-                const canSubmit =
-                  editSession !== null &&
-                  draftState.canSubmit &&
-                  draftState.normalizedValue !== null;
-                const fieldOptions = field.options ?? [];
-                const hasDraftOption = fieldOptions.some(
-                  (option) => option.value.toString() === draftValue
-                );
+            <div className="editable-field-groups">
+              {placementFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = getEditablePlacementFieldValue(
+                        placedObject,
+                        field.field
+                      );
+                      const draftValue = drafts[field.field] ?? '';
+                      const draftState = getPlacementDraftState(draftValue, currentValue, field);
+                      const isInvalid =
+                        draftValue.trim() !== '' && draftState.normalizedValue === null;
+                      const isChanged = draftState.normalizedValue !== null;
+                      const fieldOptions = field.options ?? [];
+                      const hasDraftOption = fieldOptions.some(
+                        (option) => option.value.toString() === draftValue
+                      );
+                      const statusText = isInvalid
+                        ? `Allowed range: ${field.minimumValue}-${field.maximumValue}.`
+                        : isChanged
+                          ? 'Changed'
+                          : currentValue !== null
+                            ? `Current: ${currentValue}`
+                            : null;
 
-                return (
-                  <div className="trainer-editor-row" key={field.field}>
-                    <label className="path-field">
-                      <span>{field.label}</span>
-                      {fieldOptions.length > 0 ? (
-                        <select
-                          aria-label={field.label}
-                          disabled={
-                            !canEditPlacement || editSession === null || isPlacementUpdating
-                          }
-                          onChange={(event) =>
-                            setDrafts((currentDrafts) => ({
-                              ...currentDrafts,
-                              [field.field]: event.target.value
-                            }))
-                          }
-                          title={getEditableFieldHelp(field)}
-                          value={draftValue}
+                      return (
+                        <label
+                          className={`path-field editable-field-control ${
+                            isChanged ? 'editable-field-changed' : ''
+                          } ${isInvalid ? 'editable-field-invalid' : ''}`}
+                          htmlFor={`placement-field-${field.field}`}
+                          key={field.field}
                         >
-                          {!hasDraftOption && draftValue !== '' ? (
-                            <option value={draftValue}>{`Current ${draftValue}`}</option>
+                          <span>{field.label}</span>
+                          {fieldOptions.length > 0 ? (
+                            <select
+                              aria-label={field.label}
+                              disabled={
+                                !canEditPlacement ||
+                                editSession === null ||
+                                isPlacementUpdating
+                              }
+                              id={`placement-field-${field.field}`}
+                              onChange={(event) =>
+                                setDrafts((currentDrafts) => ({
+                                  ...currentDrafts,
+                                  [field.field]: event.target.value
+                                }))
+                              }
+                              title={getEditableFieldHelp(field)}
+                              value={draftValue}
+                            >
+                              {!hasDraftOption && draftValue !== '' ? (
+                                <option value={draftValue}>{`Current ${draftValue}`}</option>
+                              ) : null}
+                              {fieldOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              aria-label={field.label}
+                              disabled={
+                                !canEditPlacement ||
+                                editSession === null ||
+                                isPlacementUpdating
+                              }
+                              id={`placement-field-${field.field}`}
+                              max={field.maximumValue}
+                              min={field.minimumValue}
+                              onChange={(event) =>
+                                setDrafts((currentDrafts) => ({
+                                  ...currentDrafts,
+                                  [field.field]: event.target.value
+                                }))
+                              }
+                              step={field.valueKind === 'integer' ? 1 : 'any'}
+                              title={getEditableFieldHelp(field)}
+                              type="number"
+                              value={draftValue}
+                            />
+                          )}
+                          {statusText ? (
+                            <small
+                              className={
+                                isInvalid ? 'editable-field-error' : 'editable-field-status'
+                              }
+                            >
+                              {statusText}
+                            </small>
                           ) : null}
-                          {fieldOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          aria-label={field.label}
-                          disabled={
-                            !canEditPlacement || editSession === null || isPlacementUpdating
-                          }
-                          max={field.maximumValue}
-                          min={field.minimumValue}
-                          onChange={(event) =>
-                            setDrafts((currentDrafts) => ({
-                              ...currentDrafts,
-                              [field.field]: event.target.value
-                            }))
-                          }
-                          step={field.valueKind === 'integer' ? 1 : 'any'}
-                          title={getEditableFieldHelp(field)}
-                          type="number"
-                          value={draftValue}
-                        />
-                      )}
-                    </label>
-                    {editSession ? (
-                      <button
-                        aria-label={`Save ${field.label.toLocaleLowerCase()}`}
-                        className="primary-button compact-button"
-                        disabled={!canSubmit || isPlacementUpdating}
-                        onClick={() =>
-                          onUpdatePlacementObjectField(
-                            placedObject.objectId,
-                            field.field,
-                            draftState.normalizedValue!
-                          )
-                        }
-                        type="button"
-                      >
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isPlacementUpdating ? 'Saving' : 'Save'}</span>
-                      </button>
-                    ) : null}
+                        </label>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </fieldset>
+              ))}
             </div>
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSavePlacementDrafts}
+                  onClick={() =>
+                    placedObject &&
+                    onUpdatePlacementObjectFields(
+                      placedObject.objectId,
+                      placementDraftSummary.changedFields.map((change) => ({
+                        field: change.field,
+                        value: change.value
+                      }))
+                    )
+                  }
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isPlacementUpdating ? 'Saving' : 'Save Object'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={isPlacementUpdating || placementDraftSummary.dirtyFieldCount === 0}
+                  onClick={() => setDrafts(placementDraftDefaults)}
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">
+                  {formatDraftSummary(placementDraftSummary)}
+                </span>
+              </div>
+            ) : null}
 
             {!editSession ? (
               <button
@@ -11163,6 +13260,20 @@ function ChangesSection({
             {pendingEdits.map((edit, index) => (
               <li key={`${edit.domain}-${edit.recordId ?? index}-${edit.field ?? 'field'}`}>
                 <strong>{edit.summary}</strong>
+                <dl className="pending-edit-meta">
+                  <div>
+                    <dt>Editor</dt>
+                    <dd>{formatPendingEditDomain(edit.domain)}</dd>
+                  </div>
+                  <div>
+                    <dt>Record</dt>
+                    <dd>{edit.recordId ?? 'n/a'}</dd>
+                  </div>
+                  <div>
+                    <dt>Field</dt>
+                    <dd>{edit.field ?? 'n/a'}</dd>
+                  </div>
+                </dl>
                 <span>{edit.sources.map((source) => source.relativePath).join(', ')}</span>
               </li>
             ))}
@@ -12929,6 +15040,267 @@ function getPokemonDraftState(pokemon: PokemonRecord, field: PokemonEditableFiel
       };
 }
 
+type PokemonPersonalFieldDraftState = {
+  error: string | null;
+  isChanged: boolean;
+  isValid: boolean;
+  normalizedValue: string | null;
+};
+
+type PokemonPersonalDraftChange = {
+  field: string;
+  group: string;
+  label: string;
+  value: string;
+};
+
+function createPokemonPersonalDrafts(
+  pokemon: PokemonRecord | null,
+  fields: PokemonEditableField[]
+) {
+  if (!pokemon) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    fields
+      .map((field) => {
+        const value = getEditablePersonalFieldValue(pokemon, field.field);
+        return value === null ? null : [field.field, value.toString()];
+      })
+      .filter((entry): entry is [string, string] => entry !== null)
+  );
+}
+
+function groupPokemonEditableFields(fields: PokemonEditableField[]) {
+  const groups: Array<{ group: string; fields: PokemonEditableField[] }> = [];
+
+  for (const field of fields) {
+    let group = groups.find((candidate) => candidate.group === field.group);
+    if (!group) {
+      group = { group: field.group, fields: [] };
+      groups.push(group);
+    }
+
+    group.fields.push(field);
+  }
+
+  return groups;
+}
+
+function getPokemonPersonalDraftSummary(
+  pokemon: PokemonRecord | null,
+  fields: PokemonEditableField[],
+  drafts: Record<string, string>
+) {
+  const changedFields: PokemonPersonalDraftChange[] = [];
+  const invalidFields: PokemonPersonalDraftChange[] = [];
+  let dirtyFieldCount = 0;
+
+  if (!pokemon) {
+    return { changedFields, dirtyFieldCount, invalidFields };
+  }
+
+  for (const field of fields) {
+    const currentValue = getEditablePersonalFieldValue(pokemon, field.field);
+    const draftValue = drafts[field.field] ?? '';
+    const draftState = getPokemonPersonalFieldDraftState(draftValue, currentValue, field);
+
+    if (draftState.isChanged || !draftState.isValid) {
+      dirtyFieldCount += 1;
+    }
+
+    if (!draftState.isValid) {
+      invalidFields.push({
+        field: field.field,
+        group: field.group,
+        label: field.label,
+        value: draftValue
+      });
+      continue;
+    }
+
+    if (draftState.isChanged && draftState.normalizedValue !== null) {
+      changedFields.push({
+        field: field.field,
+        group: field.group,
+        label: field.label,
+        value: draftState.normalizedValue
+      });
+    }
+  }
+
+  return { changedFields, dirtyFieldCount, invalidFields };
+}
+
+function getPokemonPersonalFieldDraftState(
+  draftValue: string,
+  currentValue: number | null,
+  field: PokemonEditableField
+): PokemonPersonalFieldDraftState {
+  if (currentValue === null) {
+    return {
+      error: 'This value is not available for this record.',
+      isChanged: false,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  const normalizedValue = draftValue.trim();
+  const currentText = currentValue.toString();
+
+  if (field.valueKind === 'boolean') {
+    if (normalizedValue !== '0' && normalizedValue !== '1') {
+      return {
+        error: 'Choose Yes or No.',
+        isChanged: normalizedValue !== currentText,
+        isValid: false,
+        normalizedValue: null
+      };
+    }
+
+    return {
+      error: null,
+      isChanged: normalizedValue !== currentText,
+      isValid: true,
+      normalizedValue
+    };
+  }
+
+  const parsedValue = /^-?\d+$/.test(normalizedValue)
+    ? Number.parseInt(normalizedValue, 10)
+    : null;
+
+  if (parsedValue === null) {
+    return {
+      error: 'Enter a whole number.',
+      isChanged: normalizedValue !== currentText,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  const minimumValue = field.minimumValue ?? null;
+  const maximumValue = field.maximumValue ?? null;
+
+  if (minimumValue !== null && parsedValue < minimumValue) {
+    return {
+      error: `Minimum value is ${minimumValue}.`,
+      isChanged: parsedValue !== currentValue,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  if (maximumValue !== null && parsedValue > maximumValue) {
+    return {
+      error: `Maximum value is ${maximumValue}.`,
+      isChanged: parsedValue !== currentValue,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  if (
+    field.options.length > 0 &&
+    parsedValue !== currentValue &&
+    !field.options.some((option) => option.value === parsedValue)
+  ) {
+    return {
+      error: 'Choose one of the available options.',
+      isChanged: true,
+      isValid: false,
+      normalizedValue: null
+    };
+  }
+
+  return {
+    error: null,
+    isChanged: parsedValue !== currentValue,
+    isValid: true,
+    normalizedValue: parsedValue.toString()
+  };
+}
+
+function PokemonPersonalFieldInput({
+  currentValue,
+  disabled,
+  draftState,
+  draftValue,
+  field,
+  onChange
+}: {
+  currentValue: number | null;
+  disabled: boolean;
+  draftState: PokemonPersonalFieldDraftState;
+  draftValue: string;
+  field: PokemonEditableField;
+  onChange: (value: string) => void;
+}) {
+  const inputId = `pokemon-personal-${field.field}`;
+  const helpText = getEditableFieldHelp(field);
+  const statusText = draftState.error ?? (draftState.isChanged ? 'Changed' : null);
+
+  return (
+    <label
+      className={`path-field editable-field-control ${
+        draftState.isChanged ? 'editable-field-changed' : ''
+      } ${!draftState.isValid ? 'editable-field-invalid' : ''}`}
+      htmlFor={inputId}
+    >
+      <span>{field.label}</span>
+      {field.valueKind === 'boolean' ? (
+        <select
+          aria-label={field.label}
+          disabled={disabled}
+          id={inputId}
+          onChange={(event) => onChange(event.target.value)}
+          title={helpText}
+          value={draftValue === '1' ? '1' : '0'}
+        >
+          <option value="1">Yes</option>
+          <option value="0">No</option>
+        </select>
+      ) : field.options.length > 0 ? (
+        <select
+          aria-label={field.label}
+          disabled={disabled}
+          id={inputId}
+          onChange={(event) => onChange(event.target.value)}
+          title={helpText}
+          value={draftValue}
+        >
+          {addCurrentPokemonFieldOption(field.options, draftValue, field.label).map((option) => (
+            <option key={`${field.field}:${option.value}`} value={option.value.toString()}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          aria-label={field.label}
+          disabled={disabled}
+          id={inputId}
+          max={field.maximumValue ?? undefined}
+          min={field.minimumValue ?? undefined}
+          onChange={(event) => onChange(event.target.value)}
+          title={helpText}
+          type="number"
+          value={draftValue}
+        />
+      )}
+      {statusText ? (
+        <small className={draftState.error ? 'editable-field-error' : 'editable-field-status'}>
+          {statusText}
+        </small>
+      ) : currentValue !== null ? (
+        <small className="editable-field-status">Current: {currentValue}</small>
+      ) : null}
+    </label>
+  );
+}
+
 type EditableFieldWithOptions = {
   field?: string;
   label: string;
@@ -12947,7 +15319,121 @@ type SpeciesFormOptionContext = {
   speciesId?: number;
 };
 
+function PokemonSummaryCard({
+  name,
+  subtitle,
+  title
+}: {
+  name: string;
+  subtitle: string;
+  title: string;
+}) {
+  return (
+    <div className="pokemon-summary-card">
+      <PokemonSprite className="pokemon-summary-sprite" name={name} />
+      <div>
+        <strong>{title}</strong>
+        <span>{subtitle}</span>
+      </div>
+    </div>
+  );
+}
+
+function PokemonSprite({
+  className = '',
+  name,
+  preferStatic = false
+}: {
+  className?: string;
+  name: string;
+  preferStatic?: boolean;
+}) {
+  const urls = useMemo(() => getPokemonSpriteUrls(name, preferStatic), [name, preferStatic]);
+  const [urlIndex, setUrlIndex] = useState(0);
+
+  useEffect(() => {
+    setUrlIndex(0);
+  }, [urls]);
+
+  if (urls.length === 0 || !urls[urlIndex]) {
+    return <span aria-hidden="true" className={`pokemon-sprite-placeholder ${className}`} />;
+  }
+
+  return (
+    <img
+      alt=""
+      className={`pokemon-sprite ${className} ${
+        urls[urlIndex].includes('/ani/') ? 'pokemon-sprite-animated' : ''
+      }`}
+      onError={() => setUrlIndex((currentIndex) => currentIndex + 1)}
+      src={urls[urlIndex]}
+    />
+  );
+}
+
+function getPokemonSpriteUrls(name: string, preferStatic: boolean) {
+  const spriteId = getPokemonSpriteId(name);
+  if (!spriteId) {
+    return [];
+  }
+
+  const localStatic = `/sprites/gen5/${spriteId}.png`;
+  const localAnimated = `/sprites/ani/${spriteId}.gif`;
+  const remoteStatic = `https://play.pokemonshowdown.com/sprites/gen5/${spriteId}.png`;
+
+  return preferStatic
+    ? [localStatic, remoteStatic]
+    : [localAnimated, localStatic, remoteStatic];
+}
+
+function getPokemonSpriteId(name: string) {
+  const normalizedName = normalizePokemonSpriteName(name);
+  if (!normalizedName) {
+    return '';
+  }
+
+  if (normalizedName === 'Toxtricity-Low-Key-Gmax') {
+    return 'toxtricity-gmax';
+  }
+
+  return normalizedName
+    .split('-')
+    .map(toPokemonSpriteIdPart)
+    .filter(Boolean)
+    .join('-');
+}
+
+function normalizePokemonSpriteName(name: string) {
+  const trimmedName = name.trim();
+  if (!trimmedName || /^Pokemon \d+$/i.test(trimmedName) || /^Unused \d+$/i.test(trimmedName)) {
+    return '';
+  }
+
+  return trimmedName
+    .replace(/\s*\((Alolan)\)$/i, '-Alola')
+    .replace(/\s*\((Galarian)\)$/i, '-Galar')
+    .replace(/\s*\((Gigantamax|G-Max)\)$/i, '-Gmax')
+    .replace(/\s*\((Regional Form \d+|Regional Form|Form \d+)\)$/i, '')
+    .replace(/\s+/g, '-');
+}
+
+function getReferenceSpriteName(label: string) {
+  return label.replace(/^\d+\s+/, '').replace(/^Species\s+\d+$/i, '');
+}
+
+function toPokemonSpriteIdPart(value: string) {
+  return value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
 function getEditableFieldHelp(field: EditableFieldWithOptions) {
+  const specificHelp: Record<string, string> = {
+    aiFlags: 'Battle AI behavior bitmask. Use the named AI flag checkboxes when they are shown.',
+    canDynamax: 'Whether this Pokemon is allowed to Dynamax in trainer battles.',
+    canGigantamax: 'Whether this Pokemon can use its Gigantamax form when eligible.',
+    dynamaxLevel: 'Dynamax level. Valid game values are 0 through 10.',
+    gift: 'Trainer gift/event identifier. 0 means no linked gift; review event scripts before changing.',
+    money: 'Trainer payout multiplier used by the game formula, not the final post-battle cash amount.'
+  };
   const range =
     field.minimumValue === null || field.maximumValue === null
       ? null
@@ -12957,7 +15443,12 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
   const optionCount = field.options?.length ?? 0;
   const optionHint = optionCount > 0 ? `${optionCount} available option${optionCount === 1 ? '' : 's'}` : null;
 
-  return [field.label, range ? `Allowed range: ${range}` : null, optionHint]
+  return [
+    field.label,
+    field.field ? specificHelp[field.field] : null,
+    range ? `Allowed range: ${range}` : null,
+    optionHint
+  ]
     .filter(Boolean)
     .join('. ');
 }
@@ -13493,6 +15984,49 @@ function getPlacementDraftState(
       (currentValue === null || Math.abs(parsedValue - currentValue) > Number.EPSILON),
     normalizedValue: inRange ? nextValue : null
   };
+}
+
+function getPlacementDraftSummary(
+  fields: PlacementEditableField[],
+  drafts: Record<string, string>,
+  getValue: ((field: string) => number | null) | null
+): { changedFields: TrainerDraftChange[]; dirtyFieldCount: number; invalidFields: TrainerDraftChange[] } {
+  const changedFields: TrainerDraftChange[] = [];
+  const invalidFields: TrainerDraftChange[] = [];
+  let dirtyFieldCount = 0;
+
+  if (!getValue) {
+    return { changedFields, dirtyFieldCount, invalidFields };
+  }
+
+  for (const field of fields) {
+    const currentValue = getValue(field.field);
+    const draftValue = drafts[field.field] ?? '';
+    const draftState = getPlacementDraftState(draftValue, currentValue, field);
+    const isChanged = draftState.normalizedValue !== null;
+    const isInvalid = draftValue.trim() !== '' && draftState.normalizedValue === null;
+
+    if (isChanged || isInvalid) {
+      dirtyFieldCount += 1;
+    }
+
+    if (isInvalid) {
+      invalidFields.push({ field: field.field, label: field.label, value: draftValue });
+      continue;
+    }
+
+    const normalizedValue = draftState.normalizedValue;
+
+    if (normalizedValue !== null) {
+      changedFields.push({
+        field: field.field,
+        label: field.label,
+        value: normalizedValue
+      });
+    }
+  }
+
+  return { changedFields, dirtyFieldCount, invalidFields };
 }
 
 function formatPlacementItem(placedObject: PlacedObjectRecord) {
