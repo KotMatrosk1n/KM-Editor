@@ -1471,6 +1471,7 @@ public static class SwShBridgeMapper
             inventoryItem.ItemId,
             inventoryItem.ItemName,
             inventoryItem.Price,
+            inventoryItem.IsKnownItem,
             inventoryItem.StockLimit);
     }
 

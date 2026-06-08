@@ -16,6 +16,7 @@ public sealed record SwShShopInventoryRecord(
     int ItemId,
     string ItemName,
     int Price,
+    bool IsKnownItem,
     int? StockLimit);
 
 public sealed record SwShShopRecord(

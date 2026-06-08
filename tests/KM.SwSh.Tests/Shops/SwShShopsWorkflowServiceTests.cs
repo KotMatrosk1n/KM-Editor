@@ -66,6 +66,7 @@ public sealed class SwShShopsWorkflowServiceTests
                 Assert.Equal(1, item.ItemId);
                 Assert.Equal("Potion", item.ItemName);
                 Assert.Equal(300, item.Price);
+                Assert.True(item.IsKnownItem);
                 Assert.Null(item.StockLimit);
             },
             item =>
@@ -74,6 +75,7 @@ public sealed class SwShShopsWorkflowServiceTests
                 Assert.Equal(2, item.ItemId);
                 Assert.Equal("Antidote", item.ItemName);
                 Assert.Equal(200, item.Price);
+                Assert.True(item.IsKnownItem);
             });
         var multiShop = workflow.Shops.Single(shop => shop.ShopId == $"multi:{MultiShopHash:X16}:1");
         Assert.Equal("Multi", multiShop.Kind);
@@ -117,7 +119,27 @@ public sealed class SwShShopsWorkflowServiceTests
         var item = Assert.Single(Assert.Single(workflow.Shops).Inventory);
         Assert.Equal("Item 42", item.ItemName);
         Assert.Equal(0, item.Price);
+        Assert.False(item.IsKnownItem);
         Assert.Contains(workflow.Diagnostics, diagnostic => diagnostic.Domain == "workflow.shops");
+    }
+
+    [Fact]
+    public void LoadWarnsWhenShopItemIdIsNotResolvedByLoadedItems()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShItemsWorkflowServiceTests.WriteBaseItems(temp);
+        temp.WriteBaseRomFsFile(SwShShopsWorkflowService.ShopDataPath["romfs/".Length..], CreateShopData([42], []));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShShopsWorkflowService().Load(project);
+
+        var item = Assert.Single(Assert.Single(workflow.Shops).Inventory);
+        Assert.False(item.IsKnownItem);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Domain == "workflow.shops"
+                && diagnostic.Message.Contains("item ID 42", StringComparison.Ordinal));
     }
 
     [Fact]

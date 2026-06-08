@@ -19,6 +19,7 @@ public sealed record ShopInventoryRecordDto(
     int ItemId,
     string ItemName,
     int Price,
+    bool IsKnownItem,
     int? StockLimit);
 
 public sealed record ShopRecordDto(
