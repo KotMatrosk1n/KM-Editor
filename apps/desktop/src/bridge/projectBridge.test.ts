@@ -728,7 +728,7 @@ describe('projectBridge', () => {
                     speed: -1
                   },
                   ivSummary: '3 guaranteed perfect IVs',
-                  label: 'Gift 001: Bulbasaur Lv. 5 Form 0',
+                  label: 'Gift 001: Bulbasaur Lv. 5',
                   level: 5,
                   nature: 25,
                   natureLabel: 'Random',
@@ -2252,7 +2252,7 @@ describe('projectBridge', () => {
                   speed: -1
                 },
                 ivSummary: 'HP 31 / Atk -1 / Def -1 / SpA -1 / SpD -1 / Spe -1',
-                label: 'Gift 001: Bulbasaur Lv. 5 Form 0',
+                label: 'Gift 001: Bulbasaur Lv. 5',
                 level: 5,
                 nature: 25,
                 natureLabel: 'Random',

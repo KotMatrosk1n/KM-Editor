@@ -31,7 +31,7 @@ public sealed class SwShGiftPokemonWorkflowServiceTests
 
         var firstGift = workflow.Gifts[0];
         Assert.Equal(0, firstGift.GiftIndex);
-        Assert.Equal("Gift 001: Grookey Lv. 50 Form 1", firstGift.Label);
+        Assert.Equal("Gift 001: Grookey (Form 1) Lv. 50", firstGift.Label);
         Assert.Equal(810, firstGift.SpeciesId);
         Assert.Equal("Grookey", firstGift.Species);
         Assert.Equal(1, firstGift.Form);

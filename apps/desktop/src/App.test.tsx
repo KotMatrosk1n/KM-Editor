@@ -751,8 +751,10 @@ describe('App', () => {
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Trade Pokemon' })
     ).toBeInTheDocument();
-    expect(screen.getAllByText('Eevee').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Grookey').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Meowth (Galarian)').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Farfetch’d (Galarian)').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Meowth-2')).not.toBeInTheDocument();
+    expect(screen.queryByText('Farfetch’d-1')).not.toBeInTheDocument();
     expect(screen.getByText('3 guaranteed perfect IVs')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
@@ -2817,7 +2819,7 @@ function createMockProjectBridge(
           speed: -1
         },
         ivSummary: '3 guaranteed perfect IVs',
-        label: 'Gift 001: Bulbasaur Lv. 5 Form 0',
+        label: 'Gift 001: Bulbasaur Lv. 5',
         level: 5,
         nature: 25,
         natureLabel: 'Random',
@@ -3151,7 +3153,7 @@ function createMockProjectBridge(
         dynamaxLevel: 0,
         field03: 7,
         flawlessIvCount: 3,
-        form: 0,
+        form: 1,
         gender: 0,
         genderLabel: 'Random',
         hash0: '0x0000000000000001',
@@ -3168,7 +3170,7 @@ function createMockProjectBridge(
           speed: -1
         },
         ivSummary: '3 guaranteed perfect IVs',
-        label: 'Trade 001: Eevee -> Grookey Lv. 15',
+        label: 'Trade 001: Meowth (Galarian) -> Farfetch’d (Galarian) Lv. 15',
         level: 15,
         memoryCode: 12,
         memoryFeel: 3,
@@ -3189,15 +3191,15 @@ function createMockProjectBridge(
           { move: null, moveId: 0, slot: 2 },
           { move: null, moveId: 0, slot: 3 }
         ],
-        requiredForm: 0,
+        requiredForm: 2,
         requiredNature: 25,
         requiredNatureLabel: 'Random',
-        requiredSpecies: 'Eevee',
-        requiredSpeciesId: 133,
+        requiredSpecies: 'Meowth',
+        requiredSpeciesId: 52,
         shinyLock: 2,
         shinyLockLabel: 'Never Shiny',
-        species: 'Grookey',
-        speciesId: 810,
+        species: 'Farfetch’d',
+        speciesId: 83,
         tradeIndex: 0,
         trainerId: 12345,
         unknownRequirement: 0
@@ -3401,7 +3403,7 @@ function createMockProjectBridge(
           speed: 28
         },
         ivSummary: 'HP 31 / Atk 30 / Def 29 / SpA 27 / SpD 26 / Spe 28',
-        label: 'Static 001: Grookey-1 Lv. 50 | Calyrex',
+        label: 'Static 001: Grookey (Form 1) Lv. 50 | Calyrex',
         level: 50,
         moves: [
           { move: 'Scratch', moveId: 1, slot: 0 },

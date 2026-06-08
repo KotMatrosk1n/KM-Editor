@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -347,7 +348,7 @@ public sealed class SwShRentalPokemonWorkflowService
 
         return new SwShRentalPokemonEntry(
             rental.Index,
-            FormatRentalLabel(rental.Index, species, rental.Form, rental.Level, moves),
+            FormatRentalLabel(rental.Index, species, rental.Species, rental.Form, rental.Level, moves),
             rental.Species,
             species,
             rental.Form,
@@ -376,18 +377,19 @@ public sealed class SwShRentalPokemonWorkflowService
     internal static string FormatRentalLabel(
         int rentalIndex,
         string species,
+        int speciesId,
         int form,
         int level,
         IReadOnlyList<SwShRentalPokemonMoveRecord> moves)
     {
-        var formSuffix = form == 0 ? string.Empty : $"-{form.ToString(CultureInfo.InvariantCulture)}";
+        var speciesLabel = SwShSpeciesFormLabels.FormatSpeciesFormLabel(species, speciesId, form);
         var moveSummary = string.Join(", ", moves
             .Where(move => !string.IsNullOrWhiteSpace(move.Move))
             .Take(2)
             .Select(move => move.Move));
         var suffix = string.IsNullOrWhiteSpace(moveSummary) ? string.Empty : $" | {moveSummary}";
 
-        return $"Rental {(rentalIndex + 1).ToString("000", CultureInfo.InvariantCulture)}: {species}{formSuffix} Lv. {level}{suffix}";
+        return $"Rental {(rentalIndex + 1).ToString("000", CultureInfo.InvariantCulture)}: {speciesLabel} Lv. {level}{suffix}";
     }
 
     internal static string FormatIvSummary(SwShRentalPokemonStatsRecord ivs)

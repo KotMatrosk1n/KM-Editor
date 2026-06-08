@@ -30,7 +30,7 @@ public sealed class SwShTradePokemonWorkflowServiceTests
 
         var firstTrade = workflow.Trades[0];
         Assert.Equal(0, firstTrade.TradeIndex);
-        Assert.Equal("Trade 001: Pikachu-2 -> Grookey-1 Lv. 50", firstTrade.Label);
+        Assert.Equal("Trade 001: Pikachu (Form 2) -> Grookey (Form 1) Lv. 50", firstTrade.Label);
         Assert.Equal(810, firstTrade.SpeciesId);
         Assert.Equal("Grookey", firstTrade.Species);
         Assert.Equal(25, firstTrade.RequiredSpeciesId);
@@ -78,6 +78,56 @@ public sealed class SwShTradePokemonWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTradePokemonWorkflowService.RelearnMove1Field).Options,
             option => option.Value == 2 && option.Label == "002 Growl");
+    }
+
+    [Fact]
+    public void LoadFormatsRegionalTradeFormsWithReadableLabels()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            SwShTradePokemonWorkflowService.TradePokemonDataPath["romfs/".Length..],
+            new SwShTradePokemonArchive(
+            [
+                new SwShTradePokemonRecord(
+                    0,
+                    1,
+                    0,
+                    4,
+                    0,
+                    0,
+                    false,
+                    1,
+                    50,
+                    83,
+                    0,
+                    123456,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    2,
+                    52,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    new SwShTradePokemonIvs(-1, -1, -1, -1, -1, -1),
+                    1,
+                    [1, 0, 0, 0]),
+            ]).Write());
+        temp.WriteBaseRomFsFile("bin/message/English/common/monsname.dat", CreateTextTable(83, (52, "Meowth"), (83, "Farfetch'd")));
+        temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", CreateTextTable(4, (4, "Poke Ball")));
+        temp.WriteBaseRomFsFile("bin/message/English/common/wazaname.dat", CreateTextTable(1, (1, "Scratch")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShTradePokemonWorkflowService().Load(project);
+
+        var trade = Assert.Single(workflow.Trades);
+        Assert.Equal("Trade 001: Meowth (Galarian) -> Farfetch'd (Galarian) Lv. 50", trade.Label);
     }
 
     [Fact]

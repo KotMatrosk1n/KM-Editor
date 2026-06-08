@@ -6,6 +6,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -564,11 +565,14 @@ public sealed class SwShDynamaxAdventuresEditSessionService
 
     private static string FormatEncounterLabel(SwShDynamaxAdventureEntry encounter)
     {
-        var formLabel = encounter.Form == 0 ? string.Empty : $"-{encounter.Form.ToString(CultureInfo.InvariantCulture)}";
+        var speciesLabel = SwShSpeciesFormLabels.FormatSpeciesFormLabel(
+            encounter.Species,
+            encounter.SpeciesId,
+            encounter.Form);
         var versionSuffix = string.Equals(encounter.VersionLabel, "Both", StringComparison.Ordinal)
             ? string.Empty
             : $" [{encounter.VersionLabel}]";
-        return $"{encounter.EntryIndex.ToString("000", CultureInfo.InvariantCulture)} / {encounter.AdventureIndex.ToString("000", CultureInfo.InvariantCulture)} - {encounter.Species}{formLabel}{versionSuffix}";
+        return $"{encounter.EntryIndex.ToString("000", CultureInfo.InvariantCulture)} / {encounter.AdventureIndex.ToString("000", CultureInfo.InvariantCulture)} - {speciesLabel}{versionSuffix}";
     }
 
     private static string FormatIvSummary(SwShDynamaxAdventureIvsRecord ivs, int guaranteedPerfectIvs)

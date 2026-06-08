@@ -576,6 +576,7 @@ public sealed class SwShStaticEncountersEditSessionService
             Label = SwShStaticEncountersWorkflowService.FormatEncounterLabel(
                 updatedEncounter.EncounterIndex,
                 updatedEncounter.Species,
+                updatedEncounter.SpeciesId,
                 updatedEncounter.Form,
                 updatedEncounter.Level,
                 updatedEncounter.EncounterScenarioLabel,

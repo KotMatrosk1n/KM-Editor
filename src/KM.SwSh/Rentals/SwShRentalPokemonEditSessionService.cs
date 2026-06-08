@@ -582,6 +582,7 @@ public sealed class SwShRentalPokemonEditSessionService
         return SwShRentalPokemonWorkflowService.FormatRentalLabel(
             rental.RentalIndex,
             rental.Species,
+            rental.SpeciesId,
             rental.Form,
             rental.Level,
             rental.Moves);
