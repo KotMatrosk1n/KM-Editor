@@ -1,0 +1,16 @@
+{
+  "sources": [
+    {
+      "extension": "png",
+      "files": 1666,
+      "indexUrl": "https://play.pokemonshowdown.com/sprites/gen5/",
+      "name": "gen5"
+    },
+    {
+      "extension": "gif",
+      "files": 1653,
+      "indexUrl": "https://play.pokemonshowdown.com/sprites/ani/",
+      "name": "ani"
+    }
+  ]
+}

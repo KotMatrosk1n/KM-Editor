@@ -621,6 +621,7 @@ export const pokemonWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(pokemonEditableFieldSchema),
   evolutionMethodOptions: z.array(pokemonEvolutionMethodOptionSchema).default([]),
+  learnsetMoveOptions: z.array(pokemonEditableFieldOptionSchema).default([]),
   pokemon: z.array(pokemonRecordSchema),
   stats: pokemonWorkflowStatsSchema,
   summary: workflowSummarySchema
@@ -699,11 +700,17 @@ export const moveFlagRecordSchema = z.strictObject({
   label: z.string()
 });
 
+export const moveEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
 export const moveEditableFieldSchema = z.strictObject({
   field: z.string(),
   label: z.string(),
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
+  options: z.array(moveEditableFieldOptionSchema).default([]),
   valueKind: z.string()
 });
 

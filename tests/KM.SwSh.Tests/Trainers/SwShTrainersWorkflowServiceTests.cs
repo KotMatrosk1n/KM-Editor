@@ -107,6 +107,9 @@ public sealed class SwShTrainersWorkflowServiceTests
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.NatureField).Options,
             option => option.Value == 13 && option.Label == "Jolly");
         Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.DynamaxLevelField).Options,
+            option => option.Value == 10 && option.Label == "10 levels");
+        Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.CanDynamaxField).Options,
             option => option.Value == 0 && option.Label == "No");
         Assert.Contains(

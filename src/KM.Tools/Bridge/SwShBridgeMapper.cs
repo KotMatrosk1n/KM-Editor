@@ -417,8 +417,9 @@ public static class SwShBridgeMapper
                 workflow.Stats.PresentPokemonCount,
                 workflow.Stats.TotalEvolutionCount,
                 workflow.Stats.TotalLearnsetMoveCount,
-                workflow.Stats.SourceFileCount),
+            workflow.Stats.SourceFileCount),
             workflow.EvolutionMethodOptions.Select(ToDto).ToArray(),
+            workflow.LearnsetMoveOptions.Select(ToDto).ToArray(),
             workflow.EditableFields.Select(ToDto).ToArray(),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1291,7 +1292,13 @@ public static class SwShBridgeMapper
             field.Label,
             field.ValueKind,
             field.MinimumValue,
-            field.MaximumValue);
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static MoveEditableFieldOptionDto ToDto(SwShMoveEditableFieldOption option)
+    {
+        return new MoveEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static MoveStatChangeRecordDto ToDto(SwShMoveStatChangeRecord statChange)

@@ -8,6 +8,8 @@
     "build": "tsc --build && vite build",
     "preview": "vite preview",
     "sidecar:publish": "node scripts/publish-sidecar.mjs",
+    "sprites:download": "node scripts/download-sprites.mjs --refresh",
+    "sprites:ensure": "node scripts/download-sprites.mjs",
     "tauri": "tauri",
     "tauri:build": "tauri build",
     "tauri:dev": "tauri dev",
