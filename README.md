@@ -1,19 +1,30 @@
 # KM Editor
 
-KM Editor is a project for a modern Pokemon Sword/Shield editor.
+KM Editor is a desktop editor for Pokemon Sword and Pokemon Shield projects.
 
-## Project Direction
+The app keeps game parsing and writing in the backend, shows source provenance and diagnostics in the UI, and routes edits through preview, validation, change review, and apply steps before writing to a LayeredFS output root.
 
-- [Priority 0 product direction](docs/priority-0/product-direction.md)
-- [Priority 0 V1 scope](docs/priority-0/v1-scope.md)
-- [Priority 0 safety and data ownership](docs/priority-0/safety-policy.md)
-- [Priority 0 UX and project model](docs/priority-0/ux-project-model.md)
-- [Priority 1 technical spine](docs/priority-1/technical-spine.md)
-- [Priority 2 framework and library stack](docs/priority-2/framework-stack.md)
-- [Priority 3 workbench navigation model](docs/priority-3/workbench-navigation.md)
-- [Priority 3 project and path flow model](docs/priority-3/project-path-flows.md)
-- [Priority 3 workflow surface model](docs/priority-3/workflow-surface-model.md)
-- [Priority 3 interaction state model](docs/priority-3/interaction-state-model.md)
-- [Priority 3 first Priority 4 vertical slice plan](docs/priority-3/priority-4-first-slice.md)
-- [Priority 7 performance baseline](docs/priority-7/performance-baseline.md)
-- [Priority 9 feature coverage roadmap](docs/priority-9/feature-coverage-roadmap.md)
+## Repository
+
+- `src/`: backend projects, file formats, workflow services, and bridge host.
+- `apps/desktop/`: React/Tauri desktop app.
+- `tests/`: backend, format, integration, and desktop-facing contract coverage.
+
+## Requirements
+
+- .NET SDK from `global.json`
+- Node.js and pnpm
+- Rust/MSVC toolchain for Tauri desktop packaging on Windows
+
+## Common Commands
+
+Run these from the repository root:
+
+```powershell
+dotnet test .\KM.Editor.slnx --no-restore
+pnpm --filter @km-editor/desktop typecheck
+pnpm --filter @km-editor/desktop test:run
+pnpm --filter @km-editor/desktop tauri:build
+```
+
+Desktop-specific notes live in [apps/desktop/README.md](apps/desktop/README.md). Backend test notes live in [tests/README.md](tests/README.md).

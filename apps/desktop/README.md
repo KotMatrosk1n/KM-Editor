@@ -1,7 +1,5 @@
 # Desktop App
 
-Status: Priority 2 frontend shell.
-
 The KM Editor desktop frontend shell lives here.
 
 ## Stack
