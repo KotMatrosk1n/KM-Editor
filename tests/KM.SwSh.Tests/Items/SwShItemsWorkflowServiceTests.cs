@@ -31,6 +31,24 @@ public sealed class SwShItemsWorkflowServiceTests
         Assert.Equal(150, item.SellPrice);
         Assert.Equal(15, item.WattsPrice);
         Assert.Equal(3, item.AlternatePrice);
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Inventory").Details,
+            detail => detail.Label == "Sprite" && detail.Value == "12");
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Field Use").Details,
+            detail => detail.Label == "Field use type" && detail.Value == "Medicine (1)");
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Field Use").Details,
+            detail => detail.Label == "Use flags 1" && detail.Value == "Restore HP");
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Battle").Details,
+            detail => detail.Label == "Fling power" && detail.Value == "30");
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Pokemon Effects").Details,
+            detail => detail.Label == "Heal" && detail.Value == "20 HP");
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Pokemon Effects").Details,
+            detail => detail.Label == "Friendship gains" && detail.Value == "+1 / +1 / 0");
         Assert.Equal(ProjectFileLayer.Base, item.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.BaseOnly, item.Provenance.FileState);
         Assert.Equal(SwShItemsWorkflowService.ItemDataPath, item.Provenance.SourceFile);
@@ -121,7 +139,24 @@ public sealed class SwShItemsWorkflowServiceTests
             "bin/pml/item/item.dat",
             SwShItemTestFixtures.CreateItemTable(
                 new ItemFixtureRecord(0, 0, 0, 0, 0, SwShItemPouch.Items),
-                new ItemFixtureRecord(1, 1, 300, 15, 3, SwShItemPouch.Medicine),
+                new ItemFixtureRecord(
+                    1,
+                    1,
+                    300,
+                    15,
+                    3,
+                    SwShItemPouch.Medicine,
+                    FlingPower: 30,
+                    FieldUseType: 1,
+                    FieldFlags: 2,
+                    CanUseOnPokemon: true,
+                    ItemType: 9,
+                    SortIndex: 5,
+                    ItemSprite: 12,
+                    UseFlags1: 4,
+                    HealAmount: 20,
+                    FriendshipGain1: 1,
+                    FriendshipGain2: 1),
                 new ItemFixtureRecord(2, 2, 200, 10, 5, SwShItemPouch.Medicine)));
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/itemname.dat",

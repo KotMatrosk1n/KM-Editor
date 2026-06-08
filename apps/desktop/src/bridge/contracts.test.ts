@@ -344,6 +344,19 @@ describe('bridge contracts', () => {
           alternatePrice: 3,
           buyPrice: 300,
           category: 'Medicine',
+          detailGroups: [
+            {
+              details: [
+                { label: 'Pouch', value: 'Medicine (0)' },
+                { label: 'Machine', value: 'No machine link' }
+              ],
+              label: 'Inventory'
+            },
+            {
+              details: [{ label: 'Use flags 1', value: 'Restore HP' }],
+              label: 'Field Use'
+            }
+          ],
           itemId: 1,
           name: 'Potion',
           provenance: {
@@ -2084,6 +2097,19 @@ describe('bridge contracts', () => {
           alternatePrice: 3,
           buyPrice: 450,
           category: 'Medicine',
+          detailGroups: [
+            {
+              details: [
+                { label: 'Pouch', value: 'Medicine (0)' },
+                { label: 'Machine', value: 'No machine link' }
+              ],
+              label: 'Inventory'
+            },
+            {
+              details: [{ label: 'Use flags 1', value: 'Restore HP' }],
+              label: 'Field Use'
+            }
+          ],
           itemId: 1,
           name: 'Potion',
           provenance: {

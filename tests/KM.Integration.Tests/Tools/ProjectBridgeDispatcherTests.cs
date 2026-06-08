@@ -248,6 +248,15 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(150, item.SellPrice);
         Assert.Equal(15, item.WattsPrice);
         Assert.Equal(3, item.AlternatePrice);
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Inventory").Details,
+            detail => detail.Label == "Sprite" && detail.Value == "12");
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Field Use").Details,
+            detail => detail.Label == "Use flags 1" && detail.Value == "Restore HP");
+        Assert.Contains(
+            item.DetailGroups.Single(group => group.Label == "Pokemon Effects").Details,
+            detail => detail.Label == "Heal" && detail.Value == "20 HP");
         Assert.Equal("romfs/bin/pml/item/item.dat", item.Provenance.SourceFile);
         Assert.Equal(ProjectFileLayerDto.Base, item.Provenance.SourceLayer);
         Assert.Collection(

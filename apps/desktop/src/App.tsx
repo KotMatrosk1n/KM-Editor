@@ -3413,6 +3413,20 @@ function SelectedItemPanel({
             </div>
           </dl>
 
+          {item.detailGroups.map((group) => (
+            <section className="inspector-block" key={group.label}>
+              <h4>{group.label}</h4>
+              <dl className="item-provenance-list compact-dl">
+                {group.details.map((detail) => (
+                  <div key={`${group.label}:${detail.label}`}>
+                    <dt>{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ))}
+
           <div className="item-edit-form">
             <div className="item-price-editor">
               {editableFields.map((field) => {
@@ -10858,7 +10872,11 @@ function filterItems(items: ItemRecord[], searchText: string) {
       item.buyPrice.toString(),
       item.sellPrice.toString(),
       item.wattsPrice.toString(),
-      item.alternatePrice.toString()
+      item.alternatePrice.toString(),
+      ...item.detailGroups.flatMap((group) => [
+        group.label,
+        ...group.details.flatMap((detail) => [detail.label, detail.value])
+      ])
     ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
   );
 }

@@ -11,6 +11,34 @@ public sealed record SwShItemTableRecord(
     uint WattsPrice,
     uint AlternatePrice,
     SwShItemPouch Pouch,
+    byte PouchFlags,
+    byte FlingPower,
+    byte FieldUseType,
+    byte FieldFlags,
+    bool CanUseOnPokemon,
+    byte ItemType,
+    byte SortIndex,
+    short ItemSprite,
+    byte GroupType,
+    byte GroupIndex,
+    byte CureStatusFlags,
+    byte Boost0,
+    byte Boost1,
+    byte Boost2,
+    byte Boost3,
+    byte UseFlags1,
+    byte UseFlags2,
+    sbyte EvHp,
+    sbyte EvAttack,
+    sbyte EvDefense,
+    sbyte EvSpeed,
+    sbyte EvSpecialAttack,
+    sbyte EvSpecialDefense,
+    byte HealAmount,
+    byte PpGain,
+    sbyte FriendshipGain1,
+    sbyte FriendshipGain2,
+    sbyte FriendshipGain3,
     IReadOnlyList<int> SharedItemIds);
 
 public sealed record SwShItemTableEdit(
@@ -52,6 +80,33 @@ public sealed class SwShItemTable
     private const int WattsPriceOffset = 0x04;
     private const int AlternatePriceOffset = 0x08;
     private const int PouchOffset = 0x11;
+    private const int FlingPowerOffset = 0x12;
+    private const int FieldUseTypeOffset = 0x13;
+    private const int FieldFlagsOffset = 0x14;
+    private const int CanUseOnPokemonOffset = 0x15;
+    private const int ItemTypeOffset = 0x16;
+    private const int SortIndexOffset = 0x18;
+    private const int ItemSpriteOffset = 0x1A;
+    private const int GroupTypeOffset = 0x1C;
+    private const int GroupIndexOffset = 0x1D;
+    private const int CureStatusFlagsOffset = 0x1E;
+    private const int Boost0Offset = 0x1F;
+    private const int Boost1Offset = 0x20;
+    private const int Boost2Offset = 0x21;
+    private const int Boost3Offset = 0x22;
+    private const int UseFlags1Offset = 0x23;
+    private const int UseFlags2Offset = 0x24;
+    private const int EvHpOffset = 0x25;
+    private const int EvAttackOffset = 0x26;
+    private const int EvDefenseOffset = 0x27;
+    private const int EvSpeedOffset = 0x28;
+    private const int EvSpecialAttackOffset = 0x29;
+    private const int EvSpecialDefenseOffset = 0x2A;
+    private const int HealAmountOffset = 0x2B;
+    private const int PpGainOffset = 0x2C;
+    private const int FriendshipGain1Offset = 0x2D;
+    private const int FriendshipGain2Offset = 0x2E;
+    private const int FriendshipGain3Offset = 0x2F;
     private const int EntryTableOffset = 0x44;
     private const int MaxRowIndexOffset = 0x04;
     private const int RowsStartOffset = 0x40;
@@ -191,7 +246,8 @@ public sealed class SwShItemTable
     private SwShItemTableRecord ReadRecord(int itemId, int rawRowIndex, IReadOnlyList<int> aliases)
     {
         var rowOffset = RowsStart + (rawRowIndex * RowSize);
-        var pouch = (SwShItemPouch)(data[rowOffset + PouchOffset] & 0x0F);
+        var pouchByte = data[rowOffset + PouchOffset];
+        var pouch = (SwShItemPouch)(pouchByte & 0x0F);
 
         return new SwShItemTableRecord(
             itemId,
@@ -200,6 +256,34 @@ public sealed class SwShItemTable
             BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(rowOffset + WattsPriceOffset)),
             BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(rowOffset + AlternatePriceOffset)),
             pouch,
+            (byte)(pouchByte >> 4),
+            data[rowOffset + FlingPowerOffset],
+            data[rowOffset + FieldUseTypeOffset],
+            data[rowOffset + FieldFlagsOffset],
+            data[rowOffset + CanUseOnPokemonOffset] == 1,
+            data[rowOffset + ItemTypeOffset],
+            data[rowOffset + SortIndexOffset],
+            BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(rowOffset + ItemSpriteOffset)),
+            data[rowOffset + GroupTypeOffset],
+            data[rowOffset + GroupIndexOffset],
+            data[rowOffset + CureStatusFlagsOffset],
+            data[rowOffset + Boost0Offset],
+            data[rowOffset + Boost1Offset],
+            data[rowOffset + Boost2Offset],
+            data[rowOffset + Boost3Offset],
+            data[rowOffset + UseFlags1Offset],
+            data[rowOffset + UseFlags2Offset],
+            unchecked((sbyte)data[rowOffset + EvHpOffset]),
+            unchecked((sbyte)data[rowOffset + EvAttackOffset]),
+            unchecked((sbyte)data[rowOffset + EvDefenseOffset]),
+            unchecked((sbyte)data[rowOffset + EvSpeedOffset]),
+            unchecked((sbyte)data[rowOffset + EvSpecialAttackOffset]),
+            unchecked((sbyte)data[rowOffset + EvSpecialDefenseOffset]),
+            data[rowOffset + HealAmountOffset],
+            data[rowOffset + PpGainOffset],
+            unchecked((sbyte)data[rowOffset + FriendshipGain1Offset]),
+            unchecked((sbyte)data[rowOffset + FriendshipGain2Offset]),
+            unchecked((sbyte)data[rowOffset + FriendshipGain3Offset]),
             aliases);
     }
 }

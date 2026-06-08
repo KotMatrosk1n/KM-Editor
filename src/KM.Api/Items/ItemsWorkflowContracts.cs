@@ -26,6 +26,14 @@ public sealed record ItemProvenanceDto(
     ProjectFileLayerDto SourceLayer,
     ProjectFileGraphEntryStateDto FileState);
 
+public sealed record ItemDetailDto(
+    string Label,
+    string Value);
+
+public sealed record ItemDetailGroupDto(
+    string Label,
+    IReadOnlyList<ItemDetailDto> Details);
+
 public sealed record ItemRecordDto(
     int ItemId,
     string Name,
@@ -35,6 +43,7 @@ public sealed record ItemRecordDto(
     int WattsPrice,
     int AlternatePrice,
     IReadOnlyList<int> SharedItemIds,
+    IReadOnlyList<ItemDetailGroupDto> DetailGroups,
     ItemProvenanceDto Provenance);
 
 public sealed record ItemEditableFieldDto(
