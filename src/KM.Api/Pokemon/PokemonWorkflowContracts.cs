@@ -114,7 +114,12 @@ public sealed record PokemonEditableFieldDto(
     string Group,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<PokemonEditableFieldOptionDto> Options);
+
+public sealed record PokemonEditableFieldOptionDto(
+    int Value,
+    string Label);
 
 public sealed record PokemonWorkflowStatsDto(
     int TotalPokemonCount,

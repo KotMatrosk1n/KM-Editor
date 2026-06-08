@@ -347,6 +347,7 @@ describe('bridge contracts', () => {
           label: 'HP',
           maximumValue: 255,
           minimumValue: 0,
+          options: [],
           valueKind: 'integer'
         }
       ],
@@ -1706,6 +1707,7 @@ describe('bridge contracts', () => {
           label: 'HP',
           maximumValue: 255,
           minimumValue: 0,
+          options: [],
           valueKind: 'integer'
         }
       ],

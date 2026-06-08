@@ -62,6 +62,72 @@ public sealed class SwShPokemonWorkflowService
     public const string ArmorDexIndexField = "armorDexIndex";
     public const string CrownDexIndexField = "crownDexIndex";
 
+    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> TypeOptions =
+    [
+        CreateOption(0, "Normal"),
+        CreateOption(1, "Fighting"),
+        CreateOption(2, "Flying"),
+        CreateOption(3, "Poison"),
+        CreateOption(4, "Ground"),
+        CreateOption(5, "Rock"),
+        CreateOption(6, "Bug"),
+        CreateOption(7, "Ghost"),
+        CreateOption(8, "Steel"),
+        CreateOption(9, "Fire"),
+        CreateOption(10, "Water"),
+        CreateOption(11, "Grass"),
+        CreateOption(12, "Electric"),
+        CreateOption(13, "Psychic"),
+        CreateOption(14, "Ice"),
+        CreateOption(15, "Dragon"),
+        CreateOption(16, "Dark"),
+        CreateOption(17, "Fairy"),
+    ];
+
+    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> EggGroupOptions =
+    [
+        CreateOption(0, "None"),
+        CreateOption(1, "Monster"),
+        CreateOption(2, "Water 1"),
+        CreateOption(3, "Bug"),
+        CreateOption(4, "Flying"),
+        CreateOption(5, "Field"),
+        CreateOption(6, "Fairy"),
+        CreateOption(7, "Grass"),
+        CreateOption(8, "Human-Like"),
+        CreateOption(9, "Water 3"),
+        CreateOption(10, "Mineral"),
+        CreateOption(11, "Amorphous"),
+        CreateOption(12, "Water 2"),
+        CreateOption(13, "Ditto"),
+        CreateOption(14, "Dragon"),
+        CreateOption(15, "Undiscovered"),
+    ];
+
+    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> ExpGrowthOptions =
+    [
+        CreateOption(0, "Medium Fast"),
+        CreateOption(1, "Erratic"),
+        CreateOption(2, "Fluctuating"),
+        CreateOption(3, "Medium Slow"),
+        CreateOption(4, "Fast"),
+        CreateOption(5, "Slow"),
+    ];
+
+    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> ColorOptions =
+    [
+        CreateOption(0, "Red"),
+        CreateOption(1, "Blue"),
+        CreateOption(2, "Yellow"),
+        CreateOption(3, "Green"),
+        CreateOption(4, "Black"),
+        CreateOption(5, "Brown"),
+        CreateOption(6, "Purple"),
+        CreateOption(7, "Gray"),
+        CreateOption(8, "White"),
+        CreateOption(9, "Pink"),
+    ];
+
     public static readonly IReadOnlyList<SwShPokemonEditableField> EditableFields =
     [
         CreateField(HPField, "HP", "Base Stats", 0, byte.MaxValue),
@@ -76,12 +142,12 @@ public sealed class SwShPokemonWorkflowService
         CreateField(EVYieldSpecialAttackField, "Sp. Atk EV Yield", "EV Yield", 0, 3),
         CreateField(EVYieldSpecialDefenseField, "Sp. Def EV Yield", "EV Yield", 0, 3),
         CreateField(EVYieldSpeedField, "Speed EV Yield", "EV Yield", 0, 3),
-        CreateField(Type1Field, "Type 1", "Traits", 0, 17),
-        CreateField(Type2Field, "Type 2", "Traits", 0, 17),
-        CreateField(EggGroup1Field, "Egg Group 1", "Traits", 0, 15),
-        CreateField(EggGroup2Field, "Egg Group 2", "Traits", 0, 15),
-        CreateField(ExpGrowthField, "EXP Growth", "Traits", 0, 5),
-        CreateField(ColorField, "Color", "Traits", 0, 63),
+        CreateField(Type1Field, "Type 1", "Traits", 0, 17, TypeOptions),
+        CreateField(Type2Field, "Type 2", "Traits", 0, 17, TypeOptions),
+        CreateField(EggGroup1Field, "Egg Group 1", "Traits", 0, 15, EggGroupOptions),
+        CreateField(EggGroup2Field, "Egg Group 2", "Traits", 0, 15, EggGroupOptions),
+        CreateField(ExpGrowthField, "EXP Growth", "Traits", 0, 5, ExpGrowthOptions),
+        CreateField(ColorField, "Color", "Traits", 0, 63, ColorOptions),
         CreateField(HeldItem1Field, "Held Item 50%", "Held Items", 0, short.MaxValue),
         CreateField(HeldItem2Field, "Held Item 5%", "Held Items", 0, short.MaxValue),
         CreateField(HeldItem3Field, "Held Item 1%", "Held Items", 0, short.MaxValue),
@@ -624,7 +690,8 @@ public sealed class SwShPokemonWorkflowService
         string label,
         string group,
         int minimumValue,
-        int maximumValue)
+        int maximumValue,
+        IReadOnlyList<SwShPokemonEditableFieldOption>? options = null)
     {
         return new SwShPokemonEditableField(
             field,
@@ -632,7 +699,8 @@ public sealed class SwShPokemonWorkflowService
             group,
             "integer",
             minimumValue,
-            maximumValue);
+            maximumValue,
+            options ?? []);
     }
 
     private static SwShPokemonEditableField CreateBooleanField(
@@ -646,7 +714,13 @@ public sealed class SwShPokemonWorkflowService
             group,
             "boolean",
             0,
-            1);
+            1,
+            []);
+    }
+
+    private static SwShPokemonEditableFieldOption CreateOption(int value, string label)
+    {
+        return new SwShPokemonEditableFieldOption(value, label);
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

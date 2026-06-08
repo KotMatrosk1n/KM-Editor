@@ -432,12 +432,18 @@ export const pokemonLearnsetMoveSchema = z.strictObject({
   moveName: z.string()
 });
 
+export const pokemonEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
 export const pokemonEditableFieldSchema = z.strictObject({
   field: z.string(),
   group: z.string(),
   label: z.string(),
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
+  options: z.array(pokemonEditableFieldOptionSchema),
   valueKind: z.string()
 });
 
