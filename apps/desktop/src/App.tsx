@@ -2576,7 +2576,13 @@ export function App({
               <WorkflowLoadingPanel label="Royal Candy Workflows" />
             ) : (
               <RoyalCandySection
+                changePlan={changePlan}
+                editSession={editSession}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
                 isStaging={isRoyalCandyStaging}
+                onApplyChangePlan={handleApplyChangePlan}
+                onCreateChangePlan={handleCreateChangePlan}
                 onSearchChange={setRoyalCandySearchText}
                 onSelectCheck={setSelectedRoyalCandyCheckId}
                 onSelectWorkflow={setSelectedRoyalCandyWorkflowId}
@@ -10185,7 +10191,13 @@ function SelectedExeFsPatchPanel({
 }
 
 function RoyalCandySection({
+  changePlan,
+  editSession,
+  isChangePlanApplying,
+  isChangePlanCreating,
   isStaging,
+  onApplyChangePlan,
+  onCreateChangePlan,
   onSearchChange,
   onSelectCheck,
   onSelectWorkflow,
@@ -10195,7 +10207,13 @@ function RoyalCandySection({
   selectedWorkflowId,
   workflow
 }: {
+  changePlan: ChangePlan | null;
+  editSession: EditSession | null;
+  isChangePlanApplying: boolean;
+  isChangePlanCreating: boolean;
   isStaging: boolean;
+  onApplyChangePlan: () => void;
+  onCreateChangePlan: () => void;
   onSearchChange: (value: string) => void;
   onSelectCheck: (checkId: string | null) => void;
   onSelectWorkflow: (workflowId: string | null) => void;
@@ -10346,7 +10364,13 @@ function RoyalCandySection({
 
             <SelectedRoyalCandyPanel
               check={selectedCheck}
+              changePlan={changePlan}
+              editSession={editSession}
+              isChangePlanApplying={isChangePlanApplying}
+              isChangePlanCreating={isChangePlanCreating}
               isStaging={isStaging}
+              onApplyChangePlan={onApplyChangePlan}
+              onCreateChangePlan={onCreateChangePlan}
               onStageWorkflow={onStageWorkflow}
               outputs={visibleOutputs}
               selectedWorkflow={selectedWorkflow}
@@ -10366,13 +10390,25 @@ function RoyalCandySection({
 
 function SelectedRoyalCandyPanel({
   check,
+  changePlan,
+  editSession,
+  isChangePlanApplying,
+  isChangePlanCreating,
   isStaging,
+  onApplyChangePlan,
+  onCreateChangePlan,
   onStageWorkflow,
   outputs,
   selectedWorkflow
 }: {
   check: RoyalCandyWorkflowCheckRecord | null;
+  changePlan: ChangePlan | null;
+  editSession: EditSession | null;
+  isChangePlanApplying: boolean;
+  isChangePlanCreating: boolean;
   isStaging: boolean;
+  onApplyChangePlan: () => void;
+  onCreateChangePlan: () => void;
   onStageWorkflow: (workflowId: string) => void;
   outputs: RoyalCandyOutputRecord[];
   selectedWorkflow: RoyalCandyWorkflowRecord | null;
@@ -10383,6 +10419,18 @@ function SelectedRoyalCandyPanel({
     (selectedWorkflow.workflowId === 'royal-candy-unlimited' ||
       selectedWorkflow.workflowId === 'royal-candy-story-limits') &&
     (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning');
+  const stagedRoyalCandyEdit = editSession?.pendingEdits.find(
+    (edit) => edit.domain === 'workflow.royalCandy'
+  );
+  const isSelectedWorkflowStaged =
+    selectedWorkflow !== null && stagedRoyalCandyEdit?.recordId === selectedWorkflow.workflowId;
+  const canReviewPlan = isSelectedWorkflowStaged && !isChangePlanCreating;
+  const canApplyPlan =
+    isSelectedWorkflowStaged &&
+    changePlan !== null &&
+    changePlan.canApply &&
+    changePlan.writes.length > 0 &&
+    !isChangePlanApplying;
 
   return (
     <aside aria-label="Selected Royal Candy workflow provenance" className="encounter-inspector">
@@ -10448,6 +10496,24 @@ function SelectedRoyalCandyPanel({
               >
                 <ClipboardCheck aria-hidden="true" size={16} />
                 <span>{isStaging ? 'Staging' : 'Stage Workflow'}</span>
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canReviewPlan}
+                onClick={onCreateChangePlan}
+                type="button"
+              >
+                <ClipboardCheck aria-hidden="true" size={16} />
+                <span>{isChangePlanCreating ? 'Reviewing' : 'Review Plan'}</span>
+              </button>
+              <button
+                className="primary-button"
+                disabled={!canApplyPlan}
+                onClick={onApplyChangePlan}
+                type="button"
+              >
+                <Save aria-hidden="true" size={16} />
+                <span>{isChangePlanApplying ? 'Applying' : 'Apply Plan'}</span>
               </button>
             </div>
 

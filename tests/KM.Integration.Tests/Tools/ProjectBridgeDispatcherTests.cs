@@ -1850,9 +1850,12 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(
             planResponse.Payload.ChangePlan.Writes,
             write => write.TargetRelativePath == "romfs/bin/message/English/common/iteminfo.dat");
-        Assert.DoesNotContain(
+        Assert.Contains(
             planResponse.Payload.ChangePlan.Writes,
             write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.BagEventScriptPath);
 
         var applyJson = SerializeRequest(
             KmCommandNames.ApplyChangePlan,
@@ -1871,6 +1874,12 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(
             applyResponse.Payload.ApplyResult.WrittenFiles,
             relativePath => relativePath == SwShRoyalCandyWorkflowService.ItemPath);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShRoyalCandyWorkflowService.BagEventScriptPath);
         Assert.Equal(baseItemBytes, File.ReadAllBytes(baseItemPath));
 
         var outputItemPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
@@ -1908,6 +1917,19 @@ public sealed class ProjectBridgeDispatcherTests
             "item",
             "item_hash_to_index.dat")));
         Assert.Contains(outputHashTable.Entries, entry => entry.ItemId == 1128);
+
+        var outputBagScript = File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "script",
+            "amx",
+            "main_event_0020.amx"));
+        Assert.NotEqual([0x05], outputBagScript);
+        Assert.True(outputBagScript.Length > 0x38);
+
+        var outputExeFsMain = File.ReadAllBytes(Path.Combine(temp.OutputRootPath, "exefs", "main"));
+        Assert.NotEqual(SwShExeFsBridgeFixtures.CreateCompatibleNso(), outputExeFsMain);
     }
 
     [Fact]
@@ -2643,7 +2665,7 @@ public sealed class ProjectBridgeDispatcherTests
             [0x04]);
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.BagEventScriptPath["romfs/".Length..],
-            [0x05]);
+            CreateRoyalCandyBagEventScript());
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/itemname.dat",
             CreateRoyalCandyTextTable(itemId => itemId == 50 ? "Rare Candy" : $"Item {itemId}"));
@@ -2696,6 +2718,124 @@ public sealed class ProjectBridgeDispatcherTests
             Enumerable.Range(0, 1129)
                 .Select(itemId => new SwShGameTextLine(getLine(itemId), Flags: 0))
                 .ToArray());
+    }
+
+    private static byte[] CreateRoyalCandyBagEventScript()
+    {
+        const ushort pawnMagic64 = 0xF1E1;
+        const short pawnFlagCompact = 0x0004;
+        const short defSize = 12;
+        const int cellSize = 8;
+        const int nativeCount = 77;
+        const int natives = 0x38;
+        const int libraries = natives + nativeCount * defSize;
+        const int cod = libraries;
+        const int codeCellCount = 5022;
+        const uint duplicatedNativeHash = 0x0473BE4E;
+
+        var prefix = new byte[cod];
+        BinaryPrimitives.WriteUInt32LittleEndian(prefix.AsSpan(natives + 70 * defSize + 8), duplicatedNativeHash);
+        BinaryPrimitives.WriteUInt32LittleEndian(prefix.AsSpan(natives + 76 * defSize + 8), duplicatedNativeHash);
+
+        var cells = new ulong[codeCellCount];
+        cells[3686] = 135;
+        cells[3687] = 70;
+        cells[3688] = 8;
+        cells[4991] = 46;
+        cells[4992] = 89;
+        cells[4993] = 48;
+        cells[5020] = 49;
+        cells[5021] = unchecked((ulong)((4991 - 5020) * cellSize));
+
+        var compactCode = CompactAmxCells(cells);
+        var data = new byte[cod + compactCode.Length];
+        Array.Copy(prefix, data, prefix.Length);
+        Array.Copy(compactCode, 0, data, cod, compactCode.Length);
+
+        var dat = cod + codeCellCount * cellSize;
+        WriteAmxHeaderFields(
+            data,
+            size: data.Length,
+            magic: pawnMagic64,
+            flags: pawnFlagCompact,
+            defSize: defSize,
+            cod: cod,
+            dat: dat,
+            hea: dat,
+            stp: dat,
+            publics: natives,
+            natives: natives,
+            libraries: libraries,
+            nameTable: libraries);
+        return data;
+    }
+
+    private static byte[] CompactAmxCells(IEnumerable<ulong> cells)
+    {
+        var compact = new List<byte>();
+        foreach (var cell in cells)
+        {
+            var value = unchecked((long)cell);
+            var chunks = new List<byte>();
+            while (true)
+            {
+                var payload = (byte)(value & 0x7F);
+                chunks.Add(payload);
+                value >>= 7;
+                var signBitSet = (payload & 0x40) != 0;
+                if ((value == 0 && !signBitSet) || (value == -1 && signBitSet))
+                {
+                    break;
+                }
+            }
+
+            for (var i = chunks.Count - 1; i >= 0; i--)
+            {
+                var current = chunks[i];
+                if (i != 0)
+                {
+                    current |= 0x80;
+                }
+
+                compact.Add(current);
+            }
+        }
+
+        return compact.ToArray();
+    }
+
+    private static void WriteAmxHeaderFields(
+        byte[] data,
+        int size,
+        ushort magic,
+        short flags,
+        short defSize,
+        int cod,
+        int dat,
+        int hea,
+        int stp,
+        int publics,
+        int natives,
+        int libraries,
+        int nameTable)
+    {
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x00), size);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x04), magic);
+        data[0x06] = 11;
+        data[0x07] = 11;
+        BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(0x08), flags);
+        BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(0x0A), defSize);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x0C), cod);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x10), dat);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x14), hea);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x18), stp);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x1C), 0);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x20), publics);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x24), natives);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x28), libraries);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x2C), libraries);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x30), libraries);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x34), nameTable);
     }
 
     private static BridgeResponse<TPayload> DeserializeResponse<TPayload>(string responseJson)

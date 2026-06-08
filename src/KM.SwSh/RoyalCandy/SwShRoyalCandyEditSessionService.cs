@@ -5,6 +5,7 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.ExeFs;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -391,7 +392,7 @@ public sealed class SwShRoyalCandyEditSessionService
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Warning,
-            "Royal Candy plan currently generates item data and item text outputs. Acquisition, script, and ExeFS targets remain reserved for their dedicated apply workflows.",
+            "Royal Candy plan currently generates item data, item text, the Bag-event grant, and ExeFS item-use patches. Shop, raid reward, and placement targets remain reserved for their dedicated apply workflows.",
             expected: "Review remaining Royal Candy output targets before full install"));
     }
 
@@ -458,6 +459,16 @@ public sealed class SwShRoyalCandyEditSessionService
                 : GetRoyalCandyDescription(workflowId);
             lines[1128] = lines[1128] with { Text = replacement };
             return SwShGameTextFile.Write(lines);
+        }
+
+        if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return SwShRoyalCandyBagEventScriptPatcher.ApplyGrantPatch(File.ReadAllBytes(source.AbsolutePath), 1128);
+        }
+
+        if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(File.ReadAllBytes(source.AbsolutePath));
         }
 
         diagnostics.Add(CreateDiagnostic(
@@ -566,6 +577,11 @@ public sealed class SwShRoyalCandyEditSessionService
             return CombineGraphPath(paths.BaseRomFsPath, entry.RelativePath["romfs/".Length..]);
         }
 
+        if (entry.BaseFile is not null && entry.RelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
+        {
+            return CombineGraphPath(paths.BaseExeFsPath, entry.RelativePath["exefs/".Length..]);
+        }
+
         return null;
     }
 
@@ -585,6 +601,8 @@ public sealed class SwShRoyalCandyEditSessionService
     {
         return string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemPath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemHashPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, SwShRoyalCandyWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
             || IsItemTextOutput(relativePath);
     }
 
