@@ -10,6 +10,7 @@ export const kmCommandNameValues = [
   'items.load',
   'items.field.update',
   'pokemon.load',
+  'pokemon.field.update',
   'moves.load',
   'moves.field.update',
   'text.load',
@@ -50,6 +51,7 @@ export const kmCommandNames = {
   listWorkflows: 'workflow.list',
   loadItemsWorkflow: 'items.load',
   loadPokemonWorkflow: 'pokemon.load',
+  updatePokemonField: 'pokemon.field.update',
   loadMovesWorkflow: 'moves.load',
   updateMoveField: 'moves.field.update',
   loadTextWorkflow: 'text.load',
@@ -374,6 +376,48 @@ export const pokemonDexPresenceSchema = z.strictObject({
   regionalDexIndex: z.number().int().nonnegative()
 });
 
+export const pokemonPersonalDetailsSchema = z.strictObject({
+  ability1: z.number().int().nonnegative().optional(),
+  ability2: z.number().int().nonnegative().optional(),
+  armorDexIndex: z.number().int().nonnegative().optional(),
+  baseExperience: z.number().int().nonnegative().optional(),
+  baseFriendship: z.number().int().nonnegative(),
+  canNotDynamax: z.boolean(),
+  catchRate: z.number().int().nonnegative(),
+  color: z.number().int().nonnegative(),
+  crownDexIndex: z.number().int().nonnegative().optional(),
+  eggGroup1: z.number().int().nonnegative(),
+  eggGroup2: z.number().int().nonnegative(),
+  evYieldAttack: z.number().int().nonnegative(),
+  evYieldDefense: z.number().int().nonnegative(),
+  evYieldHP: z.number().int().nonnegative(),
+  evYieldSpecialAttack: z.number().int().nonnegative(),
+  evYieldSpecialDefense: z.number().int().nonnegative(),
+  evYieldSpeed: z.number().int().nonnegative(),
+  evolutionStage: z.number().int().nonnegative(),
+  expGrowth: z.number().int().nonnegative(),
+  form: z.number().int().nonnegative(),
+  formCount: z.number().int().nonnegative(),
+  formStatsIndex: z.number().int().nonnegative(),
+  genderRatio: z.number().int().nonnegative(),
+  hasSpriteForm: z.boolean(),
+  hatchedSpecies: z.number().int().nonnegative(),
+  hatchCycles: z.number().int().nonnegative(),
+  heldItem1: z.number().int().nonnegative(),
+  heldItem2: z.number().int().nonnegative(),
+  heldItem3: z.number().int().nonnegative(),
+  hiddenAbility: z.number().int().nonnegative().optional(),
+  height: z.number().int().nonnegative().optional(),
+  isPresentInGame: z.boolean(),
+  isRegionalForm: z.boolean(),
+  localFormIndex: z.number().int().nonnegative(),
+  modelId: z.number().int().nonnegative(),
+  regionalDexIndex: z.number().int().nonnegative().optional(),
+  type1: z.number().int().nonnegative(),
+  type2: z.number().int().nonnegative(),
+  weight: z.number().int().nonnegative().optional()
+});
+
 export const pokemonEvolutionRecordSchema = z.strictObject({
   argument: z.number().int().nonnegative(),
   form: z.number().int().nonnegative(),
@@ -386,6 +430,15 @@ export const pokemonLearnsetMoveSchema = z.strictObject({
   level: z.number().int().nonnegative(),
   moveId: z.number().int().nonnegative(),
   moveName: z.string()
+});
+
+export const pokemonEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  group: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  valueKind: z.string()
 });
 
 export const pokemonRecordSchema = z.strictObject({
@@ -402,6 +455,7 @@ export const pokemonRecordSchema = z.strictObject({
   height: z.number().int().nonnegative(),
   learnset: z.array(pokemonLearnsetMoveSchema),
   name: z.string(),
+  personal: pokemonPersonalDetailsSchema,
   personalId: z.number().int().nonnegative(),
   provenance: pokemonProvenanceSchema,
   speciesId: z.number().int().nonnegative(),
@@ -420,12 +474,27 @@ export const pokemonWorkflowStatsSchema = z.strictObject({
 
 export const pokemonWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(pokemonEditableFieldSchema),
   pokemon: z.array(pokemonRecordSchema),
   stats: pokemonWorkflowStatsSchema,
   summary: workflowSummarySchema
 });
 
 export const loadPokemonWorkflowResponseSchema = z.strictObject({
+  workflow: pokemonWorkflowSchema
+});
+
+export const updatePokemonFieldRequestSchema = z.strictObject({
+  field: z.string(),
+  paths: projectPathsSchema,
+  personalId: z.number().int().nonnegative(),
+  session: editSessionSchema.nullable(),
+  value: z.string()
+});
+
+export const updatePokemonFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
   workflow: pokemonWorkflowSchema
 });
 
@@ -1351,6 +1420,7 @@ export type EditSession = z.infer<typeof editSessionSchema>;
 export type ItemEditableField = z.infer<typeof itemEditableFieldSchema>;
 export type ItemRecord = z.infer<typeof itemRecordSchema>;
 export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
+export type PokemonEditableField = z.infer<typeof pokemonEditableFieldSchema>;
 export type PokemonEvolutionRecord = z.infer<typeof pokemonEvolutionRecordSchema>;
 export type PokemonLearnsetMove = z.infer<typeof pokemonLearnsetMoveSchema>;
 export type PokemonRecord = z.infer<typeof pokemonRecordSchema>;
@@ -1407,6 +1477,8 @@ export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSc
 export type LoadItemsWorkflowResponse = z.infer<typeof loadItemsWorkflowResponseSchema>;
 export type LoadPokemonWorkflowRequest = z.infer<typeof loadPokemonWorkflowRequestSchema>;
 export type LoadPokemonWorkflowResponse = z.infer<typeof loadPokemonWorkflowResponseSchema>;
+export type UpdatePokemonFieldRequest = z.infer<typeof updatePokemonFieldRequestSchema>;
+export type UpdatePokemonFieldResponse = z.infer<typeof updatePokemonFieldResponseSchema>;
 export type LoadMovesWorkflowRequest = z.infer<typeof loadMovesWorkflowRequestSchema>;
 export type LoadMovesWorkflowResponse = z.infer<typeof loadMovesWorkflowResponseSchema>;
 export type UpdateMoveFieldRequest = z.infer<typeof updateMoveFieldRequestSchema>;

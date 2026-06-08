@@ -46,7 +46,7 @@ public sealed class SwShPokemonDataTableTests
         BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(0x4C), 0x11223344);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x56), 1);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x58), 0);
-        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5A), 3);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5A), 5);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5C), 1);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5E), 0);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0xAC), 200);
@@ -78,8 +78,77 @@ public sealed class SwShPokemonDataTableTests
         Assert.Equal(66, personal.Ability2);
         Assert.Equal(34, personal.HiddenAbility);
         Assert.Equal(1, personal.HatchedSpecies);
+        Assert.True(personal.IsRegionalForm);
+        Assert.True(personal.CanNotDynamax);
         Assert.Equal(200, personal.ArmorDexIndex);
         Assert.Equal(300, personal.CrownDexIndex);
+    }
+
+    [Fact]
+    public void PersonalTableWritesEditedFieldsAndPreservesUnknownBytes()
+    {
+        var record = Enumerable.Repeat((byte)0xCC, SwShPersonalTable.RecordSize).ToArray();
+        record[0x00] = 45;
+        record[0x01] = 49;
+        record[0x02] = 50;
+        record[0x03] = 65;
+        record[0x04] = 66;
+        record[0x05] = 67;
+        record[0x06] = 11;
+        record[0x07] = 3;
+        record[0x08] = 45;
+        record[0x09] = 1;
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x0A), 0);
+        BinaryPrimitives.WriteInt16LittleEndian(record.AsSpan(0x0C), 10);
+        BinaryPrimitives.WriteInt16LittleEndian(record.AsSpan(0x0E), 20);
+        BinaryPrimitives.WriteInt16LittleEndian(record.AsSpan(0x10), 30);
+        record[0x12] = 31;
+        record[0x13] = 20;
+        record[0x14] = 70;
+        record[0x15] = 4;
+        record[0x16] = 7;
+        record[0x17] = 8;
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x18), 65);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x1A), 66);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x1C), 34);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x1E), 100);
+        record[0x20] = 2;
+        record[0x21] = 12 | (1 << 6);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x22), 64);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x24), 7);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x26), 69);
+        BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(0x4C), 0x11223344);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x56), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x58), 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5A), 0x00F0);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5C), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5E), 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0xAC), 200);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0xAE), 300);
+        var parsed = SwShPersonalTable.Parse(record);
+        var edited = parsed.Records[0] with
+        {
+            HP = 99,
+            EVYieldAttack = 3,
+            IsPresentInGame = false,
+            HasSpriteForm = true,
+            IsRegionalForm = true,
+            CanNotDynamax = true,
+            CrownDexIndex = 401,
+        };
+
+        var written = SwShPersonalTable.Write([edited], record);
+        var reparsed = SwShPersonalTable.Parse(written).Records[0];
+
+        Assert.Equal(99, reparsed.HP);
+        Assert.Equal(3, reparsed.EVYieldAttack);
+        Assert.False(reparsed.IsPresentInGame);
+        Assert.True(reparsed.HasSpriteForm);
+        Assert.True(reparsed.IsRegionalForm);
+        Assert.True(reparsed.CanNotDynamax);
+        Assert.Equal(401, reparsed.CrownDexIndex);
+        Assert.Equal(0xCC, written[0x60]);
+        Assert.Equal(0xF0 | 0x1 | 0x4, BinaryPrimitives.ReadUInt16LittleEndian(written.AsSpan(0x5A)));
     }
 
     [Fact]

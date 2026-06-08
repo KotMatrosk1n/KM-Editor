@@ -193,6 +193,31 @@ describe('App', () => {
     expect(screen.getByText('Base only')).toBeInTheDocument();
   });
 
+  it('starts a Pokemon edit session and saves a personal stat change', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const hpInput = screen.getByLabelText('HP');
+    await user.clear(hpInput);
+    await user.type(hpInput, '99');
+    await user.click(screen.getByRole('button', { name: 'Save HP' }));
+
+    expect(await screen.findByDisplayValue('99')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Bulbasaur hp to 99.')).toBeInTheDocument();
+  });
+
   it('opens Moves Data, searches records, and shows selected details', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge()} />);
@@ -1018,6 +1043,24 @@ function createMockProjectBridge(
   };
   const pokemonWorkflow: PokemonWorkflow = {
     diagnostics: [],
+    editableFields: [
+      {
+        field: 'hp',
+        group: 'Base Stats',
+        label: 'HP',
+        maximumValue: 255,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'canNotDynamax',
+        group: 'Flags',
+        label: 'Cannot Dynamax',
+        maximumValue: 1,
+        minimumValue: 0,
+        valueKind: 'boolean'
+      }
+    ],
     pokemon: [
       {
         abilities: {
@@ -1070,6 +1113,38 @@ function createMockProjectBridge(
           }
         ],
         name: 'Bulbasaur',
+        personal: {
+          baseFriendship: 70,
+          canNotDynamax: false,
+          catchRate: 45,
+          color: 5,
+          eggGroup1: 7,
+          eggGroup2: 1,
+          evYieldAttack: 0,
+          evYieldDefense: 0,
+          evYieldHP: 0,
+          evYieldSpecialAttack: 1,
+          evYieldSpecialDefense: 0,
+          evYieldSpeed: 0,
+          evolutionStage: 1,
+          expGrowth: 4,
+          form: 0,
+          formCount: 1,
+          formStatsIndex: 0,
+          genderRatio: 31,
+          hasSpriteForm: false,
+          hatchedSpecies: 1,
+          hatchCycles: 20,
+          heldItem1: 0,
+          heldItem2: 0,
+          heldItem3: 0,
+          isPresentInGame: true,
+          isRegionalForm: false,
+          localFormIndex: 0,
+          modelId: 1,
+          type1: 11,
+          type2: 3
+        },
         personalId: 1,
         provenance: {
           fileState: 'baseOnly',
@@ -1119,6 +1194,38 @@ function createMockProjectBridge(
           }
         ],
         name: 'Charmander',
+        personal: {
+          baseFriendship: 70,
+          canNotDynamax: false,
+          catchRate: 45,
+          color: 8,
+          eggGroup1: 7,
+          eggGroup2: 7,
+          evYieldAttack: 0,
+          evYieldDefense: 0,
+          evYieldHP: 0,
+          evYieldSpecialAttack: 0,
+          evYieldSpecialDefense: 0,
+          evYieldSpeed: 1,
+          evolutionStage: 1,
+          expGrowth: 4,
+          form: 0,
+          formCount: 1,
+          formStatsIndex: 0,
+          genderRatio: 31,
+          hasSpriteForm: false,
+          hatchedSpecies: 4,
+          hatchCycles: 20,
+          heldItem1: 0,
+          heldItem2: 0,
+          heldItem3: 0,
+          isPresentInGame: true,
+          isRegionalForm: false,
+          localFormIndex: 0,
+          modelId: 4,
+          type1: 9,
+          type2: 9
+        },
         personalId: 4,
         provenance: {
           fileState: 'baseOnly',
@@ -2064,6 +2171,20 @@ function createMockProjectBridge(
                       targetRelativePath: 'romfs/bin/trainer/trainer_poke/trainer_010.bin'
                     }
                   ]
+                : request.session.pendingEdits[0]?.domain === 'workflow.pokemon'
+                  ? [
+                      {
+                        reason: 'Apply pending Pokemon Data edit: Set Bulbasaur hp to 99.',
+                        replacesExistingOutput: false,
+                        sources: [
+                          {
+                            layer: 'base',
+                            relativePath: 'romfs/bin/pml/personal/personal_total.bin'
+                          }
+                        ],
+                        targetRelativePath: 'romfs/bin/pml/personal/personal_total.bin'
+                      }
+                    ]
                 : request.session.pendingEdits[0]?.domain === 'workflow.moves'
                   ? [
                       {
@@ -2597,6 +2718,76 @@ function createMockProjectBridge(
         }
       });
     },
+    updatePokemonField: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.pokemon',
+              field: request.field,
+              newValue: request.value,
+              recordId: request.personalId.toString(),
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/pml/personal/personal_total.bin'
+                }
+              ],
+              summary:
+                request.field === 'canNotDynamax'
+                  ? `Set Bulbasaur cannot dynamax to ${
+                      request.value === '1' ? 'enabled' : 'disabled'
+                    }.`
+                  : `Set Bulbasaur ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...pokemonWorkflow,
+          pokemon: pokemonWorkflow.pokemon.map((pokemon) => {
+            if (pokemon.personalId !== request.personalId) {
+              return pokemon;
+            }
+
+            const value = Number.parseInt(request.value, 10);
+            if (request.field === 'hp') {
+              const baseStats = {
+                ...pokemon.baseStats,
+                hp: value
+              };
+
+              return {
+                ...pokemon,
+                baseStats: {
+                  ...baseStats,
+                  total:
+                    baseStats.hp +
+                    baseStats.attack +
+                    baseStats.defense +
+                    baseStats.specialAttack +
+                    baseStats.specialDefense +
+                    baseStats.speed
+                }
+              };
+            }
+
+            if (request.field === 'canNotDynamax') {
+              return {
+                ...pokemon,
+                personal: {
+                  ...pokemon.personal,
+                  canNotDynamax: value !== 0
+                }
+              };
+            }
+
+            return pokemon;
+          })
+        }
+      }),
     updateMoveField: (request) =>
       Promise.resolve({
         diagnostics: [],
@@ -2917,6 +3108,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
 
   if (domain === 'workflow.moves') {
     return 'Applied Moves Data change plan to the configured LayeredFS output root.';
+  }
+
+  if (domain === 'workflow.pokemon') {
+    return 'Applied Pokemon Data change plan to the configured LayeredFS output root.';
   }
 
   if (domain === 'workflow.royalCandy') {

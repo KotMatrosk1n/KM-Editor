@@ -16,6 +16,101 @@ public sealed class SwShPokemonWorkflowService
     public const string EnglishPokemonNamePath = "romfs/bin/message/English/common/pokelist.dat";
     public const string EnglishMoveNamePath = "romfs/bin/message/English/common/wazaname.dat";
 
+    public const string HPField = "hp";
+    public const string AttackField = "attack";
+    public const string DefenseField = "defense";
+    public const string SpecialAttackField = "specialAttack";
+    public const string SpecialDefenseField = "specialDefense";
+    public const string SpeedField = "speed";
+    public const string Type1Field = "type1";
+    public const string Type2Field = "type2";
+    public const string CatchRateField = "catchRate";
+    public const string EvolutionStageField = "evolutionStage";
+    public const string EVYieldHPField = "evYieldHP";
+    public const string EVYieldAttackField = "evYieldAttack";
+    public const string EVYieldDefenseField = "evYieldDefense";
+    public const string EVYieldSpecialAttackField = "evYieldSpecialAttack";
+    public const string EVYieldSpecialDefenseField = "evYieldSpecialDefense";
+    public const string EVYieldSpeedField = "evYieldSpeed";
+    public const string HeldItem1Field = "heldItem1";
+    public const string HeldItem2Field = "heldItem2";
+    public const string HeldItem3Field = "heldItem3";
+    public const string GenderRatioField = "genderRatio";
+    public const string HatchCyclesField = "hatchCycles";
+    public const string BaseFriendshipField = "baseFriendship";
+    public const string ExpGrowthField = "expGrowth";
+    public const string EggGroup1Field = "eggGroup1";
+    public const string EggGroup2Field = "eggGroup2";
+    public const string Ability1Field = "ability1";
+    public const string Ability2Field = "ability2";
+    public const string HiddenAbilityField = "hiddenAbility";
+    public const string FormStatsIndexField = "formStatsIndex";
+    public const string FormCountField = "formCount";
+    public const string ColorField = "color";
+    public const string IsPresentInGameField = "isPresentInGame";
+    public const string HasSpriteFormField = "hasSpriteForm";
+    public const string BaseExperienceField = "baseExperience";
+    public const string HeightField = "height";
+    public const string WeightField = "weight";
+    public const string ModelIdField = "modelId";
+    public const string HatchedSpeciesField = "hatchedSpecies";
+    public const string LocalFormIndexField = "localFormIndex";
+    public const string IsRegionalFormField = "isRegionalForm";
+    public const string CanNotDynamaxField = "canNotDynamax";
+    public const string RegionalDexIndexField = "regionalDexIndex";
+    public const string FormField = "form";
+    public const string ArmorDexIndexField = "armorDexIndex";
+    public const string CrownDexIndexField = "crownDexIndex";
+
+    public static readonly IReadOnlyList<SwShPokemonEditableField> EditableFields =
+    [
+        CreateField(HPField, "HP", "Base Stats", 0, byte.MaxValue),
+        CreateField(AttackField, "Attack", "Base Stats", 0, byte.MaxValue),
+        CreateField(DefenseField, "Defense", "Base Stats", 0, byte.MaxValue),
+        CreateField(SpecialAttackField, "Sp. Atk", "Base Stats", 0, byte.MaxValue),
+        CreateField(SpecialDefenseField, "Sp. Def", "Base Stats", 0, byte.MaxValue),
+        CreateField(SpeedField, "Speed", "Base Stats", 0, byte.MaxValue),
+        CreateField(EVYieldHPField, "HP EV Yield", "EV Yield", 0, 3),
+        CreateField(EVYieldAttackField, "Attack EV Yield", "EV Yield", 0, 3),
+        CreateField(EVYieldDefenseField, "Defense EV Yield", "EV Yield", 0, 3),
+        CreateField(EVYieldSpecialAttackField, "Sp. Atk EV Yield", "EV Yield", 0, 3),
+        CreateField(EVYieldSpecialDefenseField, "Sp. Def EV Yield", "EV Yield", 0, 3),
+        CreateField(EVYieldSpeedField, "Speed EV Yield", "EV Yield", 0, 3),
+        CreateField(Type1Field, "Type 1", "Traits", 0, 17),
+        CreateField(Type2Field, "Type 2", "Traits", 0, 17),
+        CreateField(EggGroup1Field, "Egg Group 1", "Traits", 0, 15),
+        CreateField(EggGroup2Field, "Egg Group 2", "Traits", 0, 15),
+        CreateField(ExpGrowthField, "EXP Growth", "Traits", 0, 5),
+        CreateField(ColorField, "Color", "Traits", 0, 63),
+        CreateField(HeldItem1Field, "Held Item 50%", "Held Items", 0, short.MaxValue),
+        CreateField(HeldItem2Field, "Held Item 5%", "Held Items", 0, short.MaxValue),
+        CreateField(HeldItem3Field, "Held Item 1%", "Held Items", 0, short.MaxValue),
+        CreateField(Ability1Field, "Ability 1", "Abilities", 0, ushort.MaxValue),
+        CreateField(Ability2Field, "Ability 2", "Abilities", 0, ushort.MaxValue),
+        CreateField(HiddenAbilityField, "Hidden Ability", "Abilities", 0, ushort.MaxValue),
+        CreateField(GenderRatioField, "Gender Ratio", "Identity", 0, byte.MaxValue),
+        CreateField(BaseFriendshipField, "Base Friendship", "Identity", 0, byte.MaxValue),
+        CreateField(BaseExperienceField, "Base EXP", "Identity", 0, ushort.MaxValue),
+        CreateField(HatchCyclesField, "Hatch Cycles", "Identity", 0, byte.MaxValue),
+        CreateField(CatchRateField, "Catch Rate", "Identity", 0, byte.MaxValue),
+        CreateField(EvolutionStageField, "Evolution Stage", "Forms/Dex", 0, byte.MaxValue),
+        CreateField(FormStatsIndexField, "Form Sprite/Stats Index", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(FormCountField, "Forms Count", "Forms/Dex", 0, byte.MaxValue),
+        CreateField(FormField, "Form", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(LocalFormIndexField, "Local Form Index", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(HatchedSpeciesField, "Hatched Species", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(HeightField, "Height", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(WeightField, "Weight", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(ModelIdField, "Model ID", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(RegionalDexIndexField, "Regional Dex", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(ArmorDexIndexField, "Armor Dex", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(CrownDexIndexField, "Crown Dex", "Forms/Dex", 0, ushort.MaxValue),
+        CreateBooleanField(IsRegionalFormField, "Regional Variant", "Flags"),
+        CreateBooleanField(CanNotDynamaxField, "Cannot Dynamax", "Flags"),
+        CreateBooleanField(IsPresentInGameField, "Present In Game", "Flags"),
+        CreateBooleanField(HasSpriteFormField, "Has Sprite Form", "Flags"),
+    ];
+
     private static readonly IReadOnlyList<string> TypeNames =
     [
         "Normal",
@@ -52,7 +147,9 @@ public sealed class SwShPokemonWorkflowService
                     expected: "Readable project paths"));
         }
 
-        return CreateSummary(SwShWorkflowAvailability.ReadOnly);
+        return CreateSummary(project.Health.CanOpenEditableWorkflows
+            ? SwShWorkflowAvailability.Available
+            : SwShWorkflowAvailability.ReadOnly);
     }
 
     public SwShPokemonWorkflow Load(OpenedProject project)
@@ -284,6 +381,7 @@ public sealed class SwShPokemonWorkflowService
                 pokemon.Sum(record => record.Evolutions.Count),
                 pokemon.Sum(record => record.Learnset.Count),
                 sourceFileCount),
+            EditableFields,
             diagnostics);
     }
 
@@ -337,6 +435,43 @@ public sealed class SwShPokemonWorkflowService
                 personal.RegionalDexIndex,
                 personal.ArmorDexIndex,
                 personal.CrownDexIndex),
+            new SwShPokemonPersonalDetails(
+                personal.Type1,
+                personal.Type2,
+                personal.CatchRate,
+                personal.EvolutionStage,
+                personal.EVYieldHP,
+                personal.EVYieldAttack,
+                personal.EVYieldDefense,
+                personal.EVYieldSpecialAttack,
+                personal.EVYieldSpecialDefense,
+                personal.EVYieldSpeed,
+                personal.HeldItem1,
+                personal.HeldItem2,
+                personal.HeldItem3,
+                personal.GenderRatio,
+                personal.HatchCycles,
+                personal.BaseFriendship,
+                personal.ExpGrowth,
+                personal.EggGroup1,
+                personal.EggGroup2,
+                personal.FormStatsIndex,
+                personal.FormCount,
+                personal.Color,
+                personal.IsPresentInGame,
+                personal.HasSpriteForm,
+                personal.BaseExperience,
+                personal.Height,
+                personal.Weight,
+                personal.ModelId,
+                personal.HatchedSpecies,
+                personal.LocalFormIndex,
+                personal.IsRegionalForm,
+                personal.CanNotDynamax,
+                personal.RegionalDexIndex,
+                personal.Form,
+                personal.ArmorDexIndex,
+                personal.CrownDexIndex),
             personal.CatchRate,
             personal.EvolutionStage,
             personal.GenderRatio,
@@ -370,6 +505,36 @@ public sealed class SwShPokemonWorkflowService
         return (uint)typeId < (uint)TypeNames.Count
             ? TypeNames[typeId]
             : $"Type {typeId}";
+    }
+
+    public static SwShPokemonEditableField? GetEditableField(string? field)
+    {
+        return EditableFields.FirstOrDefault(editableField =>
+            string.Equals(editableField.Field, field, StringComparison.Ordinal));
+    }
+
+    internal static WorkflowFileSource? ResolvePersonalDataSource(OpenedProject project)
+    {
+        return ResolveWorkflowFile(project, PersonalDataPath);
+    }
+
+    internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
+    {
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath) || Path.IsPathRooted(targetRelativePath))
+        {
+            return null;
+        }
+
+        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
+        var targetPath = Path.GetFullPath(Path.Combine(
+            outputRoot,
+            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var relative = Path.GetRelativePath(outputRoot, targetPath);
+
+        return relative.StartsWith("..", StringComparison.Ordinal)
+            || Path.IsPathRooted(relative)
+            ? null
+            : targetPath;
     }
 
     private static WorkflowFileSource? ResolveWorkflowFile(OpenedProject project, string relativePath)
@@ -452,6 +617,36 @@ public sealed class SwShPokemonWorkflowService
             "Pokemon personal stats, forms, evolutions, learnsets, and source provenance.",
             availability,
             diagnostics);
+    }
+
+    private static SwShPokemonEditableField CreateField(
+        string field,
+        string label,
+        string group,
+        int minimumValue,
+        int maximumValue)
+    {
+        return new SwShPokemonEditableField(
+            field,
+            label,
+            group,
+            "integer",
+            minimumValue,
+            maximumValue);
+    }
+
+    private static SwShPokemonEditableField CreateBooleanField(
+        string field,
+        string label,
+        string group)
+    {
+        return new SwShPokemonEditableField(
+            field,
+            label,
+            group,
+            "boolean",
+            0,
+            1);
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

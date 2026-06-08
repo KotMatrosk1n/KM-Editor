@@ -32,6 +32,44 @@ public sealed record SwShPokemonDexPresence(
     int ArmorDexIndex,
     int CrownDexIndex);
 
+public sealed record SwShPokemonPersonalDetails(
+    int Type1,
+    int Type2,
+    int CatchRate,
+    int EvolutionStage,
+    int EVYieldHP,
+    int EVYieldAttack,
+    int EVYieldDefense,
+    int EVYieldSpecialAttack,
+    int EVYieldSpecialDefense,
+    int EVYieldSpeed,
+    int HeldItem1,
+    int HeldItem2,
+    int HeldItem3,
+    int GenderRatio,
+    int HatchCycles,
+    int BaseFriendship,
+    int ExpGrowth,
+    int EggGroup1,
+    int EggGroup2,
+    int FormStatsIndex,
+    int FormCount,
+    int Color,
+    bool IsPresentInGame,
+    bool HasSpriteForm,
+    int BaseExperience,
+    int Height,
+    int Weight,
+    uint ModelId,
+    int HatchedSpecies,
+    int LocalFormIndex,
+    bool IsRegionalForm,
+    bool CanNotDynamax,
+    int RegionalDexIndex,
+    int Form,
+    int ArmorDexIndex,
+    int CrownDexIndex);
+
 public sealed record SwShPokemonEvolutionRecord(
     int Method,
     int Argument,
@@ -55,6 +93,7 @@ public sealed record SwShPokemonRecord(
     SwShPokemonBaseStats BaseStats,
     SwShPokemonAbilitySet Abilities,
     SwShPokemonDexPresence DexPresence,
+    SwShPokemonPersonalDetails Personal,
     int CatchRate,
     int EvolutionStage,
     int GenderRatio,
@@ -76,4 +115,13 @@ public sealed record SwShPokemonWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShPokemonRecord> Pokemon,
     SwShPokemonWorkflowStats Stats,
+    IReadOnlyList<SwShPokemonEditableField> EditableFields,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+public sealed record SwShPokemonEditableField(
+    string Field,
+    string Label,
+    string Group,
+    string ValueKind,
+    int? MinimumValue,
+    int? MaximumValue);

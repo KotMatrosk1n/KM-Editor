@@ -267,6 +267,8 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("Poison", pokemon.Type2);
         Assert.Equal(318, pokemon.BaseStats.Total);
         Assert.Equal(65, pokemon.Abilities.Ability1);
+        Assert.Equal(11, pokemon.Personal.Type1);
+        Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "hp" && field.Group == "Base Stats");
         Assert.Equal("romfs/bin/pml/personal/personal_total.bin", pokemon.Provenance.SourceFile);
         Assert.Equal(ProjectFileLayerDto.Base, pokemon.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryStateDto.BaseOnly, pokemon.Provenance.FileState);
@@ -285,6 +287,73 @@ public sealed class ProjectBridgeDispatcherTests
                 Assert.Equal(45, move.MoveId);
                 Assert.Equal("Growl", move.MoveName);
             });
+    }
+
+    [Fact]
+    public void DispatchUpdatePokemonFieldReturnsPendingPokemonSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShPokemonBridgeFixtures.WriteBasePokemonData(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdatePokemonField,
+            new UpdatePokemonFieldRequest(
+                temp.Paths,
+                Session: null,
+                PersonalId: 1,
+                Field: "hp",
+                Value: "99"),
+            requestId: "request-pokemon-update");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdatePokemonFieldResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-pokemon-update", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Equal(99, response.Payload.Workflow.Pokemon[1].BaseStats.HP);
+        var edit = Assert.Single(response.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.pokemon", edit.Domain);
+        Assert.Equal("1", edit.RecordId);
+        Assert.Equal("hp", edit.Field);
+        Assert.Equal("99", edit.NewValue);
+    }
+
+    [Fact]
+    public void DispatchApplyPokemonChangePlanWritesPersonalData()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShPokemonBridgeFixtures.WriteBasePokemonData(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdatePokemonField,
+            new UpdatePokemonFieldRequest(
+                temp.Paths,
+                Session: null,
+                PersonalId: 1,
+                Field: "canNotDynamax",
+                Value: "true"),
+            requestId: "request-pokemon-update");
+        var update = DeserializeResponse<UpdatePokemonFieldResponse>(dispatcher.Dispatch(updateJson)).Payload!;
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, update.Session),
+            requestId: "request-pokemon-plan");
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson)).Payload!.ChangePlan;
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, update.Session, plan),
+            requestId: "request-pokemon-apply");
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson)).Payload!.ApplyResult;
+
+        Assert.Contains("romfs/bin/pml/personal/personal_total.bin", apply.WrittenFiles);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs/bin/pml/personal/personal_total.bin".Replace('/', Path.DirectorySeparatorChar));
+        var output = SwShPersonalTable.Parse(File.ReadAllBytes(outputPath));
+        Assert.True(output.Records[1].CanNotDynamax);
     }
 
     [Fact]
