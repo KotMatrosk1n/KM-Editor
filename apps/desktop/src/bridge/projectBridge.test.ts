@@ -311,6 +311,15 @@ describe('projectBridge', () => {
           payload: {
             workflow: {
               diagnostics: [],
+              editableFields: [
+                {
+                  field: 'power',
+                  label: 'Power',
+                  maximumValue: 255,
+                  minimumValue: 0,
+                  valueKind: 'integer'
+                }
+              ],
               moves: [
                 {
                   accuracy: 100,
@@ -1605,6 +1614,78 @@ describe('projectBridge', () => {
       'romfs/bin/pml/item/item.dat'
     );
     expect(apply.applyResult.writtenFiles).toEqual(['romfs/bin/pml/item/item.dat']);
+  });
+
+  it('runs move field update command', async () => {
+    const bridge = createProjectBridge(async (requestJson) => {
+      const request = JSON.parse(requestJson) as { command: string };
+
+      expect(request.command).toBe('moves.field.update');
+
+      return JSON.stringify({
+        error: null,
+        payload: {
+          diagnostics: [],
+          session: {
+            hasPendingChanges: true,
+            pendingEdits: [
+              {
+                domain: 'workflow.moves',
+                field: 'power',
+                newValue: '80',
+                recordId: '33',
+                sources: [
+                  {
+                    layer: 'base',
+                    relativePath: 'romfs/bin/pml/waza/waza_033.bin'
+                  }
+                ],
+                summary: 'Set Tackle power to 80.'
+              }
+            ],
+            sessionId: 'session-1'
+          },
+          workflow: {
+            diagnostics: [],
+            editableFields: [
+              {
+                field: 'power',
+                label: 'Power',
+                maximumValue: 255,
+                minimumValue: 0,
+                valueKind: 'integer'
+              }
+            ],
+            moves: [],
+            stats: {
+              activeFlagCount: 0,
+              enabledMoveCount: 0,
+              sourceFileCount: 1,
+              totalMoveCount: 0
+            },
+            summary: {
+              availability: 'available',
+              description:
+                'Move stats, target behavior, secondary effects, flags, and source provenance.',
+              diagnostics: [],
+              id: 'moves',
+              label: 'Moves Data'
+            }
+          }
+        }
+      });
+    });
+
+    const updated = await bridge.updateMoveField({
+      field: 'power',
+      moveId: 33,
+      paths: editableProjectPaths,
+      session: null,
+      value: '80'
+    });
+
+    expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.moves');
+    expect(updated.session.pendingEdits[0]?.newValue).toBe('80');
   });
 
   it('runs trainer field update command', async () => {

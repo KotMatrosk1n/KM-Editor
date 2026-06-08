@@ -11,6 +11,7 @@ export const kmCommandNameValues = [
   'items.field.update',
   'pokemon.load',
   'moves.load',
+  'moves.field.update',
   'text.load',
   'text.entry.update',
   'trainers.load',
@@ -50,6 +51,7 @@ export const kmCommandNames = {
   loadItemsWorkflow: 'items.load',
   loadPokemonWorkflow: 'pokemon.load',
   loadMovesWorkflow: 'moves.load',
+  updateMoveField: 'moves.field.update',
   loadTextWorkflow: 'text.load',
   updateTextEntry: 'text.entry.update',
   loadTrainersWorkflow: 'trainers.load',
@@ -447,6 +449,14 @@ export const moveFlagRecordSchema = z.strictObject({
   label: z.string()
 });
 
+export const moveEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  valueKind: z.string()
+});
+
 export const moveRecordSchema = z.strictObject({
   accuracy: z.number().int().nonnegative(),
   canUseMove: z.boolean(),
@@ -492,6 +502,7 @@ export const movesWorkflowStatsSchema = z.strictObject({
 
 export const movesWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(moveEditableFieldSchema),
   moves: z.array(moveRecordSchema),
   stats: movesWorkflowStatsSchema,
   summary: workflowSummarySchema
@@ -1156,6 +1167,20 @@ export const updateItemFieldResponseSchema = z.strictObject({
   workflow: itemsWorkflowSchema
 });
 
+export const updateMoveFieldRequestSchema = z.strictObject({
+  field: z.string(),
+  moveId: z.number().int().nonnegative(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  value: z.string()
+});
+
+export const updateMoveFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: movesWorkflowSchema
+});
+
 export const updateTextEntryRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
@@ -1330,6 +1355,7 @@ export type PokemonEvolutionRecord = z.infer<typeof pokemonEvolutionRecordSchema
 export type PokemonLearnsetMove = z.infer<typeof pokemonLearnsetMoveSchema>;
 export type PokemonRecord = z.infer<typeof pokemonRecordSchema>;
 export type PokemonWorkflow = z.infer<typeof pokemonWorkflowSchema>;
+export type MoveEditableField = z.infer<typeof moveEditableFieldSchema>;
 export type MoveFlagRecord = z.infer<typeof moveFlagRecordSchema>;
 export type MoveRecord = z.infer<typeof moveRecordSchema>;
 export type MoveStatChangeRecord = z.infer<typeof moveStatChangeRecordSchema>;
@@ -1383,6 +1409,8 @@ export type LoadPokemonWorkflowRequest = z.infer<typeof loadPokemonWorkflowReque
 export type LoadPokemonWorkflowResponse = z.infer<typeof loadPokemonWorkflowResponseSchema>;
 export type LoadMovesWorkflowRequest = z.infer<typeof loadMovesWorkflowRequestSchema>;
 export type LoadMovesWorkflowResponse = z.infer<typeof loadMovesWorkflowResponseSchema>;
+export type UpdateMoveFieldRequest = z.infer<typeof updateMoveFieldRequestSchema>;
+export type UpdateMoveFieldResponse = z.infer<typeof updateMoveFieldResponseSchema>;
 export type LoadTextWorkflowRequest = z.infer<typeof loadTextWorkflowRequestSchema>;
 export type LoadTextWorkflowResponse = z.infer<typeof loadTextWorkflowResponseSchema>;
 export type LoadTrainersWorkflowRequest = z.infer<typeof loadTrainersWorkflowRequestSchema>;

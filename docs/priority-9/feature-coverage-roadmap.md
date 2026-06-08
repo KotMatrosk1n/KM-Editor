@@ -22,6 +22,7 @@ KM Editor already has the project and workflow spine needed for safer feature wo
 - Preview/validate/apply edit sessions for supported workflows.
 - Items price editing, text/dialogue editing, trainer basics, wild encounter basics, shops inventory basics, raid rewards basics, placement item basics, spreadsheet import, flagwork/save inspection, ExeFS patch readiness, and Royal Candy workflow guidance.
 - Pokemon Data read-only coverage for personal records, evolution records, learnsets, names, search, provenance, and diagnostics.
+- Moves Data coverage for move metadata, scalar/effect/stat/flag editing, search, provenance, diagnostics, and output-root apply.
 
 This coverage is not complete yet. Many editor families still need more fields, linked tables, validations, and bulk operations before KM Editor can be considered a full replacement workflow.
 
@@ -40,7 +41,7 @@ This coverage is not complete yet. Many editor families still need more fields, 
 | Rentals | Species/form/level, ball, item, nature, gender, ability, moves, EVs, IVs | Not covered | Add rental Pokemon workflow using shared individual-Pokemon stat controls |
 | Dynamax Adventures | Species/form/level, ball, ability roll, Gigantamax state, game version, shiny roll, moves, guaranteed perfect IVs, IV overrides, single-capture flags, story gates, UI message IDs | Not covered | Add Dynamax Adventure workflow with IV sentinel validation and encounter-rule grouping |
 | Symbol Behavior | Species/form/model behavior, behavior mode strings, hitbox/grass-shake fields, raw behavior parameters, behavior randomizer | Not covered | Add inspector-first workflow; edit named safe fields before raw parameters |
-| Moves | Type/category/power/accuracy/PP/priority, target/timing, secondary effects, stat changes, Max Move power, behavior flags, raw effect fields | Parser-backed read-only workflow with labels, grouped inspectors, search, provenance, and diagnostics | Add editable field groups, validation, previewed output-root writes, filter presets, and safe bulk transforms |
+| Moves | Type/category/power/accuracy/PP/priority, target/timing, secondary effects, stat changes, Max Move power, behavior flags, raw effect fields | Parser-backed workflow with labels, grouped inspectors, search, provenance, diagnostics, editable scalar/effect/stat/flag fields, validation, and output-root apply | Add filter presets, safer named selectors for enums/effects, and safe bulk transforms |
 | Items | Prices, pouch/inventory metadata, field-use behavior, TM/TR machine data, battle boosts, Pokemon effects, raw flags, trade-evolution item bulk action | Price-focused editing only | Expand Items beyond prices, especially field-use behavior and TM/TR machine metadata |
 | Shops | Single-shop and multi-shop inventories, hash labels, rotating/multiple inventories, item-name formatting | Basic inventory editing | Improve single/multi labels, inventory grouping, search, and linked item validation |
 | Placement | Area/zone/object labels, field items, hidden items, static spawns, trainer references, nests, flags, randomizable item placements | Item-focused placement editing | Expand labels/references and add targeted editors for static spawns, trainer refs, and nest links |
@@ -79,7 +80,7 @@ The Moves workflow covers battle move metadata as backend-owned records. The fir
 | Behavior flags | Contact, charge, recharge, Protect interaction, reflectable, snatch, mirror, punch, sound, gravity, defrost, distance triple, heal, substitute bypass, sky battle fail, animate ally, dance, and Metronome eligibility |
 | Desktop workflow | Search by ID/name/type/category/effect/stat/flag/source, table scan, grouped inspector, diagnostics for missing or unsupported files, and provenance for base versus output overrides |
 
-The current Moves slice adds the parser/writer foundation plus a read-only workflow and desktop inspector. The next Moves slice should add editable fields through backend edit sessions, validate numeric ranges and known enums, create reviewed change plans, and write only to the output root.
+The current Moves slices add the parser/writer foundation, read-only workflow, desktop inspector, editable scalar/effect/stat/flag fields through backend edit sessions, numeric and pair validation, reviewed change plans, and output-root writes. Future Moves slices should add filter presets, safer named selectors for enums/effects, and previewed bulk transforms.
 
 ## Individual Pokemon Stats And IVs
 
@@ -96,7 +97,7 @@ KM should implement a shared individual-Pokemon stats model for IVs, EVs, nature
 
 1. Pokemon Data editable parity foundation: personal fields, TM/TR/tutor flags, learnset row edits, evolution row edits, and Pokemon-specific preview/validate/apply.
 2. Individual Pokemon stat editing across trainer parties first, then gifts/trades/statics/rentals/Dynamax Adventures, with IV handling treated as a required shared capability.
-3. Moves Data workflow with grouped move metadata and battle-behavior flags.
+3. Moves Data workflow with grouped move metadata, battle-behavior flags, and guarded edit-session writes.
 4. Expanded Items workflow beyond prices, including field-use behavior, Pokemon effects, battle boosts, and TM/TR machine metadata.
 5. Gift, trade, static, rental, and Dynamax Adventure encounter workflows, including linked text/placement side effects.
 6. Raid battle workflow and stronger raid reward/bonus reward linking, usage labels, and placement provenance.

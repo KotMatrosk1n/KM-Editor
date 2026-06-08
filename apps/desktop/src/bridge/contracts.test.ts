@@ -47,6 +47,8 @@ import {
   startEditSessionResponseSchema,
   updateItemFieldRequestSchema,
   updateItemFieldResponseSchema,
+  updateMoveFieldRequestSchema,
+  updateMoveFieldResponseSchema,
   updateEncounterSlotFieldRequestSchema,
   updateEncounterSlotFieldResponseSchema,
   updatePlacementObjectFieldRequestSchema,
@@ -412,6 +414,22 @@ describe('bridge contracts', () => {
     } as const;
     const movesWorkflow = {
       diagnostics: [],
+      editableFields: [
+        {
+          field: 'power',
+          label: 'Power',
+          maximumValue: 255,
+          minimumValue: 0,
+          valueKind: 'integer'
+        },
+        {
+          field: 'makesContact',
+          label: 'Makes contact',
+          maximumValue: 1,
+          minimumValue: 0,
+          valueKind: 'boolean'
+        }
+      ],
       moves: [
         {
           accuracy: 100,
@@ -1481,6 +1499,8 @@ describe('bridge contracts', () => {
     const startResponseSchema = createBridgeResponseSchema(startEditSessionResponseSchema);
     const updateRequestSchema = createBridgeRequestSchema(updateItemFieldRequestSchema);
     const updateResponseSchema = createBridgeResponseSchema(updateItemFieldResponseSchema);
+    const updateMoveRequestSchema = createBridgeRequestSchema(updateMoveFieldRequestSchema);
+    const updateMoveResponseSchema = createBridgeResponseSchema(updateMoveFieldResponseSchema);
     const updateTextRequestSchema = createBridgeRequestSchema(updateTextEntryRequestSchema);
     const updateTextResponseSchema = createBridgeResponseSchema(updateTextEntryResponseSchema);
     const updateTrainerRequestSchema = createBridgeRequestSchema(updateTrainerFieldRequestSchema);
@@ -1610,6 +1630,51 @@ describe('bridge contracts', () => {
         diagnostics: [],
         id: 'items',
         label: 'Items'
+      }
+    } as const;
+    const moveSession = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.moves',
+          field: 'power',
+          newValue: '80',
+          recordId: '33',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/bin/pml/waza/waza_033.bin'
+            }
+          ],
+          summary: 'Set Tackle power to 80.'
+        }
+      ],
+      sessionId: 'session-1'
+    } as const;
+    const movesWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'power',
+          label: 'Power',
+          maximumValue: 255,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
+      moves: [],
+      stats: {
+        activeFlagCount: 0,
+        enabledMoveCount: 0,
+        sourceFileCount: 1,
+        totalMoveCount: 0
+      },
+      summary: {
+        availability: 'available',
+        description: 'Move stats, target behavior, secondary effects, flags, and source provenance.',
+        diagnostics: [],
+        id: 'moves',
+        label: 'Moves Data'
       }
     } as const;
     const textSession = {
@@ -2033,6 +2098,34 @@ describe('bridge contracts', () => {
           diagnostics: [],
           session: editSession,
           workflow: itemsWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateMoveRequestSchema.safeParse({
+        command: kmCommandNames.updateMoveField,
+        payload: {
+          field: 'power',
+          moveId: 33,
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output',
+            saveFilePath: null
+          },
+          session: editSession,
+          value: '80'
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updateMoveResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: moveSession,
+          workflow: movesWorkflow
         }
       }).success
     ).toBe(true);

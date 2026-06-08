@@ -220,7 +220,8 @@ h2 {
   min-width: 0;
 }
 
-.path-field input {
+.path-field input,
+.path-field select {
   min-width: 0;
   min-height: 40px;
   padding: 0 10px;
@@ -231,7 +232,8 @@ h2 {
   outline: none;
 }
 
-.path-field input:focus {
+.path-field input:focus,
+.path-field select:focus {
   border-color: #2f6f46;
   box-shadow: 0 0 0 3px rgb(47 111 70 / 16%);
 }
@@ -720,6 +722,11 @@ h2 {
   background: #4338ca;
 }
 
+.moves-row-pending:not(.moves-row-selected) {
+  background: #fff8e8;
+  box-shadow: inset 4px 0 0 #b88416;
+}
+
 .moves-row-heading {
   color: #6c756a;
   background: #f5f6f4;
@@ -753,6 +760,37 @@ h2 {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: end;
+}
+
+.move-edit-form {
+  align-items: stretch;
+}
+
+.move-field-editor-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 10px;
+  color: #202420;
+  background: #f7f8f6;
+  border: 1px solid #cbd4c9;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.checkbox-field input {
+  width: 16px;
+  height: 16px;
+  accent-color: #4338ca;
 }
 
 .text-layout {
@@ -1749,7 +1787,8 @@ h2 {
     display: none;
   }
 
-  .item-price-editor-row {
+  .item-price-editor-row,
+  .move-field-editor-row {
     grid-template-columns: 1fr;
   }
 

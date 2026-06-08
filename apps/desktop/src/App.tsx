@@ -50,6 +50,7 @@ import {
   type ItemEditableField,
   type ItemsWorkflow,
   type ItemRecord,
+  type MoveEditableField,
   type MoveRecord,
   type MovesWorkflow,
   type PokemonRecord,
@@ -580,6 +581,7 @@ export function App({
   const [isItemUpdating, setIsItemUpdating] = useState(false);
   const [isPokemonLoading, setIsPokemonLoading] = useState(false);
   const [isMovesLoading, setIsMovesLoading] = useState(false);
+  const [isMoveUpdating, setIsMoveUpdating] = useState(false);
   const [isTextLoading, setIsTextLoading] = useState(false);
   const [isTextUpdating, setIsTextUpdating] = useState(false);
   const [isTrainersLoading, setIsTrainersLoading] = useState(false);
@@ -1111,6 +1113,29 @@ export function App({
     }
   };
 
+  const handleUpdateMoveField = async (moveId: number, field: string, value: string) => {
+    setIsMoveUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateMoveField({
+        field,
+        moveId,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        value
+      });
+      setMovesWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsMoveUpdating(false);
+    }
+  };
+
   const handleUpdateTextEntry = async (textKey: string, value: string) => {
     setIsTextUpdating(true);
     setBridgeDiagnostics([]);
@@ -1506,8 +1531,13 @@ export function App({
               <WorkflowLoadingPanel label="Moves Data" />
             ) : (
               <MovesSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isMoveUpdating={isMoveUpdating}
                 onSearchChange={setMovesSearchText}
                 onSelectMove={setSelectedMoveId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateMoveField={handleUpdateMoveField}
                 searchText={movesSearchText}
                 selectedMoveId={selectedMoveId}
                 workflow={movesWorkflow}
@@ -2737,14 +2767,24 @@ function SelectedPokemonPanel({ pokemon }: { pokemon: PokemonRecord | null }) {
 }
 
 function MovesSection({
+  editSession,
+  isEditStarting,
+  isMoveUpdating,
   onSearchChange,
   onSelectMove,
+  onStartEditSession,
+  onUpdateMoveField,
   searchText,
   selectedMoveId,
   workflow
 }: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isMoveUpdating: boolean;
   onSearchChange: (searchText: string) => void;
   onSelectMove: (moveId: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateMoveField: (moveId: number, field: string, value: string) => void;
   searchText: string;
   selectedMoveId: number | null;
   workflow: MovesWorkflow | null;
@@ -2758,6 +2798,8 @@ function MovesSection({
       null,
     [filteredMoves, selectedMoveId]
   );
+  const canEditMoves = workflow?.summary.availability === 'available';
+  const pendingMoveIds = useMemo(() => getPendingMoveIds(editSession), [editSession]);
 
   return (
     <>
@@ -2819,6 +2861,8 @@ function MovesSection({
                   <button
                     className={`moves-row ${
                       selectedMove?.moveId === move.moveId ? 'moves-row-selected' : ''
+                    } ${
+                      pendingMoveIds.has(move.moveId) ? 'moves-row-pending' : ''
                     }`}
                     onClick={() => onSelectMove(move.moveId)}
                     role="row"
@@ -2837,7 +2881,16 @@ function MovesSection({
               />
             </div>
 
-            <SelectedMovePanel move={selectedMove} />
+            <SelectedMovePanel
+              canEditMoves={canEditMoves}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              isEditStarting={isEditStarting}
+              isMoveUpdating={isMoveUpdating}
+              move={selectedMove}
+              onStartEditSession={onStartEditSession}
+              onUpdateMoveField={onUpdateMoveField}
+            />
           </div>
         ) : (
           <p className="empty-copy">Open Moves Data from Workflows to load backend move data.</p>
@@ -2849,12 +2902,67 @@ function MovesSection({
   );
 }
 
-function SelectedMovePanel({ move }: { move: MoveRecord | null }) {
+function SelectedMovePanel({
+  canEditMoves,
+  editSession,
+  editableFields,
+  isEditStarting,
+  isMoveUpdating,
+  move,
+  onStartEditSession,
+  onUpdateMoveField
+}: {
+  canEditMoves: boolean;
+  editSession: EditSession | null;
+  editableFields: MoveEditableField[];
+  isEditStarting: boolean;
+  isMoveUpdating: boolean;
+  move: MoveRecord | null;
+  onStartEditSession: () => void;
+  onUpdateMoveField: (moveId: number, field: string, value: string) => void;
+}) {
+  const [selectedFieldName, setSelectedFieldName] = useState('');
+  const [draftValue, setDraftValue] = useState('');
   const activeFlags = move?.flags.filter((flag) => flag.enabled) ?? [];
   const visibleStatChanges =
     move?.statChanges.filter(
       (statChange) => statChange.stat !== 0 || statChange.stage !== 0 || statChange.percent !== 0
     ) ?? [];
+  const selectedField = useMemo(
+    () =>
+      editableFields.find((field) => field.field === selectedFieldName) ??
+      editableFields[0] ??
+      null,
+    [editableFields, selectedFieldName]
+  );
+  const currentValue =
+    move && selectedField ? getEditableMoveFieldValue(move, selectedField.field) : null;
+  const draftState = selectedField
+    ? getMoveDraftState(draftValue, currentValue, selectedField)
+    : { canSubmit: false, normalizedValue: null };
+  const canSubmit =
+    editSession !== null && draftState.canSubmit && draftState.normalizedValue !== null;
+
+  useEffect(() => {
+    if (editableFields.length === 0) {
+      setSelectedFieldName('');
+      return;
+    }
+
+    if (!editableFields.some((field) => field.field === selectedFieldName)) {
+      setSelectedFieldName(editableFields[0].field);
+    }
+  }, [editableFields, selectedFieldName]);
+
+  useEffect(() => {
+    if (!move || !selectedField) {
+      setDraftValue('');
+      return;
+    }
+
+    const value = getEditableMoveFieldValue(move, selectedField.field);
+    setDraftValue(value === null ? '' : value.toString());
+  }, [move, selectedField]);
 
   return (
     <aside aria-label="Selected move details" className="item-inspector">
@@ -2901,6 +3009,85 @@ function SelectedMovePanel({ move }: { move: MoveRecord | null }) {
               <dd>{formatFileState(move.provenance.fileState)}</dd>
             </div>
           </dl>
+
+          <div className="item-edit-form move-edit-form">
+            <label className="path-field">
+              <span>Field</span>
+              <select
+                aria-label="Move edit field"
+                disabled={!canEditMoves || editableFields.length === 0 || isMoveUpdating}
+                onChange={(event) => setSelectedFieldName(event.target.value)}
+                value={selectedField?.field ?? ''}
+              >
+                {editableFields.map((field) => (
+                  <option key={field.field} value={field.field}>
+                    {field.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {selectedField ? (
+              <div className="move-field-editor-row">
+                {selectedField.valueKind === 'boolean' ? (
+                  <label className="checkbox-field">
+                    <input
+                      aria-label={selectedField.label}
+                      checked={draftValue === '1'}
+                      disabled={!canEditMoves || editSession === null || isMoveUpdating}
+                      onChange={(event) => setDraftValue(event.target.checked ? '1' : '0')}
+                      type="checkbox"
+                    />
+                    <span>{selectedField.label}</span>
+                  </label>
+                ) : (
+                  <label className="path-field">
+                    <span>{selectedField.label}</span>
+                    <input
+                      aria-label={selectedField.label}
+                      disabled={!canEditMoves || editSession === null || isMoveUpdating}
+                      max={selectedField.maximumValue ?? undefined}
+                      min={selectedField.minimumValue ?? undefined}
+                      onChange={(event) => setDraftValue(event.target.value)}
+                      type="number"
+                      value={draftValue}
+                    />
+                  </label>
+                )}
+
+                {editSession ? (
+                  <button
+                    aria-label={`Save ${selectedField.label.toLocaleLowerCase()}`}
+                    className="primary-button compact-button"
+                    disabled={!canSubmit || isMoveUpdating}
+                    onClick={() =>
+                      onUpdateMoveField(
+                        move.moveId,
+                        selectedField.field,
+                        draftState.normalizedValue!
+                      )
+                    }
+                    type="button"
+                  >
+                    <Save aria-hidden="true" size={16} />
+                    <span>{isMoveUpdating ? 'Saving' : 'Save Field'}</span>
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditMoves || isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
 
           <div className="inspector-block">
             <h4>Core Stats</h4>
@@ -6816,6 +7003,77 @@ function getEditableItemFieldValue(item: ItemRecord, field: string) {
   }
 }
 
+function getEditableMoveFieldValue(move: MoveRecord, field: string) {
+  switch (field) {
+    case 'canUseMove':
+      return move.canUseMove ? 1 : 0;
+    case 'type':
+      return move.type;
+    case 'quality':
+      return move.quality;
+    case 'category':
+      return move.category;
+    case 'power':
+      return move.power;
+    case 'accuracy':
+      return move.accuracy;
+    case 'pp':
+      return move.pp;
+    case 'priority':
+      return move.priority;
+    case 'critStage':
+      return move.critStage;
+    case 'maxMovePower':
+      return move.maxMovePower;
+    case 'target':
+      return move.target;
+    case 'hitMin':
+      return move.hitMin;
+    case 'hitMax':
+      return move.hitMax;
+    case 'turnMin':
+      return move.turnMin;
+    case 'turnMax':
+      return move.turnMax;
+    case 'inflict':
+      return move.inflict;
+    case 'inflictPercent':
+      return move.inflictPercent;
+    case 'rawInflictCount':
+      return move.rawInflictCount;
+    case 'flinch':
+      return move.flinch;
+    case 'effectSequence':
+      return move.effectSequence;
+    case 'recoil':
+      return move.recoil;
+    case 'rawHealing':
+      return move.rawHealing;
+    case 'stat1':
+      return move.statChanges.find((stat) => stat.slot === 1)?.stat ?? null;
+    case 'stat1Stage':
+      return move.statChanges.find((stat) => stat.slot === 1)?.stage ?? null;
+    case 'stat1Percent':
+      return move.statChanges.find((stat) => stat.slot === 1)?.percent ?? null;
+    case 'stat2':
+      return move.statChanges.find((stat) => stat.slot === 2)?.stat ?? null;
+    case 'stat2Stage':
+      return move.statChanges.find((stat) => stat.slot === 2)?.stage ?? null;
+    case 'stat2Percent':
+      return move.statChanges.find((stat) => stat.slot === 2)?.percent ?? null;
+    case 'stat3':
+      return move.statChanges.find((stat) => stat.slot === 3)?.stat ?? null;
+    case 'stat3Stage':
+      return move.statChanges.find((stat) => stat.slot === 3)?.stage ?? null;
+    case 'stat3Percent':
+      return move.statChanges.find((stat) => stat.slot === 3)?.percent ?? null;
+    default: {
+      const flag = move.flags.find((candidate) => candidate.field === field);
+      return flag ? (flag.enabled ? 1 : 0) : null;
+    }
+  }
+}
+
 function getEditableEncounterFieldValue(encounterSlot: EncounterSlotRecord, field: string) {
   switch (field) {
     case speciesIdFieldName:
@@ -6935,6 +7193,42 @@ function getItemPriceDraftState(
   };
 }
 
+function getMoveDraftState(
+  draftValue: string,
+  currentValue: number | null,
+  field: MoveEditableField
+) {
+  const normalizedValue = draftValue.trim();
+
+  if (field.valueKind === 'boolean') {
+    const normalizedBoolean = normalizedValue === '1' ? '1' : '0';
+    const parsedValue = normalizedBoolean === '1' ? 1 : 0;
+
+    return {
+      canSubmit: currentValue !== null && parsedValue !== currentValue,
+      normalizedValue: normalizedBoolean
+    };
+  }
+
+  const parsedValue = /^-?\d+$/.test(normalizedValue)
+    ? Number.parseInt(normalizedValue, 10)
+    : null;
+  const minimumValue = field.minimumValue ?? null;
+  const maximumValue = field.maximumValue ?? null;
+  const inRange =
+    parsedValue !== null &&
+    (minimumValue === null || parsedValue >= minimumValue) &&
+    (maximumValue === null || parsedValue <= maximumValue);
+
+  return {
+    canSubmit:
+      currentValue !== null &&
+      inRange &&
+      parsedValue !== currentValue,
+    normalizedValue: inRange && parsedValue !== null ? parsedValue.toString() : null
+  };
+}
+
 function getIntegerDraftState(
   draftValue: string,
   currentValue: number | null,
@@ -6970,6 +7264,15 @@ function getPendingItemIds(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
       .filter((edit) => edit.domain === 'workflow.items')
+      .map((edit) => Number.parseInt(edit.recordId ?? '', 10))
+      .filter(Number.isInteger)
+  );
+}
+
+function getPendingMoveIds(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.moves')
       .map((edit) => Number.parseInt(edit.recordId ?? '', 10))
       .filter(Number.isInteger)
   );
