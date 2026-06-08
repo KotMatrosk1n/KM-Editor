@@ -30,6 +30,8 @@ import {
   type LoadMovesWorkflowResponse,
   type LoadPokemonWorkflowRequest,
   type LoadPokemonWorkflowResponse,
+  type LoadRaidBattlesWorkflowRequest,
+  type LoadRaidBattlesWorkflowResponse,
   type UpdatePokemonEvolutionRequest,
   type UpdatePokemonEvolutionResponse,
   type UpdatePokemonFieldRequest,
@@ -79,6 +81,8 @@ import {
   type UpdateEncounterSlotFieldResponse,
   type UpdatePlacementObjectFieldRequest,
   type UpdatePlacementObjectFieldResponse,
+  type UpdateRaidBattleSlotFieldRequest,
+  type UpdateRaidBattleSlotFieldResponse,
   type UpdateRaidRewardFieldRequest,
   type UpdateRaidRewardFieldResponse,
   type UpdateShopInventoryItemRequest,
@@ -107,6 +111,7 @@ import {
   loadMovesWorkflowResponseSchema,
   loadPokemonWorkflowResponseSchema,
   loadPlacementWorkflowResponseSchema,
+  loadRaidBattlesWorkflowResponseSchema,
   loadRaidRewardsWorkflowResponseSchema,
   loadRoyalCandyWorkflowResponseSchema,
   stageExeFsPatchResponseSchema,
@@ -130,6 +135,7 @@ import {
   updatePokemonLearnsetResponseSchema,
   updateEncounterSlotFieldResponseSchema,
   updatePlacementObjectFieldResponseSchema,
+  updateRaidBattleSlotFieldResponseSchema,
   updateRaidRewardFieldResponseSchema,
   updateShopInventoryItemResponseSchema,
   updateTextEntryResponseSchema,
@@ -181,6 +187,9 @@ export type ProjectBridge = {
   loadPlacementWorkflow: (
     request: LoadPlacementWorkflowRequest
   ) => Promise<LoadPlacementWorkflowResponse>;
+  loadRaidBattlesWorkflow: (
+    request: LoadRaidBattlesWorkflowRequest
+  ) => Promise<LoadRaidBattlesWorkflowResponse>;
   loadRaidRewardsWorkflow: (
     request: LoadRaidRewardsWorkflowRequest
   ) => Promise<LoadRaidRewardsWorkflowResponse>;
@@ -221,6 +230,9 @@ export type ProjectBridge = {
   updateEncounterSlotField: (
     request: UpdateEncounterSlotFieldRequest
   ) => Promise<UpdateEncounterSlotFieldResponse>;
+  updateRaidBattleSlotField: (
+    request: UpdateRaidBattleSlotFieldRequest
+  ) => Promise<UpdateRaidBattleSlotFieldResponse>;
   updateRaidRewardField: (
     request: UpdateRaidRewardFieldRequest
   ) => Promise<UpdateRaidRewardFieldResponse>;
@@ -369,6 +381,13 @@ export function createProjectBridge(
         request,
         loadPlacementWorkflowResponseSchema
       ),
+    loadRaidBattlesWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadRaidBattlesWorkflow,
+        request,
+        loadRaidBattlesWorkflowResponseSchema
+      ),
     loadRaidRewardsWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
@@ -515,6 +534,13 @@ export function createProjectBridge(
         kmCommandNames.updateEncounterSlotField,
         request,
         updateEncounterSlotFieldResponseSchema
+      ),
+    updateRaidBattleSlotField: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateRaidBattleSlotField,
+        request,
+        updateRaidBattleSlotFieldResponseSchema
       ),
     updateRaidRewardField: (request) =>
       sendProjectBridgeRequest(

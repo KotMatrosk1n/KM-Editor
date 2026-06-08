@@ -21,6 +21,8 @@ internal static class SwShPerformanceFixtureProject
     public const int ExtraRomFsFileCount = 600;
     public const int EncounterTableCount = 48;
     public const int EncounterSlotsPerTable = 24;
+    public const int RaidBattleTableCount = 24;
+    public const int RaidBattleSlotsPerTable = 12;
     public const int RaidRewardTableCount = 24;
     public const int RaidRewardRowsPerTable = 12;
     public const int PlacementAreaCount = 12;
@@ -312,6 +314,7 @@ internal static class SwShPerformanceFixtureProject
             [
                 new SwShGfPackNamedFile("encount_symbol_k.bin", CreateEncounterArchive(speciesOffset: 0).Write()),
                 new SwShGfPackNamedFile("encount_k.bin", CreateEncounterArchive(speciesOffset: 2).Write()),
+                new SwShGfPackNamedFile("nest_hole_encount.bin", CreateRaidBattleArchive().Write()),
                 new SwShGfPackNamedFile("nest_hole_drop_rewards.bin", CreateRaidArchive(itemOffset: 0).Write()),
                 new SwShGfPackNamedFile("nest_hole_bonus_rewards.bin", CreateRaidArchive(itemOffset: 50).Write()),
             ]).Write());
@@ -349,6 +352,30 @@ internal static class SwShPerformanceFixtureProject
                             (uint)rowIndex,
                             (uint)(1 + itemOffset + ((tableIndex * RaidRewardRowsPerTable + rowIndex) % 500)),
                             [10, 20, 30, 40, 50]))
+                        .ToArray()))
+                .ToArray());
+    }
+
+    private static SwShEncounterNestArchive CreateRaidBattleArchive()
+    {
+        return new SwShEncounterNestArchive(
+            Enumerable.Range(0, RaidBattleTableCount)
+                .Select(tableIndex => new SwShEncounterNestTable(
+                    0xBEEFCAFE00000000UL + (ulong)tableIndex,
+                    tableIndex % 2,
+                    Enumerable.Range(0, RaidBattleSlotsPerTable)
+                        .Select(slotIndex => new SwShEncounterNest(
+                            slotIndex,
+                            1 + ((tableIndex * RaidBattleSlotsPerTable + slotIndex) % 900),
+                            slotIndex % 3,
+                            0x1111000000000000UL + (ulong)slotIndex,
+                            slotIndex % 5,
+                            slotIndex % 7 == 0,
+                            0xAABBCCDD00000000UL + (ulong)(tableIndex % RaidRewardTableCount),
+                            0xAABBCCDD00000000UL + (ulong)(50 + (tableIndex % RaidRewardTableCount)),
+                            [10, 20, 30, 40, 50],
+                            slotIndex % 3,
+                            slotIndex % 7))
                         .ToArray()))
                 .ToArray());
     }

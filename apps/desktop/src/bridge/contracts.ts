@@ -31,6 +31,8 @@ export const kmCommandNameValues = [
   'shops.inventory.update',
   'encounters.load',
   'encounters.slot.update',
+  'raidBattles.load',
+  'raidBattles.slot.update',
   'raidRewards.load',
   'raidRewards.reward.update',
   'placement.load',
@@ -82,6 +84,8 @@ export const kmCommandNames = {
   updateShopInventoryItem: 'shops.inventory.update',
   loadEncountersWorkflow: 'encounters.load',
   updateEncounterSlotField: 'encounters.slot.update',
+  loadRaidBattlesWorkflow: 'raidBattles.load',
+  updateRaidBattleSlotField: 'raidBattles.slot.update',
   loadRaidRewardsWorkflow: 'raidRewards.load',
   updateRaidRewardField: 'raidRewards.reward.update',
   loadPlacementWorkflow: 'placement.load',
@@ -182,6 +186,10 @@ export const loadShopsWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadEncountersWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadRaidBattlesWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -1285,6 +1293,74 @@ export const loadEncountersWorkflowResponseSchema = z.strictObject({
   workflow: encountersWorkflowSchema
 });
 
+export const raidBattleProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const raidBattleEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
+export const raidBattleSlotRecordSchema = z.strictObject({
+  ability: z.number().int().nonnegative(),
+  abilityLabel: z.string(),
+  bonusTableHash: z.string(),
+  dropTableHash: z.string(),
+  entryIndex: z.number().int().nonnegative(),
+  flawlessIvs: z.number().int().nonnegative(),
+  form: z.number().int().nonnegative(),
+  gender: z.number().int().nonnegative(),
+  genderLabel: z.string(),
+  isGigantamax: z.boolean(),
+  levelTableHash: z.string(),
+  probabilities: z.array(z.number().int().nonnegative()),
+  probabilitySummary: z.string(),
+  slot: z.number().int().nonnegative(),
+  species: z.string(),
+  speciesId: z.number().int().nonnegative()
+});
+
+export const raidBattleTableRecordSchema = z.strictObject({
+  denId: z.string(),
+  gameVersion: z.string(),
+  provenance: raidBattleProvenanceSchema,
+  slots: z.array(raidBattleSlotRecordSchema),
+  sourceTableHash: z.string(),
+  tableIndex: z.number().int().nonnegative(),
+  tableId: z.string()
+});
+
+export const raidBattleEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  options: z.array(raidBattleEditableFieldOptionSchema),
+  valueKind: z.string()
+});
+
+export const raidBattlesWorkflowStatsSchema = z.strictObject({
+  gigantamaxSlotCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative(),
+  totalSlotCount: z.number().int().nonnegative(),
+  totalTableCount: z.number().int().nonnegative()
+});
+
+export const raidBattlesWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(raidBattleEditableFieldSchema),
+  stats: raidBattlesWorkflowStatsSchema,
+  summary: workflowSummarySchema,
+  tables: z.array(raidBattleTableRecordSchema)
+});
+
+export const loadRaidBattlesWorkflowResponseSchema = z.strictObject({
+  workflow: raidBattlesWorkflowSchema
+});
+
 export const raidRewardProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -1832,6 +1908,21 @@ export const updateEncounterSlotFieldResponseSchema = z.strictObject({
   workflow: encountersWorkflowSchema
 });
 
+export const updateRaidBattleSlotFieldRequestSchema = z.strictObject({
+  field: z.string(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  slot: z.number().int().nonnegative(),
+  tableId: z.string(),
+  value: z.string()
+});
+
+export const updateRaidBattleSlotFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: raidBattlesWorkflowSchema
+});
+
 export const updateRaidRewardFieldRequestSchema = z.strictObject({
   field: z.string(),
   paths: projectPathsSchema,
@@ -2002,6 +2093,13 @@ export type EncounterEditableField = z.infer<typeof encounterEditableFieldSchema
 export type EncounterSlotRecord = z.infer<typeof encounterSlotRecordSchema>;
 export type EncounterTableRecord = z.infer<typeof encounterTableRecordSchema>;
 export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;
+export type RaidBattleEditableField = z.infer<typeof raidBattleEditableFieldSchema>;
+export type RaidBattleEditableFieldOption = z.infer<
+  typeof raidBattleEditableFieldOptionSchema
+>;
+export type RaidBattleSlotRecord = z.infer<typeof raidBattleSlotRecordSchema>;
+export type RaidBattleTableRecord = z.infer<typeof raidBattleTableRecordSchema>;
+export type RaidBattlesWorkflow = z.infer<typeof raidBattlesWorkflowSchema>;
 export type RaidRewardEditableField = z.infer<typeof raidRewardEditableFieldSchema>;
 export type RaidRewardItemRecord = z.infer<typeof raidRewardItemRecordSchema>;
 export type RaidRewardTableRecord = z.infer<typeof raidRewardTableRecordSchema>;
@@ -2076,8 +2174,20 @@ export type LoadShopsWorkflowRequest = z.infer<typeof loadShopsWorkflowRequestSc
 export type LoadShopsWorkflowResponse = z.infer<typeof loadShopsWorkflowResponseSchema>;
 export type LoadEncountersWorkflowRequest = z.infer<typeof loadEncountersWorkflowRequestSchema>;
 export type LoadEncountersWorkflowResponse = z.infer<typeof loadEncountersWorkflowResponseSchema>;
+export type LoadRaidBattlesWorkflowRequest = z.infer<
+  typeof loadRaidBattlesWorkflowRequestSchema
+>;
+export type LoadRaidBattlesWorkflowResponse = z.infer<
+  typeof loadRaidBattlesWorkflowResponseSchema
+>;
 export type LoadRaidRewardsWorkflowRequest = z.infer<typeof loadRaidRewardsWorkflowRequestSchema>;
 export type LoadRaidRewardsWorkflowResponse = z.infer<typeof loadRaidRewardsWorkflowResponseSchema>;
+export type UpdateRaidBattleSlotFieldRequest = z.infer<
+  typeof updateRaidBattleSlotFieldRequestSchema
+>;
+export type UpdateRaidBattleSlotFieldResponse = z.infer<
+  typeof updateRaidBattleSlotFieldResponseSchema
+>;
 export type UpdateRaidRewardFieldRequest = z.infer<typeof updateRaidRewardFieldRequestSchema>;
 export type UpdateRaidRewardFieldResponse = z.infer<typeof updateRaidRewardFieldResponseSchema>;
 export type LoadPlacementWorkflowRequest = z.infer<typeof loadPlacementWorkflowRequestSchema>;

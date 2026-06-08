@@ -173,6 +173,13 @@ public static class SwShBridgeMapper
         return new LoadRaidRewardsWorkflowResponse(ToRaidRewardsWorkflowDto(workflow));
     }
 
+    public static LoadRaidBattlesWorkflowResponse ToDto(SwShRaidBattlesWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadRaidBattlesWorkflowResponse(ToRaidBattlesWorkflowDto(workflow));
+    }
+
     public static LoadPlacementWorkflowResponse ToDto(SwShPlacementWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -335,6 +342,16 @@ public static class SwShBridgeMapper
 
         return new UpdateRaidRewardFieldResponse(
             ToRaidRewardsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateRaidBattleSlotFieldResponse ToDto(SwShRaidBattlesEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateRaidBattleSlotFieldResponse(
+            ToRaidBattlesWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -784,6 +801,20 @@ public static class SwShBridgeMapper
             new EncountersWorkflowStatsDto(
                 workflow.Stats.TotalTableCount,
                 workflow.Stats.TotalSlotCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static RaidBattlesWorkflowDto ToRaidBattlesWorkflowDto(SwShRaidBattlesWorkflow workflow)
+    {
+        return new RaidBattlesWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Tables.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new RaidBattlesWorkflowStatsDto(
+                workflow.Stats.TotalTableCount,
+                workflow.Stats.TotalSlotCount,
+                workflow.Stats.GigantamaxSlotCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1344,6 +1375,63 @@ public static class SwShBridgeMapper
     private static EncounterProvenanceDto ToDto(SwShEncounterProvenance provenance)
     {
         return new EncounterProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static RaidBattleTableRecordDto ToDto(SwShRaidBattleTableRecord table)
+    {
+        return new RaidBattleTableRecordDto(
+            table.TableId,
+            table.DenId,
+            table.TableIndex,
+            table.GameVersion,
+            table.SourceTableHash,
+            table.Slots.Select(ToDto).ToArray(),
+            ToDto(table.Provenance));
+    }
+
+    private static RaidBattleSlotRecordDto ToDto(SwShRaidBattleSlotRecord slot)
+    {
+        return new RaidBattleSlotRecordDto(
+            slot.Slot,
+            slot.EntryIndex,
+            slot.SpeciesId,
+            slot.Species,
+            slot.Form,
+            slot.Ability,
+            slot.AbilityLabel,
+            slot.IsGigantamax,
+            slot.Gender,
+            slot.GenderLabel,
+            slot.FlawlessIvs,
+            slot.Probabilities,
+            slot.ProbabilitySummary,
+            slot.LevelTableHash,
+            slot.DropTableHash,
+            slot.BonusTableHash);
+    }
+
+    private static RaidBattleEditableFieldDto ToDto(SwShRaidBattleEditableField field)
+    {
+        return new RaidBattleEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static RaidBattleEditableFieldOptionDto ToDto(SwShRaidBattleEditableFieldOption option)
+    {
+        return new RaidBattleEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static RaidBattleProvenanceDto ToDto(SwShRaidBattleProvenance provenance)
+    {
+        return new RaidBattleProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

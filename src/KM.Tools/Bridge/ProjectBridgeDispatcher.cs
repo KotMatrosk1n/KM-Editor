@@ -56,6 +56,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShMovesEditSessionService movesEditSessionService;
     private readonly SwShPlacementEditSessionService placementEditSessionService;
     private readonly SwShPokemonEditSessionService pokemonEditSessionService;
+    private readonly SwShRaidBattlesEditSessionService raidBattlesEditSessionService;
     private readonly SwShRaidRewardsEditSessionService raidRewardsEditSessionService;
     private readonly SwShRentalPokemonEditSessionService rentalPokemonEditSessionService;
     private readonly SwShRoyalCandyEditSessionService royalCandyEditSessionService;
@@ -76,6 +77,7 @@ public sealed class ProjectBridgeDispatcher
         SwShMovesEditSessionService? movesEditSessionService = null,
         SwShPlacementEditSessionService? placementEditSessionService = null,
         SwShPokemonEditSessionService? pokemonEditSessionService = null,
+        SwShRaidBattlesEditSessionService? raidBattlesEditSessionService = null,
         SwShRaidRewardsEditSessionService? raidRewardsEditSessionService = null,
         SwShRentalPokemonEditSessionService? rentalPokemonEditSessionService = null,
         SwShRoyalCandyEditSessionService? royalCandyEditSessionService = null,
@@ -95,6 +97,7 @@ public sealed class ProjectBridgeDispatcher
         this.movesEditSessionService = movesEditSessionService ?? new SwShMovesEditSessionService(this.projectWorkspaceService);
         this.placementEditSessionService = placementEditSessionService ?? new SwShPlacementEditSessionService(this.projectWorkspaceService);
         this.pokemonEditSessionService = pokemonEditSessionService ?? new SwShPokemonEditSessionService(this.projectWorkspaceService);
+        this.raidBattlesEditSessionService = raidBattlesEditSessionService ?? new SwShRaidBattlesEditSessionService(this.projectWorkspaceService);
         this.raidRewardsEditSessionService = raidRewardsEditSessionService ?? new SwShRaidRewardsEditSessionService(this.projectWorkspaceService);
         this.rentalPokemonEditSessionService = rentalPokemonEditSessionService ?? new SwShRentalPokemonEditSessionService(this.projectWorkspaceService);
         this.royalCandyEditSessionService = royalCandyEditSessionService ?? new SwShRoyalCandyEditSessionService(this.projectWorkspaceService);
@@ -149,6 +152,8 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateShopInventoryItem => DispatchUpdateShopInventoryItem(requestJson),
                 KmCommandNames.LoadEncountersWorkflow => DispatchLoadEncountersWorkflow(requestJson),
                 KmCommandNames.UpdateEncounterSlotField => DispatchUpdateEncounterSlotField(requestJson),
+                KmCommandNames.LoadRaidBattlesWorkflow => DispatchLoadRaidBattlesWorkflow(requestJson),
+                KmCommandNames.UpdateRaidBattleSlotField => DispatchUpdateRaidBattleSlotField(requestJson),
                 KmCommandNames.LoadRaidRewardsWorkflow => DispatchLoadRaidRewardsWorkflow(requestJson),
                 KmCommandNames.UpdateRaidRewardField => DispatchUpdateRaidRewardField(requestJson),
                 KmCommandNames.LoadPlacementWorkflow => DispatchLoadPlacementWorkflow(requestJson),
@@ -528,6 +533,33 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadRaidBattlesWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadRaidBattlesWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadRaidBattles(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateRaidBattleSlotField(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateRaidBattleSlotFieldRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = raidBattlesEditSessionService.UpdateSlotField(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            request.Payload.TableId,
+            request.Payload.Slot,
+            request.Payload.Field,
+            request.Payload.Value);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadRaidRewardsWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadRaidRewardsWorkflowRequest>(requestJson);
@@ -703,6 +735,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
+            EditSessionDomain.RaidBattles => raidBattlesEditSessionService.Validate(paths, session),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.Validate(paths, session),
             EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.Validate(paths, session),
             EditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
@@ -733,6 +766,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.RaidBattles => raidBattlesEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session),
@@ -764,6 +798,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.RaidBattles => raidBattlesEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, changePlan),
@@ -805,6 +840,7 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.rentalPokemon"] => EditSessionDomain.RentalPokemon,
             ["workflow.staticEncounters"] => EditSessionDomain.StaticEncounters,
             ["workflow.placement"] => EditSessionDomain.Placement,
+            ["workflow.raidBattles"] => EditSessionDomain.RaidBattles,
             ["workflow.raidRewards"] => EditSessionDomain.RaidRewards,
             ["workflow.royalCandy"] => EditSessionDomain.RoyalCandy,
             _ => EditSessionDomain.Mixed,
@@ -898,6 +934,7 @@ public sealed class ProjectBridgeDispatcher
         RentalPokemon,
         StaticEncounters,
         Placement,
+        RaidBattles,
         RaidRewards,
         RoyalCandy,
         Mixed,

@@ -23,6 +23,7 @@ using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
 using KM.SwSh.ExeFs;
+using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
 using KM.Tools.Bridge;
 using System.Buffers.Binary;
@@ -178,6 +179,11 @@ public sealed class ProjectBridgeDispatcherTests
             workflow =>
             {
                 Assert.Equal("encounters", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
+                Assert.Equal("raidBattles", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             },
             workflow =>
@@ -1143,6 +1149,109 @@ public sealed class ProjectBridgeDispatcherTests
         var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
         var outputArchive = SwShWildEncounterArchive.Parse(outputPack.GetFileByName("encount_symbol_k.bin"));
         Assert.Equal(40, outputArchive.Tables[0].SubTables[0].Slots[1].Probability);
+    }
+
+    [Fact]
+    public void DispatchLoadRaidBattlesWorkflowReturnsRealBattleSlots()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidBattleBridgeFixtures.WriteBaseRaidBattles(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadRaidBattlesWorkflow,
+            new LoadRaidBattlesWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-raid-battles");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadRaidBattlesWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-raid-battles", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Single(response.Payload.Workflow.Tables);
+        var table = response.Payload.Workflow.Tables[0];
+        Assert.Equal("0xAABBCCDD00112233", table.SourceTableHash);
+        Assert.Equal(ProjectFileLayerDto.Base, table.Provenance.SourceLayer);
+        var slot = table.Slots[0];
+        Assert.Equal("Eevee", slot.Species);
+        Assert.Equal("Any Ability", slot.AbilityLabel);
+        Assert.True(slot.IsGigantamax);
+        Assert.Equal(4, slot.FlawlessIvs);
+        Assert.Equal([100, 20, 30, 40, 50], slot.Probabilities);
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "flawlessIvs").Options,
+            option => option.Value == 6 && option.Label == "6 Perfect IVs");
+        Assert.Equal(2, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchRaidBattleEditValidatePlanAndApplyWritesNestDataPack()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidBattleBridgeFixtures.WriteBaseRaidBattles(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loadJson = SerializeRequest(
+            KmCommandNames.LoadRaidBattlesWorkflow,
+            new LoadRaidBattlesWorkflowRequest(temp.Paths),
+            requestId: "request-raid-battle-load");
+        var loadResponse = DeserializeResponse<LoadRaidBattlesWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.NotNull(loadResponse.Payload);
+        var table = Assert.Single(loadResponse.Payload.Workflow.Tables);
+        var startJson = SerializeRequest(
+            KmCommandNames.StartEditSession,
+            new StartEditSessionRequest(temp.Paths),
+            requestId: "request-raid-battle-start");
+        var startResponse = DeserializeResponse<StartEditSessionResponse>(dispatcher.Dispatch(startJson));
+        Assert.NotNull(startResponse.Payload);
+
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateRaidBattleSlotField,
+            new UpdateRaidBattleSlotFieldRequest(
+                temp.Paths,
+                startResponse.Payload.Session,
+                table.TableId,
+                Slot: 2,
+                Field: "flawlessIvs",
+                Value: "6"),
+            requestId: "request-raid-battle-update");
+        var updateResponse = DeserializeResponse<UpdateRaidBattleSlotFieldResponse>(dispatcher.Dispatch(updateJson));
+
+        Assert.Null(updateResponse.Error);
+        Assert.NotNull(updateResponse.Payload);
+        Assert.Equal(6, updateResponse.Payload.Workflow.Tables.Single(candidate => candidate.TableId == table.TableId).Slots[1].FlawlessIvs);
+        Assert.Equal("workflow.raidBattles", Assert.Single(updateResponse.Payload.Session.PendingEdits).Domain);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-raid-battle-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, updateResponse.Payload.Session),
+            requestId: "request-raid-battle-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.NotNull(planResponse.Payload);
+        Assert.Equal("romfs/bin/archive/field/resident/data_table.gfpak", Assert.Single(planResponse.Payload.ChangePlan.Writes).TargetRelativePath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, updateResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-raid-battle-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.Equal("romfs/bin/archive/field/resident/data_table.gfpak", Assert.Single(applyResponse.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "archive", "field", "resident", "data_table.gfpak");
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
+        var outputArchive = SwShEncounterNestArchive.Parse(outputPack.GetFileByName(SwShRaidBattlesWorkflowService.EncounterMemberName));
+        Assert.Equal(6, outputArchive.Tables[0].Entries[1].FlawlessIvs);
     }
 
     [Fact]

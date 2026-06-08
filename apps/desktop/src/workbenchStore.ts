@@ -16,6 +16,7 @@ import {
   type PokemonWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
+  type RaidBattlesWorkflow,
   type RaidRewardsWorkflow,
   type RentalPokemonWorkflow,
   type RoyalCandyWorkflow,
@@ -43,6 +44,7 @@ export type WorkbenchSection =
   | 'rentalPokemon'
   | 'shops'
   | 'encounters'
+  | 'raidBattles'
   | 'raidRewards'
   | 'placement'
   | 'flagworkSave'
@@ -97,6 +99,8 @@ type WorkbenchState = {
   pokemonSearchText: string;
   pokemonWorkflow: PokemonWorkflow | null;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
+  raidBattleSearchText: string;
+  raidBattlesWorkflow: RaidBattlesWorkflow | null;
   raidRewardSearchText: string;
   raidRewardsWorkflow: RaidRewardsWorkflow | null;
   royalCandySearchText: string;
@@ -122,6 +126,7 @@ type WorkbenchState = {
   selectedMoveId: number | null;
   selectedPokemonPersonalId: number | null;
   selectedEncounterTableId: string | null;
+  selectedRaidBattleTableId: string | null;
   selectedShopId: string | null;
   selectedTextKey: string | null;
   selectedTrainerId: number | null;
@@ -163,6 +168,8 @@ type WorkbenchState = {
   setPokemonWorkflow: (pokemonWorkflow: PokemonWorkflow) => void;
   setProjectHealth: (health: ProjectHealth) => void;
   setProjectStatus: (projectStatus: WorkbenchState['projectStatus']) => void;
+  setRaidBattleSearchText: (raidBattleSearchText: string) => void;
+  setRaidBattlesWorkflow: (raidBattlesWorkflow: RaidBattlesWorkflow) => void;
   setRaidRewardSearchText: (raidRewardSearchText: string) => void;
   setRaidRewardsWorkflow: (raidRewardsWorkflow: RaidRewardsWorkflow) => void;
   setRoyalCandySearchText: (royalCandySearchText: string) => void;
@@ -190,6 +197,7 @@ type WorkbenchState = {
   setSelectedMoveId: (selectedMoveId: number | null) => void;
   setSelectedPokemonPersonalId: (selectedPokemonPersonalId: number | null) => void;
   setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
+  setSelectedRaidBattleTableId: (selectedRaidBattleTableId: string | null) => void;
   setSelectedShopId: (selectedShopId: string | null) => void;
   setSelectedTextKey: (selectedTextKey: string | null) => void;
   setSelectedTrainerId: (selectedTrainerId: number | null) => void;
@@ -240,6 +248,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   pokemonSearchText: '',
   pokemonWorkflow: null,
   projectStatus: 'idle',
+  raidBattleSearchText: '',
+  raidBattlesWorkflow: null,
   raidRewardSearchText: '',
   raidRewardsWorkflow: null,
   royalCandySearchText: '',
@@ -265,6 +275,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedPokemonPersonalId: null,
   selectedSaveBlockId: null,
   selectedEncounterTableId: null,
+  selectedRaidBattleTableId: null,
   selectedShopId: null,
   selectedTextKey: null,
   selectedTrainerId: null,
@@ -300,6 +311,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setRentalPokemonSearchText: (rentalPokemonSearchText) => set({ rentalPokemonSearchText }),
   setPlacementSearchText: (placementSearchText) => set({ placementSearchText }),
   setPokemonSearchText: (pokemonSearchText) => set({ pokemonSearchText }),
+  setRaidBattleSearchText: (raidBattleSearchText) => set({ raidBattleSearchText }),
   setRaidRewardSearchText: (raidRewardSearchText) => set({ raidRewardSearchText }),
   setRoyalCandySearchText: (royalCandySearchText) => set({ royalCandySearchText }),
   setSpreadsheetImportSearchText: (spreadsheetImportSearchText) =>
@@ -529,6 +541,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       projectStatus: 'idle'
     })),
   setProjectStatus: (projectStatus) => set({ projectStatus }),
+  setSelectedRaidBattleTableId: (selectedRaidBattleTableId) =>
+    set({ selectedRaidBattleTableId }),
   setSelectedRaidRewardTableId: (selectedRaidRewardTableId) =>
     set({ selectedRaidRewardTableId }),
   setSelectedPlacementObjectId: (selectedPlacementObjectId) =>
@@ -633,6 +647,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         encounterSearchText: '',
         encountersWorkflow,
         selectedEncounterTableId
+      };
+    }),
+  setRaidBattlesWorkflow: (raidBattlesWorkflow) =>
+    set((state) => {
+      const selectedRaidBattleTableId = raidBattlesWorkflow.tables.some(
+        (table) => table.tableId === state.selectedRaidBattleTableId
+      )
+        ? state.selectedRaidBattleTableId
+        : (raidBattlesWorkflow.tables[0]?.tableId ?? null);
+
+      return {
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'raidBattles'),
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        raidBattleSearchText: '',
+        raidBattlesWorkflow,
+        selectedRaidBattleTableId
       };
     }),
   setRaidRewardsWorkflow: (raidRewardsWorkflow) =>

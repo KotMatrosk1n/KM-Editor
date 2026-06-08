@@ -34,6 +34,7 @@ public sealed class SwShWorkflowService
     private readonly SwShStaticEncountersWorkflowService staticEncountersWorkflowService;
     private readonly SwShRentalPokemonWorkflowService rentalPokemonWorkflowService;
     private readonly SwShPlacementWorkflowService placementWorkflowService;
+    private readonly SwShRaidBattlesWorkflowService raidBattlesWorkflowService;
     private readonly SwShRaidRewardsWorkflowService raidRewardsWorkflowService;
     private readonly SwShRoyalCandyWorkflowService royalCandyWorkflowService;
     private readonly SwShShopsWorkflowService shopsWorkflowService;
@@ -51,6 +52,7 @@ public sealed class SwShWorkflowService
         SwShTrainersWorkflowService? trainersWorkflowService = null,
         SwShShopsWorkflowService? shopsWorkflowService = null,
         SwShEncountersWorkflowService? encountersWorkflowService = null,
+        SwShRaidBattlesWorkflowService? raidBattlesWorkflowService = null,
         SwShRaidRewardsWorkflowService? raidRewardsWorkflowService = null,
         SwShPlacementWorkflowService? placementWorkflowService = null,
         SwShFlagworkSaveWorkflowService? flagworkSaveWorkflowService = null,
@@ -76,6 +78,7 @@ public sealed class SwShWorkflowService
         this.staticEncountersWorkflowService = staticEncountersWorkflowService ?? new SwShStaticEncountersWorkflowService();
         this.rentalPokemonWorkflowService = rentalPokemonWorkflowService ?? new SwShRentalPokemonWorkflowService();
         this.placementWorkflowService = placementWorkflowService ?? new SwShPlacementWorkflowService();
+        this.raidBattlesWorkflowService = raidBattlesWorkflowService ?? new SwShRaidBattlesWorkflowService();
         this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
         this.royalCandyWorkflowService = royalCandyWorkflowService ?? new SwShRoyalCandyWorkflowService(this.exeFsPatchWorkflowService);
         this.shopsWorkflowService = shopsWorkflowService ?? new SwShShopsWorkflowService();
@@ -103,6 +106,7 @@ public sealed class SwShWorkflowService
                 rentalPokemonWorkflowService.CreateSummary(project),
                 shopsWorkflowService.CreateSummary(project),
                 encountersWorkflowService.CreateSummary(project),
+                raidBattlesWorkflowService.CreateSummary(project),
                 raidRewardsWorkflowService.CreateSummary(project),
                 placementWorkflowService.CreateSummary(project),
                 flagworkSaveWorkflowService.CreateSummary(project),
@@ -218,6 +222,15 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return raidRewardsWorkflowService.Load(project);
+    }
+
+    public SwShRaidBattlesWorkflow LoadRaidBattles(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return raidBattlesWorkflowService.Load(project);
     }
 
     public SwShPlacementWorkflow LoadPlacement(ProjectPaths paths)

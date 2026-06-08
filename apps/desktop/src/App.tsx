@@ -74,6 +74,10 @@ import {
   type ProjectHealth,
   type ProjectPathRole,
   type ProjectPathValidation,
+  type RaidBattleEditableField,
+  type RaidBattleSlotRecord,
+  type RaidBattleTableRecord,
+  type RaidBattlesWorkflow,
   type RaidRewardEditableField,
   type RaidRewardItemRecord,
   type RaidRewardTableRecord,
@@ -195,6 +199,11 @@ const sections: Array<{
     icon: Layers
   },
   {
+    id: 'raidBattles',
+    label: 'Raid Battles',
+    icon: ShieldCheck
+  },
+  {
     id: 'raidRewards',
     label: 'Raid Rewards',
     icon: ShieldCheck
@@ -302,6 +311,12 @@ const workflowDefinitions: Array<{
     label: 'Encounters and Wild Data',
     description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
     icon: Layers
+  },
+  {
+    id: 'raidBattles',
+    label: 'Raid Battles',
+    description: 'Raid Pokemon slots, star probabilities, ability rolls, guaranteed perfect IVs, and source provenance.',
+    icon: ShieldCheck
   },
   {
     id: 'raidRewards',
@@ -565,6 +580,19 @@ const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
 const encounterLevelMinFieldName = 'levelMin';
 const encounterLevelMaxFieldName = 'levelMax';
+const raidBattleSpeciesFieldName = 'species';
+const raidBattleFormFieldName = 'form';
+const raidBattleAbilityFieldName = 'ability';
+const raidBattleIsGigantamaxFieldName = 'isGigantamax';
+const raidBattleGenderFieldName = 'gender';
+const raidBattleFlawlessIvsFieldName = 'flawlessIvs';
+const raidBattleProbabilityFieldNames = [
+  'star1Probability',
+  'star2Probability',
+  'star3Probability',
+  'star4Probability',
+  'star5Probability'
+] as const;
 const raidRewardItemIdFieldName = 'itemId';
 const raidRewardValueFieldNames = [
   'star1Value',
@@ -636,6 +664,8 @@ export function App({
   const pokemonSearchText = useWorkbenchStore((state) => state.pokemonSearchText);
   const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
+  const raidBattleSearchText = useWorkbenchStore((state) => state.raidBattleSearchText);
+  const raidBattlesWorkflow = useWorkbenchStore((state) => state.raidBattlesWorkflow);
   const raidRewardSearchText = useWorkbenchStore((state) => state.raidRewardSearchText);
   const raidRewardsWorkflow = useWorkbenchStore((state) => state.raidRewardsWorkflow);
   const royalCandySearchText = useWorkbenchStore((state) => state.royalCandySearchText);
@@ -657,6 +687,9 @@ export function App({
   const selectedMoveId = useWorkbenchStore((state) => state.selectedMoveId);
   const selectedPokemonPersonalId = useWorkbenchStore(
     (state) => state.selectedPokemonPersonalId
+  );
+  const selectedRaidBattleTableId = useWorkbenchStore(
+    (state) => state.selectedRaidBattleTableId
   );
   const selectedRaidRewardTableId = useWorkbenchStore(
     (state) => state.selectedRaidRewardTableId
@@ -748,6 +781,8 @@ export function App({
   const setPokemonWorkflow = useWorkbenchStore((state) => state.setPokemonWorkflow);
   const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
+  const setRaidBattleSearchText = useWorkbenchStore((state) => state.setRaidBattleSearchText);
+  const setRaidBattlesWorkflow = useWorkbenchStore((state) => state.setRaidBattlesWorkflow);
   const setRaidRewardSearchText = useWorkbenchStore((state) => state.setRaidRewardSearchText);
   const setRaidRewardsWorkflow = useWorkbenchStore((state) => state.setRaidRewardsWorkflow);
   const setRoyalCandySearchText = useWorkbenchStore((state) => state.setRoyalCandySearchText);
@@ -766,6 +801,9 @@ export function App({
   );
   const setSelectedRaidRewardTableId = useWorkbenchStore(
     (state) => state.setSelectedRaidRewardTableId
+  );
+  const setSelectedRaidBattleTableId = useWorkbenchStore(
+    (state) => state.setSelectedRaidBattleTableId
   );
   const setSelectedPlacementObjectId = useWorkbenchStore(
     (state) => state.setSelectedPlacementObjectId
@@ -844,6 +882,8 @@ export function App({
   const [isShopUpdating, setIsShopUpdating] = useState(false);
   const [isEncountersLoading, setIsEncountersLoading] = useState(false);
   const [isEncounterUpdating, setIsEncounterUpdating] = useState(false);
+  const [isRaidBattlesLoading, setIsRaidBattlesLoading] = useState(false);
+  const [isRaidBattleUpdating, setIsRaidBattleUpdating] = useState(false);
   const [isRaidRewardsLoading, setIsRaidRewardsLoading] = useState(false);
   const [isRaidRewardUpdating, setIsRaidRewardUpdating] = useState(false);
   const [isPlacementLoading, setIsPlacementLoading] = useState(false);
@@ -1096,6 +1136,20 @@ export function App({
     }
   };
 
+  const handleOpenRaidBattlesWorkflow = async () => {
+    setIsRaidBattlesLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadRaidBattlesWorkflow({ paths: toProjectPaths(draftPaths) });
+      setRaidBattlesWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRaidBattlesLoading(false);
+    }
+  };
+
   const handleOpenRaidRewardsWorkflow = async () => {
     setIsRaidRewardsLoading(true);
     setBridgeDiagnostics([]);
@@ -1318,6 +1372,12 @@ export function App({
           void handleOpenEncountersWorkflow();
         }
         break;
+      case 'raidBattles':
+        if (!raidBattlesWorkflow && !isRaidBattlesLoading) {
+          markLazyLoadStarted();
+          void handleOpenRaidBattlesWorkflow();
+        }
+        break;
       case 'raidRewards':
         if (!raidRewardsWorkflow && !isRaidRewardsLoading) {
           markLazyLoadStarted();
@@ -1375,6 +1435,7 @@ export function App({
     isMovesLoading,
     isPlacementLoading,
     isPokemonLoading,
+    isRaidBattlesLoading,
     isRaidRewardsLoading,
     isRoyalCandyLoading,
     isShopsLoading,
@@ -1386,6 +1447,7 @@ export function App({
     movesWorkflow,
     placementWorkflow,
     pokemonWorkflow,
+    raidBattlesWorkflow,
     raidRewardsWorkflow,
     rentalPokemonWorkflow,
     royalCandyWorkflow,
@@ -1819,6 +1881,35 @@ export function App({
     }
   };
 
+  const handleUpdateRaidBattleSlotField = async (
+    tableId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => {
+    setIsRaidBattleUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateRaidBattleSlotField({
+        field,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        slot,
+        tableId,
+        value
+      });
+      setRaidBattlesWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRaidBattleUpdating(false);
+    }
+  };
+
   const handleUpdatePlacementObjectField = async (
     objectId: string,
     field: string,
@@ -2017,6 +2108,7 @@ export function App({
               isTrainersLoading={isTrainersLoading}
               isShopsLoading={isShopsLoading}
               isEncountersLoading={isEncountersLoading}
+              isRaidBattlesLoading={isRaidBattlesLoading}
               isRaidRewardsLoading={isRaidRewardsLoading}
               isPlacementLoading={isPlacementLoading}
               isFlagworkSaveLoading={isFlagworkSaveLoading}
@@ -2038,6 +2130,7 @@ export function App({
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
               onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
               onOpenPlacementWorkflow={handleOpenPlacementWorkflow}
+              onOpenRaidBattlesWorkflow={handleOpenRaidBattlesWorkflow}
               onOpenRaidRewardsWorkflow={handleOpenRaidRewardsWorkflow}
               onOpenRoyalCandyWorkflow={handleOpenRoyalCandyWorkflow}
               onOpenShopsWorkflow={handleOpenShopsWorkflow}
@@ -2263,6 +2356,24 @@ export function App({
                 searchText={raidRewardSearchText}
                 selectedTableId={selectedRaidRewardTableId}
                 workflow={raidRewardsWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'raidBattles' ? (
+            isRaidBattlesLoading && !raidBattlesWorkflow ? (
+              <WorkflowLoadingPanel label="Raid Battles" />
+            ) : (
+              <RaidBattlesSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isRaidBattleUpdating={isRaidBattleUpdating}
+                onSearchChange={setRaidBattleSearchText}
+                onSelectTable={setSelectedRaidBattleTableId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateRaidBattleSlotField={handleUpdateRaidBattleSlotField}
+                searchText={raidBattleSearchText}
+                selectedTableId={selectedRaidBattleTableId}
+                workflow={raidBattlesWorkflow}
               />
             )
           ) : null}
@@ -2588,6 +2699,7 @@ function WorkflowsSection({
   isShopsLoading,
   isTextLoading,
   isTrainersLoading,
+  isRaidBattlesLoading,
   isRaidRewardsLoading,
   isPlacementLoading,
   isFlagworkSaveLoading,
@@ -2608,6 +2720,7 @@ function WorkflowsSection({
   onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
   onOpenPlacementWorkflow,
+  onOpenRaidBattlesWorkflow,
   onOpenRaidRewardsWorkflow,
   onOpenRoyalCandyWorkflow,
   onOpenShopsWorkflow,
@@ -2626,6 +2739,7 @@ function WorkflowsSection({
   isShopsLoading: boolean;
   isTextLoading: boolean;
   isTrainersLoading: boolean;
+  isRaidBattlesLoading: boolean;
   isRaidRewardsLoading: boolean;
   isPlacementLoading: boolean;
   isFlagworkSaveLoading: boolean;
@@ -2646,6 +2760,7 @@ function WorkflowsSection({
   onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
   onOpenPlacementWorkflow: () => void;
+  onOpenRaidBattlesWorkflow: () => void;
   onOpenRaidRewardsWorkflow: () => void;
   onOpenRoyalCandyWorkflow: () => void;
   onOpenShopsWorkflow: () => void;
@@ -2678,6 +2793,7 @@ function WorkflowsSection({
           const isRentalPokemonWorkflow = definition.id === 'rentalPokemon';
           const isShopsWorkflow = definition.id === 'shops';
           const isEncountersWorkflow = definition.id === 'encounters';
+          const isRaidBattlesWorkflow = definition.id === 'raidBattles';
           const isRaidRewardsWorkflow = definition.id === 'raidRewards';
           const isPlacementWorkflow = definition.id === 'placement';
           const isFlagworkSaveWorkflow = definition.id === 'flagworkSave';
@@ -2700,6 +2816,8 @@ function WorkflowsSection({
           const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
           const canOpenEncounters =
             isEncountersWorkflow && workflowState.availability !== 'disabled';
+          const canOpenRaidBattles =
+            isRaidBattlesWorkflow && workflowState.availability !== 'disabled';
           const canOpenRaidRewards =
             isRaidRewardsWorkflow && workflowState.availability !== 'disabled';
           const canOpenPlacement =
@@ -2847,6 +2965,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isEncountersLoading ? 'Loading' : 'Open Encounters'}</span>
+                  </button>
+                ) : null}
+                {isRaidBattlesWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenRaidBattles || isRaidBattlesLoading}
+                    onClick={onOpenRaidBattlesWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isRaidBattlesLoading ? 'Loading' : 'Open Raid Battles'}</span>
                   </button>
                 ) : null}
                 {isRaidRewardsWorkflow ? (
@@ -7665,6 +7794,430 @@ function SelectedEncounterPanel({
   );
 }
 
+function RaidBattlesSection({
+  editSession,
+  isEditStarting,
+  isRaidBattleUpdating,
+  onSearchChange,
+  onSelectTable,
+  onStartEditSession,
+  onUpdateRaidBattleSlotField,
+  searchText,
+  selectedTableId,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isRaidBattleUpdating: boolean;
+  onSearchChange: (value: string) => void;
+  onSelectTable: (tableId: string) => void;
+  onStartEditSession: () => void;
+  onUpdateRaidBattleSlotField: (
+    tableId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => void;
+  searchText: string;
+  selectedTableId: string | null;
+  workflow: RaidBattlesWorkflow | null;
+}) {
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+  const filteredTables =
+    workflow?.tables.filter((table) => {
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return [
+        table.denId,
+        table.gameVersion,
+        table.sourceTableHash,
+        ...table.slots.flatMap((slot) => [
+          slot.species,
+          slot.speciesId.toString(),
+          slot.levelTableHash,
+          slot.dropTableHash,
+          slot.bonusTableHash
+        ])
+      ]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(normalizedSearch);
+    }) ?? [];
+  const selectedTable =
+    filteredTables.find((table) => table.tableId === selectedTableId) ??
+    workflow?.tables.find((table) => table.tableId === selectedTableId) ??
+    filteredTables[0] ??
+    workflow?.tables[0] ??
+    null;
+  const selectedBattleSlot =
+    selectedTable?.slots.find((slot) => slot.slot === selectedSlot) ??
+    selectedTable?.slots[0] ??
+    null;
+  const canEditRaidBattles = workflow?.summary.availability === 'available';
+  const pendingRaidBattleTableIds = getPendingRaidBattleTableIds(editSession);
+
+  useEffect(() => {
+    if (!selectedTable) {
+      setSelectedSlot(null);
+      return;
+    }
+
+    const hasSelectedSlot = selectedTable.slots.some((slot) => slot.slot === selectedSlot);
+    if (!hasSelectedSlot) {
+      setSelectedSlot(selectedTable.slots[0]?.slot ?? null);
+    }
+  }, [selectedSlot, selectedTable?.slots, selectedTable?.tableId]);
+
+  return (
+    <>
+      <section aria-labelledby="raid-battles-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <ShieldCheck aria-hidden="true" size={18} />
+          <h2 id="raid-battles-heading">Raid Battles</h2>
+        </div>
+
+        <div className="items-toolbar encounters-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search raid battles"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search raid battles"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded tables"
+            value={workflow ? workflow.stats.totalTableCount.toString() : '0'}
+          />
+          <Metric
+            label="Battle slots"
+            value={workflow ? workflow.stats.totalSlotCount.toString() : '0'}
+          />
+          <Metric
+            label="G-Max slots"
+            value={workflow ? workflow.stats.gigantamaxSlotCount.toString() : '0'}
+          />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="encounters-layout">
+            <div className="raid-rewards-table" role="table" aria-label="Raid battle tables">
+              <div className="raid-rewards-row raid-rewards-row-heading" role="row">
+                <span role="columnheader">Table</span>
+                <span role="columnheader">Version</span>
+                <span role="columnheader">Slots</span>
+                <span role="columnheader">G-Max</span>
+              </div>
+              {filteredTables.map((table) => (
+                <button
+                  className={`raid-rewards-row ${
+                    selectedTable?.tableId === table.tableId ? 'raid-rewards-row-selected' : ''
+                  } ${
+                    pendingRaidBattleTableIds.has(table.tableId) ? 'raid-rewards-row-pending' : ''
+                  }`}
+                  key={table.tableId}
+                  onClick={() => onSelectTable(table.tableId)}
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{table.sourceTableHash}</span>
+                  <span role="cell">{table.gameVersion}</span>
+                  <span role="cell">{table.slots.length}</span>
+                  <span role="cell">{table.slots.filter((slot) => slot.isGigantamax).length}</span>
+                </button>
+              ))}
+            </div>
+
+            <SelectedRaidBattlePanel
+              battleSlot={selectedBattleSlot}
+              canEditRaidBattles={canEditRaidBattles}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              isEditStarting={isEditStarting}
+              isRaidBattleUpdating={isRaidBattleUpdating}
+              onSelectSlot={setSelectedSlot}
+              onStartEditSession={onStartEditSession}
+              onUpdateRaidBattleSlotField={onUpdateRaidBattleSlotField}
+              selectedSlot={selectedSlot}
+              table={selectedTable}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Raid Battles from Workflows to load backend battle data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedRaidBattlePanel({
+  battleSlot,
+  canEditRaidBattles,
+  editSession,
+  editableFields,
+  isEditStarting,
+  isRaidBattleUpdating,
+  onSelectSlot,
+  onStartEditSession,
+  onUpdateRaidBattleSlotField,
+  selectedSlot,
+  table
+}: {
+  battleSlot: RaidBattleSlotRecord | null;
+  canEditRaidBattles: boolean;
+  editSession: EditSession | null;
+  editableFields: RaidBattleEditableField[];
+  isEditStarting: boolean;
+  isRaidBattleUpdating: boolean;
+  onSelectSlot: (slot: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdateRaidBattleSlotField: (
+    tableId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => void;
+  selectedSlot: number | null;
+  table: RaidBattleTableRecord | null;
+}) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!battleSlot) {
+      setDrafts({});
+      return;
+    }
+
+    setDrafts(
+      Object.fromEntries(
+        editableFields.map((field) => [
+          field.field,
+          (getEditableRaidBattleFieldValue(battleSlot, field.field) ?? '').toString()
+        ])
+      )
+    );
+  }, [
+    battleSlot?.ability,
+    battleSlot?.flawlessIvs,
+    battleSlot?.form,
+    battleSlot?.gender,
+    battleSlot?.isGigantamax,
+    battleSlot?.probabilities.join('|'),
+    battleSlot?.slot,
+    battleSlot?.speciesId,
+    editableFields,
+    table?.tableId
+  ]);
+
+  return (
+    <aside aria-label="Selected raid battle provenance" className="encounter-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Battle</h3>
+      </div>
+
+      {table ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Table</dt>
+              <dd>{table.sourceTableHash}</dd>
+            </div>
+            <div>
+              <dt>Game</dt>
+              <dd>{table.gameVersion}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{table.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(table.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(table.provenance.fileState)}</dd>
+            </div>
+          </dl>
+
+          <div className="encounter-edit-form">
+            <div className="encounter-slot-header">
+              <strong>Battle slots</strong>
+              <select
+                aria-label="Raid battle slot"
+                disabled={table.slots.length === 0}
+                onChange={(event) => onSelectSlot(Number(event.target.value))}
+                value={selectedSlot ?? ''}
+              >
+                {table.slots.map((candidate) => (
+                  <option key={candidate.slot} value={candidate.slot}>
+                    Slot {candidate.slot}: {candidate.species}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {battleSlot ? (
+              <>
+                <dl className="encounter-slot-detail">
+                  <div>
+                    <dt>Pokemon</dt>
+                    <dd>
+                      {battleSlot.species} ({battleSlot.speciesId})
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Ability</dt>
+                    <dd>{battleSlot.abilityLabel}</dd>
+                  </div>
+                  <div>
+                    <dt>Gender</dt>
+                    <dd>{battleSlot.genderLabel}</dd>
+                  </div>
+                  <div>
+                    <dt>G-Max</dt>
+                    <dd>{battleSlot.isGigantamax ? 'Yes' : 'No'}</dd>
+                  </div>
+                  <div>
+                    <dt>Perfect IVs</dt>
+                    <dd>{battleSlot.flawlessIvs}</dd>
+                  </div>
+                  <div>
+                    <dt>Star odds</dt>
+                    <dd>{battleSlot.probabilitySummary}</dd>
+                  </div>
+                  <div>
+                    <dt>Level table</dt>
+                    <dd>{battleSlot.levelTableHash}</dd>
+                  </div>
+                  <div>
+                    <dt>Drop table</dt>
+                    <dd>{battleSlot.dropTableHash}</dd>
+                  </div>
+                  <div>
+                    <dt>Bonus table</dt>
+                    <dd>{battleSlot.bonusTableHash}</dd>
+                  </div>
+                </dl>
+
+                <div className="encounter-field-grid">
+                  {editableFields.map((field) => {
+                    const currentValue = getEditableRaidBattleFieldValue(battleSlot, field.field);
+                    const draftValue = drafts[field.field] ?? '';
+                    const draftState = getIntegerDraftState(draftValue, currentValue, field);
+                    const canSubmit =
+                      editSession !== null &&
+                      draftState.canSubmit &&
+                      draftState.parsedValue !== null;
+
+                    return (
+                      <div className="trainer-editor-row" key={field.field}>
+                        <label className="path-field">
+                          <span>{field.label}</span>
+                          {field.options.length > 0 ? (
+                            <select
+                              aria-label={field.label}
+                              disabled={
+                                !canEditRaidBattles ||
+                                editSession === null ||
+                                isRaidBattleUpdating
+                              }
+                              onChange={(event) =>
+                                setDrafts((currentDrafts) => ({
+                                  ...currentDrafts,
+                                  [field.field]: event.target.value
+                                }))
+                              }
+                              value={draftValue}
+                            >
+                              {field.options.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              aria-label={field.label}
+                              disabled={
+                                !canEditRaidBattles ||
+                                editSession === null ||
+                                isRaidBattleUpdating
+                              }
+                              max={field.maximumValue ?? undefined}
+                              min={field.minimumValue ?? undefined}
+                              onChange={(event) =>
+                                setDrafts((currentDrafts) => ({
+                                  ...currentDrafts,
+                                  [field.field]: event.target.value
+                                }))
+                              }
+                              type="number"
+                              value={draftValue}
+                            />
+                          )}
+                        </label>
+                        {editSession ? (
+                          <button
+                            aria-label={`Save ${field.label.toLocaleLowerCase()}`}
+                            className="primary-button compact-button"
+                            disabled={!canSubmit || isRaidBattleUpdating}
+                            onClick={() =>
+                              onUpdateRaidBattleSlotField(
+                                table.tableId,
+                                battleSlot.slot,
+                                field.field,
+                                draftState.parsedValue!.toString()
+                              )
+                            }
+                            type="button"
+                          >
+                            <Save aria-hidden="true" size={16} />
+                            <span>{isRaidBattleUpdating ? 'Saving' : 'Save'}</span>
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <p className="empty-copy">No raid battle selected.</p>
+            )}
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditRaidBattles || isEditStarting || table.slots.length === 0}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No raid battle table selected.</p>
+      )}
+    </aside>
+  );
+}
+
 function RaidRewardsSection({
   editSession,
   isEditStarting,
@@ -11075,6 +11628,7 @@ function getIntegerDraftState(
   currentValue: number | null,
   field:
     | EncounterEditableField
+    | RaidBattleEditableField
     | RaidRewardEditableField
     | ShopEditableField
     | TrainerEditableField
@@ -11325,6 +11879,14 @@ function getPendingRaidRewardTableIds(editSession: EditSession | null) {
   );
 }
 
+function getPendingRaidBattleTableIds(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.raidBattles' && edit.recordId)
+      .map((edit) => edit.recordId!.split('#')[0])
+  );
+}
+
 function getPendingPlacementObjectIds(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
@@ -11427,6 +11989,29 @@ function getEditableRaidRewardFieldValue(reward: RaidRewardItemRecord, field: st
 
   const valueIndex = raidRewardValueFieldNames.findIndex((fieldName) => fieldName === field);
   return valueIndex >= 0 ? (reward.values[valueIndex] ?? 0) : null;
+}
+
+function getEditableRaidBattleFieldValue(battleSlot: RaidBattleSlotRecord, field: string) {
+  switch (field) {
+    case raidBattleSpeciesFieldName:
+      return battleSlot.speciesId;
+    case raidBattleFormFieldName:
+      return battleSlot.form;
+    case raidBattleAbilityFieldName:
+      return battleSlot.ability;
+    case raidBattleIsGigantamaxFieldName:
+      return battleSlot.isGigantamax ? 1 : 0;
+    case raidBattleGenderFieldName:
+      return battleSlot.gender;
+    case raidBattleFlawlessIvsFieldName:
+      return battleSlot.flawlessIvs;
+    default: {
+      const probabilityIndex = raidBattleProbabilityFieldNames.findIndex(
+        (fieldName) => fieldName === field
+      );
+      return probabilityIndex >= 0 ? (battleSlot.probabilities[probabilityIndex] ?? 0) : null;
+    }
+  }
 }
 
 function isPlacementFieldVisible(placedObject: PlacedObjectRecord, field: string) {
