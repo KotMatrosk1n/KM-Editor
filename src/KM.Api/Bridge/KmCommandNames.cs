@@ -25,6 +25,8 @@ public static class KmCommandNames
     public const string UpdateTrainerField = "trainers.field.update";
     public const string LoadGiftPokemonWorkflow = "giftPokemon.load";
     public const string UpdateGiftPokemonField = "giftPokemon.field.update";
+    public const string LoadTradePokemonWorkflow = "tradePokemon.load";
+    public const string UpdateTradePokemonField = "tradePokemon.field.update";
     public const string LoadStaticEncountersWorkflow = "staticEncounters.load";
     public const string UpdateStaticEncounterField = "staticEncounters.field.update";
     public const string LoadShopsWorkflow = "shops.load";

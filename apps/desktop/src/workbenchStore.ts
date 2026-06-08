@@ -23,6 +23,7 @@ import {
   type StaticEncountersWorkflow,
   type ShopsWorkflow,
   type TextWorkflow,
+  type TradePokemonWorkflow,
   type TrainersWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
@@ -36,6 +37,7 @@ export type WorkbenchSection =
   | 'text'
   | 'trainers'
   | 'giftPokemon'
+  | 'tradePokemon'
   | 'staticEncounters'
   | 'shops'
   | 'encounters'
@@ -77,6 +79,8 @@ type WorkbenchState = {
   flagworkSaveWorkflow: FlagworkSaveWorkflow | null;
   giftPokemonSearchText: string;
   giftPokemonWorkflow: GiftPokemonWorkflow | null;
+  tradePokemonSearchText: string;
+  tradePokemonWorkflow: TradePokemonWorkflow | null;
   staticEncounterSearchText: string;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
   itemSearchText: string;
@@ -104,6 +108,7 @@ type WorkbenchState = {
   selectedExeFsCheckId: string | null;
   selectedExeFsPatchId: string | null;
   selectedGiftPokemonIndex: number | null;
+  selectedTradePokemonIndex: number | null;
   selectedStaticEncounterIndex: number | null;
   selectedRoyalCandyCheckId: string | null;
   selectedRoyalCandyWorkflowId: string | null;
@@ -136,6 +141,8 @@ type WorkbenchState = {
   setFlagworkSaveWorkflow: (flagworkSaveWorkflow: FlagworkSaveWorkflow) => void;
   setGiftPokemonSearchText: (giftPokemonSearchText: string) => void;
   setGiftPokemonWorkflow: (giftPokemonWorkflow: GiftPokemonWorkflow) => void;
+  setTradePokemonSearchText: (tradePokemonSearchText: string) => void;
+  setTradePokemonWorkflow: (tradePokemonWorkflow: TradePokemonWorkflow) => void;
   setStaticEncounterSearchText: (staticEncounterSearchText: string) => void;
   setStaticEncountersWorkflow: (staticEncountersWorkflow: StaticEncountersWorkflow) => void;
   setItemsWorkflow: (itemsWorkflow: ItemsWorkflow) => void;
@@ -164,6 +171,7 @@ type WorkbenchState = {
   setSelectedExeFsCheckId: (selectedExeFsCheckId: string | null) => void;
   setSelectedExeFsPatchId: (selectedExeFsPatchId: string | null) => void;
   setSelectedGiftPokemonIndex: (selectedGiftPokemonIndex: number | null) => void;
+  setSelectedTradePokemonIndex: (selectedTradePokemonIndex: number | null) => void;
   setSelectedStaticEncounterIndex: (selectedStaticEncounterIndex: number | null) => void;
   setSelectedRoyalCandyCheckId: (selectedRoyalCandyCheckId: string | null) => void;
   setSelectedRoyalCandyWorkflowId: (selectedRoyalCandyWorkflowId: string | null) => void;
@@ -208,6 +216,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   flagworkSaveWorkflow: null,
   giftPokemonSearchText: '',
   giftPokemonWorkflow: null,
+  tradePokemonSearchText: '',
+  tradePokemonWorkflow: null,
   staticEncounterSearchText: '',
   staticEncountersWorkflow: null,
   itemSearchText: '',
@@ -234,6 +244,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedExeFsCheckId: null,
   selectedExeFsPatchId: null,
   selectedGiftPokemonIndex: null,
+  selectedTradePokemonIndex: null,
   selectedStaticEncounterIndex: null,
   selectedRoyalCandyCheckId: null,
   selectedRoyalCandyWorkflowId: null,
@@ -272,6 +283,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setExeFsPatchSearchText: (exeFsPatchSearchText) => set({ exeFsPatchSearchText }),
   setFlagworkSaveSearchText: (flagworkSaveSearchText) => set({ flagworkSaveSearchText }),
   setGiftPokemonSearchText: (giftPokemonSearchText) => set({ giftPokemonSearchText }),
+  setTradePokemonSearchText: (tradePokemonSearchText) => set({ tradePokemonSearchText }),
   setStaticEncounterSearchText: (staticEncounterSearchText) =>
     set({ staticEncounterSearchText }),
   setPlacementSearchText: (placementSearchText) => set({ placementSearchText }),
@@ -360,6 +372,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         selectedGiftPokemonIndex
       };
     }),
+  setTradePokemonWorkflow: (tradePokemonWorkflow) =>
+    set((state) => {
+      const selectedTradePokemonIndex = tradePokemonWorkflow.trades.some(
+        (trade) => trade.tradeIndex === state.selectedTradePokemonIndex
+      )
+        ? state.selectedTradePokemonIndex
+        : (tradePokemonWorkflow.trades[0]?.tradeIndex ?? null);
+
+      return {
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'tradePokemon'),
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        selectedTradePokemonIndex,
+        tradePokemonSearchText: '',
+        tradePokemonWorkflow
+      };
+    }),
   setStaticEncountersWorkflow: (staticEncountersWorkflow) =>
     set((state) => {
       const selectedStaticEncounterIndex = staticEncountersWorkflow.encounters.some(
@@ -398,6 +429,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       flagworkSaveWorkflow: null,
       giftPokemonSearchText: '',
       giftPokemonWorkflow: null,
+      tradePokemonSearchText: '',
+      tradePokemonWorkflow: null,
       staticEncounterSearchText: '',
       staticEncountersWorkflow: null,
       itemSearchText: '',
@@ -422,6 +455,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       selectedExeFsCheckId: null,
       selectedExeFsPatchId: null,
       selectedGiftPokemonIndex: null,
+      selectedTradePokemonIndex: null,
       selectedStaticEncounterIndex: null,
       selectedRoyalCandyCheckId: null,
       selectedRoyalCandyWorkflowId: null,
@@ -471,6 +505,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setSelectedExeFsPatchId: (selectedExeFsPatchId) => set({ selectedExeFsPatchId }),
   setSelectedGiftPokemonIndex: (selectedGiftPokemonIndex) =>
     set({ selectedGiftPokemonIndex }),
+  setSelectedTradePokemonIndex: (selectedTradePokemonIndex) =>
+    set({ selectedTradePokemonIndex }),
   setSelectedStaticEncounterIndex: (selectedStaticEncounterIndex) =>
     set({ selectedStaticEncounterIndex }),
   setSelectedRoyalCandyCheckId: (selectedRoyalCandyCheckId) =>

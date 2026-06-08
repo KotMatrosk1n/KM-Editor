@@ -166,6 +166,14 @@ describe('projectBridge', () => {
               },
               {
                 availability: 'readOnly',
+                description:
+                  'In-game trade records, requested Pokemon, IV modes, relearn moves, and source provenance.',
+                diagnostics: [],
+                id: 'tradePokemon',
+                label: 'Trade Pokemon'
+              },
+              {
+                availability: 'readOnly',
                 description: 'Shop inventories, prices, stock limits, and source provenance.',
                 diagnostics: [],
                 id: 'shops',
@@ -709,6 +717,103 @@ describe('projectBridge', () => {
                 id: 'giftPokemon',
                 label: 'Gift Pokemon'
               }
+            }
+          }
+        });
+      }
+
+      if (request.command === 'tradePokemon.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              editableFields: [
+                {
+                  field: 'ivHp',
+                  label: 'HP IV',
+                  maximumValue: 31,
+                  minimumValue: -4,
+                  options: [],
+                  valueKind: 'integer'
+                }
+              ],
+              stats: {
+                fixedIvTradeCount: 0,
+                sourceFileCount: 1,
+                totalTradeCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description:
+                  'In-game trade records, requested Pokemon, IV modes, relearn moves, and source provenance.',
+                diagnostics: [],
+                id: 'tradePokemon',
+                label: 'Trade Pokemon'
+              },
+              trades: [
+                {
+                  ability: 1,
+                  abilityLabel: 'Ability 1',
+                  ballItem: 'Poke Ball',
+                  ballItemId: 4,
+                  canGigantamax: false,
+                  dynamaxLevel: 0,
+                  field03: 0,
+                  flawlessIvCount: 3,
+                  form: 0,
+                  gender: 0,
+                  genderLabel: 'Random',
+                  hash0: '0x1122334455667788',
+                  hash1: '0x8877665544332211',
+                  hash2: '0x0102030405060708',
+                  heldItem: null,
+                  heldItemId: 0,
+                  ivs: {
+                    attack: -1,
+                    defense: -1,
+                    hp: -4,
+                    specialAttack: -1,
+                    specialDefense: -1,
+                    speed: -1
+                  },
+                  ivSummary: '3 guaranteed perfect IVs',
+                  label: 'Trade 001: Eevee -> Grookey Lv. 50',
+                  level: 50,
+                  memoryCode: 11,
+                  memoryFeel: 12,
+                  memoryIntensity: 13,
+                  memoryTextVariable: 4660,
+                  nature: 25,
+                  natureLabel: 'Random',
+                  otGender: 1,
+                  otGenderLabel: 'Female',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/bin/script_event_data/field_trade.bin',
+                    sourceLayer: 'base'
+                  },
+                  relearnMoves: [
+                    {
+                      move: 'Scratch',
+                      moveId: 1,
+                      slot: 0
+                    }
+                  ],
+                  requiredForm: 0,
+                  requiredNature: 25,
+                  requiredNatureLabel: 'Random',
+                  requiredSpecies: 'Eevee',
+                  requiredSpeciesId: 133,
+                  shinyLock: 2,
+                  shinyLockLabel: 'Never Shiny',
+                  species: 'Grookey',
+                  speciesId: 810,
+                  tradeIndex: 0,
+                  trainerId: 123456,
+                  unknownRequirement: 0
+                }
+              ]
             }
           }
         });
@@ -1305,6 +1410,7 @@ describe('projectBridge', () => {
     const text = await bridge.loadTextWorkflow({ paths: projectPaths });
     const trainers = await bridge.loadTrainersWorkflow({ paths: projectPaths });
     const giftPokemon = await bridge.loadGiftPokemonWorkflow({ paths: projectPaths });
+    const tradePokemon = await bridge.loadTradePokemonWorkflow({ paths: projectPaths });
     const shops = await bridge.loadShopsWorkflow({ paths: projectPaths });
     const encounters = await bridge.loadEncountersWorkflow({ paths: projectPaths });
     const raidRewards = await bridge.loadRaidRewardsWorkflow({ paths: projectPaths });
@@ -1320,14 +1426,15 @@ describe('projectBridge', () => {
     expect(workflows.workflows[3]?.id).toBe('text');
     expect(workflows.workflows[4]?.id).toBe('trainers');
     expect(workflows.workflows[5]?.id).toBe('giftPokemon');
-    expect(workflows.workflows[6]?.id).toBe('shops');
-    expect(workflows.workflows[7]?.id).toBe('encounters');
-    expect(workflows.workflows[8]?.id).toBe('raidRewards');
-    expect(workflows.workflows[9]?.id).toBe('placement');
-    expect(workflows.workflows[10]?.id).toBe('flagworkSave');
-    expect(workflows.workflows[11]?.id).toBe('exefsPatches');
-    expect(workflows.workflows[12]?.id).toBe('royalCandy');
-    expect(workflows.workflows[13]?.id).toBe('spreadsheetImport');
+    expect(workflows.workflows[6]?.id).toBe('tradePokemon');
+    expect(workflows.workflows[7]?.id).toBe('shops');
+    expect(workflows.workflows[8]?.id).toBe('encounters');
+    expect(workflows.workflows[9]?.id).toBe('raidRewards');
+    expect(workflows.workflows[10]?.id).toBe('placement');
+    expect(workflows.workflows[11]?.id).toBe('flagworkSave');
+    expect(workflows.workflows[12]?.id).toBe('exefsPatches');
+    expect(workflows.workflows[13]?.id).toBe('royalCandy');
+    expect(workflows.workflows[14]?.id).toBe('spreadsheetImport');
     expect(items.workflow.editableFields).toHaveLength(4);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(pokemon.workflow.editableFields[0]?.field).toBe('hp');
@@ -1339,6 +1446,7 @@ describe('projectBridge', () => {
     expect(text.workflow.entries[0]?.label).toBe('story #0');
     expect(trainers.workflow.trainers[0]?.name).toBe('Avery');
     expect(giftPokemon.workflow.gifts[0]?.ivSummary).toBe('3 guaranteed perfect IVs');
+    expect(tradePokemon.workflow.trades[0]?.hash0).toBe('0x1122334455667788');
     expect(shops.workflow.editableFields[0]?.field).toBe('itemId');
     expect(shops.workflow.shops[0]?.name).toBe('Route 1 Mart');
     expect(encounters.workflow.editableFields[0]?.field).toBe('probability');
@@ -2112,6 +2220,140 @@ describe('projectBridge', () => {
 
     expect(updated.workflow.gifts[0]?.ivs.hp).toBe(31);
     expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.giftPokemon');
+  });
+
+  it('runs trade Pokemon field update command', async () => {
+    const bridge = createProjectBridge(async (requestJson) => {
+      const request = JSON.parse(requestJson) as { command: string };
+
+      expect(request.command).toBe('tradePokemon.field.update');
+
+      return JSON.stringify({
+        error: null,
+        payload: {
+          diagnostics: [],
+          session: {
+            hasPendingChanges: true,
+            pendingEdits: [
+              {
+                domain: 'workflow.tradePokemon',
+                field: 'ivHp',
+                newValue: '31',
+                recordId: 'trade:0',
+                sources: [
+                  {
+                    layer: 'base',
+                    relativePath: 'romfs/bin/script_event_data/field_trade.bin'
+                  }
+                ],
+                summary: 'Set Trade 001 HP IV to 31.'
+              }
+            ],
+            sessionId: 'session-1'
+          },
+          workflow: {
+            diagnostics: [],
+            editableFields: [
+              {
+                field: 'ivHp',
+                label: 'HP IV',
+                maximumValue: 31,
+                minimumValue: -4,
+                options: [],
+                valueKind: 'integer'
+              }
+            ],
+            stats: {
+              fixedIvTradeCount: 1,
+              sourceFileCount: 1,
+              totalTradeCount: 1
+            },
+            summary: {
+              availability: 'available',
+              description:
+                'In-game trade records, requested Pokemon, IV modes, relearn moves, and source provenance.',
+              diagnostics: [],
+              id: 'tradePokemon',
+              label: 'Trade Pokemon'
+            },
+            trades: [
+              {
+                ability: 1,
+                abilityLabel: 'Ability 1',
+                ballItem: 'Poke Ball',
+                ballItemId: 4,
+                canGigantamax: false,
+                dynamaxLevel: 0,
+                field03: 0,
+                flawlessIvCount: null,
+                form: 0,
+                gender: 0,
+                genderLabel: 'Random',
+                hash0: '0x1122334455667788',
+                hash1: '0x8877665544332211',
+                hash2: '0x0102030405060708',
+                heldItem: null,
+                heldItemId: 0,
+                ivs: {
+                  attack: -1,
+                  defense: -1,
+                  hp: 31,
+                  specialAttack: -1,
+                  specialDefense: -1,
+                  speed: -1
+                },
+                ivSummary: 'HP 31 / Atk -1 / Def -1 / SpA -1 / SpD -1 / Spe -1',
+                label: 'Trade 001: Eevee -> Grookey Lv. 50',
+                level: 50,
+                memoryCode: 11,
+                memoryFeel: 12,
+                memoryIntensity: 13,
+                memoryTextVariable: 4660,
+                nature: 25,
+                natureLabel: 'Random',
+                otGender: 1,
+                otGenderLabel: 'Female',
+                provenance: {
+                  fileState: 'baseOnly',
+                  sourceFile: 'romfs/bin/script_event_data/field_trade.bin',
+                  sourceLayer: 'base'
+                },
+                relearnMoves: [
+                  {
+                    move: 'Scratch',
+                    moveId: 1,
+                    slot: 0
+                  }
+                ],
+                requiredForm: 0,
+                requiredNature: 25,
+                requiredNatureLabel: 'Random',
+                requiredSpecies: 'Eevee',
+                requiredSpeciesId: 133,
+                shinyLock: 2,
+                shinyLockLabel: 'Never Shiny',
+                species: 'Grookey',
+                speciesId: 810,
+                tradeIndex: 0,
+                trainerId: 123456,
+                unknownRequirement: 0
+              }
+            ]
+          }
+        }
+      });
+    });
+
+    const updated = await bridge.updateTradePokemonField({
+      field: 'ivHp',
+      paths: editableProjectPaths,
+      session: null,
+      tradeIndex: 0,
+      value: '31'
+    });
+
+    expect(updated.workflow.trades[0]?.ivs.hp).toBe(31);
+    expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.tradePokemon');
   });
 
   it('runs move field update command', async () => {
