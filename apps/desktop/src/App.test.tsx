@@ -212,6 +212,10 @@ describe('App', () => {
     await waitFor(() => expect(tm00).toBeChecked());
     await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'type1');
     expect(screen.getByLabelText('Type 1')).toHaveDisplayValue('Grass');
+    await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'ability1');
+    expect(screen.getByLabelText('Ability 1')).toHaveDisplayValue('065 Overgrow');
+    await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'heldItem1');
+    expect(screen.getByLabelText('Held Item 50%')).toHaveDisplayValue('000 None');
     await user.selectOptions(screen.getByLabelText('Pokemon edit field'), 'hp');
     const hpInput = screen.getByLabelText('HP');
     await user.clear(hpInput);
@@ -266,7 +270,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
-    await user.click(screen.getByRole('button', { name: /Species 2/ }));
+    await user.click(screen.getByRole('button', { name: /002 Ivysaur/ }));
     await user.clear(screen.getByLabelText('Method'));
     await user.type(screen.getByLabelText('Method'), '8');
     await user.clear(screen.getByLabelText('Argument'));
@@ -1130,6 +1134,45 @@ function createMockProjectBridge(
           { label: 'Normal', value: 0 },
           { label: 'Grass', value: 11 },
           { label: 'Fire', value: 9 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'heldItem1',
+        group: 'Held Items',
+        label: 'Held Item 50%',
+        maximumValue: 32767,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Potion', value: 1 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ability1',
+        group: 'Abilities',
+        label: 'Ability 1',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '034 Chlorophyll', value: 34 },
+          { label: '065 Overgrow', value: 65 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'hatchedSpecies',
+        group: 'Forms/Dex',
+        label: 'Hatched Species',
+        maximumValue: 65535,
+        minimumValue: 0,
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Bulbasaur', value: 1 },
+          { label: '002 Ivysaur', value: 2 },
+          { label: '003 Venusaur', value: 3 }
         ],
         valueKind: 'integer'
       },

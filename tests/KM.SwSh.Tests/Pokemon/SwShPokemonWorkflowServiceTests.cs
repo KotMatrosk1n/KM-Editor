@@ -27,7 +27,16 @@ public sealed class SwShPokemonWorkflowServiceTests
         Assert.Equal(1, workflow.Stats.PresentPokemonCount);
         Assert.Equal(1, workflow.Stats.TotalEvolutionCount);
         Assert.Equal(2, workflow.Stats.TotalLearnsetMoveCount);
-        Assert.Equal(5, workflow.Stats.SourceFileCount);
+        Assert.Equal(8, workflow.Stats.SourceFileCount);
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShPokemonWorkflowService.HeldItem1Field).Options,
+            option => option.Value == 1 && option.Label == "001 Potion");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShPokemonWorkflowService.Ability1Field).Options,
+            option => option.Value == 65 && option.Label == "065 Overgrow");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShPokemonWorkflowService.HatchedSpeciesField).Options,
+            option => option.Value == 2 && option.Label == "002 Ivysaur");
         var pokemon = workflow.Pokemon[1];
         Assert.Equal(1, pokemon.PersonalId);
         Assert.Equal(1, pokemon.SpeciesId);
@@ -122,6 +131,15 @@ public sealed class SwShPokemonWorkflowServiceTests
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/pokelist.dat",
             CreateTextTable("None", "Bulbasaur"));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateIndexedPokemonNames());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            CreateIndexedItemNames());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/tokusei.dat",
+            CreateIndexedAbilityNames());
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/wazaname.dat",
             CreateIndexedMoveNames());
@@ -234,6 +252,42 @@ public sealed class SwShPokemonWorkflowServiceTests
         names[45] = "Growl";
         names[345] = "Magical Leaf";
         names[520] = "Grass Pledge";
+
+        return CreateTextTable(names);
+    }
+
+    private static byte[] CreateIndexedPokemonNames()
+    {
+        var names = Enumerable.Range(0, 4)
+            .Select(index => $"Pokemon {index}")
+            .ToArray();
+        names[0] = "None";
+        names[1] = "Bulbasaur";
+        names[2] = "Ivysaur";
+        names[3] = "Venusaur";
+
+        return CreateTextTable(names);
+    }
+
+    private static byte[] CreateIndexedItemNames()
+    {
+        var names = Enumerable.Range(0, 2)
+            .Select(index => $"Item {index}")
+            .ToArray();
+        names[0] = "None";
+        names[1] = "Potion";
+
+        return CreateTextTable(names);
+    }
+
+    private static byte[] CreateIndexedAbilityNames()
+    {
+        var names = Enumerable.Range(0, 66)
+            .Select(index => $"Ability {index}")
+            .ToArray();
+        names[0] = "None";
+        names[34] = "Chlorophyll";
+        names[65] = "Overgrow";
 
         return CreateTextTable(names);
     }

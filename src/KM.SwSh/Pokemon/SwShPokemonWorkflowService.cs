@@ -15,6 +15,9 @@ public sealed class SwShPokemonWorkflowService
     public const string LearnsetDataPath = SwShPokemonLearnsetTable.LearnsetDataRelativePath;
     public const string EvolutionDataDirectory = SwShEvolutionSet.EvolutionDataRelativeDirectory;
     public const string EnglishPokemonNamePath = "romfs/bin/message/English/common/pokelist.dat";
+    public const string EnglishSpeciesNamePath = "romfs/bin/message/English/common/monsname.dat";
+    public const string EnglishItemNamePath = "romfs/bin/message/English/common/itemname.dat";
+    public const string EnglishAbilityNamePath = "romfs/bin/message/English/common/tokusei.dat";
     public const string EnglishMoveNamePath = "romfs/bin/message/English/common/wazaname.dat";
 
     public const string HPField = "hp";
@@ -290,6 +293,21 @@ public sealed class SwShPokemonWorkflowService
             EnglishPokemonNamePath,
             "Pokemon names",
             diagnostics);
+        var speciesNames = LoadOptionalTextTable(
+            project,
+            EnglishSpeciesNamePath,
+            "Pokemon species names",
+            diagnostics);
+        var itemNames = LoadOptionalTextTable(
+            project,
+            EnglishItemNamePath,
+            "Item names",
+            diagnostics);
+        var abilityNames = LoadOptionalTextTable(
+            project,
+            EnglishAbilityNamePath,
+            "Ability names",
+            diagnostics);
         var moveNames = LoadOptionalTextTable(
             project,
             EnglishMoveNamePath,
@@ -308,11 +326,19 @@ public sealed class SwShPokemonWorkflowService
             var sourceFileCount =
                 1
                 + (pokemonNames.Count > 0 ? 1 : 0)
+                + (speciesNames.Count > 0 ? 1 : 0)
+                + (itemNames.Count > 0 ? 1 : 0)
+                + (abilityNames.Count > 0 ? 1 : 0)
                 + (moveNames.Count > 0 ? 1 : 0)
                 + (learnsets.Count > 0 ? 1 : 0)
                 + (evolutions.Count > 0 ? evolutions.Count : 0);
 
-            return CreateWorkflow(summary, pokemon, sourceFileCount, diagnostics);
+            return CreateWorkflow(
+                summary,
+                pokemon,
+                sourceFileCount,
+                CreateEditableFields(itemNames, abilityNames, speciesNames.Count > 0 ? speciesNames : pokemonNames),
+                diagnostics);
         }
         catch (InvalidDataException exception)
         {
@@ -483,6 +509,16 @@ public sealed class SwShPokemonWorkflowService
         int sourceFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
+        return CreateWorkflow(summary, pokemon, sourceFileCount, EditableFields, diagnostics);
+    }
+
+    private static SwShPokemonWorkflow CreateWorkflow(
+        SwShWorkflowSummary summary,
+        IReadOnlyList<SwShPokemonRecord> pokemon,
+        int sourceFileCount,
+        IReadOnlyList<SwShPokemonEditableField> editableFields,
+        IReadOnlyList<ValidationDiagnostic> diagnostics)
+    {
         return new SwShPokemonWorkflow(
             summary,
             pokemon,
@@ -492,7 +528,7 @@ public sealed class SwShPokemonWorkflowService
                 pokemon.Sum(record => record.Evolutions.Count),
                 pokemon.Sum(record => record.Learnset.Count),
                 sourceFileCount),
-            EditableFields,
+            editableFields,
             diagnostics);
     }
 
@@ -669,6 +705,50 @@ public sealed class SwShPokemonWorkflowService
         return personal.HatchedSpecies > 0
             ? personal.HatchedSpecies
             : personal.PersonalId;
+    }
+
+    private static IReadOnlyList<SwShPokemonEditableField> CreateEditableFields(
+        IReadOnlyList<string> itemNames,
+        IReadOnlyList<string> abilityNames,
+        IReadOnlyList<string> speciesNames)
+    {
+        var itemOptions = CreateIndexedOptions(itemNames, "Item");
+        var abilityOptions = CreateIndexedOptions(abilityNames, "Ability");
+        var speciesOptions = CreateIndexedOptions(speciesNames, "Species");
+
+        return EditableFields
+            .Select(field =>
+            {
+                var options = field.Field switch
+                {
+                    HeldItem1Field or HeldItem2Field or HeldItem3Field => itemOptions,
+                    Ability1Field or Ability2Field or HiddenAbilityField => abilityOptions,
+                    HatchedSpeciesField => speciesOptions,
+                    _ => field.Options,
+                };
+
+                return options.Count == 0 || ReferenceEquals(options, field.Options)
+                    ? field
+                    : field with { Options = options };
+            })
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateIndexedOptions(
+        IReadOnlyList<string> names,
+        string fallbackPrefix)
+    {
+        return names.Count == 0
+            ? []
+            : names
+                .Select((name, index) =>
+                {
+                    var label = string.IsNullOrWhiteSpace(name)
+                        ? index == 0 ? "None" : $"{fallbackPrefix} {index}"
+                        : name;
+                    return CreateOption(index, string.Create(CultureInfo.InvariantCulture, $"{index:000} {label}"));
+                })
+                .ToArray();
     }
 
     private static string GetIndexedName(int id, IReadOnlyList<string> names, string fallbackPrefix)

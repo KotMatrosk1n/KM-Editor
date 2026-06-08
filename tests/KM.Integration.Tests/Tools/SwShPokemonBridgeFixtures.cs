@@ -22,6 +22,15 @@ internal static class SwShPokemonBridgeFixtures
             "bin/message/English/common/pokelist.dat",
             CreateTextTable("None", "Bulbasaur"));
         temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateIndexedPokemonNames());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            CreateIndexedItemNames());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/tokusei.dat",
+            CreateIndexedAbilityNames());
+        temp.WriteBaseRomFsFile(
             "bin/message/English/common/wazaname.dat",
             CreateIndexedMoveNames());
     }
@@ -122,6 +131,42 @@ internal static class SwShPokemonBridgeFixtures
         names[33] = "Tackle";
         names[45] = "Growl";
         names[345] = "Magical Leaf";
+
+        return CreateTextTable(names);
+    }
+
+    private static byte[] CreateIndexedPokemonNames()
+    {
+        var names = Enumerable.Range(0, 4)
+            .Select(index => $"Pokemon {index}")
+            .ToArray();
+        names[0] = "None";
+        names[1] = "Bulbasaur";
+        names[2] = "Ivysaur";
+        names[3] = "Venusaur";
+
+        return CreateTextTable(names);
+    }
+
+    private static byte[] CreateIndexedItemNames()
+    {
+        var names = Enumerable.Range(0, 2)
+            .Select(index => $"Item {index}")
+            .ToArray();
+        names[0] = "None";
+        names[1] = "Potion";
+
+        return CreateTextTable(names);
+    }
+
+    private static byte[] CreateIndexedAbilityNames()
+    {
+        var names = Enumerable.Range(0, 66)
+            .Select(index => $"Ability {index}")
+            .ToArray();
+        names[0] = "None";
+        names[34] = "Chlorophyll";
+        names[65] = "Overgrow";
 
         return CreateTextTable(names);
     }

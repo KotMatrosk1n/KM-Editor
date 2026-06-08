@@ -2815,6 +2815,14 @@ function SelectedPokemonPanel({
     pokemon?.evolutions.find((evolution) => evolution.slot === selectedEvolutionSlot) ??
     pokemon?.evolutions[0] ??
     null;
+  const pokemonSpeciesOptions = useMemo(
+    () => editableFields.find((field) => field.field === 'hatchedSpecies')?.options ?? [],
+    [editableFields]
+  );
+  const pokemonSpeciesLabels = useMemo(
+    () => new Map(pokemonSpeciesOptions.map((option) => [option.value, option.label])),
+    [pokemonSpeciesOptions]
+  );
   const [evolutionMethodDraft, setEvolutionMethodDraft] = useState(
     selectedEvolution?.method.toString() ?? ''
   );
@@ -3264,7 +3272,9 @@ function SelectedPokemonPanel({
                       >
                         <span>#{evolution.slot + 1}</span>
                         <span>M {evolution.method}</span>
-                        <strong>Species {evolution.species}</strong>
+                        <strong>
+                          {formatReferenceLabel(pokemonSpeciesLabels, evolution.species, 'Species')}
+                        </strong>
                         <span>F {evolution.form}</span>
                         <span>Lv. {evolution.level}</span>
                         <span>Arg {evolution.argument}</span>
@@ -3302,14 +3312,28 @@ function SelectedPokemonPanel({
                   </label>
                   <label className="path-field">
                     <span>Species</span>
-                    <input
-                      disabled={!canEditEvolution}
-                      max={65535}
-                      min={0}
-                      onChange={(event) => setEvolutionSpeciesDraft(event.target.value)}
-                      type="number"
-                      value={evolutionSpeciesDraft}
-                    />
+                    {pokemonSpeciesOptions.length > 0 ? (
+                      <select
+                        disabled={!canEditEvolution}
+                        onChange={(event) => setEvolutionSpeciesDraft(event.target.value)}
+                        value={evolutionSpeciesDraft}
+                      >
+                        {pokemonSpeciesOptions.map((option) => (
+                          <option key={option.value} value={option.value.toString()}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        disabled={!canEditEvolution}
+                        max={65535}
+                        min={0}
+                        onChange={(event) => setEvolutionSpeciesDraft(event.target.value)}
+                        type="number"
+                        value={evolutionSpeciesDraft}
+                      />
+                    )}
                   </label>
                   <label className="path-field">
                     <span>Form</span>
@@ -3449,14 +3473,29 @@ function SelectedPokemonPanel({
                 </label>
                 <label className="path-field">
                   <span>New species</span>
-                  <input
-                    disabled={!canEditEvolution}
-                    max={65535}
-                    min={0}
-                    onChange={(event) => setNewEvolutionSpeciesDraft(event.target.value)}
-                    type="number"
-                    value={newEvolutionSpeciesDraft}
-                  />
+                  {pokemonSpeciesOptions.length > 0 ? (
+                    <select
+                      disabled={!canEditEvolution}
+                      onChange={(event) => setNewEvolutionSpeciesDraft(event.target.value)}
+                      value={newEvolutionSpeciesDraft}
+                    >
+                      <option value="">Select species</option>
+                      {pokemonSpeciesOptions.map((option) => (
+                        <option key={option.value} value={option.value.toString()}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      disabled={!canEditEvolution}
+                      max={65535}
+                      min={0}
+                      onChange={(event) => setNewEvolutionSpeciesDraft(event.target.value)}
+                      type="number"
+                      value={newEvolutionSpeciesDraft}
+                    />
+                  )}
                 </label>
                 <label className="path-field">
                   <span>New form</span>
@@ -7602,6 +7641,14 @@ function filterPokemonCompatibilityEntries(
 
 function createPokemonCompatibilityFieldName(groupId: string, slot: number) {
   return `compatibility:${groupId}:${slot}`;
+}
+
+function formatReferenceLabel(
+  labels: ReadonlyMap<number, string>,
+  value: number,
+  fallbackPrefix: string
+) {
+  return labels.get(value) ?? `${fallbackPrefix} ${value}`;
 }
 
 function filterMoves(moves: MoveRecord[], searchText: string) {
