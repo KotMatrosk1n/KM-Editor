@@ -50,7 +50,7 @@ internal static class SwShEncounterTestFixtures
                             8,
                             [
                                 new SwShWildEncounterSlot(35, 1 + speciesOffset, 0),
-                                new SwShWildEncounterSlot(15, 4 + speciesOffset, 1),
+                                new SwShWildEncounterSlot(65, 4 + speciesOffset, 1),
                             ]),
                     ]),
             ]);

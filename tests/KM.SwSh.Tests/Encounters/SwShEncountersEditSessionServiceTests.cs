@@ -60,6 +60,32 @@ public sealed class SwShEncountersEditSessionServiceTests
     }
 
     [Fact]
+    public void ValidateRejectsProbabilityTotalsOutsideOneHundred()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+        var table = workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
+        var service = new SwShEncountersEditSessionService();
+        var result = service.UpdateSlotField(
+            temp.Paths,
+            session: null,
+            table.TableId,
+            slot: 2,
+            field: "probability",
+            value: "40");
+
+        var validation = service.Validate(temp.Paths, result.Session);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("must total 100", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ApplyChangePlanWritesEditedEncounterArchiveToOutputPack()
     {
         using var temp = TemporarySwShProject.Create();
@@ -69,13 +95,20 @@ public sealed class SwShEncountersEditSessionServiceTests
         var workflow = new SwShEncountersWorkflowService().Load(project);
         var table = workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
         var service = new SwShEncountersEditSessionService();
-        var update = service.UpdateSlotField(
+        var firstUpdate = service.UpdateSlotField(
             temp.Paths,
             session: null,
             table.TableId,
-            slot: 2,
+            slot: 1,
             field: "probability",
             value: "40");
+        var update = service.UpdateSlotField(
+            temp.Paths,
+            firstUpdate.Session,
+            table.TableId,
+            slot: 2,
+            field: "probability",
+            value: "60");
 
         var plan = service.CreateChangePlan(temp.Paths, update.Session);
         var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
@@ -92,8 +125,9 @@ public sealed class SwShEncountersEditSessionServiceTests
             "data_table.gfpak");
         var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
         var outputArchive = SwShWildEncounterArchive.Parse(outputPack.GetFileByName("encount_symbol_k.bin"));
-        Assert.Equal(40, outputArchive.Tables[0].SubTables[0].Slots[1].Probability);
+        Assert.Equal(40, outputArchive.Tables[0].SubTables[0].Slots[0].Probability);
+        Assert.Equal(60, outputArchive.Tables[0].SubTables[0].Slots[1].Probability);
         var hiddenArchive = SwShWildEncounterArchive.Parse(outputPack.GetFileByName("encount_k.bin"));
-        Assert.Equal(15, hiddenArchive.Tables[0].SubTables[0].Slots[1].Probability);
+        Assert.Equal(65, hiddenArchive.Tables[0].SubTables[0].Slots[1].Probability);
     }
 }

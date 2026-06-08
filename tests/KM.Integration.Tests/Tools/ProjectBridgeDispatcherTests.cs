@@ -1224,7 +1224,7 @@ public sealed class ProjectBridgeDispatcherTests
                 temp.Paths,
                 Session: null,
                 table.TableId,
-                Slot: 2,
+                Slot: 1,
                 Field: "probability",
                 Value: "40"),
             requestId: "request-encounter-update");
@@ -1232,12 +1232,30 @@ public sealed class ProjectBridgeDispatcherTests
         var updateResponse = DeserializeResponse<UpdateEncounterSlotFieldResponse>(dispatcher.Dispatch(updateJson));
         Assert.Null(updateResponse.Error);
         Assert.NotNull(updateResponse.Payload);
-        Assert.Equal(40, updateResponse.Payload.Workflow.Tables.First(candidate => candidate.TableId == table.TableId).Slots[1].Weight);
         Assert.Single(updateResponse.Payload.Session.PendingEdits);
+
+        var secondUpdateJson = SerializeRequest(
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                temp.Paths,
+                updateResponse.Payload.Session,
+                table.TableId,
+                Slot: 2,
+                Field: "probability",
+                Value: "60"),
+            requestId: "request-encounter-update-2");
+
+        var secondUpdateResponse = DeserializeResponse<UpdateEncounterSlotFieldResponse>(dispatcher.Dispatch(secondUpdateJson));
+        Assert.Null(secondUpdateResponse.Error);
+        Assert.NotNull(secondUpdateResponse.Payload);
+        var updatedTable = secondUpdateResponse.Payload.Workflow.Tables.First(candidate => candidate.TableId == table.TableId);
+        Assert.Equal(40, updatedTable.Slots[0].Weight);
+        Assert.Equal(60, updatedTable.Slots[1].Weight);
+        Assert.Equal(2, secondUpdateResponse.Payload.Session.PendingEdits.Count);
 
         var validateJson = SerializeRequest(
             KmCommandNames.ValidateEditSession,
-            new ValidateEditSessionRequest(temp.Paths, updateResponse.Payload.Session),
+            new ValidateEditSessionRequest(temp.Paths, secondUpdateResponse.Payload.Session),
             requestId: "request-encounter-validate");
         var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
         Assert.Null(validateResponse.Error);
@@ -1246,7 +1264,7 @@ public sealed class ProjectBridgeDispatcherTests
 
         var planJson = SerializeRequest(
             KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(temp.Paths, updateResponse.Payload.Session),
+            new CreateChangePlanRequest(temp.Paths, secondUpdateResponse.Payload.Session),
             requestId: "request-encounter-plan");
         var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
         Assert.Null(planResponse.Error);
@@ -1255,7 +1273,7 @@ public sealed class ProjectBridgeDispatcherTests
 
         var applyJson = SerializeRequest(
             KmCommandNames.ApplyChangePlan,
-            new ApplyChangePlanRequest(temp.Paths, updateResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            new ApplyChangePlanRequest(temp.Paths, secondUpdateResponse.Payload.Session, planResponse.Payload.ChangePlan),
             requestId: "request-encounter-apply");
         var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
 
@@ -1265,7 +1283,8 @@ public sealed class ProjectBridgeDispatcherTests
         var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "archive", "field", "resident", "data_table.gfpak");
         var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
         var outputArchive = SwShWildEncounterArchive.Parse(outputPack.GetFileByName("encount_symbol_k.bin"));
-        Assert.Equal(40, outputArchive.Tables[0].SubTables[0].Slots[1].Probability);
+        Assert.Equal(40, outputArchive.Tables[0].SubTables[0].Slots[0].Probability);
+        Assert.Equal(60, outputArchive.Tables[0].SubTables[0].Slots[1].Probability);
     }
 
     [Fact]

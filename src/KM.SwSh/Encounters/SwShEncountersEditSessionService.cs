@@ -98,10 +98,12 @@ public sealed class SwShEncountersEditSessionService
 
         var project = projectWorkspaceService.Open(paths);
         var workflow = encountersWorkflowService.Load(project);
+        var workflowWithPendingEdits = OverlayPendingEdits(workflow, session.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         CanEditEncounters(project, workflow, diagnostics);
         ValidatePendingLevelPairs(workflow, session.PendingEdits, diagnostics);
+        ValidateEncounterProbabilityTotals(workflowWithPendingEdits, session.PendingEdits, diagnostics);
 
         foreach (var edit in session.PendingEdits)
         {
@@ -390,6 +392,43 @@ public sealed class SwShEncountersEditSessionService
                 $"Encounter table '{pair.Key}' has a minimum level greater than its maximum level.",
                 field: "level",
                 expected: "Min level less than or equal to max level"));
+        }
+    }
+
+    private static void ValidateEncounterProbabilityTotals(
+        SwShEncountersWorkflow workflow,
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var touchedTableIds = edits
+            .Where(edit => string.Equals(edit.Domain, EncountersEditDomain, StringComparison.Ordinal))
+            .Select(edit => SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out _)
+                ? tableId
+                : null)
+            .Where(tableId => !string.IsNullOrWhiteSpace(tableId))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var tableId in touchedTableIds)
+        {
+            var table = workflow.Tables.FirstOrDefault(candidate =>
+                string.Equals(candidate.TableId, tableId, StringComparison.Ordinal));
+            if (table is null)
+            {
+                continue;
+            }
+
+            var totalProbability = table.Slots.Sum(slot => slot.Weight);
+            if (totalProbability == 100)
+            {
+                continue;
+            }
+
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Encounter table '{table.Location}' {table.Area} {table.EncounterType} probabilities total {totalProbability}, but must total 100.",
+                field: SwShEncountersWorkflowService.ProbabilityField,
+                expected: "Slot probabilities total exactly 100"));
         }
     }
 
