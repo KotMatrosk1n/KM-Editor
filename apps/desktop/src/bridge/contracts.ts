@@ -1368,10 +1368,16 @@ export const shopEditableFieldSchema = z.strictObject({
 export const shopRecordSchema = z.strictObject({
   currency: z.string(),
   inventory: z.array(shopInventoryRecordSchema),
+  inventoryCount: z.number().int().positive().default(1),
+  inventoryIndex: z.number().int().positive().default(1),
+  inventoryLabel: z.string().default('Inventory'),
+  inventorySummary: z.string().default(''),
+  kind: z.string().default('Unknown'),
   location: z.string(),
   name: z.string(),
   provenance: shopProvenanceSchema,
-  shopId: z.string()
+  shopId: z.string(),
+  sourceHash: z.string().default('')
 });
 
 export const shopsWorkflowStatsSchema = z.strictObject({

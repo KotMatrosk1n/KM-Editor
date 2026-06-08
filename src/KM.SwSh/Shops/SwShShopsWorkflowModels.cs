@@ -21,6 +21,12 @@ public sealed record SwShShopInventoryRecord(
 public sealed record SwShShopRecord(
     string ShopId,
     string Name,
+    string Kind,
+    string InventoryLabel,
+    int InventoryIndex,
+    int InventoryCount,
+    string SourceHash,
+    string InventorySummary,
     string Location,
     string Currency,
     IReadOnlyList<SwShShopInventoryRecord> Inventory,

@@ -7802,12 +7802,12 @@ function ShopsSection({
           <div className="shops-layout">
             <div className="shops-table" role="table" aria-label="Shops">
               <div className="shops-row shops-row-heading" role="row">
-                <span role="columnheader">ID</span>
+                <span role="columnheader">Type</span>
                 <span role="columnheader">Name</span>
+                <span role="columnheader">Inventory</span>
                 <span role="columnheader">Location</span>
-                <span role="columnheader">Currency</span>
                 <span role="columnheader">Items</span>
-                <span role="columnheader">Source</span>
+                <span role="columnheader">Summary</span>
               </div>
               {filteredShops.map((shop) => (
                 <button
@@ -7819,12 +7819,12 @@ function ShopsSection({
                   role="row"
                   type="button"
                 >
-                  <span role="cell">{shop.shopId}</span>
+                  <span role="cell">{shop.kind}</span>
                   <span role="cell">{shop.name}</span>
+                  <span role="cell">{shop.inventoryLabel}</span>
                   <span role="cell">{shop.location}</span>
-                  <span role="cell">{shop.currency}</span>
                   <span role="cell">{shop.inventory.length}</span>
-                  <span role="cell">{formatSourceLayer(shop.provenance.sourceLayer)}</span>
+                  <span role="cell">{shop.inventorySummary}</span>
                 </button>
               ))}
             </div>
@@ -7914,6 +7914,22 @@ function SelectedShopPanel({
             <div>
               <dt>Name</dt>
               <dd>{shop.name}</dd>
+            </div>
+            <div>
+              <dt>Inventory</dt>
+              <dd>{shop.inventoryLabel}</dd>
+            </div>
+            <div>
+              <dt>Type</dt>
+              <dd>{shop.kind}</dd>
+            </div>
+            <div>
+              <dt>Hash</dt>
+              <dd>{shop.sourceHash}</dd>
+            </div>
+            <div>
+              <dt>Summary</dt>
+              <dd>{shop.inventorySummary}</dd>
             </div>
             <div>
               <dt>Source file</dt>
@@ -11433,6 +11449,12 @@ function filterShops(shops: ShopRecord[], searchText: string) {
     [
       shop.shopId,
       shop.name,
+      shop.kind,
+      shop.inventoryLabel,
+      shop.inventoryIndex.toString(),
+      shop.inventoryCount.toString(),
+      shop.sourceHash,
+      shop.inventorySummary,
       shop.location,
       shop.currency,
       shop.provenance.sourceFile,

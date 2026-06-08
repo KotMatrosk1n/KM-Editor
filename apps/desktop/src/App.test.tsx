@@ -944,6 +944,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Shops' })).toBeInTheDocument();
     expect(screen.getAllByText('Poke Mart').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Potion, Antidote').length).toBeGreaterThan(0);
     expect(screen.getByRole('option', { name: 'Slot 1: Potion' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
@@ -3745,6 +3746,11 @@ function createMockProjectBridge(
             stockLimit: null
           }
         ],
+        inventoryCount: 1,
+        inventoryIndex: 1,
+        inventoryLabel: 'Inventory',
+        inventorySummary: 'Potion, Antidote',
+        kind: 'Single',
         location: 'Poke Mart',
         name: 'Poke Mart',
         provenance: {
@@ -3752,7 +3758,8 @@ function createMockProjectBridge(
           sourceFile: 'romfs/bin/app/shop/shop_data.bin',
           sourceLayer: 'base'
         },
-        shopId: 'single:1F3FF031A3A24490'
+        shopId: 'single:1F3FF031A3A24490',
+        sourceHash: '0x1F3FF031A3A24490'
       }
     ],
     stats: {

@@ -46,6 +46,12 @@ public sealed class SwShShopsWorkflowServiceTests
 
         var singleShop = workflow.Shops[0];
         Assert.Equal($"single:{SingleShopHash:X16}", singleShop.ShopId);
+        Assert.Equal("Single", singleShop.Kind);
+        Assert.Equal("Inventory", singleShop.InventoryLabel);
+        Assert.Equal(1, singleShop.InventoryIndex);
+        Assert.Equal(1, singleShop.InventoryCount);
+        Assert.Equal($"0x{SingleShopHash:X16}", singleShop.SourceHash);
+        Assert.Equal("Potion, Antidote", singleShop.InventorySummary);
         Assert.Equal("Poke Mart", singleShop.Location);
         Assert.Equal("Money", singleShop.Currency);
         Assert.Equal(ProjectFileLayer.Base, singleShop.Provenance.SourceLayer);
@@ -69,6 +75,12 @@ public sealed class SwShShopsWorkflowServiceTests
                 Assert.Equal("Antidote", item.ItemName);
                 Assert.Equal(200, item.Price);
             });
+        var multiShop = workflow.Shops.Single(shop => shop.ShopId == $"multi:{MultiShopHash:X16}:1");
+        Assert.Equal("Multi", multiShop.Kind);
+        Assert.Equal("Inventory 2 of 2", multiShop.InventoryLabel);
+        Assert.Equal(2, multiShop.InventoryIndex);
+        Assert.Equal(2, multiShop.InventoryCount);
+        Assert.Equal("Antidote", multiShop.InventorySummary);
         Assert.Empty(workflow.Diagnostics);
     }
 

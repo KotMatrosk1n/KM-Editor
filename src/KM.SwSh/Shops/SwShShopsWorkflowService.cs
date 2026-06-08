@@ -339,6 +339,11 @@ public sealed class SwShShopsWorkflowService
             shops.Add(ToShopRecord(
                 CreateShopId(SwShShopKind.Single, shop.Hash, inventoryIndex: 0),
                 name,
+                "Single",
+                "Inventory",
+                1,
+                1,
+                shop.Hash,
                 shop.Inventory,
                 itemLookup,
                 provenance));
@@ -352,6 +357,11 @@ public sealed class SwShShopsWorkflowService
                 shops.Add(ToShopRecord(
                     CreateShopId(SwShShopKind.Multi, shop.Hash, inventoryIndex),
                     $"{name} #{inventoryIndex + 1}",
+                    "Multi",
+                    $"Inventory {inventoryIndex + 1} of {shop.Inventories.Count}",
+                    inventoryIndex + 1,
+                    shop.Inventories.Count,
+                    shop.Hash,
                     shop.Inventories[inventoryIndex],
                     itemLookup,
                     provenance));
@@ -364,18 +374,31 @@ public sealed class SwShShopsWorkflowService
     private static SwShShopRecord ToShopRecord(
         string shopId,
         string name,
+        string kind,
+        string inventoryLabel,
+        int inventoryIndex,
+        int inventoryCount,
+        ulong hash,
         SwShShopInventory inventory,
         IReadOnlyDictionary<int, SwShItemRecord> itemLookup,
         SwShShopProvenance provenance)
     {
+        var inventoryRows = inventory.Items
+            .Select((itemId, index) => ToInventoryRecord(index, itemId, itemLookup))
+            .ToArray();
+
         return new SwShShopRecord(
             shopId,
             name,
+            kind,
+            inventoryLabel,
+            inventoryIndex,
+            inventoryCount,
+            $"0x{hash:X16}",
+            FormatInventorySummary(inventoryRows),
             FormatLocation(name),
             FormatCurrency(name),
-            inventory.Items
-                .Select((itemId, index) => ToInventoryRecord(index, itemId, itemLookup))
-                .ToArray(),
+            inventoryRows,
             provenance);
     }
 
@@ -387,6 +410,19 @@ public sealed class SwShShopsWorkflowService
         return itemLookup.TryGetValue(itemId, out var item)
             ? new SwShShopInventoryRecord(index + 1, itemId, item.Name, item.BuyPrice, StockLimit: null)
             : new SwShShopInventoryRecord(index + 1, itemId, $"Item {itemId}", Price: 0, StockLimit: null);
+    }
+
+    private static string FormatInventorySummary(IReadOnlyList<SwShShopInventoryRecord> inventory)
+    {
+        if (inventory.Count == 0)
+        {
+            return "Empty";
+        }
+
+        var preview = string.Join(", ", inventory.Take(3).Select(item => item.ItemName));
+        return inventory.Count > 3
+            ? string.Create(CultureInfo.InvariantCulture, $"{preview}, +{inventory.Count - 3} more")
+            : preview;
     }
 
     private static string FormatSingleShopName(ulong hash)

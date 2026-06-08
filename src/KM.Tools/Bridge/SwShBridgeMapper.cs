@@ -1452,6 +1452,12 @@ public static class SwShBridgeMapper
         return new ShopRecordDto(
             shop.ShopId,
             shop.Name,
+            shop.Kind,
+            shop.InventoryLabel,
+            shop.InventoryIndex,
+            shop.InventoryCount,
+            shop.SourceHash,
+            shop.InventorySummary,
             shop.Location,
             shop.Currency,
             shop.Inventory.Select(ToDto).ToArray(),

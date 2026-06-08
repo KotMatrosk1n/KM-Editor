@@ -1147,6 +1147,12 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(2, response.Payload.Workflow.Shops.Count);
         var shop = response.Payload.Workflow.Shops[0];
         Assert.Equal($"single:{SwShShopBridgeFixtures.SingleShopHash:X16}", shop.ShopId);
+        Assert.Equal("Single", shop.Kind);
+        Assert.Equal("Inventory", shop.InventoryLabel);
+        Assert.Equal(1, shop.InventoryIndex);
+        Assert.Equal(1, shop.InventoryCount);
+        Assert.Equal($"0x{SwShShopBridgeFixtures.SingleShopHash:X16}", shop.SourceHash);
+        Assert.Equal("Potion, Antidote", shop.InventorySummary);
         Assert.Equal("Poke Mart", shop.Location);
         Assert.Equal(ProjectFileLayerDto.Base, shop.Provenance.SourceLayer);
         var inventoryItem = shop.Inventory[0];
