@@ -19,10 +19,12 @@ import {
   type WorkflowSummary
 } from './bridge/contracts';
 import { type ProjectBridge } from './bridge/projectBridge';
+import { type DesktopServices } from './desktopServices';
 import { useWorkbenchStore } from './workbenchStore';
 
 describe('App', () => {
   beforeEach(() => {
+    window.localStorage.clear();
     useWorkbenchStore.setState({
       activeSection: 'health',
       applyResult: null,
@@ -650,7 +652,63 @@ describe('App', () => {
 
     expect(await screen.findByText('Project bridge unavailable.')).toBeInTheDocument();
   });
+
+  it('uses desktop folder pickers and opens the output root', async () => {
+    const user = userEvent.setup();
+    const openedPaths: string[] = [];
+    const desktopServices = createMockDesktopServices({
+      openPath: async (path) => {
+        openedPaths.push(path);
+      },
+      pickFolder: async ({ title }) =>
+        ({
+          'Select Base ExeFS': 'picked-exefs',
+          'Select Base RomFS': 'picked-romfs',
+          'Select Output Root': 'picked-output'
+        })[title] ?? null
+    });
+    render(<App bridge={createMockProjectBridge()} desktopServices={desktopServices} />);
+
+    await user.click(screen.getByRole('button', { name: 'Browse for Base RomFS' }));
+    await user.click(screen.getByRole('button', { name: 'Browse for Base ExeFS' }));
+    await user.click(screen.getByRole('button', { name: 'Browse for Output Root' }));
+
+    expect(screen.getByLabelText('Base RomFS')).toHaveValue('picked-romfs');
+    expect(screen.getByLabelText('Base ExeFS')).toHaveValue('picked-exefs');
+    expect(screen.getByLabelText('Output Root')).toHaveValue('picked-output');
+
+    await user.click(screen.getByRole('button', { name: 'Open Output Root' }));
+
+    expect(openedPaths).toEqual(['picked-output']);
+    expect(window.localStorage.getItem('km-editor.project-path-draft.v1')).toContain(
+      'picked-output'
+    );
+  });
+
+  it('shows desktop diagnostics when opening the output root fails', async () => {
+    const user = userEvent.setup();
+    const desktopServices = createMockDesktopServices({
+      openPath: async () => {
+        throw 'The folder does not exist.';
+      }
+    });
+    render(<App bridge={createMockProjectBridge()} desktopServices={desktopServices} />);
+
+    await user.type(screen.getByLabelText('Output Root'), 'missing-output-root');
+    await user.click(screen.getByRole('button', { name: 'Open Output Root' }));
+
+    expect(await screen.findByText('The folder does not exist.')).toBeInTheDocument();
+  });
 });
+
+function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): DesktopServices {
+  return {
+    isAvailable: true,
+    openPath: async () => undefined,
+    pickFolder: async () => null,
+    ...overrides
+  };
+}
 
 function createMockProjectBridge(
   overrides: Partial<ProjectBridge> = {},

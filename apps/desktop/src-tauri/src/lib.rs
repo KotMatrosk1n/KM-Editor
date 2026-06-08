@@ -114,12 +114,55 @@ fn resolve_dev_bridge_command() -> Result<Command, String> {
     Ok(command)
 }
 
+#[tauri::command(rename_all = "camelCase")]
+fn open_path(path: String) -> Result<(), String> {
+    let trimmed_path = path.trim();
+
+    if trimmed_path.is_empty() {
+        return Err("No folder path was provided.".to_owned());
+    }
+
+    let path = PathBuf::from(trimmed_path);
+
+    if !path.is_dir() {
+        return Err("The folder does not exist.".to_owned());
+    }
+
+    let mut command = create_open_path_command(&path);
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Could not open the folder: {error}"))
+}
+
+#[cfg(windows)]
+fn create_open_path_command(path: &Path) -> Command {
+    let mut command = Command::new("explorer.exe");
+    command.arg(path);
+    command
+}
+
+#[cfg(target_os = "macos")]
+fn create_open_path_command(path: &Path) -> Command {
+    let mut command = Command::new("open");
+    command.arg(path);
+    command
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn create_open_path_command(path: &Path) -> Command {
+    let mut command = Command::new("xdg-open");
+    command.arg(path);
+    command
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         // Register shell support now so the future sidecar bridge can add a narrow command allowlist.
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![project_bridge_once])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![project_bridge_once, open_path])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

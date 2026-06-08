@@ -45,6 +45,8 @@ export type ProjectPathDraft = {
   outputRootPath: string;
 };
 
+const projectPathDraftStorageKey = 'km-editor.project-path-draft.v1';
+
 export type OpenProjectState = {
   fileGraph: ProjectFileGraph;
   health: ProjectHealth;
@@ -162,11 +164,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   activeSection: 'health',
   applyResult: null,
   changePlan: null,
-  draftPaths: {
-    baseExeFsPath: '',
-    baseRomFsPath: '',
-    outputRootPath: ''
-  },
+  draftPaths: loadProjectPathDraft(),
   editSession: null,
   editValidationDiagnostics: [],
   encounterSearchText: '',
@@ -214,12 +212,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setApplyResult: (applyResult) => set({ applyResult }),
   setChangePlan: (changePlan) => set({ changePlan }),
   setDraftPath: (field, value) =>
-    set((state) => ({
-      draftPaths: {
+    set((state) => {
+      const draftPaths = {
         ...state.draftPaths,
         [field]: value
-      }
-    })),
+      };
+      saveProjectPathDraft(draftPaths);
+
+      return { draftPaths };
+    }),
   setEditSession: (editSession) => set({ applyResult: null, changePlan: null, editSession }),
   setEditValidationDiagnostics: (editValidationDiagnostics) => set({ editValidationDiagnostics }),
   setEncounterSearchText: (encounterSearchText) => set({ encounterSearchText }),
@@ -552,3 +553,51 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setWorkflows: (workflows) => set({ workflows })
 }));
+
+function loadProjectPathDraft(): ProjectPathDraft {
+  const emptyDraft = createEmptyProjectPathDraft();
+
+  if (typeof window === 'undefined') {
+    return emptyDraft;
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(projectPathDraftStorageKey);
+
+    if (!storedValue) {
+      return emptyDraft;
+    }
+
+    const parsedValue = JSON.parse(storedValue) as Partial<ProjectPathDraft>;
+
+    return {
+      baseExeFsPath: typeof parsedValue.baseExeFsPath === 'string' ? parsedValue.baseExeFsPath : '',
+      baseRomFsPath:
+        typeof parsedValue.baseRomFsPath === 'string' ? parsedValue.baseRomFsPath : '',
+      outputRootPath:
+        typeof parsedValue.outputRootPath === 'string' ? parsedValue.outputRootPath : ''
+    };
+  } catch {
+    return emptyDraft;
+  }
+}
+
+function saveProjectPathDraft(draftPaths: ProjectPathDraft) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(projectPathDraftStorageKey, JSON.stringify(draftPaths));
+  } catch {
+    // Storage can be unavailable in hardened browser contexts; typed paths should still work.
+  }
+}
+
+function createEmptyProjectPathDraft(): ProjectPathDraft {
+  return {
+    baseExeFsPath: '',
+    baseRomFsPath: '',
+    outputRootPath: ''
+  };
+}

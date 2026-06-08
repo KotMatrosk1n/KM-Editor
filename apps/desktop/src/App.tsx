@@ -4,6 +4,7 @@ import {
   Activity,
   CheckCircle,
   ClipboardCheck,
+  ExternalLink,
   FileSpreadsheet,
   FolderOpen,
   Layers,
@@ -83,6 +84,10 @@ import {
   projectBridge as defaultProjectBridge,
   type ProjectBridge
 } from './bridge/projectBridge';
+import {
+  desktopServices as defaultDesktopServices,
+  type DesktopServices
+} from './desktopServices';
 import {
   type ProjectPathDraft,
   type WorkbenchSection,
@@ -261,6 +266,7 @@ const pathFields: Array<{
     role: 'outputRoot'
   }
 ];
+type ProjectPathField = (typeof pathFields)[number];
 
 const healthLabels = {
   blocked: 'Blocked',
@@ -320,7 +326,13 @@ const observeVirtualTableElementRect:
       }
     : undefined;
 
-export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge } = {}) {
+export function App({
+  bridge = defaultProjectBridge,
+  desktopServices = defaultDesktopServices
+}: {
+  bridge?: ProjectBridge;
+  desktopServices?: DesktopServices;
+} = {}) {
   const activeSection = useWorkbenchStore((state) => state.activeSection);
   const applyResult = useWorkbenchStore((state) => state.applyResult);
   const changePlan = useWorkbenchStore((state) => state.changePlan);
@@ -530,6 +542,42 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
     } catch (error) {
       setProjectStatus('idle');
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+    }
+  };
+
+  const handlePickProjectPath = async (pathField: ProjectPathField) => {
+    try {
+      const selectedPath = await desktopServices.pickFolder({
+        defaultPath: draftPaths[pathField.field] || undefined,
+        title: `Select ${pathField.label}`
+      });
+
+      if (selectedPath) {
+        setDraftPath(pathField.field, selectedPath);
+      }
+    } catch (error) {
+      setBridgeDiagnostics(toDesktopDiagnostics(error, `Could not choose ${pathField.label}.`));
+    }
+  };
+
+  const handleOpenOutputRoot = async () => {
+    const outputRootPath = draftPaths.outputRootPath.trim();
+
+    if (!outputRootPath) {
+      setBridgeDiagnostics([
+        {
+          domain: 'desktop',
+          message: 'Output root is not configured.',
+          severity: 'warning'
+        }
+      ]);
+      return;
+    }
+
+    try {
+      await desktopServices.openPath(outputRootPath);
+    } catch (error) {
+      setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not open output root.'));
     }
   };
 
@@ -1186,9 +1234,12 @@ export function App({ bridge = defaultProjectBridge }: { bridge?: ProjectBridge 
             <HealthSection
               draftPaths={draftPaths}
               health={health}
+              isDesktopAvailable={desktopServices.isAvailable}
               bridgeDiagnostics={bridgeDiagnostics}
               isBusy={isBusy}
               onOpenProject={handleOpenProject}
+              onOpenOutputRoot={handleOpenOutputRoot}
+              onPickProjectPath={handlePickProjectPath}
               onSetDraftPath={setDraftPath}
               onValidateProject={handleValidateProject}
               pendingEditCount={pendingEditCount}
@@ -1509,7 +1560,10 @@ function HealthSection({
   draftPaths,
   health,
   isBusy,
+  isDesktopAvailable,
   onOpenProject,
+  onOpenOutputRoot,
+  onPickProjectPath,
   onSetDraftPath,
   onValidateProject,
   pendingEditCount,
@@ -1519,12 +1573,17 @@ function HealthSection({
   draftPaths: ProjectPathDraft;
   health: ProjectHealth | null;
   isBusy: boolean;
+  isDesktopAvailable: boolean;
   onOpenProject: () => void;
+  onOpenOutputRoot: () => void;
+  onPickProjectPath: (pathField: ProjectPathField) => void;
   onSetDraftPath: (field: keyof ProjectPathDraft, value: string) => void;
   onValidateProject: () => void;
   pendingEditCount: number;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
 }) {
+  const outputRootPath = draftPaths.outputRootPath.trim();
+
   return (
     <>
       <section aria-labelledby="project-gate-heading" className="panel project-gate">
@@ -1536,24 +1595,37 @@ function HealthSection({
         <div className="path-form">
           {pathFields.map((pathField) => {
             const pathValidation = health?.paths.find((path) => path.role === pathField.role);
+            const inputId = `${pathField.field}-input`;
 
             return (
-              <label className="path-field" key={pathField.field}>
-                <span>{pathField.label}</span>
-                <input
-                  aria-label={pathField.label}
-                  aria-describedby={`${pathField.field}-status`}
-                  onChange={(event) => onSetDraftPath(pathField.field, event.target.value)}
-                  placeholder="Not set"
-                  value={draftPaths[pathField.field]}
-                />
+              <div className="path-field" key={pathField.field}>
+                <label htmlFor={inputId}>{pathField.label}</label>
+                <div className="path-input-row">
+                  <input
+                    aria-describedby={`${pathField.field}-status`}
+                    id={inputId}
+                    onChange={(event) => onSetDraftPath(pathField.field, event.target.value)}
+                    placeholder="Not set"
+                    value={draftPaths[pathField.field]}
+                  />
+                  <button
+                    aria-label={`Browse for ${pathField.label}`}
+                    className="secondary-button icon-button"
+                    disabled={!isDesktopAvailable || isBusy}
+                    onClick={() => onPickProjectPath(pathField)}
+                    title={`Browse for ${pathField.label}`}
+                    type="button"
+                  >
+                    <FolderOpen aria-hidden="true" size={18} />
+                  </button>
+                </div>
                 <small
                   className={getPathStatusClassName(pathValidation)}
                   id={`${pathField.field}-status`}
                 >
                   {pathValidation ? pathStatusLabels[pathValidation.status] : 'Not checked'}
                 </small>
-              </label>
+              </div>
             );
           })}
         </div>
@@ -1576,6 +1648,15 @@ function HealthSection({
           >
             <FolderOpen aria-hidden="true" size={18} />
             <span>{projectStatus === 'opening' ? 'Opening' : 'Open Project'}</span>
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!isDesktopAvailable || isBusy || outputRootPath.length === 0}
+            onClick={onOpenOutputRoot}
+            type="button"
+          >
+            <ExternalLink aria-hidden="true" size={18} />
+            <span>Open Output Root</span>
           </button>
         </div>
       </section>
@@ -6221,6 +6302,21 @@ function toBridgeDiagnostics(error: unknown): ApiDiagnostic[] {
     {
       domain: 'bridge',
       message: error instanceof Error ? error.message : 'Project bridge request failed.',
+      severity: 'error'
+    }
+  ];
+}
+
+function toDesktopDiagnostics(error: unknown, fallbackMessage: string): ApiDiagnostic[] {
+  return [
+    {
+      domain: 'desktop',
+      message:
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : fallbackMessage,
       severity: 'error'
     }
   ];
