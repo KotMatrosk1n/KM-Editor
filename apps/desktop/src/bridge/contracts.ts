@@ -93,7 +93,8 @@ export const apiErrorSchema = z.strictObject({
 export const projectPathsSchema = z.strictObject({
   baseExeFsPath: z.string().nullable(),
   baseRomFsPath: z.string().nullable(),
-  outputRootPath: z.string().nullable()
+  outputRootPath: z.string().nullable(),
+  saveFilePath: z.string().nullable()
 });
 
 export const openProjectRequestSchema = z.strictObject({
@@ -167,7 +168,7 @@ export const projectHealthStateSchema = z.enum([
   'blocked'
 ]);
 
-export const projectPathRoleSchema = z.enum(['baseRomFs', 'baseExeFs', 'outputRoot']);
+export const projectPathRoleSchema = z.enum(['baseRomFs', 'baseExeFs', 'outputRoot', 'saveFile']);
 
 export const projectPathStatusSchema = z.enum(['notSet', 'missing', 'wrongKind', 'valid', 'unsafe']);
 
@@ -688,7 +689,16 @@ export const saveBlockRecordSchema = z.strictObject({
   valueKind: z.string()
 });
 
+export const saveFileRecordSchema = z.strictObject({
+  description: z.string(),
+  fileName: z.string(),
+  sha256: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  status: z.string()
+});
+
 export const flagworkSaveWorkflowStatsSchema = z.strictObject({
+  hasSaveFile: z.boolean(),
   sourceFileCount: z.number().int().nonnegative(),
   totalFlagCount: z.number().int().nonnegative(),
   totalSaveBlockCount: z.number().int().nonnegative()
@@ -697,6 +707,7 @@ export const flagworkSaveWorkflowStatsSchema = z.strictObject({
 export const flagworkSaveWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   flags: z.array(flagRecordSchema),
+  saveFile: saveFileRecordSchema.nullable(),
   saveBlocks: z.array(saveBlockRecordSchema),
   stats: flagworkSaveWorkflowStatsSchema,
   summary: workflowSummarySchema
@@ -1149,6 +1160,7 @@ export type PlacementEditableField = z.infer<typeof placementEditableFieldSchema
 export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
 export type FlagRecord = z.infer<typeof flagRecordSchema>;
 export type SaveBlockRecord = z.infer<typeof saveBlockRecordSchema>;
+export type SaveFileRecord = z.infer<typeof saveFileRecordSchema>;
 export type FlagworkSaveWorkflow = z.infer<typeof flagworkSaveWorkflowSchema>;
 export type ExeFsPatchCheckRecord = z.infer<typeof exeFsPatchCheckRecordSchema>;
 export type ExeFsPatchRecord = z.infer<typeof exeFsPatchRecordSchema>;

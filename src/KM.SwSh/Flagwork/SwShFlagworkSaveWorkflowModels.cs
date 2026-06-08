@@ -35,14 +35,23 @@ public sealed record SwShSaveBlockRecord(
     string Description,
     SwShFlagworkSaveProvenance Provenance);
 
+public sealed record SwShSaveFileRecord(
+    string FileName,
+    long SizeBytes,
+    string Sha256,
+    string Status,
+    string Description);
+
 public sealed record SwShFlagworkSaveWorkflowStats(
     int TotalFlagCount,
     int TotalSaveBlockCount,
-    int SourceFileCount);
+    int SourceFileCount,
+    bool HasSaveFile);
 
 public sealed record SwShFlagworkSaveWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShFlagRecord> Flags,
     IReadOnlyList<SwShSaveBlockRecord> SaveBlocks,
+    SwShSaveFileRecord? SaveFile,
     SwShFlagworkSaveWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);

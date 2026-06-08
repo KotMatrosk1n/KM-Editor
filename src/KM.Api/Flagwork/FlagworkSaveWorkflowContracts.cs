@@ -37,15 +37,24 @@ public sealed record SaveBlockRecordDto(
     string Description,
     FlagworkSaveProvenanceDto Provenance);
 
+public sealed record SaveFileRecordDto(
+    string FileName,
+    long SizeBytes,
+    string Sha256,
+    string Status,
+    string Description);
+
 public sealed record FlagworkSaveWorkflowStatsDto(
     int TotalFlagCount,
     int TotalSaveBlockCount,
-    int SourceFileCount);
+    int SourceFileCount,
+    bool HasSaveFile);
 
 public sealed record FlagworkSaveWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<FlagRecordDto> Flags,
     IReadOnlyList<SaveBlockRecordDto> SaveBlocks,
+    SaveFileRecordDto? SaveFile,
     FlagworkSaveWorkflowStatsDto Stats,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 

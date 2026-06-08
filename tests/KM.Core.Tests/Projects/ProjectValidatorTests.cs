@@ -46,6 +46,40 @@ public sealed class ProjectValidatorTests
     }
 
     [Fact]
+    public void ValidateAcceptsOptionalSaveFileWithoutAddingItToFileGraph()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var saveFilePath = Path.Combine(temp.RootPath, "main");
+        File.WriteAllBytes(saveFilePath, [0x01, 0x02, 0x03]);
+
+        var health = new ProjectValidator().Validate(temp.Paths with { SaveFilePath = saveFilePath });
+
+        Assert.Equal(ProjectHealthState.EditableReady, health.State);
+        Assert.Contains(
+            health.Paths,
+            path => path.Role == ProjectPathRole.SaveFile && path.Status == ProjectPathStatus.Valid);
+        Assert.Equal(2, health.FileGraph.BaseFileCount);
+    }
+
+    [Fact]
+    public void ValidateWarnsForDirectoryUsedAsSaveFileWithoutBlockingProject()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        var health = new ProjectValidator().Validate(temp.Paths with { SaveFilePath = temp.OutputRootPath });
+
+        Assert.Equal(ProjectHealthState.EditableReady, health.State);
+        Assert.Contains(
+            health.Paths,
+            path => path.Role == ProjectPathRole.SaveFile && path.Status == ProjectPathStatus.WrongKind);
+        Assert.Contains(
+            health.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
+                && diagnostic.Message.Contains("must be a file", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ValidateReturnsNeedsPathsWhenRequiredBasePathIsMissing()
     {
         using var temp = TemporaryProjectFolders.Create();

@@ -5,12 +5,14 @@ import { ProjectBridgeError, createProjectBridge } from './projectBridge';
 const projectPaths = {
   baseExeFsPath: 'base-exefs',
   baseRomFsPath: 'base-romfs',
-  outputRootPath: null
+  outputRootPath: null,
+  saveFilePath: null
 };
 
 const editableProjectPaths = {
   ...projectPaths,
-  outputRootPath: 'output'
+  outputRootPath: 'output',
+  saveFilePath: null
 };
 
 const readOnlyHealth = {
@@ -608,7 +610,15 @@ describe('projectBridge', () => {
                   valueKind: 'integer'
                 }
               ],
+              saveFile: {
+                description: 'Save file is configured for read-only inspection.',
+                fileName: 'main',
+                sha256: '01020304',
+                sizeBytes: 4,
+                status: 'available'
+              },
               stats: {
+                hasSaveFile: true,
                 sourceFileCount: 2,
                 totalFlagCount: 1,
                 totalSaveBlockCount: 1
@@ -942,6 +952,7 @@ describe('projectBridge', () => {
     expect(placement.workflow.objects[0]?.label).toBe('Hidden item: Potion');
     expect(flagworkSave.workflow.flags[0]?.name).toBe('FE_TEST_FLAG');
     expect(flagworkSave.workflow.saveBlocks[0]?.key).toBe('0xDDEEFF00');
+    expect(flagworkSave.workflow.saveFile?.fileName).toBe('main');
     expect(exeFsPatches.workflow.patches[0]?.targetFile).toBe('exefs/main');
     expect(royalCandy.workflow.workflows[0]?.name).toBe('Install Unlimited Royal Candy');
     expect(royalCandy.workflow.outputs[0]?.relativePath).toBe('romfs/bin/pml/item/item.dat');

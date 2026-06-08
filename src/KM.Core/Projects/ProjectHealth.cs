@@ -18,6 +18,7 @@ public enum ProjectPathRole
     BaseRomFs,
     BaseExeFs,
     OutputRoot,
+    SaveFile,
 }
 
 public enum ProjectPathStatus

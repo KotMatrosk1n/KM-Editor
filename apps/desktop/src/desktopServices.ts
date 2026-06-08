@@ -11,12 +11,23 @@ export type PickFolderOptions = {
 export type DesktopServices = {
   isAvailable: boolean;
   openPath: (path: string) => Promise<void>;
+  pickFile: (options: PickFolderOptions) => Promise<string | null>;
   pickFolder: (options: PickFolderOptions) => Promise<string | null>;
 };
 
 export const desktopServices: DesktopServices = {
   isAvailable: hasTauriRuntime(),
   openPath: (path) => invoke('open_path', { path }),
+  pickFile: async ({ defaultPath, title }) => {
+    const selection = await openDialog({
+      defaultPath,
+      directory: false,
+      multiple: false,
+      title
+    });
+
+    return typeof selection === 'string' ? selection : null;
+  },
   pickFolder: async ({ defaultPath, title }) => {
     const selection = await openDialog({
       defaultPath,

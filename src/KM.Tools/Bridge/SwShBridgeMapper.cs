@@ -322,10 +322,12 @@ public static class SwShBridgeMapper
             ToDto(workflow.Summary),
             workflow.Flags.Select(ToDto).ToArray(),
             workflow.SaveBlocks.Select(ToDto).ToArray(),
+            workflow.SaveFile is null ? null : ToDto(workflow.SaveFile),
             new FlagworkSaveWorkflowStatsDto(
                 workflow.Stats.TotalFlagCount,
                 workflow.Stats.TotalSaveBlockCount,
-                workflow.Stats.SourceFileCount),
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.HasSaveFile),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -707,6 +709,16 @@ public static class SwShBridgeMapper
             saveBlock.ValueKind,
             saveBlock.Description,
             ToDto(saveBlock.Provenance));
+    }
+
+    private static SaveFileRecordDto ToDto(SwShSaveFileRecord saveFile)
+    {
+        return new SaveFileRecordDto(
+            saveFile.FileName,
+            saveFile.SizeBytes,
+            saveFile.Sha256,
+            saveFile.Status,
+            saveFile.Description);
     }
 
     private static FlagworkSaveProvenanceDto ToDto(SwShFlagworkSaveProvenance provenance)

@@ -14,7 +14,11 @@ public static class ProjectBridgeMapper
     {
         ArgumentNullException.ThrowIfNull(paths);
 
-        return new ProjectPaths(paths.BaseRomFsPath, paths.BaseExeFsPath, paths.OutputRootPath);
+        return new ProjectPaths(
+            paths.BaseRomFsPath,
+            paths.BaseExeFsPath,
+            paths.OutputRootPath,
+            paths.SaveFilePath);
     }
 
     public static ProjectHealthDto ToDto(ProjectHealth health)
@@ -136,6 +140,7 @@ public static class ProjectBridgeMapper
             ProjectPathRole.BaseRomFs => ProjectPathRoleDto.BaseRomFs,
             ProjectPathRole.BaseExeFs => ProjectPathRoleDto.BaseExeFs,
             ProjectPathRole.OutputRoot => ProjectPathRoleDto.OutputRoot,
+            ProjectPathRole.SaveFile => ProjectPathRoleDto.SaveFile,
             _ => throw new ArgumentOutOfRangeException(nameof(role), role, null),
         };
     }
