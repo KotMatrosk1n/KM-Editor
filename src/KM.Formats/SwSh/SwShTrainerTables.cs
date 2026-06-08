@@ -22,6 +22,14 @@ public enum SwShTrainerDataField
 {
     ClassId,
     BattleMode,
+    Item1Id,
+    Item2Id,
+    Item3Id,
+    Item4Id,
+    AiFlags,
+    Heal,
+    Money,
+    Gift,
 }
 
 public sealed class SwShTrainerDataFile
@@ -30,6 +38,10 @@ public sealed class SwShTrainerDataFile
     public const int Size = 0x14;
     public const int MaximumClassId = ushort.MaxValue;
     public const int MaximumBattleMode = 2;
+    public const int MaximumItemId = ushort.MaxValue;
+    public const int MaximumAiFlags = byte.MaxValue;
+    public const int MaximumMoney = byte.MaxValue;
+    public const int MaximumGiftId = ushort.MaxValue;
 
     private const int ClassOffset = 0x00;
     private const int BattleModeOffset = 0x02;
@@ -94,6 +106,35 @@ public sealed class SwShTrainerDataFile
                     ValidateRange(edit.Value, 0, MaximumBattleMode, nameof(edits));
                     result[BattleModeOffset] = checked((byte)edit.Value);
                     break;
+                case SwShTrainerDataField.Item1Id:
+                    WriteUInt16Field(result, Item1Offset, edit.Value, MaximumItemId, nameof(edits));
+                    break;
+                case SwShTrainerDataField.Item2Id:
+                    WriteUInt16Field(result, Item2Offset, edit.Value, MaximumItemId, nameof(edits));
+                    break;
+                case SwShTrainerDataField.Item3Id:
+                    WriteUInt16Field(result, Item3Offset, edit.Value, MaximumItemId, nameof(edits));
+                    break;
+                case SwShTrainerDataField.Item4Id:
+                    WriteUInt16Field(result, Item4Offset, edit.Value, MaximumItemId, nameof(edits));
+                    break;
+                case SwShTrainerDataField.AiFlags:
+                    ValidateRange(edit.Value, 0, MaximumAiFlags, nameof(edits));
+                    var currentAiFlags = BinaryPrimitives.ReadUInt32LittleEndian(result.AsSpan(AiOffset));
+                    var updatedAiFlags = (currentAiFlags & 0xFFFFFF00u) | (uint)edit.Value;
+                    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(AiOffset), updatedAiFlags);
+                    break;
+                case SwShTrainerDataField.Heal:
+                    ValidateRange(edit.Value, 0, 1, nameof(edits));
+                    result[HealOffset] = checked((byte)edit.Value);
+                    break;
+                case SwShTrainerDataField.Money:
+                    ValidateRange(edit.Value, 0, MaximumMoney, nameof(edits));
+                    result[MoneyOffset] = checked((byte)edit.Value);
+                    break;
+                case SwShTrainerDataField.Gift:
+                    WriteUInt16Field(result, GiftOffset, edit.Value, MaximumGiftId, nameof(edits));
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(edits), $"Trainer data field '{edit.Field}' is not supported.");
             }
@@ -110,6 +151,12 @@ public sealed class SwShTrainerDataFile
                 parameterName,
                 $"Trainer value {value} is outside the supported range {minimum}-{maximum}.");
         }
+    }
+
+    private static void WriteUInt16Field(byte[] data, int offset, int value, int maximum, string parameterName)
+    {
+        ValidateRange(value, 0, maximum, parameterName);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(offset), checked((ushort)value));
     }
 }
 

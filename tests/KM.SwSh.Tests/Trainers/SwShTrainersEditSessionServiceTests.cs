@@ -36,6 +36,29 @@ public sealed class SwShTrainersEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateFieldCreatesPendingTrainerMetadataEditAndOverlaysWorkflow()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.MoneyField,
+            value: "99");
+
+        Assert.Empty(result.Diagnostics);
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal("workflow.trainers", edit.Domain);
+        Assert.Equal("money", edit.Field);
+        Assert.Equal("10", edit.RecordId);
+        Assert.Equal("99", edit.NewValue);
+        Assert.Equal(99, Assert.Single(result.Workflow.Trainers).Money);
+    }
+
+    [Fact]
     public void UpdateFieldCreatesPendingPartyEditAndOverlaysWorkflow()
     {
         using var temp = CreateEditableProject();
@@ -160,6 +183,60 @@ public sealed class SwShTrainersEditSessionServiceTests
         var output = SwShTrainerTeamFile.Parse(File.ReadAllBytes(outputPath));
         Assert.Equal(25, output.Records[0].Level);
         Assert.Equal(11, output.Records[1].Level);
+    }
+
+    [Fact]
+    public void ApplyChangePlanWritesEditedTrainerMetadataToOutputRoot()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.TrainerItem1IdField,
+            value: "2");
+        update = service.UpdateField(
+            temp.Paths,
+            update.Session,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.AiFlagsField,
+            value: "63");
+        update = service.UpdateField(
+            temp.Paths,
+            update.Session,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.HealField,
+            value: "0");
+        update = service.UpdateField(
+            temp.Paths,
+            update.Session,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.MoneyField,
+            value: "99");
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal("romfs/bin/trainer/trainer_data/trainer_010.bin", Assert.Single(apply.WrittenFiles).RelativePath);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "trainer",
+            "trainer_data",
+            "trainer_010.bin");
+        var output = SwShTrainerDataFile.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal([2, 2, 0, 0], output.Record.Items);
+        Assert.Equal(63u, output.Record.AiFlags);
+        Assert.False(output.Record.Heal);
+        Assert.Equal(99, output.Record.Money);
+        Assert.Equal(7, output.Record.Gift);
     }
 
     [Fact]

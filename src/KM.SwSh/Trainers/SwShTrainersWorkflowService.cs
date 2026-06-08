@@ -14,6 +14,14 @@ public sealed class SwShTrainersWorkflowService
 {
     public const string TrainerClassIdField = "trainerClassId";
     public const string BattleTypeField = "battleType";
+    public const string TrainerItem1IdField = "trainerItem1Id";
+    public const string TrainerItem2IdField = "trainerItem2Id";
+    public const string TrainerItem3IdField = "trainerItem3Id";
+    public const string TrainerItem4IdField = "trainerItem4Id";
+    public const string AiFlagsField = "aiFlags";
+    public const string HealField = "heal";
+    public const string MoneyField = "money";
+    public const string GiftField = "gift";
     public const string SpeciesIdField = "speciesId";
     public const string FormField = "form";
     public const string LevelField = "level";
@@ -49,6 +57,19 @@ public sealed class SwShTrainersWorkflowService
 
     private static readonly Regex DigitsRegex = new("(\\d+)(?!.*\\d)", RegexOptions.Compiled);
 
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BattleTypeOptions =
+    [
+        new SwShTrainerEditableFieldOption(0, "0 Singles"),
+        new SwShTrainerEditableFieldOption(1, "1 Doubles"),
+        new SwShTrainerEditableFieldOption(2, "2 Multi"),
+    ];
+
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BooleanOptions =
+    [
+        new SwShTrainerEditableFieldOption(0, "0 Off"),
+        new SwShTrainerEditableFieldOption(1, "1 On"),
+    ];
+
     private static readonly IReadOnlyList<SwShTrainerEditableField> EditableFields =
     [
         new SwShTrainerEditableField(
@@ -62,7 +83,57 @@ public sealed class SwShTrainersWorkflowService
             "Battle type",
             "integer",
             0,
-            SwShTrainerDataFile.MaximumBattleMode),
+            SwShTrainerDataFile.MaximumBattleMode,
+            BattleTypeOptions),
+        new SwShTrainerEditableField(
+            TrainerItem1IdField,
+            "Trainer item 1 ID",
+            "integer",
+            0,
+            SwShTrainerDataFile.MaximumItemId),
+        new SwShTrainerEditableField(
+            TrainerItem2IdField,
+            "Trainer item 2 ID",
+            "integer",
+            0,
+            SwShTrainerDataFile.MaximumItemId),
+        new SwShTrainerEditableField(
+            TrainerItem3IdField,
+            "Trainer item 3 ID",
+            "integer",
+            0,
+            SwShTrainerDataFile.MaximumItemId),
+        new SwShTrainerEditableField(
+            TrainerItem4IdField,
+            "Trainer item 4 ID",
+            "integer",
+            0,
+            SwShTrainerDataFile.MaximumItemId),
+        new SwShTrainerEditableField(
+            AiFlagsField,
+            "AI flags",
+            "integer",
+            0,
+            SwShTrainerDataFile.MaximumAiFlags),
+        new SwShTrainerEditableField(
+            HealField,
+            "Heal flag",
+            "integer",
+            0,
+            1,
+            BooleanOptions),
+        new SwShTrainerEditableField(
+            MoneyField,
+            "Money",
+            "integer",
+            0,
+            SwShTrainerDataFile.MaximumMoney),
+        new SwShTrainerEditableField(
+            GiftField,
+            "Gift ID",
+            "integer",
+            0,
+            SwShTrainerDataFile.MaximumGiftId),
         new SwShTrainerEditableField(
             SpeciesIdField,
             "Species ID",
@@ -388,7 +459,15 @@ public sealed class SwShTrainersWorkflowService
     internal static bool IsTrainerDataField(string? field)
     {
         return string.Equals(field, TrainerClassIdField, StringComparison.Ordinal)
-            || string.Equals(field, BattleTypeField, StringComparison.Ordinal);
+            || string.Equals(field, BattleTypeField, StringComparison.Ordinal)
+            || string.Equals(field, TrainerItem1IdField, StringComparison.Ordinal)
+            || string.Equals(field, TrainerItem2IdField, StringComparison.Ordinal)
+            || string.Equals(field, TrainerItem3IdField, StringComparison.Ordinal)
+            || string.Equals(field, TrainerItem4IdField, StringComparison.Ordinal)
+            || string.Equals(field, AiFlagsField, StringComparison.Ordinal)
+            || string.Equals(field, HealField, StringComparison.Ordinal)
+            || string.Equals(field, MoneyField, StringComparison.Ordinal)
+            || string.Equals(field, GiftField, StringComparison.Ordinal);
     }
 
     internal static bool IsTrainerPokemonField(string? field)
@@ -491,6 +570,7 @@ public sealed class SwShTrainersWorkflowService
                 var options = field.Field switch
                 {
                     TrainerClassIdField => trainerClassOptions,
+                    TrainerItem1IdField or TrainerItem2IdField or TrainerItem3IdField or TrainerItem4IdField => itemOptions,
                     SpeciesIdField => speciesOptions,
                     HeldItemIdField => itemOptions,
                     Move1IdField or Move2IdField or Move3IdField or Move4IdField => moveOptions,
@@ -723,6 +803,12 @@ public sealed class SwShTrainersWorkflowService
             $"Trainer {dataSource.TrainerId}",
             trainer.BattleMode,
             FormatBattleMode(trainer.BattleMode),
+            trainer.Items,
+            trainer.Items.Select(itemId => itemId == 0 ? "None" : GetLookupValue(names.ItemNames, itemId, $"Item {itemId}")).ToArray(),
+            (int)(trainer.AiFlags & byte.MaxValue),
+            trainer.Heal,
+            trainer.Money,
+            trainer.Gift,
             team.Select(pokemon => ToTrainerPokemonRecord(pokemon, names)).ToArray(),
             CreateProvenance(dataSource.Entry, pokeSource.Entry));
     }

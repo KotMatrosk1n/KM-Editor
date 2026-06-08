@@ -53,6 +53,12 @@ public sealed record TrainerRecordDto(
     string Location,
     int BattleTypeValue,
     string BattleType,
+    IReadOnlyList<int> ItemIds,
+    IReadOnlyList<string> Items,
+    int AiFlags,
+    bool Heal,
+    int Money,
+    int Gift,
     IReadOnlyList<TrainerPokemonRecordDto> Team,
     TrainerProvenanceDto Provenance);
 

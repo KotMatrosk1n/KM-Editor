@@ -335,6 +335,16 @@ const wattsPriceFieldName = 'wattsPrice';
 const alternatePriceFieldName = 'alternatePrice';
 const trainerClassIdFieldName = 'trainerClassId';
 const battleTypeFieldName = 'battleType';
+const trainerItemFieldNames = [
+  'trainerItem1Id',
+  'trainerItem2Id',
+  'trainerItem3Id',
+  'trainerItem4Id'
+] as const;
+const aiFlagsFieldName = 'aiFlags';
+const healFieldName = 'heal';
+const moneyFieldName = 'money';
+const giftFieldName = 'gift';
 const speciesIdFieldName = 'speciesId';
 const formFieldName = 'form';
 const levelFieldName = 'level';
@@ -363,6 +373,15 @@ const ivFieldNames = [
 ] as const;
 const shinyFieldName = 'shiny';
 const canDynamaxFieldName = 'canDynamax';
+const trainerDataFieldNames = [
+  trainerClassIdFieldName,
+  battleTypeFieldName,
+  ...trainerItemFieldNames,
+  aiFlagsFieldName,
+  healFieldName,
+  moneyFieldName,
+  giftFieldName
+] as const;
 const trainerPokemonFieldNames = [
   speciesIdFieldName,
   formFieldName,
@@ -4604,7 +4623,7 @@ function SelectedTrainerPanel({
   const [trainerDrafts, setTrainerDrafts] = useState<Record<string, string>>({});
   const [pokemonDrafts, setPokemonDrafts] = useState<Record<string, string>>({});
   const trainerFields = editableFields.filter((field) =>
-    [trainerClassIdFieldName, battleTypeFieldName].includes(field.field)
+    trainerDataFieldNames.includes(field.field as (typeof trainerDataFieldNames)[number])
   );
   const pokemonFields = editableFields.filter((field) =>
     trainerPokemonFieldNames.includes(field.field as (typeof trainerPokemonFieldNames)[number])
@@ -4624,7 +4643,7 @@ function SelectedTrainerPanel({
         ])
       )
     );
-  }, [editableFields, trainer?.battleTypeValue, trainer?.trainerClassId, trainer?.trainerId]);
+  }, [editableFields, trainer]);
 
   useEffect(() => {
     if (!selectedPokemon) {
@@ -7766,6 +7785,12 @@ function filterTrainers(trainers: TrainerRecord[], searchText: string) {
       trainer.trainerClass,
       trainer.trainerClassId.toString(),
       trainer.battleType,
+      ...trainer.itemIds.map((itemId) => itemId.toString()),
+      ...trainer.items,
+      trainer.aiFlags.toString(),
+      trainer.heal ? 'heal' : '',
+      trainer.money.toString(),
+      trainer.gift.toString(),
       trainer.provenance.sourceFile,
       trainer.provenance.teamSourceFile,
       ...trainer.team.flatMap((pokemon) => [
@@ -8243,6 +8268,22 @@ function getEditableTrainerFieldValue(trainer: TrainerRecord, field: string) {
       return trainer.trainerClassId;
     case battleTypeFieldName:
       return trainer.battleTypeValue;
+    case trainerItemFieldNames[0]:
+      return trainer.itemIds[0] ?? null;
+    case trainerItemFieldNames[1]:
+      return trainer.itemIds[1] ?? null;
+    case trainerItemFieldNames[2]:
+      return trainer.itemIds[2] ?? null;
+    case trainerItemFieldNames[3]:
+      return trainer.itemIds[3] ?? null;
+    case aiFlagsFieldName:
+      return trainer.aiFlags;
+    case healFieldName:
+      return trainer.heal ? 1 : 0;
+    case moneyFieldName:
+      return trainer.money;
+    case giftFieldName:
+      return trainer.gift;
     default:
       return null;
   }

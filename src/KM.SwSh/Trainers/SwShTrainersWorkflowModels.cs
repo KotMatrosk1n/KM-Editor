@@ -50,6 +50,12 @@ public sealed record SwShTrainerRecord(
     string Location,
     int BattleTypeValue,
     string BattleType,
+    IReadOnlyList<int> ItemIds,
+    IReadOnlyList<string> Items,
+    int AiFlags,
+    bool Heal,
+    int Money,
+    int Gift,
     IReadOnlyList<SwShTrainerPokemonRecord> Team,
     SwShTrainerProvenance Provenance);
 

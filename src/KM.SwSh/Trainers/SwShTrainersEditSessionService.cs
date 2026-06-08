@@ -589,7 +589,38 @@ public sealed class SwShTrainersEditSessionService
                     _ => $"Mode {value}",
                 },
             },
+            SwShTrainersWorkflowService.TrainerItem1IdField => OverlayTrainerItem(trainer, 0, value),
+            SwShTrainersWorkflowService.TrainerItem2IdField => OverlayTrainerItem(trainer, 1, value),
+            SwShTrainersWorkflowService.TrainerItem3IdField => OverlayTrainerItem(trainer, 2, value),
+            SwShTrainersWorkflowService.TrainerItem4IdField => OverlayTrainerItem(trainer, 3, value),
+            SwShTrainersWorkflowService.AiFlagsField => trainer with { AiFlags = value },
+            SwShTrainersWorkflowService.HealField => trainer with { Heal = value != 0 },
+            SwShTrainersWorkflowService.MoneyField => trainer with { Money = value },
+            SwShTrainersWorkflowService.GiftField => trainer with { Gift = value },
             _ => trainer,
+        };
+    }
+
+    private static SwShTrainerRecord OverlayTrainerItem(
+        SwShTrainerRecord trainer,
+        int itemIndex,
+        int value)
+    {
+        var itemIds = trainer.ItemIds.ToArray();
+        var items = trainer.Items.ToArray();
+
+        if ((uint)itemIndex >= (uint)itemIds.Length || (uint)itemIndex >= (uint)items.Length)
+        {
+            return trainer;
+        }
+
+        itemIds[itemIndex] = value;
+        items[itemIndex] = value == 0 ? "None" : $"Item {value}";
+
+        return trainer with
+        {
+            ItemIds = itemIds,
+            Items = items,
         };
     }
 
@@ -829,6 +860,14 @@ public sealed class SwShTrainersEditSessionService
         {
             SwShTrainersWorkflowService.TrainerClassIdField => SwShTrainerDataField.ClassId,
             SwShTrainersWorkflowService.BattleTypeField => SwShTrainerDataField.BattleMode,
+            SwShTrainersWorkflowService.TrainerItem1IdField => SwShTrainerDataField.Item1Id,
+            SwShTrainersWorkflowService.TrainerItem2IdField => SwShTrainerDataField.Item2Id,
+            SwShTrainersWorkflowService.TrainerItem3IdField => SwShTrainerDataField.Item3Id,
+            SwShTrainersWorkflowService.TrainerItem4IdField => SwShTrainerDataField.Item4Id,
+            SwShTrainersWorkflowService.AiFlagsField => SwShTrainerDataField.AiFlags,
+            SwShTrainersWorkflowService.HealField => SwShTrainerDataField.Heal,
+            SwShTrainersWorkflowService.MoneyField => SwShTrainerDataField.Money,
+            SwShTrainersWorkflowService.GiftField => SwShTrainerDataField.Gift,
             _ => (SwShTrainerDataField?)null,
         };
 
