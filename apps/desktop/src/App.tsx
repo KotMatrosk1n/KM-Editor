@@ -469,7 +469,6 @@ const trainerDataFieldNames = [
   classBallIdFieldName,
   battleTypeFieldName,
   ...trainerItemFieldNames,
-  aiFlagsFieldName,
   healFieldName,
   moneyFieldName,
   giftFieldName
@@ -4043,15 +4042,15 @@ function SelectedPokemonPanel({
             <dl className="item-provenance-list compact-dl">
               <div>
                 <dt>Ability 1</dt>
-                <dd>{pokemon.abilities.ability1}</dd>
+                <dd>{pokemon.abilities.ability1Label}</dd>
               </div>
               <div>
                 <dt>Ability 2</dt>
-                <dd>{pokemon.abilities.ability2}</dd>
+                <dd>{pokemon.abilities.ability2Label}</dd>
               </div>
               <div>
                 <dt>Hidden</dt>
-                <dd>{pokemon.abilities.hiddenAbility}</dd>
+                <dd>{pokemon.abilities.hiddenAbilityLabel}</dd>
               </div>
               <div>
                 <dt>Catch rate</dt>
@@ -4063,7 +4062,7 @@ function SelectedPokemonPanel({
               </div>
               <div>
                 <dt>Gender</dt>
-                <dd>{pokemon.genderRatio}</dd>
+                <dd>{pokemon.genderRatioLabel}</dd>
               </div>
               <div>
                 <dt>Height / weight</dt>
@@ -5639,6 +5638,12 @@ function SelectedTrainerPanel({
   const pokemonFields = editableFields.filter((field) =>
     trainerPokemonFieldNames.includes(field.field as (typeof trainerPokemonFieldNames)[number])
   );
+  const aiFlagsField = editableFields.find((field) => field.field === aiFlagsFieldName) ?? null;
+  const canToggleAiFlags =
+    canEditTrainers && editSession !== null && !isTrainerUpdating && aiFlagsField !== null;
+  const aiFlagsMaskLabel = trainer
+    ? `0x${trainer.aiFlags.toString(16).padStart(4, '0').toLocaleUpperCase()}`
+    : '0x0000';
 
   useEffect(() => {
     if (!trainer) {
@@ -5721,6 +5726,41 @@ function SelectedTrainerPanel({
           </dl>
 
           <div className="trainer-edit-form">
+            {trainer.aiFlagStates.length > 0 ? (
+              <div className="trainer-ai-flags-panel">
+                <div className="trainer-ai-flags-header">
+                  <strong>AI Flags</strong>
+                  <span>{aiFlagsMaskLabel}</span>
+                </div>
+                <div className="trainer-ai-flags-grid">
+                  {trainer.aiFlagStates.map((flag) => (
+                    <label className="trainer-ai-flag" key={flag.bit}>
+                      <input
+                        checked={flag.enabled}
+                        disabled={!canToggleAiFlags}
+                        onChange={(event) => {
+                          const nextValue = event.target.checked
+                            ? trainer.aiFlags | flag.mask
+                            : trainer.aiFlags & ~flag.mask;
+                          onUpdateTrainerField(
+                            trainer.trainerId,
+                            null,
+                            aiFlagsFieldName,
+                            nextValue.toString()
+                          );
+                        }}
+                        type="checkbox"
+                      />
+                      <span>
+                        <strong>{flag.label}</strong>
+                        <small>{flag.description}</small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <div className="trainer-field-grid">
               {trainerFields.map((field) => {
                 const currentValue = getEditableTrainerFieldValue(trainer, field.field);
@@ -10989,8 +11029,13 @@ function filterPokemon(pokemon: PokemonRecord[], searchText: string) {
       record.baseStats.speed.toString(),
       record.baseStats.total.toString(),
       record.abilities.ability1.toString(),
+      record.abilities.ability1Label,
       record.abilities.ability2.toString(),
+      record.abilities.ability2Label,
       record.abilities.hiddenAbility.toString(),
+      record.abilities.hiddenAbilityLabel,
+      record.genderRatio.toString(),
+      record.genderRatioLabel,
       record.provenance.sourceFile,
       ...record.compatibility.flatMap((group) => [
         group.groupId,
@@ -11233,6 +11278,11 @@ function filterTrainers(trainers: TrainerRecord[], searchText: string) {
       ...trainer.itemIds.map((itemId) => itemId.toString()),
       ...trainer.items,
       trainer.aiFlags.toString(),
+      ...trainer.aiFlagStates.flatMap((flag) => [
+        flag.label,
+        flag.description,
+        flag.enabled ? 'enabled' : ''
+      ]),
       trainer.heal ? 'heal' : '',
       trainer.money.toString(),
       trainer.gift.toString(),
@@ -11243,6 +11293,12 @@ function filterTrainers(trainers: TrainerRecord[], searchText: string) {
         pokemon.speciesId.toString(),
         pokemon.level.toString(),
         pokemon.heldItem ?? '',
+        pokemon.genderLabel,
+        pokemon.gender.toString(),
+        pokemon.abilityLabel,
+        pokemon.ability.toString(),
+        pokemon.natureLabel,
+        pokemon.nature.toString(),
         ...pokemon.moves,
         ...pokemon.moveIds.map((moveId) => moveId.toString())
       ])

@@ -690,7 +690,11 @@ public sealed class SwShTrainersEditSessionService
             SwShTrainersWorkflowService.TrainerItem2IdField => OverlayTrainerItem(trainer, 1, value),
             SwShTrainersWorkflowService.TrainerItem3IdField => OverlayTrainerItem(trainer, 2, value),
             SwShTrainersWorkflowService.TrainerItem4IdField => OverlayTrainerItem(trainer, 3, value),
-            SwShTrainersWorkflowService.AiFlagsField => trainer with { AiFlags = value },
+            SwShTrainersWorkflowService.AiFlagsField => trainer with
+            {
+                AiFlags = value,
+                AiFlagStates = SwShTrainersWorkflowService.CreateAiFlagStates((uint)value),
+            },
             SwShTrainersWorkflowService.HealField => trainer with { Heal = value != 0 },
             SwShTrainersWorkflowService.MoneyField => trainer with { Money = value },
             SwShTrainersWorkflowService.GiftField => trainer with { Gift = value },
@@ -763,9 +767,21 @@ public sealed class SwShTrainersEditSessionService
             SwShTrainersWorkflowService.Move2IdField => OverlayMove(pokemon, 1, value),
             SwShTrainersWorkflowService.Move3IdField => OverlayMove(pokemon, 2, value),
             SwShTrainersWorkflowService.Move4IdField => OverlayMove(pokemon, 3, value),
-            SwShTrainersWorkflowService.GenderField => pokemon with { Gender = value },
-            SwShTrainersWorkflowService.AbilityField => pokemon with { Ability = value },
-            SwShTrainersWorkflowService.NatureField => pokemon with { Nature = value },
+            SwShTrainersWorkflowService.GenderField => pokemon with
+            {
+                Gender = value,
+                GenderLabel = SwShTrainersWorkflowService.FormatTrainerPokemonGender(value),
+            },
+            SwShTrainersWorkflowService.AbilityField => pokemon with
+            {
+                Ability = value,
+                AbilityLabel = SwShTrainersWorkflowService.FormatTrainerPokemonAbility(value),
+            },
+            SwShTrainersWorkflowService.NatureField => pokemon with
+            {
+                Nature = value,
+                NatureLabel = SwShTrainersWorkflowService.FormatTrainerPokemonNature(value),
+            },
             SwShTrainersWorkflowService.EvHpField => pokemon with { Evs = pokemon.Evs with { HP = value } },
             SwShTrainersWorkflowService.EvAttackField => pokemon with { Evs = pokemon.Evs with { Attack = value } },
             SwShTrainersWorkflowService.EvDefenseField => pokemon with { Evs = pokemon.Evs with { Defense = value } },

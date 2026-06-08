@@ -31,8 +31,11 @@ public sealed record TrainerPokemonRecordDto(
     IReadOnlyList<int> MoveIds,
     IReadOnlyList<string> Moves,
     int Gender,
+    string GenderLabel,
     int Ability,
+    string AbilityLabel,
     int Nature,
+    string NatureLabel,
     TrainerPokemonStatsDto Evs,
     int DynamaxLevel,
     bool CanGigantamax,
@@ -59,6 +62,7 @@ public sealed record TrainerRecordDto(
     IReadOnlyList<int> ItemIds,
     IReadOnlyList<string> Items,
     int AiFlags,
+    IReadOnlyList<TrainerAiFlagStateDto> AiFlagStates,
     bool Heal,
     int Money,
     int Gift,
@@ -68,6 +72,13 @@ public sealed record TrainerRecordDto(
     string ClassBallScope,
     IReadOnlyList<TrainerPokemonRecordDto> Team,
     TrainerProvenanceDto Provenance);
+
+public sealed record TrainerAiFlagStateDto(
+    int Bit,
+    int Mask,
+    string Label,
+    string Description,
+    bool Enabled);
 
 public sealed record TrainerEditableFieldDto(
     string Field,

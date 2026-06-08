@@ -57,6 +57,13 @@ public sealed class SwShPokemonWorkflowServiceTests
         Assert.Equal("Poison", pokemon.Type2);
         Assert.Equal(318, pokemon.BaseStats.Total);
         Assert.Equal(65, pokemon.Abilities.Ability1);
+        Assert.Equal("065 Overgrow", pokemon.Abilities.Ability1Label);
+        Assert.Equal(0, pokemon.Abilities.Ability2);
+        Assert.Equal("000 None", pokemon.Abilities.Ability2Label);
+        Assert.Equal(34, pokemon.Abilities.HiddenAbility);
+        Assert.Equal("034 Chlorophyll", pokemon.Abilities.HiddenAbilityLabel);
+        Assert.Equal(31, pokemon.GenderRatio);
+        Assert.Equal("031 Male 87.5% / Female 12.5%", pokemon.GenderRatioLabel);
         Assert.True(pokemon.DexPresence.IsPresentInGame);
         Assert.Equal(1, pokemon.DexPresence.RegionalDexIndex);
         Assert.Equal(ProjectFileLayer.Base, pokemon.Provenance.SourceLayer);
@@ -120,6 +127,29 @@ public sealed class SwShPokemonWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadUsesPersonalRowForDisplaySpeciesWhenHatchedSpeciesPointsAtBase()
+    {
+        using var temp = TemporaryPokemonProject.Create();
+        WriteBasePokemonData(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(
+                CreateEmptyPersonalRecord(),
+                CreateBulbasaurPersonalRecord(),
+                CreateBulbasaurPersonalRecord(hp: 60, hatchedSpecies: 1)));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShPokemonWorkflowService().Load(project);
+
+        var evolvedRow = workflow.Pokemon[2];
+        Assert.Equal(2, evolvedRow.PersonalId);
+        Assert.Equal(2, evolvedRow.SpeciesId);
+        Assert.Equal("Ivysaur", evolvedRow.Name);
+        Assert.Equal(1, evolvedRow.Personal.HatchedSpecies);
+    }
+
+    [Fact]
     public void LoadReportsDiagnosticWhenPersonalDataIsMissing()
     {
         using var temp = TemporaryPokemonProject.Create();
@@ -145,7 +175,7 @@ public sealed class SwShPokemonWorkflowServiceTests
             CreateEvolutionFile((4, 0, 2, 0, 16)));
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/pokelist.dat",
-            CreateTextTable("None", "Bulbasaur"));
+            CreateTextTable("None", "Which Pokemon do you want to swap with?"));
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/monsname.dat",
             CreateIndexedPokemonNames());
@@ -176,7 +206,7 @@ public sealed class SwShPokemonWorkflowServiceTests
         return new byte[SwShPersonalTable.RecordSize];
     }
 
-    internal static byte[] CreateBulbasaurPersonalRecord(int hp = 45)
+    internal static byte[] CreateBulbasaurPersonalRecord(int hp = 45, int hatchedSpecies = 1)
     {
         var record = new byte[SwShPersonalTable.RecordSize];
         record[0x00] = checked((byte)hp);
@@ -206,7 +236,7 @@ public sealed class SwShPokemonWorkflowServiceTests
         SetFlag(record, 0x28, 10);
         SetFlag(record, 0x38, 0);
         SetFlag(record, 0xA8, 1);
-        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x56), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x56), checked((ushort)hatchedSpecies));
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5C), 1);
 
         return record;

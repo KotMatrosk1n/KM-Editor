@@ -469,8 +469,11 @@ export const pokemonBaseStatsSchema = z.strictObject({
 
 export const pokemonAbilitySetSchema = z.strictObject({
   ability1: z.number().int().nonnegative(),
+  ability1Label: z.string(),
   ability2: z.number().int().nonnegative(),
-  hiddenAbility: z.number().int().nonnegative()
+  ability2Label: z.string(),
+  hiddenAbility: z.number().int().nonnegative(),
+  hiddenAbilityLabel: z.string()
 });
 
 export const pokemonDexPresenceSchema = z.strictObject({
@@ -593,6 +596,7 @@ export const pokemonRecordSchema = z.strictObject({
   form: z.number().int().nonnegative(),
   formLabel: z.string(),
   genderRatio: z.number().int().nonnegative(),
+  genderRatioLabel: z.string(),
   height: z.number().int().nonnegative(),
   learnset: z.array(pokemonLearnsetMoveSchema),
   name: z.string(),
@@ -836,12 +840,14 @@ export const trainerPokemonStatsSchema = z.strictObject({
 
 export const trainerPokemonRecordSchema = z.strictObject({
   ability: z.number().int().nonnegative(),
+  abilityLabel: z.string(),
   canDynamax: z.boolean(),
   canGigantamax: z.boolean(),
   dynamaxLevel: z.number().int().nonnegative(),
   evs: trainerPokemonStatsSchema,
   form: z.number().int().nonnegative(),
   gender: z.number().int().nonnegative(),
+  genderLabel: z.string(),
   heldItem: z.string().nullable(),
   heldItemId: z.number().int().nonnegative(),
   ivs: trainerPokemonStatsSchema,
@@ -849,14 +855,24 @@ export const trainerPokemonRecordSchema = z.strictObject({
   moveIds: z.array(z.number().int().nonnegative()),
   moves: z.array(z.string()),
   nature: z.number().int().nonnegative(),
+  natureLabel: z.string(),
   shiny: z.boolean(),
   slot: z.number().int().nonnegative(),
   speciesId: z.number().int().nonnegative(),
   species: z.string()
 });
 
+export const trainerAiFlagStateSchema = z.strictObject({
+  bit: z.number().int().nonnegative(),
+  description: z.string(),
+  enabled: z.boolean(),
+  label: z.string(),
+  mask: z.number().int().nonnegative()
+});
+
 export const trainerRecordSchema = z.strictObject({
   aiFlags: z.number().int().nonnegative().default(0),
+  aiFlagStates: z.array(trainerAiFlagStateSchema).default([]),
   battleType: z.string(),
   battleTypeValue: z.number().int().nonnegative(),
   canEditClassBall: z.boolean().default(false),

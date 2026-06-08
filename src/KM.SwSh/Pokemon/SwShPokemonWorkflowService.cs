@@ -146,6 +146,9 @@ public sealed class SwShPokemonWorkflowService
         CreateOption(9, "Pink"),
     ];
 
+    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> GenderRatioOptions =
+        CreateGenderRatioOptions();
+
     private static readonly IReadOnlyList<int> TechnicalMachineMoveIds =
     [
         5, 25, 6, 7, 8, 9, 19, 42, 63, 416,
@@ -211,7 +214,7 @@ public sealed class SwShPokemonWorkflowService
         CreateField(Ability1Field, "Ability 1", "Abilities", 0, ushort.MaxValue),
         CreateField(Ability2Field, "Ability 2", "Abilities", 0, ushort.MaxValue),
         CreateField(HiddenAbilityField, "Hidden Ability", "Abilities", 0, ushort.MaxValue),
-        CreateField(GenderRatioField, "Gender Ratio", "Identity", 0, byte.MaxValue),
+        CreateField(GenderRatioField, "Gender Ratio", "Identity", 0, byte.MaxValue, GenderRatioOptions),
         CreateField(BaseFriendshipField, "Base Friendship", "Identity", 0, byte.MaxValue),
         CreateField(BaseExperienceField, "Base EXP", "Identity", 0, ushort.MaxValue),
         CreateField(HatchCyclesField, "Hatch Cycles", "Identity", 0, byte.MaxValue),
@@ -381,8 +384,8 @@ public sealed class SwShPokemonWorkflowService
             diagnostics);
         var learnsets = LoadLearnsets(project, diagnostics);
         var evolutions = LoadEvolutions(project, diagnostics);
-        var evolutionSpeciesNames = speciesNames.Count > 0 ? speciesNames : pokemonNames;
-        var evolutionMethodOptions = CreateEvolutionMethodOptions(itemNames, moveNames, evolutionSpeciesNames);
+        var displaySpeciesNames = speciesNames.Count > 0 ? speciesNames : Array.Empty<string>();
+        var evolutionMethodOptions = CreateEvolutionMethodOptions(itemNames, moveNames, displaySpeciesNames);
 
         try
         {
@@ -391,8 +394,8 @@ public sealed class SwShPokemonWorkflowService
             var pokemon = personalTable.Records
                 .Select(record => ToPokemonRecord(
                     record,
-                    pokemonNames,
-                    evolutionSpeciesNames,
+                    displaySpeciesNames,
+                    abilityNames,
                     itemNames,
                     moveNames,
                     learnsets,
@@ -414,7 +417,7 @@ public sealed class SwShPokemonWorkflowService
                 pokemon,
                 sourceFileCount,
                 evolutionMethodOptions,
-                CreateEditableFields(itemNames, abilityNames, evolutionSpeciesNames),
+                CreateEditableFields(itemNames, abilityNames, displaySpeciesNames),
                 diagnostics);
         }
         catch (InvalidDataException exception)
@@ -619,8 +622,8 @@ public sealed class SwShPokemonWorkflowService
 
     private static SwShPokemonRecord ToPokemonRecord(
         SwShPersonalRecord personal,
-        IReadOnlyList<string> pokemonNames,
         IReadOnlyList<string> speciesNames,
+        IReadOnlyList<string> abilityNames,
         IReadOnlyList<string> itemNames,
         IReadOnlyList<string> moveNames,
         IReadOnlyDictionary<int, SwShPokemonLearnsetRecord> learnsets,
@@ -647,7 +650,7 @@ public sealed class SwShPokemonWorkflowService
             personal.PersonalId,
             speciesId,
             personal.Form,
-            GetIndexedName(speciesId, pokemonNames, "Pokemon"),
+            GetIndexedName(speciesId, speciesNames, "Pokemon"),
             personal.Form == 0 ? "Base" : $"Form {personal.Form}",
             FormatType(personal.Type1),
             FormatType(personal.Type2),
@@ -659,7 +662,13 @@ public sealed class SwShPokemonWorkflowService
                 personal.SpecialDefense,
                 personal.Speed,
                 personal.BaseStatTotal),
-            new SwShPokemonAbilitySet(personal.Ability1, personal.Ability2, personal.HiddenAbility),
+            new SwShPokemonAbilitySet(
+                personal.Ability1,
+                FormatIndexedOption(personal.Ability1, abilityNames, "Ability"),
+                personal.Ability2,
+                FormatIndexedOption(personal.Ability2, abilityNames, "Ability"),
+                personal.HiddenAbility,
+                FormatIndexedOption(personal.HiddenAbility, abilityNames, "Ability")),
             new SwShPokemonDexPresence(
                 personal.IsPresentInGame,
                 personal.RegionalDexIndex != 0 || personal.ArmorDexIndex != 0 || personal.CrownDexIndex != 0,
@@ -706,6 +715,7 @@ public sealed class SwShPokemonWorkflowService
             personal.CatchRate,
             personal.EvolutionStage,
             personal.GenderRatio,
+            FormatGenderRatio(personal.GenderRatio, includeValue: true),
             personal.BaseExperience,
             personal.Height,
             personal.Weight,
@@ -864,9 +874,7 @@ public sealed class SwShPokemonWorkflowService
 
     private static int ResolveSpeciesId(SwShPersonalRecord personal)
     {
-        return personal.HatchedSpecies > 0
-            ? personal.HatchedSpecies
-            : personal.PersonalId;
+        return personal.PersonalId;
     }
 
     private static IReadOnlyList<SwShPokemonEditableField> CreateEditableFields(
@@ -913,6 +921,15 @@ public sealed class SwShPokemonWorkflowService
                 .ToArray();
     }
 
+    private static string FormatIndexedOption(int id, IReadOnlyList<string> names, string fallbackPrefix)
+    {
+        var label = (uint)id < (uint)names.Count && !string.IsNullOrWhiteSpace(names[id])
+            ? names[id]
+            : id == 0 ? "None" : $"{fallbackPrefix} {id}";
+
+        return string.Create(CultureInfo.InvariantCulture, $"{id:000} {label}");
+    }
+
     private static string GetIndexedName(int id, IReadOnlyList<string> names, string fallbackPrefix)
     {
         if ((uint)id < (uint)names.Count && !string.IsNullOrWhiteSpace(names[id]))
@@ -921,6 +938,39 @@ public sealed class SwShPokemonWorkflowService
         }
 
         return $"{fallbackPrefix} {id}";
+    }
+
+    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateGenderRatioOptions()
+    {
+        return Enumerable
+            .Range(0, byte.MaxValue + 1)
+            .Select(value => CreateOption(value, FormatGenderRatio(value, includeValue: true)))
+            .ToArray();
+    }
+
+    private static string FormatGenderRatio(int genderRatio, bool includeValue)
+    {
+        var label = genderRatio switch
+        {
+            0 => "Male only",
+            254 => "Female only",
+            255 => "Genderless",
+            _ => FormatMixedGenderRatio(genderRatio),
+        };
+
+        return includeValue
+            ? string.Create(CultureInfo.InvariantCulture, $"{genderRatio:000} {label}")
+            : label;
+    }
+
+    private static string FormatMixedGenderRatio(int genderRatio)
+    {
+        var femalePercent = (genderRatio + 1) * 100.0 / 256.0;
+        var malePercent = 100.0 - femalePercent;
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"Male {malePercent:0.#}% / Female {femalePercent:0.#}%");
     }
 
     private static string FormatType(int typeId)

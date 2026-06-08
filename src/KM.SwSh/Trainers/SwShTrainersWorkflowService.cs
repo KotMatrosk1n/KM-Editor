@@ -68,8 +68,70 @@ public sealed class SwShTrainersWorkflowService
 
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BooleanOptions =
     [
-        new SwShTrainerEditableFieldOption(0, "0 Off"),
-        new SwShTrainerEditableFieldOption(1, "1 On"),
+        new SwShTrainerEditableFieldOption(0, "No"),
+        new SwShTrainerEditableFieldOption(1, "Yes"),
+    ];
+
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> AbilityOptions =
+    [
+        new SwShTrainerEditableFieldOption(0, "Default"),
+        new SwShTrainerEditableFieldOption(1, "Ability 1"),
+        new SwShTrainerEditableFieldOption(2, "Ability 2"),
+        new SwShTrainerEditableFieldOption(3, "Hidden Ability"),
+    ];
+
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> GenderOptions =
+    [
+        new SwShTrainerEditableFieldOption(0, "Random"),
+        new SwShTrainerEditableFieldOption(1, "Male"),
+        new SwShTrainerEditableFieldOption(2, "Female"),
+        new SwShTrainerEditableFieldOption(3, "Genderless"),
+    ];
+
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> NatureOptions =
+    [
+        new SwShTrainerEditableFieldOption(0, "Hardy"),
+        new SwShTrainerEditableFieldOption(1, "Lonely"),
+        new SwShTrainerEditableFieldOption(2, "Brave"),
+        new SwShTrainerEditableFieldOption(3, "Adamant"),
+        new SwShTrainerEditableFieldOption(4, "Naughty"),
+        new SwShTrainerEditableFieldOption(5, "Bold"),
+        new SwShTrainerEditableFieldOption(6, "Docile"),
+        new SwShTrainerEditableFieldOption(7, "Relaxed"),
+        new SwShTrainerEditableFieldOption(8, "Impish"),
+        new SwShTrainerEditableFieldOption(9, "Lax"),
+        new SwShTrainerEditableFieldOption(10, "Timid"),
+        new SwShTrainerEditableFieldOption(11, "Hasty"),
+        new SwShTrainerEditableFieldOption(12, "Serious"),
+        new SwShTrainerEditableFieldOption(13, "Jolly"),
+        new SwShTrainerEditableFieldOption(14, "Naive"),
+        new SwShTrainerEditableFieldOption(15, "Modest"),
+        new SwShTrainerEditableFieldOption(16, "Mild"),
+        new SwShTrainerEditableFieldOption(17, "Quiet"),
+        new SwShTrainerEditableFieldOption(18, "Bashful"),
+        new SwShTrainerEditableFieldOption(19, "Rash"),
+        new SwShTrainerEditableFieldOption(20, "Calm"),
+        new SwShTrainerEditableFieldOption(21, "Gentle"),
+        new SwShTrainerEditableFieldOption(22, "Sassy"),
+        new SwShTrainerEditableFieldOption(23, "Careful"),
+        new SwShTrainerEditableFieldOption(24, "Quirky"),
+    ];
+
+    private static readonly IReadOnlyList<TrainerAiFlagDefinition> AiFlagDefinitions =
+    [
+        new(0, "Basic", "Enables basic battle decision logic."),
+        new(1, "Strong", "Enables stronger move and target choices."),
+        new(2, "Expert", "Enables expert battle decision logic."),
+        new(3, "Double", "Enables double-battle-aware decision logic."),
+        new(4, "Raid", "Enables raid-battle-specific decision logic."),
+        new(5, "Allowance", "Allows additional AI-controlled action checks."),
+        new(6, "PokeChange", "Allows AI-driven Pokemon switching."),
+        new(7, "Fire Gym (1)", "Enables the first Fire Gym behavior bit."),
+        new(8, "Fire Gym (2)", "Enables the second Fire Gym behavior bit."),
+        new(9, "Unused 1", "Reserved trainer AI bit."),
+        new(10, "Item", "Allows AI-driven trainer item usage."),
+        new(11, "Fire Gym (3)", "Enables the third Fire Gym behavior bit."),
+        new(12, "Unused 2", "Reserved trainer AI bit."),
     ];
 
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BallOptions =
@@ -227,19 +289,22 @@ public sealed class SwShTrainersWorkflowService
             "Gender",
             "integer",
             0,
-            SwShTrainerTeamFile.MaximumGenderValue),
+            SwShTrainerTeamFile.MaximumGenderValue,
+            GenderOptions),
         new SwShTrainerEditableField(
             AbilityField,
             "Ability",
             "integer",
             0,
-            SwShTrainerTeamFile.MaximumAbilityValue),
+            SwShTrainerTeamFile.MaximumAbilityValue,
+            AbilityOptions),
         new SwShTrainerEditableField(
             NatureField,
             "Nature",
             "integer",
             0,
-            SwShTrainerTeamFile.MaximumNatureId),
+            SwShTrainerTeamFile.MaximumNatureId,
+            NatureOptions),
         new SwShTrainerEditableField(
             EvHpField,
             "EV HP",
@@ -285,9 +350,10 @@ public sealed class SwShTrainersWorkflowService
         new SwShTrainerEditableField(
             CanGigantamaxField,
             "Can Gigantamax",
-            "integer",
+            "boolean",
             0,
-            1),
+            1,
+            BooleanOptions),
         new SwShTrainerEditableField(
             IvHpField,
             "IV HP",
@@ -327,15 +393,17 @@ public sealed class SwShTrainersWorkflowService
         new SwShTrainerEditableField(
             ShinyField,
             "Shiny",
-            "integer",
+            "boolean",
             0,
-            1),
+            1,
+            BooleanOptions),
         new SwShTrainerEditableField(
             CanDynamaxField,
             "Can Dynamax",
-            "integer",
+            "boolean",
             0,
-            1),
+            1,
+            BooleanOptions),
     ];
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -970,7 +1038,8 @@ public sealed class SwShTrainersWorkflowService
             FormatBattleMode(trainer.BattleMode),
             trainer.Items,
             trainer.Items.Select(itemId => itemId == 0 ? "None" : GetLookupValue(names.ItemNames, itemId, $"Item {itemId}")).ToArray(),
-            (int)(trainer.AiFlags & byte.MaxValue),
+            (int)(trainer.AiFlags & SwShTrainerDataFile.KnownAiFlagsMask),
+            CreateAiFlagStates(trainer.AiFlags),
             trainer.Heal,
             trainer.Money,
             trainer.Gift,
@@ -1003,8 +1072,11 @@ public sealed class SwShTrainersWorkflowService
             pokemon.MoveIds,
             moves,
             pokemon.Gender,
+            FormatTrainerPokemonGender(pokemon.Gender),
             pokemon.Ability,
+            FormatTrainerPokemonAbility(pokemon.Ability),
             pokemon.Nature,
+            FormatTrainerPokemonNature(pokemon.Nature),
             ToStatsRecord(pokemon.Evs),
             pokemon.DynamaxLevel,
             pokemon.CanGigantamax,
@@ -1070,6 +1142,46 @@ public sealed class SwShTrainersWorkflowService
     private static string FormatBall(int ballId)
     {
         return BallOptions.FirstOrDefault(option => option.Value == ballId)?.Label ?? $"Ball {ballId}";
+    }
+
+    internal static IReadOnlyList<SwShTrainerAiFlagState> CreateAiFlagStates(uint aiFlags)
+    {
+        return AiFlagDefinitions
+            .Select(definition =>
+            {
+                var mask = 1 << definition.Bit;
+                return new SwShTrainerAiFlagState(
+                    definition.Bit,
+                    mask,
+                    definition.Label,
+                    definition.Description,
+                    (aiFlags & (uint)mask) != 0);
+            })
+            .ToArray();
+    }
+
+    internal static string FormatTrainerPokemonGender(int value)
+    {
+        return GetOptionLabel(GenderOptions, value, "Gender");
+    }
+
+    internal static string FormatTrainerPokemonAbility(int value)
+    {
+        return GetOptionLabel(AbilityOptions, value, "Ability");
+    }
+
+    internal static string FormatTrainerPokemonNature(int value)
+    {
+        return GetOptionLabel(NatureOptions, value, "Nature");
+    }
+
+    internal static string GetOptionLabel(
+        IReadOnlyList<SwShTrainerEditableFieldOption> options,
+        int value,
+        string fallbackPrefix)
+    {
+        return options.FirstOrDefault(option => option.Value == value)?.Label
+            ?? $"{fallbackPrefix} {value.ToString(CultureInfo.InvariantCulture)}";
     }
 
     private static SwShTrainerProvenance CreateProvenance(
@@ -1145,4 +1257,9 @@ public sealed class SwShTrainersWorkflowService
     private sealed record TrainerClassOwnership(
         string OwnerName,
         bool HasMultipleOwners);
+
+    private sealed record TrainerAiFlagDefinition(
+        int Bit,
+        string Label,
+        string Description);
 }

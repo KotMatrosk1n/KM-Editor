@@ -1117,8 +1117,11 @@ public static class SwShBridgeMapper
                 pokemon.BaseStats.Total),
             new PokemonAbilitySetDto(
                 pokemon.Abilities.Ability1,
+                pokemon.Abilities.Ability1Label,
                 pokemon.Abilities.Ability2,
-                pokemon.Abilities.HiddenAbility),
+                pokemon.Abilities.Ability2Label,
+                pokemon.Abilities.HiddenAbility,
+                pokemon.Abilities.HiddenAbilityLabel),
             new PokemonDexPresenceDto(
                 pokemon.DexPresence.IsPresentInGame,
                 pokemon.DexPresence.IsInAnyDex,
@@ -1159,6 +1162,7 @@ public static class SwShBridgeMapper
             pokemon.CatchRate,
             pokemon.EvolutionStage,
             pokemon.GenderRatio,
+            pokemon.GenderRatioLabel,
             pokemon.BaseExperience,
             pokemon.Height,
             pokemon.Weight,
@@ -1372,6 +1376,7 @@ public static class SwShBridgeMapper
             trainer.ItemIds,
             trainer.Items,
             trainer.AiFlags,
+            trainer.AiFlagStates.Select(ToDto).ToArray(),
             trainer.Heal,
             trainer.Money,
             trainer.Gift,
@@ -1396,14 +1401,27 @@ public static class SwShBridgeMapper
             pokemon.MoveIds,
             pokemon.Moves,
             pokemon.Gender,
+            pokemon.GenderLabel,
             pokemon.Ability,
+            pokemon.AbilityLabel,
             pokemon.Nature,
+            pokemon.NatureLabel,
             ToDto(pokemon.Evs),
             pokemon.DynamaxLevel,
             pokemon.CanGigantamax,
             ToDto(pokemon.Ivs),
             pokemon.Shiny,
             pokemon.CanDynamax);
+    }
+
+    private static TrainerAiFlagStateDto ToDto(SwShTrainerAiFlagState flag)
+    {
+        return new TrainerAiFlagStateDto(
+            flag.Bit,
+            flag.Mask,
+            flag.Label,
+            flag.Description,
+            flag.Enabled);
     }
 
     private static TrainerPokemonStatsDto ToDto(SwShTrainerPokemonStatsRecord stats)

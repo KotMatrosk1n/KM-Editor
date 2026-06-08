@@ -34,6 +34,14 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Equal([1, 2, 0, 0], trainer.ItemIds);
         Assert.Equal(["Potion", "Antidote", "None", "None"], trainer.Items);
         Assert.Equal(0x4D, trainer.AiFlags);
+        Assert.Equal(13, trainer.AiFlagStates.Count);
+        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Basic" && flag.Enabled);
+        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Expert" && flag.Enabled);
+        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Double" && flag.Enabled);
+        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "PokeChange" && flag.Enabled);
+        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Fire Gym (1)" && !flag.Enabled);
+        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Fire Gym (2)" && !flag.Enabled);
+        Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Fire Gym (3)" && !flag.Enabled);
         Assert.True(trainer.Heal);
         Assert.Equal(24, trainer.Money);
         Assert.Equal(7, trainer.Gift);
@@ -51,8 +59,11 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Equal([1, 2, 0, 0], trainer.Team[0].MoveIds);
         Assert.Equal(["Scratch", "Growl", "None", "None"], trainer.Team[0].Moves);
         Assert.Equal(1, trainer.Team[0].Gender);
+        Assert.Equal("Male", trainer.Team[0].GenderLabel);
         Assert.Equal(2, trainer.Team[0].Ability);
+        Assert.Equal("Ability 2", trainer.Team[0].AbilityLabel);
         Assert.Equal(13, trainer.Team[0].Nature);
+        Assert.Equal("Jolly", trainer.Team[0].NatureLabel);
         Assert.Equal(new SwShTrainerPokemonStatsRecord(10, 20, 30, 40, 50, 60), trainer.Team[0].Evs);
         Assert.Equal(7, trainer.Team[0].DynamaxLevel);
         Assert.True(trainer.Team[0].CanGigantamax);
@@ -86,6 +97,24 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.Move1IdField).Options,
             option => option.Value == 1 && option.Label == "001 Scratch");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.AbilityField).Options,
+            option => option.Value == 2 && option.Label == "Ability 2");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.GenderField).Options,
+            option => option.Value == 1 && option.Label == "Male");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.NatureField).Options,
+            option => option.Value == 13 && option.Label == "Jolly");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.CanDynamaxField).Options,
+            option => option.Value == 0 && option.Label == "No");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.CanDynamaxField).Options,
+            option => option.Value == 1 && option.Label == "Yes");
+        Assert.Equal(
+            SwShTrainerDataFile.KnownAiFlagsMask,
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.AiFlagsField).MaximumValue);
         Assert.Empty(workflow.Diagnostics);
     }
 
