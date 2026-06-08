@@ -32,6 +32,12 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         Assert.Equal(50, unlimited.TemplateItemId);
         Assert.Equal(ProjectFileLayer.Base, unlimited.Provenance.SourceLayer);
         Assert.Contains(workflow.Checks, check => check.CheckId.EndsWith(":item-data", StringComparison.Ordinal) && check.Status == "Pass");
+        Assert.Contains(
+            workflow.Checks,
+            check => check.CheckId.EndsWith(":item-data-stride", StringComparison.Ordinal)
+                && check.Status == "Pass"
+                && check.Message.Contains("1,129 item id", StringComparison.Ordinal));
+        Assert.Contains(workflow.Checks, check => check.CheckId.EndsWith(":royal-candy-row", StringComparison.Ordinal) && check.Status == "Pass");
         Assert.Contains(workflow.Checks, check => check.CheckId.EndsWith(":message-text-sets", StringComparison.Ordinal) && check.Status == "Pass");
         Assert.Contains(workflow.Checks, check => check.CheckId.EndsWith(":game-flavor", StringComparison.Ordinal) && check.Message.Contains("Pokemon Sword", StringComparison.Ordinal));
         Assert.Contains(workflow.Checks, check => check.CheckId.Contains("patch-code-cave", StringComparison.Ordinal) && check.Status == "Pass");
@@ -94,7 +100,7 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
     {
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.ItemPath["romfs/".Length..],
-            new byte[(1128 + 1) * 0x30]);
+            CreateCompactRoyalCandyItemTable());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.ItemHashPath["romfs/".Length..],
             [0x01, 0x02, 0x03, 0x04]);
@@ -114,6 +120,21 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", [0x0A]);
         temp.WriteBaseExeFsFile("main", CreateCompatibleNso());
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+    }
+
+    private static byte[] CreateCompactRoyalCandyItemTable()
+    {
+        var records = Enumerable.Range(0, 1129)
+            .Select(itemId => new ItemFixtureRecord(
+                itemId,
+                itemId == 50 || itemId == 1128 ? 50 : 0,
+                0,
+                0,
+                0,
+                SwShItemPouch.Medicine))
+            .ToArray();
+
+        return SwShItemTestFixtures.CreateItemTable(records);
     }
 
     private static byte[] CreateNpdm(ulong titleId)
