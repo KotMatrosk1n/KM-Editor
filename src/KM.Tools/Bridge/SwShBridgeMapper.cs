@@ -6,6 +6,7 @@ using KM.Api.Encounters;
 using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Placement;
+using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Shops;
 using KM.Api.Raids;
@@ -19,6 +20,7 @@ using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Placement;
+using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Shops;
 using KM.SwSh.Raids;
@@ -51,6 +53,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadPokemonWorkflowResponse(ToPokemonWorkflowDto(workflow));
+    }
+
+    public static LoadMovesWorkflowResponse ToDto(SwShMovesWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadMovesWorkflowResponse(ToMovesWorkflowDto(workflow));
     }
 
     public static LoadTextWorkflowResponse ToDto(SwShTextWorkflow workflow)
@@ -256,7 +265,20 @@ public static class SwShBridgeMapper
                 workflow.Stats.PresentPokemonCount,
                 workflow.Stats.TotalEvolutionCount,
                 workflow.Stats.TotalLearnsetMoveCount,
-                workflow.Stats.SourceFileCount),
+            workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static MovesWorkflowDto ToMovesWorkflowDto(SwShMovesWorkflow workflow)
+    {
+        return new MovesWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Moves.Select(ToDto).ToArray(),
+            new MovesWorkflowStatsDto(
+                workflow.Stats.TotalMoveCount,
+                workflow.Stats.EnabledMoveCount,
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.ActiveFlagCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -498,6 +520,70 @@ public static class SwShBridgeMapper
             learnsetMove.MoveId,
             learnsetMove.MoveName,
             learnsetMove.Level);
+    }
+
+    private static MoveRecordDto ToDto(SwShMoveRecord move)
+    {
+        return new MoveRecordDto(
+            move.MoveId,
+            move.Name,
+            move.Description,
+            move.Version,
+            move.CanUseMove,
+            move.Type,
+            move.TypeName,
+            move.Quality,
+            move.Category,
+            move.CategoryName,
+            move.Power,
+            move.Accuracy,
+            move.PP,
+            move.Priority,
+            move.CritStage,
+            move.MaxMovePower,
+            move.Target,
+            move.TargetName,
+            move.HitMin,
+            move.HitMax,
+            move.TurnMin,
+            move.TurnMax,
+            move.Inflict,
+            move.InflictName,
+            move.InflictPercent,
+            move.RawInflictCount,
+            move.Flinch,
+            move.EffectSequence,
+            move.Recoil,
+            move.RawHealing,
+            move.StatChanges.Select(ToDto).ToArray(),
+            move.Flags.Select(ToDto).ToArray(),
+            ToDto(move.Provenance));
+    }
+
+    private static MoveStatChangeRecordDto ToDto(SwShMoveStatChangeRecord statChange)
+    {
+        return new MoveStatChangeRecordDto(
+            statChange.Slot,
+            statChange.Stat,
+            statChange.StatName,
+            statChange.Stage,
+            statChange.Percent);
+    }
+
+    private static MoveFlagRecordDto ToDto(SwShMoveFlagRecord flag)
+    {
+        return new MoveFlagRecordDto(
+            flag.Field,
+            flag.Label,
+            flag.Enabled);
+    }
+
+    private static MoveProvenanceDto ToDto(SwShMoveProvenance provenance)
+    {
+        return new MoveProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
     }
 
     private static TextEntryRecordDto ToDto(SwShTextEntryRecord entry)

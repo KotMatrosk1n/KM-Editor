@@ -10,6 +10,7 @@ export const kmCommandNameValues = [
   'items.load',
   'items.field.update',
   'pokemon.load',
+  'moves.load',
   'text.load',
   'text.entry.update',
   'trainers.load',
@@ -48,6 +49,7 @@ export const kmCommandNames = {
   listWorkflows: 'workflow.list',
   loadItemsWorkflow: 'items.load',
   loadPokemonWorkflow: 'pokemon.load',
+  loadMovesWorkflow: 'moves.load',
   loadTextWorkflow: 'text.load',
   updateTextEntry: 'text.entry.update',
   loadTrainersWorkflow: 'trainers.load',
@@ -120,6 +122,10 @@ export const loadItemsWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadPokemonWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadMovesWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -419,6 +425,80 @@ export const pokemonWorkflowSchema = z.strictObject({
 
 export const loadPokemonWorkflowResponseSchema = z.strictObject({
   workflow: pokemonWorkflowSchema
+});
+
+export const moveProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const moveStatChangeRecordSchema = z.strictObject({
+  percent: z.number().int().nonnegative(),
+  slot: z.number().int().nonnegative(),
+  stage: z.number().int(),
+  stat: z.number().int().nonnegative(),
+  statName: z.string()
+});
+
+export const moveFlagRecordSchema = z.strictObject({
+  enabled: z.boolean(),
+  field: z.string(),
+  label: z.string()
+});
+
+export const moveRecordSchema = z.strictObject({
+  accuracy: z.number().int().nonnegative(),
+  canUseMove: z.boolean(),
+  category: z.number().int().nonnegative(),
+  categoryName: z.string(),
+  critStage: z.number().int(),
+  description: z.string().nullable(),
+  effectSequence: z.number().int().nonnegative(),
+  flags: z.array(moveFlagRecordSchema),
+  flinch: z.number().int().nonnegative(),
+  hitMax: z.number().int().nonnegative(),
+  hitMin: z.number().int().nonnegative(),
+  inflict: z.number().int().nonnegative(),
+  inflictName: z.string(),
+  inflictPercent: z.number().int().nonnegative(),
+  maxMovePower: z.number().int().nonnegative(),
+  moveId: z.number().int().nonnegative(),
+  name: z.string(),
+  power: z.number().int().nonnegative(),
+  pp: z.number().int().nonnegative(),
+  priority: z.number().int(),
+  provenance: moveProvenanceSchema,
+  quality: z.number().int().nonnegative(),
+  rawHealing: z.number().int(),
+  rawInflictCount: z.number().int().nonnegative(),
+  recoil: z.number().int(),
+  statChanges: z.array(moveStatChangeRecordSchema),
+  target: z.number().int().nonnegative(),
+  targetName: z.string(),
+  turnMax: z.number().int().nonnegative(),
+  turnMin: z.number().int().nonnegative(),
+  type: z.number().int().nonnegative(),
+  typeName: z.string(),
+  version: z.number().int().nonnegative()
+});
+
+export const movesWorkflowStatsSchema = z.strictObject({
+  activeFlagCount: z.number().int().nonnegative(),
+  enabledMoveCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative(),
+  totalMoveCount: z.number().int().nonnegative()
+});
+
+export const movesWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  moves: z.array(moveRecordSchema),
+  stats: movesWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadMovesWorkflowResponseSchema = z.strictObject({
+  workflow: movesWorkflowSchema
 });
 
 export const textProvenanceSchema = z.strictObject({
@@ -1250,6 +1330,10 @@ export type PokemonEvolutionRecord = z.infer<typeof pokemonEvolutionRecordSchema
 export type PokemonLearnsetMove = z.infer<typeof pokemonLearnsetMoveSchema>;
 export type PokemonRecord = z.infer<typeof pokemonRecordSchema>;
 export type PokemonWorkflow = z.infer<typeof pokemonWorkflowSchema>;
+export type MoveFlagRecord = z.infer<typeof moveFlagRecordSchema>;
+export type MoveRecord = z.infer<typeof moveRecordSchema>;
+export type MoveStatChangeRecord = z.infer<typeof moveStatChangeRecordSchema>;
+export type MovesWorkflow = z.infer<typeof movesWorkflowSchema>;
 export type TextEditableField = z.infer<typeof textEditableFieldSchema>;
 export type TextEntryRecord = z.infer<typeof textEntryRecordSchema>;
 export type TextWorkflow = z.infer<typeof textWorkflowSchema>;
@@ -1297,6 +1381,8 @@ export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSc
 export type LoadItemsWorkflowResponse = z.infer<typeof loadItemsWorkflowResponseSchema>;
 export type LoadPokemonWorkflowRequest = z.infer<typeof loadPokemonWorkflowRequestSchema>;
 export type LoadPokemonWorkflowResponse = z.infer<typeof loadPokemonWorkflowResponseSchema>;
+export type LoadMovesWorkflowRequest = z.infer<typeof loadMovesWorkflowRequestSchema>;
+export type LoadMovesWorkflowResponse = z.infer<typeof loadMovesWorkflowResponseSchema>;
 export type LoadTextWorkflowRequest = z.infer<typeof loadTextWorkflowRequestSchema>;
 export type LoadTextWorkflowResponse = z.infer<typeof loadTextWorkflowResponseSchema>;
 export type LoadTrainersWorkflowRequest = z.infer<typeof loadTrainersWorkflowRequestSchema>;

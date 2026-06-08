@@ -18,6 +18,7 @@ import {
   Search,
   ShieldCheck,
   Wrench,
+  Zap,
   type LucideIcon
 } from 'lucide-react';
 import {
@@ -49,6 +50,8 @@ import {
   type ItemEditableField,
   type ItemsWorkflow,
   type ItemRecord,
+  type MoveRecord,
+  type MovesWorkflow,
   type PokemonRecord,
   type PokemonWorkflow,
   type PlacedObjectRecord,
@@ -124,6 +127,11 @@ const sections: Array<{
     icon: Dna
   },
   {
+    id: 'moves',
+    label: 'Moves Data',
+    icon: Zap
+  },
+  {
     id: 'text',
     label: 'Text',
     icon: ListChecks
@@ -197,6 +205,12 @@ const workflowDefinitions: Array<{
     label: 'Pokemon Data',
     description: 'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
     icon: Dna
+  },
+  {
+    id: 'moves',
+    label: 'Moves Data',
+    description: 'Move stats, target behavior, secondary effects, flags, and source provenance.',
+    icon: Zap
   },
   {
     id: 'text',
@@ -412,6 +426,8 @@ export function App({
   const flagworkSaveWorkflow = useWorkbenchStore((state) => state.flagworkSaveWorkflow);
   const itemSearchText = useWorkbenchStore((state) => state.itemSearchText);
   const itemsWorkflow = useWorkbenchStore((state) => state.itemsWorkflow);
+  const movesSearchText = useWorkbenchStore((state) => state.movesSearchText);
+  const movesWorkflow = useWorkbenchStore((state) => state.movesWorkflow);
   const openProject = useWorkbenchStore((state) => state.openProject);
   const placementSearchText = useWorkbenchStore((state) => state.placementSearchText);
   const placementWorkflow = useWorkbenchStore((state) => state.placementWorkflow);
@@ -436,6 +452,7 @@ export function App({
   );
   const selectedEncounterTableId = useWorkbenchStore((state) => state.selectedEncounterTableId);
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
+  const selectedMoveId = useWorkbenchStore((state) => state.selectedMoveId);
   const selectedPokemonPersonalId = useWorkbenchStore(
     (state) => state.selectedPokemonPersonalId
   );
@@ -488,6 +505,8 @@ export function App({
   const setFlagworkSaveWorkflow = useWorkbenchStore((state) => state.setFlagworkSaveWorkflow);
   const setItemSearchText = useWorkbenchStore((state) => state.setItemSearchText);
   const setItemsWorkflow = useWorkbenchStore((state) => state.setItemsWorkflow);
+  const setMovesSearchText = useWorkbenchStore((state) => state.setMovesSearchText);
+  const setMovesWorkflow = useWorkbenchStore((state) => state.setMovesWorkflow);
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
   const setPlacementSearchText = useWorkbenchStore((state) => state.setPlacementSearchText);
   const setPlacementWorkflow = useWorkbenchStore((state) => state.setPlacementWorkflow);
@@ -537,6 +556,7 @@ export function App({
   );
   const setSelectedFlagId = useWorkbenchStore((state) => state.setSelectedFlagId);
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
+  const setSelectedMoveId = useWorkbenchStore((state) => state.setSelectedMoveId);
   const setSelectedPokemonPersonalId = useWorkbenchStore(
     (state) => state.setSelectedPokemonPersonalId
   );
@@ -559,6 +579,7 @@ export function App({
   const [isItemsLoading, setIsItemsLoading] = useState(false);
   const [isItemUpdating, setIsItemUpdating] = useState(false);
   const [isPokemonLoading, setIsPokemonLoading] = useState(false);
+  const [isMovesLoading, setIsMovesLoading] = useState(false);
   const [isTextLoading, setIsTextLoading] = useState(false);
   const [isTextUpdating, setIsTextUpdating] = useState(false);
   const [isTrainersLoading, setIsTrainersLoading] = useState(false);
@@ -686,6 +707,20 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsPokemonLoading(false);
+    }
+  };
+
+  const handleOpenMovesWorkflow = async () => {
+    setIsMovesLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadMovesWorkflow({ paths: toProjectPaths(draftPaths) });
+      setMovesWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsMovesLoading(false);
     }
   };
 
@@ -913,6 +948,12 @@ export function App({
           void handleOpenPokemonWorkflow();
         }
         break;
+      case 'moves':
+        if (!movesWorkflow && !isMovesLoading) {
+          markLazyLoadStarted();
+          void handleOpenMovesWorkflow();
+        }
+        break;
       case 'text':
         if (!textWorkflow && !isTextLoading) {
           markLazyLoadStarted();
@@ -986,6 +1027,7 @@ export function App({
     isExeFsPatchLoading,
     isFlagworkSaveLoading,
     isItemsLoading,
+    isMovesLoading,
     isPlacementLoading,
     isPokemonLoading,
     isRaidRewardsLoading,
@@ -996,6 +1038,7 @@ export function App({
     isTrainersLoading,
     itemsWorkflow,
     lazyLoadedWorkflowSections,
+    movesWorkflow,
     placementWorkflow,
     pokemonWorkflow,
     raidRewardsWorkflow,
@@ -1398,6 +1441,7 @@ export function App({
             <WorkflowsSection
               health={health}
               isItemsLoading={isItemsLoading}
+              isMovesLoading={isMovesLoading}
               isPokemonLoading={isPokemonLoading}
               isTextLoading={isTextLoading}
               isTrainersLoading={isTrainersLoading}
@@ -1413,6 +1457,7 @@ export function App({
               onOpenExeFsPatchWorkflow={handleOpenExeFsPatchWorkflow}
               onOpenFlagworkSaveWorkflow={handleOpenFlagworkSaveWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
+              onOpenMovesWorkflow={handleOpenMovesWorkflow}
               onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
               onOpenPlacementWorkflow={handleOpenPlacementWorkflow}
               onOpenRaidRewardsWorkflow={handleOpenRaidRewardsWorkflow}
@@ -1453,6 +1498,19 @@ export function App({
                 searchText={pokemonSearchText}
                 selectedPokemonPersonalId={selectedPokemonPersonalId}
                 workflow={pokemonWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'moves' ? (
+            isMovesLoading && !movesWorkflow ? (
+              <WorkflowLoadingPanel label="Moves Data" />
+            ) : (
+              <MovesSection
+                onSearchChange={setMovesSearchText}
+                onSelectMove={setSelectedMoveId}
+                searchText={movesSearchText}
+                selectedMoveId={selectedMoveId}
+                workflow={movesWorkflow}
               />
             )
           ) : null}
@@ -1863,6 +1921,7 @@ function WorkflowsSection({
   isEncountersLoading,
   isExeFsPatchLoading,
   isItemsLoading,
+  isMovesLoading,
   isPokemonLoading,
   isShopsLoading,
   isTextLoading,
@@ -1876,6 +1935,7 @@ function WorkflowsSection({
   onOpenExeFsPatchWorkflow,
   onOpenFlagworkSaveWorkflow,
   onOpenItemsWorkflow,
+  onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
   onOpenPlacementWorkflow,
   onOpenRaidRewardsWorkflow,
@@ -1891,6 +1951,7 @@ function WorkflowsSection({
   isEncountersLoading: boolean;
   isExeFsPatchLoading: boolean;
   isItemsLoading: boolean;
+  isMovesLoading: boolean;
   isPokemonLoading: boolean;
   isShopsLoading: boolean;
   isTextLoading: boolean;
@@ -1904,6 +1965,7 @@ function WorkflowsSection({
   onOpenExeFsPatchWorkflow: () => void;
   onOpenFlagworkSaveWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
+  onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
   onOpenPlacementWorkflow: () => void;
   onOpenRaidRewardsWorkflow: () => void;
@@ -1929,6 +1991,7 @@ function WorkflowsSection({
           const Icon = definition.icon;
           const isItemsWorkflow = definition.id === 'items';
           const isPokemonWorkflow = definition.id === 'pokemon';
+          const isMovesWorkflow = definition.id === 'moves';
           const isTextWorkflow = definition.id === 'text';
           const isTrainersWorkflow = definition.id === 'trainers';
           const isShopsWorkflow = definition.id === 'shops';
@@ -1941,6 +2004,7 @@ function WorkflowsSection({
           const isSpreadsheetImportWorkflow = definition.id === 'spreadsheetImport';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenPokemon = isPokemonWorkflow && workflowState.availability !== 'disabled';
+          const canOpenMoves = isMovesWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
           const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
@@ -1992,6 +2056,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isPokemonLoading ? 'Loading' : 'Open Pokemon'}</span>
+                  </button>
+                ) : null}
+                {isMovesWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenMoves || isMovesLoading}
+                    onClick={onOpenMovesWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isMovesLoading ? 'Loading' : 'Open Moves'}</span>
                   </button>
                 ) : null}
                 {isTextWorkflow ? (
@@ -2656,6 +2731,297 @@ function SelectedPokemonPanel({ pokemon }: { pokemon: PokemonRecord | null }) {
         </>
       ) : (
         <p className="empty-copy">No Pokemon selected.</p>
+      )}
+    </aside>
+  );
+}
+
+function MovesSection({
+  onSearchChange,
+  onSelectMove,
+  searchText,
+  selectedMoveId,
+  workflow
+}: {
+  onSearchChange: (searchText: string) => void;
+  onSelectMove: (moveId: number | null) => void;
+  searchText: string;
+  selectedMoveId: number | null;
+  workflow: MovesWorkflow | null;
+}) {
+  const moves = workflow?.moves ?? [];
+  const filteredMoves = useMemo(() => filterMoves(moves, searchText), [moves, searchText]);
+  const selectedMove = useMemo(
+    () =>
+      filteredMoves.find((candidate) => candidate.moveId === selectedMoveId) ??
+      filteredMoves[0] ??
+      null,
+    [filteredMoves, selectedMoveId]
+  );
+
+  return (
+    <>
+      <section aria-labelledby="moves-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Zap aria-hidden="true" size={18} />
+          <h2 id="moves-heading">Moves Data</h2>
+        </div>
+
+        <div className="items-toolbar moves-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search moves"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search moves"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded records"
+            value={workflow ? workflow.stats.totalMoveCount.toString() : '0'}
+          />
+          <Metric
+            label="Enabled"
+            value={workflow ? workflow.stats.enabledMoveCount.toString() : '0'}
+          />
+          <Metric
+            label="Active flags"
+            value={workflow ? workflow.stats.activeFlagCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="items-layout moves-layout">
+            <div
+              aria-colcount={8}
+              aria-label="Moves Data"
+              aria-rowcount={filteredMoves.length + 1}
+              className="moves-table"
+              role="table"
+            >
+              <div className="moves-row moves-row-heading" role="row">
+                <span role="columnheader">ID</span>
+                <span role="columnheader">Move</span>
+                <span role="columnheader">Type</span>
+                <span role="columnheader">Category</span>
+                <span role="columnheader">Power</span>
+                <span role="columnheader">Acc</span>
+                <span role="columnheader">PP</span>
+                <span role="columnheader">Flags</span>
+              </div>
+              <VirtualTableBody
+                getKey={(move) => move.moveId}
+                items={filteredMoves}
+                renderRow={(move) => (
+                  <button
+                    className={`moves-row ${
+                      selectedMove?.moveId === move.moveId ? 'moves-row-selected' : ''
+                    }`}
+                    onClick={() => onSelectMove(move.moveId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{move.moveId}</span>
+                    <span role="cell">{move.name}</span>
+                    <span role="cell">{move.typeName}</span>
+                    <span role="cell">{move.categoryName}</span>
+                    <span role="cell">{formatMovePower(move.power)}</span>
+                    <span role="cell">{formatMoveAccuracy(move.accuracy)}</span>
+                    <span role="cell">{move.pp}</span>
+                    <span role="cell">{formatMoveActiveFlags(move)}</span>
+                  </button>
+                )}
+              />
+            </div>
+
+            <SelectedMovePanel move={selectedMove} />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Moves Data from Workflows to load backend move data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedMovePanel({ move }: { move: MoveRecord | null }) {
+  const activeFlags = move?.flags.filter((flag) => flag.enabled) ?? [];
+  const visibleStatChanges =
+    move?.statChanges.filter(
+      (statChange) => statChange.stat !== 0 || statChange.stage !== 0 || statChange.percent !== 0
+    ) ?? [];
+
+  return (
+    <aside aria-label="Selected move details" className="item-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Move</h3>
+      </div>
+
+      {move ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Name</dt>
+              <dd>{move.name}</dd>
+            </div>
+            <div>
+              <dt>Move ID</dt>
+              <dd>{move.moveId}</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>{move.canUseMove ? 'Enabled' : 'Disabled'}</dd>
+            </div>
+            <div>
+              <dt>Type / category</dt>
+              <dd>
+                {move.typeName} / {move.categoryName}
+              </dd>
+            </div>
+            <div>
+              <dt>Description</dt>
+              <dd>{move.description ?? 'No description text.'}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{move.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(move.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(move.provenance.fileState)}</dd>
+            </div>
+          </dl>
+
+          <div className="inspector-block">
+            <h4>Core Stats</h4>
+            <dl className="item-provenance-list compact-dl">
+              <div>
+                <dt>Power</dt>
+                <dd>{formatMovePower(move.power)}</dd>
+              </div>
+              <div>
+                <dt>Accuracy</dt>
+                <dd>{formatMoveAccuracy(move.accuracy)}</dd>
+              </div>
+              <div>
+                <dt>PP</dt>
+                <dd>{move.pp}</dd>
+              </div>
+              <div>
+                <dt>Priority</dt>
+                <dd>{move.priority}</dd>
+              </div>
+              <div>
+                <dt>Crit stage</dt>
+                <dd>{move.critStage}</dd>
+              </div>
+              <div>
+                <dt>Max move</dt>
+                <dd>{move.maxMovePower}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="inspector-block">
+            <h4>Targeting</h4>
+            <dl className="item-provenance-list compact-dl">
+              <div>
+                <dt>Target</dt>
+                <dd>{move.targetName}</dd>
+              </div>
+              <div>
+                <dt>Hits</dt>
+                <dd>
+                  {move.hitMin}-{move.hitMax}
+                </dd>
+              </div>
+              <div>
+                <dt>Turns</dt>
+                <dd>
+                  {move.turnMin}-{move.turnMax}
+                </dd>
+              </div>
+              <div>
+                <dt>Quality</dt>
+                <dd>{move.quality}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="inspector-block">
+            <h4>Secondary Effects</h4>
+            <dl className="item-provenance-list compact-dl">
+              <div>
+                <dt>Inflict</dt>
+                <dd>{move.inflictName}</dd>
+              </div>
+              <div>
+                <dt>Inflict %</dt>
+                <dd>{move.inflictPercent}</dd>
+              </div>
+              <div>
+                <dt>Raw count</dt>
+                <dd>{move.rawInflictCount}</dd>
+              </div>
+              <div>
+                <dt>Flinch</dt>
+                <dd>{move.flinch}</dd>
+              </div>
+              <div>
+                <dt>Recoil</dt>
+                <dd>{move.recoil}</dd>
+              </div>
+              <div>
+                <dt>Healing</dt>
+                <dd>{move.rawHealing}</dd>
+              </div>
+              <div>
+                <dt>Effect seq</dt>
+                <dd>{move.effectSequence}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="inspector-block">
+            <h4>Stat Changes</h4>
+            {visibleStatChanges.length > 0 ? (
+              <ul className="inspector-list">
+                {visibleStatChanges.map((statChange) => (
+                  <li key={statChange.slot}>
+                    {statChange.statName}: {statChange.stage} stage, {statChange.percent}%
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-copy">No stat change effects.</p>
+            )}
+          </div>
+
+          <div className="inspector-block">
+            <h4>Active Flags</h4>
+            {activeFlags.length > 0 ? (
+              <ul className="inspector-list">
+                {activeFlags.map((flag) => (
+                  <li key={flag.field}>{flag.label}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-copy">No active flags.</p>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No move selected.</p>
       )}
     </aside>
   );
@@ -6089,6 +6455,48 @@ function filterPokemon(pokemon: PokemonRecord[], searchText: string) {
   );
 }
 
+function filterMoves(moves: MoveRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return moves;
+  }
+
+  return moves.filter((move) =>
+    [
+      move.moveId.toString(),
+      move.name,
+      move.description ?? '',
+      move.typeName,
+      move.categoryName,
+      move.power.toString(),
+      move.accuracy.toString(),
+      move.pp.toString(),
+      move.priority.toString(),
+      move.critStage.toString(),
+      move.maxMovePower.toString(),
+      move.targetName,
+      move.hitMin.toString(),
+      move.hitMax.toString(),
+      move.turnMin.toString(),
+      move.turnMax.toString(),
+      move.inflictName,
+      move.inflictPercent.toString(),
+      move.flinch.toString(),
+      move.recoil.toString(),
+      move.rawHealing.toString(),
+      move.provenance.sourceFile,
+      ...move.flags.flatMap((flag) => [flag.field, flag.label, flag.enabled ? 'enabled' : '']),
+      ...move.statChanges.flatMap((statChange) => [
+        statChange.slot.toString(),
+        statChange.statName,
+        statChange.stage.toString(),
+        statChange.percent.toString()
+      ])
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function filterTextEntries(entries: TextEntryRecord[], searchText: string) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -6831,6 +7239,27 @@ function formatPokemonDexPresence(pokemon: PokemonRecord) {
     .join(', ');
 }
 
+function formatMovePower(power: number) {
+  return power === 0 ? '-' : power.toString();
+}
+
+function formatMoveAccuracy(accuracy: number) {
+  return accuracy === 0 ? '-' : accuracy.toString();
+}
+
+function formatMoveActiveFlags(move: MoveRecord) {
+  const activeFlags = move.flags.filter((flag) => flag.enabled);
+
+  if (activeFlags.length === 0) {
+    return '-';
+  }
+
+  return activeFlags
+    .slice(0, 3)
+    .map((flag) => flag.label)
+    .join(', ');
+}
+
 const workflowAvailabilityLabels = {
   available: 'Available',
   disabled: 'Disabled',
@@ -6848,6 +7277,7 @@ function formatSourceLayer(
     | EncounterTableRecord['provenance']['sourceLayer']
     | FlagRecord['provenance']['sourceLayer']
     | ItemRecord['provenance']['sourceLayer']
+    | MoveRecord['provenance']['sourceLayer']
     | PokemonRecord['provenance']['sourceLayer']
     | RaidRewardTableRecord['provenance']['sourceLayer']
     | SaveBlockRecord['provenance']['sourceLayer']
@@ -6878,6 +7308,7 @@ function formatFileState(
     | EncounterTableRecord['provenance']['fileState']
     | FlagRecord['provenance']['fileState']
     | ItemRecord['provenance']['fileState']
+    | MoveRecord['provenance']['fileState']
     | PokemonRecord['provenance']['fileState']
     | RaidRewardTableRecord['provenance']['fileState']
     | SaveBlockRecord['provenance']['fileState']

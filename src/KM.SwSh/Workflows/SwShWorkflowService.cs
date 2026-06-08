@@ -5,6 +5,7 @@ using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Items;
+using KM.SwSh.Moves;
 using KM.SwSh.Placement;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Raids;
@@ -20,6 +21,7 @@ public sealed class SwShWorkflowService
 {
     private readonly SwShItemsWorkflowService itemsWorkflowService;
     private readonly SwShPokemonWorkflowService pokemonWorkflowService;
+    private readonly SwShMovesWorkflowService movesWorkflowService;
     private readonly SwShEncountersWorkflowService encountersWorkflowService;
     private readonly SwShExeFsPatchWorkflowService exeFsPatchWorkflowService;
     private readonly SwShFlagworkSaveWorkflowService flagworkSaveWorkflowService;
@@ -36,6 +38,7 @@ public sealed class SwShWorkflowService
         ProjectWorkspaceService? projectWorkspaceService = null,
         SwShItemsWorkflowService? itemsWorkflowService = null,
         SwShPokemonWorkflowService? pokemonWorkflowService = null,
+        SwShMovesWorkflowService? movesWorkflowService = null,
         SwShTextWorkflowService? textWorkflowService = null,
         SwShTrainersWorkflowService? trainersWorkflowService = null,
         SwShShopsWorkflowService? shopsWorkflowService = null,
@@ -52,6 +55,7 @@ public sealed class SwShWorkflowService
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
         this.pokemonWorkflowService = pokemonWorkflowService ?? new SwShPokemonWorkflowService();
+        this.movesWorkflowService = movesWorkflowService ?? new SwShMovesWorkflowService();
         this.encountersWorkflowService = encountersWorkflowService ?? new SwShEncountersWorkflowService();
         this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService(sharedParsedDataCache);
         this.flagworkSaveWorkflowService = flagworkSaveWorkflowService ?? new SwShFlagworkSaveWorkflowService();
@@ -74,6 +78,7 @@ public sealed class SwShWorkflowService
             [
                 itemsWorkflowService.CreateSummary(project),
                 pokemonWorkflowService.CreateSummary(project),
+                movesWorkflowService.CreateSummary(project),
                 textWorkflowService.CreateSummary(project),
                 trainersWorkflowService.CreateSummary(project),
                 shopsWorkflowService.CreateSummary(project),
@@ -103,6 +108,15 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return pokemonWorkflowService.Load(project);
+    }
+
+    public SwShMovesWorkflow LoadMoves(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return movesWorkflowService.Load(project);
     }
 
     public SwShTextWorkflow LoadText(ProjectPaths paths)

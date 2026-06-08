@@ -19,6 +19,8 @@ import {
   loadFlagworkSaveWorkflowResponseSchema,
   loadItemsWorkflowRequestSchema,
   loadItemsWorkflowResponseSchema,
+  loadMovesWorkflowRequestSchema,
+  loadMovesWorkflowResponseSchema,
   loadPokemonWorkflowRequestSchema,
   loadPokemonWorkflowResponseSchema,
   loadPlacementWorkflowRequestSchema,
@@ -221,6 +223,8 @@ describe('bridge contracts', () => {
     const itemsResponseSchema = createBridgeResponseSchema(loadItemsWorkflowResponseSchema);
     const pokemonRequestSchema = createBridgeRequestSchema(loadPokemonWorkflowRequestSchema);
     const pokemonResponseSchema = createBridgeResponseSchema(loadPokemonWorkflowResponseSchema);
+    const movesRequestSchema = createBridgeRequestSchema(loadMovesWorkflowRequestSchema);
+    const movesResponseSchema = createBridgeResponseSchema(loadMovesWorkflowResponseSchema);
     const textRequestSchema = createBridgeRequestSchema(loadTextWorkflowRequestSchema);
     const textResponseSchema = createBridgeResponseSchema(loadTextWorkflowResponseSchema);
     const trainersRequestSchema = createBridgeRequestSchema(loadTrainersWorkflowRequestSchema);
@@ -404,6 +408,89 @@ describe('bridge contracts', () => {
         diagnostics: [],
         id: 'pokemon',
         label: 'Pokemon Data'
+      }
+    } as const;
+    const movesWorkflow = {
+      diagnostics: [],
+      moves: [
+        {
+          accuracy: 100,
+          canUseMove: true,
+          category: 1,
+          categoryName: 'Physical',
+          critStage: 0,
+          description: 'A physical attack in which the user charges and slams into the target.',
+          effectSequence: 12,
+          flags: [
+            {
+              enabled: true,
+              field: 'makesContact',
+              label: 'Makes Contact'
+            },
+            {
+              enabled: true,
+              field: 'protect',
+              label: 'Blocked By Protect'
+            }
+          ],
+          flinch: 0,
+          hitMax: 1,
+          hitMin: 1,
+          inflict: 0,
+          inflictName: 'None',
+          inflictPercent: 0,
+          maxMovePower: 90,
+          moveId: 33,
+          name: 'Tackle',
+          power: 40,
+          pp: 35,
+          priority: 0,
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/pml/waza/waza_033.bin',
+            sourceLayer: 'base'
+          },
+          quality: 2,
+          rawHealing: 0,
+          rawInflictCount: 0,
+          recoil: 0,
+          statChanges: [
+            {
+              percent: 0,
+              slot: 1,
+              stage: 0,
+              stat: 0,
+              statName: 'None'
+            },
+            {
+              percent: 30,
+              slot: 2,
+              stage: -1,
+              stat: 1,
+              statName: 'Attack'
+            }
+          ],
+          target: 3,
+          targetName: 'Opponent',
+          turnMax: 0,
+          turnMin: 0,
+          type: 0,
+          typeName: 'Normal',
+          version: 1
+        }
+      ],
+      stats: {
+        activeFlagCount: 2,
+        enabledMoveCount: 1,
+        sourceFileCount: 4,
+        totalMoveCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Move stats, target behavior, secondary effects, flags, and source provenance.',
+        diagnostics: [],
+        id: 'moves',
+        label: 'Moves Data'
       }
     } as const;
     const textWorkflow = {
@@ -1015,6 +1102,7 @@ describe('bridge contracts', () => {
           workflows: [
             itemsWorkflow.summary,
             pokemonWorkflow.summary,
+            movesWorkflow.summary,
             textWorkflow.summary,
             trainersWorkflow.summary,
             shopsWorkflow.summary,
@@ -1070,6 +1158,28 @@ describe('bridge contracts', () => {
       pokemonResponseSchema.safeParse({
         payload: {
           workflow: pokemonWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      movesRequestSchema.safeParse({
+        command: kmCommandNames.loadMovesWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null,
+            saveFilePath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      movesResponseSchema.safeParse({
+        payload: {
+          workflow: movesWorkflow
         }
       }).success
     ).toBe(true);

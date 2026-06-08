@@ -12,6 +12,7 @@ internal static class SwShPerformanceFixtureProject
     public const int ItemCount = 1_500;
     public const int TrainerCount = 120;
     public const int PokemonCount = 920;
+    public const int MoveCount = 200;
     public const int TextTableCount = 120;
     public const int TextLinesPerTable = 40;
     public const int ExtraRomFsFileCount = 600;
@@ -33,6 +34,7 @@ internal static class SwShPerformanceFixtureProject
         WritePokemonData(temp);
         WriteTextTables(temp);
         WriteTrainers(temp);
+        WriteMovesData(temp);
         WriteShopData(temp);
         WriteDataTablePack(temp);
         WritePlacement(temp);
@@ -146,6 +148,110 @@ internal static class SwShPerformanceFixtureProject
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/wazaname.dat",
             CreateTextTable(CreateIndexedNames("Move", 32)));
+    }
+
+    private static void WriteMovesData(TemporarySwShProject temp)
+    {
+        for (var moveId = 0; moveId < MoveCount; moveId++)
+        {
+            temp.WriteBaseRomFsFile(
+                $"bin/pml/waza/waza_{moveId:D3}.bin",
+                SwShMoveDataFile.Write(CreateMoveRecord(moveId)));
+        }
+
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            CreateTextTable(CreateIndexedNames("Move", MoveCount)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazainfo.dat",
+            CreateTextTable(Enumerable.Range(0, MoveCount)
+                .Select(index => $"Synthetic move info {index}")
+                .ToArray()));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/typename.dat",
+            CreateTextTable(
+                "Normal",
+                "Fighting",
+                "Flying",
+                "Poison",
+                "Ground",
+                "Rock",
+                "Bug",
+                "Ghost",
+                "Steel",
+                "Fire",
+                "Water",
+                "Grass",
+                "Electric",
+                "Psychic",
+                "Ice",
+                "Dragon",
+                "Dark",
+                "Fairy"));
+    }
+
+    private static SwShMoveDataRecord CreateMoveRecord(int moveId)
+    {
+        var type = checked((byte)(moveId % 18));
+        var category = checked((byte)(moveId % 3));
+        var power = checked((byte)(category == 0 ? 0 : 20 + (moveId % 130)));
+
+        return new SwShMoveDataRecord(
+            Version: 1,
+            MoveId: checked((uint)moveId),
+            CanUseMove: moveId % 11 != 0,
+            new SwShMoveCoreStats(
+                Type: type,
+                Quality: checked((byte)(moveId % 8)),
+                Category: category,
+                Power: power,
+                Accuracy: 100,
+                PP: checked((byte)(5 + (moveId % 35))),
+                Priority: checked((sbyte)(moveId % 5 == 0 ? 1 : 0)),
+                CritStage: checked((sbyte)(moveId % 9 == 0 ? 1 : 0)),
+                GigantamaxPower: checked((byte)(90 + (moveId % 60)))),
+            new SwShMoveTargeting(
+                RawTarget: checked((byte)(moveId % 12)),
+                HitMin: 1,
+                HitMax: checked((byte)(moveId % 6 == 0 ? 5 : 1)),
+                TurnMin: 0,
+                TurnMax: 0),
+            new SwShMoveSecondaryEffects(
+                Inflict: checked((ushort)(moveId % 7)),
+                InflictPercent: checked((byte)(moveId % 3 == 0 ? 30 : 0)),
+                RawInflictCount: 1,
+                Flinch: checked((byte)(moveId % 10 == 0 ? 10 : 0)),
+                EffectSequence: checked((ushort)moveId),
+                Recoil: checked((sbyte)(moveId % 17 == 0 ? -25 : 0)),
+                RawHealing: checked((sbyte)(moveId % 19 == 0 ? -50 : 0))),
+            [
+                new SwShMoveStatChange(
+                    1,
+                    Stat: checked((byte)(moveId % 8)),
+                    Stage: checked((sbyte)(moveId % 4 == 0 ? -1 : 0)),
+                    Percent: checked((byte)(moveId % 4 == 0 ? 30 : 0))),
+                new SwShMoveStatChange(2, Stat: 0, Stage: 0, Percent: 0),
+                new SwShMoveStatChange(3, Stat: 0, Stage: 0, Percent: 0),
+            ],
+            new SwShMoveFlags(
+                MakesContact: moveId % 2 == 0,
+                Charge: false,
+                Recharge: moveId % 23 == 0,
+                Protect: true,
+                Reflectable: false,
+                Snatch: false,
+                Mirror: false,
+                Punch: moveId % 13 == 0,
+                Sound: moveId % 29 == 0,
+                Gravity: false,
+                Defrost: false,
+                DistanceTriple: false,
+                Heal: moveId % 19 == 0,
+                IgnoreSubstitute: false,
+                FailSkyBattle: false,
+                AnimateAlly: false,
+                Dance: false,
+                Metronome: moveId % 31 != 0));
     }
 
     private static void WriteShopData(TemporarySwShProject temp)

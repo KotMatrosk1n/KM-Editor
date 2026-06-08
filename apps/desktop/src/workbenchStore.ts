@@ -10,6 +10,7 @@ import {
   type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
   type ItemsWorkflow,
+  type MovesWorkflow,
   type PlacementWorkflow,
   type PokemonWorkflow,
   type ProjectFileGraph,
@@ -29,6 +30,7 @@ export type WorkbenchSection =
   | 'workflows'
   | 'items'
   | 'pokemon'
+  | 'moves'
   | 'text'
   | 'trainers'
   | 'shops'
@@ -71,6 +73,8 @@ type WorkbenchState = {
   flagworkSaveWorkflow: FlagworkSaveWorkflow | null;
   itemSearchText: string;
   itemsWorkflow: ItemsWorkflow | null;
+  movesSearchText: string;
+  movesWorkflow: MovesWorkflow | null;
   openProject: OpenProjectState | null;
   placementSearchText: string;
   placementWorkflow: PlacementWorkflow | null;
@@ -95,6 +99,7 @@ type WorkbenchState = {
   selectedRoyalCandyWorkflowId: string | null;
   selectedSpreadsheetImportProfileId: string | null;
   selectedItemId: number | null;
+  selectedMoveId: number | null;
   selectedPokemonPersonalId: number | null;
   selectedEncounterTableId: string | null;
   selectedShopId: string | null;
@@ -121,6 +126,8 @@ type WorkbenchState = {
   setFlagworkSaveWorkflow: (flagworkSaveWorkflow: FlagworkSaveWorkflow) => void;
   setItemsWorkflow: (itemsWorkflow: ItemsWorkflow) => void;
   setItemSearchText: (itemSearchText: string) => void;
+  setMovesSearchText: (movesSearchText: string) => void;
+  setMovesWorkflow: (movesWorkflow: MovesWorkflow) => void;
   setOpenProject: (project: OpenProjectState) => void;
   setPlacementSearchText: (placementSearchText: string) => void;
   setPlacementWorkflow: (placementWorkflow: PlacementWorkflow) => void;
@@ -148,6 +155,7 @@ type WorkbenchState = {
     selectedSpreadsheetImportProfileId: string | null
   ) => void;
   setSelectedItemId: (selectedItemId: number | null) => void;
+  setSelectedMoveId: (selectedMoveId: number | null) => void;
   setSelectedPokemonPersonalId: (selectedPokemonPersonalId: number | null) => void;
   setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
   setSelectedShopId: (selectedShopId: string | null) => void;
@@ -184,6 +192,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   flagworkSaveWorkflow: null,
   itemSearchText: '',
   itemsWorkflow: null,
+  movesSearchText: '',
+  movesWorkflow: null,
   openProject: null,
   placementSearchText: '',
   placementWorkflow: null,
@@ -207,6 +217,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedRoyalCandyWorkflowId: null,
   selectedSpreadsheetImportProfileId: null,
   selectedItemId: null,
+  selectedMoveId: null,
   selectedPokemonPersonalId: null,
   selectedSaveBlockId: null,
   selectedEncounterTableId: null,
@@ -267,6 +278,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         selectedItemId
       };
     }),
+  setMovesWorkflow: (movesWorkflow) =>
+    set((state) => {
+      const selectedMoveId = movesWorkflow.moves.some(
+        (move) => move.moveId === state.selectedMoveId
+      )
+        ? state.selectedMoveId
+        : (movesWorkflow.moves[0]?.moveId ?? null);
+
+      return {
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'moves'),
+        applyResult: null,
+        changePlan: null,
+        editSession: null,
+        editValidationDiagnostics: [],
+        movesSearchText: '',
+        movesWorkflow,
+        selectedMoveId
+      };
+    }),
   setPokemonWorkflow: (pokemonWorkflow) =>
     set((state) => {
       const selectedPokemonPersonalId = pokemonWorkflow.pokemon.some(
@@ -287,6 +317,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       };
     }),
   setItemSearchText: (itemSearchText) => set({ itemSearchText }),
+  setMovesSearchText: (movesSearchText) => set({ movesSearchText }),
   setShopSearchText: (shopSearchText) => set({ shopSearchText }),
   setTextSearchText: (textSearchText) => set({ textSearchText }),
   setTrainerSearchText: (trainerSearchText) => set({ trainerSearchText }),
@@ -304,6 +335,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       flagworkSaveWorkflow: null,
       itemSearchText: '',
       itemsWorkflow: null,
+      movesSearchText: '',
+      movesWorkflow: null,
       openProject,
       placementSearchText: '',
       placementWorkflow: null,
@@ -326,6 +359,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       selectedSpreadsheetImportProfileId: null,
       selectedFlagId: null,
       selectedItemId: null,
+      selectedMoveId: null,
       selectedPokemonPersonalId: null,
       selectedPlacementObjectId: null,
       selectedRaidRewardTableId: null,
@@ -374,6 +408,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set({ selectedSpreadsheetImportProfileId }),
   setSelectedEncounterTableId: (selectedEncounterTableId) => set({ selectedEncounterTableId }),
   setSelectedItemId: (selectedItemId) => set({ selectedItemId }),
+  setSelectedMoveId: (selectedMoveId) => set({ selectedMoveId }),
   setSelectedPokemonPersonalId: (selectedPokemonPersonalId) =>
     set({ selectedPokemonPersonalId }),
   setSelectedShopId: (selectedShopId) => set({ selectedShopId }),
