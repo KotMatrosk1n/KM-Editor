@@ -1933,6 +1933,87 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchRoyalCandyCleanupStagesAndDeletesReviewedOutputs()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteRoyalCandyApplyInputs(temp);
+        temp.WriteOutputFile("exefs/main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
+        temp.WriteOutputFile(
+            SwShRoyalCandyWorkflowService.BagEventScriptPath,
+            CreateRoyalCandyBagEventScript());
+
+        var dispatcher = new ProjectBridgeDispatcher();
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageRoyalCandyWorkflow,
+            new StageRoyalCandyWorkflowRequest(
+                temp.Paths,
+                WorkflowId: "royal-candy-uninstall",
+                Session: null),
+            requestId: "request-royal-candy-cleanup-stage");
+
+        var stageResponse = DeserializeResponse<StageRoyalCandyWorkflowResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+        Assert.Single(stageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("royal-candy-uninstall", stageResponse.Payload.Session.PendingEdits[0].RecordId);
+        Assert.DoesNotContain(
+            stageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-royal-candy-cleanup-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.True(planResponse.Payload.ChangePlan.CanApply);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.BagEventScriptPath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageResponse.Payload.Session,
+                planResponse.Payload.ChangePlan),
+            requestId: "request-royal-candy-cleanup-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.DoesNotContain(
+            applyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShRoyalCandyWorkflowService.BagEventScriptPath);
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "exefs", "main")));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "script",
+            "amx",
+            "main_event_0020.amx")));
+        Assert.True(File.Exists(Path.Combine(temp.BaseExeFsPath, "main")));
+        Assert.True(File.Exists(Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "script",
+            "amx",
+            "main_event_0020.amx")));
+    }
+
+    [Fact]
     public void DispatchLoadSpreadsheetImportWorkflowReturnsGeneratedImportProfiles()
     {
         using var temp = TemporaryBridgeProject.Create();
