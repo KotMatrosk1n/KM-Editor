@@ -59,6 +59,9 @@ import {
   type MovesWorkflow,
   type PokemonCompatibilityGroup,
   type PokemonEditableField,
+  type PokemonEditableFieldOption,
+  type PokemonEvolutionMethodOption,
+  type PokemonEvolutionRecord,
   type PokemonRecord,
   type PokemonWorkflow,
   type PlacedObjectRecord,
@@ -2760,6 +2763,7 @@ function PokemonSection({
               canEditPokemon={canEditPokemon}
               editSession={editSession}
               editableFields={workflow.editableFields}
+              evolutionMethodOptions={workflow.evolutionMethodOptions}
               isEditStarting={isEditStarting}
               isPokemonUpdating={isPokemonUpdating}
               onStartEditSession={onStartEditSession}
@@ -2783,6 +2787,7 @@ function SelectedPokemonPanel({
   canEditPokemon,
   editSession,
   editableFields,
+  evolutionMethodOptions,
   isEditStarting,
   isPokemonUpdating,
   onStartEditSession,
@@ -2794,6 +2799,7 @@ function SelectedPokemonPanel({
   canEditPokemon: boolean;
   editSession: EditSession | null;
   editableFields: PokemonEditableField[];
+  evolutionMethodOptions: PokemonEvolutionMethodOption[];
   isEditStarting: boolean;
   isPokemonUpdating: boolean;
   onStartEditSession: () => void;
@@ -2864,6 +2870,46 @@ function SelectedPokemonPanel({
   const [newEvolutionSpeciesDraft, setNewEvolutionSpeciesDraft] = useState('');
   const [newEvolutionFormDraft, setNewEvolutionFormDraft] = useState('0');
   const [newEvolutionLevelDraft, setNewEvolutionLevelDraft] = useState('');
+  const selectedEvolutionMethodOptions = useMemo(
+    () => addCurrentEvolutionMethodOption(evolutionMethodOptions, evolutionMethodDraft),
+    [evolutionMethodOptions, evolutionMethodDraft]
+  );
+  const selectedEvolutionMethodOption = useMemo(
+    () => findEvolutionMethodOption(selectedEvolutionMethodOptions, evolutionMethodDraft),
+    [evolutionMethodDraft, selectedEvolutionMethodOptions]
+  );
+  const selectedEvolutionArgumentOptions = useMemo(
+    () => addCurrentPokemonFieldOption(
+      selectedEvolutionMethodOption?.argumentOptions ?? [],
+      evolutionArgumentDraft,
+      selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'
+    ),
+    [
+      evolutionArgumentDraft,
+      selectedEvolutionMethodOption?.argumentLabel,
+      selectedEvolutionMethodOption?.argumentOptions
+    ]
+  );
+  const newEvolutionMethodOptions = useMemo(
+    () => addCurrentEvolutionMethodOption(evolutionMethodOptions, newEvolutionMethodDraft),
+    [evolutionMethodOptions, newEvolutionMethodDraft]
+  );
+  const newEvolutionMethodOption = useMemo(
+    () => findEvolutionMethodOption(newEvolutionMethodOptions, newEvolutionMethodDraft),
+    [newEvolutionMethodDraft, newEvolutionMethodOptions]
+  );
+  const newEvolutionArgumentOptions = useMemo(
+    () => addCurrentPokemonFieldOption(
+      newEvolutionMethodOption?.argumentOptions ?? [],
+      newEvolutionArgumentDraft,
+      newEvolutionMethodOption?.argumentLabel ?? 'Argument'
+    ),
+    [
+      newEvolutionArgumentDraft,
+      newEvolutionMethodOption?.argumentLabel,
+      newEvolutionMethodOption?.argumentOptions
+    ]
+  );
   const [selectedLearnsetSlot, setSelectedLearnsetSlot] = useState(
     pokemon?.learnset[0]?.slot ?? 0
   );
@@ -3292,13 +3338,13 @@ function SelectedPokemonPanel({
                         type="button"
                       >
                         <span>#{evolution.slot + 1}</span>
-                        <span>M {evolution.method}</span>
+                        <span>{formatEvolutionMethodSummary(evolution)}</span>
                         <strong>
                           {formatReferenceLabel(pokemonSpeciesLabels, evolution.species, 'Species')}
                         </strong>
                         <span>F {evolution.form}</span>
                         <span>Lv. {evolution.level}</span>
-                        <span>Arg {evolution.argument}</span>
+                        <span>{formatEvolutionArgumentSummary(evolution)}</span>
                       </button>
                     </li>
                   ))}
@@ -3311,25 +3357,54 @@ function SelectedPokemonPanel({
                 <div className="learnset-edit-grid evolution-edit-grid">
                   <label className="path-field">
                     <span>Method</span>
-                    <input
+                    <select
                       disabled={!canEditEvolution}
-                      max={65535}
-                      min={0}
-                      onChange={(event) => setEvolutionMethodDraft(event.target.value)}
-                      type="number"
+                      onChange={(event) => {
+                        const nextMethod = event.target.value;
+                        const nextOption = findEvolutionMethodOption(
+                          selectedEvolutionMethodOptions,
+                          nextMethod
+                        );
+                        setEvolutionMethodDraft(nextMethod);
+                        setEvolutionArgumentDraft(getDefaultEvolutionArgumentDraft(nextOption));
+                      }}
                       value={evolutionMethodDraft}
-                    />
+                    >
+                      {selectedEvolutionMethodOptions.map((option) => (
+                        <option key={option.value} value={option.value.toString()}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label className="path-field">
-                    <span>Argument</span>
-                    <input
-                      disabled={!canEditEvolution}
-                      max={65535}
-                      min={0}
-                      onChange={(event) => setEvolutionArgumentDraft(event.target.value)}
-                      type="number"
-                      value={evolutionArgumentDraft}
-                    />
+                    <span>{selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'}</span>
+                    {usesEvolutionArgumentSelector(selectedEvolutionMethodOption) &&
+                    selectedEvolutionArgumentOptions.length > 0 ? (
+                      <select
+                        disabled={!canEditEvolution}
+                        onChange={(event) => setEvolutionArgumentDraft(event.target.value)}
+                        value={evolutionArgumentDraft}
+                      >
+                        {selectedEvolutionArgumentOptions.map((option) => (
+                          <option key={option.value} value={option.value.toString()}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        disabled={
+                          !canEditEvolution ||
+                          !usesEvolutionArgumentNumberInput(selectedEvolutionMethodOption)
+                        }
+                        max={65535}
+                        min={0}
+                        onChange={(event) => setEvolutionArgumentDraft(event.target.value)}
+                        type="number"
+                        value={evolutionArgumentDraft}
+                      />
+                    )}
                   </label>
                   <label className="path-field">
                     <span>Species</span>
@@ -3472,25 +3547,55 @@ function SelectedPokemonPanel({
               <div className="learnset-edit-grid evolution-edit-grid">
                 <label className="path-field">
                   <span>New method</span>
-                  <input
+                  <select
                     disabled={!canEditEvolution}
-                    max={65535}
-                    min={0}
-                    onChange={(event) => setNewEvolutionMethodDraft(event.target.value)}
-                    type="number"
+                    onChange={(event) => {
+                      const nextMethod = event.target.value;
+                      const nextOption = findEvolutionMethodOption(
+                        newEvolutionMethodOptions,
+                        nextMethod
+                      );
+                      setNewEvolutionMethodDraft(nextMethod);
+                      setNewEvolutionArgumentDraft(getDefaultEvolutionArgumentDraft(nextOption));
+                    }}
                     value={newEvolutionMethodDraft}
-                  />
+                  >
+                    <option value="">Select method</option>
+                    {newEvolutionMethodOptions.map((option) => (
+                      <option key={option.value} value={option.value.toString()}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label className="path-field">
-                  <span>New argument</span>
-                  <input
-                    disabled={!canEditEvolution}
-                    max={65535}
-                    min={0}
-                    onChange={(event) => setNewEvolutionArgumentDraft(event.target.value)}
-                    type="number"
-                    value={newEvolutionArgumentDraft}
-                  />
+                  <span>{newEvolutionMethodOption?.argumentLabel ?? 'New argument'}</span>
+                  {usesEvolutionArgumentSelector(newEvolutionMethodOption) &&
+                  newEvolutionArgumentOptions.length > 0 ? (
+                    <select
+                      disabled={!canEditEvolution}
+                      onChange={(event) => setNewEvolutionArgumentDraft(event.target.value)}
+                      value={newEvolutionArgumentDraft}
+                    >
+                      {newEvolutionArgumentOptions.map((option) => (
+                        <option key={option.value} value={option.value.toString()}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      disabled={
+                        !canEditEvolution ||
+                        !usesEvolutionArgumentNumberInput(newEvolutionMethodOption)
+                      }
+                      max={65535}
+                      min={0}
+                      onChange={(event) => setNewEvolutionArgumentDraft(event.target.value)}
+                      type="number"
+                      value={newEvolutionArgumentDraft}
+                    />
+                  )}
                 </label>
                 <label className="path-field">
                   <span>New species</span>
@@ -7690,7 +7795,11 @@ function filterPokemon(pokemon: PokemonRecord[], searchText: string) {
       ...record.evolutions.flatMap((evolution) => [
         evolution.slot.toString(),
         evolution.method.toString(),
+        evolution.methodName,
         evolution.argument.toString(),
+        evolution.argumentKind,
+        evolution.argumentLabel,
+        evolution.argumentValue,
         evolution.species.toString(),
         evolution.form.toString(),
         evolution.level.toString()
@@ -7736,6 +7845,99 @@ function formatReferenceLabel(
   fallbackPrefix: string
 ) {
   return labels.get(value) ?? `${fallbackPrefix} ${value}`;
+}
+
+function addCurrentEvolutionMethodOption(
+  options: PokemonEvolutionMethodOption[],
+  draftValue: string
+) {
+  const parsedValue = Number.parseInt(draftValue, 10);
+  if (!Number.isInteger(parsedValue) || options.some((option) => option.value === parsedValue)) {
+    return options;
+  }
+
+  return [
+    ...options,
+    {
+      argumentKind: 'value',
+      argumentLabel: 'Argument',
+      argumentOptions: [],
+      label: `${parsedValue.toString().padStart(3, '0')} Method ${parsedValue}`,
+      value: parsedValue
+    }
+  ];
+}
+
+function addCurrentPokemonFieldOption(
+  options: PokemonEditableFieldOption[],
+  draftValue: string,
+  fallbackLabel: string
+) {
+  const parsedValue = Number.parseInt(draftValue, 10);
+  if (!Number.isInteger(parsedValue) || options.some((option) => option.value === parsedValue)) {
+    return options;
+  }
+
+  return [
+    ...options,
+    {
+      label: `${parsedValue} ${fallbackLabel}`,
+      value: parsedValue
+    }
+  ];
+}
+
+function findEvolutionMethodOption(
+  options: PokemonEvolutionMethodOption[],
+  draftValue: string
+) {
+  const parsedValue = Number.parseInt(draftValue, 10);
+  return Number.isInteger(parsedValue)
+    ? options.find((option) => option.value === parsedValue) ?? null
+    : null;
+}
+
+function getDefaultEvolutionArgumentDraft(methodOption: PokemonEvolutionMethodOption | null) {
+  if (
+    !methodOption ||
+    methodOption.argumentKind === 'none' ||
+    methodOption.argumentKind === 'level'
+  ) {
+    return '0';
+  }
+
+  return methodOption.argumentOptions[0]?.value.toString() ?? '0';
+}
+
+function usesEvolutionArgumentSelector(methodOption: PokemonEvolutionMethodOption | null) {
+  return Boolean(
+    methodOption &&
+      methodOption.argumentKind !== 'none' &&
+      methodOption.argumentKind !== 'level' &&
+      methodOption.argumentOptions.length > 0
+  );
+}
+
+function usesEvolutionArgumentNumberInput(methodOption: PokemonEvolutionMethodOption | null) {
+  return Boolean(
+    methodOption &&
+      methodOption.argumentKind !== 'none' &&
+      methodOption.argumentKind !== 'level' &&
+      methodOption.argumentOptions.length === 0
+  );
+}
+
+function formatEvolutionMethodSummary(evolution: PokemonEvolutionRecord) {
+  const methodName = evolution.methodName || `Method ${evolution.method}`;
+  return `${evolution.method.toString().padStart(3, '0')} ${methodName}`;
+}
+
+function formatEvolutionArgumentSummary(evolution: PokemonEvolutionRecord) {
+  if (evolution.argumentKind === 'none' || evolution.argumentKind === 'level') {
+    return 'Arg -';
+  }
+
+  return `${evolution.argumentLabel} ${evolution.argumentValue || evolution.argument}`;
 }
 
 function filterMoves(moves: MoveRecord[], searchText: string) {

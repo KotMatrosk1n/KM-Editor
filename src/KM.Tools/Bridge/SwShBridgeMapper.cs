@@ -306,6 +306,7 @@ public static class SwShBridgeMapper
                 workflow.Stats.TotalEvolutionCount,
                 workflow.Stats.TotalLearnsetMoveCount,
                 workflow.Stats.SourceFileCount),
+            workflow.EvolutionMethodOptions.Select(ToDto).ToArray(),
             workflow.EditableFields.Select(ToDto).ToArray(),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -603,7 +604,21 @@ public static class SwShBridgeMapper
             evolution.Argument,
             evolution.Species,
             evolution.Form,
-            evolution.Level);
+            evolution.Level,
+            evolution.MethodName,
+            evolution.ArgumentKind,
+            evolution.ArgumentLabel,
+            evolution.ArgumentValue);
+    }
+
+    private static PokemonEvolutionMethodOptionDto ToDto(SwShPokemonEvolutionMethodOption option)
+    {
+        return new PokemonEvolutionMethodOptionDto(
+            option.Value,
+            option.Label,
+            option.ArgumentKind,
+            option.ArgumentLabel,
+            option.ArgumentOptions.Select(ToDto).ToArray());
     }
 
     private static PokemonLearnsetMoveDto ToDto(SwShPokemonLearnsetMove learnsetMove)

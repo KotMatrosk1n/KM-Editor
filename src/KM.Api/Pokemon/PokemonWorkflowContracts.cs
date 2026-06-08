@@ -101,7 +101,18 @@ public sealed record PokemonEvolutionRecordDto(
     int Argument,
     int Species,
     int Form,
-    int Level);
+    int Level,
+    string MethodName,
+    string ArgumentKind,
+    string ArgumentLabel,
+    string ArgumentValue);
+
+public sealed record PokemonEvolutionMethodOptionDto(
+    int Value,
+    string Label,
+    string ArgumentKind,
+    string ArgumentLabel,
+    IReadOnlyList<PokemonEditableFieldOptionDto> ArgumentOptions);
 
 public sealed record PokemonLearnsetMoveDto(
     int Slot,
@@ -169,6 +180,7 @@ public sealed record PokemonWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<PokemonRecordDto> Pokemon,
     PokemonWorkflowStatsDto Stats,
+    IReadOnlyList<PokemonEvolutionMethodOptionDto> EvolutionMethodOptions,
     IReadOnlyList<PokemonEditableFieldDto> EditableFields,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 

@@ -275,6 +275,14 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(
             response.Payload.Workflow.EditableFields.Single(field => field.Field == "hatchedSpecies").Options,
             option => option.Value == 2 && option.Label == "002 Ivysaur");
+        Assert.Contains(
+            response.Payload.Workflow.EvolutionMethodOptions,
+            option => option.Value == 4
+                && option.Label == "004 Level Up"
+                && option.ArgumentKind == "level");
+        Assert.Contains(
+            response.Payload.Workflow.EvolutionMethodOptions.Single(option => option.Value == 8).ArgumentOptions,
+            option => option.Value == 1 && option.Label == "001 Potion");
         var tmGroup = pokemon.Compatibility.Single(group => group.GroupId == "tm");
         Assert.Equal(1, tmGroup.EnabledCount);
         var tm10 = tmGroup.Entries.Single(entry => entry.Slot == 10);
@@ -285,6 +293,10 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(ProjectFileGraphEntryStateDto.BaseOnly, pokemon.Provenance.FileState);
         var evolution = Assert.Single(pokemon.Evolutions);
         Assert.Equal(0, evolution.Slot);
+        Assert.Equal("Level Up", evolution.MethodName);
+        Assert.Equal("level", evolution.ArgumentKind);
+        Assert.Equal("Level", evolution.ArgumentLabel);
+        Assert.Equal("None", evolution.ArgumentValue);
         Assert.Equal(2, evolution.Species);
         Assert.Equal(16, evolution.Level);
         Assert.Collection(

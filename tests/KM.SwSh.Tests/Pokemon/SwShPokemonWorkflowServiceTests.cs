@@ -29,6 +29,17 @@ public sealed class SwShPokemonWorkflowServiceTests
         Assert.Equal(2, workflow.Stats.TotalLearnsetMoveCount);
         Assert.Equal(8, workflow.Stats.SourceFileCount);
         Assert.Contains(
+            workflow.EvolutionMethodOptions,
+            option => option.Value == 4
+                && option.Label == "004 Level Up"
+                && option.ArgumentKind == "level");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 8).ArgumentOptions,
+            option => option.Value == 1 && option.Label == "001 Potion");
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 21).ArgumentOptions,
+            option => option.Value == 45 && option.Label == "045 Growl");
+        Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShPokemonWorkflowService.HeldItem1Field).Options,
             option => option.Value == 1 && option.Label == "001 Potion");
         Assert.Contains(
@@ -63,6 +74,10 @@ public sealed class SwShPokemonWorkflowServiceTests
         Assert.Equal(4, evolution.Method);
         Assert.Equal(2, evolution.Species);
         Assert.Equal(16, evolution.Level);
+        Assert.Equal("Level Up", evolution.MethodName);
+        Assert.Equal("level", evolution.ArgumentKind);
+        Assert.Equal("Level", evolution.ArgumentLabel);
+        Assert.Equal("None", evolution.ArgumentValue);
         Assert.Collection(
             pokemon.Learnset,
             move =>

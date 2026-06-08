@@ -71,6 +71,15 @@ public sealed class SwShPokemonWorkflowService
     public const string TypeTutorCompatibilityGroupId = "typeTutor";
     public const string ArmorTutorCompatibilityGroupId = "armorTutor";
 
+    private const string EvolutionArgumentKindNone = "none";
+    private const string EvolutionArgumentKindLevel = "level";
+    private const string EvolutionArgumentKindItem = "item";
+    private const string EvolutionArgumentKindMove = "move";
+    private const string EvolutionArgumentKindSpecies = "species";
+    private const string EvolutionArgumentKindValue = "value";
+    private const string EvolutionArgumentKindType = "type";
+    private const string EvolutionArgumentKindVersion = "version";
+
     private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> TypeOptions =
     [
         CreateOption(0, "Normal"),
@@ -225,6 +234,63 @@ public sealed class SwShPokemonWorkflowService
         CreateBooleanField(HasSpriteFormField, "Has Sprite Form", "Flags"),
     ];
 
+    private static readonly IReadOnlyList<EvolutionMethodDefinition> EvolutionMethods =
+    [
+        CreateEvolutionMethod(0, "None", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(1, "Level Up Friendship", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(2, "Level Up Friendship Morning", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(3, "Level Up Friendship Night", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(4, "Level Up", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(5, "Trade", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(6, "Trade Held Item", EvolutionArgumentKindItem, "Item"),
+        CreateEvolutionMethod(7, "Trade Shelmet/Karrablast", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(8, "Use Item", EvolutionArgumentKindItem, "Item"),
+        CreateEvolutionMethod(9, "Level Up Attack > Defense", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(10, "Level Up Attack = Defense", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(11, "Level Up Defense > Attack", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(12, "Level Up EC < 5", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(13, "Level Up EC >= 5", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(14, "Level Up Ninjask", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(15, "Level Up Shedinja", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(16, "Level Up Beauty", EvolutionArgumentKindValue, "Beauty"),
+        CreateEvolutionMethod(17, "Use Item Male", EvolutionArgumentKindItem, "Item"),
+        CreateEvolutionMethod(18, "Use Item Female", EvolutionArgumentKindItem, "Item"),
+        CreateEvolutionMethod(19, "Level Up Held Item Day", EvolutionArgumentKindItem, "Item"),
+        CreateEvolutionMethod(20, "Level Up Held Item Night", EvolutionArgumentKindItem, "Item"),
+        CreateEvolutionMethod(21, "Level Up Know Move", EvolutionArgumentKindMove, "Move"),
+        CreateEvolutionMethod(22, "Level Up With Teammate", EvolutionArgumentKindSpecies, "Species"),
+        CreateEvolutionMethod(23, "Level Up Male", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(24, "Level Up Female", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(25, "Level Up Electric Area", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(26, "Level Up Forest Area", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(27, "Level Up Cold Area", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(28, "Level Up Inverted", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(29, "Level Up Affection 50 Move Type", EvolutionArgumentKindType, "Type"),
+        CreateEvolutionMethod(30, "Level Up Move Type", EvolutionArgumentKindType, "Type"),
+        CreateEvolutionMethod(31, "Level Up Weather", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(32, "Level Up Morning", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(33, "Level Up Night", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(34, "Level Up Female Form 1", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(35, "Unused", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(36, "Level Up Version", EvolutionArgumentKindVersion, "Version"),
+        CreateEvolutionMethod(37, "Level Up Version Day", EvolutionArgumentKindVersion, "Version"),
+        CreateEvolutionMethod(38, "Level Up Version Night", EvolutionArgumentKindVersion, "Version"),
+        CreateEvolutionMethod(39, "Level Up Summit", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(40, "Level Up Dusk", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(41, "Level Up Wormhole", EvolutionArgumentKindLevel, "Level"),
+        CreateEvolutionMethod(42, "Use Item Wormhole", EvolutionArgumentKindItem, "Item"),
+        CreateEvolutionMethod(43, "Critical Hits In Battle", EvolutionArgumentKindVersion, "Version"),
+        CreateEvolutionMethod(44, "HP Lost In Battle", EvolutionArgumentKindVersion, "Version"),
+        CreateEvolutionMethod(45, "Spin", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(46, "Level Up Nature Amped", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(47, "Level Up Nature Low Key", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(48, "Tower Of Darkness", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(49, "Tower Of Waters", EvolutionArgumentKindNone, "None"),
+    ];
+
+    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> ByteArgumentOptions =
+        CreateNumericOptions(0, byte.MaxValue);
+
     private static readonly IReadOnlyList<string> TypeNames =
     [
         "Normal",
@@ -315,13 +381,23 @@ public sealed class SwShPokemonWorkflowService
             diagnostics);
         var learnsets = LoadLearnsets(project, diagnostics);
         var evolutions = LoadEvolutions(project, diagnostics);
+        var evolutionSpeciesNames = speciesNames.Count > 0 ? speciesNames : pokemonNames;
+        var evolutionMethodOptions = CreateEvolutionMethodOptions(itemNames, moveNames, evolutionSpeciesNames);
 
         try
         {
             var personalTable = SwShPersonalTable.Parse(File.ReadAllBytes(personalSource.AbsolutePath));
             var provenance = CreateProvenance(personalSource.GraphEntry);
             var pokemon = personalTable.Records
-                .Select(record => ToPokemonRecord(record, pokemonNames, moveNames, learnsets, evolutions, provenance))
+                .Select(record => ToPokemonRecord(
+                    record,
+                    pokemonNames,
+                    evolutionSpeciesNames,
+                    itemNames,
+                    moveNames,
+                    learnsets,
+                    evolutions,
+                    provenance))
                 .ToArray();
             var sourceFileCount =
                 1
@@ -337,7 +413,8 @@ public sealed class SwShPokemonWorkflowService
                 summary,
                 pokemon,
                 sourceFileCount,
-                CreateEditableFields(itemNames, abilityNames, speciesNames.Count > 0 ? speciesNames : pokemonNames),
+                evolutionMethodOptions,
+                CreateEditableFields(itemNames, abilityNames, evolutionSpeciesNames),
                 diagnostics);
         }
         catch (InvalidDataException exception)
@@ -509,13 +586,20 @@ public sealed class SwShPokemonWorkflowService
         int sourceFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
-        return CreateWorkflow(summary, pokemon, sourceFileCount, EditableFields, diagnostics);
+        return CreateWorkflow(
+            summary,
+            pokemon,
+            sourceFileCount,
+            CreateEvolutionMethodOptions([], [], []),
+            EditableFields,
+            diagnostics);
     }
 
     private static SwShPokemonWorkflow CreateWorkflow(
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShPokemonRecord> pokemon,
         int sourceFileCount,
+        IReadOnlyList<SwShPokemonEvolutionMethodOption> evolutionMethodOptions,
         IReadOnlyList<SwShPokemonEditableField> editableFields,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
@@ -528,6 +612,7 @@ public sealed class SwShPokemonWorkflowService
                 pokemon.Sum(record => record.Evolutions.Count),
                 pokemon.Sum(record => record.Learnset.Count),
                 sourceFileCount),
+            evolutionMethodOptions,
             editableFields,
             diagnostics);
     }
@@ -535,6 +620,8 @@ public sealed class SwShPokemonWorkflowService
     private static SwShPokemonRecord ToPokemonRecord(
         SwShPersonalRecord personal,
         IReadOnlyList<string> pokemonNames,
+        IReadOnlyList<string> speciesNames,
+        IReadOnlyList<string> itemNames,
         IReadOnlyList<string> moveNames,
         IReadOnlyDictionary<int, SwShPokemonLearnsetRecord> learnsets,
         IReadOnlyDictionary<int, IReadOnlyList<SwShEvolutionRecord>> evolutions,
@@ -551,13 +638,7 @@ public sealed class SwShPokemonWorkflowService
             : [];
         var evolutionRecords = evolutions.TryGetValue(personal.PersonalId, out var evolutionRecord)
             ? evolutionRecord
-                .Select(evolution => new SwShPokemonEvolutionRecord(
-                    evolution.Slot,
-                    evolution.Method,
-                    evolution.Argument,
-                    evolution.Species,
-                    evolution.Form,
-                    evolution.Level))
+                .Select(evolution => ToPokemonEvolutionRecord(evolution, itemNames, moveNames, speciesNames))
                 .ToArray()
             : [];
         var compatibility = CreateCompatibilityGroups(personal, moveNames);
@@ -632,6 +713,87 @@ public sealed class SwShPokemonWorkflowService
             learnset,
             compatibility,
             provenance);
+    }
+
+    private static SwShPokemonEvolutionRecord ToPokemonEvolutionRecord(
+        SwShEvolutionRecord evolution,
+        IReadOnlyList<string> itemNames,
+        IReadOnlyList<string> moveNames,
+        IReadOnlyList<string> speciesNames)
+    {
+        var definition = GetEvolutionMethodDefinition(evolution.Method);
+        return new SwShPokemonEvolutionRecord(
+            evolution.Slot,
+            evolution.Method,
+            evolution.Argument,
+            evolution.Species,
+            evolution.Form,
+            evolution.Level,
+            definition.Name,
+            definition.ArgumentKind,
+            definition.ArgumentLabel,
+            FormatEvolutionArgument(evolution.Argument, definition.ArgumentKind, itemNames, moveNames, speciesNames));
+    }
+
+    private static IReadOnlyList<SwShPokemonEvolutionMethodOption> CreateEvolutionMethodOptions(
+        IReadOnlyList<string> itemNames,
+        IReadOnlyList<string> moveNames,
+        IReadOnlyList<string> speciesNames)
+    {
+        return EvolutionMethods
+            .Select(method => new SwShPokemonEvolutionMethodOption(
+                method.Value,
+                string.Create(CultureInfo.InvariantCulture, $"{method.Value:000} {method.Name}"),
+                method.ArgumentKind,
+                method.ArgumentLabel,
+                CreateEvolutionArgumentOptions(method.ArgumentKind, itemNames, moveNames, speciesNames)))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateEvolutionArgumentOptions(
+        string argumentKind,
+        IReadOnlyList<string> itemNames,
+        IReadOnlyList<string> moveNames,
+        IReadOnlyList<string> speciesNames)
+    {
+        return argumentKind switch
+        {
+            EvolutionArgumentKindItem => CreateIndexedOptions(itemNames, "Item"),
+            EvolutionArgumentKindMove => CreateIndexedOptions(moveNames, "Move"),
+            EvolutionArgumentKindSpecies => CreateIndexedOptions(speciesNames, "Species"),
+            EvolutionArgumentKindType => TypeOptions,
+            EvolutionArgumentKindValue or EvolutionArgumentKindVersion => ByteArgumentOptions,
+            _ => [],
+        };
+    }
+
+    private static string FormatEvolutionArgument(
+        int argument,
+        string argumentKind,
+        IReadOnlyList<string> itemNames,
+        IReadOnlyList<string> moveNames,
+        IReadOnlyList<string> speciesNames)
+    {
+        return argumentKind switch
+        {
+            EvolutionArgumentKindItem => GetIndexedName(argument, itemNames, "Item"),
+            EvolutionArgumentKindMove => GetIndexedName(argument, moveNames, "Move"),
+            EvolutionArgumentKindSpecies => GetIndexedName(argument, speciesNames, "Species"),
+            EvolutionArgumentKindType => FormatType(argument),
+            EvolutionArgumentKindValue => argument.ToString(CultureInfo.InvariantCulture),
+            EvolutionArgumentKindVersion => argument.ToString(CultureInfo.InvariantCulture),
+            _ => "None",
+        };
+    }
+
+    private static EvolutionMethodDefinition GetEvolutionMethodDefinition(int method)
+    {
+        return EvolutionMethods.FirstOrDefault(definition => definition.Value == method)
+            ?? CreateEvolutionMethod(
+                method,
+                string.Create(CultureInfo.InvariantCulture, $"Method {method}"),
+                EvolutionArgumentKindValue,
+                "Argument");
     }
 
     private static IReadOnlyList<SwShPokemonCompatibilityGroup> CreateCompatibilityGroups(
@@ -979,6 +1141,25 @@ public sealed class SwShPokemonWorkflowService
         return new SwShPokemonEditableFieldOption(value, label);
     }
 
+    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateNumericOptions(int minimum, int maximum)
+    {
+        return Enumerable
+            .Range(minimum, maximum - minimum + 1)
+            .Select(value => CreateOption(
+                value,
+                value.ToString(CultureInfo.InvariantCulture)))
+            .ToArray();
+    }
+
+    private static EvolutionMethodDefinition CreateEvolutionMethod(
+        int value,
+        string name,
+        string argumentKind,
+        string argumentLabel)
+    {
+        return new EvolutionMethodDefinition(value, name, argumentKind, argumentLabel);
+    }
+
     private static ValidationDiagnostic CreateDiagnostic(
         DiagnosticSeverity severity,
         string message,
@@ -996,4 +1177,10 @@ public sealed class SwShPokemonWorkflowService
     internal sealed record WorkflowFileSource(
         ProjectFileGraphEntry GraphEntry,
         string AbsolutePath);
+
+    private sealed record EvolutionMethodDefinition(
+        int Value,
+        string Name,
+        string ArgumentKind,
+        string ArgumentLabel);
 }
