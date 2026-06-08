@@ -150,6 +150,69 @@ public sealed class SwShPokemonWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadNamesPersonalFormRowsFromOwningSpecies()
+    {
+        using var temp = TemporaryPokemonProject.Create();
+        WriteBasePokemonData(temp);
+        var records = Enumerable.Range(0, 54)
+            .Select(_ => CreateEmptyPersonalRecord())
+            .ToArray();
+        records[52] = CreateBulbasaurPersonalRecord(
+            hp: 40,
+            hatchedSpecies: 52,
+            formStatsIndex: 53,
+            formCount: 2);
+        records[53] = CreateBulbasaurPersonalRecord(
+            hp: 50,
+            hatchedSpecies: 52,
+            localFormIndex: 2,
+            form: 2,
+            isRegionalForm: true);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(records));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateNamedPokemonNames(54, (52, "Meowth")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShPokemonWorkflowService().Load(project);
+
+        var formRow = workflow.Pokemon[53];
+        Assert.Equal(53, formRow.PersonalId);
+        Assert.Equal(52, formRow.SpeciesId);
+        Assert.Equal("Meowth (Galarian)", formRow.Name);
+        Assert.Equal("Galarian", formRow.FormLabel);
+        Assert.Equal(50, formRow.BaseStats.HP);
+    }
+
+    [Fact]
+    public void LoadLabelsEmptyPersonalRowsAsUnused()
+    {
+        using var temp = TemporaryPokemonProject.Create();
+        WriteBasePokemonData(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(
+                CreateEmptyPersonalRecord(),
+                CreateBulbasaurPersonalRecord(),
+                CreateBulbasaurPersonalRecord(hp: 60, hatchedSpecies: 2),
+                CreateBulbasaurPersonalRecord(hp: 80, hatchedSpecies: 3),
+                CreateEmptyPersonalRecord(formCount: 1)));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShPokemonWorkflowService().Load(project);
+
+        var unusedRow = workflow.Pokemon[4];
+        Assert.Equal(4, unusedRow.PersonalId);
+        Assert.Equal(4, unusedRow.SpeciesId);
+        Assert.Equal("Unused 4", unusedRow.Name);
+        Assert.Equal("Unused", unusedRow.FormLabel);
+    }
+
+    [Fact]
     public void LoadReportsDiagnosticWhenPersonalDataIsMissing()
     {
         using var temp = TemporaryPokemonProject.Create();
@@ -201,12 +264,21 @@ public sealed class SwShPokemonWorkflowServiceTests
         return data;
     }
 
-    internal static byte[] CreateEmptyPersonalRecord()
+    internal static byte[] CreateEmptyPersonalRecord(int formCount = 0)
     {
-        return new byte[SwShPersonalTable.RecordSize];
+        var record = new byte[SwShPersonalTable.RecordSize];
+        record[0x20] = checked((byte)formCount);
+        return record;
     }
 
-    internal static byte[] CreateBulbasaurPersonalRecord(int hp = 45, int hatchedSpecies = 1)
+    internal static byte[] CreateBulbasaurPersonalRecord(
+        int hp = 45,
+        int hatchedSpecies = 1,
+        int formStatsIndex = 0,
+        int formCount = 1,
+        int localFormIndex = 0,
+        int form = 0,
+        bool isRegionalForm = false)
     {
         var record = new byte[SwShPersonalTable.RecordSize];
         record[0x00] = checked((byte)hp);
@@ -228,7 +300,8 @@ public sealed class SwShPokemonWorkflowServiceTests
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x18), 65);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x1A), 0);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x1C), 34);
-        record[0x20] = 1;
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x1E), checked((ushort)formStatsIndex));
+        record[0x20] = checked((byte)formCount);
         record[0x21] = 12 | (1 << 6);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x22), 64);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x24), 7);
@@ -237,7 +310,14 @@ public sealed class SwShPokemonWorkflowServiceTests
         SetFlag(record, 0x38, 0);
         SetFlag(record, 0xA8, 1);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x56), checked((ushort)hatchedSpecies));
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x58), checked((ushort)localFormIndex));
+        if (isRegionalForm)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5A), 1);
+        }
+
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5C), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5E), checked((ushort)form));
 
         return record;
     }
@@ -303,13 +383,23 @@ public sealed class SwShPokemonWorkflowServiceTests
 
     private static byte[] CreateIndexedPokemonNames()
     {
-        var names = Enumerable.Range(0, 4)
+        return CreateNamedPokemonNames(
+            4,
+            (0, "None"),
+            (1, "Bulbasaur"),
+            (2, "Ivysaur"),
+            (3, "Venusaur"));
+    }
+
+    private static byte[] CreateNamedPokemonNames(int count, params (int Index, string Name)[] replacements)
+    {
+        var names = Enumerable.Range(0, count)
             .Select(index => $"Pokemon {index}")
             .ToArray();
-        names[0] = "None";
-        names[1] = "Bulbasaur";
-        names[2] = "Ivysaur";
-        names[3] = "Venusaur";
+        foreach (var replacement in replacements)
+        {
+            names[replacement.Index] = replacement.Name;
+        }
 
         return CreateTextTable(names);
     }
