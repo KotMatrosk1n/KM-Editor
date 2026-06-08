@@ -18,6 +18,8 @@ import {
   type LoadFlagworkSaveWorkflowResponse,
   type LoadItemsWorkflowRequest,
   type LoadItemsWorkflowResponse,
+  type LoadPokemonWorkflowRequest,
+  type LoadPokemonWorkflowResponse,
   type LoadPlacementWorkflowRequest,
   type LoadPlacementWorkflowResponse,
   type LoadRaidRewardsWorkflowRequest,
@@ -72,6 +74,7 @@ import {
   loadExeFsPatchWorkflowResponseSchema,
   loadFlagworkSaveWorkflowResponseSchema,
   loadItemsWorkflowResponseSchema,
+  loadPokemonWorkflowResponseSchema,
   loadPlacementWorkflowResponseSchema,
   loadRaidRewardsWorkflowResponseSchema,
   loadRoyalCandyWorkflowResponseSchema,
@@ -111,6 +114,9 @@ export type ProjectBridge = {
     request: LoadFlagworkSaveWorkflowRequest
   ) => Promise<LoadFlagworkSaveWorkflowResponse>;
   loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
+  loadPokemonWorkflow: (
+    request: LoadPokemonWorkflowRequest
+  ) => Promise<LoadPokemonWorkflowResponse>;
   loadPlacementWorkflow: (
     request: LoadPlacementWorkflowRequest
   ) => Promise<LoadPlacementWorkflowResponse>;
@@ -239,6 +245,13 @@ export function createProjectBridge(
         kmCommandNames.loadItemsWorkflow,
         request,
         loadItemsWorkflowResponseSchema
+      ),
+    loadPokemonWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadPokemonWorkflow,
+        request,
+        loadPokemonWorkflowResponseSchema
       ),
     loadPlacementWorkflow: (request) =>
       sendProjectBridgeRequest(

@@ -4,6 +4,7 @@ import {
   Activity,
   CheckCircle,
   ClipboardCheck,
+  Dna,
   ExternalLink,
   FileSpreadsheet,
   FolderOpen,
@@ -48,6 +49,8 @@ import {
   type ItemEditableField,
   type ItemsWorkflow,
   type ItemRecord,
+  type PokemonRecord,
+  type PokemonWorkflow,
   type PlacedObjectRecord,
   type PlacementEditableField,
   type PlacementWorkflow,
@@ -114,6 +117,11 @@ const sections: Array<{
     id: 'items',
     label: 'Items',
     icon: Package
+  },
+  {
+    id: 'pokemon',
+    label: 'Pokemon Data',
+    icon: Dna
   },
   {
     id: 'text',
@@ -183,6 +191,12 @@ const workflowDefinitions: Array<{
     label: 'Items',
     description: 'Item records, names, and source provenance.',
     icon: Package
+  },
+  {
+    id: 'pokemon',
+    label: 'Pokemon Data',
+    description: 'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
+    icon: Dna
   },
   {
     id: 'text',
@@ -361,6 +375,8 @@ export function App({
   const openProject = useWorkbenchStore((state) => state.openProject);
   const placementSearchText = useWorkbenchStore((state) => state.placementSearchText);
   const placementWorkflow = useWorkbenchStore((state) => state.placementWorkflow);
+  const pokemonSearchText = useWorkbenchStore((state) => state.pokemonSearchText);
+  const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
   const raidRewardSearchText = useWorkbenchStore((state) => state.raidRewardSearchText);
   const raidRewardsWorkflow = useWorkbenchStore((state) => state.raidRewardsWorkflow);
@@ -380,6 +396,9 @@ export function App({
   );
   const selectedEncounterTableId = useWorkbenchStore((state) => state.selectedEncounterTableId);
   const selectedItemId = useWorkbenchStore((state) => state.selectedItemId);
+  const selectedPokemonPersonalId = useWorkbenchStore(
+    (state) => state.selectedPokemonPersonalId
+  );
   const selectedRaidRewardTableId = useWorkbenchStore(
     (state) => state.selectedRaidRewardTableId
   );
@@ -432,6 +451,8 @@ export function App({
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
   const setPlacementSearchText = useWorkbenchStore((state) => state.setPlacementSearchText);
   const setPlacementWorkflow = useWorkbenchStore((state) => state.setPlacementWorkflow);
+  const setPokemonSearchText = useWorkbenchStore((state) => state.setPokemonSearchText);
+  const setPokemonWorkflow = useWorkbenchStore((state) => state.setPokemonWorkflow);
   const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
   const setRaidRewardSearchText = useWorkbenchStore((state) => state.setRaidRewardSearchText);
@@ -476,6 +497,9 @@ export function App({
   );
   const setSelectedFlagId = useWorkbenchStore((state) => state.setSelectedFlagId);
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
+  const setSelectedPokemonPersonalId = useWorkbenchStore(
+    (state) => state.setSelectedPokemonPersonalId
+  );
   const setSelectedSaveBlockId = useWorkbenchStore((state) => state.setSelectedSaveBlockId);
   const setSelectedShopId = useWorkbenchStore((state) => state.setSelectedShopId);
   const setSelectedTextKey = useWorkbenchStore((state) => state.setSelectedTextKey);
@@ -494,6 +518,7 @@ export function App({
   const [isEditStarting, setIsEditStarting] = useState(false);
   const [isItemsLoading, setIsItemsLoading] = useState(false);
   const [isItemUpdating, setIsItemUpdating] = useState(false);
+  const [isPokemonLoading, setIsPokemonLoading] = useState(false);
   const [isTextLoading, setIsTextLoading] = useState(false);
   const [isTextUpdating, setIsTextUpdating] = useState(false);
   const [isTrainersLoading, setIsTrainersLoading] = useState(false);
@@ -607,6 +632,20 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsItemsLoading(false);
+    }
+  };
+
+  const handleOpenPokemonWorkflow = async () => {
+    setIsPokemonLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadPokemonWorkflow({ paths: toProjectPaths(draftPaths) });
+      setPokemonWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsPokemonLoading(false);
     }
   };
 
@@ -828,6 +867,12 @@ export function App({
           void handleOpenItemsWorkflow();
         }
         break;
+      case 'pokemon':
+        if (!pokemonWorkflow && !isPokemonLoading) {
+          markLazyLoadStarted();
+          void handleOpenPokemonWorkflow();
+        }
+        break;
       case 'text':
         if (!textWorkflow && !isTextLoading) {
           markLazyLoadStarted();
@@ -902,6 +947,7 @@ export function App({
     isFlagworkSaveLoading,
     isItemsLoading,
     isPlacementLoading,
+    isPokemonLoading,
     isRaidRewardsLoading,
     isRoyalCandyLoading,
     isShopsLoading,
@@ -911,6 +957,7 @@ export function App({
     itemsWorkflow,
     lazyLoadedWorkflowSections,
     placementWorkflow,
+    pokemonWorkflow,
     raidRewardsWorkflow,
     royalCandyWorkflow,
     shopsWorkflow,
@@ -1311,6 +1358,7 @@ export function App({
             <WorkflowsSection
               health={health}
               isItemsLoading={isItemsLoading}
+              isPokemonLoading={isPokemonLoading}
               isTextLoading={isTextLoading}
               isTrainersLoading={isTrainersLoading}
               isShopsLoading={isShopsLoading}
@@ -1325,6 +1373,7 @@ export function App({
               onOpenExeFsPatchWorkflow={handleOpenExeFsPatchWorkflow}
               onOpenFlagworkSaveWorkflow={handleOpenFlagworkSaveWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
+              onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
               onOpenPlacementWorkflow={handleOpenPlacementWorkflow}
               onOpenRaidRewardsWorkflow={handleOpenRaidRewardsWorkflow}
               onOpenRoyalCandyWorkflow={handleOpenRoyalCandyWorkflow}
@@ -1351,6 +1400,19 @@ export function App({
                 isEditStarting={isEditStarting}
                 isItemUpdating={isItemUpdating}
                 workflow={itemsWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'pokemon' ? (
+            isPokemonLoading && !pokemonWorkflow ? (
+              <WorkflowLoadingPanel label="Pokemon Data" />
+            ) : (
+              <PokemonSection
+                onSearchChange={setPokemonSearchText}
+                onSelectPokemon={setSelectedPokemonPersonalId}
+                searchText={pokemonSearchText}
+                selectedPokemonPersonalId={selectedPokemonPersonalId}
+                workflow={pokemonWorkflow}
               />
             )
           ) : null}
@@ -1761,6 +1823,7 @@ function WorkflowsSection({
   isEncountersLoading,
   isExeFsPatchLoading,
   isItemsLoading,
+  isPokemonLoading,
   isShopsLoading,
   isTextLoading,
   isTrainersLoading,
@@ -1773,6 +1836,7 @@ function WorkflowsSection({
   onOpenExeFsPatchWorkflow,
   onOpenFlagworkSaveWorkflow,
   onOpenItemsWorkflow,
+  onOpenPokemonWorkflow,
   onOpenPlacementWorkflow,
   onOpenRaidRewardsWorkflow,
   onOpenRoyalCandyWorkflow,
@@ -1787,6 +1851,7 @@ function WorkflowsSection({
   isEncountersLoading: boolean;
   isExeFsPatchLoading: boolean;
   isItemsLoading: boolean;
+  isPokemonLoading: boolean;
   isShopsLoading: boolean;
   isTextLoading: boolean;
   isTrainersLoading: boolean;
@@ -1799,6 +1864,7 @@ function WorkflowsSection({
   onOpenExeFsPatchWorkflow: () => void;
   onOpenFlagworkSaveWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
+  onOpenPokemonWorkflow: () => void;
   onOpenPlacementWorkflow: () => void;
   onOpenRaidRewardsWorkflow: () => void;
   onOpenRoyalCandyWorkflow: () => void;
@@ -1822,6 +1888,7 @@ function WorkflowsSection({
           const workflowState = getWorkflowState(health, workflow);
           const Icon = definition.icon;
           const isItemsWorkflow = definition.id === 'items';
+          const isPokemonWorkflow = definition.id === 'pokemon';
           const isTextWorkflow = definition.id === 'text';
           const isTrainersWorkflow = definition.id === 'trainers';
           const isShopsWorkflow = definition.id === 'shops';
@@ -1833,6 +1900,7 @@ function WorkflowsSection({
           const isRoyalCandyWorkflow = definition.id === 'royalCandy';
           const isSpreadsheetImportWorkflow = definition.id === 'spreadsheetImport';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
+          const canOpenPokemon = isPokemonWorkflow && workflowState.availability !== 'disabled';
           const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
           const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
           const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
@@ -1873,6 +1941,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isItemsLoading ? 'Loading' : 'Open Items'}</span>
+                  </button>
+                ) : null}
+                {isPokemonWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenPokemon || isPokemonLoading}
+                    onClick={onOpenPokemonWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isPokemonLoading ? 'Loading' : 'Open Pokemon'}</span>
                   </button>
                 ) : null}
                 {isTextWorkflow ? (
@@ -2264,6 +2343,279 @@ function SelectedItemPanel({
         </>
       ) : (
         <p className="empty-copy">No item selected.</p>
+      )}
+    </aside>
+  );
+}
+
+function PokemonSection({
+  onSearchChange,
+  onSelectPokemon,
+  searchText,
+  selectedPokemonPersonalId,
+  workflow
+}: {
+  onSearchChange: (searchText: string) => void;
+  onSelectPokemon: (personalId: number | null) => void;
+  searchText: string;
+  selectedPokemonPersonalId: number | null;
+  workflow: PokemonWorkflow | null;
+}) {
+  const pokemon = workflow?.pokemon ?? [];
+  const filteredPokemon = useMemo(
+    () => filterPokemon(pokemon, searchText),
+    [pokemon, searchText]
+  );
+  const selectedPokemon = useMemo(
+    () =>
+      filteredPokemon.find((candidate) => candidate.personalId === selectedPokemonPersonalId) ??
+      filteredPokemon[0] ??
+      null,
+    [filteredPokemon, selectedPokemonPersonalId]
+  );
+
+  return (
+    <>
+      <section aria-labelledby="pokemon-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Dna aria-hidden="true" size={18} />
+          <h2 id="pokemon-heading">Pokemon Data</h2>
+        </div>
+
+        <div className="items-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search Pokemon"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search Pokemon"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded records"
+            value={workflow ? workflow.stats.totalPokemonCount.toString() : '0'}
+          />
+          <Metric
+            label="Present"
+            value={workflow ? workflow.stats.presentPokemonCount.toString() : '0'}
+          />
+          <Metric
+            label="Learnset moves"
+            value={workflow ? workflow.stats.totalLearnsetMoveCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="items-layout">
+            <div
+              aria-colcount={8}
+              aria-label="Pokemon Data"
+              aria-rowcount={filteredPokemon.length + 1}
+              className="items-table"
+              role="table"
+            >
+              <div className="items-row items-row-heading" role="row">
+                <span role="columnheader">ID</span>
+                <span role="columnheader">Name</span>
+                <span role="columnheader">Form</span>
+                <span role="columnheader">Types</span>
+                <span role="columnheader">HP</span>
+                <span role="columnheader">BST</span>
+                <span role="columnheader">Evo</span>
+                <span role="columnheader">Learn</span>
+              </div>
+              <VirtualTableBody
+                getKey={(record) => record.personalId}
+                items={filteredPokemon}
+                renderRow={(record) => (
+                  <button
+                    className={`items-row ${
+                      selectedPokemon?.personalId === record.personalId
+                        ? 'items-row-selected'
+                        : ''
+                    }`}
+                    onClick={() => onSelectPokemon(record.personalId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{record.personalId}</span>
+                    <span role="cell">{record.name}</span>
+                    <span role="cell">{record.formLabel}</span>
+                    <span role="cell">{formatPokemonTypes(record)}</span>
+                    <span role="cell">{record.baseStats.hp}</span>
+                    <span role="cell">{record.baseStats.total}</span>
+                    <span role="cell">{record.evolutions.length}</span>
+                    <span role="cell">{record.learnset.length}</span>
+                  </button>
+                )}
+              />
+            </div>
+
+            <SelectedPokemonPanel pokemon={selectedPokemon} />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Pokemon Data from Workflows to load backend Pokemon data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedPokemonPanel({ pokemon }: { pokemon: PokemonRecord | null }) {
+  return (
+    <aside aria-label="Selected Pokemon provenance" className="item-inspector">
+      <div className="panel-heading">
+        <ShieldCheck aria-hidden="true" size={18} />
+        <h3>Selected Pokemon</h3>
+      </div>
+
+      {pokemon ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Name</dt>
+              <dd>{pokemon.name}</dd>
+            </div>
+            <div>
+              <dt>Personal ID</dt>
+              <dd>{pokemon.personalId}</dd>
+            </div>
+            <div>
+              <dt>Species / form</dt>
+              <dd>
+                {pokemon.speciesId} / {pokemon.formLabel}
+              </dd>
+            </div>
+            <div>
+              <dt>Types</dt>
+              <dd>{formatPokemonTypes(pokemon)}</dd>
+            </div>
+            <div>
+              <dt>Dex</dt>
+              <dd>{formatPokemonDexPresence(pokemon)}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{pokemon.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(pokemon.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(pokemon.provenance.fileState)}</dd>
+            </div>
+          </dl>
+
+          <div className="inspector-block">
+            <h4>Base Stats</h4>
+            <dl className="item-provenance-list compact-dl">
+              <div>
+                <dt>HP</dt>
+                <dd>{pokemon.baseStats.hp}</dd>
+              </div>
+              <div>
+                <dt>Attack</dt>
+                <dd>{pokemon.baseStats.attack}</dd>
+              </div>
+              <div>
+                <dt>Defense</dt>
+                <dd>{pokemon.baseStats.defense}</dd>
+              </div>
+              <div>
+                <dt>Sp. Atk</dt>
+                <dd>{pokemon.baseStats.specialAttack}</dd>
+              </div>
+              <div>
+                <dt>Sp. Def</dt>
+                <dd>{pokemon.baseStats.specialDefense}</dd>
+              </div>
+              <div>
+                <dt>Speed</dt>
+                <dd>{pokemon.baseStats.speed}</dd>
+              </div>
+              <div>
+                <dt>Total</dt>
+                <dd>{pokemon.baseStats.total}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="inspector-block">
+            <h4>Traits</h4>
+            <dl className="item-provenance-list compact-dl">
+              <div>
+                <dt>Ability 1</dt>
+                <dd>{pokemon.abilities.ability1}</dd>
+              </div>
+              <div>
+                <dt>Ability 2</dt>
+                <dd>{pokemon.abilities.ability2}</dd>
+              </div>
+              <div>
+                <dt>Hidden</dt>
+                <dd>{pokemon.abilities.hiddenAbility}</dd>
+              </div>
+              <div>
+                <dt>Catch rate</dt>
+                <dd>{pokemon.catchRate}</dd>
+              </div>
+              <div>
+                <dt>Base EXP</dt>
+                <dd>{pokemon.baseExperience}</dd>
+              </div>
+              <div>
+                <dt>Gender</dt>
+                <dd>{pokemon.genderRatio}</dd>
+              </div>
+              <div>
+                <dt>Height / weight</dt>
+                <dd>
+                  {pokemon.height} / {pokemon.weight}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="inspector-block">
+            <h4>Evolutions</h4>
+            {pokemon.evolutions.length > 0 ? (
+              <ul className="inspector-list">
+                {pokemon.evolutions.map((evolution, index) => (
+                  <li key={`${evolution.method}-${evolution.species}-${index}`}>
+                    Method {evolution.method}, target {evolution.species}, level{' '}
+                    {evolution.level}, arg {evolution.argument}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-copy">No evolution entries.</p>
+            )}
+          </div>
+
+          <div className="inspector-block">
+            <h4>Learnset</h4>
+            {pokemon.learnset.length > 0 ? (
+              <ul className="inspector-list">
+                {pokemon.learnset.slice(0, 12).map((move) => (
+                  <li key={`${move.level}-${move.moveId}`}>
+                    Lv. {move.level}: {move.moveName} ({move.moveId})
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-copy">No level-up moves.</p>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No Pokemon selected.</p>
       )}
     </aside>
   );
@@ -5663,6 +6015,49 @@ function filterItems(items: ItemRecord[], searchText: string) {
   );
 }
 
+function filterPokemon(pokemon: PokemonRecord[], searchText: string) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+
+  if (normalizedSearch.length === 0) {
+    return pokemon;
+  }
+
+  return pokemon.filter((record) =>
+    [
+      record.personalId.toString(),
+      record.speciesId.toString(),
+      record.form.toString(),
+      record.name,
+      record.formLabel,
+      record.type1,
+      record.type2,
+      record.baseStats.hp.toString(),
+      record.baseStats.attack.toString(),
+      record.baseStats.defense.toString(),
+      record.baseStats.specialAttack.toString(),
+      record.baseStats.specialDefense.toString(),
+      record.baseStats.speed.toString(),
+      record.baseStats.total.toString(),
+      record.abilities.ability1.toString(),
+      record.abilities.ability2.toString(),
+      record.abilities.hiddenAbility.toString(),
+      record.provenance.sourceFile,
+      ...record.evolutions.flatMap((evolution) => [
+        evolution.method.toString(),
+        evolution.argument.toString(),
+        evolution.species.toString(),
+        evolution.form.toString(),
+        evolution.level.toString()
+      ]),
+      ...record.learnset.flatMap((move) => [
+        move.moveId.toString(),
+        move.moveName,
+        move.level.toString()
+      ])
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
+  );
+}
+
 function filterTextEntries(entries: TextEntryRecord[], searchText: string) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -6339,6 +6734,32 @@ function formatCoordinate(value: number) {
   return Number.isInteger(value) ? value.toString() : value.toFixed(2);
 }
 
+function formatPokemonTypes(pokemon: PokemonRecord) {
+  return pokemon.type1 === pokemon.type2
+    ? pokemon.type1
+    : `${pokemon.type1} / ${pokemon.type2}`;
+}
+
+function formatPokemonDexPresence(pokemon: PokemonRecord) {
+  if (!pokemon.dexPresence.isPresentInGame) {
+    return 'Not present';
+  }
+
+  if (!pokemon.dexPresence.isInAnyDex) {
+    return 'Present, no dex index';
+  }
+
+  return [
+    pokemon.dexPresence.regionalDexIndex > 0
+      ? `Regional ${pokemon.dexPresence.regionalDexIndex}`
+      : null,
+    pokemon.dexPresence.armorDexIndex > 0 ? `Armor ${pokemon.dexPresence.armorDexIndex}` : null,
+    pokemon.dexPresence.crownDexIndex > 0 ? `Crown ${pokemon.dexPresence.crownDexIndex}` : null
+  ]
+    .filter((value): value is string => value !== null)
+    .join(', ');
+}
+
 const workflowAvailabilityLabels = {
   available: 'Available',
   disabled: 'Disabled',
@@ -6356,6 +6777,7 @@ function formatSourceLayer(
     | EncounterTableRecord['provenance']['sourceLayer']
     | FlagRecord['provenance']['sourceLayer']
     | ItemRecord['provenance']['sourceLayer']
+    | PokemonRecord['provenance']['sourceLayer']
     | RaidRewardTableRecord['provenance']['sourceLayer']
     | SaveBlockRecord['provenance']['sourceLayer']
     | ShopRecord['provenance']['sourceLayer']
@@ -6385,6 +6807,7 @@ function formatFileState(
     | EncounterTableRecord['provenance']['fileState']
     | FlagRecord['provenance']['fileState']
     | ItemRecord['provenance']['fileState']
+    | PokemonRecord['provenance']['fileState']
     | RaidRewardTableRecord['provenance']['fileState']
     | SaveBlockRecord['provenance']['fileState']
     | ShopRecord['provenance']['fileState']

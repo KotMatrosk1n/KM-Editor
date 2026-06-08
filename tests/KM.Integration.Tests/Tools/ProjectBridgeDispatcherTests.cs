@@ -8,6 +8,7 @@ using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Items;
 using KM.Api.Placement;
+using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Raids;
 using KM.Api.RoyalCandy;
@@ -127,6 +128,11 @@ public sealed class ProjectBridgeDispatcherTests
             },
             workflow =>
             {
+                Assert.Equal("pokemon", workflow.Id);
+                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
+            },
+            workflow =>
+            {
                 Assert.Equal("text", workflow.Id);
                 Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
             },
@@ -224,6 +230,54 @@ public sealed class ProjectBridgeDispatcherTests
             {
                 Assert.Equal("alternatePrice", editableField.Field);
                 Assert.Equal(999_999, editableField.MaximumValue);
+            });
+    }
+
+    [Fact]
+    public void DispatchLoadPokemonWorkflowReturnsRealPokemonRecords()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShPokemonBridgeFixtures.WriteBasePokemonData(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-pokemon");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadPokemonWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-pokemon", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Equal(2, response.Payload.Workflow.Pokemon.Count);
+        Assert.Equal(1, response.Payload.Workflow.Stats.PresentPokemonCount);
+        Assert.Equal(1, response.Payload.Workflow.Stats.TotalEvolutionCount);
+        Assert.Equal(2, response.Payload.Workflow.Stats.TotalLearnsetMoveCount);
+        var pokemon = response.Payload.Workflow.Pokemon[1];
+        Assert.Equal(1, pokemon.PersonalId);
+        Assert.Equal("Bulbasaur", pokemon.Name);
+        Assert.Equal("Grass", pokemon.Type1);
+        Assert.Equal("Poison", pokemon.Type2);
+        Assert.Equal(318, pokemon.BaseStats.Total);
+        Assert.Equal(65, pokemon.Abilities.Ability1);
+        Assert.Equal("romfs/bin/pml/personal/personal_total.bin", pokemon.Provenance.SourceFile);
+        Assert.Equal(ProjectFileLayerDto.Base, pokemon.Provenance.SourceLayer);
+        Assert.Equal(ProjectFileGraphEntryStateDto.BaseOnly, pokemon.Provenance.FileState);
+        var evolution = Assert.Single(pokemon.Evolutions);
+        Assert.Equal(2, evolution.Species);
+        Assert.Equal(16, evolution.Level);
+        Assert.Collection(
+            pokemon.Learnset,
+            move =>
+            {
+                Assert.Equal(33, move.MoveId);
+                Assert.Equal("Tackle", move.MoveName);
+            },
+            move =>
+            {
+                Assert.Equal(45, move.MoveId);
+                Assert.Equal("Growl", move.MoveName);
             });
     }
 

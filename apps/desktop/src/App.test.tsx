@@ -9,6 +9,7 @@ import {
   type FlagworkSaveWorkflow,
   type ItemsWorkflow,
   type PlacementWorkflow,
+  type PokemonWorkflow,
   type ProjectFileGraph,
   type ProjectHealth,
   type RaidRewardsWorkflow,
@@ -48,6 +49,8 @@ describe('App', () => {
       openProject: null,
       placementSearchText: '',
       placementWorkflow: null,
+      pokemonSearchText: '',
+      pokemonWorkflow: null,
       projectStatus: 'idle',
       raidRewardSearchText: '',
       raidRewardsWorkflow: null,
@@ -66,6 +69,7 @@ describe('App', () => {
       selectedFlagId: null,
       selectedItemId: null,
       selectedPlacementObjectId: null,
+      selectedPokemonPersonalId: null,
       selectedRaidRewardTableId: null,
       selectedSaveBlockId: null,
       selectedShopId: null,
@@ -113,6 +117,7 @@ describe('App', () => {
 
     expect(screen.getByRole('heading', { name: 'Workflow List' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Items' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: 'Pokemon Data' })).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { level: 3, name: 'Text and Dialogue Map' })
     ).toBeInTheDocument();
@@ -156,6 +161,30 @@ describe('App', () => {
 
     expect(screen.queryByText('Potion')).not.toBeInTheDocument();
     expect(screen.getByText('romfs/bin/pml/item/item.dat')).toBeInTheDocument();
+    expect(screen.getByText('Base only')).toBeInTheDocument();
+  });
+
+  it('opens Pokemon Data, searches records, and shows selected details', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge()} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
+    expect(screen.getAllByText('Bulbasaur').length).toBeGreaterThan(0);
+    expect(screen.getByText('Lv. 1: Tackle (33)')).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Search Pokemon'));
+    await user.type(screen.getByLabelText('Search Pokemon'), 'fire');
+
+    expect(screen.queryByText('Bulbasaur')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Charmander').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Fire').length).toBeGreaterThan(0);
+    expect(screen.getByText('romfs/bin/pml/personal/personal_total.bin')).toBeInTheDocument();
     expect(screen.getByText('Base only')).toBeInTheDocument();
   });
 
@@ -908,6 +937,137 @@ function createMockProjectBridge(
       id: 'items',
       label: 'Items'
     }
+  };
+  const pokemonWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
+    diagnostics: [],
+    id: 'pokemon',
+    label: 'Pokemon Data'
+  };
+  const pokemonWorkflow: PokemonWorkflow = {
+    diagnostics: [],
+    pokemon: [
+      {
+        abilities: {
+          ability1: 65,
+          ability2: 0,
+          hiddenAbility: 34
+        },
+        baseExperience: 64,
+        baseStats: {
+          attack: 49,
+          defense: 49,
+          hp: 45,
+          specialAttack: 65,
+          specialDefense: 65,
+          speed: 45,
+          total: 318
+        },
+        catchRate: 45,
+        dexPresence: {
+          armorDexIndex: 0,
+          crownDexIndex: 0,
+          isInAnyDex: true,
+          isPresentInGame: true,
+          regionalDexIndex: 1
+        },
+        evolutionStage: 1,
+        evolutions: [
+          {
+            argument: 0,
+            form: 0,
+            level: 16,
+            method: 4,
+            species: 2
+          }
+        ],
+        form: 0,
+        formLabel: 'Base',
+        genderRatio: 31,
+        height: 7,
+        learnset: [
+          {
+            level: 1,
+            moveId: 33,
+            moveName: 'Tackle'
+          },
+          {
+            level: 3,
+            moveId: 45,
+            moveName: 'Growl'
+          }
+        ],
+        name: 'Bulbasaur',
+        personalId: 1,
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/pml/personal/personal_total.bin',
+          sourceLayer: 'base'
+        },
+        speciesId: 1,
+        type1: 'Grass',
+        type2: 'Poison',
+        weight: 69
+      },
+      {
+        abilities: {
+          ability1: 66,
+          ability2: 0,
+          hiddenAbility: 94
+        },
+        baseExperience: 62,
+        baseStats: {
+          attack: 52,
+          defense: 43,
+          hp: 39,
+          specialAttack: 60,
+          specialDefense: 50,
+          speed: 65,
+          total: 309
+        },
+        catchRate: 45,
+        dexPresence: {
+          armorDexIndex: 0,
+          crownDexIndex: 0,
+          isInAnyDex: true,
+          isPresentInGame: true,
+          regionalDexIndex: 4
+        },
+        evolutionStage: 1,
+        evolutions: [],
+        form: 0,
+        formLabel: 'Base',
+        genderRatio: 31,
+        height: 6,
+        learnset: [
+          {
+            level: 1,
+            moveId: 10,
+            moveName: 'Scratch'
+          }
+        ],
+        name: 'Charmander',
+        personalId: 4,
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/pml/personal/personal_total.bin',
+          sourceLayer: 'base'
+        },
+        speciesId: 4,
+        type1: 'Fire',
+        type2: 'Fire',
+        weight: 85
+      }
+    ],
+    stats: {
+      presentPokemonCount: 2,
+      sourceFileCount: 5,
+      totalEvolutionCount: 1,
+      totalLearnsetMoveCount: 3,
+      totalPokemonCount: 2
+    },
+    summary: pokemonWorkflowSummary
   };
   const textWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
@@ -1722,6 +1882,7 @@ function createMockProjectBridge(
       Promise.resolve({
         workflows: [
           itemsWorkflow.summary,
+          pokemonWorkflowSummary,
           textWorkflowSummary,
           trainersWorkflowSummary,
           shopsWorkflowSummary,
@@ -2060,6 +2221,10 @@ function createMockProjectBridge(
     loadItemsWorkflow: () =>
       Promise.resolve({
         workflow: itemsWorkflow
+      }),
+    loadPokemonWorkflow: () =>
+      Promise.resolve({
+        workflow: pokemonWorkflow
       }),
     loadTextWorkflow: () =>
       Promise.resolve({
