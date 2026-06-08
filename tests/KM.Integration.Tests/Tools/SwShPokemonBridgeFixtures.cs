@@ -63,10 +63,16 @@ internal static class SwShPokemonBridgeFixtures
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x22), 64);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x24), 7);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x26), 69);
+        SetFlag(record, 0x28, 10);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x56), 1);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5C), 1);
 
         return record;
+    }
+
+    private static void SetFlag(byte[] data, int offset, int bitIndex)
+    {
+        data[offset + (bitIndex / 8)] |= (byte)(1 << (bitIndex % 8));
     }
 
     private static byte[] CreateLearnsetTable(params (ushort MoveId, ushort Level)[][] learnsets)
@@ -110,11 +116,12 @@ internal static class SwShPokemonBridgeFixtures
 
     private static byte[] CreateIndexedMoveNames()
     {
-        var names = Enumerable.Range(0, 46)
+        var names = Enumerable.Range(0, 346)
             .Select(index => $"Move {index}")
             .ToArray();
         names[33] = "Tackle";
         names[45] = "Growl";
+        names[345] = "Magical Leaf";
 
         return CreateTextTable(names);
     }

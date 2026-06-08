@@ -551,6 +551,7 @@ public static class SwShBridgeMapper
             pokemon.Weight,
             pokemon.Evolutions.Select(ToDto).ToArray(),
             pokemon.Learnset.Select(ToDto).ToArray(),
+            pokemon.Compatibility.Select(ToDto).ToArray(),
             new PokemonProvenanceDto(
                 pokemon.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(pokemon.Provenance.SourceLayer),
@@ -590,6 +591,25 @@ public static class SwShBridgeMapper
             learnsetMove.MoveId,
             learnsetMove.MoveName,
             learnsetMove.Level);
+    }
+
+    private static PokemonCompatibilityGroupDto ToDto(SwShPokemonCompatibilityGroup group)
+    {
+        return new PokemonCompatibilityGroupDto(
+            group.GroupId,
+            group.Label,
+            group.EnabledCount,
+            group.Entries.Select(ToDto).ToArray());
+    }
+
+    private static PokemonCompatibilityEntryDto ToDto(SwShPokemonCompatibilityEntry entry)
+    {
+        return new PokemonCompatibilityEntryDto(
+            entry.Slot,
+            entry.MoveId,
+            entry.MoveName,
+            entry.Label,
+            entry.CanLearn);
     }
 
     private static MoveRecordDto ToDto(SwShMoveRecord move)

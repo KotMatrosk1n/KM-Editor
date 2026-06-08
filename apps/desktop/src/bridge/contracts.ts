@@ -432,6 +432,21 @@ export const pokemonLearnsetMoveSchema = z.strictObject({
   moveName: z.string()
 });
 
+export const pokemonCompatibilityEntrySchema = z.strictObject({
+  canLearn: z.boolean(),
+  label: z.string(),
+  moveId: z.number().int().nonnegative(),
+  moveName: z.string(),
+  slot: z.number().int().nonnegative()
+});
+
+export const pokemonCompatibilityGroupSchema = z.strictObject({
+  enabledCount: z.number().int().nonnegative(),
+  entries: z.array(pokemonCompatibilityEntrySchema),
+  groupId: z.string(),
+  label: z.string()
+});
+
 export const pokemonEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
   value: z.number().int()
@@ -452,6 +467,7 @@ export const pokemonRecordSchema = z.strictObject({
   baseExperience: z.number().int().nonnegative(),
   baseStats: pokemonBaseStatsSchema,
   catchRate: z.number().int().nonnegative(),
+  compatibility: z.array(pokemonCompatibilityGroupSchema),
   dexPresence: pokemonDexPresenceSchema,
   evolutionStage: z.number().int().nonnegative(),
   evolutions: z.array(pokemonEvolutionRecordSchema),
@@ -1429,6 +1445,8 @@ export type ItemsWorkflow = z.infer<typeof itemsWorkflowSchema>;
 export type PokemonEditableField = z.infer<typeof pokemonEditableFieldSchema>;
 export type PokemonEvolutionRecord = z.infer<typeof pokemonEvolutionRecordSchema>;
 export type PokemonLearnsetMove = z.infer<typeof pokemonLearnsetMoveSchema>;
+export type PokemonCompatibilityEntry = z.infer<typeof pokemonCompatibilityEntrySchema>;
+export type PokemonCompatibilityGroup = z.infer<typeof pokemonCompatibilityGroupSchema>;
 export type PokemonRecord = z.infer<typeof pokemonRecordSchema>;
 export type PokemonWorkflow = z.infer<typeof pokemonWorkflowSchema>;
 export type MoveEditableField = z.infer<typeof moveEditableFieldSchema>;

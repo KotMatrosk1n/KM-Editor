@@ -82,6 +82,19 @@ public sealed record SwShPokemonLearnsetMove(
     string MoveName,
     int Level);
 
+public sealed record SwShPokemonCompatibilityGroup(
+    string GroupId,
+    string Label,
+    int EnabledCount,
+    IReadOnlyList<SwShPokemonCompatibilityEntry> Entries);
+
+public sealed record SwShPokemonCompatibilityEntry(
+    int Slot,
+    int MoveId,
+    string MoveName,
+    string Label,
+    bool CanLearn);
+
 public sealed record SwShPokemonRecord(
     int PersonalId,
     int SpeciesId,
@@ -102,6 +115,7 @@ public sealed record SwShPokemonRecord(
     int Weight,
     IReadOnlyList<SwShPokemonEvolutionRecord> Evolutions,
     IReadOnlyList<SwShPokemonLearnsetMove> Learnset,
+    IReadOnlyList<SwShPokemonCompatibilityGroup> Compatibility,
     SwShPokemonProvenance Provenance);
 
 public sealed record SwShPokemonWorkflowStats(

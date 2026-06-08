@@ -7,6 +7,10 @@ namespace KM.Formats.SwSh;
 public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records)
 {
     public const int RecordSize = 0xB0;
+    public const int TechnicalMachineCompatibilityCount = 100;
+    public const int TechnicalRecordCompatibilityCount = 100;
+    public const int TypeTutorCompatibilityCount = 8;
+    public const int ArmorTutorCompatibilityCount = 18;
     public const string PersonalDataRelativePath = "romfs/bin/pml/personal/personal_total.bin";
 
     public static SwShPersonalTable Parse(ReadOnlySpan<byte> data)
@@ -100,6 +104,9 @@ public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records
         BinaryPrimitives.WriteUInt16LittleEndian(data[0x22..], checked((ushort)record.BaseExperience));
         BinaryPrimitives.WriteUInt16LittleEndian(data[0x24..], checked((ushort)record.Height));
         BinaryPrimitives.WriteUInt16LittleEndian(data[0x26..], checked((ushort)record.Weight));
+        WriteFlags(record.TechnicalMachines, data[0x28..], TechnicalMachineCompatibilityCount);
+        WriteFlags(record.TypeTutors, data[0x38..], TypeTutorCompatibilityCount);
+        WriteFlags(record.TechnicalRecords, data[0x3C..], TechnicalRecordCompatibilityCount);
         BinaryPrimitives.WriteUInt32LittleEndian(data[0x4C..], record.ModelId);
         BinaryPrimitives.WriteUInt16LittleEndian(data[0x56..], checked((ushort)record.HatchedSpecies));
         BinaryPrimitives.WriteUInt16LittleEndian(data[0x58..], checked((ushort)record.LocalFormIndex));
@@ -111,6 +118,7 @@ public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records
 
         BinaryPrimitives.WriteUInt16LittleEndian(data[0x5C..], checked((ushort)record.RegionalDexIndex));
         BinaryPrimitives.WriteUInt16LittleEndian(data[0x5E..], checked((ushort)record.Form));
+        WriteFlags(record.ArmorTutors, data[0xA8..], ArmorTutorCompatibilityCount);
         BinaryPrimitives.WriteUInt16LittleEndian(data[0xAC..], checked((ushort)record.ArmorDexIndex));
         BinaryPrimitives.WriteUInt16LittleEndian(data[0xAE..], checked((ushort)record.CrownDexIndex));
     }
@@ -158,6 +166,10 @@ public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records
             BaseExperience: BinaryPrimitives.ReadUInt16LittleEndian(data[0x22..]),
             Height: BinaryPrimitives.ReadUInt16LittleEndian(data[0x24..]),
             Weight: BinaryPrimitives.ReadUInt16LittleEndian(data[0x26..]),
+            TechnicalMachines: ReadFlags(data[0x28..], TechnicalMachineCompatibilityCount),
+            TechnicalRecords: ReadFlags(data[0x3C..], TechnicalRecordCompatibilityCount),
+            TypeTutors: ReadFlags(data[0x38..], TypeTutorCompatibilityCount),
+            ArmorTutors: ReadFlags(data[0xA8..], ArmorTutorCompatibilityCount),
             ModelId: BinaryPrimitives.ReadUInt32LittleEndian(data[0x4C..]),
             HatchedSpecies: BinaryPrimitives.ReadUInt16LittleEndian(data[0x56..]),
             LocalFormIndex: BinaryPrimitives.ReadUInt16LittleEndian(data[0x58..]),
@@ -168,6 +180,47 @@ public sealed record SwShPersonalTable(IReadOnlyList<SwShPersonalRecord> Records
             Form: BinaryPrimitives.ReadUInt16LittleEndian(data[0x5E..]),
             ArmorDexIndex: BinaryPrimitives.ReadUInt16LittleEndian(data[0xAC..]),
             CrownDexIndex: BinaryPrimitives.ReadUInt16LittleEndian(data[0xAE..]));
+    }
+
+    private static bool[] ReadFlags(ReadOnlySpan<byte> data, int count)
+    {
+        var flags = new bool[count];
+        for (var index = 0; index < count; index++)
+        {
+            flags[index] = GetFlag(data, index);
+        }
+
+        return flags;
+    }
+
+    private static void WriteFlags(IReadOnlyList<bool> flags, Span<byte> data, int expectedCount)
+    {
+        if (flags.Count != expectedCount)
+        {
+            throw new InvalidDataException(
+                $"Personal compatibility flag write expected {expectedCount} flags, but found {flags.Count}.");
+        }
+
+        for (var index = 0; index < expectedCount; index++)
+        {
+            SetFlag(data, index, flags[index]);
+        }
+    }
+
+    private static bool GetFlag(ReadOnlySpan<byte> data, int bitIndex)
+    {
+        var byteIndex = bitIndex / 8;
+        var mask = 1 << (bitIndex % 8);
+        return (data[byteIndex] & mask) != 0;
+    }
+
+    private static void SetFlag(Span<byte> data, int bitIndex, bool enabled)
+    {
+        var byteIndex = bitIndex / 8;
+        var mask = (byte)(1 << (bitIndex % 8));
+        data[byteIndex] = enabled
+            ? (byte)(data[byteIndex] | mask)
+            : (byte)(data[byteIndex] & ~mask);
     }
 }
 
@@ -209,6 +262,10 @@ public sealed record SwShPersonalRecord(
     int BaseExperience,
     int Height,
     int Weight,
+    IReadOnlyList<bool> TechnicalMachines,
+    IReadOnlyList<bool> TechnicalRecords,
+    IReadOnlyList<bool> TypeTutors,
+    IReadOnlyList<bool> ArmorTutors,
     uint ModelId,
     int HatchedSpecies,
     int LocalFormIndex,

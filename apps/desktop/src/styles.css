@@ -793,6 +793,64 @@ h2 {
   accent-color: #4338ca;
 }
 
+.compatibility-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.compatibility-controls {
+  display: grid;
+  gap: 10px;
+}
+
+.compatibility-search {
+  width: 100%;
+}
+
+.compatibility-list {
+  display: grid;
+  gap: 4px;
+  max-height: 300px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.compatibility-toggle {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 8px;
+  color: #202420;
+  background: #ffffff;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.compatibility-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #4338ca;
+}
+
+.compatibility-toggle span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compatibility-toggle small {
+  color: #6c756a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .text-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);

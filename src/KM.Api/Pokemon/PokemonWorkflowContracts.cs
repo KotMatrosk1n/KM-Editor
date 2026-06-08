@@ -86,6 +86,19 @@ public sealed record PokemonLearnsetMoveDto(
     string MoveName,
     int Level);
 
+public sealed record PokemonCompatibilityGroupDto(
+    string GroupId,
+    string Label,
+    int EnabledCount,
+    IReadOnlyList<PokemonCompatibilityEntryDto> Entries);
+
+public sealed record PokemonCompatibilityEntryDto(
+    int Slot,
+    int MoveId,
+    string MoveName,
+    string Label,
+    bool CanLearn);
+
 public sealed record PokemonRecordDto(
     int PersonalId,
     int SpeciesId,
@@ -106,6 +119,7 @@ public sealed record PokemonRecordDto(
     int Weight,
     IReadOnlyList<PokemonEvolutionRecordDto> Evolutions,
     IReadOnlyList<PokemonLearnsetMoveDto> Learnset,
+    IReadOnlyList<PokemonCompatibilityGroupDto> Compatibility,
     PokemonProvenanceDto Provenance);
 
 public sealed record PokemonEditableFieldDto(
