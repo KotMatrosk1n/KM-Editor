@@ -128,6 +128,14 @@ describe('projectBridge', () => {
               },
               {
                 availability: 'readOnly',
+                description:
+                  'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
+                diagnostics: [],
+                id: 'pokemon',
+                label: 'Pokemon Data'
+              },
+              {
+                availability: 'readOnly',
                 description: 'Text entries, dialogue references, and source provenance.',
                 diagnostics: [],
                 id: 'text',
@@ -200,6 +208,91 @@ describe('projectBridge', () => {
                 label: 'Spreadsheet Import'
               }
             ]
+          }
+        });
+      }
+
+      if (request.command === 'pokemon.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              pokemon: [
+                {
+                  abilities: {
+                    ability1: 65,
+                    ability2: 0,
+                    hiddenAbility: 34
+                  },
+                  baseExperience: 64,
+                  baseStats: {
+                    attack: 49,
+                    defense: 49,
+                    hp: 45,
+                    specialAttack: 65,
+                    specialDefense: 65,
+                    speed: 45,
+                    total: 318
+                  },
+                  catchRate: 45,
+                  dexPresence: {
+                    armorDexIndex: 0,
+                    crownDexIndex: 0,
+                    isInAnyDex: true,
+                    isPresentInGame: true,
+                    regionalDexIndex: 1
+                  },
+                  evolutionStage: 1,
+                  evolutions: [
+                    {
+                      argument: 0,
+                      form: 0,
+                      level: 16,
+                      method: 4,
+                      species: 2
+                    }
+                  ],
+                  form: 0,
+                  formLabel: 'Base',
+                  genderRatio: 31,
+                  height: 7,
+                  learnset: [
+                    {
+                      level: 1,
+                      moveId: 33,
+                      moveName: 'Tackle'
+                    }
+                  ],
+                  name: 'Bulbasaur',
+                  personalId: 1,
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/bin/pml/personal/personal_total.bin',
+                    sourceLayer: 'base'
+                  },
+                  speciesId: 1,
+                  type1: 'Grass',
+                  type2: 'Poison',
+                  weight: 69
+                }
+              ],
+              stats: {
+                presentPokemonCount: 1,
+                sourceFileCount: 4,
+                totalEvolutionCount: 1,
+                totalLearnsetMoveCount: 1,
+                totalPokemonCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description:
+                  'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
+                diagnostics: [],
+                id: 'pokemon',
+                label: 'Pokemon Data'
+              }
+            }
           }
         });
       }
@@ -917,6 +1010,7 @@ describe('projectBridge', () => {
 
     const workflows = await bridge.listWorkflows({ paths: projectPaths });
     const items = await bridge.loadItemsWorkflow({ paths: projectPaths });
+    const pokemon = await bridge.loadPokemonWorkflow({ paths: projectPaths });
     const text = await bridge.loadTextWorkflow({ paths: projectPaths });
     const trainers = await bridge.loadTrainersWorkflow({ paths: projectPaths });
     const shops = await bridge.loadShopsWorkflow({ paths: projectPaths });
@@ -929,18 +1023,21 @@ describe('projectBridge', () => {
     const spreadsheetImport = await bridge.loadSpreadsheetImportWorkflow({ paths: projectPaths });
 
     expect(workflows.workflows[0]?.id).toBe('items');
-    expect(workflows.workflows[1]?.id).toBe('text');
-    expect(workflows.workflows[2]?.id).toBe('trainers');
-    expect(workflows.workflows[3]?.id).toBe('shops');
-    expect(workflows.workflows[4]?.id).toBe('encounters');
-    expect(workflows.workflows[5]?.id).toBe('raidRewards');
-    expect(workflows.workflows[6]?.id).toBe('placement');
-    expect(workflows.workflows[7]?.id).toBe('flagworkSave');
-    expect(workflows.workflows[8]?.id).toBe('exefsPatches');
-    expect(workflows.workflows[9]?.id).toBe('royalCandy');
-    expect(workflows.workflows[10]?.id).toBe('spreadsheetImport');
+    expect(workflows.workflows[1]?.id).toBe('pokemon');
+    expect(workflows.workflows[2]?.id).toBe('text');
+    expect(workflows.workflows[3]?.id).toBe('trainers');
+    expect(workflows.workflows[4]?.id).toBe('shops');
+    expect(workflows.workflows[5]?.id).toBe('encounters');
+    expect(workflows.workflows[6]?.id).toBe('raidRewards');
+    expect(workflows.workflows[7]?.id).toBe('placement');
+    expect(workflows.workflows[8]?.id).toBe('flagworkSave');
+    expect(workflows.workflows[9]?.id).toBe('exefsPatches');
+    expect(workflows.workflows[10]?.id).toBe('royalCandy');
+    expect(workflows.workflows[11]?.id).toBe('spreadsheetImport');
     expect(items.workflow.editableFields).toHaveLength(4);
     expect(items.workflow.items[0]?.name).toBe('Potion');
+    expect(pokemon.workflow.pokemon[0]?.name).toBe('Bulbasaur');
+    expect(pokemon.workflow.pokemon[0]?.learnset[0]?.moveName).toBe('Tackle');
     expect(text.workflow.editableFields[0]?.field).toBe('value');
     expect(text.workflow.entries[0]?.label).toBe('story #0');
     expect(trainers.workflow.trainers[0]?.name).toBe('Avery');

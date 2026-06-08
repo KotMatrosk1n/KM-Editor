@@ -6,6 +6,7 @@ using KM.Api.Encounters;
 using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Placement;
+using KM.Api.Pokemon;
 using KM.Api.Shops;
 using KM.Api.Raids;
 using KM.Api.RoyalCandy;
@@ -18,6 +19,7 @@ using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Placement;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Shops;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
@@ -42,6 +44,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadItemsWorkflowResponse(ToItemsWorkflowDto(workflow));
+    }
+
+    public static LoadPokemonWorkflowResponse ToDto(SwShPokemonWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadPokemonWorkflowResponse(ToPokemonWorkflowDto(workflow));
     }
 
     public static LoadTextWorkflowResponse ToDto(SwShTextWorkflow workflow)
@@ -237,6 +246,20 @@ public static class SwShBridgeMapper
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    private static PokemonWorkflowDto ToPokemonWorkflowDto(SwShPokemonWorkflow workflow)
+    {
+        return new PokemonWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Pokemon.Select(ToDto).ToArray(),
+            new PokemonWorkflowStatsDto(
+                workflow.Stats.TotalPokemonCount,
+                workflow.Stats.PresentPokemonCount,
+                workflow.Stats.TotalEvolutionCount,
+                workflow.Stats.TotalLearnsetMoveCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     private static TextWorkflowDto ToTextWorkflowDto(SwShTextWorkflow workflow)
     {
         return new TextWorkflowDto(
@@ -415,6 +438,66 @@ public static class SwShBridgeMapper
             field.ValueKind,
             field.MinimumValue,
             field.MaximumValue);
+    }
+
+    private static PokemonRecordDto ToDto(SwShPokemonRecord pokemon)
+    {
+        return new PokemonRecordDto(
+            pokemon.PersonalId,
+            pokemon.SpeciesId,
+            pokemon.Form,
+            pokemon.Name,
+            pokemon.FormLabel,
+            pokemon.Type1,
+            pokemon.Type2,
+            new PokemonBaseStatsDto(
+                pokemon.BaseStats.HP,
+                pokemon.BaseStats.Attack,
+                pokemon.BaseStats.Defense,
+                pokemon.BaseStats.SpecialAttack,
+                pokemon.BaseStats.SpecialDefense,
+                pokemon.BaseStats.Speed,
+                pokemon.BaseStats.Total),
+            new PokemonAbilitySetDto(
+                pokemon.Abilities.Ability1,
+                pokemon.Abilities.Ability2,
+                pokemon.Abilities.HiddenAbility),
+            new PokemonDexPresenceDto(
+                pokemon.DexPresence.IsPresentInGame,
+                pokemon.DexPresence.IsInAnyDex,
+                pokemon.DexPresence.RegionalDexIndex,
+                pokemon.DexPresence.ArmorDexIndex,
+                pokemon.DexPresence.CrownDexIndex),
+            pokemon.CatchRate,
+            pokemon.EvolutionStage,
+            pokemon.GenderRatio,
+            pokemon.BaseExperience,
+            pokemon.Height,
+            pokemon.Weight,
+            pokemon.Evolutions.Select(ToDto).ToArray(),
+            pokemon.Learnset.Select(ToDto).ToArray(),
+            new PokemonProvenanceDto(
+                pokemon.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(pokemon.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(pokemon.Provenance.FileState)));
+    }
+
+    private static PokemonEvolutionRecordDto ToDto(SwShPokemonEvolutionRecord evolution)
+    {
+        return new PokemonEvolutionRecordDto(
+            evolution.Method,
+            evolution.Argument,
+            evolution.Species,
+            evolution.Form,
+            evolution.Level);
+    }
+
+    private static PokemonLearnsetMoveDto ToDto(SwShPokemonLearnsetMove learnsetMove)
+    {
+        return new PokemonLearnsetMoveDto(
+            learnsetMove.MoveId,
+            learnsetMove.MoveName,
+            learnsetMove.Level);
     }
 
     private static TextEntryRecordDto ToDto(SwShTextEntryRecord entry)

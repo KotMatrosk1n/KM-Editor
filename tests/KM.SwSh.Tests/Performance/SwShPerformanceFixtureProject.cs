@@ -11,6 +11,7 @@ internal static class SwShPerformanceFixtureProject
 {
     public const int ItemCount = 1_500;
     public const int TrainerCount = 120;
+    public const int PokemonCount = 920;
     public const int TextTableCount = 120;
     public const int TextLinesPerTable = 40;
     public const int ExtraRomFsFileCount = 600;
@@ -29,6 +30,7 @@ internal static class SwShPerformanceFixtureProject
         var temp = TemporarySwShProject.Create();
 
         WriteItems(temp);
+        WritePokemonData(temp);
         WriteTextTables(temp);
         WriteTrainers(temp);
         WriteShopData(temp);
@@ -90,6 +92,27 @@ internal static class SwShPerformanceFixtureProject
             temp.WriteBaseRomFsFile(
                 $"bin/message/French/scenario/event_{tableIndex:D3}.dat",
                 CreateTextTable($"Texte synthetique {tableIndex}"));
+        }
+    }
+
+    private static void WritePokemonData(TemporarySwShProject temp)
+    {
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(Enumerable.Range(0, PokemonCount).Select(CreatePokemonPersonalRecord)));
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza_oboe/wazaoboe_total.bin",
+            CreateLearnsetTable(PokemonCount));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/pokelist.dat",
+            CreateTextTable(CreateIndexedNames("Pokemon", PokemonCount)));
+
+        var emptyEvolutionFile = new byte[SwShEvolutionSet.FileSize];
+        for (var pokemonId = 0; pokemonId < PokemonCount; pokemonId++)
+        {
+            temp.WriteBaseRomFsFile(
+                $"bin/pml/evolution/evo_{pokemonId:D3}.bin",
+                emptyEvolutionFile);
         }
     }
 
@@ -331,6 +354,68 @@ internal static class SwShPerformanceFixtureProject
         return Enumerable.Range(0, count)
             .Select(index => 1 + ((seed * 17 + index) % (ItemCount - 1)))
             .ToArray();
+    }
+
+    private static byte[] CreatePersonalTable(IEnumerable<byte[]> records)
+    {
+        var rows = records.ToArray();
+        var data = new byte[rows.Length * SwShPersonalTable.RecordSize];
+        for (var index = 0; index < rows.Length; index++)
+        {
+            rows[index].CopyTo(data.AsSpan(index * SwShPersonalTable.RecordSize));
+        }
+
+        return data;
+    }
+
+    private static byte[] CreatePokemonPersonalRecord(int pokemonId)
+    {
+        var record = new byte[SwShPersonalTable.RecordSize];
+        record[0x00] = (byte)(35 + (pokemonId % 70));
+        record[0x01] = (byte)(40 + ((pokemonId * 3) % 80));
+        record[0x02] = (byte)(40 + ((pokemonId * 5) % 80));
+        record[0x03] = (byte)(35 + ((pokemonId * 7) % 85));
+        record[0x04] = (byte)(40 + ((pokemonId * 11) % 80));
+        record[0x05] = (byte)(40 + ((pokemonId * 13) % 80));
+        record[0x06] = (byte)(pokemonId % 18);
+        record[0x07] = (byte)((pokemonId + 1) % 18);
+        record[0x08] = (byte)(45 + (pokemonId % 120));
+        record[0x09] = (byte)(pokemonId % 3);
+        record[0x12] = 31;
+        record[0x13] = (byte)(10 + (pokemonId % 30));
+        record[0x14] = 70;
+        record[0x15] = (byte)(pokemonId % 6);
+        record[0x16] = (byte)(pokemonId % 16);
+        record[0x17] = (byte)((pokemonId + 3) % 16);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x18), (ushort)(1 + (pokemonId % 256)));
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x1A), (ushort)(1 + ((pokemonId + 17) % 256)));
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x1C), (ushort)(1 + ((pokemonId + 31) % 256)));
+        record[0x20] = 1;
+        record[0x21] = (byte)((pokemonId % 14) | (1 << 6));
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x22), (ushort)(50 + (pokemonId % 200)));
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x24), (ushort)(5 + (pokemonId % 30)));
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x26), (ushort)(50 + (pokemonId % 900)));
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x56), (ushort)pokemonId);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x5C), (ushort)pokemonId);
+
+        return record;
+    }
+
+    private static byte[] CreateLearnsetTable(int recordCount)
+    {
+        var data = new byte[recordCount * SwShPokemonLearnsetTable.RecordSize];
+        for (var recordIndex = 0; recordIndex < recordCount; recordIndex++)
+        {
+            var recordOffset = recordIndex * SwShPokemonLearnsetTable.RecordSize;
+            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(recordOffset), (ushort)(1 + (recordIndex % 16)));
+            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(recordOffset + 2), 1);
+            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(recordOffset + 4), (ushort)(1 + ((recordIndex + 1) % 16)));
+            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(recordOffset + 6), 5);
+            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(recordOffset + 8), ushort.MaxValue);
+            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(recordOffset + 10), ushort.MaxValue);
+        }
+
+        return data;
     }
 
     private static string[] CreateIndexedNames(string prefix, int count)

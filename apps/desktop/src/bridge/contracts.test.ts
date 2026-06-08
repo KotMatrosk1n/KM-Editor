@@ -19,6 +19,8 @@ import {
   loadFlagworkSaveWorkflowResponseSchema,
   loadItemsWorkflowRequestSchema,
   loadItemsWorkflowResponseSchema,
+  loadPokemonWorkflowRequestSchema,
+  loadPokemonWorkflowResponseSchema,
   loadPlacementWorkflowRequestSchema,
   loadPlacementWorkflowResponseSchema,
   loadRaidRewardsWorkflowRequestSchema,
@@ -217,6 +219,8 @@ describe('bridge contracts', () => {
     const workflowsResponseSchema = createBridgeResponseSchema(listWorkflowsResponseSchema);
     const itemsRequestSchema = createBridgeRequestSchema(loadItemsWorkflowRequestSchema);
     const itemsResponseSchema = createBridgeResponseSchema(loadItemsWorkflowResponseSchema);
+    const pokemonRequestSchema = createBridgeRequestSchema(loadPokemonWorkflowRequestSchema);
+    const pokemonResponseSchema = createBridgeResponseSchema(loadPokemonWorkflowResponseSchema);
     const textRequestSchema = createBridgeRequestSchema(loadTextWorkflowRequestSchema);
     const textResponseSchema = createBridgeResponseSchema(loadTextWorkflowResponseSchema);
     const trainersRequestSchema = createBridgeRequestSchema(loadTrainersWorkflowRequestSchema);
@@ -324,6 +328,82 @@ describe('bridge contracts', () => {
         diagnostics: [],
         id: 'items',
         label: 'Items'
+      }
+    } as const;
+    const pokemonWorkflow = {
+      diagnostics: [],
+      pokemon: [
+        {
+          abilities: {
+            ability1: 65,
+            ability2: 0,
+            hiddenAbility: 34
+          },
+          baseExperience: 64,
+          baseStats: {
+            attack: 49,
+            defense: 49,
+            hp: 45,
+            specialAttack: 65,
+            specialDefense: 65,
+            speed: 45,
+            total: 318
+          },
+          catchRate: 45,
+          dexPresence: {
+            armorDexIndex: 0,
+            crownDexIndex: 0,
+            isInAnyDex: true,
+            isPresentInGame: true,
+            regionalDexIndex: 1
+          },
+          evolutionStage: 1,
+          evolutions: [
+            {
+              argument: 0,
+              form: 0,
+              level: 16,
+              method: 4,
+              species: 2
+            }
+          ],
+          form: 0,
+          formLabel: 'Base',
+          genderRatio: 31,
+          height: 7,
+          learnset: [
+            {
+              level: 1,
+              moveId: 33,
+              moveName: 'Tackle'
+            }
+          ],
+          name: 'Bulbasaur',
+          personalId: 1,
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/pml/personal/personal_total.bin',
+            sourceLayer: 'base'
+          },
+          speciesId: 1,
+          type1: 'Grass',
+          type2: 'Poison',
+          weight: 69
+        }
+      ],
+      stats: {
+        presentPokemonCount: 1,
+        sourceFileCount: 4,
+        totalEvolutionCount: 1,
+        totalLearnsetMoveCount: 1,
+        totalPokemonCount: 1
+      },
+      summary: {
+        availability: 'readOnly',
+        description: 'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
+        diagnostics: [],
+        id: 'pokemon',
+        label: 'Pokemon Data'
       }
     } as const;
     const textWorkflow = {
@@ -910,6 +990,7 @@ describe('bridge contracts', () => {
         payload: {
           workflows: [
             itemsWorkflow.summary,
+            pokemonWorkflow.summary,
             textWorkflow.summary,
             trainersWorkflow.summary,
             shopsWorkflow.summary,
@@ -943,6 +1024,28 @@ describe('bridge contracts', () => {
       itemsResponseSchema.safeParse({
         payload: {
           workflow: itemsWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      pokemonRequestSchema.safeParse({
+        command: kmCommandNames.loadPokemonWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null,
+            saveFilePath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      pokemonResponseSchema.safeParse({
+        payload: {
+          workflow: pokemonWorkflow
         }
       }).success
     ).toBe(true);

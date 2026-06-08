@@ -7,6 +7,7 @@ using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Items;
 using KM.Api.Placement;
+using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Raids;
 using KM.Api.RoyalCandy;
@@ -97,6 +98,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.ListWorkflows => DispatchListWorkflows(requestJson),
                 KmCommandNames.LoadItemsWorkflow => DispatchLoadItemsWorkflow(requestJson),
                 KmCommandNames.UpdateItemField => DispatchUpdateItemField(requestJson),
+                KmCommandNames.LoadPokemonWorkflow => DispatchLoadPokemonWorkflow(requestJson),
                 KmCommandNames.LoadTextWorkflow => DispatchLoadTextWorkflow(requestJson),
                 KmCommandNames.UpdateTextEntry => DispatchUpdateTextEntry(requestJson),
                 KmCommandNames.LoadTrainersWorkflow => DispatchLoadTrainersWorkflow(requestJson),
@@ -176,6 +178,15 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadItemsWorkflowRequest>(requestJson);
         var workflow = swShWorkflowService.LoadItems(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadPokemonWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadPokemonWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadPokemon(ProjectBridgeMapper.ToCore(request.Payload.Paths));
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);

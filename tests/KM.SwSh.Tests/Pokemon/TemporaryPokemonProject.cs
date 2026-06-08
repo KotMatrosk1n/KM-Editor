@@ -1,0 +1,71 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+using KM.Core.Projects;
+
+namespace KM.SwSh.Tests.Pokemon;
+
+internal sealed class TemporaryPokemonProject : IDisposable
+{
+    private TemporaryPokemonProject(string rootPath)
+    {
+        RootPath = rootPath;
+        BaseRomFsPath = Directory.CreateDirectory(Path.Combine(rootPath, "base-romfs")).FullName;
+        BaseExeFsPath = Directory.CreateDirectory(Path.Combine(rootPath, "base-exefs")).FullName;
+        OutputRootPath = Directory.CreateDirectory(Path.Combine(rootPath, "output")).FullName;
+    }
+
+    public string RootPath { get; }
+
+    public string BaseRomFsPath { get; }
+
+    public string BaseExeFsPath { get; }
+
+    public string OutputRootPath { get; }
+
+    public ProjectPaths Paths => new(BaseRomFsPath, BaseExeFsPath, OutputRootPath);
+
+    public static TemporaryPokemonProject Create()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "km-editor-swsh-pokemon-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(rootPath);
+
+        return new TemporaryPokemonProject(rootPath);
+    }
+
+    public void WriteBaseRomFsFile(string relativePath, byte[] contents)
+    {
+        WriteFile(BaseRomFsPath, relativePath, contents);
+    }
+
+    public void WriteBaseExeFsFile(string relativePath, string contents)
+    {
+        WriteFile(BaseExeFsPath, relativePath, contents);
+    }
+
+    public void WriteOutputFile(string relativePath, byte[] contents)
+    {
+        WriteFile(OutputRootPath, relativePath, contents);
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(RootPath))
+        {
+            Directory.Delete(RootPath, recursive: true);
+        }
+    }
+
+    private static void WriteFile(string rootPath, string relativePath, string contents)
+    {
+        var filePath = Path.Combine(rootPath, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        File.WriteAllText(filePath, contents);
+    }
+
+    private static void WriteFile(string rootPath, string relativePath, byte[] contents)
+    {
+        var filePath = Path.Combine(rootPath, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        File.WriteAllBytes(filePath, contents);
+    }
+}

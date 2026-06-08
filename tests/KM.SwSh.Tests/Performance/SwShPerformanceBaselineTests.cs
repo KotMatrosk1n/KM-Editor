@@ -33,9 +33,10 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
             "The synthetic baseline must include enough files to exercise project graph enumeration.");
 
         var workflowList = Record(measurements, "workflows.list", () => workflowService.List(temp.Paths));
-        Assert.Equal(11, workflowList.Workflows.Count);
+        Assert.Equal(12, workflowList.Workflows.Count);
 
         var items = Record(measurements, "items.load", () => workflowService.LoadItems(temp.Paths));
+        var pokemon = Record(measurements, "pokemon.load", () => workflowService.LoadPokemon(temp.Paths));
         var text = Record(measurements, "text.load", () => workflowService.LoadText(temp.Paths));
         var trainers = Record(measurements, "trainers.load", () => workflowService.LoadTrainers(temp.Paths));
         var shops = Record(measurements, "shops.load", () => workflowService.LoadShops(temp.Paths));
@@ -48,6 +49,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var spreadsheetImport = Record(measurements, "spreadsheetImport.load", () => workflowService.LoadSpreadsheetImport(temp.Paths));
 
         Assert.Equal(SwShPerformanceFixtureProject.ItemCount, items.Stats.TotalItemCount);
+        Assert.Equal(SwShPerformanceFixtureProject.PokemonCount, pokemon.Stats.TotalPokemonCount);
         Assert.True(text.Stats.TotalTextEntryCount >= SwShPerformanceFixtureProject.TextTableCount * SwShPerformanceFixtureProject.TextLinesPerTable);
         Assert.Equal(SwShPerformanceFixtureProject.TrainerCount, trainers.Stats.TotalTrainerCount);
         Assert.True(shops.Stats.TotalInventoryItemCount > 0);
