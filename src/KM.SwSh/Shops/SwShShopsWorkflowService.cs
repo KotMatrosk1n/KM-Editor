@@ -101,7 +101,7 @@ public sealed class SwShShopsWorkflowService
         {
             var shopData = SwShShopDataFile.Parse(File.ReadAllBytes(shopDataSource.AbsolutePath));
             var provenance = CreateProvenance(shopDataSource.GraphEntry);
-            var shops = FlattenShops(shopData, itemLookup, provenance);
+            var shops = FlattenShops(shopData, itemLookup, provenance, diagnostics);
 
             return CreateWorkflow(summary, shops, editableFields, sourceFileCount: 1, diagnostics);
         }
@@ -329,9 +329,11 @@ public sealed class SwShShopsWorkflowService
     private static SwShShopRecord[] FlattenShops(
         SwShShopDataFile shopData,
         IReadOnlyDictionary<int, SwShItemRecord> itemLookup,
-        SwShShopProvenance provenance)
+        SwShShopProvenance provenance,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
         var shops = new List<SwShShopRecord>();
+        var unresolvedItemIds = new HashSet<int>();
 
         foreach (var shop in shopData.SingleShops.OrderBy(shop => shop.Hash))
         {
@@ -346,6 +348,7 @@ public sealed class SwShShopsWorkflowService
                 shop.Hash,
                 shop.Inventory,
                 itemLookup,
+                unresolvedItemIds,
                 provenance));
         }
 
@@ -364,7 +367,20 @@ public sealed class SwShShopsWorkflowService
                     shop.Hash,
                     shop.Inventories[inventoryIndex],
                     itemLookup,
+                    unresolvedItemIds,
                     provenance));
+            }
+        }
+
+        if (itemLookup.Count > 0)
+        {
+            foreach (var itemId in unresolvedItemIds.Order())
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Shop inventory references item ID {itemId}, but the Items workflow did not resolve that item.",
+                    file: provenance.SourceFile,
+                    expected: $"Loaded item metadata for item {itemId}"));
             }
         }
 
@@ -381,10 +397,11 @@ public sealed class SwShShopsWorkflowService
         ulong hash,
         SwShShopInventory inventory,
         IReadOnlyDictionary<int, SwShItemRecord> itemLookup,
+        ISet<int> unresolvedItemIds,
         SwShShopProvenance provenance)
     {
         var inventoryRows = inventory.Items
-            .Select((itemId, index) => ToInventoryRecord(index, itemId, itemLookup))
+            .Select((itemId, index) => ToInventoryRecord(index, itemId, itemLookup, unresolvedItemIds))
             .ToArray();
 
         return new SwShShopRecord(
@@ -405,14 +422,31 @@ public sealed class SwShShopsWorkflowService
     private static SwShShopInventoryRecord ToInventoryRecord(
         int index,
         int itemId,
-        IReadOnlyDictionary<int, SwShItemRecord> itemLookup)
+        IReadOnlyDictionary<int, SwShItemRecord> itemLookup,
+        ISet<int> unresolvedItemIds)
     {
-        return itemLookup.TryGetValue(itemId, out var item)
-            ? new SwShShopInventoryRecord(index + 1, itemId, item.Name, item.BuyPrice, StockLimit: null)
-            : new SwShShopInventoryRecord(index + 1, itemId, $"Item {itemId}", Price: 0, StockLimit: null);
+        if (itemLookup.TryGetValue(itemId, out var item))
+        {
+            return new SwShShopInventoryRecord(
+                index + 1,
+                itemId,
+                item.Name,
+                item.BuyPrice,
+                IsKnownItem: true,
+                StockLimit: null);
+        }
+
+        unresolvedItemIds.Add(itemId);
+        return new SwShShopInventoryRecord(
+            index + 1,
+            itemId,
+            $"Item {itemId}",
+            Price: 0,
+            IsKnownItem: false,
+            StockLimit: null);
     }
 
-    private static string FormatInventorySummary(IReadOnlyList<SwShShopInventoryRecord> inventory)
+    internal static string FormatInventorySummary(IReadOnlyList<SwShShopInventoryRecord> inventory)
     {
         if (inventory.Count == 0)
         {

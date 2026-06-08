@@ -1342,6 +1342,7 @@ export const shopProvenanceSchema = z.strictObject({
 });
 
 export const shopInventoryRecordSchema = z.strictObject({
+  isKnownItem: z.boolean().default(false),
   itemId: z.number().int().nonnegative(),
   itemName: z.string(),
   price: z.number().int().nonnegative(),

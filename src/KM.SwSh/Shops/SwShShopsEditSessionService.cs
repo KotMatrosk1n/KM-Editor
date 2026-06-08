@@ -427,21 +427,34 @@ public sealed class SwShShopsEditSessionService
         {
             Shops = workflow.Shops
                 .Select(shop => shop.ShopId == shopId
-                    ? shop with
-                    {
-                        Inventory = shop.Inventory
-                            .Select(item => item.Slot == slot
-                                ? item with
-                                {
-                                    ItemId = itemId,
-                                    ItemName = itemOption?.ItemName ?? $"Item {itemId}",
-                                    Price = itemOption?.Price ?? 0,
-                                }
-                                : item)
-                            .ToArray(),
-                    }
+                    ? OverlayShopInventoryItem(shop, slot, itemId, itemOption)
                     : shop)
                 .ToArray(),
+        };
+    }
+
+    private static SwShShopRecord OverlayShopInventoryItem(
+        SwShShopRecord shop,
+        int slot,
+        int itemId,
+        SwShShopEditableFieldOption? itemOption)
+    {
+        var inventory = shop.Inventory
+            .Select(item => item.Slot == slot
+                ? item with
+                {
+                    ItemId = itemId,
+                    ItemName = itemOption?.ItemName ?? $"Item {itemId}",
+                    Price = itemOption?.Price ?? 0,
+                    IsKnownItem = itemOption is not null,
+                }
+                : item)
+            .ToArray();
+
+        return shop with
+        {
+            Inventory = inventory,
+            InventorySummary = SwShShopsWorkflowService.FormatInventorySummary(inventory),
         };
     }
 

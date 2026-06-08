@@ -1940,6 +1940,12 @@ export function App({
     }
   };
 
+  const handleOpenShopItem = (itemId: number) => {
+    setSelectedItemId(itemId);
+    setItemSearchText('');
+    setActiveSection('items');
+  };
+
   const handleUpdateEncounterSlotField = async (
     tableId: string,
     slot: number,
@@ -2451,6 +2457,7 @@ export function App({
                 isEditStarting={isEditStarting}
                 isShopUpdating={isShopUpdating}
                 onSearchChange={setShopSearchText}
+                onOpenItem={handleOpenShopItem}
                 onSelectShop={setSelectedShopId}
                 onStartEditSession={handleStartEditSession}
                 onUpdateShopInventoryItem={handleUpdateShopInventoryItem}
@@ -7717,6 +7724,7 @@ function ShopsSection({
   editSession,
   isEditStarting,
   isShopUpdating,
+  onOpenItem,
   onSearchChange,
   onSelectShop,
   onStartEditSession,
@@ -7728,6 +7736,7 @@ function ShopsSection({
   editSession: EditSession | null;
   isEditStarting: boolean;
   isShopUpdating: boolean;
+  onOpenItem: (itemId: number) => void;
   onSearchChange: (searchText: string) => void;
   onSelectShop: (shopId: string | null) => void;
   onStartEditSession: () => void;
@@ -7836,6 +7845,7 @@ function ShopsSection({
               inventoryItem={selectedInventoryItem}
               isEditStarting={isEditStarting}
               isShopUpdating={isShopUpdating}
+              onOpenItem={onOpenItem}
               onSelectSlot={setSelectedSlot}
               onStartEditSession={onStartEditSession}
               onUpdateShopInventoryItem={onUpdateShopInventoryItem}
@@ -7860,6 +7870,7 @@ function SelectedShopPanel({
   inventoryItem,
   isEditStarting,
   isShopUpdating,
+  onOpenItem,
   onSelectSlot,
   onStartEditSession,
   onUpdateShopInventoryItem,
@@ -7872,6 +7883,7 @@ function SelectedShopPanel({
   inventoryItem: ShopInventoryRecord | null;
   isEditStarting: boolean;
   isShopUpdating: boolean;
+  onOpenItem: (itemId: number) => void;
   onSelectSlot: (slot: number | null) => void;
   onStartEditSession: () => void;
   onUpdateShopInventoryItem: (
@@ -7967,7 +7979,22 @@ function SelectedShopPanel({
                 <dl className="shop-inventory-detail">
                   <div>
                     <dt>Item</dt>
-                    <dd>{inventoryItem.itemName}</dd>
+                    <dd>
+                      <span>{inventoryItem.itemName}</span>
+                      {inventoryItem.isKnownItem ? (
+                        <button
+                          className="secondary-button compact-button shop-item-link"
+                          onClick={() => onOpenItem(inventoryItem.itemId)}
+                          title="Open in Items"
+                          type="button"
+                        >
+                          <ExternalLink aria-hidden="true" size={14} />
+                          <span>Open in Items</span>
+                        </button>
+                      ) : (
+                        <span className="path-status-muted">Missing item metadata</span>
+                      )}
+                    </dd>
                   </div>
                   <div>
                     <dt>Price</dt>

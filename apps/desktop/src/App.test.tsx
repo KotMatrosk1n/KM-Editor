@@ -975,6 +975,23 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('opens a linked shop inventory item in Items', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Shops' }));
+
+    await user.click(await screen.findByRole('button', { name: 'Open in Items' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
+    expect(screen.getAllByText('Potion').length).toBeGreaterThan(0);
+  });
+
   it('opens Encounters, edits a slot probability, reviews a wild data plan, and applies it', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
@@ -3732,6 +3749,7 @@ function createMockProjectBridge(
         currency: 'Money',
         inventory: [
           {
+            isKnownItem: true,
             itemId: 1,
             itemName: 'Potion',
             price: 300,
@@ -3739,6 +3757,7 @@ function createMockProjectBridge(
             stockLimit: null
           },
           {
+            isKnownItem: true,
             itemId: 2,
             itemName: 'Antidote',
             price: 200,

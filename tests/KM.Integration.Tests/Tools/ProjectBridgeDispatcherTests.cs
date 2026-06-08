@@ -1158,6 +1158,7 @@ public sealed class ProjectBridgeDispatcherTests
         var inventoryItem = shop.Inventory[0];
         Assert.Equal("Potion", inventoryItem.ItemName);
         Assert.Equal(300, inventoryItem.Price);
+        Assert.True(inventoryItem.IsKnownItem);
         Assert.Null(inventoryItem.StockLimit);
         Assert.Equal(1, response.Payload.Workflow.EditableFields.Count);
         Assert.Contains(
