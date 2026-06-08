@@ -700,6 +700,9 @@ export const loadTextWorkflowResponseSchema = z.strictObject({
 });
 
 export const trainerProvenanceSchema = z.strictObject({
+  classFileState: projectFileGraphEntryStateSchema.nullable().default(null),
+  classSourceFile: z.string().nullable().default(null),
+  classSourceLayer: projectFileLayerSchema.nullable().default(null),
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
   sourceLayer: projectFileLayerSchema,
@@ -742,6 +745,10 @@ export const trainerRecordSchema = z.strictObject({
   aiFlags: z.number().int().nonnegative().default(0),
   battleType: z.string(),
   battleTypeValue: z.number().int().nonnegative(),
+  canEditClassBall: z.boolean().default(false),
+  classBall: z.string().nullable().default(null),
+  classBallId: z.number().int().nonnegative().nullable().default(null),
+  classBallScope: z.string().default('Class file missing'),
   gift: z.number().int().nonnegative().default(0),
   heal: z.boolean().default(false),
   itemIds: z.array(z.number().int().nonnegative()).default([]),

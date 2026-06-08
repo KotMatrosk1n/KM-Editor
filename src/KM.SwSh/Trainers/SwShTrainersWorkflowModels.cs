@@ -9,10 +9,13 @@ namespace KM.SwSh.Trainers;
 public sealed record SwShTrainerProvenance(
     string SourceFile,
     string TeamSourceFile,
+    string? ClassSourceFile,
     ProjectFileLayer SourceLayer,
     ProjectFileLayer TeamSourceLayer,
+    ProjectFileLayer? ClassSourceLayer,
     ProjectFileGraphEntryState FileState,
-    ProjectFileGraphEntryState TeamFileState);
+    ProjectFileGraphEntryState TeamFileState,
+    ProjectFileGraphEntryState? ClassFileState);
 
 public sealed record SwShTrainerPokemonRecord(
     int Slot,
@@ -56,6 +59,10 @@ public sealed record SwShTrainerRecord(
     bool Heal,
     int Money,
     int Gift,
+    int? ClassBallId,
+    string? ClassBall,
+    bool CanEditClassBall,
+    string ClassBallScope,
     IReadOnlyList<SwShTrainerPokemonRecord> Team,
     SwShTrainerProvenance Provenance);
 

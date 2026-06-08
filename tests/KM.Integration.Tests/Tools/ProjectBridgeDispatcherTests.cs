@@ -619,8 +619,13 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.True(trainer.Heal);
         Assert.Equal(24, trainer.Money);
         Assert.Equal(7, trainer.Gift);
+        Assert.Equal(4, trainer.ClassBallId);
+        Assert.Equal("4 Poke Ball", trainer.ClassBall);
+        Assert.True(trainer.CanEditClassBall);
+        Assert.Equal("Unique trainer class: Avery", trainer.ClassBallScope);
         Assert.Equal(ProjectFileLayerDto.Base, trainer.Provenance.SourceLayer);
         Assert.Equal(ProjectFileLayerDto.Base, trainer.Provenance.TeamSourceLayer);
+        Assert.Equal(ProjectFileLayerDto.Base, trainer.Provenance.ClassSourceLayer);
         var pokemon = Assert.Single(trainer.Team);
         Assert.Equal(810, pokemon.SpeciesId);
         Assert.Equal("Grookey", pokemon.Species);
@@ -638,10 +643,13 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(5, pokemon.Ivs.SpecialAttack);
         Assert.True(pokemon.Shiny);
         Assert.False(pokemon.CanDynamax);
-        Assert.Equal(37, response.Payload.Workflow.EditableFields.Count);
+        Assert.Equal(38, response.Payload.Workflow.EditableFields.Count);
         Assert.Contains(
             response.Payload.Workflow.EditableFields.Single(field => field.Field == "trainerClassId").Options,
             option => option.Value == 5 && option.Label == "005 Pokemon Trainer");
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "classBallId").Options,
+            option => option.Value == 4 && option.Label == "4 Poke Ball");
         Assert.Contains(
             response.Payload.Workflow.EditableFields.Single(field => field.Field == "battleType").Options,
             option => option.Value == 1 && option.Label == "1 Doubles");
@@ -657,7 +665,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(
             response.Payload.Workflow.EditableFields.Single(field => field.Field == "move1Id").Options,
             option => option.Value == 1 && option.Label == "001 Scratch");
-        Assert.Equal(2, response.Payload.Workflow.Stats.SourceFileCount);
+        Assert.Equal(3, response.Payload.Workflow.Stats.SourceFileCount);
     }
 
     [Fact]

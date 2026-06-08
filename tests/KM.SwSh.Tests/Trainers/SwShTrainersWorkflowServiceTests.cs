@@ -37,6 +37,10 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.True(trainer.Heal);
         Assert.Equal(24, trainer.Money);
         Assert.Equal(7, trainer.Gift);
+        Assert.Equal(4, trainer.ClassBallId);
+        Assert.Equal("4 Poke Ball", trainer.ClassBall);
+        Assert.True(trainer.CanEditClassBall);
+        Assert.Equal("Unique trainer class: Avery", trainer.ClassBallScope);
         Assert.Equal(2, trainer.Team.Count);
         Assert.Equal(810, trainer.Team[0].SpeciesId);
         Assert.Equal("Grookey", trainer.Team[0].Species);
@@ -57,14 +61,19 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.False(trainer.Team[0].CanDynamax);
         Assert.Equal(ProjectFileLayer.Base, trainer.Provenance.SourceLayer);
         Assert.Equal(ProjectFileLayer.Base, trainer.Provenance.TeamSourceLayer);
+        Assert.Equal(ProjectFileLayer.Base, trainer.Provenance.ClassSourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.BaseOnly, trainer.Provenance.FileState);
         Assert.Equal(ProjectFileGraphEntryState.BaseOnly, trainer.Provenance.TeamFileState);
+        Assert.Equal(ProjectFileGraphEntryState.BaseOnly, trainer.Provenance.ClassFileState);
         Assert.Equal(1, workflow.Stats.TotalTrainerCount);
         Assert.Equal(2, workflow.Stats.TotalPokemonCount);
-        Assert.Equal(2, workflow.Stats.SourceFileCount);
+        Assert.Equal(3, workflow.Stats.SourceFileCount);
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.TrainerClassIdField).Options,
             option => option.Value == 5 && option.Label == "005 Pokemon Trainer");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.ClassBallIdField).Options,
+            option => option.Value == 4 && option.Label == "4 Poke Ball");
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.SpeciesIdField).Options,
             option => option.Value == 810 && option.Label == "810 Grookey");
@@ -128,6 +137,7 @@ public sealed class SwShTrainersWorkflowServiceTests
                 heal: true,
                 money: 24,
                 gift: 7));
+        temp.WriteBaseRomFsFile("bin/trainer/trainer_type/trainer_type_005.bin", CreateTrainerClass(ballId: 4));
         temp.WriteBaseRomFsFile(
             "bin/trainer/trainer_poke/trainer_010.bin",
             CreateTrainerTeam(
@@ -198,6 +208,15 @@ public sealed class SwShTrainersWorkflowServiceTests
             WriteUInt16(data, rowOffset + 0x16, record.moves[2]);
             WriteUInt16(data, rowOffset + 0x18, record.moves[3]);
         }
+
+        return data;
+    }
+
+    internal static byte[] CreateTrainerClass(int ballId)
+    {
+        var data = new byte[SwShTrainerClassFile.Size];
+        data[0x01] = 8;
+        data[0x02] = checked((byte)ballId);
 
         return data;
     }

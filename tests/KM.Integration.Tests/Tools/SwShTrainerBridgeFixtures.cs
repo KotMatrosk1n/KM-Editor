@@ -19,6 +19,7 @@ internal static class SwShTrainerBridgeFixtures
                 heal: true,
                 money: 24,
                 gift: 7));
+        temp.WriteBaseRomFsFile("bin/trainer/trainer_type/trainer_type_005.bin", CreateTrainerClass(ballId: 4));
         temp.WriteBaseRomFsFile(
             "bin/trainer/trainer_poke/trainer_010.bin",
             CreateTrainerTeam((speciesId: 810, level: 12, heldItemId: 1, moves: new[] { 1, 2, 0, 0 })));
@@ -87,6 +88,15 @@ internal static class SwShTrainerBridgeFixtures
             WriteUInt16(data, rowOffset + 0x16, record.moves[2]);
             WriteUInt16(data, rowOffset + 0x18, record.moves[3]);
         }
+
+        return data;
+    }
+
+    public static byte[] CreateTrainerClass(int ballId)
+    {
+        var data = new byte[SwShTrainerClassFile.Size];
+        data[0x01] = 8;
+        data[0x02] = checked((byte)ballId);
 
         return data;
     }

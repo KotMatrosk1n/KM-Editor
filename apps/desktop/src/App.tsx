@@ -334,6 +334,7 @@ const sellPriceFieldName = 'sellPrice';
 const wattsPriceFieldName = 'wattsPrice';
 const alternatePriceFieldName = 'alternatePrice';
 const trainerClassIdFieldName = 'trainerClassId';
+const classBallIdFieldName = 'classBallId';
 const battleTypeFieldName = 'battleType';
 const trainerItemFieldNames = [
   'trainerItem1Id',
@@ -375,6 +376,7 @@ const shinyFieldName = 'shiny';
 const canDynamaxFieldName = 'canDynamax';
 const trainerDataFieldNames = [
   trainerClassIdFieldName,
+  classBallIdFieldName,
   battleTypeFieldName,
   ...trainerItemFieldNames,
   aiFlagsFieldName,
@@ -4684,12 +4686,28 @@ function SelectedTrainerPanel({
               <dd>{trainer.provenance.teamSourceFile}</dd>
             </div>
             <div>
+              <dt>Class file</dt>
+              <dd>{trainer.provenance.classSourceFile ?? 'Not loaded'}</dd>
+            </div>
+            <div>
+              <dt>Class ball scope</dt>
+              <dd>{trainer.classBallScope}</dd>
+            </div>
+            <div>
               <dt>Data layer</dt>
               <dd>{formatSourceLayer(trainer.provenance.sourceLayer)}</dd>
             </div>
             <div>
               <dt>Party layer</dt>
               <dd>{formatSourceLayer(trainer.provenance.teamSourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>Class layer</dt>
+              <dd>
+                {trainer.provenance.classSourceLayer
+                  ? formatSourceLayer(trainer.provenance.classSourceLayer)
+                  : 'Not loaded'}
+              </dd>
             </div>
           </dl>
 
@@ -4699,15 +4717,25 @@ function SelectedTrainerPanel({
                 const currentValue = getEditableTrainerFieldValue(trainer, field.field);
                 const draftValue = trainerDrafts[field.field] ?? '';
                 const draftState = getIntegerDraftState(draftValue, currentValue, field);
+                const isFieldBlocked =
+                  field.field === classBallIdFieldName && !trainer.canEditClassBall;
                 const canSubmit =
-                  editSession !== null && draftState.canSubmit && draftState.parsedValue !== null;
+                  !isFieldBlocked
+                  && editSession !== null
+                  && draftState.canSubmit
+                  && draftState.parsedValue !== null;
 
                 return (
                   <div className="trainer-editor-row" key={field.field}>
                     <label className="path-field">
                       <span>{field.label}</span>
                       <TrainerFieldInput
-                        disabled={!canEditTrainers || editSession === null || isTrainerUpdating}
+                        disabled={
+                          isFieldBlocked
+                          || !canEditTrainers
+                          || editSession === null
+                          || isTrainerUpdating
+                        }
                         draftValue={draftValue}
                         field={field}
                         onChange={(value) =>
@@ -7784,6 +7812,9 @@ function filterTrainers(trainers: TrainerRecord[], searchText: string) {
       trainer.name,
       trainer.trainerClass,
       trainer.trainerClassId.toString(),
+      trainer.classBall ?? '',
+      trainer.classBallId?.toString() ?? '',
+      trainer.classBallScope,
       trainer.battleType,
       ...trainer.itemIds.map((itemId) => itemId.toString()),
       ...trainer.items,
@@ -8266,6 +8297,8 @@ function getEditableTrainerFieldValue(trainer: TrainerRecord, field: string) {
   switch (field) {
     case trainerClassIdFieldName:
       return trainer.trainerClassId;
+    case classBallIdFieldName:
+      return trainer.classBallId;
     case battleTypeFieldName:
       return trainer.battleTypeValue;
     case trainerItemFieldNames[0]:
