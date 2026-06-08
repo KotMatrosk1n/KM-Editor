@@ -181,7 +181,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
     expect(screen.getAllByText('Bulbasaur').length).toBeGreaterThan(0);
-    expect(screen.getByText('Lv. 1: Tackle (33)')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Tackle/ })).toBeInTheDocument();
 
     await user.clear(screen.getByLabelText('Search Pokemon'));
     await user.type(screen.getByLabelText('Search Pokemon'), 'fire');
@@ -223,6 +223,33 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(screen.getByText('Set Bulbasaur hp to 99.')).toBeInTheDocument();
+  });
+
+  it('starts a Pokemon edit session and saves a learnset row change', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    await user.click(screen.getByRole('button', { name: /Growl/ }));
+    await user.clear(screen.getByLabelText('Move ID'));
+    await user.type(screen.getByLabelText('Move ID'), '345');
+    await user.clear(screen.getByLabelText('Level'));
+    await user.type(screen.getByLabelText('Level'), '9');
+    await user.click(screen.getByRole('button', { name: 'Save learnset row' }));
+
+    expect(await screen.findByRole('button', { name: /Magical Leaf/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Bulbasaur learnset slot 1 to Lv. 9 Magical Leaf.')).toBeInTheDocument();
   });
 
   it('opens Moves Data, searches records, and shows selected details', async () => {
@@ -1163,12 +1190,14 @@ function createMockProjectBridge(
           {
             level: 1,
             moveId: 33,
-            moveName: 'Tackle'
+            moveName: 'Tackle',
+            slot: 0
           },
           {
             level: 3,
             moveId: 45,
-            moveName: 'Growl'
+            moveName: 'Growl',
+            slot: 1
           }
         ],
         name: 'Bulbasaur',
@@ -1265,7 +1294,8 @@ function createMockProjectBridge(
           {
             level: 1,
             moveId: 10,
-            moveName: 'Scratch'
+            moveName: 'Scratch',
+            slot: 0
           }
         ],
         name: 'Charmander',
@@ -2893,6 +2923,91 @@ function createMockProjectBridge(
             }
 
             return pokemon;
+          })
+        }
+      }),
+    updatePokemonLearnset: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.pokemon',
+              field: `learnset:${request.action === 'add' ? 'upsert' : request.action}:${
+                request.action === 'add'
+                  ? pokemonWorkflow.pokemon.find((pokemon) => pokemon.personalId === request.personalId)
+                      ?.learnset.length ?? 0
+                  : request.slot ?? 0
+              }`,
+              newValue:
+                request.moveId !== null && request.level !== null
+                  ? `${request.moveId}:${request.level}`
+                  : '1',
+              recordId: request.personalId.toString(),
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/pml/waza_oboe/wazaoboe_total.bin'
+                }
+              ],
+              summary:
+                request.action === 'remove'
+                  ? `Remove Bulbasaur learnset slot ${request.slot}.`
+                  : request.action === 'moveUp'
+                  ? `Move Bulbasaur learnset slot ${request.slot} up.`
+                  : request.action === 'moveDown'
+                  ? `Move Bulbasaur learnset slot ${request.slot} down.`
+                  : `Set Bulbasaur learnset slot ${request.slot ?? 0} to Lv. ${
+                      request.level
+                    } ${request.moveId === 345 ? 'Magical Leaf' : `Move ${request.moveId}`}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...pokemonWorkflow,
+          pokemon: pokemonWorkflow.pokemon.map((pokemon) => {
+            if (pokemon.personalId !== request.personalId) {
+              return pokemon;
+            }
+
+            const learnset = [...pokemon.learnset];
+            const targetSlot = request.action === 'add' ? learnset.length : request.slot ?? 0;
+            if (
+              (request.action === 'upsert' || request.action === 'add') &&
+              request.moveId !== null &&
+              request.level !== null
+            ) {
+              const row = {
+                level: request.level,
+                moveId: request.moveId,
+                moveName: request.moveId === 345 ? 'Magical Leaf' : `Move ${request.moveId}`,
+                slot: targetSlot
+              };
+              if (targetSlot < learnset.length) {
+                learnset[targetSlot] = row;
+              } else {
+                learnset.push(row);
+              }
+            } else if (request.action === 'remove' && targetSlot < learnset.length) {
+              learnset.splice(targetSlot, 1);
+            } else if (request.action === 'moveUp' && targetSlot > 0) {
+              [learnset[targetSlot - 1], learnset[targetSlot]] = [
+                learnset[targetSlot]!,
+                learnset[targetSlot - 1]!
+              ];
+            } else if (request.action === 'moveDown' && targetSlot < learnset.length - 1) {
+              [learnset[targetSlot + 1], learnset[targetSlot]] = [
+                learnset[targetSlot]!,
+                learnset[targetSlot + 1]!
+              ];
+            }
+
+            return {
+              ...pokemon,
+              learnset: learnset.map((move, slot) => ({ ...move, slot }))
+            };
           })
         }
       }),

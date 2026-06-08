@@ -57,12 +57,14 @@ public sealed class SwShPokemonWorkflowServiceTests
             pokemon.Learnset,
             move =>
             {
+                Assert.Equal(0, move.Slot);
                 Assert.Equal(33, move.MoveId);
                 Assert.Equal("Tackle", move.MoveName);
                 Assert.Equal(1, move.Level);
             },
             move =>
             {
+                Assert.Equal(1, move.Slot);
                 Assert.Equal(45, move.MoveId);
                 Assert.Equal("Growl", move.MoveName);
                 Assert.Equal(3, move.Level);

@@ -16,6 +16,15 @@ public sealed record UpdatePokemonFieldRequest(
     string Field,
     string Value);
 
+public sealed record UpdatePokemonLearnsetRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    int PersonalId,
+    string Action,
+    int? Slot,
+    int? MoveId,
+    int? Level);
+
 public sealed record PokemonProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -82,6 +91,7 @@ public sealed record PokemonEvolutionRecordDto(
     int Level);
 
 public sealed record PokemonLearnsetMoveDto(
+    int Slot,
     int MoveId,
     string MoveName,
     int Level);
@@ -152,6 +162,11 @@ public sealed record PokemonWorkflowDto(
 public sealed record LoadPokemonWorkflowResponse(PokemonWorkflowDto Workflow);
 
 public sealed record UpdatePokemonFieldResponse(
+    PokemonWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdatePokemonLearnsetResponse(
     PokemonWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

@@ -81,6 +81,47 @@ public sealed class SwShPokemonEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateLearnsetOverlaysPendingRowEdit()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+
+        var result = service.UpdateLearnset(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 1,
+            moveId: 345,
+            level: 7);
+
+        var pokemon = result.Workflow.Pokemon.Single(record => record.PersonalId == 1);
+        Assert.Collection(
+            pokemon.Learnset,
+            move =>
+            {
+                Assert.Equal(0, move.Slot);
+                Assert.Equal(33, move.MoveId);
+                Assert.Equal(1, move.Level);
+            },
+            move =>
+            {
+                Assert.Equal(1, move.Slot);
+                Assert.Equal(345, move.MoveId);
+                Assert.Equal("Magical Leaf", move.MoveName);
+                Assert.Equal(7, move.Level);
+            });
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal("workflow.pokemon", edit.Domain);
+        Assert.Equal("1", edit.RecordId);
+        Assert.Equal("learnset:upsert:1", edit.Field);
+        Assert.Equal("345:7", edit.NewValue);
+        Assert.Equal("Set Bulbasaur learnset slot 1 to Lv. 7 Magical Leaf.", edit.Summary);
+        Assert.Contains(edit.Sources, source => source.RelativePath == SwShPokemonWorkflowService.LearnsetDataPath);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
     public void UpdateFieldReplacesPendingEditForSamePokemonAndField()
     {
         using var temp = CreateEditableProject();
@@ -122,6 +163,33 @@ public sealed class SwShPokemonEditSessionServiceTests
         var write = Assert.Single(plan.Writes);
         Assert.Equal(SwShPokemonWorkflowService.PersonalDataPath, write.TargetRelativePath);
         Assert.Contains(write.Sources, source => source.Layer == ProjectFileLayer.Base);
+    }
+
+    [Fact]
+    public void CreateChangePlanCanTargetPersonalAndLearnsetTables()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var personalUpdate = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            SwShPokemonWorkflowService.Type1Field,
+            "9");
+        var learnsetUpdate = service.UpdateLearnset(
+            temp.Paths,
+            personalUpdate.Session,
+            personalId: 1,
+            action: "add",
+            slot: null,
+            moveId: 520,
+            level: 12);
+
+        var plan = service.CreateChangePlan(temp.Paths, learnsetUpdate.Session);
+
+        Assert.True(plan.CanApply);
+        Assert.Contains(plan.Writes, write => write.TargetRelativePath == SwShPokemonWorkflowService.PersonalDataPath);
+        Assert.Contains(plan.Writes, write => write.TargetRelativePath == SwShPokemonWorkflowService.LearnsetDataPath);
     }
 
     [Fact]
@@ -167,6 +235,64 @@ public sealed class SwShPokemonEditSessionServiceTests
             "bin/pml/personal/personal_total.bin"));
         Assert.Equal(45, SwShPersonalTable.Parse(baseBytes).Records[1].HP);
         Assert.False(SwShPersonalTable.Parse(baseBytes).Records[1].TechnicalMachines[0]);
+    }
+
+    [Fact]
+    public void ApplyChangePlanWritesOutputLearnsetTableAndLeavesBaseUntouched()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+        var rowUpdate = service.UpdateLearnset(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "upsert",
+            slot: 1,
+            moveId: 345,
+            level: 9);
+        var addUpdate = service.UpdateLearnset(
+            temp.Paths,
+            rowUpdate.Session,
+            personalId: 1,
+            action: "add",
+            slot: null,
+            moveId: 520,
+            level: 12);
+        var plan = service.CreateChangePlan(temp.Paths, addUpdate.Session);
+
+        var apply = service.ApplyChangePlan(temp.Paths, addUpdate.Session, plan);
+
+        Assert.Contains(apply.WrittenFiles, file => file.RelativePath == SwShPokemonWorkflowService.LearnsetDataPath);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputBytes = File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.LearnsetDataPath.Replace('/', Path.DirectorySeparatorChar)));
+        var outputLearnset = SwShPokemonLearnsetTable.Parse(outputBytes).Records[1];
+        Assert.Collection(
+            outputLearnset.Moves,
+            move =>
+            {
+                Assert.Equal(33, move.MoveId);
+                Assert.Equal(1, move.Level);
+            },
+            move =>
+            {
+                Assert.Equal(345, move.MoveId);
+                Assert.Equal(9, move.Level);
+            },
+            move =>
+            {
+                Assert.Equal(520, move.MoveId);
+                Assert.Equal(12, move.Level);
+            });
+        var baseBytes = File.ReadAllBytes(Path.Combine(
+            temp.BaseRomFsPath,
+            "bin/pml/waza_oboe/wazaoboe_total.bin"));
+        var baseLearnset = SwShPokemonLearnsetTable.Parse(baseBytes).Records[1];
+        Assert.Collection(
+            baseLearnset.Moves,
+            move => Assert.Equal(33, move.MoveId),
+            move => Assert.Equal(45, move.MoveId));
     }
 
     [Fact]

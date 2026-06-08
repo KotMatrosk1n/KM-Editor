@@ -21,7 +21,7 @@ KM Editor already has the project and workflow spine needed for safer feature wo
 - Project health, file graph, output-root ownership, read-only base RomFS/ExeFS handling, diagnostics, and installable desktop UX.
 - Preview/validate/apply edit sessions for supported workflows.
 - Items price editing, text/dialogue editing, trainer basics, wild encounter basics, shops inventory basics, raid rewards basics, placement item basics, spreadsheet import, flagwork/save inspection, ExeFS patch readiness, and Royal Candy workflow guidance.
-- Pokemon Data coverage for personal records, editable Personal scalar/flag fields, TM/TR/tutor compatibility flags, evolution records, learnsets, names, search, provenance, diagnostics, and output-root apply.
+- Pokemon Data coverage for personal records, editable Personal scalar/flag fields, TM/TR/tutor compatibility flags, editable level-up learnset rows, evolution records, names, search, provenance, diagnostics, and output-root apply.
 - Moves Data coverage for move metadata, scalar/effect/stat/flag editing, search, provenance, diagnostics, and output-root apply.
 
 This coverage is not complete yet. Many editor families still need more fields, linked tables, validations, and bulk operations before KM Editor can be considered a full replacement workflow.
@@ -30,7 +30,7 @@ This coverage is not complete yet. Many editor families still need more fields, 
 
 | Feature family | Required editor surface | Current KM status | P9 action |
 | --- | --- | --- | --- |
-| Pokemon Data | Personal, learnset, evolution, TM/TR/tutor compatibility, and enhancement/bulk actions | Parser-backed workflow with searchable species inspection, editable Personal scalar/flag fields, core Personal enum selectors, and TM/TR/tutor compatibility flags through preview/validate/apply | Add learnset/evolution row editing, additional named selectors for item/ability/species references, and previewed bulk transforms |
+| Pokemon Data | Personal, learnset, evolution, TM/TR/tutor compatibility, and enhancement/bulk actions | Parser-backed workflow with searchable species inspection, editable Personal scalar/flag fields, core Personal enum selectors, TM/TR/tutor compatibility flags, and level-up learnset row editing through preview/validate/apply | Add evolution row editing, additional named selectors for item/ability/species references, and previewed bulk transforms |
 | Trainers | Trainer class, money, mode, items, AI flags, class ball, party slots, species/form/level/ability/item/nature/gender/shiny/EVs/IVs/Dynamax/Gigantamax/moves, bulk helpers | Basic trainer and party edits only | Expand trainer metadata and party stat editing, including IVs, EVs, nature, gender, shiny, Dynamax, Gigantamax, AI flags, and class ball |
 | Wild Encounters | Symbol and hidden encounter tables, species/form/probability/level ranges, map/table context, randomize current map | Basic wild table/slot editing | Expand table context, labels, filters, and batch-safe encounter transforms |
 | Raid Battles | Den tables, game version, species/form, star probabilities, level table, ability roll, gender, Gigantamax, flawless IV count, drop/bonus reward links, placement usage labels | Raid rewards only, not battle slots | Add raid battle workflow with linked rewards and placement usage diagnostics |
@@ -63,7 +63,7 @@ The Pokemon editor is a high-priority target because users rely on it as a centr
 | Evolve | Up to nine SWSH evolution rows with method, evolves-into species, argument/form/item/move/type context, and level |
 | Enhancements | Randomize personal data, amplify EXP, randomize evolutions, remove trade evolutions, evolve every level, randomize learnsets, expand learnsets, metronome learnsets |
 
-KM now presents core Personal scalar/flag fields as backend-owned edit-session fields with validation, diagnostics, change previews, output-root writes, named selectors for type, egg group, EXP growth, and color fields, and grouped TM/TR/type-tutor/Armor-tutor compatibility toggles. Future Pokemon Data slices should add item/ability/species reference labels, level-up learnset row editing, evolution row editing, and previewed transforms that list every affected species and output file before apply.
+KM now presents core Personal scalar/flag fields as backend-owned edit-session fields with validation, diagnostics, change previews, output-root writes, named selectors for type, egg group, EXP growth, and color fields, grouped TM/TR/type-tutor/Armor-tutor compatibility toggles, and level-up learnset row add/edit/remove/reorder actions against `wazaoboe_total.bin`. Future Pokemon Data slices should add item/ability/species reference labels, evolution row editing, and previewed transforms that list every affected species and output file before apply.
 
 ## Moves Data Field Inventory
 
@@ -95,7 +95,7 @@ KM should implement a shared individual-Pokemon stats model for IVs, EVs, nature
 
 ## Ordered P9 Implementation Queue
 
-1. Pokemon Data editable parity foundation: personal fields and TM/TR/tutor compatibility flags are started with guarded edit sessions and core enum selectors; continue with item/ability/species selectors, learnset row edits, evolution row edits, and previewed bulk transforms.
+1. Pokemon Data editable parity foundation: personal fields, TM/TR/tutor compatibility flags, core enum selectors, and level-up learnset row editing are covered with guarded edit sessions; continue with item/ability/species selectors, evolution row edits, and previewed bulk transforms.
 2. Individual Pokemon stat editing across trainer parties first, then gifts/trades/statics/rentals/Dynamax Adventures, with IV handling treated as a required shared capability.
 3. Moves Data workflow with grouped move metadata, battle-behavior flags, and guarded edit-session writes.
 4. Expanded Items workflow beyond prices, including field-use behavior, Pokemon effects, battle boosts, and TM/TR machine metadata.

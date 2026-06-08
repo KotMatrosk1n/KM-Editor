@@ -851,6 +851,84 @@ h2 {
   font-weight: 800;
 }
 
+.learnset-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.learnset-list {
+  display: grid;
+  gap: 4px;
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.learnset-row {
+  display: grid;
+  grid-template-columns: 42px 64px minmax(0, 1fr) 54px;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  width: 100%;
+  padding: 6px 8px;
+  color: #202420;
+  background: #ffffff;
+  border: 1px solid #e1e5df;
+  border-radius: 8px;
+  box-sizing: border-box;
+  cursor: pointer;
+  text-align: left;
+}
+
+.learnset-row:hover,
+.learnset-row-selected {
+  color: #ffffff;
+  background: #4338ca;
+  border-color: #4338ca;
+}
+
+.learnset-row span,
+.learnset-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.learnset-edit-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 0.7fr);
+  gap: 10px;
+  align-items: end;
+}
+
+.learnset-button-row {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.learnset-add-button {
+  grid-column: 1 / -1;
+  white-space: nowrap;
+}
+
+.danger-icon-button {
+  color: #8f1f1f;
+  background: #fff0f0;
+  border-color: #dfb5b5;
+}
+
+.danger-icon-button:hover {
+  background: #ffe2e2;
+}
+
 .text-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
