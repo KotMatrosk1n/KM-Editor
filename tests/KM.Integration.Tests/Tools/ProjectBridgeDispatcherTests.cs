@@ -324,6 +324,80 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchUpdateMoveFieldReturnsPendingMoveSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShMoveBridgeFixtures.WriteBaseMoves(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.UpdateMoveField,
+            new UpdateMoveFieldRequest(
+                temp.Paths,
+                Session: null,
+                MoveId: 33,
+                Field: "power",
+                Value: "80"),
+            requestId: "request-move-edit");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<UpdateMoveFieldResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.True(response.Payload.Session.HasPendingChanges);
+        Assert.Equal(80, Assert.Single(response.Payload.Workflow.Moves).Power);
+        var edit = Assert.Single(response.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.moves", edit.Domain);
+        Assert.Equal("power", edit.Field);
+        Assert.Equal("80", edit.NewValue);
+    }
+
+    [Fact]
+    public void DispatchApplyMoveChangePlanWritesMoveData()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShMoveBridgeFixtures.WriteBaseMoves(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var sessionResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.UpdateMoveField,
+            new UpdateMoveFieldRequest(temp.Paths, Session: null, MoveId: 33, Field: "power", Value: "80"),
+            requestId: "request-move-edit"));
+        var sessionResponse = DeserializeResponse<UpdateMoveFieldResponse>(sessionResponseJson);
+        Assert.NotNull(sessionResponse.Payload);
+        var validationResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, sessionResponse.Payload.Session),
+            requestId: "request-move-validate"));
+        var validationResponse = DeserializeResponse<ValidateEditSessionResponse>(validationResponseJson);
+        Assert.NotNull(validationResponse.Payload);
+        var planResponseJson = dispatcher.Dispatch(SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, sessionResponse.Payload.Session),
+            requestId: "request-move-change-plan"));
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(planResponseJson);
+        Assert.NotNull(planResponse.Payload);
+        var requestJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, sessionResponse.Payload.Session, planResponse.Payload.ChangePlan),
+            requestId: "request-move-apply");
+
+        var responseJson = dispatcher.Dispatch(requestJson);
+        var response = DeserializeResponse<ApplyChangePlanResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.True(validationResponse.Payload.IsValid);
+        Assert.NotNull(response.Payload);
+        Assert.Equal("romfs/bin/pml/waza/waza_033.bin", Assert.Single(response.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "waza", "waza_033.bin");
+        var output = SwShMoveDataFile.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal(80, output.Record.Core.Power);
+        Assert.DoesNotContain(
+            response.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
     public void DispatchLoadTextWorkflowReturnsRealMessageRecords()
     {
         using var temp = TemporaryBridgeProject.Create();

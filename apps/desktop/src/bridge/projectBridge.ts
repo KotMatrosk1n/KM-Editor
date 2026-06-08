@@ -51,6 +51,8 @@ import {
   type StartEditSessionResponse,
   type UpdateItemFieldRequest,
   type UpdateItemFieldResponse,
+  type UpdateMoveFieldRequest,
+  type UpdateMoveFieldResponse,
   type UpdateEncounterSlotFieldRequest,
   type UpdateEncounterSlotFieldResponse,
   type UpdatePlacementObjectFieldRequest,
@@ -92,6 +94,7 @@ import {
   refreshFileGraphResponseSchema,
   startEditSessionResponseSchema,
   updateItemFieldResponseSchema,
+  updateMoveFieldResponseSchema,
   updateEncounterSlotFieldResponseSchema,
   updatePlacementObjectFieldResponseSchema,
   updateRaidRewardFieldResponseSchema,
@@ -148,6 +151,7 @@ export type ProjectBridge = {
   refreshFileGraph: (request: RefreshFileGraphRequest) => Promise<RefreshFileGraphResponse>;
   startEditSession: (request: StartEditSessionRequest) => Promise<StartEditSessionResponse>;
   updateItemField: (request: UpdateItemFieldRequest) => Promise<UpdateItemFieldResponse>;
+  updateMoveField: (request: UpdateMoveFieldRequest) => Promise<UpdateMoveFieldResponse>;
   updateEncounterSlotField: (
     request: UpdateEncounterSlotFieldRequest
   ) => Promise<UpdateEncounterSlotFieldResponse>;
@@ -354,6 +358,13 @@ export function createProjectBridge(
         kmCommandNames.updateItemField,
         request,
         updateItemFieldResponseSchema
+      ),
+    updateMoveField: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateMoveField,
+        request,
+        updateMoveFieldResponseSchema
       ),
     updateEncounterSlotField: (request) =>
       sendProjectBridgeRequest(

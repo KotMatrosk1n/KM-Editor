@@ -62,6 +62,16 @@ public static class SwShBridgeMapper
         return new LoadMovesWorkflowResponse(ToMovesWorkflowDto(workflow));
     }
 
+    public static UpdateMoveFieldResponse ToDto(SwShMovesEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateMoveFieldResponse(
+            ToMovesWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadTextWorkflowResponse ToDto(SwShTextWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -274,6 +284,7 @@ public static class SwShBridgeMapper
         return new MovesWorkflowDto(
             ToDto(workflow.Summary),
             workflow.Moves.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
             new MovesWorkflowStatsDto(
                 workflow.Stats.TotalMoveCount,
                 workflow.Stats.EnabledMoveCount,
@@ -558,6 +569,16 @@ public static class SwShBridgeMapper
             move.StatChanges.Select(ToDto).ToArray(),
             move.Flags.Select(ToDto).ToArray(),
             ToDto(move.Provenance));
+    }
+
+    private static MoveEditableFieldDto ToDto(SwShMoveEditableField field)
+    {
+        return new MoveEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue);
     }
 
     private static MoveStatChangeRecordDto ToDto(SwShMoveStatChangeRecord statChange)

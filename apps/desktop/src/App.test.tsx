@@ -218,6 +218,47 @@ describe('App', () => {
     expect(screen.getByText('Base only')).toBeInTheDocument();
   });
 
+  it('starts a Moves edit session, saves a power change, reviews a move plan, and applies it', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Moves' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Moves Data' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
+    const powerInput = screen.getByLabelText('Power');
+    await user.clear(powerInput);
+    await user.type(powerInput, '80');
+    await user.click(screen.getByRole('button', { name: 'Save power' }));
+
+    expect(await screen.findByDisplayValue('80')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Tackle power to 80.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending move change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Change Plan Review' })).toBeInTheDocument();
+    expect(screen.getAllByText('romfs/bin/pml/waza/waza_033.bin').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Applied Moves Data change plan to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
   it('keeps large Items workflows in a bounded rendered row window', async () => {
     const user = userEvent.setup();
     const baseBridge = createMockProjectBridge();
@@ -1108,6 +1149,22 @@ function createMockProjectBridge(
   };
   const movesWorkflow: MovesWorkflow = {
     diagnostics: [],
+    editableFields: [
+      {
+        field: 'power',
+        label: 'Power',
+        maximumValue: 255,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        field: 'makesContact',
+        label: 'Makes contact',
+        maximumValue: 1,
+        minimumValue: 0,
+        valueKind: 'boolean'
+      }
+    ],
     moves: [
       {
         accuracy: 100,
@@ -2007,6 +2064,20 @@ function createMockProjectBridge(
                       targetRelativePath: 'romfs/bin/trainer/trainer_poke/trainer_010.bin'
                     }
                   ]
+                : request.session.pendingEdits[0]?.domain === 'workflow.moves'
+                  ? [
+                      {
+                        reason: 'Apply pending Moves Data edit: Set Tackle power to 80.',
+                        replacesExistingOutput: false,
+                        sources: [
+                          {
+                            layer: 'base',
+                            relativePath: 'romfs/bin/pml/waza/waza_033.bin'
+                          }
+                        ],
+                        targetRelativePath: 'romfs/bin/pml/waza/waza_033.bin'
+                      }
+                    ]
                 : request.session.pendingEdits[0]?.domain === 'workflow.shops'
                   ? [
                       {
@@ -2526,6 +2597,56 @@ function createMockProjectBridge(
         }
       });
     },
+    updateMoveField: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.moves',
+              field: request.field,
+              newValue: request.value,
+              recordId: request.moveId.toString(),
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/pml/waza/waza_033.bin'
+                }
+              ],
+              summary:
+                request.field === 'makesContact'
+                  ? `Set Tackle makes contact to ${request.value === '1' ? 'enabled' : 'disabled'}.`
+                  : `Set Tackle ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...movesWorkflow,
+          moves: movesWorkflow.moves.map((move) => {
+            if (move.moveId !== request.moveId) {
+              return move;
+            }
+
+            const value = Number.parseInt(request.value, 10);
+            if (request.field === 'makesContact') {
+              return {
+                ...move,
+                flags: move.flags.map((flag) =>
+                  flag.field === 'makesContact' ? { ...flag, enabled: value !== 0 } : flag
+                )
+              };
+            }
+
+            if (request.field === 'power') {
+              return { ...move, power: value };
+            }
+
+            return move;
+          })
+        }
+      }),
     updateTextEntry: (request) =>
       Promise.resolve({
         diagnostics: [],
@@ -2794,6 +2915,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Raid Rewards change plan to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.moves') {
+    return 'Applied Moves Data change plan to the configured LayeredFS output root.';
+  }
+
   if (domain === 'workflow.royalCandy') {
     return 'Applied Royal Candy change plan to the configured LayeredFS output root.';
   }
@@ -2821,6 +2946,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending encounter change is valid.';
     case 'workflow.raidRewards':
       return 'Pending raid reward change is valid.';
+    case 'workflow.moves':
+      return 'Pending move change is valid.';
     case 'workflow.royalCandy':
       return 'Pending Royal Candy workflow is valid.';
     case 'workflow.exefsPatches':

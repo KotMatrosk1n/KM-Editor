@@ -23,6 +23,13 @@ public sealed record SwShMoveFlagRecord(
     string Label,
     bool Enabled);
 
+public sealed record SwShMoveEditableField(
+    string Field,
+    string Label,
+    string ValueKind,
+    int? MinimumValue,
+    int? MaximumValue);
+
 public sealed record SwShMoveRecord(
     int MoveId,
     string Name,
@@ -67,5 +74,6 @@ public sealed record SwShMovesWorkflowStats(
 public sealed record SwShMovesWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShMoveRecord> Moves,
+    IReadOnlyList<SwShMoveEditableField> EditableFields,
     SwShMovesWorkflowStats Stats,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);

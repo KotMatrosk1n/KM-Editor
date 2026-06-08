@@ -1,12 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
 
 namespace KM.Api.Moves;
 
 public sealed record LoadMovesWorkflowRequest(ProjectPathsDto Paths);
+
+public sealed record UpdateMoveFieldRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    int MoveId,
+    string Field,
+    string Value);
 
 public sealed record MoveProvenanceDto(
     string SourceFile,
@@ -24,6 +32,13 @@ public sealed record MoveFlagRecordDto(
     string Field,
     string Label,
     bool Enabled);
+
+public sealed record MoveEditableFieldDto(
+    string Field,
+    string Label,
+    string ValueKind,
+    int? MinimumValue,
+    int? MaximumValue);
 
 public sealed record MoveRecordDto(
     int MoveId,
@@ -69,7 +84,13 @@ public sealed record MovesWorkflowStatsDto(
 public sealed record MovesWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<MoveRecordDto> Moves,
+    IReadOnlyList<MoveEditableFieldDto> EditableFields,
     MovesWorkflowStatsDto Stats,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record LoadMovesWorkflowResponse(MovesWorkflowDto Workflow);
+
+public sealed record UpdateMoveFieldResponse(
+    MovesWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
