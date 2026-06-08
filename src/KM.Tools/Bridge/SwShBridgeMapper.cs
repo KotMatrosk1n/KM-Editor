@@ -807,7 +807,13 @@ public static class SwShBridgeMapper
             field.Label,
             field.ValueKind,
             field.MinimumValue,
-            field.MaximumValue);
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static TrainerEditableFieldOptionDto ToDto(SwShTrainerEditableFieldOption option)
+    {
+        return new TrainerEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static TrainerProvenanceDto ToDto(SwShTrainerProvenance provenance)

@@ -532,6 +532,7 @@ describe('projectBridge', () => {
                   label: 'Level',
                   maximumValue: 100,
                   minimumValue: 1,
+                  options: [],
                   valueKind: 'integer'
                 }
               ],
@@ -1999,6 +2000,7 @@ describe('projectBridge', () => {
                 label: 'Level',
                 maximumValue: 100,
                 minimumValue: 1,
+                options: [],
                 valueKind: 'integer'
               }
             ],

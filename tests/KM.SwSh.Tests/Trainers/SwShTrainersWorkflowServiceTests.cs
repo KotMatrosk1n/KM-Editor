@@ -56,6 +56,18 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Equal(1, workflow.Stats.TotalTrainerCount);
         Assert.Equal(2, workflow.Stats.TotalPokemonCount);
         Assert.Equal(2, workflow.Stats.SourceFileCount);
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.TrainerClassIdField).Options,
+            option => option.Value == 5 && option.Label == "005 Pokemon Trainer");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.SpeciesIdField).Options,
+            option => option.Value == 810 && option.Label == "810 Grookey");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.HeldItemIdField).Options,
+            option => option.Value == 1 && option.Label == "001 Potion");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.Move1IdField).Options,
+            option => option.Value == 1 && option.Label == "001 Scratch");
         Assert.Empty(workflow.Diagnostics);
     }
 

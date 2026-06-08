@@ -642,6 +642,7 @@ describe('bridge contracts', () => {
           label: 'Level',
           maximumValue: 100,
           minimumValue: 1,
+          options: [],
           valueKind: 'integer'
         }
       ],
@@ -2000,6 +2001,7 @@ describe('bridge contracts', () => {
           label: 'Level',
           maximumValue: 100,
           minimumValue: 1,
+          options: [],
           valueKind: 'integer'
         }
       ],

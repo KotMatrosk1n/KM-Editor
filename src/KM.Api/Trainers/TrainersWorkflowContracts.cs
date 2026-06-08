@@ -61,7 +61,12 @@ public sealed record TrainerEditableFieldDto(
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<TrainerEditableFieldOptionDto> Options);
+
+public sealed record TrainerEditableFieldOptionDto(
+    int Value,
+    string Label);
 
 public sealed record TrainersWorkflowStatsDto(
     int TotalTrainerCount,

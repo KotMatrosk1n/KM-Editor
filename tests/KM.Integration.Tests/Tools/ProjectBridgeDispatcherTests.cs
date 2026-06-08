@@ -633,6 +633,18 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.True(pokemon.Shiny);
         Assert.False(pokemon.CanDynamax);
         Assert.Equal(29, response.Payload.Workflow.EditableFields.Count);
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "trainerClassId").Options,
+            option => option.Value == 5 && option.Label == "005 Pokemon Trainer");
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "speciesId").Options,
+            option => option.Value == 810 && option.Label == "810 Grookey");
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "heldItemId").Options,
+            option => option.Value == 1 && option.Label == "001 Potion");
+        Assert.Contains(
+            response.Payload.Workflow.EditableFields.Single(field => field.Field == "move1Id").Options,
+            option => option.Value == 1 && option.Label == "001 Scratch");
         Assert.Equal(2, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

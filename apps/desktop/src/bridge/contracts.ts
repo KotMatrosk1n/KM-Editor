@@ -750,11 +750,17 @@ export const trainerRecordSchema = z.strictObject({
   trainerId: z.number().int().nonnegative()
 });
 
+export const trainerEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
 export const trainerEditableFieldSchema = z.strictObject({
   field: z.string(),
   label: z.string(),
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
+  options: z.array(trainerEditableFieldOptionSchema),
   valueKind: z.string()
 });
 

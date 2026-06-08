@@ -58,7 +58,23 @@ public sealed record SwShTrainerEditableField(
     string Label,
     string ValueKind,
     int? MinimumValue,
-    int? MaximumValue);
+    int? MaximumValue,
+    IReadOnlyList<SwShTrainerEditableFieldOption> Options)
+{
+    public SwShTrainerEditableField(
+        string Field,
+        string Label,
+        string ValueKind,
+        int? MinimumValue,
+        int? MaximumValue)
+        : this(Field, Label, ValueKind, MinimumValue, MaximumValue, Array.Empty<SwShTrainerEditableFieldOption>())
+    {
+    }
+}
+
+public sealed record SwShTrainerEditableFieldOption(
+    int Value,
+    string Label);
 
 public sealed record SwShTrainersWorkflowStats(
     int TotalTrainerCount,
