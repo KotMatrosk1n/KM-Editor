@@ -15,21 +15,24 @@ internal static class SwShExeFsBridgeFixtures
     private static byte[] CreateCompatibleText()
     {
         var text = new byte[0x007DDA90];
-        WriteInstruction(text, 0x00747988, EncodeCmpImmediate(28, 50));
-        WriteInstruction(text, 0x00747D44, EncodeCmpImmediate(9, 50));
-        WriteInstruction(text, 0x0074BA24, EncodeCmpImmediate(26, 50));
-        WriteInstruction(text, 0x0074BDA8, EncodeCmpImmediate(9, 50));
-        WriteInstruction(text, 0x0074DFE4, EncodeCmpImmediate(9, 50));
-        WriteInstruction(text, 0x0074DFF8, EncodeCmpImmediate(28, 50));
-        WriteInstruction(text, 0x0075CEFC, EncodeCmpImmediate(9, 50));
-        WriteInstruction(text, 0x007BB204, EncodeCmpImmediate(20, 50));
-        WriteInstruction(text, 0x007BB3C0, EncodeCmpImmediate(19, 50));
-        WriteInstruction(text, 0x007BC1F8, EncodeCmpImmediate(8, 50));
-        WriteInstruction(text, 0x00747DE0, EncodeCmpImmediate(9, 50));
-        WriteInstruction(text, 0x0074BE44, EncodeCmpImmediate(9, 50));
-        WriteInstruction(text, 0x0075CCE8, EncodeCmpImmediate(27, 50));
-        WriteInstruction(text, 0x0075D08C, EncodeCmpImmediate(10, 50));
-        WriteInstruction(text, 0x007BBFD4, EncodeCmpImmediate(23, 50));
+        foreach (var check in UiRouteChecks)
+        {
+            WriteInstruction(text, check.CompareOffset, EncodeCmpImmediate(check.ItemRegister, 50));
+            WriteInstruction(
+                text,
+                check.CompareOffset + 4,
+                EncodeConditionalBranch(check.CompareOffset + 4, check.FailOffset, Arm64Condition.NE));
+        }
+
+        foreach (var check in EqualBranchChecks)
+        {
+            WriteInstruction(text, check.CompareOffset, EncodeCmpImmediate(check.ItemRegister, 50));
+            WriteInstruction(
+                text,
+                check.CompareOffset + 4,
+                EncodeConditionalBranch(check.CompareOffset + 4, check.TargetOffset, Arm64Condition.EQ));
+        }
+
         WriteInstruction(text, 0x007BC1BC, EncodeCmpImmediate(9, 4));
         WriteInstruction(text, 0x007BC1C4, EncodeCmpImmediate(9, 4));
         WriteInstruction(text, 0x007B1F20, 0x2A0003E2);
@@ -45,6 +48,13 @@ internal static class SwShExeFsBridgeFixtures
     private static uint EncodeCmpImmediate(int register, int immediate)
     {
         return (uint)(0x7100001F | ((immediate & 0xFFF) << 10) | ((register & 0x1F) << 5));
+    }
+
+    private static uint EncodeConditionalBranch(int sourceOffset, int targetOffset, Arm64Condition condition)
+    {
+        var delta = targetOffset - sourceOffset;
+        var imm19 = delta >> 2;
+        return (uint)(0x54000000 | ((imm19 & 0x7FFFF) << 5) | ((int)condition & 0xF));
     }
 
     private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data)
@@ -88,4 +98,43 @@ internal static class SwShExeFsBridgeFixtures
     {
         return (value + alignment - 1) / alignment * alignment;
     }
+
+    private static readonly RareCandyUiCheck[] UiRouteChecks =
+    [
+        new(0x00747988, 28, 0x00747A80),
+        new(0x00747D44, 9, 0x007477E8),
+        new(0x0074BA24, 26, 0x0074BAD4),
+        new(0x0074BDA8, 9, 0x0074B788),
+        new(0x0074DFE4, 9, 0x0074DE78),
+        new(0x0074DFF8, 28, 0x0074E16C),
+        new(0x0075CEFC, 9, 0x0075CC18),
+        new(0x007BB204, 20, 0x007BB26C),
+        new(0x007BB3C0, 19, 0x007BB3EC),
+        new(0x007BC1F8, 8, 0x007BC2B4),
+    ];
+
+    private static readonly RareCandyEqualBranchCheck[] EqualBranchChecks =
+    [
+        new(0x00747DE0, 9, 0x00747D4C),
+        new(0x0074BE44, 9, 0x0074BDB0),
+        new(0x0075CCE8, 27, 0x0075D064),
+        new(0x0075D08C, 10, 0x0075D05C),
+        new(0x007BBFD4, 23, 0x007BC054),
+    ];
+
+    private enum Arm64Condition
+    {
+        EQ = 0,
+        NE = 1,
+    }
+
+    private sealed record RareCandyUiCheck(
+        int CompareOffset,
+        int ItemRegister,
+        int FailOffset);
+
+    private sealed record RareCandyEqualBranchCheck(
+        int CompareOffset,
+        int ItemRegister,
+        int TargetOffset);
 }

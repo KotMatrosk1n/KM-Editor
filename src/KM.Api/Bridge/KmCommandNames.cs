@@ -27,6 +27,7 @@ public static class KmCommandNames
     public const string UpdatePlacementObjectField = "placement.object.update";
     public const string LoadFlagworkSaveWorkflow = "flagworkSave.load";
     public const string LoadExeFsPatchWorkflow = "exefsPatches.load";
+    public const string StageExeFsPatch = "exefsPatches.patch.stage";
     public const string LoadRoyalCandyWorkflow = "royalCandy.load";
     public const string StageRoyalCandyWorkflow = "royalCandy.workflow.stage";
     public const string LoadSpreadsheetImportWorkflow = "spreadsheetImport.load";

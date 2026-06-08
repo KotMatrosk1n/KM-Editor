@@ -20,6 +20,7 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.Encounters;
+using KM.SwSh.ExeFs;
 using KM.SwSh.Items;
 using KM.SwSh.Placement;
 using KM.SwSh.Raids;
@@ -37,6 +38,7 @@ public sealed class ProjectBridgeDispatcher
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShEncountersEditSessionService encountersEditSessionService;
+    private readonly SwShExeFsPatchEditSessionService exeFsPatchEditSessionService;
     private readonly SwShItemsEditSessionService itemsEditSessionService;
     private readonly SwShPlacementEditSessionService placementEditSessionService;
     private readonly SwShRaidRewardsEditSessionService raidRewardsEditSessionService;
@@ -50,6 +52,7 @@ public sealed class ProjectBridgeDispatcher
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
         SwShEncountersEditSessionService? encountersEditSessionService = null,
+        SwShExeFsPatchEditSessionService? exeFsPatchEditSessionService = null,
         SwShItemsEditSessionService? itemsEditSessionService = null,
         SwShPlacementEditSessionService? placementEditSessionService = null,
         SwShRaidRewardsEditSessionService? raidRewardsEditSessionService = null,
@@ -62,6 +65,7 @@ public sealed class ProjectBridgeDispatcher
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.encountersEditSessionService = encountersEditSessionService ?? new SwShEncountersEditSessionService(this.projectWorkspaceService);
+        this.exeFsPatchEditSessionService = exeFsPatchEditSessionService ?? new SwShExeFsPatchEditSessionService(this.projectWorkspaceService);
         this.itemsEditSessionService = itemsEditSessionService ?? new SwShItemsEditSessionService(this.projectWorkspaceService);
         this.placementEditSessionService = placementEditSessionService ?? new SwShPlacementEditSessionService(this.projectWorkspaceService);
         this.raidRewardsEditSessionService = raidRewardsEditSessionService ?? new SwShRaidRewardsEditSessionService(this.projectWorkspaceService);
@@ -107,6 +111,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdatePlacementObjectField => DispatchUpdatePlacementObjectField(requestJson),
                 KmCommandNames.LoadFlagworkSaveWorkflow => DispatchLoadFlagworkSaveWorkflow(requestJson),
                 KmCommandNames.LoadExeFsPatchWorkflow => DispatchLoadExeFsPatchWorkflow(requestJson),
+                KmCommandNames.StageExeFsPatch => DispatchStageExeFsPatch(requestJson),
                 KmCommandNames.LoadRoyalCandyWorkflow => DispatchLoadRoyalCandyWorkflow(requestJson),
                 KmCommandNames.StageRoyalCandyWorkflow => DispatchStageRoyalCandyWorkflow(requestJson),
                 KmCommandNames.LoadSpreadsheetImportWorkflow => DispatchLoadSpreadsheetImportWorkflow(requestJson),
@@ -353,6 +358,21 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchStageExeFsPatch(string requestJson)
+    {
+        var request = DeserializeRequest<StageExeFsPatchRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = exeFsPatchEditSessionService.StagePatch(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.PatchId,
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadRoyalCandyWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadRoyalCandyWorkflowRequest>(requestJson);
@@ -437,6 +457,7 @@ public sealed class ProjectBridgeDispatcher
         var validation = GetEditSessionDomain(session) switch
         {
             EditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
+            EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.Validate(paths, session),
             EditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.Validate(paths, session),
             EditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
@@ -460,6 +481,7 @@ public sealed class ProjectBridgeDispatcher
         var changePlan = GetEditSessionDomain(session) switch
         {
             EditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session),
@@ -484,6 +506,7 @@ public sealed class ProjectBridgeDispatcher
         var applyResult = GetEditSessionDomain(session) switch
         {
             EditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, changePlan),
@@ -515,6 +538,7 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.trainers"] => EditSessionDomain.Trainers,
             ["workflow.shops"] => EditSessionDomain.Shops,
             ["workflow.encounters"] => EditSessionDomain.Encounters,
+            ["workflow.exefsPatches"] => EditSessionDomain.ExeFsPatches,
             ["workflow.placement"] => EditSessionDomain.Placement,
             ["workflow.raidRewards"] => EditSessionDomain.RaidRewards,
             ["workflow.royalCandy"] => EditSessionDomain.RoyalCandy,
@@ -601,6 +625,7 @@ public sealed class ProjectBridgeDispatcher
         Trainers,
         Shops,
         Encounters,
+        ExeFsPatches,
         Placement,
         RaidRewards,
         RoyalCandy,

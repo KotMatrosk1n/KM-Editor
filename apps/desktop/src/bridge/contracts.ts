@@ -23,6 +23,7 @@ export const kmCommandNameValues = [
   'placement.object.update',
   'flagworkSave.load',
   'exefsPatches.load',
+  'exefsPatches.patch.stage',
   'royalCandy.load',
   'royalCandy.workflow.stage',
   'spreadsheetImport.load',
@@ -59,6 +60,7 @@ export const kmCommandNames = {
   updatePlacementObjectField: 'placement.object.update',
   loadFlagworkSaveWorkflow: 'flagworkSave.load',
   loadExeFsPatchWorkflow: 'exefsPatches.load',
+  stageExeFsPatch: 'exefsPatches.patch.stage',
   loadRoyalCandyWorkflow: 'royalCandy.load',
   stageRoyalCandyWorkflow: 'royalCandy.workflow.stage',
   loadSpreadsheetImportWorkflow: 'spreadsheetImport.load',
@@ -768,6 +770,18 @@ export const loadExeFsPatchWorkflowResponseSchema = z.strictObject({
   workflow: exeFsPatchWorkflowSchema
 });
 
+export const stageExeFsPatchRequestSchema = z.strictObject({
+  patchId: z.string(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageExeFsPatchResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: exeFsPatchWorkflowSchema
+});
+
 export const royalCandyProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -1179,6 +1193,8 @@ export type LoadFlagworkSaveWorkflowRequest = z.infer<typeof loadFlagworkSaveWor
 export type LoadFlagworkSaveWorkflowResponse = z.infer<typeof loadFlagworkSaveWorkflowResponseSchema>;
 export type LoadExeFsPatchWorkflowRequest = z.infer<typeof loadExeFsPatchWorkflowRequestSchema>;
 export type LoadExeFsPatchWorkflowResponse = z.infer<typeof loadExeFsPatchWorkflowResponseSchema>;
+export type StageExeFsPatchRequest = z.infer<typeof stageExeFsPatchRequestSchema>;
+export type StageExeFsPatchResponse = z.infer<typeof stageExeFsPatchResponseSchema>;
 export type LoadRoyalCandyWorkflowRequest = z.infer<typeof loadRoyalCandyWorkflowRequestSchema>;
 export type LoadRoyalCandyWorkflowResponse = z.infer<typeof loadRoyalCandyWorkflowResponseSchema>;
 export type StageRoyalCandyWorkflowRequest = z.infer<

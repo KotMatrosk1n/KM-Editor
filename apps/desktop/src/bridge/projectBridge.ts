@@ -24,6 +24,8 @@ import {
   type LoadRaidRewardsWorkflowResponse,
   type LoadRoyalCandyWorkflowRequest,
   type LoadRoyalCandyWorkflowResponse,
+  type StageExeFsPatchRequest,
+  type StageExeFsPatchResponse,
   type StageRoyalCandyWorkflowRequest,
   type StageRoyalCandyWorkflowResponse,
   type LoadSpreadsheetImportWorkflowRequest,
@@ -73,6 +75,7 @@ import {
   loadPlacementWorkflowResponseSchema,
   loadRaidRewardsWorkflowResponseSchema,
   loadRoyalCandyWorkflowResponseSchema,
+  stageExeFsPatchResponseSchema,
   stageRoyalCandyWorkflowResponseSchema,
   loadSpreadsheetImportWorkflowResponseSchema,
   previewSpreadsheetImportResponseSchema,
@@ -103,6 +106,7 @@ export type ProjectBridge = {
   loadExeFsPatchWorkflow: (
     request: LoadExeFsPatchWorkflowRequest
   ) => Promise<LoadExeFsPatchWorkflowResponse>;
+  stageExeFsPatch: (request: StageExeFsPatchRequest) => Promise<StageExeFsPatchResponse>;
   loadFlagworkSaveWorkflow: (
     request: LoadFlagworkSaveWorkflowRequest
   ) => Promise<LoadFlagworkSaveWorkflowResponse>;
@@ -214,6 +218,13 @@ export function createProjectBridge(
         kmCommandNames.loadExeFsPatchWorkflow,
         request,
         loadExeFsPatchWorkflowResponseSchema
+      ),
+    stageExeFsPatch: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageExeFsPatch,
+        request,
+        stageExeFsPatchResponseSchema
       ),
     loadFlagworkSaveWorkflow: (request) =>
       sendProjectBridgeRequest(

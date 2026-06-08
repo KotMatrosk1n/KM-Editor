@@ -612,6 +612,37 @@ describe('App', () => {
     expect(screen.getAllByText('file+0x100').length).toBeGreaterThan(0);
   });
 
+  it('stages an ExeFS patch for review and apply', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open ExeFS' }));
+    await user.click(await screen.findByRole('button', { name: 'Stage Patch' }));
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(await screen.findByText('Stage ExeFS patch: ExeFS main compatibility.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Change' }));
+
+    expect(await screen.findByText('Pending ExeFS patch is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review Change Plan' }));
+
+    expect((await screen.findAllByText('exefs/main')).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Apply Plan' }));
+
+    expect(
+      await screen.findByText('Applied ExeFS patch to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
   it('opens Royal Candy workflows, searches checks, and shows planned outputs', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge()} />);
@@ -1633,6 +1664,21 @@ function createMockProjectBridge(
                               targetRelativePath: 'romfs/bin/pml/item/item.dat'
                             }
                           ]
+                        : request.session.pendingEdits[0]?.domain === 'workflow.exefsPatches'
+                          ? [
+                              {
+                                reason:
+                                  'Apply ExeFS patch: Royal Candy UI route and usage patch.',
+                                replacesExistingOutput: false,
+                                sources: [
+                                  {
+                                    layer: 'base',
+                                    relativePath: 'exefs/main'
+                                  }
+                                ],
+                                targetRelativePath: 'exefs/main'
+                              }
+                            ]
                         : [
                             {
                               reason: 'Apply pending Items edit: Set Potion buy price to 450.',
@@ -1674,6 +1720,35 @@ function createMockProjectBridge(
       }),
     loadExeFsPatchWorkflow: () =>
       Promise.resolve({
+        workflow: exeFsPatchWorkflow
+      }),
+    stageExeFsPatch: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'ExeFS patch is staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.exefsPatches',
+              field: 'patchId',
+              newValue: 'exefs/main',
+              recordId: request.patchId,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'exefs/main'
+                }
+              ],
+              summary: 'Stage ExeFS patch: ExeFS main compatibility.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-exefs'
+        },
         workflow: exeFsPatchWorkflow
       }),
     loadRoyalCandyWorkflow: () =>
@@ -2307,6 +2382,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Royal Candy change plan to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.exefsPatches') {
+    return 'Applied ExeFS patch to the configured LayeredFS output root.';
+  }
+
   if (targetRelativePath.includes('/archive/field/resident/')) {
     return 'Applied Encounters change plan to the configured LayeredFS output root.';
   }
@@ -2328,6 +2407,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending raid reward change is valid.';
     case 'workflow.royalCandy':
       return 'Pending Royal Candy workflow is valid.';
+    case 'workflow.exefsPatches':
+      return 'Pending ExeFS patch is valid.';
     default:
       return 'Pending item change is valid.';
   }

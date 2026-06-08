@@ -17,6 +17,7 @@ using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
+using KM.SwSh.ExeFs;
 using KM.SwSh.RoyalCandy;
 using KM.Tools.Bridge;
 using System.Buffers.Binary;
@@ -808,6 +809,85 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchExeFsStageValidatePlanAndApplyWritesLayeredMain()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
+        var baseMainPath = Path.Combine(temp.BaseExeFsPath, "main");
+        var baseMainBytes = File.ReadAllBytes(baseMainPath);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageExeFsPatch,
+            new StageExeFsPatchRequest(
+                temp.Paths,
+                PatchId: SwShExeFsPatchWorkflowService.MainPatchId,
+                Session: null),
+            requestId: "request-exefs-stage");
+
+        var stageResponse = DeserializeResponse<StageExeFsPatchResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+        Assert.Single(stageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.exefsPatches", stageResponse.Payload.Session.PendingEdits[0].Domain);
+        Assert.Equal(SwShExeFsPatchWorkflowService.MainPatchId, stageResponse.Payload.Session.PendingEdits[0].RecordId);
+        Assert.DoesNotContain(
+            stageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-exefs-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-exefs-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.True(planResponse.Payload.ChangePlan.CanApply);
+        var write = Assert.Single(planResponse.Payload.ChangePlan.Writes);
+        Assert.Equal(SwShExeFsPatchWorkflowService.ExeFsMainPath, write.TargetRelativePath);
+        Assert.False(write.ReplacesExistingOutput);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageResponse.Payload.Session,
+                planResponse.Payload.ChangePlan),
+            requestId: "request-exefs-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.DoesNotContain(
+            applyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShExeFsPatchWorkflowService.ExeFsMainPath);
+        Assert.Equal(baseMainBytes, File.ReadAllBytes(baseMainPath));
+
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var outputMainBytes = File.ReadAllBytes(outputMainPath);
+        Assert.NotEqual(baseMainBytes, outputMainBytes);
+        var outputNso = SwShNsoFile.Parse(outputMainBytes);
+        var outputText = outputNso.Text.DecompressedData;
+        Assert.Equal(EncodeCmpImmediate(register: 9, immediate: 3), ReadInstruction(outputText, 0x007BC1BC));
+        Assert.Equal(EncodeCmpImmediate(register: 9, immediate: 3), ReadInstruction(outputText, 0x007BC1C4));
+        Assert.NotEqual(0x2A0003E2u, ReadInstruction(outputText, 0x007B1F20));
+        Assert.Contains(EncodeCmpImmediate(register: 22, immediate: 1128), ReadAlignedInstructions(outputText));
+        Assert.Equal(SwShNsoFile.ComputeHash(outputText), outputNso.Text.Hash);
+    }
+
+    [Fact]
     public void DispatchLoadRoyalCandyWorkflowReturnsRealPreflightAndOutputs()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -1370,6 +1450,24 @@ public sealed class ProjectBridgeDispatcherTests
         var data = new byte[0x298];
         BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(0x290, 8), titleId);
         return data;
+    }
+
+    private static uint ReadInstruction(byte[] text, int offset)
+    {
+        return BinaryPrimitives.ReadUInt32LittleEndian(text.AsSpan(offset, 4));
+    }
+
+    private static IEnumerable<uint> ReadAlignedInstructions(byte[] text)
+    {
+        for (var offset = 0; offset <= text.Length - 4; offset += 4)
+        {
+            yield return ReadInstruction(text, offset);
+        }
+    }
+
+    private static uint EncodeCmpImmediate(int register, int immediate)
+    {
+        return (uint)(0x7100001F | ((immediate & 0xFFF) << 10) | ((register & 0x1F) << 5));
     }
 
     private static void WriteRoyalCandyApplyInputs(TemporaryBridgeProject temp)

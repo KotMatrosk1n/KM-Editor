@@ -43,6 +43,42 @@ public sealed class SwShNsoFileTests
     }
 
     [Fact]
+    public void WriteUpdatesUncompressedTextAndSegmentHash()
+    {
+        var text = new byte[] { 1, 2, 3, 4 };
+        var replacementText = new byte[] { 4, 3, 2, 1 };
+        var ro = new byte[] { 5, 6 };
+        var data = new byte[] { 7, 8, 9 };
+        var nso = SwShNsoFile.Parse(CreateNso(text, ro, data));
+
+        var output = nso.Write(textDecompressedData: replacementText);
+        var reparsed = SwShNsoFile.Parse(output);
+
+        Assert.Equal(replacementText, reparsed.Text.DecompressedData);
+        Assert.Equal(ro, reparsed.Ro.DecompressedData);
+        Assert.Equal(data, reparsed.Data.DecompressedData);
+        Assert.Equal(SwShNsoFile.ComputeHash(replacementText), reparsed.Text.Hash);
+    }
+
+    [Fact]
+    public void WriteRecompressesCompressedTextAndKeepsItReadable()
+    {
+        var text = Enumerable.Range(0, 128).Select(index => (byte)(index % 4)).ToArray();
+        var replacementText = Enumerable.Range(0, 128).Select(index => (byte)(3 - index % 4)).ToArray();
+        var ro = new byte[] { 5, 6 };
+        var data = new byte[] { 7, 8, 9 };
+        var nso = SwShNsoFile.Parse(CreateNso(text, ro, data, SwShNsoFlags.CompressedText));
+
+        var output = nso.Write(textDecompressedData: replacementText);
+        var reparsed = SwShNsoFile.Parse(output);
+
+        Assert.Equal(SwShNsoFlags.CompressedText, reparsed.Flags);
+        Assert.Equal(replacementText, reparsed.Text.DecompressedData);
+        Assert.Equal(SwShNsoFile.ComputeHash(replacementText), reparsed.Text.Hash);
+        Assert.True(reparsed.Text.CompressedSize < replacementText.Length);
+    }
+
+    [Fact]
     public void ParseRejectsInvalidMagic()
     {
         var bytes = new byte[SwShNsoFile.HeaderSize];

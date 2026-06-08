@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
 
 namespace KM.Api.ExeFs;
 
 public sealed record LoadExeFsPatchWorkflowRequest(ProjectPathsDto Paths);
+
+public sealed record StageExeFsPatchRequest(ProjectPathsDto Paths, string PatchId, EditSessionDto? Session);
 
 public sealed record ExeFsPatchProvenanceDto(
     string SourceFile,
@@ -63,3 +66,8 @@ public sealed record ExeFsPatchWorkflowDto(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record LoadExeFsPatchWorkflowResponse(ExeFsPatchWorkflowDto Workflow);
+
+public sealed record StageExeFsPatchResponse(
+    ExeFsPatchWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);

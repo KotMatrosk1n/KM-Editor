@@ -42,6 +42,8 @@ public sealed record SwShNsoFile(
     public const uint Magic = 0x304F534E;
     public const int HeaderSize = 0x100;
 
+    public byte[] RawHeader { get; init; } = [];
+
     public IReadOnlyList<SwShNsoSegment> Segments => [Text, Ro, Data];
 
     public static SwShNsoFile Parse(byte[] data)
@@ -79,12 +81,54 @@ public sealed record SwShNsoFile(
             buildId,
             ReadSegment(data, ".text", textHeader, textCompressedSize, textHash, flags.HasFlag(SwShNsoFlags.CompressedText)),
             ReadSegment(data, ".ro", roHeader, roCompressedSize, roHash, flags.HasFlag(SwShNsoFlags.CompressedRo)),
-            ReadSegment(data, ".data", dataHeader, dataCompressedSize, dataHash, flags.HasFlag(SwShNsoFlags.CompressedData)));
+            ReadSegment(data, ".data", dataHeader, dataCompressedSize, dataHash, flags.HasFlag(SwShNsoFlags.CompressedData)))
+        {
+            RawHeader = data.AsSpan(0, HeaderSize).ToArray(),
+        };
     }
 
     public static byte[] ComputeHash(ReadOnlySpan<byte> data)
     {
         return SHA256.HashData(data);
+    }
+
+    public byte[] Write(
+        byte[]? textDecompressedData = null,
+        byte[]? roDecompressedData = null,
+        byte[]? dataDecompressedData = null)
+    {
+        var textData = textDecompressedData ?? Text.DecompressedData;
+        var roData = roDecompressedData ?? Ro.DecompressedData;
+        var dataData = dataDecompressedData ?? Data.DecompressedData;
+        var textSegment = EncodeSegment(".text", textData, Flags.HasFlag(SwShNsoFlags.CompressedText));
+        var roSegment = EncodeSegment(".ro", roData, Flags.HasFlag(SwShNsoFlags.CompressedRo));
+        var dataSegment = EncodeSegment(".data", dataData, Flags.HasFlag(SwShNsoFlags.CompressedData));
+
+        var textOffset = Math.Max(HeaderSize, Text.Header.FileOffset);
+        var roOffset = Align(textOffset + textSegment.Length, 0x10);
+        var dataOffset = Align(roOffset + roSegment.Length, 0x10);
+        var output = new byte[Align(dataOffset + dataSegment.Length, 0x10)];
+        var header = RawHeader.Length == HeaderSize ? (byte[])RawHeader.Clone() : new byte[HeaderSize];
+
+        WriteHeader(
+            header,
+            textOffset,
+            textData.Length,
+            textSegment.Length,
+            ComputeHash(textData),
+            roOffset,
+            roData.Length,
+            roSegment.Length,
+            ComputeHash(roData),
+            dataOffset,
+            dataData.Length,
+            dataSegment.Length,
+            ComputeHash(dataData));
+        header.CopyTo(output.AsSpan(0, HeaderSize));
+        textSegment.CopyTo(output.AsSpan(textOffset));
+        roSegment.CopyTo(output.AsSpan(roOffset));
+        dataSegment.CopyTo(output.AsSpan(dataOffset));
+        return output;
     }
 
     private static SwShNsoSegmentHeader ReadSegmentHeader(byte[] data, int offset)
@@ -135,6 +179,77 @@ public sealed record SwShNsoFile(
         }
 
         return output;
+    }
+
+    private static byte[] EncodeSegment(string name, byte[] decompressedData, bool shouldCompress)
+    {
+        if (!shouldCompress)
+        {
+            return decompressedData.ToArray();
+        }
+
+        var output = new byte[LZ4Codec.MaximumOutputSize(decompressedData.Length)];
+        var length = LZ4Codec.Encode(
+            decompressedData,
+            0,
+            decompressedData.Length,
+            output,
+            0,
+            output.Length,
+            LZ4Level.L00_FAST);
+        if (length <= 0)
+        {
+            throw new InvalidDataException($"{name} LZ4 compression failed.");
+        }
+
+        return output[..length];
+    }
+
+    private void WriteHeader(
+        byte[] header,
+        int textOffset,
+        int textDecompressedSize,
+        int textCompressedSize,
+        byte[] textHash,
+        int roOffset,
+        int roDecompressedSize,
+        int roCompressedSize,
+        byte[] roHash,
+        int dataOffset,
+        int dataDecompressedSize,
+        int dataCompressedSize,
+        byte[] dataHash)
+    {
+        BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(0x00), Magic);
+        BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(0x04), Version);
+        BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(0x0C), (uint)Flags);
+        WriteSegmentHeader(header, 0x10, textOffset, Text.Header.MemoryOffset, textDecompressedSize);
+        WriteSegmentHeader(header, 0x20, roOffset, Ro.Header.MemoryOffset, roDecompressedSize);
+        WriteSegmentHeader(header, 0x30, dataOffset, Data.Header.MemoryOffset, dataDecompressedSize);
+        BuildId.CopyTo(header.AsSpan(0x40, 0x20));
+        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(0x60), textCompressedSize);
+        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(0x64), roCompressedSize);
+        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(0x68), dataCompressedSize);
+        textHash.CopyTo(header.AsSpan(0xA0, 0x20));
+        roHash.CopyTo(header.AsSpan(0xC0, 0x20));
+        dataHash.CopyTo(header.AsSpan(0xE0, 0x20));
+    }
+
+    private static void WriteSegmentHeader(
+        byte[] output,
+        int offset,
+        int fileOffset,
+        int memoryOffset,
+        int decompressedSize)
+    {
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset), fileOffset);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset + 0x04), memoryOffset);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset + 0x08), decompressedSize);
+    }
+
+    private static int Align(int value, int alignment)
+    {
+        return (value + alignment - 1) / alignment * alignment;
     }
 
     private static int ReadNonNegativeInt32(byte[] data, int offset, string fieldName)
