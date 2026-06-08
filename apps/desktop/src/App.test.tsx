@@ -1067,6 +1067,12 @@ describe('App', () => {
     expect(screen.getAllByText('0xAABBCCDD00112233').length).toBeGreaterThan(0);
     expect(screen.getByRole('option', { name: 'Slot 1: Eevee' })).toBeInTheDocument();
     expect(screen.getByText('Any Ability')).toBeInTheDocument();
+    expect(
+      screen.getByText('Matched: 2 rewards: Exp. Candy L, Rare Candy (drop:0:AABBCCDD00112233)')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Matched: 1 reward: Armorite Ore (bonus:0:1020304050607080)')
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Start Edit Session' }));
     await user.selectOptions(screen.getByLabelText('Guaranteed perfect IVs'), '6');
@@ -3765,7 +3771,25 @@ function createMockProjectBridge(
             ability: 4,
             abilityLabel: 'Any Ability',
             bonusTableHash: '0x1020304050607080',
+            bonusRewardLink: {
+              isMatched: true,
+              preview: '1 reward: Armorite Ore',
+              rewardItemCount: 1,
+              rewardKind: 'bonus',
+              rewardKindLabel: 'Bonus',
+              sourceTableHash: '0x1020304050607080',
+              tableId: 'bonus:0:1020304050607080'
+            },
             dropTableHash: '0xAABBCCDD00112233',
+            dropRewardLink: {
+              isMatched: true,
+              preview: '2 rewards: Exp. Candy L, Rare Candy',
+              rewardItemCount: 2,
+              rewardKind: 'drop',
+              rewardKindLabel: 'Drop',
+              sourceTableHash: '0xAABBCCDD00112233',
+              tableId: 'drop:0:AABBCCDD00112233'
+            },
             entryIndex: 0,
             flawlessIvs: 4,
             form: 1,
@@ -3783,7 +3807,25 @@ function createMockProjectBridge(
             ability: 0,
             abilityLabel: 'Ability 1',
             bonusTableHash: '0x0807060504030201',
+            bonusRewardLink: {
+              isMatched: false,
+              preview: 'No loaded bonus table matches this hash',
+              rewardItemCount: 0,
+              rewardKind: 'bonus',
+              rewardKindLabel: 'Bonus',
+              sourceTableHash: '0x0807060504030201',
+              tableId: ''
+            },
             dropTableHash: '0xAABBCCDD00112233',
+            dropRewardLink: {
+              isMatched: true,
+              preview: '2 rewards: Exp. Candy L, Rare Candy',
+              rewardItemCount: 2,
+              rewardKind: 'drop',
+              rewardKindLabel: 'Drop',
+              sourceTableHash: '0xAABBCCDD00112233',
+              tableId: 'drop:0:AABBCCDD00112233'
+            },
             entryIndex: 1,
             flawlessIvs: 0,
             form: 0,

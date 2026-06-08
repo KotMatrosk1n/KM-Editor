@@ -18,6 +18,14 @@ internal static class SwShRaidBattleTestFixtures
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/monsname.dat",
             CreateTextTable(133, (25, "Pikachu"), (133, "Eevee")));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            SwShItemTestFixtures.CreateItemNames(
+                "",
+                "Potion",
+                "Rare Candy",
+                "Exp. Candy L",
+                "Armorite Ore"));
     }
 
     public static byte[] CreateRaidBattlePack()
@@ -26,6 +34,7 @@ internal static class SwShRaidBattleTestFixtures
         [
             new SwShGfPackNamedFile(SwShRaidBattlesWorkflowService.EncounterMemberName, CreateArchive().Write()),
             new SwShGfPackNamedFile("nest_hole_drop_rewards.bin", SwShRaidRewardTestFixtures.CreateDropArchive().Write()),
+            new SwShGfPackNamedFile("nest_hole_bonus_rewards.bin", SwShRaidRewardTestFixtures.CreateBonusArchive().Write()),
         ]).Write();
     }
 

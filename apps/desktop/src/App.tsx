@@ -8385,7 +8385,15 @@ function RaidBattlesSection({
           slot.speciesId.toString(),
           slot.levelTableHash,
           slot.dropTableHash,
-          slot.bonusTableHash
+          slot.dropRewardLink.preview,
+          slot.dropRewardLink.rewardKindLabel,
+          slot.dropRewardLink.sourceTableHash,
+          slot.dropRewardLink.tableId,
+          slot.bonusTableHash,
+          slot.bonusRewardLink.preview,
+          slot.bonusRewardLink.rewardKindLabel,
+          slot.bonusRewardLink.sourceTableHash,
+          slot.bonusRewardLink.tableId
         ])
       ]
         .join(' ')
@@ -8654,8 +8662,16 @@ function SelectedRaidBattlePanel({
                     <dd>{battleSlot.dropTableHash}</dd>
                   </div>
                   <div>
+                    <dt>Drop rewards</dt>
+                    <dd>{formatRaidBattleRewardLink(battleSlot.dropRewardLink)}</dd>
+                  </div>
+                  <div>
                     <dt>Bonus table</dt>
                     <dd>{battleSlot.bonusTableHash}</dd>
+                  </div>
+                  <div>
+                    <dt>Bonus rewards</dt>
+                    <dd>{formatRaidBattleRewardLink(battleSlot.bonusRewardLink)}</dd>
                   </div>
                 </dl>
 
@@ -12419,6 +12435,12 @@ function getDynamaxAdventureDraftState(
       (currentValue === null || parsedValue !== currentValue),
     parsedValue
   };
+}
+
+function formatRaidBattleRewardLink(link: RaidBattleSlotRecord['dropRewardLink']) {
+  const status = link.isMatched ? 'Matched' : 'Unmatched';
+  const target = link.tableId || link.sourceTableHash;
+  return `${status}: ${link.preview} (${target})`;
 }
 
 function getPendingItemIds(editSession: EditSession | null) {

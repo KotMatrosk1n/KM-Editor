@@ -1514,7 +1514,21 @@ public static class SwShBridgeMapper
             slot.ProbabilitySummary,
             slot.LevelTableHash,
             slot.DropTableHash,
-            slot.BonusTableHash);
+            slot.BonusTableHash,
+            ToDto(slot.DropRewardLink),
+            ToDto(slot.BonusRewardLink));
+    }
+
+    private static RaidBattleRewardLinkDto ToDto(SwShRaidBattleRewardLinkRecord link)
+    {
+        return new RaidBattleRewardLinkDto(
+            link.RewardKind,
+            link.RewardKindLabel,
+            link.TableId,
+            link.SourceTableHash,
+            link.IsMatched,
+            link.RewardItemCount,
+            link.Preview);
     }
 
     private static RaidBattleEditableFieldDto ToDto(SwShRaidBattleEditableField field)

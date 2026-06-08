@@ -1252,6 +1252,14 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.True(slot.IsGigantamax);
         Assert.Equal(4, slot.FlawlessIvs);
         Assert.Equal([100, 20, 30, 40, 50], slot.Probabilities);
+        Assert.True(slot.DropRewardLink.IsMatched);
+        Assert.Equal("Drop", slot.DropRewardLink.RewardKindLabel);
+        Assert.Equal("0xAABBCCDD00112233", slot.DropRewardLink.SourceTableHash);
+        Assert.Contains("Exp. Candy L", slot.DropRewardLink.Preview, StringComparison.Ordinal);
+        Assert.True(slot.BonusRewardLink.IsMatched);
+        Assert.Equal("Bonus", slot.BonusRewardLink.RewardKindLabel);
+        Assert.Contains("Armorite Ore", slot.BonusRewardLink.Preview, StringComparison.Ordinal);
+        Assert.False(table.Slots[1].BonusRewardLink.IsMatched);
         Assert.Contains(
             response.Payload.Workflow.EditableFields.Single(field => field.Field == "flawlessIvs").Options,
             option => option.Value == 6 && option.Label == "6 Perfect IVs");
