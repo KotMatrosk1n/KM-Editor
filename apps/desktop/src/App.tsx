@@ -497,6 +497,7 @@ export function App({
   const [isPlacementUpdating, setIsPlacementUpdating] = useState(false);
   const [isFlagworkSaveLoading, setIsFlagworkSaveLoading] = useState(false);
   const [isExeFsPatchLoading, setIsExeFsPatchLoading] = useState(false);
+  const [isExeFsPatchStaging, setIsExeFsPatchStaging] = useState(false);
   const [isRoyalCandyLoading, setIsRoyalCandyLoading] = useState(false);
   const [isRoyalCandyStaging, setIsRoyalCandyStaging] = useState(false);
   const [isSpreadsheetImportLoading, setIsSpreadsheetImportLoading] = useState(false);
@@ -709,6 +710,29 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsExeFsPatchLoading(false);
+    }
+  };
+
+  const handleStageExeFsPatch = async (patchId: string) => {
+    setIsExeFsPatchStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageExeFsPatch({
+        patchId,
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setExeFsPatchWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsExeFsPatchStaging(false);
     }
   };
 
@@ -1445,9 +1469,11 @@ export function App({
               <WorkflowLoadingPanel label="ExeFS Patch Manager" />
             ) : (
               <ExeFsPatchSection
+                isStaging={isExeFsPatchStaging}
                 onSearchChange={setExeFsPatchSearchText}
                 onSelectCheck={setSelectedExeFsCheckId}
                 onSelectPatch={setSelectedExeFsPatchId}
+                onStagePatch={handleStageExeFsPatch}
                 searchText={exeFsPatchSearchText}
                 selectedCheckId={selectedExeFsCheckId}
                 selectedPatchId={selectedExeFsPatchId}
@@ -4471,17 +4497,21 @@ function SelectedFlagworkSavePanel({
 }
 
 function ExeFsPatchSection({
+  isStaging,
   onSearchChange,
   onSelectCheck,
   onSelectPatch,
+  onStagePatch,
   searchText,
   selectedCheckId,
   selectedPatchId,
   workflow
 }: {
+  isStaging: boolean;
   onSearchChange: (value: string) => void;
   onSelectCheck: (checkId: string | null) => void;
   onSelectPatch: (patchId: string | null) => void;
+  onStagePatch: (patchId: string) => void;
   searchText: string;
   selectedCheckId: string | null;
   selectedPatchId: string | null;
@@ -4613,6 +4643,8 @@ function ExeFsPatchSection({
 
             <SelectedExeFsPatchPanel
               check={selectedCheck}
+              isStaging={isStaging}
+              onStagePatch={onStagePatch}
               patch={selectedPatch}
               segments={visibleSegments}
             />
@@ -4631,14 +4663,19 @@ function ExeFsPatchSection({
 
 function SelectedExeFsPatchPanel({
   check,
+  isStaging,
+  onStagePatch,
   patch,
   segments
 }: {
   check: ExeFsPatchCheckRecord | null;
+  isStaging: boolean;
+  onStagePatch: (patchId: string) => void;
   patch: ExeFsPatchRecord | null;
   segments: ExeFsSegmentRecord[];
 }) {
   const provenance = check?.provenance ?? patch?.provenance ?? segments[0]?.provenance ?? null;
+  const canStagePatch = patch?.status === 'available' || patch?.status === 'warning';
 
   return (
     <aside aria-label="Selected ExeFS provenance" className="encounter-inspector">
@@ -4689,6 +4726,20 @@ function SelectedExeFsPatchPanel({
           </dl>
 
           <div className="encounter-edit-form">
+            {patch ? (
+              <div className="form-actions">
+                <button
+                  className="primary-button"
+                  disabled={!canStagePatch || isStaging}
+                  onClick={() => onStagePatch(patch.patchId)}
+                  type="button"
+                >
+                  <Wrench aria-hidden="true" size={16} />
+                  <span>{isStaging ? 'Staging' : 'Stage Patch'}</span>
+                </button>
+              </div>
+            ) : null}
+
             <dl className="encounter-slot-detail">
               <div>
                 <dt>Notes</dt>

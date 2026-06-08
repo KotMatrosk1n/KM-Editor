@@ -13,11 +13,11 @@ namespace KM.SwSh.ExeFs;
 public sealed class SwShExeFsPatchWorkflowService
 {
     public const string ExeFsMainPath = "exefs/main";
+    public const string MainPatchId = "exefs-main-compatibility";
 
     private const int RareCandyItemId = 50;
     private const int RoyalCandyItemId = 1128;
     private const int RareCandyUiHookCodeCaveSearchStart = 0x007BC338;
-    private const string MainPatchId = "exefs-main-compatibility";
 
     private readonly SwShParsedDataCache parsedDataCache;
 
@@ -526,6 +526,26 @@ public sealed class SwShExeFsPatchWorkflowService
         }
 
         return null;
+    }
+
+    internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
+    {
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath) || Path.IsPathRooted(targetRelativePath))
+        {
+            return null;
+        }
+
+        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
+        var targetPath = Path.GetFullPath(Path.Combine(
+            outputRoot,
+            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        var normalizedRoot = outputRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+
+        return targetPath.StartsWith(normalizedRoot, comparison) ? targetPath : null;
     }
 
     private static string? CombineGraphPath(string? rootPath, string relativePath)

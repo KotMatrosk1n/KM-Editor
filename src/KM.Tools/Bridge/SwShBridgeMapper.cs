@@ -100,6 +100,16 @@ public static class SwShBridgeMapper
         return new LoadExeFsPatchWorkflowResponse(ToExeFsPatchWorkflowDto(workflow));
     }
 
+    public static StageExeFsPatchResponse ToDto(SwShExeFsPatchEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageExeFsPatchResponse(
+            ToExeFsPatchWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadRoyalCandyWorkflowResponse ToDto(SwShRoyalCandyWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
