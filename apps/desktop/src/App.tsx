@@ -53,6 +53,7 @@ import {
   type MoveEditableField,
   type MoveRecord,
   type MovesWorkflow,
+  type PokemonEditableField,
   type PokemonRecord,
   type PokemonWorkflow,
   type PlacedObjectRecord,
@@ -580,6 +581,7 @@ export function App({
   const [isItemsLoading, setIsItemsLoading] = useState(false);
   const [isItemUpdating, setIsItemUpdating] = useState(false);
   const [isPokemonLoading, setIsPokemonLoading] = useState(false);
+  const [isPokemonUpdating, setIsPokemonUpdating] = useState(false);
   const [isMovesLoading, setIsMovesLoading] = useState(false);
   const [isMoveUpdating, setIsMoveUpdating] = useState(false);
   const [isTextLoading, setIsTextLoading] = useState(false);
@@ -1113,6 +1115,29 @@ export function App({
     }
   };
 
+  const handleUpdatePokemonField = async (personalId: number, field: string, value: string) => {
+    setIsPokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updatePokemonField({
+        field,
+        paths: toProjectPaths(draftPaths),
+        personalId,
+        session: editSession,
+        value
+      });
+      setPokemonWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsPokemonUpdating(false);
+    }
+  };
+
   const handleUpdateMoveField = async (moveId: number, field: string, value: string) => {
     setIsMoveUpdating(true);
     setBridgeDiagnostics([]);
@@ -1518,8 +1543,13 @@ export function App({
               <WorkflowLoadingPanel label="Pokemon Data" />
             ) : (
               <PokemonSection
+                editSession={editSession}
+                isEditStarting={isEditStarting}
+                isPokemonUpdating={isPokemonUpdating}
                 onSearchChange={setPokemonSearchText}
                 onSelectPokemon={setSelectedPokemonPersonalId}
+                onStartEditSession={handleStartEditSession}
+                onUpdatePokemonField={handleUpdatePokemonField}
                 searchText={pokemonSearchText}
                 selectedPokemonPersonalId={selectedPokemonPersonalId}
                 workflow={pokemonWorkflow}
@@ -2494,14 +2524,24 @@ function SelectedItemPanel({
 }
 
 function PokemonSection({
+  editSession,
+  isEditStarting,
+  isPokemonUpdating,
   onSearchChange,
   onSelectPokemon,
+  onStartEditSession,
+  onUpdatePokemonField,
   searchText,
   selectedPokemonPersonalId,
   workflow
 }: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isPokemonUpdating: boolean;
   onSearchChange: (searchText: string) => void;
   onSelectPokemon: (personalId: number | null) => void;
+  onStartEditSession: () => void;
+  onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
   searchText: string;
   selectedPokemonPersonalId: number | null;
   workflow: PokemonWorkflow | null;
@@ -2518,6 +2558,8 @@ function PokemonSection({
       null,
     [filteredPokemon, selectedPokemonPersonalId]
   );
+  const canEditPokemon = workflow?.summary.availability === 'available';
+  const pendingPokemonIds = useMemo(() => getPendingPokemonIds(editSession), [editSession]);
 
   return (
     <>
@@ -2581,7 +2623,7 @@ function PokemonSection({
                       selectedPokemon?.personalId === record.personalId
                         ? 'items-row-selected'
                         : ''
-                    }`}
+                    } ${pendingPokemonIds.has(record.personalId) ? 'moves-row-pending' : ''}`}
                     onClick={() => onSelectPokemon(record.personalId)}
                     role="row"
                     type="button"
@@ -2599,7 +2641,16 @@ function PokemonSection({
               />
             </div>
 
-            <SelectedPokemonPanel pokemon={selectedPokemon} />
+            <SelectedPokemonPanel
+              canEditPokemon={canEditPokemon}
+              editSession={editSession}
+              editableFields={workflow.editableFields}
+              isEditStarting={isEditStarting}
+              isPokemonUpdating={isPokemonUpdating}
+              onStartEditSession={onStartEditSession}
+              onUpdatePokemonField={onUpdatePokemonField}
+              pokemon={selectedPokemon}
+            />
           </div>
         ) : (
           <p className="empty-copy">Open Pokemon Data from Workflows to load backend Pokemon data.</p>
@@ -2611,7 +2662,49 @@ function PokemonSection({
   );
 }
 
-function SelectedPokemonPanel({ pokemon }: { pokemon: PokemonRecord | null }) {
+function SelectedPokemonPanel({
+  canEditPokemon,
+  editSession,
+  editableFields,
+  isEditStarting,
+  isPokemonUpdating,
+  onStartEditSession,
+  onUpdatePokemonField,
+  pokemon
+}: {
+  canEditPokemon: boolean;
+  editSession: EditSession | null;
+  editableFields: PokemonEditableField[];
+  isEditStarting: boolean;
+  isPokemonUpdating: boolean;
+  onStartEditSession: () => void;
+  onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
+  pokemon: PokemonRecord | null;
+}) {
+  const [selectedFieldName, setSelectedFieldName] = useState<string>(
+    editableFields[0]?.field ?? ''
+  );
+  const selectedField =
+    editableFields.find((field) => field.field === selectedFieldName) ?? editableFields[0] ?? null;
+  const draftState =
+    pokemon && selectedField ? getPokemonDraftState(pokemon, selectedField) : null;
+  const [draftValue, setDraftValue] = useState(draftState?.value ?? '');
+
+  useEffect(() => {
+    if (!selectedField && editableFields[0]) {
+      setSelectedFieldName(editableFields[0].field);
+    }
+  }, [editableFields, selectedField]);
+
+  useEffect(() => {
+    setDraftValue(draftState?.value ?? '');
+  }, [draftState?.field, draftState?.recordId, draftState?.value]);
+
+  const isBooleanField = selectedField?.valueKind === 'boolean';
+  const canSubmit =
+    Boolean(pokemon && selectedField && editSession && canEditPokemon) &&
+    (isBooleanField || draftValue.trim().length > 0);
+
   return (
     <aside aria-label="Selected Pokemon provenance" className="item-inspector">
       <div className="panel-heading">
@@ -2726,6 +2819,79 @@ function SelectedPokemonPanel({ pokemon }: { pokemon: PokemonRecord | null }) {
                 </dd>
               </div>
             </dl>
+          </div>
+
+          <div className="inspector-block">
+            <h4>Personal Edit</h4>
+            <div className="move-edit-form">
+              <label className="path-field">
+                <span>Pokemon edit field</span>
+                <select
+                  disabled={!canEditPokemon || editableFields.length === 0 || isPokemonUpdating}
+                  onChange={(event) => setSelectedFieldName(event.target.value)}
+                  value={selectedField?.field ?? ''}
+                >
+                  {editableFields.map((field) => (
+                    <option key={field.field} value={field.field}>
+                      {field.group} - {field.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {selectedField ? (
+                <div className="move-field-editor-row">
+                  {isBooleanField ? (
+                    <label className="checkbox-field">
+                      <input
+                        checked={draftValue === '1'}
+                        disabled={!canEditPokemon || editSession === null || isPokemonUpdating}
+                        onChange={(event) => setDraftValue(event.target.checked ? '1' : '0')}
+                        type="checkbox"
+                      />
+                      <span>{selectedField.label}</span>
+                    </label>
+                  ) : (
+                    <label className="path-field">
+                      <span>{selectedField.label}</span>
+                      <input
+                        disabled={!canEditPokemon || editSession === null || isPokemonUpdating}
+                        max={selectedField.maximumValue ?? undefined}
+                        min={selectedField.minimumValue ?? undefined}
+                        onChange={(event) => setDraftValue(event.target.value)}
+                        type="number"
+                        value={draftValue}
+                      />
+                    </label>
+                  )}
+                  <button
+                    aria-label={`Save ${selectedField.label}`}
+                    className="secondary-button"
+                    disabled={!canSubmit || isPokemonUpdating}
+                    onClick={() => {
+                      if (pokemon && selectedField) {
+                        onUpdatePokemonField(pokemon.personalId, selectedField.field, draftValue);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <Save aria-hidden="true" size={16} />
+                    <span>{isPokemonUpdating ? 'Saving' : 'Save Field'}</span>
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            {canEditPokemon && editSession === null ? (
+              <button
+                className="secondary-button"
+                disabled={isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Start Edit Session'}</span>
+              </button>
+            ) : null}
           </div>
 
           <div className="inspector-block">
@@ -7074,6 +7240,103 @@ function getEditableMoveFieldValue(move: MoveRecord, field: string) {
   }
 }
 
+function getEditablePersonalFieldValue(pokemon: PokemonRecord, field: string) {
+  switch (field) {
+    case 'hp':
+      return pokemon.baseStats.hp;
+    case 'attack':
+      return pokemon.baseStats.attack;
+    case 'defense':
+      return pokemon.baseStats.defense;
+    case 'specialAttack':
+      return pokemon.baseStats.specialAttack;
+    case 'specialDefense':
+      return pokemon.baseStats.specialDefense;
+    case 'speed':
+      return pokemon.baseStats.speed;
+    case 'type1':
+      return pokemon.personal.type1;
+    case 'type2':
+      return pokemon.personal.type2;
+    case 'catchRate':
+      return pokemon.catchRate;
+    case 'evolutionStage':
+      return pokemon.evolutionStage;
+    case 'evYieldHP':
+      return pokemon.personal.evYieldHP;
+    case 'evYieldAttack':
+      return pokemon.personal.evYieldAttack;
+    case 'evYieldDefense':
+      return pokemon.personal.evYieldDefense;
+    case 'evYieldSpecialAttack':
+      return pokemon.personal.evYieldSpecialAttack;
+    case 'evYieldSpecialDefense':
+      return pokemon.personal.evYieldSpecialDefense;
+    case 'evYieldSpeed':
+      return pokemon.personal.evYieldSpeed;
+    case 'heldItem1':
+      return pokemon.personal.heldItem1;
+    case 'heldItem2':
+      return pokemon.personal.heldItem2;
+    case 'heldItem3':
+      return pokemon.personal.heldItem3;
+    case 'genderRatio':
+      return pokemon.genderRatio;
+    case 'hatchCycles':
+      return pokemon.personal.hatchCycles;
+    case 'baseFriendship':
+      return pokemon.personal.baseFriendship;
+    case 'expGrowth':
+      return pokemon.personal.expGrowth;
+    case 'eggGroup1':
+      return pokemon.personal.eggGroup1;
+    case 'eggGroup2':
+      return pokemon.personal.eggGroup2;
+    case 'ability1':
+      return pokemon.abilities.ability1;
+    case 'ability2':
+      return pokemon.abilities.ability2;
+    case 'hiddenAbility':
+      return pokemon.abilities.hiddenAbility;
+    case 'formStatsIndex':
+      return pokemon.personal.formStatsIndex;
+    case 'formCount':
+      return pokemon.personal.formCount;
+    case 'color':
+      return pokemon.personal.color;
+    case 'isPresentInGame':
+      return pokemon.dexPresence.isPresentInGame ? 1 : 0;
+    case 'hasSpriteForm':
+      return pokemon.personal.hasSpriteForm ? 1 : 0;
+    case 'baseExperience':
+      return pokemon.baseExperience;
+    case 'height':
+      return pokemon.height;
+    case 'weight':
+      return pokemon.weight;
+    case 'modelId':
+      return pokemon.personal.modelId;
+    case 'hatchedSpecies':
+      return pokemon.personal.hatchedSpecies;
+    case 'localFormIndex':
+      return pokemon.personal.localFormIndex;
+    case 'isRegionalForm':
+      return pokemon.personal.isRegionalForm ? 1 : 0;
+    case 'canNotDynamax':
+      return pokemon.personal.canNotDynamax ? 1 : 0;
+    case 'regionalDexIndex':
+      return pokemon.dexPresence.regionalDexIndex;
+    case 'form':
+      return pokemon.form;
+    case 'armorDexIndex':
+      return pokemon.dexPresence.armorDexIndex;
+    case 'crownDexIndex':
+      return pokemon.dexPresence.crownDexIndex;
+    default:
+      return null;
+  }
+}
+
 function getEditableEncounterFieldValue(encounterSlot: EncounterSlotRecord, field: string) {
   switch (field) {
     case speciesIdFieldName:
@@ -7229,6 +7492,18 @@ function getMoveDraftState(
   };
 }
 
+function getPokemonDraftState(pokemon: PokemonRecord, field: PokemonEditableField) {
+  const value = getEditablePersonalFieldValue(pokemon, field.field);
+
+  return value === null
+    ? null
+    : {
+        field: field.field,
+        recordId: pokemon.personalId,
+        value: value.toString()
+      };
+}
+
 function getIntegerDraftState(
   draftValue: string,
   currentValue: number | null,
@@ -7273,6 +7548,15 @@ function getPendingMoveIds(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
       .filter((edit) => edit.domain === 'workflow.moves')
+      .map((edit) => Number.parseInt(edit.recordId ?? '', 10))
+      .filter(Number.isInteger)
+  );
+}
+
+function getPendingPokemonIds(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.pokemon')
       .map((edit) => Number.parseInt(edit.recordId ?? '', 10))
       .filter(Number.isInteger)
   );

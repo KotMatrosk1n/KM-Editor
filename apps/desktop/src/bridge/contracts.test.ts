@@ -47,6 +47,8 @@ import {
   startEditSessionResponseSchema,
   updateItemFieldRequestSchema,
   updateItemFieldResponseSchema,
+  updatePokemonFieldRequestSchema,
+  updatePokemonFieldResponseSchema,
   updateMoveFieldRequestSchema,
   updateMoveFieldResponseSchema,
   updateEncounterSlotFieldRequestSchema,
@@ -338,6 +340,16 @@ describe('bridge contracts', () => {
     } as const;
     const pokemonWorkflow = {
       diagnostics: [],
+      editableFields: [
+        {
+          field: 'hp',
+          group: 'Base Stats',
+          label: 'HP',
+          maximumValue: 255,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
       pokemon: [
         {
           abilities: {
@@ -385,6 +397,38 @@ describe('bridge contracts', () => {
             }
           ],
           name: 'Bulbasaur',
+          personal: {
+            baseFriendship: 70,
+            canNotDynamax: false,
+            catchRate: 45,
+            color: 5,
+            eggGroup1: 7,
+            eggGroup2: 1,
+            evYieldAttack: 0,
+            evYieldDefense: 0,
+            evYieldHP: 0,
+            evYieldSpecialAttack: 1,
+            evYieldSpecialDefense: 0,
+            evYieldSpeed: 0,
+            evolutionStage: 1,
+            expGrowth: 4,
+            form: 0,
+            formCount: 1,
+            formStatsIndex: 0,
+            genderRatio: 31,
+            hasSpriteForm: false,
+            hatchedSpecies: 1,
+            hatchCycles: 20,
+            heldItem1: 0,
+            heldItem2: 0,
+            heldItem3: 0,
+            isPresentInGame: true,
+            isRegionalForm: false,
+            localFormIndex: 0,
+            modelId: 1,
+            type1: 11,
+            type2: 3
+          },
           personalId: 1,
           provenance: {
             fileState: 'baseOnly',
@@ -1499,6 +1543,8 @@ describe('bridge contracts', () => {
     const startResponseSchema = createBridgeResponseSchema(startEditSessionResponseSchema);
     const updateRequestSchema = createBridgeRequestSchema(updateItemFieldRequestSchema);
     const updateResponseSchema = createBridgeResponseSchema(updateItemFieldResponseSchema);
+    const updatePokemonRequestSchema = createBridgeRequestSchema(updatePokemonFieldRequestSchema);
+    const updatePokemonResponseSchema = createBridgeResponseSchema(updatePokemonFieldResponseSchema);
     const updateMoveRequestSchema = createBridgeRequestSchema(updateMoveFieldRequestSchema);
     const updateMoveResponseSchema = createBridgeResponseSchema(updateMoveFieldResponseSchema);
     const updateTextRequestSchema = createBridgeRequestSchema(updateTextEntryRequestSchema);
@@ -1630,6 +1676,129 @@ describe('bridge contracts', () => {
         diagnostics: [],
         id: 'items',
         label: 'Items'
+      }
+    } as const;
+    const pokemonSession = {
+      hasPendingChanges: true,
+      pendingEdits: [
+        {
+          domain: 'workflow.pokemon',
+          field: 'hp',
+          newValue: '99',
+          recordId: '1',
+          sources: [
+            {
+              layer: 'base',
+              relativePath: 'romfs/bin/pml/personal/personal_total.bin'
+            }
+          ],
+          summary: 'Set Bulbasaur hp to 99.'
+        }
+      ],
+      sessionId: 'session-1'
+    } as const;
+    const pokemonWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'hp',
+          group: 'Base Stats',
+          label: 'HP',
+          maximumValue: 255,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
+      pokemon: [
+        {
+          abilities: {
+            ability1: 65,
+            ability2: 0,
+            hiddenAbility: 34
+          },
+          baseExperience: 64,
+          baseStats: {
+            attack: 49,
+            defense: 49,
+            hp: 99,
+            specialAttack: 65,
+            specialDefense: 65,
+            speed: 45,
+            total: 372
+          },
+          catchRate: 45,
+          dexPresence: {
+            armorDexIndex: 0,
+            crownDexIndex: 0,
+            isInAnyDex: true,
+            isPresentInGame: true,
+            regionalDexIndex: 1
+          },
+          evolutionStage: 1,
+          evolutions: [],
+          form: 0,
+          formLabel: 'Base',
+          genderRatio: 31,
+          height: 7,
+          learnset: [],
+          name: 'Bulbasaur',
+          personal: {
+            baseFriendship: 70,
+            canNotDynamax: false,
+            catchRate: 45,
+            color: 5,
+            eggGroup1: 7,
+            eggGroup2: 1,
+            evYieldAttack: 0,
+            evYieldDefense: 0,
+            evYieldHP: 0,
+            evYieldSpecialAttack: 1,
+            evYieldSpecialDefense: 0,
+            evYieldSpeed: 0,
+            evolutionStage: 1,
+            expGrowth: 4,
+            form: 0,
+            formCount: 1,
+            formStatsIndex: 0,
+            genderRatio: 31,
+            hasSpriteForm: false,
+            hatchedSpecies: 1,
+            hatchCycles: 20,
+            heldItem1: 0,
+            heldItem2: 0,
+            heldItem3: 0,
+            isPresentInGame: true,
+            isRegionalForm: false,
+            localFormIndex: 0,
+            modelId: 1,
+            type1: 11,
+            type2: 3
+          },
+          personalId: 1,
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/pml/personal/personal_total.bin',
+            sourceLayer: 'base'
+          },
+          speciesId: 1,
+          type1: 'Grass',
+          type2: 'Poison',
+          weight: 69
+        }
+      ],
+      stats: {
+        presentPokemonCount: 1,
+        sourceFileCount: 1,
+        totalEvolutionCount: 0,
+        totalLearnsetMoveCount: 0,
+        totalPokemonCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
+        diagnostics: [],
+        id: 'pokemon',
+        label: 'Pokemon Data'
       }
     } as const;
     const moveSession = {
@@ -2098,6 +2267,34 @@ describe('bridge contracts', () => {
           diagnostics: [],
           session: editSession,
           workflow: itemsWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updatePokemonRequestSchema.safeParse({
+        command: kmCommandNames.updatePokemonField,
+        payload: {
+          field: 'hp',
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: 'output',
+            saveFilePath: null
+          },
+          personalId: 1,
+          session: editSession,
+          value: '99'
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      updatePokemonResponseSchema.safeParse({
+        payload: {
+          diagnostics: [],
+          session: pokemonSession,
+          workflow: pokemonWorkflow
         }
       }).success
     ).toBe(true);

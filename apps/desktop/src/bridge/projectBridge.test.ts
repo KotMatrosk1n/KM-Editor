@@ -226,6 +226,16 @@ describe('projectBridge', () => {
           payload: {
             workflow: {
               diagnostics: [],
+              editableFields: [
+                {
+                  field: 'hp',
+                  group: 'Base Stats',
+                  label: 'HP',
+                  maximumValue: 255,
+                  minimumValue: 0,
+                  valueKind: 'integer'
+                }
+              ],
               pokemon: [
                 {
                   abilities: {
@@ -273,6 +283,38 @@ describe('projectBridge', () => {
                     }
                   ],
                   name: 'Bulbasaur',
+                  personal: {
+                    baseFriendship: 70,
+                    canNotDynamax: false,
+                    catchRate: 45,
+                    color: 5,
+                    eggGroup1: 7,
+                    eggGroup2: 1,
+                    evYieldAttack: 0,
+                    evYieldDefense: 0,
+                    evYieldHP: 0,
+                    evYieldSpecialAttack: 1,
+                    evYieldSpecialDefense: 0,
+                    evYieldSpeed: 0,
+                    evolutionStage: 1,
+                    expGrowth: 4,
+                    form: 0,
+                    formCount: 1,
+                    formStatsIndex: 0,
+                    genderRatio: 31,
+                    hasSpriteForm: false,
+                    hatchedSpecies: 1,
+                    hatchCycles: 20,
+                    heldItem1: 0,
+                    heldItem2: 0,
+                    heldItem3: 0,
+                    isPresentInGame: true,
+                    isRegionalForm: false,
+                    localFormIndex: 0,
+                    modelId: 1,
+                    type1: 11,
+                    type2: 3
+                  },
                   personalId: 1,
                   provenance: {
                     fileState: 'baseOnly',
@@ -1160,6 +1202,7 @@ describe('projectBridge', () => {
     expect(workflows.workflows[12]?.id).toBe('spreadsheetImport');
     expect(items.workflow.editableFields).toHaveLength(4);
     expect(items.workflow.items[0]?.name).toBe('Potion');
+    expect(pokemon.workflow.editableFields[0]?.field).toBe('hp');
     expect(pokemon.workflow.pokemon[0]?.name).toBe('Bulbasaur');
     expect(pokemon.workflow.pokemon[0]?.learnset[0]?.moveName).toBe('Tackle');
     expect(moves.workflow.moves[0]?.name).toBe('Tackle');
@@ -1614,6 +1657,80 @@ describe('projectBridge', () => {
       'romfs/bin/pml/item/item.dat'
     );
     expect(apply.applyResult.writtenFiles).toEqual(['romfs/bin/pml/item/item.dat']);
+  });
+
+  it('runs pokemon field update command', async () => {
+    const bridge = createProjectBridge(async (requestJson) => {
+      const request = JSON.parse(requestJson) as { command: string };
+
+      expect(request.command).toBe('pokemon.field.update');
+
+      return JSON.stringify({
+        error: null,
+        payload: {
+          diagnostics: [],
+          session: {
+            hasPendingChanges: true,
+            pendingEdits: [
+              {
+                domain: 'workflow.pokemon',
+                field: 'hp',
+                newValue: '99',
+                recordId: '1',
+                sources: [
+                  {
+                    layer: 'base',
+                    relativePath: 'romfs/bin/pml/personal/personal_total.bin'
+                  }
+                ],
+                summary: 'Set Bulbasaur hp to 99.'
+              }
+            ],
+            sessionId: 'session-1'
+          },
+          workflow: {
+            diagnostics: [],
+            editableFields: [
+              {
+                field: 'hp',
+                group: 'Base Stats',
+                label: 'HP',
+                maximumValue: 255,
+                minimumValue: 0,
+                valueKind: 'integer'
+              }
+            ],
+            pokemon: [],
+            stats: {
+              presentPokemonCount: 0,
+              sourceFileCount: 1,
+              totalEvolutionCount: 0,
+              totalLearnsetMoveCount: 0,
+              totalPokemonCount: 0
+            },
+            summary: {
+              availability: 'available',
+              description:
+                'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
+              diagnostics: [],
+              id: 'pokemon',
+              label: 'Pokemon Data'
+            }
+          }
+        }
+      });
+    });
+
+    const updated = await bridge.updatePokemonField({
+      field: 'hp',
+      paths: editableProjectPaths,
+      personalId: 1,
+      session: null,
+      value: '99'
+    });
+
+    expect(updated.session.pendingEdits[0]?.domain).toBe('workflow.pokemon');
+    expect(updated.session.pendingEdits[0]?.field).toBe('hp');
   });
 
   it('runs move field update command', async () => {

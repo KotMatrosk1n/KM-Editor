@@ -55,6 +55,16 @@ public static class SwShBridgeMapper
         return new LoadPokemonWorkflowResponse(ToPokemonWorkflowDto(workflow));
     }
 
+    public static UpdatePokemonFieldResponse ToDto(SwShPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonFieldResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadMovesWorkflowResponse ToDto(SwShMovesWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -275,7 +285,8 @@ public static class SwShBridgeMapper
                 workflow.Stats.PresentPokemonCount,
                 workflow.Stats.TotalEvolutionCount,
                 workflow.Stats.TotalLearnsetMoveCount,
-            workflow.Stats.SourceFileCount),
+                workflow.Stats.SourceFileCount),
+            workflow.EditableFields.Select(ToDto).ToArray(),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -501,6 +512,37 @@ public static class SwShBridgeMapper
                 pokemon.DexPresence.RegionalDexIndex,
                 pokemon.DexPresence.ArmorDexIndex,
                 pokemon.DexPresence.CrownDexIndex),
+            new PokemonPersonalDetailsDto(
+                pokemon.Personal.Type1,
+                pokemon.Personal.Type2,
+                pokemon.Personal.CatchRate,
+                pokemon.Personal.EvolutionStage,
+                pokemon.Personal.EVYieldHP,
+                pokemon.Personal.EVYieldAttack,
+                pokemon.Personal.EVYieldDefense,
+                pokemon.Personal.EVYieldSpecialAttack,
+                pokemon.Personal.EVYieldSpecialDefense,
+                pokemon.Personal.EVYieldSpeed,
+                pokemon.Personal.HeldItem1,
+                pokemon.Personal.HeldItem2,
+                pokemon.Personal.HeldItem3,
+                pokemon.Personal.GenderRatio,
+                pokemon.Personal.HatchCycles,
+                pokemon.Personal.BaseFriendship,
+                pokemon.Personal.ExpGrowth,
+                pokemon.Personal.EggGroup1,
+                pokemon.Personal.EggGroup2,
+                pokemon.Personal.FormStatsIndex,
+                pokemon.Personal.FormCount,
+                pokemon.Personal.Color,
+                pokemon.Personal.IsPresentInGame,
+                pokemon.Personal.HasSpriteForm,
+                pokemon.Personal.ModelId,
+                pokemon.Personal.HatchedSpecies,
+                pokemon.Personal.LocalFormIndex,
+                pokemon.Personal.IsRegionalForm,
+                pokemon.Personal.CanNotDynamax,
+                pokemon.Personal.Form),
             pokemon.CatchRate,
             pokemon.EvolutionStage,
             pokemon.GenderRatio,
@@ -513,6 +555,17 @@ public static class SwShBridgeMapper
                 pokemon.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(pokemon.Provenance.SourceLayer),
                 ProjectBridgeMapper.ToDto(pokemon.Provenance.FileState)));
+    }
+
+    private static PokemonEditableFieldDto ToDto(SwShPokemonEditableField field)
+    {
+        return new PokemonEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.Group,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue);
     }
 
     private static PokemonEvolutionRecordDto ToDto(SwShPokemonEvolutionRecord evolution)
