@@ -298,7 +298,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
     private static DynamaxAdventureLookupTables CreateEmptyLookupTables()
     {
-        return new DynamaxAdventureLookupTables([], [], [], SourceFileCount: 0);
+        return new DynamaxAdventureLookupTables([], [], [], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShDynamaxAdventureEditableField> CreateEditableFields(
@@ -358,7 +358,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             entry.BallItemId,
             GetIndexedName(entry.BallItemId, lookupTables.ItemNames, "Item"),
             entry.Ability,
-            GetOptionLabel(AbilityOptions, entry.Ability, "Ability roll"),
+            GetAbilityOptionLabel(lookupTables, entry.Species, entry.Form, entry.Ability),
             entry.GigantamaxState,
             GetOptionLabel(GigantamaxOptions, entry.GigantamaxState, "Gigantamax"),
             entry.Version,
@@ -381,7 +381,10 @@ public sealed class SwShDynamaxAdventuresWorkflowService
                 entry.Ivs.SpecialDefense),
             guaranteedPerfectIvs,
             FormatIvSummary(entry.Ivs, guaranteedPerfectIvs),
-            provenance);
+            provenance)
+        {
+            AbilityOptions = CreateAbilityOptions(lookupTables, entry.Species, entry.Form),
+        };
     }
 
     private static string CreateLabel(int entryIndex, int adventureIndex, string species, int speciesId, int form, string versionLabel)
@@ -436,15 +439,39 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
+        var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new DynamaxAdventureLookupTables(
             speciesNames,
             itemNames,
             moveNames,
+            abilityResolver,
             SourceFileCount:
                 (speciesNames.Length > 0 ? 1 : 0)
                 + (itemNames.Length > 0 ? 1 : 0)
                 + (moveNames.Length > 0 ? 1 : 0));
+    }
+
+    private static IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> CreateAbilityOptions(
+        DynamaxAdventureLookupTables lookupTables,
+        int speciesId,
+        int form)
+    {
+        return lookupTables.AbilityResolver
+            .CreateOptions(speciesId, form, SwShAbilityOptionMode.Roll)
+            .Select(option => new SwShDynamaxAdventureEditableFieldOption(option.Value, option.Label))
+            .ToArray();
+    }
+
+    private static string GetAbilityOptionLabel(
+        DynamaxAdventureLookupTables lookupTables,
+        int speciesId,
+        int form,
+        int value)
+    {
+        return CreateAbilityOptions(lookupTables, speciesId, form)
+            .FirstOrDefault(option => option.Value == value)?.Label
+            ?? GetOptionLabel(AbilityOptions, value, "Ability roll");
     }
 
     private static string? ResolveLanguageMessageRoot(
@@ -654,6 +681,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         IReadOnlyList<string> SpeciesNames,
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,
+        SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);
 
     internal sealed record WorkflowFileSource(

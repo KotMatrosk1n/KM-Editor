@@ -62,7 +62,11 @@ public sealed record DynamaxAdventureRecordDto(
     DynamaxAdventureIvsDto Ivs,
     int GuaranteedPerfectIvs,
     string IvSummary,
-    DynamaxAdventureProvenanceDto Provenance);
+    DynamaxAdventureProvenanceDto Provenance)
+{
+    public IReadOnlyList<DynamaxAdventureEditableFieldOptionDto> AbilityOptions { get; init; } =
+        Array.Empty<DynamaxAdventureEditableFieldOptionDto>();
+}
 
 public sealed record DynamaxAdventureEditableFieldDto(
     string Field,

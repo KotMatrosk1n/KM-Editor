@@ -50,7 +50,11 @@ public sealed record SwShRaidBattleSlotRecord(
     string DropTableHash,
     string BonusTableHash,
     SwShRaidBattleRewardLinkRecord DropRewardLink,
-    SwShRaidBattleRewardLinkRecord BonusRewardLink);
+    SwShRaidBattleRewardLinkRecord BonusRewardLink)
+{
+    public IReadOnlyList<SwShRaidBattleEditableFieldOption> AbilityOptions { get; init; } =
+        Array.Empty<SwShRaidBattleEditableFieldOption>();
+}
 
 public sealed record SwShRaidBattleTableRecord(
     string TableId,

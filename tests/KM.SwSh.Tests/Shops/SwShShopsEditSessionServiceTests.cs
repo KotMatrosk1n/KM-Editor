@@ -69,8 +69,9 @@ public sealed class SwShShopsEditSessionServiceTests
             temp.OutputRootPath,
             "romfs",
             "bin",
-            "app",
+            "appli",
             "shop",
+            "bin",
             "shop_data.bin");
         var output = SwShShopDataFile.Parse(File.ReadAllBytes(outputPath));
         Assert.Equal(2, output.SingleShops[0].Inventory.Items[0]);

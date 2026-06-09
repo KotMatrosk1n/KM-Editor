@@ -131,6 +131,15 @@ public sealed class SwShGiftPokemonArchiveTests
             () => archive.WriteEdits([new SwShGiftPokemonEdit(0, SwShGiftPokemonField.FlawlessIvCount, 5)]));
     }
 
+    [Fact]
+    public void WriteEditsRejectsInvalidDynamaxLevel()
+    {
+        var archive = CreateArchive();
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => archive.WriteEdits([new SwShGiftPokemonEdit(0, SwShGiftPokemonField.DynamaxLevel, 11)]));
+    }
+
     private static SwShGiftPokemonArchive CreateArchive()
     {
         return new SwShGiftPokemonArchive(

@@ -313,7 +313,9 @@ public sealed class SwShEncountersWorkflowService
         var speciesOptions = speciesNames
             .Select((name, index) => new SwShEncounterEditableFieldOption(
                 index,
-                string.IsNullOrWhiteSpace(name)
+                index == 0
+                    ? "000 Empty"
+                    : string.IsNullOrWhiteSpace(name)
                     ? $"{index.ToString("000", CultureInfo.InvariantCulture)} Species {index}"
                     : $"{index.ToString("000", CultureInfo.InvariantCulture)} {name}"))
             .ToArray();
@@ -363,7 +365,9 @@ public sealed class SwShEncountersWorkflowService
         return new SwShEncounterSlotRecord(
             slotIndex + 1,
             slot.Species,
-            GetLookupValue(speciesNames, slot.Species, $"Species {slot.Species}"),
+            slot.Species == 0
+                ? "Empty"
+                : GetLookupValue(speciesNames, slot.Species, $"Species {slot.Species}"),
             slot.Form,
             subTable.LevelMin,
             subTable.LevelMax,

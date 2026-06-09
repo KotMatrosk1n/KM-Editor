@@ -848,6 +848,7 @@ export const trainerPokemonStatsSchema = z.strictObject({
 export const trainerPokemonRecordSchema = z.strictObject({
   ability: z.number().int().nonnegative(),
   abilityLabel: z.string(),
+  abilityOptions: z.array(z.strictObject({ label: z.string(), value: z.number().int() })).default([]),
   canDynamax: z.boolean(),
   canGigantamax: z.boolean(),
   dynamaxLevel: z.number().int().nonnegative(),
@@ -964,6 +965,7 @@ export const giftPokemonEditableFieldSchema = z.strictObject({
 export const giftPokemonRecordSchema = z.strictObject({
   ability: z.number().int().nonnegative(),
   abilityLabel: z.string(),
+  abilityOptions: z.array(giftPokemonEditableFieldOptionSchema).default([]),
   ballItem: z.string(),
   ballItemId: z.number().int().nonnegative(),
   canGigantamax: z.boolean(),
@@ -1048,6 +1050,7 @@ export const tradePokemonEditableFieldSchema = z.strictObject({
 export const tradePokemonRecordSchema = z.strictObject({
   ability: z.number().int().nonnegative(),
   abilityLabel: z.string(),
+  abilityOptions: z.array(tradePokemonEditableFieldOptionSchema).default([]),
   ballItem: z.string(),
   ballItemId: z.number().int().nonnegative(),
   canGigantamax: z.boolean(),
@@ -1146,6 +1149,7 @@ export const staticEncounterEditableFieldSchema = z.strictObject({
 export const staticEncounterRecordSchema = z.strictObject({
   ability: z.number().int().nonnegative(),
   abilityLabel: z.string(),
+  abilityOptions: z.array(staticEncounterEditableFieldOptionSchema).default([]),
   canGigantamax: z.boolean(),
   dynamaxLevel: z.number().int().nonnegative(),
   encounterId: z.string(),
@@ -1230,6 +1234,7 @@ export const rentalPokemonEditableFieldSchema = z.strictObject({
 export const rentalPokemonRecordSchema = z.strictObject({
   ability: z.number().int().nonnegative(),
   abilityLabel: z.string(),
+  abilityOptions: z.array(rentalPokemonEditableFieldOptionSchema).default([]),
   ballItem: z.string(),
   ballItemId: z.number().int().nonnegative(),
   evs: rentalPokemonStatsSchema,
@@ -1311,6 +1316,7 @@ export const dynamaxAdventureEditableFieldSchema = z.strictObject({
 export const dynamaxAdventureRecordSchema = z.strictObject({
   ability: z.number().int().nonnegative(),
   abilityLabel: z.string(),
+  abilityOptions: z.array(dynamaxAdventureEditableFieldOptionSchema).default([]),
   adventureIndex: z.number().int().nonnegative(),
   ballItem: z.string(),
   ballItemId: z.number().int().nonnegative(),
@@ -1508,6 +1514,7 @@ export const raidBattleRewardLinkSchema = z.strictObject({
 export const raidBattleSlotRecordSchema = z.strictObject({
   ability: z.number().int().nonnegative(),
   abilityLabel: z.string(),
+  abilityOptions: z.array(raidBattleEditableFieldOptionSchema).default([]),
   bonusTableHash: z.string(),
   bonusRewardLink: raidBattleRewardLinkSchema,
   dropTableHash: z.string(),

@@ -66,7 +66,11 @@ public sealed record RaidBattleSlotRecordDto(
     string DropTableHash,
     string BonusTableHash,
     RaidBattleRewardLinkDto DropRewardLink,
-    RaidBattleRewardLinkDto BonusRewardLink);
+    RaidBattleRewardLinkDto BonusRewardLink)
+{
+    public IReadOnlyList<RaidBattleEditableFieldOptionDto> AbilityOptions { get; init; } =
+        Array.Empty<RaidBattleEditableFieldOptionDto>();
+}
 
 public sealed record RaidBattleTableRecordDto(
     string TableId,

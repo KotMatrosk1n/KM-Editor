@@ -504,7 +504,10 @@ public static class SwShBridgeMapper
             new GiftPokemonProvenanceDto(
                 gift.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(gift.Provenance.SourceLayer),
-                ProjectBridgeMapper.ToDto(gift.Provenance.FileState)));
+                ProjectBridgeMapper.ToDto(gift.Provenance.FileState)))
+        {
+            AbilityOptions = gift.AbilityOptions.Select(ToDto).ToArray(),
+        };
     }
 
     private static GiftPokemonEditableFieldDto ToDto(SwShGiftPokemonEditableField field)
@@ -589,7 +592,10 @@ public static class SwShBridgeMapper
             new TradePokemonProvenanceDto(
                 trade.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(trade.Provenance.SourceLayer),
-                ProjectBridgeMapper.ToDto(trade.Provenance.FileState)));
+                ProjectBridgeMapper.ToDto(trade.Provenance.FileState)))
+        {
+            AbilityOptions = trade.AbilityOptions.Select(ToDto).ToArray(),
+        };
     }
 
     private static TradePokemonMoveRecordDto ToDto(SwShTradePokemonMoveRecord move)
@@ -667,7 +673,10 @@ public static class SwShBridgeMapper
             new StaticEncounterProvenanceDto(
                 encounter.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(encounter.Provenance.SourceLayer),
-                ProjectBridgeMapper.ToDto(encounter.Provenance.FileState)));
+                ProjectBridgeMapper.ToDto(encounter.Provenance.FileState)))
+        {
+            AbilityOptions = encounter.AbilityOptions.Select(ToDto).ToArray(),
+        };
     }
 
     private static StaticEncounterStatsDto ToDto(SwShStaticEncounterStatsRecord stats)
@@ -748,7 +757,10 @@ public static class SwShBridgeMapper
             new RentalPokemonProvenanceDto(
                 rental.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(rental.Provenance.SourceLayer),
-                ProjectBridgeMapper.ToDto(rental.Provenance.FileState)));
+                ProjectBridgeMapper.ToDto(rental.Provenance.FileState)))
+        {
+            AbilityOptions = rental.AbilityOptions.Select(ToDto).ToArray(),
+        };
     }
 
     private static RentalPokemonStatsDto ToDto(SwShRentalPokemonStatsRecord stats)
@@ -834,7 +846,10 @@ public static class SwShBridgeMapper
             new DynamaxAdventureProvenanceDto(
                 encounter.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(encounter.Provenance.SourceLayer),
-                ProjectBridgeMapper.ToDto(encounter.Provenance.FileState)));
+                ProjectBridgeMapper.ToDto(encounter.Provenance.FileState)))
+        {
+            AbilityOptions = encounter.AbilityOptions.Select(ToDto).ToArray(),
+        };
     }
 
     private static DynamaxAdventureMoveRecordDto ToDto(SwShDynamaxAdventureMoveRecord move)
@@ -1419,7 +1434,10 @@ public static class SwShBridgeMapper
             pokemon.CanGigantamax,
             ToDto(pokemon.Ivs),
             pokemon.Shiny,
-            pokemon.CanDynamax);
+            pokemon.CanDynamax)
+        {
+            AbilityOptions = pokemon.AbilityOptions.Select(ToDto).ToArray(),
+        };
     }
 
     private static TrainerAiFlagStateDto ToDto(SwShTrainerAiFlagState flag)
@@ -1608,7 +1626,10 @@ public static class SwShBridgeMapper
             slot.DropTableHash,
             slot.BonusTableHash,
             ToDto(slot.DropRewardLink),
-            ToDto(slot.BonusRewardLink));
+            ToDto(slot.BonusRewardLink))
+        {
+            AbilityOptions = slot.AbilityOptions.Select(ToDto).ToArray(),
+        };
     }
 
     private static RaidBattleRewardLinkDto ToDto(SwShRaidBattleRewardLinkRecord link)

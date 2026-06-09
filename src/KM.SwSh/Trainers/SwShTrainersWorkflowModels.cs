@@ -38,7 +38,11 @@ public sealed record SwShTrainerPokemonRecord(
     bool CanGigantamax,
     SwShTrainerPokemonStatsRecord Ivs,
     bool Shiny,
-    bool CanDynamax);
+    bool CanDynamax)
+{
+    public IReadOnlyList<SwShTrainerEditableFieldOption> AbilityOptions { get; init; } =
+        Array.Empty<SwShTrainerEditableFieldOption>();
+}
 
 public sealed record SwShTrainerPokemonStatsRecord(
     int HP,

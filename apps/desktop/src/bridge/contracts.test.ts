@@ -2855,7 +2855,7 @@ describe('bridge contracts', () => {
           sources: [
             {
               layer: 'base',
-              relativePath: 'romfs/bin/app/shop/shop_data.bin'
+              relativePath: 'romfs/bin/appli/shop/bin/shop_data.bin'
             }
           ],
           summary: 'Set Poke Mart slot 1 item ID to 2.'
@@ -2890,7 +2890,7 @@ describe('bridge contracts', () => {
           name: 'Poke Mart',
           provenance: {
             fileState: 'baseOnly',
-            sourceFile: 'romfs/bin/app/shop/shop_data.bin',
+            sourceFile: 'romfs/bin/appli/shop/bin/shop_data.bin',
             sourceLayer: 'base'
           },
           shopId: 'single:1F3FF031A3A24490'

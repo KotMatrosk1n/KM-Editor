@@ -75,6 +75,7 @@ public sealed record SwShGiftPokemonArchive(IReadOnlyList<SwShGiftPokemonRecord>
     public const int ThreePerfectIvSentinel = -4;
     public const int MinimumFixedIvValue = 0;
     public const int MaximumFixedIvValue = 31;
+    public const int MaximumDynamaxLevel = 10;
     public const int MaximumByteValue = byte.MaxValue;
     public const int MaximumIdValue = int.MaxValue;
 
@@ -163,7 +164,7 @@ public sealed record SwShGiftPokemonArchive(IReadOnlyList<SwShGiftPokemonRecord>
         {
             SwShGiftPokemonField.IsEgg => gift with { IsEgg = ValidateRange(edit.Value, 0, MaximumIdValue) },
             SwShGiftPokemonField.Form => gift with { Form = ValidateRange(edit.Value, 0, MaximumByteValue) },
-            SwShGiftPokemonField.DynamaxLevel => gift with { DynamaxLevel = ValidateRange(edit.Value, 0, MaximumByteValue) },
+            SwShGiftPokemonField.DynamaxLevel => gift with { DynamaxLevel = ValidateRange(edit.Value, 0, MaximumDynamaxLevel) },
             SwShGiftPokemonField.BallItemId => gift with { BallItemId = ValidateRange(edit.Value, 0, MaximumIdValue) },
             SwShGiftPokemonField.CanGigantamax => gift with { CanGigantamax = ValidateBool(edit.Value) },
             SwShGiftPokemonField.HeldItem => gift with { HeldItem = ValidateRange(edit.Value, 0, MaximumIdValue) },

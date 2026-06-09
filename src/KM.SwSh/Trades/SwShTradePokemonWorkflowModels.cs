@@ -61,7 +61,11 @@ public sealed record SwShTradePokemonEntry(
     SwShTradePokemonIvsRecord Ivs,
     int? FlawlessIvCount,
     string IvSummary,
-    SwShTradePokemonProvenance Provenance);
+    SwShTradePokemonProvenance Provenance)
+{
+    public IReadOnlyList<SwShTradePokemonEditableFieldOption> AbilityOptions { get; init; } =
+        Array.Empty<SwShTradePokemonEditableFieldOption>();
+}
 
 public sealed record SwShTradePokemonMoveRecord(
     int Slot,

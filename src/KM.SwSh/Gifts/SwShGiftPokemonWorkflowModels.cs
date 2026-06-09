@@ -46,7 +46,11 @@ public sealed record SwShGiftPokemonEntry(
     SwShGiftPokemonIvsRecord Ivs,
     int? FlawlessIvCount,
     string IvSummary,
-    SwShGiftPokemonProvenance Provenance);
+    SwShGiftPokemonProvenance Provenance)
+{
+    public IReadOnlyList<SwShGiftPokemonEditableFieldOption> AbilityOptions { get; init; } =
+        Array.Empty<SwShGiftPokemonEditableFieldOption>();
+}
 
 public sealed record SwShGiftPokemonEditableField(
     string Field,

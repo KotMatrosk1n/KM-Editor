@@ -288,7 +288,7 @@ public sealed class SwShRentalPokemonWorkflowService
 
     private static RentalLookupTables CreateEmptyLookupTables()
     {
-        return new RentalLookupTables([], [], [], SourceFileCount: 0);
+        return new RentalLookupTables([], [], [], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShRentalPokemonEditableField> CreateEditableFields(RentalLookupTables lookupTables)
@@ -364,7 +364,7 @@ public sealed class SwShRentalPokemonWorkflowService
             rental.BallItemId,
             GetIndexedName(rental.BallItemId, lookupTables.ItemNames, "Item"),
             rental.Ability,
-            GetOptionLabel(AbilityOptions, rental.Ability, "Ability slot"),
+            GetAbilityOptionLabel(lookupTables, rental.Species, rental.Form, rental.Ability),
             rental.Nature,
             GetOptionLabel(NatureOptions, rental.Nature, "Nature"),
             rental.Gender,
@@ -377,7 +377,10 @@ public sealed class SwShRentalPokemonWorkflowService
             ivs,
             hasPerfectIvs,
             FormatIvSummary(ivs),
-            provenance);
+            provenance)
+        {
+            AbilityOptions = CreateAbilityOptions(lookupTables, rental.Species, rental.Form),
+        };
     }
 
     internal static string FormatRentalLabel(
@@ -429,12 +432,36 @@ public sealed class SwShRentalPokemonWorkflowService
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
+        var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new RentalLookupTables(
             speciesNames,
             itemNames,
             moveNames,
+            abilityResolver,
             CountSource(speciesNames) + CountSource(itemNames) + CountSource(moveNames));
+    }
+
+    private static IReadOnlyList<SwShRentalPokemonEditableFieldOption> CreateAbilityOptions(
+        RentalLookupTables lookupTables,
+        int speciesId,
+        int form)
+    {
+        return lookupTables.AbilityResolver
+            .CreateOptions(speciesId, form, SwShAbilityOptionMode.ZeroBasedSlots)
+            .Select(option => new SwShRentalPokemonEditableFieldOption(option.Value, option.Label))
+            .ToArray();
+    }
+
+    private static string GetAbilityOptionLabel(
+        RentalLookupTables lookupTables,
+        int speciesId,
+        int form,
+        int value)
+    {
+        return CreateAbilityOptions(lookupTables, speciesId, form)
+            .FirstOrDefault(option => option.Value == value)?.Label
+            ?? GetOptionLabel(AbilityOptions, value, "Ability slot");
     }
 
     private static int CountSource(IReadOnlyList<string> values)
@@ -658,5 +685,6 @@ public sealed class SwShRentalPokemonWorkflowService
         IReadOnlyList<string> SpeciesNames,
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,
+        SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);
 }

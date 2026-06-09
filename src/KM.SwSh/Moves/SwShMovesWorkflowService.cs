@@ -257,7 +257,7 @@ public sealed class SwShMovesWorkflowService
         }
 
         var moveSources = ResolveWorkflowFiles(project, MoveDataDirectory)
-            .Where(source => source.GraphEntry.RelativePath.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
+            .Where(source => IsMoveDataFile(source.GraphEntry.RelativePath))
             .OrderBy(source => source.GraphEntry.RelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (moveSources.Length == 0)
@@ -265,7 +265,7 @@ public sealed class SwShMovesWorkflowService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
                 "Moves data is not available for this project.",
-                expected: $"{MoveDataDirectory}/**/*.bin"));
+                expected: $"{MoveDataDirectory}/**/*.wazabin or {MoveDataDirectory}/**/*.bin"));
             return CreateWorkflow(summary, [], sourceFileCount: 0, diagnostics);
         }
 
@@ -378,6 +378,12 @@ public sealed class SwShMovesWorkflowService
                 .ToArray(),
             flags,
             provenance);
+    }
+
+    private static bool IsMoveDataFile(string relativePath)
+    {
+        return relativePath.EndsWith(".wazabin", StringComparison.OrdinalIgnoreCase)
+            || relativePath.EndsWith(".bin", StringComparison.OrdinalIgnoreCase);
     }
 
     private static IReadOnlyList<SwShMoveFlagRecord> ToFlagRecords(SwShMoveFlags flags)

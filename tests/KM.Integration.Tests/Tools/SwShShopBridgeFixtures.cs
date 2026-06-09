@@ -13,7 +13,7 @@ internal static class SwShShopBridgeFixtures
     {
         SwShItemBridgeFixtures.WriteBaseItems(temp);
         temp.WriteBaseRomFsFile(
-            "bin/app/shop/shop_data.bin",
+            "bin/appli/shop/bin/shop_data.bin",
             CreateShopData([1, 2], [[1]]));
     }
 

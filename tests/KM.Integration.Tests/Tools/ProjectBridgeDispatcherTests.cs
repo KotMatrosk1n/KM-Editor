@@ -1111,7 +1111,7 @@ public sealed class ProjectBridgeDispatcherTests
         var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
         Assert.Null(planResponse.Error);
         Assert.NotNull(planResponse.Payload);
-        Assert.Equal("romfs/bin/app/shop/shop_data.bin", Assert.Single(planResponse.Payload.ChangePlan.Writes).TargetRelativePath);
+        Assert.Equal("romfs/bin/appli/shop/bin/shop_data.bin", Assert.Single(planResponse.Payload.ChangePlan.Writes).TargetRelativePath);
 
         var applyJson = SerializeRequest(
             KmCommandNames.ApplyChangePlan,
@@ -1121,8 +1121,8 @@ public sealed class ProjectBridgeDispatcherTests
 
         Assert.Null(applyResponse.Error);
         Assert.NotNull(applyResponse.Payload);
-        Assert.Equal("romfs/bin/app/shop/shop_data.bin", Assert.Single(applyResponse.Payload.ApplyResult.WrittenFiles));
-        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "app", "shop", "shop_data.bin");
+        Assert.Equal("romfs/bin/appli/shop/bin/shop_data.bin", Assert.Single(applyResponse.Payload.ApplyResult.WrittenFiles));
+        var outputPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "appli", "shop", "bin", "shop_data.bin");
         var output = SwShShopDataFile.Parse(File.ReadAllBytes(outputPath));
         Assert.Equal(2, output.SingleShops[0].Inventory.Items[0]);
     }

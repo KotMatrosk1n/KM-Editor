@@ -24,9 +24,9 @@
   --color-danger: #ff6b6b;
   --shadow-panel: 0 20px 70px rgb(0 0 0 / 34%);
   --shadow-inset: inset 0 1px 0 rgb(255 255 255 / 6%);
-  --editor-list-column: minmax(360px, 0.68fr);
-  --editor-detail-column: minmax(720px, 1.32fr);
-  --inspector-section-column: minmax(320px, 1fr);
+  --editor-list-column: minmax(300px, 0.52fr);
+  --editor-detail-column: minmax(0, 1.48fr);
+  --inspector-section-column: minmax(260px, 1fr);
   --editor-visible-row-count: 5;
   --editor-row-height: 40px;
   --editor-table-max-height: calc((var(--editor-visible-row-count) + 1) * var(--editor-row-height));
@@ -597,13 +597,16 @@ h2 {
   display: grid;
   grid-template-columns: var(--editor-list-column) var(--editor-detail-column);
   gap: 16px;
+  align-items: start;
   margin-top: 16px;
 }
 
 .items-table {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  align-self: start;
   min-width: 0;
+  max-height: var(--editor-table-max-height);
   overflow: hidden;
   border: 1px solid #26344d;
   border-radius: 8px;
@@ -694,6 +697,8 @@ h2 {
   grid-template-columns: repeat(auto-fit, var(--inspector-section-column));
   gap: 14px;
   align-content: start;
+  align-items: start;
+  grid-auto-rows: max-content;
   min-width: 0;
   padding: 14px;
   background: #0b1120;
@@ -722,6 +727,9 @@ h2 {
 .item-provenance-list {
   display: grid;
   gap: 10px;
+  align-content: start;
+  align-items: start;
+  grid-auto-rows: max-content;
   margin: 16px 0 0;
 }
 
@@ -816,9 +824,36 @@ h2 {
 .inspector-block {
   display: grid;
   gap: 8px;
+  align-content: start;
+  align-self: start;
   margin-top: 0;
   padding-top: 14px;
   border-top: 1px solid #26344d;
+}
+
+.pokemon-inspector {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.pokemon-inspector > .panel-heading,
+.pokemon-inspector > .pokemon-summary-card,
+.pokemon-inspector > .item-provenance-list,
+.pokemon-personal-edit-block {
+  grid-column: 1 / -1;
+}
+
+.pokemon-stats-block,
+.pokemon-traits-block {
+  grid-column: span 3;
+}
+
+.pokemon-compatibility-block {
+  grid-column: span 6;
+}
+
+.pokemon-evolutions-block,
+.pokemon-learnset-block {
+  grid-column: span 6;
 }
 
 .inspector-block h4 {
@@ -829,7 +864,8 @@ h2 {
 
 .editable-field-groups {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr));
+  align-items: start;
   gap: 12px;
 }
 
@@ -852,7 +888,7 @@ h2 {
 
 .editable-field-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 156px), 1fr));
   gap: 10px;
 }
 
@@ -943,12 +979,15 @@ h2 {
 
 .moves-layout {
   grid-template-columns: var(--editor-list-column) var(--editor-detail-column);
+  align-items: start;
 }
 
 .moves-table {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  align-self: start;
   min-width: 0;
+  max-height: var(--editor-table-max-height);
   overflow: hidden;
   border: 1px solid #26344d;
   border-radius: 8px;
@@ -1204,13 +1243,16 @@ h2 {
   display: grid;
   grid-template-columns: var(--editor-list-column) var(--editor-detail-column);
   gap: 16px;
+  align-items: start;
   margin-top: 16px;
 }
 
 .text-table {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  align-self: start;
   min-width: 0;
+  max-height: var(--editor-table-max-height);
   overflow: hidden;
   border: 1px solid #26344d;
   border-radius: 8px;
@@ -1326,13 +1368,16 @@ h2 {
   display: grid;
   grid-template-columns: var(--editor-list-column) var(--editor-detail-column);
   gap: 16px;
+  align-items: start;
   margin-top: 16px;
 }
 
 .trainers-table {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  align-self: start;
   min-width: 0;
+  max-height: var(--editor-table-max-height);
   overflow: hidden;
   border: 1px solid #26344d;
   border-radius: 8px;
@@ -1608,11 +1653,15 @@ h2 {
   display: grid;
   grid-template-columns: var(--editor-list-column) var(--editor-detail-column);
   gap: 16px;
+  align-items: start;
   margin-top: 16px;
 }
 
 .shops-table {
   display: grid;
+  align-content: start;
+  align-self: start;
+  grid-auto-rows: max-content;
   min-width: 0;
   max-height: var(--editor-table-max-height);
   overflow: auto;
@@ -1679,6 +1728,8 @@ h2 {
   grid-template-columns: repeat(auto-fit, var(--inspector-section-column));
   gap: 14px;
   align-content: start;
+  align-items: start;
+  grid-auto-rows: max-content;
   min-width: 0;
   padding: 14px;
   background: #0b1120;
@@ -1778,6 +1829,67 @@ h2 {
   align-items: end;
 }
 
+.shop-inventory-editor-grid {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.shop-inventory-editor-row {
+  display: grid;
+  grid-template-columns:
+    54px minmax(220px, 1.35fr) minmax(96px, 0.45fr) minmax(96px, 0.45fr)
+    minmax(190px, 0.9fr);
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+  padding: 10px;
+  background: #10192b;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.shop-inventory-editor-heading {
+  align-items: center;
+  min-height: 38px;
+  padding: 0 10px;
+  color: #9aa7bd;
+  background: #0b1120;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.shop-inventory-editor-row-selected {
+  border-color: rgb(109 115 255 / 70%);
+  box-shadow: inset 4px 0 0 var(--color-gold);
+}
+
+.shop-slot-index {
+  align-self: center;
+  color: var(--color-text-muted);
+  font-weight: 900;
+}
+
+.shop-inventory-item-field {
+  min-width: 0;
+}
+
+.shop-read-only-field input:disabled {
+  color: #9aa7bd;
+  background: #0b1120;
+  border-style: dashed;
+  opacity: 1;
+}
+
+.shop-inventory-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
 .encounters-toolbar {
   grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
 }
@@ -1794,11 +1906,15 @@ h2 {
   display: grid;
   grid-template-columns: var(--editor-list-column) var(--editor-detail-column);
   gap: 16px;
+  align-items: start;
   margin-top: 16px;
 }
 
 .encounters-table {
   display: grid;
+  align-content: start;
+  align-self: start;
+  grid-auto-rows: max-content;
   min-width: 0;
   max-height: var(--editor-table-max-height);
   overflow: auto;
@@ -1862,6 +1978,9 @@ h2 {
 
 .raid-rewards-table {
   display: grid;
+  align-content: start;
+  align-self: start;
+  grid-auto-rows: max-content;
   min-width: 0;
   max-height: var(--editor-table-max-height);
   overflow: auto;
@@ -1941,6 +2060,7 @@ h2 {
 
 .flagwork-table {
   display: grid;
+  align-self: start;
   min-width: 0;
   max-height: var(--editor-table-max-height);
   overflow: auto;
@@ -2265,7 +2385,7 @@ h2 {
   grid-template-rows: 34px auto auto auto;
   justify-items: start;
   gap: 2px;
-  flex: 0 0 150px;
+  flex: 0 0 168px;
   min-height: 108px;
   padding: 8px 10px;
   text-align: left;
@@ -2275,6 +2395,7 @@ h2 {
 .slot-tab-button span,
 .slot-tab-button small {
   min-width: 0;
+  width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2284,6 +2405,46 @@ h2 {
   color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 800;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.read-only-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  gap: 8px;
+}
+
+.read-only-slot {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  color: var(--color-text-soft);
+  background: #10192b;
+  border: 1px solid #34435f;
+  border-radius: 8px;
+}
+
+.read-only-slot strong,
+.read-only-slot span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.read-only-slot strong {
+  color: var(--color-gold);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.read-only-slot-disabled {
+  color: var(--color-text-muted);
+  background: rgb(13 20 36 / 62%);
+  border-style: dashed;
+  opacity: 0.72;
 }
 
 .form-actions {
@@ -2699,7 +2860,17 @@ input {
   background: #51648b;
 }
 
-@media (max-width: 1500px) {
+@media (max-width: 1300px) {
+  .pokemon-stats-block,
+  .pokemon-traits-block,
+  .pokemon-compatibility-block,
+  .pokemon-evolutions-block,
+  .pokemon-learnset-block {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 900px) {
   .items-layout,
   .moves-layout,
   .text-layout,
@@ -2708,6 +2879,18 @@ input {
   .encounters-layout,
   .flagwork-layout {
     grid-template-columns: 1fr;
+  }
+
+  .pokemon-inspector {
+    grid-template-columns: 1fr;
+  }
+
+  .pokemon-stats-block,
+  .pokemon-traits-block,
+  .pokemon-compatibility-block,
+  .pokemon-evolutions-block,
+  .pokemon-learnset-block {
+    grid-column: 1 / -1;
   }
 }
 
@@ -2859,8 +3042,13 @@ input {
 
   .shop-editor-row,
   .shop-inventory-header,
-  .shop-inventory-detail {
+  .shop-inventory-detail,
+  .shop-inventory-editor-row {
     grid-template-columns: 1fr;
+  }
+
+  .shop-inventory-editor-heading {
+    display: none;
   }
 
   .encounters-row {

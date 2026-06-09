@@ -54,7 +54,11 @@ public sealed record RentalPokemonRecordDto(
     RentalPokemonStatsDto Ivs,
     bool HasPerfectIvs,
     string IvSummary,
-    RentalPokemonProvenanceDto Provenance);
+    RentalPokemonProvenanceDto Provenance)
+{
+    public IReadOnlyList<RentalPokemonEditableFieldOptionDto> AbilityOptions { get; init; } =
+        Array.Empty<RentalPokemonEditableFieldOptionDto>();
+}
 
 public sealed record RentalPokemonMoveRecordDto(
     int Slot,

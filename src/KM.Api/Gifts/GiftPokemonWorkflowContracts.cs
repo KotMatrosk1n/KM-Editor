@@ -56,7 +56,11 @@ public sealed record GiftPokemonRecordDto(
     GiftPokemonIvsDto Ivs,
     int? FlawlessIvCount,
     string IvSummary,
-    GiftPokemonProvenanceDto Provenance);
+    GiftPokemonProvenanceDto Provenance)
+{
+    public IReadOnlyList<GiftPokemonEditableFieldOptionDto> AbilityOptions { get; init; } =
+        Array.Empty<GiftPokemonEditableFieldOptionDto>();
+}
 
 public sealed record GiftPokemonEditableFieldDto(
     string Field,

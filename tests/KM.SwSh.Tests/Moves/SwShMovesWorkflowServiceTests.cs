@@ -110,6 +110,32 @@ public sealed class SwShMovesWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadReadsRealSwordShieldWazabinMoveFiles()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza/waza0033.wazabin",
+            SwShMoveDataFile.Write(CreateMoveRecord()));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            CreateIndexedTextTable((33, "Tackle")));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazainfo.dat",
+            CreateIndexedTextTable((33, "A physical attack in which the user charges and slams into the target.")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShMovesWorkflowService().Load(project);
+
+        var move = Assert.Single(workflow.Moves);
+        Assert.Equal(33, move.MoveId);
+        Assert.Equal("romfs/bin/pml/waza/waza0033.wazabin", move.Provenance.SourceFile);
+        Assert.DoesNotContain(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("Moves data is not available", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void LoadReturnsDiagnosticWhenMoveDataIsMissing()
     {
         using var temp = TemporarySwShProject.Create();

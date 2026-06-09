@@ -37,7 +37,11 @@ internal static class SwShEncounterTestFixtures
         ]).Write();
     }
 
-    public static SwShWildEncounterArchive CreateArchive(int speciesOffset = 0)
+    public static SwShWildEncounterArchive CreateArchive(
+        int speciesOffset = 0,
+        int? firstSlotSpecies = null,
+        int? firstSlotProbability = null,
+        int? secondSlotProbability = null)
     {
         return new SwShWildEncounterArchive(
             1,
@@ -49,8 +53,8 @@ internal static class SwShEncounterTestFixtures
                             3,
                             8,
                             [
-                                new SwShWildEncounterSlot(35, 1 + speciesOffset, 0),
-                                new SwShWildEncounterSlot(65, 4 + speciesOffset, 1),
+                                new SwShWildEncounterSlot((byte)(firstSlotProbability ?? 35), firstSlotSpecies ?? 1 + speciesOffset, 0),
+                                new SwShWildEncounterSlot((byte)(secondSlotProbability ?? 65), 4 + speciesOffset, 1),
                             ]),
                     ]),
             ]);

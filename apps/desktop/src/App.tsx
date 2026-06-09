@@ -2677,6 +2677,140 @@ export function App({
     }
   };
 
+  const refreshLoadedWorkflowsAfterApply = async (paths: ReturnType<typeof toProjectPaths>) => {
+    const fileGraphResponse = await bridge.refreshFileGraph({ paths });
+    if (openProject) {
+      setOpenProject({ ...openProject, fileGraph: fileGraphResponse.fileGraph });
+    }
+
+    await refreshWorkflows(paths, health?.canOpenReadOnlyWorkflows ?? true);
+
+    const reloadTasks: Promise<void>[] = [];
+    if (itemsWorkflow) {
+      reloadTasks.push(
+        bridge.loadItemsWorkflow({ paths }).then((response) => setItemsWorkflow(response.workflow))
+      );
+    }
+    if (pokemonWorkflow) {
+      reloadTasks.push(
+        bridge.loadPokemonWorkflow({ paths }).then((response) => setPokemonWorkflow(response.workflow))
+      );
+    }
+    if (movesWorkflow) {
+      reloadTasks.push(
+        bridge.loadMovesWorkflow({ paths }).then((response) => setMovesWorkflow(response.workflow))
+      );
+    }
+    if (textWorkflow) {
+      reloadTasks.push(
+        bridge.loadTextWorkflow({ paths }).then((response) => setTextWorkflow(response.workflow))
+      );
+    }
+    if (trainersWorkflow) {
+      reloadTasks.push(
+        bridge.loadTrainersWorkflow({ paths }).then((response) => setTrainersWorkflow(response.workflow))
+      );
+    }
+    if (giftPokemonWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadGiftPokemonWorkflow({ paths })
+          .then((response) => setGiftPokemonWorkflow(response.workflow))
+      );
+    }
+    if (tradePokemonWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadTradePokemonWorkflow({ paths })
+          .then((response) => setTradePokemonWorkflow(response.workflow))
+      );
+    }
+    if (staticEncountersWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadStaticEncountersWorkflow({ paths })
+          .then((response) => setStaticEncountersWorkflow(response.workflow))
+      );
+    }
+    if (rentalPokemonWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadRentalPokemonWorkflow({ paths })
+          .then((response) => setRentalPokemonWorkflow(response.workflow))
+      );
+    }
+    if (dynamaxAdventuresWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadDynamaxAdventuresWorkflow({ paths })
+          .then((response) => setDynamaxAdventuresWorkflow(response.workflow))
+      );
+    }
+    if (shopsWorkflow) {
+      reloadTasks.push(
+        bridge.loadShopsWorkflow({ paths }).then((response) => setShopsWorkflow(response.workflow))
+      );
+    }
+    if (encountersWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadEncountersWorkflow({ paths })
+          .then((response) => setEncountersWorkflow(response.workflow))
+      );
+    }
+    if (raidBattlesWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadRaidBattlesWorkflow({ paths })
+          .then((response) => setRaidBattlesWorkflow(response.workflow))
+      );
+    }
+    if (raidRewardsWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadRaidRewardsWorkflow({ paths })
+          .then((response) => setRaidRewardsWorkflow(response.workflow))
+      );
+    }
+    if (placementWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadPlacementWorkflow({ paths })
+          .then((response) => setPlacementWorkflow(response.workflow))
+      );
+    }
+    if (flagworkSaveWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadFlagworkSaveWorkflow({ paths })
+          .then((response) => setFlagworkSaveWorkflow(response.workflow))
+      );
+    }
+    if (exeFsPatchWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadExeFsPatchWorkflow({ paths })
+          .then((response) => setExeFsPatchWorkflow(response.workflow))
+      );
+    }
+    if (royalCandyWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadRoyalCandyWorkflow({ paths })
+          .then((response) => setRoyalCandyWorkflow(response.workflow))
+      );
+    }
+    if (spreadsheetImportWorkflow) {
+      reloadTasks.push(
+        bridge
+          .loadSpreadsheetImportWorkflow({ paths })
+          .then((response) => setSpreadsheetImportWorkflow(response.workflow))
+      );
+    }
+
+    await Promise.all(reloadTasks);
+  };
+
   const handleApplyChangePlan = async () => {
     if (!editSession || !changePlan) {
       return;
@@ -2687,9 +2821,10 @@ export function App({
     setApplyResult(null);
 
     try {
+      const paths = toProjectPaths(draftPaths);
       const response = await bridge.applyChangePlan({
         changePlan,
-        paths: toProjectPaths(draftPaths),
+        paths,
         session: editSession
       });
       const hasApplyErrors = response.applyResult.diagnostics.some(
@@ -2701,6 +2836,9 @@ export function App({
         setChangePlan(null);
       }
 
+      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        await refreshLoadedWorkflowsAfterApply(paths);
+      }
       setApplyResult(response.applyResult);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -4032,58 +4170,7 @@ function SelectedItemPanel({
             </div>
           </dl>
 
-          {item.detailGroups.map((group) => (
-            <section className="inspector-block" key={group.label}>
-              <h4>{group.label}</h4>
-              <dl className="item-provenance-list compact-dl">
-                {group.details.map((detail) => (
-                  <div key={`${group.label}:${detail.label}`}>
-                    <dt>{detail.label}</dt>
-                    <dd>{detail.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ))}
-
           <div className="item-edit-form">
-            <div className="editable-field-groups">
-              {itemFieldGroups.map((group) => (
-                <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{group.group}</legend>
-                  <div className="editable-field-grid">
-                    {group.fields.map((field) => {
-                      const currentValue = getEditableItemFieldValue(item, field.field);
-                      const draftValue = fieldDrafts[field.field] ?? '';
-                      const draftState = getTrainerFieldDraftState(
-                        draftValue,
-                        currentValue,
-                        field
-                      );
-
-                      return (
-                        <GiftPokemonDraftField
-                          currentValue={currentValue}
-                          disabled={!canEditItems || editSession === null || isItemUpdating}
-                          draftState={draftState}
-                          draftValue={draftValue}
-                          field={field}
-                          idPrefix="item-field"
-                          key={field.field}
-                          onChange={(value) =>
-                            setFieldDrafts((currentDrafts) => ({
-                              ...currentDrafts,
-                              [field.field]: value
-                            }))
-                          }
-                        />
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              ))}
-            </div>
-
             {editSession ? (
               <div className="draft-action-row">
                 <button
@@ -4129,7 +4216,58 @@ function SelectedItemPanel({
                 <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
               </button>
             )}
+
+            <div className="editable-field-groups">
+              {itemFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = getEditableItemFieldValue(item, field.field);
+                      const draftValue = fieldDrafts[field.field] ?? '';
+                      const draftState = getTrainerFieldDraftState(
+                        draftValue,
+                        currentValue,
+                        field
+                      );
+
+                      return (
+                        <GiftPokemonDraftField
+                          currentValue={currentValue}
+                          disabled={!canEditItems || editSession === null || isItemUpdating}
+                          draftState={draftState}
+                          draftValue={draftValue}
+                          field={field}
+                          idPrefix="item-field"
+                          key={field.field}
+                          onChange={(value) =>
+                            setFieldDrafts((currentDrafts) => ({
+                              ...currentDrafts,
+                              [field.field]: value
+                            }))
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              ))}
+            </div>
           </div>
+
+          {item.detailGroups.map((group) => (
+            <section className="inspector-block" key={group.label}>
+              <h4>{group.label}</h4>
+              <dl className="item-provenance-list compact-dl">
+                {group.details.map((detail) => (
+                  <div key={`${group.label}:${detail.label}`}>
+                    <dt>{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          ))}
         </>
       ) : (
         <p className="empty-copy">No item selected.</p>
@@ -4596,7 +4734,7 @@ function SelectedPokemonPanel({
     Number.isInteger(parsedNewEvolutionLevel);
 
   return (
-    <aside aria-label="Selected Pokemon provenance" className="item-inspector">
+    <aside aria-label="Selected Pokemon provenance" className="item-inspector pokemon-inspector">
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Pokemon</h3>
@@ -4651,7 +4789,7 @@ function SelectedPokemonPanel({
             </div>
           </dl>
 
-          <div className="inspector-block">
+          <div className="inspector-block pokemon-stats-block">
             <h4>Base Stats</h4>
             <dl className="item-provenance-list compact-dl">
               <div>
@@ -4685,7 +4823,7 @@ function SelectedPokemonPanel({
             </dl>
           </div>
 
-          <div className="inspector-block">
+          <div className="inspector-block pokemon-traits-block">
             <h4>Traits</h4>
             <dl className="item-provenance-list compact-dl">
               <div>
@@ -4721,7 +4859,7 @@ function SelectedPokemonPanel({
             </dl>
           </div>
 
-          <div className="inspector-block">
+          <div className="inspector-block pokemon-personal-edit-block">
             <h4>Personal Edit</h4>
             <div className="editable-field-groups">
               {personalFieldGroups.map((group) => (
@@ -4812,7 +4950,7 @@ function SelectedPokemonPanel({
             ) : null}
           </div>
 
-          <div className="inspector-block">
+          <div className="inspector-block pokemon-compatibility-block">
             <h4>Compatibility</h4>
             {pokemon.compatibility.length > 0 ? (
               <div className="compatibility-editor">
@@ -4877,7 +5015,7 @@ function SelectedPokemonPanel({
             )}
           </div>
 
-          <div className="inspector-block">
+          <div className="inspector-block pokemon-evolutions-block">
             <h4>Evolutions</h4>
             <div className="learnset-editor">
               {pokemon.evolutions.length > 0 ? (
@@ -5242,7 +5380,7 @@ function SelectedPokemonPanel({
             </div>
           </div>
 
-          <div className="inspector-block">
+          <div className="inspector-block pokemon-learnset-block">
             <h4>Learnset</h4>
             <div className="learnset-editor">
               {pokemon.learnset.length > 0 ? (
@@ -5704,7 +5842,32 @@ function SelectedMovePanel({
           </dl>
 
           <div className="item-edit-form move-edit-form">
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditMoves || isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+              </button>
+            ) : null}
+
             <div className="editable-field-groups">
+              <fieldset className="editable-field-group">
+                <legend>Read-only</legend>
+                <div className="editable-field-grid">
+                  <label className="path-field editable-field-control editable-field-disabled">
+                    <span>Move ID</span>
+                    <input disabled readOnly value={move.moveId} />
+                  </label>
+                  <label className="path-field editable-field-control editable-field-disabled">
+                    <span>Version</span>
+                    <input disabled readOnly value={move.version} />
+                  </label>
+                </div>
+              </fieldset>
               {moveFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
                   <legend>{group.group}</legend>
@@ -5775,17 +5938,7 @@ function SelectedMovePanel({
                 </button>
                 <span className="draft-action-summary">{formatDraftSummary(moveDraftSummary)}</span>
               </div>
-            ) : (
-              <button
-                className="secondary-button"
-                disabled={!canEditMoves || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
-              </button>
-            )}
+            ) : null}
           </div>
 
           <div className="inspector-block">
@@ -6353,11 +6506,28 @@ function SelectedTrainerPanel({
 }) {
   const [trainerDrafts, setTrainerDrafts] = useState<Record<string, string>>({});
   const [pokemonDrafts, setPokemonDrafts] = useState<Record<string, string>>({});
-  const trainerFields = editableFields.filter((field) =>
-    trainerDataFieldNames.includes(field.field as (typeof trainerDataFieldNames)[number])
+  const trainerFields = useMemo(
+    () =>
+      editableFields.filter((field) =>
+        trainerDataFieldNames.includes(field.field as (typeof trainerDataFieldNames)[number])
+      ),
+    [editableFields]
   );
-  const pokemonFields = editableFields.filter((field) =>
-    trainerPokemonFieldNames.includes(field.field as (typeof trainerPokemonFieldNames)[number])
+  const pokemonFields = useMemo(
+    () =>
+      editableFields.filter((field) =>
+        trainerPokemonFieldNames.includes(field.field as (typeof trainerPokemonFieldNames)[number])
+      ),
+    [editableFields]
+  );
+  const contextualPokemonFields = useMemo(
+    () =>
+      pokemonFields.map((field) =>
+        field.field === abilityFieldName && (selectedPokemon?.abilityOptions.length ?? 0) > 0
+          ? { ...field, options: selectedPokemon!.abilityOptions }
+          : field
+      ),
+    [pokemonFields, selectedPokemon?.abilityOptions]
   );
   const aiFlagsField = editableFields.find((field) => field.field === aiFlagsFieldName) ?? null;
   const canToggleAiFlags =
@@ -6370,8 +6540,8 @@ function SelectedTrainerPanel({
     [trainerFields]
   );
   const pokemonFieldGroups = useMemo(
-    () => groupTrainerEditableFields(pokemonFields, getTrainerPokemonFieldGroup),
-    [pokemonFields]
+    () => groupTrainerEditableFields(contextualPokemonFields, getTrainerPokemonFieldGroup),
+    [contextualPokemonFields]
   );
   const trainerDraftSummary = useMemo(
     () =>
@@ -6385,11 +6555,11 @@ function SelectedTrainerPanel({
   const pokemonDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
-        pokemonFields,
+        contextualPokemonFields,
         pokemonDrafts,
         selectedPokemon ? (field) => getEditablePokemonFieldValue(selectedPokemon, field) : null
       ),
-    [pokemonDrafts, pokemonFields, selectedPokemon]
+    [contextualPokemonFields, pokemonDrafts, selectedPokemon]
   );
   const canSaveTrainerDrafts =
     trainer !== null &&
@@ -6421,7 +6591,7 @@ function SelectedTrainerPanel({
         ])
       )
     );
-  }, [editableFields, trainer]);
+  }, [trainer, trainerFields]);
 
   useEffect(() => {
     if (!selectedPokemon) {
@@ -6431,13 +6601,13 @@ function SelectedTrainerPanel({
 
     setPokemonDrafts(
       Object.fromEntries(
-        pokemonFields.map((field) => [
+        contextualPokemonFields.map((field) => [
           field.field,
           (getEditablePokemonFieldValue(selectedPokemon, field.field) ?? '').toString()
         ])
       )
     );
-  }, [editableFields, selectedPokemon]);
+  }, [contextualPokemonFields, selectedPokemon]);
 
   return (
     <aside aria-label="Selected trainer provenance" className="trainer-inspector">
@@ -6706,7 +6876,7 @@ function SelectedTrainerPanel({
                       className="danger-button"
                       disabled={isTrainerUpdating || pokemonDraftSummary.dirtyFieldCount === 0}
                       onClick={() =>
-                        setPokemonDrafts(createTrainerDrafts(pokemonFields, (field) =>
+                        setPokemonDrafts(createTrainerDrafts(contextualPokemonFields, (field) =>
                           getEditablePokemonFieldValue(selectedPokemon, field)
                         ))
                       }
@@ -6843,8 +7013,6 @@ function TrainerDraftField({
         <small className={draftState.error ? 'editable-field-error' : 'editable-field-status'}>
           {statusText}
         </small>
-      ) : currentValue !== null ? (
-        <small className="editable-field-status">Current: {currentValue}</small>
       ) : null}
     </label>
   );
@@ -7293,7 +7461,7 @@ function getRaidRewardEditableFieldGroup(field: NumericEditableField) {
       field.field as (typeof raidRewardValueFieldNames)[number]
     )
   ) {
-    return 'Reward Values';
+    return field.label.includes('drop chance') ? 'Drop Chances' : 'Quantities';
   }
 
   return 'Reward Data';
@@ -7494,8 +7662,6 @@ function GiftPokemonDraftField({
         <small className={draftState.error ? 'editable-field-error' : 'editable-field-status'}>
           {statusText}
         </small>
-      ) : currentValue !== null ? (
-        <small className="editable-field-status">Current: {currentValue}</small>
       ) : null}
     </label>
   );
@@ -7663,8 +7829,12 @@ function SelectedGiftPokemonPanel({
   ) => void;
 }) {
   const [giftDrafts, setGiftDrafts] = useState<Record<string, string>>({});
-  const giftFields = editableFields.filter((field) =>
-    giftPokemonFieldNames.includes(field.field as (typeof giftPokemonFieldNames)[number])
+  const giftFields = useMemo(
+    () =>
+      editableFields.filter((field) =>
+        giftPokemonFieldNames.includes(field.field as (typeof giftPokemonFieldNames)[number])
+      ),
+    [editableFields]
   );
   const giftFieldGroups = useMemo(
     () => groupNumericEditableFields(giftFields, getPokemonInstanceFieldGroup),
@@ -7744,7 +7914,7 @@ function SelectedGiftPokemonPanel({
               <dd>{gift.heldItem ?? 'None'}</dd>
             </div>
             <div>
-              <dt>Special move</dt>
+              <dt>Special Move</dt>
               <dd>{gift.specialMove ?? 'None'}</dd>
             </div>
             <div>
@@ -7776,6 +7946,7 @@ function SelectedGiftPokemonPanel({
                           draftValue={draftValue}
                           field={field}
                           formOptionContext={{
+                            abilityOptions: gift.abilityOptions,
                             species: gift.species,
                             speciesId: gift.speciesId
                           }}
@@ -8245,6 +8416,7 @@ function SelectedTradePokemonPanel({
                                   speciesId: trade.requiredSpeciesId
                                 }
                               : {
+                                  abilityOptions: trade.abilityOptions,
                                   species: trade.species,
                                   speciesId: trade.speciesId
                                 }
@@ -8688,6 +8860,7 @@ function SelectedRentalPokemonPanel({
                           draftValue={draftValue}
                           field={field}
                           formOptionContext={{
+                            abilityOptions: rental.abilityOptions,
                             species: rental.species,
                             speciesId: rental.speciesId
                           }}
@@ -9150,6 +9323,7 @@ function SelectedDynamaxAdventurePanel({
                           draftValue={draftValue}
                           field={field}
                           formOptionContext={{
+                            abilityOptions: encounter.abilityOptions,
                             species: encounter.species,
                             speciesId: encounter.speciesId
                           }}
@@ -9584,6 +9758,7 @@ function SelectedStaticEncounterPanel({
                           draftValue={draftValue}
                           field={field}
                           formOptionContext={{
+                            abilityOptions: encounter.abilityOptions,
                             species: encounter.species,
                             speciesId: encounter.speciesId
                           }}
@@ -9860,7 +10035,6 @@ function SelectedShopPanel({
   canEditShops,
   editSession,
   editableFields,
-  inventoryItem,
   isEditStarting,
   isShopUpdating,
   onOpenItem,
@@ -9888,25 +10062,19 @@ function SelectedShopPanel({
   selectedSlot: number | null;
   shop: ShopRecord | null;
 }) {
-  const [itemIdDraft, setItemIdDraft] = useState('');
+  const [itemIdDrafts, setItemIdDrafts] = useState<Record<number, string>>({});
   const itemIdField = editableFields.find((field) => field.field === shopItemIdFieldName);
-
-  useEffect(() => {
-    setItemIdDraft(inventoryItem?.itemId.toString() ?? '');
-  }, [inventoryItem?.itemId, inventoryItem?.slot, shop?.shopId]);
-
-  const draftState = getIntegerDraftState(
-    itemIdDraft,
-    inventoryItem?.itemId ?? null,
-    itemIdField
-  );
   const itemIdOptions = itemIdField?.options ?? [];
   const hasItemIdOptions = itemIdOptions.length > 0;
-  const hasDraftOption = itemIdOptions.some((option) => option.value.toString() === itemIdDraft);
-  const hasShopDraftChange =
-    inventoryItem !== null && itemIdDraft !== inventoryItem.itemId.toString();
-  const canSubmit =
-    editSession !== null && inventoryItem !== null && draftState.canSubmit && draftState.parsedValue !== null;
+
+  useEffect(() => {
+    setItemIdDrafts(
+      Object.fromEntries(shop?.inventory.map((item) => [item.slot, item.itemId.toString()]) ?? [])
+    );
+  }, [shop?.inventory, shop?.shopId]);
+
+  const changedSlotCount =
+    shop?.inventory.filter((item) => itemIdDrafts[item.slot] !== item.itemId.toString()).length ?? 0;
 
   return (
     <aside aria-label="Selected shop provenance" className="shop-inspector">
@@ -9955,120 +10123,10 @@ function SelectedShopPanel({
           <div className="shop-edit-form">
             <div className="shop-inventory-header">
               <strong>Inventory</strong>
-              <select
-                aria-label="Shop inventory slot"
-                disabled={shop.inventory.length === 0}
-                onChange={(event) => onSelectSlot(Number(event.target.value))}
-                value={selectedSlot ?? ''}
-              >
-                {shop.inventory.map((item) => (
-                  <option key={item.slot} value={item.slot}>
-                    Slot {item.slot}: {item.itemName}
-                  </option>
-                ))}
-              </select>
+              <span className="draft-action-summary">
+                {changedSlotCount} changed / {shop.inventory.length} slots
+              </span>
             </div>
-
-            {inventoryItem ? (
-              <>
-                <dl className="shop-inventory-detail">
-                  <div>
-                    <dt>Item</dt>
-                    <dd>
-                      <span>{inventoryItem.itemName}</span>
-                      {inventoryItem.isKnownItem ? (
-                        <button
-                          className="secondary-button compact-button shop-item-link"
-                          onClick={() => onOpenItem(inventoryItem.itemId)}
-                          title="Open in Items"
-                          type="button"
-                        >
-                          <ExternalLink aria-hidden="true" size={14} />
-                          <span>Open in Items</span>
-                        </button>
-                      ) : (
-                        <span className="path-status-muted">Missing item metadata</span>
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Price</dt>
-                    <dd>{inventoryItem.price}</dd>
-                  </div>
-                  <div>
-                    <dt>Stock</dt>
-                    <dd>{inventoryItem.stockLimit ?? 'None'}</dd>
-                  </div>
-                </dl>
-
-                <div className="shop-editor-row">
-                  <label className="path-field">
-                    <span>{itemIdField?.label ?? 'Item ID'}</span>
-                    {hasItemIdOptions ? (
-                      <select
-                        aria-label={itemIdField?.label ?? 'Item ID'}
-                        disabled={!canEditShops || editSession === null || isShopUpdating}
-                        onChange={(event) => setItemIdDraft(event.target.value)}
-                        value={itemIdDraft}
-                      >
-                        {!hasDraftOption && itemIdDraft !== '' ? (
-                          <option value={itemIdDraft}>{`Current ${itemIdDraft}`}</option>
-                        ) : null}
-                        {itemIdOptions.map((option) => (
-                          <option key={`shop-item:${option.value}`} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        aria-label={itemIdField?.label ?? 'Item ID'}
-                        disabled={!canEditShops || editSession === null || isShopUpdating}
-                        max={itemIdField?.maximumValue ?? undefined}
-                        min={itemIdField?.minimumValue ?? undefined}
-                        onChange={(event) => setItemIdDraft(event.target.value)}
-                        type="number"
-                        value={itemIdDraft}
-                      />
-                    )}
-                  </label>
-                </div>
-                {editSession ? (
-                  <div className="draft-action-row">
-                    <button
-                      className="primary-button"
-                      disabled={!canSubmit || isShopUpdating}
-                      onClick={() =>
-                        onUpdateShopInventoryItem(
-                          shop.shopId,
-                          inventoryItem.slot,
-                          shopItemIdFieldName,
-                          draftState.parsedValue!.toString()
-                        )
-                      }
-                      type="button"
-                    >
-                      <Save aria-hidden="true" size={16} />
-                      <span>{isShopUpdating ? 'Saving' : 'Save Item'}</span>
-                    </button>
-                    <button
-                      className="danger-button"
-                      disabled={isShopUpdating || !hasShopDraftChange}
-                      onClick={() => setItemIdDraft(inventoryItem.itemId.toString())}
-                      type="button"
-                    >
-                      <X aria-hidden="true" size={16} />
-                      <span>Cancel</span>
-                    </button>
-                    <span className="draft-action-summary">
-                      {hasShopDraftChange ? '1 changed' : '0 changed'}
-                    </span>
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <p className="empty-copy">No inventory slot selected.</p>
-            )}
 
             {!editSession ? (
               <button
@@ -10081,6 +10139,156 @@ function SelectedShopPanel({
                 <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
               </button>
             ) : null}
+
+            {shop.inventory.length > 0 ? (
+              <div className="shop-inventory-editor-grid">
+                <div className="shop-inventory-editor-row shop-inventory-editor-heading">
+                  <span>Slot</span>
+                  <span>Item</span>
+                  <span>Price</span>
+                  <span>Stock</span>
+                  <span>Actions</span>
+                </div>
+                {shop.inventory.map((item) => {
+                  const draftValue = itemIdDrafts[item.slot] ?? item.itemId.toString();
+                  const draftState = getIntegerDraftState(draftValue, item.itemId, itemIdField);
+                  const hasDraftOption = itemIdOptions.some(
+                    (option) => option.value.toString() === draftValue
+                  );
+                  const hasSlotDraftChange = draftValue !== item.itemId.toString();
+                  const canSubmitSlot =
+                    editSession !== null &&
+                    draftState.canSubmit &&
+                    draftState.parsedValue !== null &&
+                    !isShopUpdating;
+
+                  return (
+                    <div
+                      className={`shop-inventory-editor-row ${
+                        item.slot === selectedSlot ? 'shop-inventory-editor-row-selected' : ''
+                      }`}
+                      key={item.slot}
+                      onClick={() => onSelectSlot(item.slot)}
+                    >
+                      <span className="shop-slot-index">#{item.slot}</span>
+                      <label className="path-field shop-inventory-item-field">
+                        <span>{itemIdField?.label ?? 'Item ID'}</span>
+                        {hasItemIdOptions ? (
+                          <select
+                            aria-label={`Shop slot ${item.slot} item`}
+                            disabled={!canEditShops || editSession === null || isShopUpdating}
+                            onChange={(event) =>
+                              setItemIdDrafts((currentDrafts) => ({
+                                ...currentDrafts,
+                                [item.slot]: event.target.value
+                              }))
+                            }
+                            value={draftValue}
+                          >
+                            {!hasDraftOption && draftValue !== '' ? (
+                              <option value={draftValue}>
+                                {formatShopItemFallbackOption(draftValue)}
+                              </option>
+                            ) : null}
+                            {itemIdOptions.map((option) => (
+                              <option key={`shop-item:${option.value}`} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            aria-label={`Shop slot ${item.slot} item`}
+                            disabled={!canEditShops || editSession === null || isShopUpdating}
+                            max={itemIdField?.maximumValue ?? undefined}
+                            min={itemIdField?.minimumValue ?? undefined}
+                            onChange={(event) =>
+                              setItemIdDrafts((currentDrafts) => ({
+                                ...currentDrafts,
+                                [item.slot]: event.target.value
+                              }))
+                            }
+                            type="number"
+                            value={draftValue}
+                          />
+                        )}
+                      </label>
+                      <label className="path-field shop-read-only-field">
+                        <span>{shop.currency}</span>
+                        <input aria-label={`Shop slot ${item.slot} price`} disabled value={item.price} />
+                      </label>
+                      <label className="path-field shop-read-only-field">
+                        <span>Stock</span>
+                        <input
+                          aria-label={`Shop slot ${item.slot} stock`}
+                          disabled
+                          value={item.stockLimit ?? 'None'}
+                        />
+                      </label>
+                      <div className="shop-inventory-row-actions">
+                        {item.isKnownItem ? (
+                          <button
+                            aria-label={`Open ${item.itemName} in Items`}
+                            className="secondary-button compact-button shop-item-link"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onOpenItem(item.itemId);
+                            }}
+                            title="Open in Items"
+                            type="button"
+                          >
+                            <ExternalLink aria-hidden="true" size={14} />
+                            <span>Open</span>
+                          </button>
+                        ) : (
+                          <span className="path-status-muted">Missing metadata</span>
+                        )}
+                        {editSession ? (
+                          <>
+                            <button
+                              aria-label={`Save shop slot ${item.slot}`}
+                              className="primary-button compact-button"
+                              disabled={!canSubmitSlot}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onUpdateShopInventoryItem(
+                                  shop.shopId,
+                                  item.slot,
+                                  shopItemIdFieldName,
+                                  draftState.parsedValue!.toString()
+                                );
+                              }}
+                              type="button"
+                            >
+                              <Save aria-hidden="true" size={14} />
+                              <span>{isShopUpdating ? 'Saving' : 'Save'}</span>
+                            </button>
+                            <button
+                              aria-label={`Cancel shop slot ${item.slot}`}
+                              className="danger-button compact-button"
+                              disabled={isShopUpdating || !hasSlotDraftChange}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setItemIdDrafts((currentDrafts) => ({
+                                  ...currentDrafts,
+                                  [item.slot]: item.itemId.toString()
+                                }));
+                              }}
+                              type="button"
+                            >
+                              <X aria-hidden="true" size={14} />
+                              <span>Cancel</span>
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="empty-copy">No inventory slots.</p>
+            )}
           </div>
         </>
       ) : (
@@ -10088,6 +10296,10 @@ function SelectedShopPanel({
       )}
     </aside>
   );
+}
+
+function formatShopItemFallbackOption(value: string) {
+  return `Item ${value}`;
 }
 
 function EncountersSection({
@@ -10806,13 +11018,14 @@ function SelectedRaidBattlePanel({
           field,
           battleSlot
             ? getContextualFieldOptions(field, {
+                abilityOptions: battleSlot.abilityOptions,
                 species: battleSlot.species,
                 speciesId: battleSlot.speciesId
               })
             : undefined
         )
       ),
-    [battleSlot?.species, battleSlot?.speciesId, editableFields]
+    [battleSlot?.abilityOptions, battleSlot?.species, battleSlot?.speciesId, editableFields]
   );
   const raidBattleFieldGroups = useMemo(
     () => groupNumericEditableFields(raidBattleFields, getRaidBattleEditableFieldGroup),
@@ -11301,8 +11514,11 @@ function SelectedRaidRewardPanel({
 }) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const raidRewardFields = useMemo(
-    () => editableFields.map((field) => toNumericEditableControlField(field)),
-    [editableFields]
+    () =>
+      editableFields.map((field) =>
+        toNumericEditableControlField(getRaidRewardFieldForKind(field, table?.rewardKind))
+      ),
+    [editableFields, table?.rewardKind]
   );
   const raidRewardFieldGroups = useMemo(
     () => groupNumericEditableFields(raidRewardFields, getRaidRewardEditableFieldGroup),
@@ -11406,8 +11622,8 @@ function SelectedRaidRewardPanel({
                     <dd>{reward.entryId}</dd>
                   </div>
                   <div>
-                    <dt>Values</dt>
-                    <dd>{reward.values.slice(0, 5).join(' / ')}</dd>
+                    <dt>{getRaidRewardValuesLabel(table.rewardKind)}</dt>
+                    <dd>{formatRaidRewardValues(table.rewardKind, reward.values)}</dd>
                   </div>
                 </dl>
 
@@ -11422,7 +11638,7 @@ function SelectedRaidRewardPanel({
                     >
                       <strong>{`#${candidate.slot}`}</strong>
                       <span>{candidate.itemName}</span>
-                      <small>{`Qty ${candidate.quantity} / Wt ${candidate.weight}`}</small>
+                      <small>{formatRaidRewardSlotSummary(table.rewardKind, candidate)}</small>
                     </button>
                   ))}
                 </div>
@@ -11529,6 +11745,46 @@ function SelectedRaidRewardPanel({
       )}
     </aside>
   );
+}
+
+function getRaidRewardFieldForKind(
+  field: RaidRewardEditableField,
+  rewardKind?: string
+): RaidRewardEditableField {
+  if (
+    !raidRewardValueFieldNames.includes(field.field as (typeof raidRewardValueFieldNames)[number])
+  ) {
+    return field;
+  }
+
+  const starLabel = field.label.match(/^(\d-star)/)?.[1];
+  if (!starLabel) {
+    return field;
+  }
+
+  const valueLabel = rewardKind === 'drop' ? 'drop chance' : 'quantity';
+  return { ...field, label: `${starLabel} ${valueLabel}` };
+}
+
+function getRaidRewardValuesLabel(rewardKind: string) {
+  return rewardKind === 'drop' ? 'Drop chances by star' : 'Reward quantities by star';
+}
+
+function formatRaidRewardValues(rewardKind: string, values: number[]) {
+  return values
+    .slice(0, 5)
+    .map((value, index) =>
+      rewardKind === 'drop'
+        ? `${index + 1}-star ${value}% chance`
+        : `${index + 1}-star ${value} item${value === 1 ? '' : 's'}`
+    )
+    .join(' / ');
+}
+
+function formatRaidRewardSlotSummary(rewardKind: string, reward: RaidRewardItemRecord) {
+  return rewardKind === 'drop'
+    ? `Drop chance ${reward.values.slice(0, 5).join('/')}%`
+    : `Quantity ${reward.values.slice(0, 5).join('/')}`;
 }
 
 function PlacementSection({
@@ -11856,9 +12112,7 @@ function SelectedPlacementPanel({
                         ? `Allowed range: ${field.minimumValue}-${field.maximumValue}.`
                         : isChanged
                           ? 'Changed'
-                          : currentValue !== null
-                            ? `Current: ${currentValue}`
-                            : null;
+                          : null;
 
                       return (
                         <label
@@ -11888,7 +12142,7 @@ function SelectedPlacementPanel({
                               value={draftValue}
                             >
                               {!hasDraftOption && draftValue !== '' ? (
-                                <option value={draftValue}>{`Current ${draftValue}`}</option>
+                                <option value={draftValue}>{`${field.label} ${draftValue}`}</option>
                               ) : null}
                               {fieldOptions.map((option) => (
                                 <option key={option.value} value={option.value}>
@@ -15294,8 +15548,6 @@ function PokemonPersonalFieldInput({
         <small className={draftState.error ? 'editable-field-error' : 'editable-field-status'}>
           {statusText}
         </small>
-      ) : currentValue !== null ? (
-        <small className="editable-field-status">Current: {currentValue}</small>
       ) : null}
     </label>
   );
@@ -15315,6 +15567,7 @@ type EditableFieldOption = {
 };
 
 type SpeciesFormOptionContext = {
+  abilityOptions?: EditableFieldOption[];
   species: string;
   speciesId?: number;
 };
@@ -15386,14 +15639,23 @@ function getPokemonSpriteUrls(name: string, preferStatic: boolean) {
     : [localAnimated, localStatic, remoteStatic];
 }
 
-function getPokemonSpriteId(name: string) {
+const pokemonSpriteIdOverrides = new Map<string, string>([
+  ['jangmo-o', 'jangmoo'],
+  ['hakamo-o', 'hakamoo'],
+  ['kommo-o', 'kommoo'],
+  ['toxtricity-low-key-gmax', 'toxtricity-gmax']
+]);
+
+export function getPokemonSpriteId(name: string) {
   const normalizedName = normalizePokemonSpriteName(name);
   if (!normalizedName) {
     return '';
   }
 
-  if (normalizedName === 'Toxtricity-Low-Key-Gmax') {
-    return 'toxtricity-gmax';
+  const normalizedKey = normalizedName.toLocaleLowerCase();
+  const override = pokemonSpriteIdOverrides.get(normalizedKey);
+  if (override) {
+    return override;
   }
 
   return normalizedName
@@ -15412,6 +15674,7 @@ function normalizePokemonSpriteName(name: string) {
   return trimmedName
     .replace(/\s*\((Alolan)\)$/i, '-Alola')
     .replace(/\s*\((Galarian)\)$/i, '-Galar')
+    .replace(/\s*\((Low Key)\)/i, '-Low-Key')
     .replace(/\s*\((Gigantamax|G-Max)\)$/i, '-Gmax')
     .replace(/\s*\((Regional Form \d+|Regional Form|Form \d+)\)$/i, '')
     .replace(/\s+/g, '-');
@@ -15432,7 +15695,8 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     canGigantamax: 'Whether this Pokemon can use its Gigantamax form when eligible.',
     dynamaxLevel: 'Dynamax level. Valid game values are 0 through 10.',
     gift: 'Trainer gift/event identifier. 0 means no linked gift; review event scripts before changing.',
-    money: 'Trainer payout multiplier used by the game formula, not the final post-battle cash amount.'
+    money: 'Trainer payout multiplier used by the game formula, not the final post-battle cash amount.',
+    specialMoveId: 'Gift table special move field.'
   };
   const range =
     field.minimumValue === null || field.maximumValue === null
@@ -15458,6 +15722,13 @@ function getContextualFieldOptions(
   formOptionContext?: SpeciesFormOptionContext
 ): EditableFieldOption[] {
   const options = field.options ?? [];
+  if (
+    field.field === abilityFieldName ||
+    field.field === raidBattleAbilityFieldName
+  ) {
+    return formOptionContext?.abilityOptions?.length ? formOptionContext.abilityOptions : options;
+  }
+
   if (!isSpeciesFormField(field.field) || formOptionContext === undefined) {
     return options;
   }

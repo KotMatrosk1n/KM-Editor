@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -143,7 +144,7 @@ public sealed class SwShRaidBattlesWorkflowService
             var archive = SwShEncounterNestArchive.Parse(memberData);
             var provenance = CreateProvenance(dataSource.GraphEntry);
             var rewardLinks = LoadRewardLinks(project);
-            var tables = FlattenArchive(archive, provenance, lookupTables.SpeciesNames, rewardLinks);
+            var tables = FlattenArchive(archive, provenance, lookupTables, rewardLinks);
 
             return CreateWorkflow(summary, tables, sourceFileCount: 1 + lookupTables.SourceFileCount, lookupTables, diagnostics);
         }
@@ -261,7 +262,7 @@ public sealed class SwShRaidBattlesWorkflowService
 
     private static RaidBattleLookupTables CreateEmptyLookupTables()
     {
-        return new RaidBattleLookupTables([], SourceFileCount: 0);
+        return new RaidBattleLookupTables([], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShRaidBattleEditableField> CreateEditableFields(RaidBattleLookupTables lookupTables)
@@ -291,7 +292,7 @@ public sealed class SwShRaidBattlesWorkflowService
     private static IReadOnlyList<SwShRaidBattleTableRecord> FlattenArchive(
         SwShEncounterNestArchive archive,
         SwShRaidBattleProvenance provenance,
-        IReadOnlyList<string> speciesNames,
+        RaidBattleLookupTables lookupTables,
         IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> rewardLinks)
     {
         return archive.Tables
@@ -302,7 +303,7 @@ public sealed class SwShRaidBattlesWorkflowService
                 FormatGameVersion(table.GameVersion),
                 FormatHash(table.TableId),
                 table.Entries
-                    .Select((entry, entryIndex) => ToSlotRecord(entry, entryIndex, speciesNames, rewardLinks))
+                    .Select((entry, entryIndex) => ToSlotRecord(entry, entryIndex, lookupTables, rewardLinks))
                     .ToArray(),
                 provenance))
             .ToArray();
@@ -311,7 +312,7 @@ public sealed class SwShRaidBattlesWorkflowService
     private static SwShRaidBattleSlotRecord ToSlotRecord(
         SwShEncounterNest entry,
         int entryIndex,
-        IReadOnlyList<string> speciesNames,
+        RaidBattleLookupTables lookupTables,
         IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> rewardLinks)
     {
         var probabilities = PadProbabilities(entry.Probabilities, length: 5);
@@ -321,10 +322,10 @@ public sealed class SwShRaidBattlesWorkflowService
             Slot: entryIndex + 1,
             entry.EntryIndex,
             entry.Species,
-            GetIndexedName(entry.Species, speciesNames, "Species"),
+            GetIndexedName(entry.Species, lookupTables.SpeciesNames, "Species"),
             entry.Form,
             entry.Ability,
-            GetOptionLabel(AbilityOptions, entry.Ability, "Ability roll"),
+            GetAbilityOptionLabel(lookupTables, entry.Species, entry.Form, entry.Ability),
             entry.IsGigantamax,
             entry.Gender,
             GetOptionLabel(GenderOptions, entry.Gender, "Gender"),
@@ -335,7 +336,10 @@ public sealed class SwShRaidBattlesWorkflowService
             dropTableHash,
             bonusTableHash,
             CreateRewardLink("drop", dropTableHash, rewardLinks),
-            CreateRewardLink("bonus", bonusTableHash, rewardLinks));
+            CreateRewardLink("bonus", bonusTableHash, rewardLinks))
+        {
+            AbilityOptions = CreateAbilityOptions(lookupTables, entry.Species, entry.Form),
+        };
     }
 
     private static IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> LoadRewardLinks(
@@ -444,10 +448,33 @@ public sealed class SwShRaidBattlesWorkflowService
     {
         var messageRoot = ResolveLanguageMessageRoot(project, diagnostics);
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
+        var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new RaidBattleLookupTables(
             speciesNames,
+            abilityResolver,
             SourceFileCount: speciesNames.Length > 0 ? 1 : 0);
+    }
+
+    private static IReadOnlyList<SwShRaidBattleEditableFieldOption> CreateAbilityOptions(
+        RaidBattleLookupTables lookupTables,
+        int speciesId,
+        int form)
+    {
+        return lookupTables.AbilityResolver.CreateOptions(speciesId, form, SwShAbilityOptionMode.Roll)
+            .Select(option => new SwShRaidBattleEditableFieldOption(option.Value, option.Label))
+            .ToArray();
+    }
+
+    private static string GetAbilityOptionLabel(
+        RaidBattleLookupTables lookupTables,
+        int speciesId,
+        int form,
+        int value)
+    {
+        return CreateAbilityOptions(lookupTables, speciesId, form)
+            .FirstOrDefault(option => option.Value == value)?.Label
+            ?? GetOptionLabel(AbilityOptions, value, "Ability roll");
     }
 
     private static string? ResolveLanguageMessageRoot(
@@ -655,5 +682,6 @@ public sealed class SwShRaidBattlesWorkflowService
 
     private sealed record RaidBattleLookupTables(
         IReadOnlyList<string> SpeciesNames,
+        SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);
 }

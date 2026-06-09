@@ -61,7 +61,11 @@ public sealed record StaticEncounterRecordDto(
     int? FlawlessIvCount,
     string IvSummary,
     IReadOnlyList<StaticEncounterMoveDto> Moves,
-    StaticEncounterProvenanceDto Provenance);
+    StaticEncounterProvenanceDto Provenance)
+{
+    public IReadOnlyList<StaticEncounterEditableFieldOptionDto> AbilityOptions { get; init; } =
+        Array.Empty<StaticEncounterEditableFieldOptionDto>();
+}
 
 public sealed record StaticEncounterEditableFieldDto(
     string Field,

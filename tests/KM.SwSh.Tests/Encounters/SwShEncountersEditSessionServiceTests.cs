@@ -86,6 +86,33 @@ public sealed class SwShEncountersEditSessionServiceTests
     }
 
     [Fact]
+    public void ValidateRejectsEmptySpeciesWithPositiveProbability()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+        var table = workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
+        var service = new SwShEncountersEditSessionService();
+
+        var result = service.UpdateSlotField(
+            temp.Paths,
+            session: null,
+            table.TableId,
+            slot: 1,
+            field: "speciesId",
+            value: "0");
+
+        var validation = service.Validate(temp.Paths, result.Session);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("empty but has", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ApplyChangePlanWritesEditedEncounterArchiveToOutputPack()
     {
         using var temp = TemporarySwShProject.Create();

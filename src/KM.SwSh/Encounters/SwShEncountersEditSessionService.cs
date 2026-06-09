@@ -104,6 +104,7 @@ public sealed class SwShEncountersEditSessionService
         CanEditEncounters(project, workflow, diagnostics);
         ValidatePendingLevelPairs(workflow, session.PendingEdits, diagnostics);
         ValidateEncounterProbabilityTotals(workflowWithPendingEdits, session.PendingEdits, diagnostics);
+        ValidateNoEmptyWeightedSlots(workflowWithPendingEdits, session.PendingEdits, diagnostics);
 
         foreach (var edit in session.PendingEdits)
         {
@@ -432,6 +433,40 @@ public sealed class SwShEncountersEditSessionService
         }
     }
 
+    private static void ValidateNoEmptyWeightedSlots(
+        SwShEncountersWorkflow workflow,
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var touchedTableIds = edits
+            .Where(edit => string.Equals(edit.Domain, EncountersEditDomain, StringComparison.Ordinal))
+            .Select(edit => SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out _)
+                ? tableId
+                : null)
+            .Where(tableId => !string.IsNullOrWhiteSpace(tableId))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var tableId in touchedTableIds)
+        {
+            var table = workflow.Tables.FirstOrDefault(candidate =>
+                string.Equals(candidate.TableId, tableId, StringComparison.Ordinal));
+            if (table is null)
+            {
+                continue;
+            }
+
+            foreach (var slot in table.Slots.Where(slot => slot.SpeciesId == 0 && slot.Weight > 0))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Encounter table '{table.Location}' {table.Area} {table.EncounterType} slot {slot.Slot} is empty but has {slot.Weight}% probability.",
+                    field: SwShEncountersWorkflowService.SpeciesIdField,
+                    expected: "Empty encounter slots must remain at 0% probability"));
+            }
+        }
+    }
+
     private static PendingEdit? CreatePendingEdit(
         SwShEncounterTableRecord table,
         SwShEncounterSlotRecord slot,
@@ -626,7 +661,7 @@ public sealed class SwShEncountersEditSessionService
         return field switch
         {
             SwShEncountersWorkflowService.SpeciesIdField when slotRecord.Slot == targetSlot =>
-                slotRecord with { SpeciesId = value, Species = $"Species {value}" },
+                slotRecord with { SpeciesId = value, Species = value == 0 ? "Empty" : $"Species {value}" },
             SwShEncountersWorkflowService.FormField when slotRecord.Slot == targetSlot =>
                 slotRecord with { Form = value },
             SwShEncountersWorkflowService.ProbabilityField when slotRecord.Slot == targetSlot =>

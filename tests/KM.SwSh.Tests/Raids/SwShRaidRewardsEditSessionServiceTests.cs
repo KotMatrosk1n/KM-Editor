@@ -32,6 +32,7 @@ public sealed class SwShRaidRewardsEditSessionServiceTests
         var edit = Assert.Single(result.Session.PendingEdits);
         Assert.Equal("workflow.raidRewards", edit.Domain);
         Assert.Equal(SwShRaidRewardsWorkflowService.Star3ValueField, edit.Field);
+        Assert.Contains("3-star drop chance", edit.Summary, StringComparison.Ordinal);
         var updatedTable = result.Workflow.Tables.Single(table => table.TableId == dropTable.TableId);
         Assert.Equal(55, updatedTable.Rewards[0].Values[2]);
     }

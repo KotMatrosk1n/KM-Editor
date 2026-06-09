@@ -86,7 +86,7 @@ public sealed class SwShGiftPokemonWorkflowService
     [
         ..Enumerable.Range(0, 11).Select(value => new SwShGiftPokemonEditableFieldOption(
             value,
-            value == 0 ? "0 Off" : $"Level {value}")),
+            value.ToString(CultureInfo.InvariantCulture))),
     ];
 
     private static readonly IReadOnlyList<SwShGiftPokemonEditableFieldOption> NatureOptions =
@@ -132,7 +132,7 @@ public sealed class SwShGiftPokemonWorkflowService
         CreateField(ShinyLockField, "Shiny lock", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue, ShinyLockOptions),
         CreateField(DynamaxLevelField, "Dynamax level", "integer", 0, 10, DynamaxLevelOptions),
         CreateField(CanGigantamaxField, "Can Gigantamax", "boolean", 0, 1, BooleanOptions),
-        CreateField(SpecialMoveIdField, "Special move", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),
+        CreateField(SpecialMoveIdField, "Special Move", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),
         CreateField(IvHpField, "HP IV", "integer", SwShGiftPokemonArchive.ThreePerfectIvSentinel, SwShGiftPokemonArchive.MaximumFixedIvValue),
         CreateField(IvAttackField, "Attack IV", "integer", SwShGiftPokemonArchive.RandomIvValue, SwShGiftPokemonArchive.MaximumFixedIvValue),
         CreateField(IvDefenseField, "Defense IV", "integer", SwShGiftPokemonArchive.RandomIvValue, SwShGiftPokemonArchive.MaximumFixedIvValue),
@@ -301,7 +301,7 @@ public sealed class SwShGiftPokemonWorkflowService
 
     private static GiftLookupTables CreateEmptyLookupTables()
     {
-        return new GiftLookupTables([], [], [], SourceFileCount: 0);
+        return new GiftLookupTables([], [], [], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShGiftPokemonEditableField> CreateEditableFields(GiftLookupTables lookupTables)
@@ -368,7 +368,7 @@ public sealed class SwShGiftPokemonWorkflowService
             gift.BallItemId,
             GetIndexedName(gift.BallItemId, lookupTables.ItemNames, "Item"),
             gift.Ability,
-            GetOptionLabel(AbilityOptions, gift.Ability, "Ability slot"),
+            GetAbilityOptionLabel(lookupTables, gift.Species, gift.Form, gift.Ability),
             gift.Nature,
             GetOptionLabel(NatureOptions, gift.Nature, "Nature"),
             gift.Gender,
@@ -382,7 +382,10 @@ public sealed class SwShGiftPokemonWorkflowService
             ivs,
             flawlessIvCount,
             FormatIvSummary(ivs, flawlessIvCount),
-            provenance);
+            provenance)
+        {
+            AbilityOptions = CreateAbilityOptions(lookupTables, gift.Species, gift.Form),
+        };
     }
 
     internal static string FormatGiftLabel(int giftIndex, string species, int speciesId, int form, int level, bool isEgg)
@@ -429,12 +432,36 @@ public sealed class SwShGiftPokemonWorkflowService
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
+        var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new GiftLookupTables(
             speciesNames,
             itemNames,
             moveNames,
+            abilityResolver,
             CountSource(speciesNames) + CountSource(itemNames) + CountSource(moveNames));
+    }
+
+    private static IReadOnlyList<SwShGiftPokemonEditableFieldOption> CreateAbilityOptions(
+        GiftLookupTables lookupTables,
+        int speciesId,
+        int form)
+    {
+        return lookupTables.AbilityResolver
+            .CreateOptions(speciesId, form, SwShAbilityOptionMode.DefaultPlusSlots)
+            .Select(option => new SwShGiftPokemonEditableFieldOption(option.Value, option.Label))
+            .ToArray();
+    }
+
+    private static string GetAbilityOptionLabel(
+        GiftLookupTables lookupTables,
+        int speciesId,
+        int form,
+        int value)
+    {
+        return CreateAbilityOptions(lookupTables, speciesId, form)
+            .FirstOrDefault(option => option.Value == value)?.Label
+            ?? GetOptionLabel(AbilityOptions, value, "Ability slot");
     }
 
     private static int CountSource(IReadOnlyList<string> values)
@@ -653,5 +680,6 @@ public sealed class SwShGiftPokemonWorkflowService
         IReadOnlyList<string> SpeciesNames,
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,
+        SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);
 }

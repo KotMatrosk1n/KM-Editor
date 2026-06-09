@@ -93,7 +93,7 @@ public sealed class SwShStaticEncountersWorkflowService
     [
         ..Enumerable.Range(0, 11).Select(value => new SwShStaticEncounterEditableFieldOption(
             value,
-            value == 0 ? "0 Off" : $"Level {value}")),
+            value.ToString(CultureInfo.InvariantCulture))),
     ];
 
     private static readonly IReadOnlyList<SwShStaticEncounterEditableFieldOption> NatureOptions =
@@ -342,7 +342,7 @@ public sealed class SwShStaticEncountersWorkflowService
 
     private static StaticEncounterLookupTables CreateEmptyLookupTables()
     {
-        return new StaticEncounterLookupTables([], [], [], SourceFileCount: 0);
+        return new StaticEncounterLookupTables([], [], [], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShStaticEncounterEditableField> CreateEditableFields(StaticEncounterLookupTables lookupTables)
@@ -406,7 +406,7 @@ public sealed class SwShStaticEncountersWorkflowService
             encounter.HeldItem,
             heldItem,
             encounter.Ability,
-            GetOptionLabel(AbilityOptions, encounter.Ability, "Ability slot"),
+            GetAbilityOptionLabel(lookupTables, encounter.Species, encounter.Form, encounter.Ability),
             encounter.Nature,
             GetOptionLabel(NatureOptions, encounter.Nature, "Nature"),
             encounter.Gender,
@@ -422,7 +422,10 @@ public sealed class SwShStaticEncountersWorkflowService
             flawlessIvCount,
             FormatIvSummary(ivs, flawlessIvCount),
             moves,
-            provenance);
+            provenance)
+        {
+            AbilityOptions = CreateAbilityOptions(lookupTables, encounter.Species, encounter.Form),
+        };
     }
 
     private static SwShStaticEncounterStatsRecord ToStatsRecord(SwShStaticEncounterStats stats)
@@ -496,12 +499,36 @@ public sealed class SwShStaticEncountersWorkflowService
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
+        var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new StaticEncounterLookupTables(
             speciesNames,
             itemNames,
             moveNames,
+            abilityResolver,
             CountSource(speciesNames) + CountSource(itemNames) + CountSource(moveNames));
+    }
+
+    private static IReadOnlyList<SwShStaticEncounterEditableFieldOption> CreateAbilityOptions(
+        StaticEncounterLookupTables lookupTables,
+        int speciesId,
+        int form)
+    {
+        return lookupTables.AbilityResolver
+            .CreateOptions(speciesId, form, SwShAbilityOptionMode.DefaultPlusSlots)
+            .Select(option => new SwShStaticEncounterEditableFieldOption(option.Value, option.Label))
+            .ToArray();
+    }
+
+    private static string GetAbilityOptionLabel(
+        StaticEncounterLookupTables lookupTables,
+        int speciesId,
+        int form,
+        int value)
+    {
+        return CreateAbilityOptions(lookupTables, speciesId, form)
+            .FirstOrDefault(option => option.Value == value)?.Label
+            ?? GetOptionLabel(AbilityOptions, value, "Ability slot");
     }
 
     private static int CountSource(IReadOnlyList<string> values)
@@ -720,5 +747,6 @@ public sealed class SwShStaticEncountersWorkflowService
         IReadOnlyList<string> SpeciesNames,
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,
+        SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);
 }

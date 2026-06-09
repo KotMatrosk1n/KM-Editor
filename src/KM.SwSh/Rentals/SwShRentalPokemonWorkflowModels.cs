@@ -44,7 +44,11 @@ public sealed record SwShRentalPokemonEntry(
     SwShRentalPokemonStatsRecord Ivs,
     bool HasPerfectIvs,
     string IvSummary,
-    SwShRentalPokemonProvenance Provenance);
+    SwShRentalPokemonProvenance Provenance)
+{
+    public IReadOnlyList<SwShRentalPokemonEditableFieldOption> AbilityOptions { get; init; } =
+        Array.Empty<SwShRentalPokemonEditableFieldOption>();
+}
 
 public sealed record SwShRentalPokemonMoveRecord(
     int Slot,

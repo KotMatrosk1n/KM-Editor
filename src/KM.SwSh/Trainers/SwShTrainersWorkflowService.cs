@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -75,7 +76,7 @@ public sealed class SwShTrainersWorkflowService
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> DynamaxLevelOptions =
     [
         ..Enumerable.Range(0, SwShTrainerTeamFile.MaximumDynamaxLevel + 1)
-            .Select(value => new SwShTrainerEditableFieldOption(value, value == 1 ? "1 level" : $"{value} levels")),
+            .Select(value => new SwShTrainerEditableFieldOption(value, value.ToString(CultureInfo.InvariantCulture))),
     ];
 
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> AbilityOptions =
@@ -900,13 +901,15 @@ public sealed class SwShTrainersWorkflowService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var messageRoot = ResolveLanguageMessageRoot(project, diagnostics);
+        var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new TrainerLookupTables(
             LoadMessageTable(project, messageRoot, "trname.dat", diagnostics),
             LoadMessageTable(project, messageRoot, "trtype.dat", diagnostics),
             LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics),
             LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics),
-            LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics));
+            LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics),
+            abilityResolver);
     }
 
     private static string? ResolveLanguageMessageRoot(
@@ -1081,7 +1084,7 @@ public sealed class SwShTrainersWorkflowService
             pokemon.Gender,
             FormatTrainerPokemonGender(pokemon.Gender),
             pokemon.Ability,
-            FormatTrainerPokemonAbility(pokemon.Ability),
+            GetTrainerPokemonAbilityLabel(names, pokemon.SpeciesId, pokemon.Form, pokemon.Ability),
             pokemon.Nature,
             FormatTrainerPokemonNature(pokemon.Nature),
             ToStatsRecord(pokemon.Evs),
@@ -1089,7 +1092,10 @@ public sealed class SwShTrainersWorkflowService
             pokemon.CanGigantamax,
             ToStatsRecord(pokemon.Ivs),
             pokemon.Shiny,
-            pokemon.CanDynamax);
+            pokemon.CanDynamax)
+        {
+            AbilityOptions = CreateTrainerPokemonAbilityOptions(names, pokemon.SpeciesId, pokemon.Form),
+        };
     }
 
     private static SwShTrainerPokemonStatsRecord ToStatsRecord(SwShTrainerPokemonStats stats)
@@ -1177,6 +1183,27 @@ public sealed class SwShTrainersWorkflowService
         return GetOptionLabel(AbilityOptions, value, "Ability");
     }
 
+    private static IReadOnlyList<SwShTrainerEditableFieldOption> CreateTrainerPokemonAbilityOptions(
+        TrainerLookupTables names,
+        int speciesId,
+        int form)
+    {
+        return names.AbilityResolver.CreateOptions(speciesId, form, SwShAbilityOptionMode.DefaultPlusSlots)
+            .Select(option => new SwShTrainerEditableFieldOption(option.Value, option.Label))
+            .ToArray();
+    }
+
+    private static string GetTrainerPokemonAbilityLabel(
+        TrainerLookupTables names,
+        int speciesId,
+        int form,
+        int value)
+    {
+        return CreateTrainerPokemonAbilityOptions(names, speciesId, form)
+            .FirstOrDefault(option => option.Value == value)?.Label
+            ?? FormatTrainerPokemonAbility(value);
+    }
+
     internal static string FormatTrainerPokemonNature(int value)
     {
         return GetOptionLabel(NatureOptions, value, "Nature");
@@ -1259,7 +1286,8 @@ public sealed class SwShTrainersWorkflowService
         IReadOnlyList<string> TrainerClasses,
         IReadOnlyList<string> SpeciesNames,
         IReadOnlyList<string> ItemNames,
-        IReadOnlyList<string> MoveNames);
+        IReadOnlyList<string> MoveNames,
+        SwShPokemonAbilityOptionResolver AbilityResolver);
 
     private sealed record TrainerClassOwnership(
         string OwnerName,
