@@ -378,7 +378,7 @@ public sealed class SwShEncountersWorkflowService
 
     private static string FormatZone(ulong zoneId)
     {
-        return $"Zone 0x{zoneId:X16}";
+        return SwShEncounterZoneNames.Format(zoneId);
     }
 
     private static string FormatSubTable(int subTableIndex)

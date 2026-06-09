@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -382,10 +383,19 @@ public sealed class SwShPokemonWorkflowService
             EnglishMoveNamePath,
             "Move names",
             diagnostics);
+        var itemRecords = LoadOptionalItemRecords(project, diagnostics);
+        var itemDisplayNames = CreateItemDisplayNames(itemNames, moveNames, itemRecords);
+        var itemOptions = CreateIndexedOptions(itemDisplayNames, "Item");
+        var evolutionItemOptions = CreateEvolutionItemOptions(itemRecords, itemDisplayNames);
         var learnsets = LoadLearnsets(project, diagnostics);
         var evolutions = LoadEvolutions(project, diagnostics);
         var displaySpeciesNames = speciesNames.Count > 0 ? speciesNames : Array.Empty<string>();
-        var evolutionMethodOptions = CreateEvolutionMethodOptions(itemNames, moveNames, displaySpeciesNames);
+        var evolutionMethodOptions = CreateEvolutionMethodOptions(
+            itemOptions,
+            evolutionItemOptions,
+            itemRecords.Count > 0,
+            moveNames,
+            displaySpeciesNames);
         var learnsetMoveOptions = CreateIndexedOptions(moveNames, "Move");
 
         try
@@ -398,7 +408,7 @@ public sealed class SwShPokemonWorkflowService
                     record,
                     displaySpeciesNames,
                     abilityNames,
-                    itemNames,
+                    itemDisplayNames,
                     moveNames,
                     learnsets,
                     evolutions,
@@ -410,6 +420,7 @@ public sealed class SwShPokemonWorkflowService
                 + (pokemonNames.Count > 0 ? 1 : 0)
                 + (speciesNames.Count > 0 ? 1 : 0)
                 + (itemNames.Count > 0 ? 1 : 0)
+                + (itemRecords.Count > 0 ? 1 : 0)
                 + (abilityNames.Count > 0 ? 1 : 0)
                 + (moveNames.Count > 0 ? 1 : 0)
                 + (learnsets.Count > 0 ? 1 : 0)
@@ -421,7 +432,7 @@ public sealed class SwShPokemonWorkflowService
                 sourceFileCount,
                 evolutionMethodOptions,
                 learnsetMoveOptions,
-                CreateEditableFields(itemNames, abilityNames, displaySpeciesNames),
+                CreateEditableFields(itemDisplayNames, abilityNames, displaySpeciesNames),
                 diagnostics);
         }
         catch (InvalidDataException exception)
@@ -482,6 +493,43 @@ public sealed class SwShPokemonWorkflowService
         }
 
         return new Dictionary<int, SwShPokemonLearnsetRecord>();
+    }
+
+    private static IReadOnlyList<SwShItemTableRecord> LoadOptionalItemRecords(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var source = SwShItemsWorkflowService.ResolveItemDataSource(project);
+        if (source is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            return SwShItemTable.Parse(File.ReadAllBytes(source.AbsolutePath))
+                .Records
+                .OrderBy(item => item.ItemId)
+                .ToArray();
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Item metadata could not be decoded; evolution item selectors will be limited: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Sword/Shield item.dat"));
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Item metadata could not be read; evolution item selectors will be limited: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield item.dat"));
+        }
+
+        return [];
     }
 
     private static IReadOnlyDictionary<int, IReadOnlyList<SwShEvolutionRecord>> LoadEvolutions(
@@ -597,7 +645,7 @@ public sealed class SwShPokemonWorkflowService
             summary,
             pokemon,
             sourceFileCount,
-            CreateEvolutionMethodOptions([], [], []),
+            CreateEvolutionMethodOptions([], [], false, [], []),
             [],
             EditableFields,
             diagnostics);
@@ -754,7 +802,9 @@ public sealed class SwShPokemonWorkflowService
     }
 
     private static IReadOnlyList<SwShPokemonEvolutionMethodOption> CreateEvolutionMethodOptions(
-        IReadOnlyList<string> itemNames,
+        IReadOnlyList<SwShPokemonEditableFieldOption> itemOptions,
+        IReadOnlyList<SwShPokemonEditableFieldOption> evolutionItemOptions,
+        bool hasEvolutionItemMetadata,
         IReadOnlyList<string> moveNames,
         IReadOnlyList<string> speciesNames)
     {
@@ -764,19 +814,29 @@ public sealed class SwShPokemonWorkflowService
                 string.Create(CultureInfo.InvariantCulture, $"{method.Value:000} {method.Name}"),
                 method.ArgumentKind,
                 method.ArgumentLabel,
-                CreateEvolutionArgumentOptions(method.ArgumentKind, itemNames, moveNames, speciesNames)))
+                CreateEvolutionArgumentOptions(
+                    method,
+                    itemOptions,
+                    evolutionItemOptions,
+                    hasEvolutionItemMetadata,
+                    moveNames,
+                    speciesNames)))
             .ToArray();
     }
 
     private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateEvolutionArgumentOptions(
-        string argumentKind,
-        IReadOnlyList<string> itemNames,
+        EvolutionMethodDefinition method,
+        IReadOnlyList<SwShPokemonEditableFieldOption> itemOptions,
+        IReadOnlyList<SwShPokemonEditableFieldOption> evolutionItemOptions,
+        bool hasEvolutionItemMetadata,
         IReadOnlyList<string> moveNames,
         IReadOnlyList<string> speciesNames)
     {
-        return argumentKind switch
+        return method.ArgumentKind switch
         {
-            EvolutionArgumentKindItem => CreateIndexedOptions(itemNames, "Item"),
+            EvolutionArgumentKindItem => IsUseItemEvolutionMethod(method.Value) && hasEvolutionItemMetadata
+                ? evolutionItemOptions
+                : itemOptions,
             EvolutionArgumentKindMove => CreateIndexedOptions(moveNames, "Move"),
             EvolutionArgumentKindSpecies => CreateIndexedOptions(speciesNames, "Species"),
             EvolutionArgumentKindType => TypeOptions,
@@ -862,7 +922,7 @@ public sealed class SwShPokemonWorkflowService
             {
                 var moveName = GetIndexedName(moveId, moveNames, "Move");
                 var slotLabel = slotLabelFactory?.Invoke(slot);
-                var entryLabel = slotLabel is null ? moveName : $"{slotLabel} {moveName}";
+                var entryLabel = slotLabel is null ? moveName : $"{slotLabel} ({moveName})";
 
                 return new SwShPokemonCompatibilityEntry(
                     slot,
@@ -878,6 +938,56 @@ public sealed class SwShPokemonWorkflowService
             label,
             entries.Count(entry => entry.CanLearn),
             entries);
+    }
+
+    private static IReadOnlyList<string> CreateItemDisplayNames(
+        IReadOnlyList<string> itemNames,
+        IReadOnlyList<string> moveNames,
+        IReadOnlyList<SwShItemTableRecord> itemRecords)
+    {
+        if (itemRecords.Count == 0)
+        {
+            return itemNames;
+        }
+
+        var itemCount = Math.Max(itemNames.Count, itemRecords.Max(item => item.ItemId) + 1);
+        var displayNames = new string[itemCount];
+        for (var itemId = 0; itemId < itemNames.Count && itemId < displayNames.Length; itemId++)
+        {
+            displayNames[itemId] = itemNames[itemId];
+        }
+
+        foreach (var item in itemRecords)
+        {
+            displayNames[item.ItemId] = SwShItemsWorkflowService.FormatItemDisplayName(
+                item,
+                itemNames,
+                moveNames);
+        }
+
+        return displayNames;
+    }
+
+    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateEvolutionItemOptions(
+        IReadOnlyList<SwShItemTableRecord> itemRecords,
+        IReadOnlyList<string> itemDisplayNames)
+    {
+        return itemRecords
+            .Where(IsUsableEvolutionItem)
+            .Select(item => CreateOption(
+                item.ItemId,
+                FormatIndexedOption(item.ItemId, itemDisplayNames, "Item")))
+            .ToArray();
+    }
+
+    private static bool IsUsableEvolutionItem(SwShItemTableRecord item)
+    {
+        return item.CanUseOnPokemon && (item.Boost0 & 0x08) != 0;
+    }
+
+    private static bool IsUseItemEvolutionMethod(int method)
+    {
+        return method is 8 or 17 or 18 or 42;
     }
 
     private static IReadOnlyDictionary<int, PokemonFormOwner> CreateFormOwnerLookup(

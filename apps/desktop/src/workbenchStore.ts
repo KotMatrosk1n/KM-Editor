@@ -229,6 +229,33 @@ function resolveWorkflowLoadSection(
   return activeSection === 'workflows' ? workflowSection : activeSection;
 }
 
+function resolveSelectedPokemonPersonalId(
+  pokemonWorkflow: PokemonWorkflow,
+  currentSelectedPokemonPersonalId: number | null
+) {
+  const currentSelectedPokemonId =
+    currentSelectedPokemonPersonalId === null ? null : Number(currentSelectedPokemonPersonalId);
+  const currentSelection =
+    currentSelectedPokemonId !== null && currentSelectedPokemonId !== 0
+      ? pokemonWorkflow.pokemon.find(
+          (pokemon) =>
+            Number(pokemon.personalId) === currentSelectedPokemonId &&
+            !isPlaceholderPokemonRecord(pokemon)
+        )
+      : null;
+
+  return (
+    currentSelection?.personalId ??
+    pokemonWorkflow.pokemon.find((pokemon) => !isPlaceholderPokemonRecord(pokemon))?.personalId ??
+    pokemonWorkflow.pokemon[0]?.personalId ??
+    null
+  );
+}
+
+function isPlaceholderPokemonRecord(pokemon: Pick<PokemonWorkflow['pokemon'][number], 'name' | 'personalId'>) {
+  return Number(pokemon.personalId) === 0 || pokemon.name.trim().toLowerCase() === 'egg';
+}
+
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   activeSection: 'health',
   applyResult: null,
@@ -377,11 +404,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     }),
   setPokemonWorkflow: (pokemonWorkflow) =>
     set((state) => {
-      const selectedPokemonPersonalId = pokemonWorkflow.pokemon.some(
-        (pokemon) => pokemon.personalId === state.selectedPokemonPersonalId
-      )
-        ? state.selectedPokemonPersonalId
-        : (pokemonWorkflow.pokemon[0]?.personalId ?? null);
+      const selectedPokemonPersonalId = resolveSelectedPokemonPersonalId(
+        pokemonWorkflow,
+        state.selectedPokemonPersonalId
+      );
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'pokemon'),

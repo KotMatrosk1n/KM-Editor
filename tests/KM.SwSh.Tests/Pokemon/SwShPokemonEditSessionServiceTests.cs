@@ -76,7 +76,7 @@ public sealed class SwShPokemonEditSessionServiceTests
         var edit = Assert.Single(result.Session.PendingEdits);
         Assert.Equal(field, edit.Field);
         Assert.Equal("1", edit.NewValue);
-        Assert.Equal("Enable Bulbasaur TM00 Mega Punch compatibility.", edit.Summary);
+        Assert.Equal("Enable Bulbasaur TM00 (Mega Punch) compatibility.", edit.Summary);
         Assert.Empty(result.Diagnostics);
     }
 
@@ -117,6 +117,46 @@ public sealed class SwShPokemonEditSessionServiceTests
         Assert.Equal("learnset:upsert:1", edit.Field);
         Assert.Equal("345:7", edit.NewValue);
         Assert.Equal("Set Bulbasaur learnset slot 1 to Lv. 7 Magical Leaf.", edit.Summary);
+        Assert.Contains(edit.Sources, source => source.RelativePath == SwShPokemonWorkflowService.LearnsetDataPath);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Fact]
+    public void UpdateLearnsetOverlaysPendingMoveToEdit()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+
+        var result = service.UpdateLearnset(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action: "moveTo",
+            slot: 1,
+            moveId: 0,
+            level: null);
+
+        var pokemon = result.Workflow.Pokemon.Single(record => record.PersonalId == 1);
+        Assert.Collection(
+            pokemon.Learnset,
+            move =>
+            {
+                Assert.Equal(0, move.Slot);
+                Assert.Equal(45, move.MoveId);
+                Assert.Equal(3, move.Level);
+            },
+            move =>
+            {
+                Assert.Equal(1, move.Slot);
+                Assert.Equal(33, move.MoveId);
+                Assert.Equal(1, move.Level);
+            });
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal("workflow.pokemon", edit.Domain);
+        Assert.Equal("1", edit.RecordId);
+        Assert.Equal("learnset:moveTo:1", edit.Field);
+        Assert.Equal("0", edit.NewValue);
+        Assert.Equal("Move Bulbasaur learnset slot 1 to slot 0.", edit.Summary);
         Assert.Contains(edit.Sources, source => source.RelativePath == SwShPokemonWorkflowService.LearnsetDataPath);
         Assert.Empty(result.Diagnostics);
     }

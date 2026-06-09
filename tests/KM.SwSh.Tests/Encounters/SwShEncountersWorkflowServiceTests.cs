@@ -48,6 +48,38 @@ public sealed class SwShEncountersWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadFormatsKnownEncounterZoneNames()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "encount_symbol_k.bin",
+                    SwShEncounterTestFixtures.CreateArchive(zoneId: 0x078BC1FF1A657844).Write()),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            SwShGameTextFile.Write(
+            [
+                new SwShGameTextLine("", Flags: 0),
+                new SwShGameTextLine("Bulbasaur", Flags: 0),
+                new SwShGameTextLine("Ivysaur", Flags: 0),
+                new SwShGameTextLine("Venusaur", Flags: 0),
+                new SwShGameTextLine("Charmander", Flags: 0),
+            ]));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+
+        var table = Assert.Single(workflow.Tables);
+        Assert.Equal("Route 1", table.Location);
+        Assert.Contains(":078BC1FF1A657844:", table.TableId, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LoadFormatsSpeciesZeroAsEmpty()
     {
         using var temp = TemporarySwShProject.Create();

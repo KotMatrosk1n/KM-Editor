@@ -707,7 +707,7 @@ public sealed class SwShItemsWorkflowService
 
         return new SwShItemRecord(
             item.ItemId,
-            GetItemName(item.ItemId, itemNames),
+            FormatItemDisplayName(item, itemNames, moveNames),
             FormatPouch(metadata.Pouch),
             checked((int)item.BuyPrice),
             checked((int)(item.BuyPrice / 2)),
@@ -758,7 +758,41 @@ public sealed class SwShItemsWorkflowService
             item.MachineMoveId is null ? null : GetMoveName(item.MachineMoveId.Value, moveNames));
     }
 
-    private static string GetItemName(int itemId, IReadOnlyList<string> itemNames)
+    internal static string FormatItemDisplayName(
+        SwShItemTableRecord item,
+        IReadOnlyList<string> itemNames,
+        IReadOnlyList<string> moveNames)
+    {
+        var itemName = GetItemName(item.ItemId, itemNames);
+        if (item.MachineSlot is null || item.MachineMoveId is null)
+        {
+            return itemName;
+        }
+
+        return FormatMachineItemDisplayName(
+            itemName,
+            item.MachineSlot.Value,
+            item.MachineMoveId.Value,
+            moveNames);
+    }
+
+    private static string FormatMachineItemDisplayName(
+        string itemName,
+        int machineSlot,
+        int moveId,
+        IReadOnlyList<string> moveNames)
+    {
+        var machineLabel = FormatMachineLabel(machineSlot, includeSlot: false);
+        if (string.IsNullOrWhiteSpace(machineLabel))
+        {
+            return itemName;
+        }
+
+        var moveName = GetMoveName(moveId, moveNames);
+        return string.Create(CultureInfo.InvariantCulture, $"{machineLabel} ({moveName})");
+    }
+
+    internal static string GetItemName(int itemId, IReadOnlyList<string> itemNames)
     {
         if ((uint)itemId < (uint)itemNames.Count && !string.IsNullOrWhiteSpace(itemNames[itemId]))
         {
@@ -915,11 +949,7 @@ public sealed class SwShItemsWorkflowService
             return "No machine link";
         }
 
-        var isTr = item.GroupIndex >= TechnicalRecordTrSlotStart;
-        var number = isTr ? item.GroupIndex - TechnicalRecordTrSlotStart : item.GroupIndex;
-        var machineLabel = string.Create(
-            CultureInfo.InvariantCulture,
-            $"{(isTr ? "TR" : "TM")}{number:00} (slot {item.GroupIndex})");
+        var machineLabel = FormatMachineLabel(item.GroupIndex, includeSlot: true);
 
         if (item.MachineMoveId is null)
         {
@@ -929,6 +959,22 @@ public sealed class SwShItemsWorkflowService
         return string.Create(
             CultureInfo.InvariantCulture,
             $"{machineLabel} -> {item.MachineMoveName ?? GetMoveName(item.MachineMoveId.Value, Array.Empty<string>())} ({item.MachineMoveId.Value})");
+    }
+
+    private static string FormatMachineLabel(int machineSlot, bool includeSlot)
+    {
+        if (machineSlot < 0 || machineSlot > TechnicalRecordLastSlot)
+        {
+            return string.Empty;
+        }
+
+        var isTr = machineSlot >= TechnicalRecordTrSlotStart;
+        var number = isTr ? machineSlot - TechnicalRecordTrSlotStart : machineSlot;
+        var machineLabel = string.Create(CultureInfo.InvariantCulture, $"{(isTr ? "TR" : "TM")}{number:00}");
+
+        return includeSlot
+            ? string.Create(CultureInfo.InvariantCulture, $"{machineLabel} (slot {machineSlot})")
+            : machineLabel;
     }
 
     private static string FormatFlags(int value, params (int Flag, string Label)[] flags)

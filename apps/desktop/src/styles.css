@@ -109,6 +109,37 @@ textarea {
   gap: 6px;
 }
 
+.nav-workflow-group {
+  display: grid;
+  gap: 4px;
+}
+
+.nav-group-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 10px;
+  color: var(--color-gold);
+  background: rgb(214 168 66 / 7%);
+  border: 1px solid rgb(214 168 66 / 18%);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: left;
+}
+
+.nav-group-button:hover {
+  background: rgb(214 168 66 / 12%);
+  border-color: rgb(214 168 66 / 36%);
+}
+
+.nav-group-items {
+  display: grid;
+  gap: 3px;
+}
+
 .nav-button {
   display: flex;
   align-items: center;
@@ -121,6 +152,32 @@ textarea {
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
+}
+
+.nav-child-button {
+  min-height: 34px;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.nav-child-button span::before {
+  content: "- ";
+  color: var(--color-gold);
+}
+
+.nav-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0 6px;
+  color: #050814;
+  background: var(--color-gold);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .nav-button:hover,
@@ -300,6 +357,89 @@ h2 {
 .path-field select:focus {
   border-color: #4f46e5;
   box-shadow: 0 0 0 3px rgb(79 70 229 / 24%);
+}
+
+.searchable-option-input {
+  position: relative;
+  min-width: 0;
+}
+
+.searchable-option-input input {
+  width: 100%;
+  padding-right: 34px;
+}
+
+.searchable-option-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--color-text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.searchable-option-toggle:hover {
+  color: var(--color-text);
+  background: rgb(255 255 255 / 8%);
+}
+
+.searchable-option-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.searchable-option-menu {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-width: min(280px, calc(100vw - 48px));
+  max-height: 240px;
+  padding: 6px;
+  overflow: auto;
+  background: #101828;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  box-shadow: 0 18px 45px rgb(0 0 0 / 44%);
+}
+
+.searchable-option-row {
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  color: var(--color-text);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.searchable-option-row:hover {
+  background: linear-gradient(135deg, #27217a, #4f46e5);
+}
+
+.searchable-option-row span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .action-row {
@@ -601,6 +741,15 @@ h2 {
   margin-top: 16px;
 }
 
+.pokemon-layout {
+  grid-template-columns: minmax(420px, 0.72fr) minmax(480px, 1fr);
+  grid-template-areas:
+    "table selected"
+    "learnset selected"
+    "compat selected"
+    "evolutions selected";
+}
+
 .items-table {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -831,29 +980,85 @@ h2 {
   border-top: 1px solid #26344d;
 }
 
-.pokemon-inspector {
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+.pokemon-table {
+  grid-area: table;
 }
 
-.pokemon-inspector > .panel-heading,
-.pokemon-inspector > .pokemon-summary-card,
-.pokemon-inspector > .item-provenance-list,
+.pokemon-inspector {
+  display: contents;
+}
+
+.pokemon-selected-stack {
+  display: grid;
+  grid-area: selected;
+  gap: 14px;
+  align-content: start;
+  align-self: start;
+  min-width: 0;
+}
+
+.pokemon-selected-stack > .panel-heading,
+.pokemon-selected-stack > .item-provenance-list,
+.pokemon-stats-block,
+.pokemon-traits-block,
 .pokemon-personal-edit-block {
-  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.pokemon-selected-stack > .panel-heading,
+.pokemon-selected-stack > .item-provenance-list,
+.pokemon-stats-block,
+.pokemon-traits-block,
+.pokemon-personal-edit-block,
+.pokemon-compatibility-block,
+.pokemon-evolutions-block,
+.pokemon-learnset-block {
+  padding: 14px;
+  background: linear-gradient(180deg, #101828, #0c1322);
+  border: 1px solid rgb(93 113 151 / 42%);
+  border-radius: 8px;
+  box-shadow: var(--shadow-inset);
+}
+
+.pokemon-selected-stack > .panel-heading {
+  min-height: 52px;
+}
+
+.pokemon-selected-stack > .item-provenance-list {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin-top: 0;
 }
 
 .pokemon-stats-block,
-.pokemon-traits-block {
-  grid-column: span 3;
+.pokemon-traits-block,
+.pokemon-personal-edit-block,
+.pokemon-compatibility-block,
+.pokemon-evolutions-block,
+.pokemon-learnset-block {
+  border-top: 1px solid rgb(93 113 151 / 42%);
+}
+
+.pokemon-compatibility-block,
+.pokemon-evolutions-block,
+.pokemon-learnset-block {
+  grid-column: table;
 }
 
 .pokemon-compatibility-block {
-  grid-column: span 6;
+  grid-area: compat;
 }
 
-.pokemon-evolutions-block,
+.pokemon-evolutions-block {
+  grid-area: evolutions;
+}
+
 .pokemon-learnset-block {
-  grid-column: span 6;
+  grid-area: learnset;
+}
+
+.pokemon-learnset-block .learnset-list {
+  max-height: none;
+  overflow: visible;
 }
 
 .inspector-block h4 {
@@ -1168,9 +1373,13 @@ h2 {
   list-style: none;
 }
 
+.learnset-list-item {
+  min-width: 0;
+}
+
 .learnset-row {
   display: grid;
-  grid-template-columns: 42px 64px minmax(0, 1fr) 54px;
+  grid-template-columns: 24px 42px 64px minmax(0, 1fr) 54px;
   gap: 8px;
   align-items: center;
   min-height: 34px;
@@ -1186,7 +1395,66 @@ h2 {
 }
 
 .evolution-row {
-  grid-template-columns: 34px 38px 56px minmax(0, 1fr) 42px 54px 64px;
+  grid-template-columns: 34px 38px 78px minmax(0, 1fr) 82px 54px minmax(72px, 0.35fr);
+}
+
+.learnset-inline-row {
+  grid-template-columns: 24px 42px minmax(180px, 1fr) minmax(74px, 0.34fr) 54px auto;
+  align-items: end;
+  cursor: default;
+}
+
+.learnset-drag-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #9aa7bd;
+  opacity: 0.35;
+}
+
+.learnset-list-item:not([draggable='true']) .learnset-drag-cell {
+  visibility: hidden;
+}
+
+.learnset-list-item[draggable='true'] .learnset-drag-cell {
+  color: var(--color-gold);
+  cursor: grab;
+  opacity: 1;
+}
+
+.learnset-list-item[draggable='true'] .learnset-row {
+  cursor: grab;
+}
+
+.learnset-list-item[draggable='true'] .learnset-row:active {
+  cursor: grabbing;
+}
+
+.learnset-dragging .learnset-row {
+  opacity: 0.55;
+}
+
+.learnset-drop-target .learnset-row {
+  border-color: rgb(214 168 66 / 78%);
+  box-shadow:
+    inset 4px 0 0 var(--color-gold),
+    0 0 0 2px rgb(214 168 66 / 16%);
+}
+
+.learnset-inline-field {
+  gap: 4px;
+  font-size: 11px;
+}
+
+.learnset-inline-field input {
+  min-height: 34px;
+}
+
+.learnset-inline-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  justify-content: flex-end;
 }
 
 .learnset-row:hover,
@@ -1206,13 +1474,14 @@ h2 {
 
 .learnset-edit-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(88px, 0.7fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 320px));
   gap: 10px;
   align-items: end;
+  justify-content: start;
 }
 
 .evolution-edit-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 320px));
 }
 
 .learnset-button-row {
@@ -1226,6 +1495,7 @@ h2 {
 
 .learnset-add-button {
   grid-column: 1 / -1;
+  max-width: 650px;
   white-space: nowrap;
 }
 
@@ -2380,6 +2650,24 @@ h2 {
   box-shadow: inset 3px 0 0 var(--color-gold);
 }
 
+.condition-tab-button:disabled,
+.condition-tab-button-unavailable {
+  cursor: not-allowed;
+  color: #6f7b93;
+  background: #0d1424;
+  border-color: #26344d;
+  box-shadow: none;
+  opacity: 0.78;
+}
+
+.encounter-apply-weather-button {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-height: 34px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
 .slot-tab-button {
   display: grid;
   grid-template-rows: 34px auto auto auto;
@@ -2588,10 +2876,91 @@ h2 {
 
 .change-plan-status {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 1fr)) auto;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   align-items: center;
   margin-top: 16px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(5 8 16 / 72%);
+  backdrop-filter: blur(8px);
+}
+
+.modal-panel {
+  display: grid;
+  gap: 16px;
+  width: min(520px, 100%);
+  padding: 18px;
+  background: linear-gradient(180deg, #121b2d, #0d1424);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-panel);
+}
+
+.modal-copy {
+  margin: 0;
+  color: var(--color-text-soft);
+  font-weight: 700;
+}
+
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.save-progress-panel {
+  width: min(620px, 100%);
+}
+
+.save-progress-track {
+  width: 100%;
+  height: 14px;
+  overflow: hidden;
+  background: #070b12;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+}
+
+.save-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-gold));
+  transition: width 220ms ease;
+}
+
+.save-progress-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.save-progress-detail div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.save-progress-detail dt {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.save-progress-detail dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
 }
 
 .change-plan-list {
@@ -2768,6 +3137,13 @@ input {
   box-shadow: inset 4px 0 0 var(--color-gold);
 }
 
+.learnset-drop-target .learnset-row {
+  border-color: rgb(214 168 66 / 78%);
+  box-shadow:
+    inset 4px 0 0 var(--color-gold),
+    0 0 0 2px rgb(214 168 66 / 16%);
+}
+
 .item-inspector,
 .text-inspector,
 .trainer-inspector,
@@ -2794,6 +3170,7 @@ input {
 .path-field input:focus,
 .path-field select:focus,
 .path-field textarea:focus,
+.searchable-option-input:focus-within,
 .trainer-party-header select:focus,
 .shop-inventory-header select:focus,
 .search-box:focus-within {
@@ -2861,12 +3238,8 @@ input {
 }
 
 @media (max-width: 1300px) {
-  .pokemon-stats-block,
-  .pokemon-traits-block,
-  .pokemon-compatibility-block,
-  .pokemon-evolutions-block,
-  .pokemon-learnset-block {
-    grid-column: span 6;
+  .pokemon-layout {
+    grid-template-columns: minmax(360px, 0.75fr) minmax(420px, 1fr);
   }
 }
 
@@ -2881,16 +3254,23 @@ input {
     grid-template-columns: 1fr;
   }
 
-  .pokemon-inspector {
+  .pokemon-layout {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "table"
+      "selected"
+      "compat"
+      "evolutions"
+      "learnset";
   }
 
-  .pokemon-stats-block,
-  .pokemon-traits-block,
+  .pokemon-table,
+  .pokemon-selected-stack,
   .pokemon-compatibility-block,
   .pokemon-evolutions-block,
   .pokemon-learnset-block {
     grid-column: 1 / -1;
+    grid-row: auto;
   }
 }
 

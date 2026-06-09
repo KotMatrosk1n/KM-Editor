@@ -20,6 +20,7 @@ public sealed class SwShPokemonEditSessionService
     private const string LearnsetRemoveAction = "remove";
     private const string LearnsetMoveUpAction = "moveUp";
     private const string LearnsetMoveDownAction = "moveDown";
+    private const string LearnsetMoveToAction = "moveTo";
     private const string EvolutionFieldPrefix = "evolution";
     private const string EvolutionAddAction = "add";
     private const string EvolutionUpsertAction = "upsert";
@@ -571,7 +572,7 @@ public sealed class SwShPokemonEditSessionService
                 DiagnosticSeverity.Error,
                 $"Pokemon learnset action '{action}' is not supported.",
                 field: "action",
-                expected: "add, upsert, remove, moveUp, or moveDown"));
+                expected: "add, upsert, remove, moveUp, moveDown, or moveTo"));
             return null;
         }
 
@@ -582,9 +583,12 @@ public sealed class SwShPokemonEditSessionService
             ? LearnsetUpsertAction
             : normalizedAction;
         var field = CreateLearnsetFieldId(fieldAction, normalizedSlot);
-        var newValue = normalizedAction is LearnsetAddAction or LearnsetUpsertAction
-            ? CreateLearnsetValue(moveId, level)
-            : "1";
+        var newValue = normalizedAction switch
+        {
+            LearnsetAddAction or LearnsetUpsertAction => CreateLearnsetValue(moveId, level),
+            LearnsetMoveToAction => moveId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            _ => "1",
+        };
 
         var pendingEdit = new PendingEdit(
             PokemonEditDomain,
@@ -599,7 +603,7 @@ public sealed class SwShPokemonEditSessionService
             return null;
         }
 
-        var moveName = operation.MoveId is null
+        var moveName = operation.Action == LearnsetMoveToAction || operation.MoveId is null
             ? null
             : ResolveMoveName(workflow, selectedPokemon, operation.MoveId.Value);
 
@@ -766,6 +770,20 @@ public sealed class SwShPokemonEditSessionService
             moveId = parsedMoveId;
             level = parsedLevel;
         }
+        else if (action == LearnsetMoveToAction)
+        {
+            if (!int.TryParse(edit.NewValue, NumberStyles.None, CultureInfo.InvariantCulture, out var targetSlot))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon learnset move-to rows require a valid destination slot.",
+                    field: "learnset",
+                    expected: "Safe Pokemon learnset destination slot"));
+                return null;
+            }
+
+            moveId = targetSlot;
+        }
 
         var operation = new LearnsetPendingOperation(action, slot, moveId, level);
         var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
@@ -780,7 +798,9 @@ public sealed class SwShPokemonEditSessionService
         LearnsetPendingOperation operation,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (operation.MoveId is not null && (uint)operation.MoveId.Value > ushort.MaxValue)
+        if (operation.Action != LearnsetMoveToAction
+            && operation.MoveId is not null
+            && (uint)operation.MoveId.Value > ushort.MaxValue)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -841,6 +861,17 @@ public sealed class SwShPokemonEditSessionService
                     field: "slot",
                     expected: "Pokemon learnset row that can move down"));
                 break;
+            case LearnsetMoveToAction when operation.MoveId is null
+                || operation.Slot < 0
+                || operation.Slot >= count
+                || operation.MoveId.Value < 0
+                || operation.MoveId.Value >= count:
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon learnset move-to must target existing source and destination rows.",
+                    field: "slot",
+                    expected: "Existing Pokemon learnset source and destination rows"));
+                break;
         }
     }
 
@@ -863,7 +894,7 @@ public sealed class SwShPokemonEditSessionService
         }
 
         var normalizedAction = NormalizeLearnsetAction(parts[1]);
-        if (normalizedAction is not (LearnsetUpsertAction or LearnsetRemoveAction or LearnsetMoveUpAction or LearnsetMoveDownAction))
+        if (normalizedAction is not (LearnsetUpsertAction or LearnsetRemoveAction or LearnsetMoveUpAction or LearnsetMoveDownAction or LearnsetMoveToAction))
         {
             return false;
         }
@@ -911,8 +942,13 @@ public sealed class SwShPokemonEditSessionService
             return LearnsetMoveUpAction;
         }
 
-        return string.Equals(trimmed, LearnsetMoveDownAction, StringComparison.OrdinalIgnoreCase)
-            ? LearnsetMoveDownAction
+        if (string.Equals(trimmed, LearnsetMoveDownAction, StringComparison.OrdinalIgnoreCase))
+        {
+            return LearnsetMoveDownAction;
+        }
+
+        return string.Equals(trimmed, LearnsetMoveToAction, StringComparison.OrdinalIgnoreCase)
+            ? LearnsetMoveToAction
             : null;
     }
 
@@ -1714,6 +1750,15 @@ public sealed class SwShPokemonEditSessionService
             case LearnsetMoveDownAction when operation.Slot >= 0 && operation.Slot < moves.Count - 1:
                 (moves[operation.Slot + 1], moves[operation.Slot]) = (moves[operation.Slot], moves[operation.Slot + 1]);
                 break;
+            case LearnsetMoveToAction when operation.MoveId is not null
+                && operation.Slot >= 0
+                && operation.Slot < moves.Count
+                && operation.MoveId.Value >= 0
+                && operation.MoveId.Value < moves.Count:
+                var moved = moves[operation.Slot];
+                moves.RemoveAt(operation.Slot);
+                moves.Insert(operation.MoveId.Value, moved);
+                break;
         }
 
         return record with
@@ -2149,6 +2194,8 @@ public sealed class SwShPokemonEditSessionService
                 $"Move {pokemon.Name} learnset slot {operation.Slot} up.",
             LearnsetMoveDownAction =>
                 $"Move {pokemon.Name} learnset slot {operation.Slot} down.",
+            LearnsetMoveToAction =>
+                $"Move {pokemon.Name} learnset slot {operation.Slot} to slot {operation.MoveId}.",
             _ => $"Update {pokemon.Name} learnset slot {operation.Slot}.",
         };
     }

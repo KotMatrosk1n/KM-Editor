@@ -351,7 +351,7 @@ public sealed class ProjectBridgeDispatcherTests
         var tmGroup = pokemon.Compatibility.Single(group => group.GroupId == "tm");
         Assert.Equal(1, tmGroup.EnabledCount);
         var tm10 = tmGroup.Entries.Single(entry => entry.Slot == 10);
-        Assert.Equal("TM10 Magical Leaf", tm10.Label);
+        Assert.Equal("TM10 (Magical Leaf)", tm10.Label);
         Assert.True(tm10.CanLearn);
         Assert.Equal("romfs/bin/pml/personal/personal_total.bin", pokemon.Provenance.SourceFile);
         Assert.Equal(ProjectFileLayerDto.Base, pokemon.Provenance.SourceLayer);
