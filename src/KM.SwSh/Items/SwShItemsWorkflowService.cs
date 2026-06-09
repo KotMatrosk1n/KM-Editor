@@ -179,7 +179,7 @@ public sealed class SwShItemsWorkflowService
             Options: FieldUseTypeOptions),
         new SwShItemEditableField(
             FieldFlagsField,
-            "Field flags",
+            "Field flags (unknown raw)",
             "integer",
             MinimumValue: 0,
             MaximumValue: MaximumByteValue,
@@ -262,14 +262,14 @@ public sealed class SwShItemsWorkflowService
         CreateBooleanEditableField(PpMaxFlagField, "PP Max flag"),
         new SwShItemEditableField(
             UseFlags1Field,
-            "Use flags 1",
+            "Use flags 1 (raw)",
             "integer",
             MinimumValue: 0,
             MaximumValue: MaximumByteValue,
             Options: []),
         new SwShItemEditableField(
             UseFlags2Field,
-            "Use flags 2",
+            "Use flags 2 (raw)",
             "integer",
             MinimumValue: 0,
             MaximumValue: MaximumByteValue,
@@ -474,6 +474,70 @@ public sealed class SwShItemsWorkflowService
         return ResolveWorkflowFile(project, ItemDataPath);
     }
 
+    internal static IReadOnlyList<string> CreateItemDisplayNames(
+        OpenedProject project,
+        IReadOnlyList<string> itemNames,
+        IReadOnlyList<string>? moveNames = null)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(itemNames);
+
+        var itemDataSource = ResolveItemDataSource(project);
+        if (itemDataSource is null)
+        {
+            return itemNames;
+        }
+
+        var effectiveMoveNames = moveNames ?? LoadMoveNamesForDisplay(project);
+
+        try
+        {
+            var itemTable = SwShItemTable.Parse(File.ReadAllBytes(itemDataSource.AbsolutePath));
+            return CreateItemDisplayNames(itemNames, effectiveMoveNames, itemTable.Records);
+        }
+        catch (InvalidDataException)
+        {
+            return itemNames;
+        }
+        catch (IOException)
+        {
+            return itemNames;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return itemNames;
+        }
+    }
+
+    internal static IReadOnlyList<string> CreateItemDisplayNames(
+        IReadOnlyList<string> itemNames,
+        IReadOnlyList<string> moveNames,
+        IReadOnlyList<SwShItemTableRecord> itemRecords)
+    {
+        ArgumentNullException.ThrowIfNull(itemNames);
+        ArgumentNullException.ThrowIfNull(moveNames);
+        ArgumentNullException.ThrowIfNull(itemRecords);
+
+        if (itemRecords.Count == 0)
+        {
+            return itemNames;
+        }
+
+        var itemCount = Math.Max(itemNames.Count, itemRecords.Max(item => item.ItemId) + 1);
+        var displayNames = new string[itemCount];
+        for (var itemId = 0; itemId < itemNames.Count && itemId < displayNames.Length; itemId++)
+        {
+            displayNames[itemId] = itemNames[itemId];
+        }
+
+        foreach (var item in itemRecords)
+        {
+            displayNames[item.ItemId] = FormatItemDisplayName(item, itemNames, moveNames);
+        }
+
+        return displayNames;
+    }
+
     internal static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -582,6 +646,35 @@ public sealed class SwShItemsWorkflowService
     private static WorkflowFileSource? ResolveMoveNamesSource(OpenedProject project)
     {
         return ResolveWorkflowFile(project, EnglishMoveNamePath);
+    }
+
+    private static string[] LoadMoveNamesForDisplay(OpenedProject project)
+    {
+        var source = ResolveMoveNamesSource(project);
+        if (source is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            return SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath))
+                .Lines
+                .Select(line => line.Text)
+                .ToArray();
+        }
+        catch (InvalidDataException)
+        {
+            return [];
+        }
+        catch (IOException)
+        {
+            return [];
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return [];
+        }
     }
 
     private static string[] LoadMoveNames(
@@ -854,13 +947,13 @@ public sealed class SwShItemsWorkflowService
                 "Field Use",
                 [
                     new SwShItemDetail("Field use type", $"{FormatFieldUseType(item.FieldUseType)} ({item.FieldUseType.ToString(CultureInfo.InvariantCulture)})"),
-                    new SwShItemDetail("Field flags", FormatHex(item.FieldFlags)),
+                    new SwShItemDetail("Field flags (unknown raw)", FormatHex(item.FieldFlags)),
                     new SwShItemDetail("Can use on Pokemon", FormatBool(item.CanUseOnPokemon)),
                     new SwShItemDetail("Can target fainted Pokemon", FormatBool((item.Boost0 & 0x01) != 0)),
                     new SwShItemDetail("Revives whole party", FormatBool((item.Boost0 & 0x02) != 0)),
                     new SwShItemDetail("Level up item", FormatBool((item.Boost0 & 0x04) != 0)),
                     new SwShItemDetail("Evolution item", FormatBool((item.Boost0 & 0x08) != 0)),
-                    new SwShItemDetail("Use flags 1", FormatFlags(
+                    new SwShItemDetail("Use flags 1 (decoded)", FormatFlags(
                         item.UseFlags1,
                         (0x01, "Restore PP"),
                         (0x02, "Restore all PP"),
@@ -870,7 +963,7 @@ public sealed class SwShItemsWorkflowService
                         (0x20, "Defense EV"),
                         (0x40, "Speed EV"),
                         (0x80, "Sp. Atk EV"))),
-                    new SwShItemDetail("Use flags 2", FormatFlags(
+                    new SwShItemDetail("Use flags 2 (decoded; bits 5-7 unknown)", FormatFlags(
                         item.UseFlags2,
                         (0x01, "Sp. Def EV"),
                         (0x02, "EV above 100"),

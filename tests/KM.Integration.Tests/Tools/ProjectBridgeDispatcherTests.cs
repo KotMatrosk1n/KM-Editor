@@ -253,7 +253,7 @@ public sealed class ProjectBridgeDispatcherTests
             detail => detail.Label == "Sprite" && detail.Value == "12");
         Assert.Contains(
             item.DetailGroups.Single(group => group.Label == "Field Use").Details,
-            detail => detail.Label == "Use flags 1" && detail.Value == "Restore HP");
+            detail => detail.Label == "Use flags 1 (decoded)" && detail.Value == "Restore HP");
         Assert.Contains(
             item.DetailGroups.Single(group => group.Label == "Pokemon Effects").Details,
             detail => detail.Label == "Heal" && detail.Value == "20 HP");
@@ -1324,7 +1324,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.False(table.Slots[1].BonusRewardLink.IsMatched);
         Assert.Contains(
             response.Payload.Workflow.EditableFields.Single(field => field.Field == "flawlessIvs").Options,
-            option => option.Value == 6 && option.Label == "6 Perfect IVs");
+            option => option.Value == 6 && option.Label == "6 Guaranteed Perfect IVs");
         Assert.Equal(2, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

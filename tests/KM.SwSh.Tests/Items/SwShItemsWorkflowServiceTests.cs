@@ -39,7 +39,7 @@ public sealed class SwShItemsWorkflowServiceTests
             detail => detail.Label == "Field use type" && detail.Value == "Medicine (1)");
         Assert.Contains(
             item.DetailGroups.Single(group => group.Label == "Field Use").Details,
-            detail => detail.Label == "Use flags 1" && detail.Value == "Restore HP");
+            detail => detail.Label == "Use flags 1 (decoded)" && detail.Value == "Restore HP");
         Assert.Contains(
             item.DetailGroups.Single(group => group.Label == "Battle").Details,
             detail => detail.Label == "Fling power" && detail.Value == "30");

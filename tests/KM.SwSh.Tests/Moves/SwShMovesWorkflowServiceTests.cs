@@ -86,6 +86,23 @@ public sealed class SwShMovesWorkflowServiceTests
             workflow.EditableFields,
             field => field.Field == SwShMovesWorkflowService.InflictField);
         Assert.Contains(inflictField.Options, option => option.Value == 1 && option.Label == "001 Paralyze");
+        var inflictDurationField = Assert.Single(
+            workflow.EditableFields,
+            field => field.Field == SwShMovesWorkflowService.RawInflictCountField);
+        Assert.Equal("Inflict duration", inflictDurationField.Label);
+        Assert.Contains(
+            inflictDurationField.Options,
+            option => option.Value == 1 && option.Label == "001 Permanent");
+        var healingField = Assert.Single(
+            workflow.EditableFields,
+            field => field.Field == SwShMovesWorkflowService.RawHealingField);
+        Assert.Equal("Healing behavior", healingField.Label);
+        Assert.Contains(
+            healingField.Options,
+            option => option.Value == -2 && option.Label == "254 Half HP (-2 raw)");
+        Assert.Equal(
+            "Stat Change 1: Stat",
+            workflow.EditableFields.Single(field => field.Field == SwShMovesWorkflowService.Stat1Field).Label);
         Assert.Empty(workflow.Diagnostics);
     }
 
@@ -133,6 +150,31 @@ public sealed class SwShMovesWorkflowServiceTests
         Assert.DoesNotContain(
             workflow.Diagnostics,
             diagnostic => diagnostic.Message.Contains("Moves data is not available", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LoadDeduplicatesMoveIdsAndPrefersWazabinSources()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza/waza_033.bin",
+            SwShMoveDataFile.Write(CreateMoveRecord(power: 40)));
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza/waza0033.wazabin",
+            SwShMoveDataFile.Write(CreateMoveRecord(power: 80)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            CreateIndexedTextTable((33, "Tackle")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShMovesWorkflowService().Load(project);
+
+        var move = Assert.Single(workflow.Moves);
+        Assert.Equal(33, move.MoveId);
+        Assert.Equal(80, move.Power);
+        Assert.Equal("romfs/bin/pml/waza/waza0033.wazabin", move.Provenance.SourceFile);
+        Assert.Equal(1, workflow.Stats.TotalMoveCount);
     }
 
     [Fact]

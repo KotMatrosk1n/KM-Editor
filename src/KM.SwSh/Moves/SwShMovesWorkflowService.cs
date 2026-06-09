@@ -170,6 +170,23 @@ public sealed class SwShMovesWorkflowService
             .Select(entry => new SwShMoveEditableFieldOption(entry.Key, $"{entry.Key:000} {entry.Value}"))
             .ToArray();
 
+    private static readonly IReadOnlyList<SwShMoveEditableFieldOption> InflictDurationOptions =
+    [
+        new SwShMoveEditableFieldOption(0, "000 None"),
+        new SwShMoveEditableFieldOption(1, "001 Permanent"),
+        new SwShMoveEditableFieldOption(2, "002 Turn Count + Switch"),
+        new SwShMoveEditableFieldOption(3, "003 Permanent + Switch"),
+        new SwShMoveEditableFieldOption(4, "004 Turn Count + No Switch"),
+    ];
+
+    private static readonly IReadOnlyList<SwShMoveEditableFieldOption> HealingOptions =
+    [
+        new SwShMoveEditableFieldOption(0, "000 None"),
+        new SwShMoveEditableFieldOption(-3, "253 Quarter HP (-3 raw)"),
+        new SwShMoveEditableFieldOption(-2, "254 Half HP (-2 raw)"),
+        new SwShMoveEditableFieldOption(-1, "255 Full HP (-1 raw)"),
+    ];
+
     private static readonly IReadOnlyList<SwShMoveEditableFieldOption> StatOptions =
         CreateIndexedOptions(StatNames);
 
@@ -191,21 +208,21 @@ public sealed class SwShMovesWorkflowService
         CreateField(TurnMinField, "Minimum turns", "integer", MinimumByteValue, MaximumByteValue),
         CreateField(TurnMaxField, "Maximum turns", "integer", MinimumByteValue, MaximumByteValue),
         CreateField(InflictField, "Inflicted condition", "integer", MinimumByteValue, MaximumUnsignedShortValue, InflictOptions),
-        CreateField(InflictPercentField, "Inflict percent", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(RawInflictCountField, "Inflict count", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(FlinchField, "Flinch percent", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(EffectSequenceField, "Effect sequence", "integer", MinimumByteValue, MaximumUnsignedShortValue),
-        CreateField(RecoilField, "Recoil", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(RawHealingField, "Healing", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(Stat1Field, "Stat 1", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
-        CreateField(Stat1StageField, "Stat 1 stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(Stat1PercentField, "Stat 1 percent", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(Stat2Field, "Stat 2", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
-        CreateField(Stat2StageField, "Stat 2 stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(Stat2PercentField, "Stat 2 percent", "integer", MinimumByteValue, MaximumByteValue),
-        CreateField(Stat3Field, "Stat 3", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
-        CreateField(Stat3StageField, "Stat 3 stage", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
-        CreateField(Stat3PercentField, "Stat 3 percent", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(InflictPercentField, "Inflict chance (%)", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(RawInflictCountField, "Inflict duration", "integer", MinimumByteValue, MaximumByteValue, InflictDurationOptions),
+        CreateField(FlinchField, "Flinch chance (%)", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(EffectSequenceField, "Effect sequence ID", "integer", MinimumByteValue, MaximumUnsignedShortValue),
+        CreateField(RecoilField, "Recoil/drain (%)", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(RawHealingField, "Healing behavior", "integer", MinimumSignedByteValue, MaximumSignedByteValue, HealingOptions),
+        CreateField(Stat1Field, "Stat Change 1: Stat", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
+        CreateField(Stat1StageField, "Stat Change 1: Stage Delta", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(Stat1PercentField, "Stat Change 1: Chance (%)", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(Stat2Field, "Stat Change 2: Stat", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
+        CreateField(Stat2StageField, "Stat Change 2: Stage Delta", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(Stat2PercentField, "Stat Change 2: Chance (%)", "integer", MinimumByteValue, MaximumByteValue),
+        CreateField(Stat3Field, "Stat Change 3: Stat", "integer", MinimumByteValue, MaximumByteValue, StatOptions),
+        CreateField(Stat3StageField, "Stat Change 3: Stage Delta", "integer", MinimumSignedByteValue, MaximumSignedByteValue),
+        CreateField(Stat3PercentField, "Stat Change 3: Chance (%)", "integer", MinimumByteValue, MaximumByteValue),
         CreateField(MakesContactField, "Makes contact", "boolean", 0, 1),
         CreateField(ChargeField, "Charge turn", "boolean", 0, 1),
         CreateField(RechargeField, "Recharge turn", "boolean", 0, 1),
@@ -320,11 +337,32 @@ public sealed class SwShMovesWorkflowService
             + (moveDescriptions.Count > 0 ? 1 : 0)
             + (typeNames.Count > 0 ? 1 : 0);
 
+        var deduplicatedMoves = DeduplicateMoveRecords(moves);
+
         return CreateWorkflow(
             summary,
-            moves.OrderBy(move => move.MoveId).ThenBy(move => move.Provenance.SourceFile, StringComparer.OrdinalIgnoreCase).ToArray(),
+            deduplicatedMoves,
             sourceFileCount,
             diagnostics);
+    }
+
+    private static IReadOnlyList<SwShMoveRecord> DeduplicateMoveRecords(IEnumerable<SwShMoveRecord> moves)
+    {
+        return moves
+            .GroupBy(move => move.MoveId)
+            .Select(group => group
+                .OrderByDescending(move => move.Provenance.SourceLayer == ProjectFileLayer.Layered)
+                .ThenByDescending(move => IsPreferredMoveDataFile(move.Provenance.SourceFile))
+                .ThenBy(move => move.Provenance.SourceFile, StringComparer.OrdinalIgnoreCase)
+                .First())
+            .OrderBy(move => move.MoveId)
+            .ThenBy(move => move.Provenance.SourceFile, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsPreferredMoveDataFile(string relativePath)
+    {
+        return relativePath.EndsWith(".wazabin", StringComparison.OrdinalIgnoreCase);
     }
 
     private static SwShMoveRecord ToMoveRecord(

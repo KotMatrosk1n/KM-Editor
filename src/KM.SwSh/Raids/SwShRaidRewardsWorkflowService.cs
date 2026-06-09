@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -84,6 +85,7 @@ public sealed class SwShRaidRewardsWorkflowService
         }
 
         var itemNames = LoadItemNames(project, diagnostics);
+        var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames);
 
         try
         {
@@ -104,7 +106,7 @@ public sealed class SwShRaidRewardsWorkflowService
                 }
 
                 var archive = SwShNestHoleRewardArchive.Parse(memberData);
-                tables.AddRange(FlattenArchive(archive, member, provenance, itemNames));
+                tables.AddRange(FlattenArchive(archive, member, provenance, itemDisplayNames));
             }
 
             if (tables.Count == 0)
@@ -116,7 +118,7 @@ public sealed class SwShRaidRewardsWorkflowService
                     expected: "nest_hole_drop_rewards.bin or nest_hole_bonus_rewards.bin inside data_table.gfpak"));
             }
 
-            return CreateWorkflow(summary, tables, sourceFileCount: 1, itemNames, diagnostics);
+            return CreateWorkflow(summary, tables, sourceFileCount: 1, itemDisplayNames, diagnostics);
         }
         catch (InvalidDataException exception)
         {
@@ -125,7 +127,7 @@ public sealed class SwShRaidRewardsWorkflowService
                 $"Raid Rewards source is not supported: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield data_table.gfpak with nest-hole reward members"));
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemNames, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemDisplayNames, diagnostics);
         }
         catch (IOException exception)
         {
@@ -134,7 +136,7 @@ public sealed class SwShRaidRewardsWorkflowService
                 $"Raid Rewards source could not be read: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield data_table.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemNames, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemDisplayNames, diagnostics);
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -143,7 +145,7 @@ public sealed class SwShRaidRewardsWorkflowService
                 $"Raid Rewards source could not be read: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield data_table.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemNames, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShRaidRewardTableRecord>(), sourceFileCount: 1, itemDisplayNames, diagnostics);
         }
     }
 

@@ -90,7 +90,7 @@ public sealed class SwShGiftPokemonWorkflowServiceTests
         var gift = workflow.Gifts[0];
         Assert.Equal(ProjectFileLayer.Layered, gift.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.LayeredOverride, gift.Provenance.FileState);
-        Assert.Equal("6 perfect IVs", gift.IvSummary);
+        Assert.Equal("6 guaranteed perfect IVs", gift.IvSummary);
     }
 
     [Fact]

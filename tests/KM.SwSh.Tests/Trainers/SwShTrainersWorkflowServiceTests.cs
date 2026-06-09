@@ -63,7 +63,7 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Equal(2, trainer.Team[0].Ability);
         Assert.Equal("Ability 2", trainer.Team[0].AbilityLabel);
         Assert.Equal(13, trainer.Team[0].Nature);
-        Assert.Equal("Jolly", trainer.Team[0].NatureLabel);
+        Assert.Equal("Jolly (+Spe/-Sp.Atk)", trainer.Team[0].NatureLabel);
         Assert.Equal(new SwShTrainerPokemonStatsRecord(10, 20, 30, 40, 50, 60), trainer.Team[0].Evs);
         Assert.Equal(7, trainer.Team[0].DynamaxLevel);
         Assert.True(trainer.Team[0].CanGigantamax);
@@ -94,6 +94,12 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.TrainerItem1IdField).Options,
             option => option.Value == 2 && option.Label == "002 Antidote");
+        Assert.Equal(
+            "Prize money",
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.MoneyField).Label);
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.GiftField).Options,
+            option => option.Value == 1 && option.Label == "001 Potion");
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.Move1IdField).Options,
             option => option.Value == 1 && option.Label == "001 Scratch");
@@ -105,7 +111,7 @@ public sealed class SwShTrainersWorkflowServiceTests
             option => option.Value == 1 && option.Label == "Male");
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.NatureField).Options,
-            option => option.Value == 13 && option.Label == "Jolly");
+            option => option.Value == 13 && option.Label == "Jolly (+Spe/-Sp.Atk)");
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.DynamaxLevelField).Options,
             option => option.Value == 10 && option.Label == "10");

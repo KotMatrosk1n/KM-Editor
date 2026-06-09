@@ -94,7 +94,7 @@ public sealed class SwShStaticEncountersWorkflowServiceTests
         var encounter = workflow.Encounters[0];
         Assert.Equal(ProjectFileLayer.Layered, encounter.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.LayeredOverride, encounter.Provenance.FileState);
-        Assert.Equal("6 perfect IVs", encounter.IvSummary);
+        Assert.Equal("6 guaranteed perfect IVs", encounter.IvSummary);
     }
 
     [Fact]

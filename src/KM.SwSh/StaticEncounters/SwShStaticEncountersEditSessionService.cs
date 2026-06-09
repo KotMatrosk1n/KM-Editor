@@ -13,6 +13,8 @@ namespace KM.SwSh.StaticEncounters;
 
 public sealed class SwShStaticEncountersEditSessionService
 {
+    private const int MaximumPokemonEvTotal = 510;
+
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShStaticEncountersWorkflowService staticEncountersWorkflowService;
 
@@ -50,7 +52,8 @@ public sealed class SwShStaticEncountersEditSessionService
             return new SwShStaticEncountersEditResult(workflow, currentSession, diagnostics);
         }
 
-        var encounter = workflow.Encounters.FirstOrDefault(candidate => candidate.EncounterIndex == encounterIndex);
+        var effectiveWorkflow = OverlayPendingEdits(workflow, currentSession.PendingEdits);
+        var encounter = effectiveWorkflow.Encounters.FirstOrDefault(candidate => candidate.EncounterIndex == encounterIndex);
         if (encounter is null)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -58,13 +61,13 @@ public sealed class SwShStaticEncountersEditSessionService
                 $"Static encounter index {encounterIndex} is not present in the loaded workflow.",
                 field: "encounterIndex",
                 expected: "Existing static encounter record"));
-            return new SwShStaticEncountersEditResult(workflow, currentSession, diagnostics);
+            return new SwShStaticEncountersEditResult(effectiveWorkflow, currentSession, diagnostics);
         }
 
         var pendingEdit = CreatePendingEdit(encounter, field, value, diagnostics);
         if (pendingEdit is null)
         {
-            return new SwShStaticEncountersEditResult(workflow, currentSession, diagnostics);
+            return new SwShStaticEncountersEditResult(effectiveWorkflow, currentSession, diagnostics);
         }
 
         var updatedSession = ReplacePendingStaticEncounterEdit(currentSession, pendingEdit);
@@ -86,9 +89,11 @@ public sealed class SwShStaticEncountersEditSessionService
 
         CanEditStaticEncounters(project, workflow, diagnostics);
 
+        var effectiveWorkflow = workflow;
         foreach (var edit in session.PendingEdits)
         {
-            ValidatePendingEdit(workflow, edit, diagnostics);
+            ValidatePendingEdit(effectiveWorkflow, edit, diagnostics);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -268,7 +273,7 @@ public sealed class SwShStaticEncountersEditSessionService
             return null;
         }
 
-        var parsedValue = TryParseFieldValue(editableField, value, diagnostics);
+        var parsedValue = TryParseFieldValue(editableField, value, diagnostics, encounter.Evs);
         if (parsedValue is null)
         {
             return null;
@@ -316,7 +321,8 @@ public sealed class SwShStaticEncountersEditSessionService
             return;
         }
 
-        if (workflow.Encounters.All(encounter => encounter.EncounterIndex != encounterIndex))
+        var encounter = workflow.Encounters.FirstOrDefault(encounter => encounter.EncounterIndex == encounterIndex);
+        if (encounter is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -326,16 +332,17 @@ public sealed class SwShStaticEncountersEditSessionService
             return;
         }
 
-        TryParseFieldValue(editableField, edit.NewValue, diagnostics);
+        TryParseFieldValue(editableField, edit.NewValue, diagnostics, encounter.Evs);
         AddAdvancedFieldWarnings(edit.Field, diagnostics);
     }
 
     private static int? TryParseFieldValue(
         SwShStaticEncounterEditableField editableField,
         string? value,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        SwShStaticEncounterStatsRecord? currentEvs = null)
     {
-        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedValue))
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -356,17 +363,14 @@ public sealed class SwShStaticEncountersEditSessionService
             return null;
         }
 
-        if (editableField.Field == SwShStaticEncountersWorkflowService.IvHpField
-            && !IsValidHpIvValue(parsedValue))
+        if (IsIndividualIvField(editableField.Field))
         {
-            diagnostics.Add(CreateIvDiagnostic(editableField.Field));
-            return null;
+            parsedValue = ClampFixedIvValue(parsedValue);
         }
 
-        if (IsNonHpIvField(editableField.Field) && !IsValidIvValue(parsedValue))
+        if (IsEvField(editableField.Field))
         {
-            diagnostics.Add(CreateIvDiagnostic(editableField.Field));
-            return null;
+            parsedValue = NormalizeEvValue(editableField.Field, parsedValue, currentEvs);
         }
 
         if ((editableField.MinimumValue is not null && parsedValue < editableField.MinimumValue.Value)
@@ -383,25 +387,64 @@ public sealed class SwShStaticEncountersEditSessionService
         return parsedValue;
     }
 
-    private static bool IsValidHpIvValue(int value)
+    private static int ClampFixedIvValue(int value)
     {
-        return value == SwShStaticEncounterArchive.ThreePerfectIvSentinel || IsValidIvValue(value);
+        return Math.Clamp(
+            value,
+            SwShStaticEncounterArchive.MinimumFixedIvValue,
+            SwShStaticEncounterArchive.MaximumFixedIvValue);
     }
 
-    private static bool IsValidIvValue(int value)
+    private static int NormalizeEvValue(
+        string field,
+        int value,
+        SwShStaticEncounterStatsRecord? currentEvs)
     {
-        return value == SwShStaticEncounterArchive.RandomIvValue
-            || value is >= SwShStaticEncounterArchive.MinimumFixedIvValue and <= SwShStaticEncounterArchive.MaximumFixedIvValue;
+        var clamped = ClampEvValue(value);
+        if (currentEvs is null)
+        {
+            return clamped;
+        }
+
+        var remainingBudget = Math.Max(0, MaximumPokemonEvTotal - GetOtherEvTotal(currentEvs, field));
+        return Math.Min(clamped, remainingBudget);
     }
 
-    private static bool IsNonHpIvField(string field)
+    private static int GetOtherEvTotal(SwShStaticEncounterStatsRecord evs, string field)
+    {
+        return (field == SwShStaticEncountersWorkflowService.EvHpField ? 0 : ClampEvValue(evs.HP))
+            + (field == SwShStaticEncountersWorkflowService.EvAttackField ? 0 : ClampEvValue(evs.Attack))
+            + (field == SwShStaticEncountersWorkflowService.EvDefenseField ? 0 : ClampEvValue(evs.Defense))
+            + (field == SwShStaticEncountersWorkflowService.EvSpecialAttackField ? 0 : ClampEvValue(evs.SpecialAttack))
+            + (field == SwShStaticEncountersWorkflowService.EvSpecialDefenseField ? 0 : ClampEvValue(evs.SpecialDefense))
+            + (field == SwShStaticEncountersWorkflowService.EvSpeedField ? 0 : ClampEvValue(evs.Speed));
+    }
+
+    private static int ClampEvValue(int value)
+    {
+        return Math.Clamp(value, 0, SwShStaticEncountersWorkflowService.MaximumPokemonEvValue);
+    }
+
+    private static bool IsIndividualIvField(string field)
     {
         return field is
-            SwShStaticEncountersWorkflowService.IvAttackField
+            SwShStaticEncountersWorkflowService.IvHpField
+            or SwShStaticEncountersWorkflowService.IvAttackField
             or SwShStaticEncountersWorkflowService.IvDefenseField
             or SwShStaticEncountersWorkflowService.IvSpeedField
             or SwShStaticEncountersWorkflowService.IvSpecialAttackField
             or SwShStaticEncountersWorkflowService.IvSpecialDefenseField;
+    }
+
+    private static bool IsEvField(string field)
+    {
+        return field is
+            SwShStaticEncountersWorkflowService.EvHpField
+            or SwShStaticEncountersWorkflowService.EvAttackField
+            or SwShStaticEncountersWorkflowService.EvDefenseField
+            or SwShStaticEncountersWorkflowService.EvSpecialAttackField
+            or SwShStaticEncountersWorkflowService.EvSpecialDefenseField
+            or SwShStaticEncountersWorkflowService.EvSpeedField;
     }
 
     private static void AddAdvancedFieldWarnings(

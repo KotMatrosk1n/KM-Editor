@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -13,6 +14,8 @@ namespace KM.SwSh.Trainers;
 
 public sealed class SwShTrainersWorkflowService
 {
+    public const int MaximumPokemonEvValue = 252;
+
     public const string TrainerClassIdField = "trainerClassId";
     public const string ClassBallIdField = "classBallId";
     public const string BattleTypeField = "battleType";
@@ -98,29 +101,29 @@ public sealed class SwShTrainersWorkflowService
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> NatureOptions =
     [
         new SwShTrainerEditableFieldOption(0, "Hardy"),
-        new SwShTrainerEditableFieldOption(1, "Lonely"),
-        new SwShTrainerEditableFieldOption(2, "Brave"),
-        new SwShTrainerEditableFieldOption(3, "Adamant"),
-        new SwShTrainerEditableFieldOption(4, "Naughty"),
-        new SwShTrainerEditableFieldOption(5, "Bold"),
+        new SwShTrainerEditableFieldOption(1, "Lonely (+Atk/-Def)"),
+        new SwShTrainerEditableFieldOption(2, "Brave (+Atk/-Spe)"),
+        new SwShTrainerEditableFieldOption(3, "Adamant (+Atk/-Sp.Atk)"),
+        new SwShTrainerEditableFieldOption(4, "Naughty (+Atk/-Sp.Def)"),
+        new SwShTrainerEditableFieldOption(5, "Bold (+Def/-Atk)"),
         new SwShTrainerEditableFieldOption(6, "Docile"),
-        new SwShTrainerEditableFieldOption(7, "Relaxed"),
-        new SwShTrainerEditableFieldOption(8, "Impish"),
-        new SwShTrainerEditableFieldOption(9, "Lax"),
-        new SwShTrainerEditableFieldOption(10, "Timid"),
-        new SwShTrainerEditableFieldOption(11, "Hasty"),
+        new SwShTrainerEditableFieldOption(7, "Relaxed (+Def/-Spe)"),
+        new SwShTrainerEditableFieldOption(8, "Impish (+Def/-Sp.Atk)"),
+        new SwShTrainerEditableFieldOption(9, "Lax (+Def/-Sp.Def)"),
+        new SwShTrainerEditableFieldOption(10, "Timid (+Spe/-Atk)"),
+        new SwShTrainerEditableFieldOption(11, "Hasty (+Spe/-Def)"),
         new SwShTrainerEditableFieldOption(12, "Serious"),
-        new SwShTrainerEditableFieldOption(13, "Jolly"),
-        new SwShTrainerEditableFieldOption(14, "Naive"),
-        new SwShTrainerEditableFieldOption(15, "Modest"),
-        new SwShTrainerEditableFieldOption(16, "Mild"),
-        new SwShTrainerEditableFieldOption(17, "Quiet"),
+        new SwShTrainerEditableFieldOption(13, "Jolly (+Spe/-Sp.Atk)"),
+        new SwShTrainerEditableFieldOption(14, "Naive (+Spe/-Sp.Def)"),
+        new SwShTrainerEditableFieldOption(15, "Modest (+Sp.Atk/-Atk)"),
+        new SwShTrainerEditableFieldOption(16, "Mild (+Sp.Atk/-Def)"),
+        new SwShTrainerEditableFieldOption(17, "Quiet (+Sp.Atk/-Spe)"),
         new SwShTrainerEditableFieldOption(18, "Bashful"),
-        new SwShTrainerEditableFieldOption(19, "Rash"),
-        new SwShTrainerEditableFieldOption(20, "Calm"),
-        new SwShTrainerEditableFieldOption(21, "Gentle"),
-        new SwShTrainerEditableFieldOption(22, "Sassy"),
-        new SwShTrainerEditableFieldOption(23, "Careful"),
+        new SwShTrainerEditableFieldOption(19, "Rash (+Sp.Atk/-Sp.Def)"),
+        new SwShTrainerEditableFieldOption(20, "Calm (+Sp.Def/-Atk)"),
+        new SwShTrainerEditableFieldOption(21, "Gentle (+Sp.Def/-Def)"),
+        new SwShTrainerEditableFieldOption(22, "Sassy (+Sp.Def/-Spe)"),
+        new SwShTrainerEditableFieldOption(23, "Careful (+Sp.Def/-Sp.Atk)"),
         new SwShTrainerEditableFieldOption(24, "Quirky"),
     ];
 
@@ -233,7 +236,7 @@ public sealed class SwShTrainersWorkflowService
             BooleanOptions),
         new SwShTrainerEditableField(
             MoneyField,
-            "Money multiplier",
+            "Prize money",
             "integer",
             0,
             SwShTrainerDataFile.MaximumMoney),
@@ -317,37 +320,37 @@ public sealed class SwShTrainersWorkflowService
             "EV HP",
             "integer",
             0,
-            SwShTrainerTeamFile.MaximumEvValue),
+            MaximumPokemonEvValue),
         new SwShTrainerEditableField(
             EvAttackField,
             "EV Attack",
             "integer",
             0,
-            SwShTrainerTeamFile.MaximumEvValue),
+            MaximumPokemonEvValue),
         new SwShTrainerEditableField(
             EvDefenseField,
             "EV Defense",
             "integer",
             0,
-            SwShTrainerTeamFile.MaximumEvValue),
+            MaximumPokemonEvValue),
         new SwShTrainerEditableField(
             EvSpecialAttackField,
             "EV Sp. Atk",
             "integer",
             0,
-            SwShTrainerTeamFile.MaximumEvValue),
+            MaximumPokemonEvValue),
         new SwShTrainerEditableField(
             EvSpecialDefenseField,
             "EV Sp. Def",
             "integer",
             0,
-            SwShTrainerTeamFile.MaximumEvValue),
+            MaximumPokemonEvValue),
         new SwShTrainerEditableField(
             EvSpeedField,
             "EV Speed",
             "integer",
             0,
-            SwShTrainerTeamFile.MaximumEvValue),
+            MaximumPokemonEvValue),
         new SwShTrainerEditableField(
             DynamaxLevelField,
             "Dynamax level",
@@ -718,6 +721,7 @@ public sealed class SwShTrainersWorkflowService
                 {
                     TrainerClassIdField => trainerClassOptions,
                     TrainerItem1IdField or TrainerItem2IdField or TrainerItem3IdField or TrainerItem4IdField => itemOptions,
+                    GiftField => itemOptions,
                     SpeciesIdField => speciesOptions,
                     HeldItemIdField => itemOptions,
                     Move1IdField or Move2IdField or Move3IdField or Move4IdField => moveOptions,
@@ -902,13 +906,16 @@ public sealed class SwShTrainersWorkflowService
     {
         var messageRoot = ResolveLanguageMessageRoot(project, diagnostics);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
+        var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
+        var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
+        var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
 
         return new TrainerLookupTables(
             LoadMessageTable(project, messageRoot, "trname.dat", diagnostics),
             LoadMessageTable(project, messageRoot, "trtype.dat", diagnostics),
             LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics),
-            LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics),
-            LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics),
+            itemDisplayNames,
+            moveNames,
             abilityResolver);
     }
 

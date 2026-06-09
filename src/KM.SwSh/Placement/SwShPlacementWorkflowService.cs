@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -88,6 +89,7 @@ public sealed class SwShPlacementWorkflowService
         }
 
         var itemNames = LoadItemNames(project, diagnostics, out var itemNameSourceCount);
+        var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames);
         var itemHashes = LoadItemHashes(project, diagnostics, out var itemHashSourceCount);
         var itemIdsByHash = itemHashes.ToDictionary(entry => entry.Value, entry => entry.Key);
 
@@ -126,7 +128,7 @@ public sealed class SwShPlacementWorkflowService
                         zoneNames,
                         objectNames,
                         itemHashes,
-                        itemNames,
+                        itemDisplayNames,
                         provenance));
                 }
                 catch (InvalidDataException exception)
@@ -150,7 +152,7 @@ public sealed class SwShPlacementWorkflowService
                     .ToArray(),
                 areaCount,
                 sourceFileCount: 1 + itemNameSourceCount + itemHashSourceCount,
-                itemNames,
+                itemDisplayNames,
                 diagnostics);
         }
         catch (InvalidDataException exception)
@@ -160,7 +162,7 @@ public sealed class SwShPlacementWorkflowService
                 $"Placement data source is not a supported Sword/Shield placement pack: {exception.Message}",
                 file: placementSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield placement.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, itemNames, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, itemDisplayNames, diagnostics);
         }
         catch (IOException exception)
         {
@@ -169,7 +171,7 @@ public sealed class SwShPlacementWorkflowService
                 $"Placement data source could not be read: {exception.Message}",
                 file: placementSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield placement.gfpak"));
-            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, itemNames, diagnostics);
+            return CreateWorkflow(summary, Array.Empty<SwShPlacedObjectRecord>(), areaCount: 0, sourceFileCount: 1, itemDisplayNames, diagnostics);
         }
     }
 

@@ -51,7 +51,8 @@ public sealed class SwShTradePokemonEditSessionService
             return new SwShTradePokemonEditResult(workflow, currentSession, diagnostics);
         }
 
-        var trade = workflow.Trades.FirstOrDefault(candidate => candidate.TradeIndex == tradeIndex);
+        var effectiveWorkflow = OverlayPendingEdits(workflow, currentSession.PendingEdits);
+        var trade = effectiveWorkflow.Trades.FirstOrDefault(candidate => candidate.TradeIndex == tradeIndex);
         if (trade is null)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -59,13 +60,13 @@ public sealed class SwShTradePokemonEditSessionService
                 $"Trade Pokemon index {tradeIndex} is not present in the loaded workflow.",
                 field: "tradeIndex",
                 expected: "Existing Trade Pokemon record"));
-            return new SwShTradePokemonEditResult(workflow, currentSession, diagnostics);
+            return new SwShTradePokemonEditResult(effectiveWorkflow, currentSession, diagnostics);
         }
 
         var pendingEdit = CreatePendingEdit(trade, field, value, diagnostics);
         if (pendingEdit is null)
         {
-            return new SwShTradePokemonEditResult(workflow, currentSession, diagnostics);
+            return new SwShTradePokemonEditResult(effectiveWorkflow, currentSession, diagnostics);
         }
 
         var updatedSession = ReplacePendingTradeEdit(currentSession, pendingEdit);
@@ -336,7 +337,7 @@ public sealed class SwShTradePokemonEditSessionService
         string? value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedValue))
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -357,17 +358,9 @@ public sealed class SwShTradePokemonEditSessionService
             return null;
         }
 
-        if (editableField.Field == SwShTradePokemonWorkflowService.IvHpField
-            && !IsValidHpIvValue(parsedValue))
+        if (IsIndividualIvField(editableField.Field))
         {
-            diagnostics.Add(CreateIvDiagnostic(editableField.Field));
-            return null;
-        }
-
-        if (IsNonHpIvField(editableField.Field) && !IsValidIvValue(parsedValue))
-        {
-            diagnostics.Add(CreateIvDiagnostic(editableField.Field));
-            return null;
+            parsedValue = ClampFixedIvValue(parsedValue);
         }
 
         if ((editableField.MinimumValue is not null && parsedValue < editableField.MinimumValue.Value)
@@ -384,20 +377,19 @@ public sealed class SwShTradePokemonEditSessionService
         return parsedValue;
     }
 
-    private static bool IsValidHpIvValue(int value)
+    private static int ClampFixedIvValue(int value)
     {
-        return value == SwShTradePokemonArchive.ThreePerfectIvSentinel || IsValidIvValue(value);
+        return Math.Clamp(
+            value,
+            SwShTradePokemonArchive.MinimumFixedIvValue,
+            SwShTradePokemonArchive.MaximumFixedIvValue);
     }
 
-    private static bool IsValidIvValue(int value)
-    {
-        return value == SwShTradePokemonArchive.RandomIvValue
-            || value is >= SwShTradePokemonArchive.MinimumFixedIvValue and <= SwShTradePokemonArchive.MaximumFixedIvValue;
-    }
-
-    private static bool IsNonHpIvField(string field)
+    private static bool IsIndividualIvField(string field)
     {
         return field is
+            SwShTradePokemonWorkflowService.IvHpField
+            or
             SwShTradePokemonWorkflowService.IvAttackField
             or SwShTradePokemonWorkflowService.IvDefenseField
             or SwShTradePokemonWorkflowService.IvSpeedField

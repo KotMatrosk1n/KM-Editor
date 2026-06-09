@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-using KM.Core.Editing;
 using KM.Formats.SwSh;
 using KM.SwSh.Gifts;
 using KM.SwSh.Tests.Items;
@@ -23,14 +22,25 @@ public sealed class SwShGiftPokemonEditSessionServiceTests
             session: null,
             giftIndex: 0,
             field: SwShGiftPokemonWorkflowService.IvAttackField,
-            value: "12");
+            value: "80");
+        result = service.UpdateField(
+            temp.Paths,
+            result.Session,
+            giftIndex: 0,
+            field: SwShGiftPokemonWorkflowService.IvDefenseField,
+            value: "-50");
 
-        var edit = Assert.Single(result.Session.PendingEdits);
-        Assert.Equal("workflow.giftPokemon", edit.Domain);
-        Assert.Equal(SwShGiftPokemonWorkflowService.IvAttackField, edit.Field);
-        Assert.Equal("gift:0", edit.RecordId);
-        Assert.Equal("12", edit.NewValue);
-        Assert.Equal(12, result.Workflow.Gifts[0].Ivs.Attack);
+        Assert.Equal(2, result.Session.PendingEdits.Count);
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.giftPokemon"
+            && edit.Field == SwShGiftPokemonWorkflowService.IvAttackField
+            && edit.RecordId == "gift:0"
+            && edit.NewValue == "31");
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShGiftPokemonWorkflowService.IvDefenseField
+            && edit.NewValue == "0");
+        Assert.Equal(31, result.Workflow.Gifts[0].Ivs.Attack);
+        Assert.Equal(0, result.Workflow.Gifts[0].Ivs.Defense);
         Assert.Empty(result.Diagnostics);
     }
 
@@ -81,33 +91,6 @@ public sealed class SwShGiftPokemonEditSessionServiceTests
 
         var output = SwShGiftPokemonArchive.Parse(File.ReadAllBytes(GetOutputGiftPath(temp)));
         Assert.Equal(new SwShGiftPokemonIvs(-4, -1, -1, -1, -1, -1), output.Gifts[1].Ivs);
-    }
-
-    [Fact]
-    public void ValidateRejectsUnsupportedGiftPokemonIvSentinelField()
-    {
-        using var temp = TemporarySwShProject.Create();
-        SwShGiftPokemonWorkflowServiceTests.WriteGiftFixture(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
-        var service = new SwShGiftPokemonEditSessionService();
-        var session = EditSession.Start() with
-        {
-            PendingEdits =
-            [
-                new PendingEdit(
-                    "workflow.giftPokemon",
-                    "Set unsupported IV sentinel.",
-                    [],
-                    RecordId: "gift:0",
-                    Field: SwShGiftPokemonWorkflowService.IvAttackField,
-                    NewValue: "-4")
-            ],
-        };
-
-        var validation = service.Validate(temp.Paths, session);
-
-        Assert.False(validation.IsValid);
-        Assert.Contains(validation.Diagnostics, diagnostic => diagnostic.Field == SwShGiftPokemonWorkflowService.IvAttackField);
     }
 
     private static string GetOutputGiftPath(TemporarySwShProject temp)

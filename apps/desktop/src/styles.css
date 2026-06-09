@@ -743,11 +743,6 @@ h2 {
 
 .pokemon-layout {
   grid-template-columns: minmax(420px, 0.72fr) minmax(480px, 1fr);
-  grid-template-areas:
-    "table selected"
-    "learnset selected"
-    "compat selected"
-    "evolutions selected";
 }
 
 .items-table {
@@ -917,6 +912,16 @@ h2 {
   border-radius: 8px;
 }
 
+.pokemon-summary-card-detailed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.pokemon-summary-card-detailed .pokemon-summary-metadata {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+  margin: 4px 0 0;
+}
+
 .pokemon-summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -980,17 +985,24 @@ h2 {
   border-top: 1px solid #26344d;
 }
 
-.pokemon-table {
-  grid-area: table;
-}
-
 .pokemon-inspector {
   display: contents;
 }
 
+.pokemon-left-stack {
+  display: grid;
+  grid-column: 1;
+  order: 1;
+  gap: 14px;
+  align-content: start;
+  align-self: start;
+  min-width: 0;
+}
+
 .pokemon-selected-stack {
   display: grid;
-  grid-area: selected;
+  grid-column: 2;
+  order: 2;
   gap: 14px;
   align-content: start;
   align-self: start;
@@ -1038,24 +1050,6 @@ h2 {
   border-top: 1px solid rgb(93 113 151 / 42%);
 }
 
-.pokemon-compatibility-block,
-.pokemon-evolutions-block,
-.pokemon-learnset-block {
-  grid-column: table;
-}
-
-.pokemon-compatibility-block {
-  grid-area: compat;
-}
-
-.pokemon-evolutions-block {
-  grid-area: evolutions;
-}
-
-.pokemon-learnset-block {
-  grid-area: learnset;
-}
-
 .pokemon-learnset-block .learnset-list {
   max-height: none;
   overflow: visible;
@@ -1100,6 +1094,33 @@ h2 {
 .editable-field-control {
   gap: 6px;
   min-width: 0;
+}
+
+.editable-field-label-row {
+  position: relative;
+  display: block;
+  min-width: 0;
+  padding-right: 18px;
+}
+
+.nature-stat-arrow {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  transform: translateY(-50%);
+}
+
+.nature-stat-arrow-up {
+  color: #ff6b6b;
+}
+
+.nature-stat-arrow-down {
+  color: #60a5fa;
 }
 
 .editable-field-control input,
@@ -1395,7 +1416,7 @@ h2 {
 }
 
 .evolution-row {
-  grid-template-columns: 34px 38px 78px minmax(0, 1fr) 82px 54px minmax(72px, 0.35fr);
+  grid-template-columns: 34px 42px minmax(112px, 0.8fr) minmax(160px, 1fr) minmax(72px, 0.45fr) 64px minmax(120px, 0.6fr);
 }
 
 .learnset-inline-row {
@@ -3256,16 +3277,11 @@ input {
 
   .pokemon-layout {
     grid-template-columns: 1fr;
-    grid-template-areas:
-      "table"
-      "selected"
-      "compat"
-      "evolutions"
-      "learnset";
   }
 
-  .pokemon-table,
+  .pokemon-left-stack,
   .pokemon-selected-stack,
+  .pokemon-table,
   .pokemon-compatibility-block,
   .pokemon-evolutions-block,
   .pokemon-learnset-block {

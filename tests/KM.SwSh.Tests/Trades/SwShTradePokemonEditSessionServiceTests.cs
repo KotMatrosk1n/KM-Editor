@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-using KM.Core.Editing;
 using KM.Formats.SwSh;
 using KM.SwSh.Trades;
 using KM.SwSh.Tests.Items;
@@ -23,14 +22,25 @@ public sealed class SwShTradePokemonEditSessionServiceTests
             session: null,
             tradeIndex: 0,
             field: SwShTradePokemonWorkflowService.IvAttackField,
-            value: "12");
+            value: "80");
+        result = service.UpdateField(
+            temp.Paths,
+            result.Session,
+            tradeIndex: 0,
+            field: SwShTradePokemonWorkflowService.IvDefenseField,
+            value: "-50");
 
-        var edit = Assert.Single(result.Session.PendingEdits);
-        Assert.Equal("workflow.tradePokemon", edit.Domain);
-        Assert.Equal(SwShTradePokemonWorkflowService.IvAttackField, edit.Field);
-        Assert.Equal("trade:0", edit.RecordId);
-        Assert.Equal("12", edit.NewValue);
-        Assert.Equal(12, result.Workflow.Trades[0].Ivs.Attack);
+        Assert.Equal(2, result.Session.PendingEdits.Count);
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.tradePokemon"
+            && edit.Field == SwShTradePokemonWorkflowService.IvAttackField
+            && edit.RecordId == "trade:0"
+            && edit.NewValue == "31");
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShTradePokemonWorkflowService.IvDefenseField
+            && edit.NewValue == "0");
+        Assert.Equal(31, result.Workflow.Trades[0].Ivs.Attack);
+        Assert.Equal(0, result.Workflow.Trades[0].Ivs.Defense);
         Assert.Empty(result.Diagnostics);
     }
 
@@ -83,33 +93,6 @@ public sealed class SwShTradePokemonEditSessionServiceTests
 
         var output = SwShTradePokemonArchive.Parse(File.ReadAllBytes(GetOutputtradePath(temp)));
         Assert.Equal(new SwShTradePokemonIvs(-4, -1, -1, -1, -1, -1), output.Trades[1].Ivs);
-    }
-
-    [Fact]
-    public void ValidateRejectsUnsupportedTradePokemonIvSentinelField()
-    {
-        using var temp = TemporarySwShProject.Create();
-        SwShTradePokemonWorkflowServiceTests.WriteTradeFixture(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
-        var service = new SwShTradePokemonEditSessionService();
-        var session = EditSession.Start() with
-        {
-            PendingEdits =
-            [
-                new PendingEdit(
-                    "workflow.tradePokemon",
-                    "Set unsupported IV sentinel.",
-                    [],
-                    RecordId: "trade:0",
-                    Field: SwShTradePokemonWorkflowService.IvAttackField,
-                    NewValue: "-4")
-            ],
-        };
-
-        var validation = service.Validate(temp.Paths, session);
-
-        Assert.False(validation.IsValid);
-        Assert.Contains(validation.Diagnostics, diagnostic => diagnostic.Field == SwShTradePokemonWorkflowService.IvAttackField);
     }
 
     private static string GetOutputtradePath(TemporarySwShProject temp)

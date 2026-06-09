@@ -285,7 +285,7 @@ public sealed class SwShPokemonWorkflowService
         CreateEvolutionMethod(42, "Use Item Wormhole", EvolutionArgumentKindItem, "Item"),
         CreateEvolutionMethod(43, "Critical Hits In Battle", EvolutionArgumentKindVersion, "Version"),
         CreateEvolutionMethod(44, "HP Lost In Battle", EvolutionArgumentKindVersion, "Version"),
-        CreateEvolutionMethod(45, "Spin", EvolutionArgumentKindNone, "None"),
+        CreateEvolutionMethod(45, "Spin", EvolutionArgumentKindItem, "Held item"),
         CreateEvolutionMethod(46, "Level Up Nature Amped", EvolutionArgumentKindNone, "None"),
         CreateEvolutionMethod(47, "Level Up Nature Low Key", EvolutionArgumentKindNone, "None"),
         CreateEvolutionMethod(48, "Tower Of Darkness", EvolutionArgumentKindNone, "None"),

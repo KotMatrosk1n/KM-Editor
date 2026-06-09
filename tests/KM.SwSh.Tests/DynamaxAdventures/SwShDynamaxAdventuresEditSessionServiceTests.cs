@@ -32,7 +32,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     }
 
     [Fact]
-    public void UpdateFieldRejectsUnsupportedDynamaxAdventureIvSentinel()
+    public void UpdateFieldClampsDynamaxAdventureIvOverrides()
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
@@ -44,9 +44,23 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
             entryIndex: 0,
             field: SwShDynamaxAdventuresWorkflowService.IvAttackField,
             value: "-2");
+        result = service.UpdateField(
+            temp.Paths,
+            result.Session,
+            entryIndex: 0,
+            field: SwShDynamaxAdventuresWorkflowService.IvDefenseField,
+            value: "80");
 
-        Assert.Empty(result.Session.PendingEdits);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        Assert.Equal(2, result.Session.PendingEdits.Count);
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShDynamaxAdventuresWorkflowService.IvAttackField
+            && edit.NewValue == "0");
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShDynamaxAdventuresWorkflowService.IvDefenseField
+            && edit.NewValue == "31");
+        Assert.Equal(0, result.Workflow.Encounters[0].Ivs.Attack);
+        Assert.Equal(31, result.Workflow.Encounters[0].Ivs.Defense);
+        Assert.Empty(result.Diagnostics);
     }
 
     [Fact]
