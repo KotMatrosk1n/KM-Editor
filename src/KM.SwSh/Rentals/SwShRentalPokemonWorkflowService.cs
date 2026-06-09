@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -12,6 +13,8 @@ namespace KM.SwSh.Rentals;
 
 public sealed class SwShRentalPokemonWorkflowService
 {
+    public const int MaximumPokemonEvValue = 252;
+
     public const string SpeciesField = "species";
     public const string FormField = "form";
     public const string LevelField = "level";
@@ -62,7 +65,7 @@ public sealed class SwShRentalPokemonWorkflowService
     private static readonly IReadOnlyList<SwShRentalPokemonEditableFieldOption> FixedIvPresetOptions =
     [
         new(0, "0 IVs"),
-        new(31, "6 Perfect IVs"),
+        new(31, "6 Guaranteed Perfect IVs"),
     ];
 
     private static readonly IReadOnlyList<SwShRentalPokemonEditableFieldOption> FormOptions =
@@ -115,12 +118,12 @@ public sealed class SwShRentalPokemonWorkflowService
         CreateField(Move1Field, "Move 2", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
         CreateField(Move2Field, "Move 3", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
         CreateField(Move3Field, "Move 4", "integer", 0, SwShRentalPokemonArchive.MaximumIdValue),
-        CreateField(EvHpField, "HP EV", "integer", 0, SwShRentalPokemonArchive.MaximumByteValue),
-        CreateField(EvAttackField, "Attack EV", "integer", 0, SwShRentalPokemonArchive.MaximumByteValue),
-        CreateField(EvDefenseField, "Defense EV", "integer", 0, SwShRentalPokemonArchive.MaximumByteValue),
-        CreateField(EvSpecialAttackField, "Sp. Atk EV", "integer", 0, SwShRentalPokemonArchive.MaximumByteValue),
-        CreateField(EvSpecialDefenseField, "Sp. Def EV", "integer", 0, SwShRentalPokemonArchive.MaximumByteValue),
-        CreateField(EvSpeedField, "Speed EV", "integer", 0, SwShRentalPokemonArchive.MaximumByteValue),
+        CreateField(EvHpField, "HP EV", "integer", 0, MaximumPokemonEvValue),
+        CreateField(EvAttackField, "Attack EV", "integer", 0, MaximumPokemonEvValue),
+        CreateField(EvDefenseField, "Defense EV", "integer", 0, MaximumPokemonEvValue),
+        CreateField(EvSpecialAttackField, "Sp. Atk EV", "integer", 0, MaximumPokemonEvValue),
+        CreateField(EvSpecialDefenseField, "Sp. Def EV", "integer", 0, MaximumPokemonEvValue),
+        CreateField(EvSpeedField, "Speed EV", "integer", 0, MaximumPokemonEvValue),
         CreateField(IvHpField, "HP IV", "integer", SwShRentalPokemonArchive.MinimumFixedIvValue, SwShRentalPokemonArchive.MaximumFixedIvValue),
         CreateField(IvAttackField, "Attack IV", "integer", SwShRentalPokemonArchive.MinimumFixedIvValue, SwShRentalPokemonArchive.MaximumFixedIvValue),
         CreateField(IvDefenseField, "Defense IV", "integer", SwShRentalPokemonArchive.MinimumFixedIvValue, SwShRentalPokemonArchive.MaximumFixedIvValue),
@@ -432,11 +435,12 @@ public sealed class SwShRentalPokemonWorkflowService
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
+        var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new RentalLookupTables(
             speciesNames,
-            itemNames,
+            itemDisplayNames,
             moveNames,
             abilityResolver,
             CountSource(speciesNames) + CountSource(itemNames) + CountSource(moveNames));

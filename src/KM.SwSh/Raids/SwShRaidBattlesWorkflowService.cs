@@ -62,7 +62,7 @@ public sealed class SwShRaidBattlesWorkflowService
         new(3, "3 Guaranteed Perfect IVs"),
         new(4, "4 Guaranteed Perfect IVs"),
         new(5, "5 Guaranteed Perfect IVs"),
-        new(6, "6 Perfect IVs"),
+        new(6, "6 Guaranteed Perfect IVs"),
     ];
 
     private static readonly IReadOnlyList<SwShRaidBattleEditableFieldOption> FormOptions =

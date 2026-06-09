@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -95,7 +96,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         new(3, "3 Guaranteed Perfect IVs"),
         new(4, "4 Guaranteed Perfect IVs"),
         new(5, "5 Guaranteed Perfect IVs"),
-        new(6, "6 Perfect IVs"),
+        new(6, "6 Guaranteed Perfect IVs"),
     ];
 
     private static readonly IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> IvOverrideOptions =
@@ -439,11 +440,12 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
+        var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new DynamaxAdventureLookupTables(
             speciesNames,
-            itemNames,
+            itemDisplayNames,
             moveNames,
             abilityResolver,
             SourceFileCount:

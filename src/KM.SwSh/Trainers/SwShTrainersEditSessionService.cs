@@ -14,6 +14,7 @@ namespace KM.SwSh.Trainers;
 public sealed class SwShTrainersEditSessionService
 {
     private const string TrainersEditDomain = "workflow.trainers";
+    private const int MaximumPokemonEvTotal = 510;
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShTrainersWorkflowService trainersWorkflowService;
@@ -53,7 +54,8 @@ public sealed class SwShTrainersEditSessionService
             return new SwShTrainersEditResult(workflow, currentSession, diagnostics);
         }
 
-        var selectedTrainer = workflow.Trainers.FirstOrDefault(trainer => trainer.TrainerId == trainerId);
+        var effectiveWorkflow = OverlayPendingEdits(workflow, currentSession.PendingEdits);
+        var selectedTrainer = effectiveWorkflow.Trainers.FirstOrDefault(trainer => trainer.TrainerId == trainerId);
         if (selectedTrainer is null)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -61,13 +63,13 @@ public sealed class SwShTrainersEditSessionService
                 $"Trainer {trainerId} is not present in the loaded Trainers workflow.",
                 field: "trainerId",
                 expected: "Existing trainer record"));
-            return new SwShTrainersEditResult(workflow, currentSession, diagnostics);
+            return new SwShTrainersEditResult(effectiveWorkflow, currentSession, diagnostics);
         }
 
         var pendingEdit = CreatePendingEdit(selectedTrainer, slot, field, value, diagnostics);
         if (pendingEdit is null)
         {
-            return new SwShTrainersEditResult(workflow, currentSession, diagnostics);
+            return new SwShTrainersEditResult(effectiveWorkflow, currentSession, diagnostics);
         }
 
         var updatedSession = ReplacePendingTrainerEdit(currentSession, pendingEdit);
@@ -89,9 +91,11 @@ public sealed class SwShTrainersEditSessionService
 
         CanEditTrainers(project, workflow, diagnostics);
 
+        var effectiveWorkflow = workflow;
         foreach (var edit in session.PendingEdits)
         {
-            ValidatePendingEdit(workflow, edit, diagnostics);
+            ValidatePendingEdit(effectiveWorkflow, edit, diagnostics);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -423,7 +427,8 @@ public sealed class SwShTrainersEditSessionService
             return;
         }
 
-        TryParseEditableValue(edit.Field, edit.NewValue, diagnostics);
+        var pokemon = trainer.Team.First(candidate => candidate.Slot == slot);
+        TryParseEditableValue(edit.Field, edit.NewValue, diagnostics, pokemon.Evs);
     }
 
     private static PendingEdit? CreatePendingEdit(
@@ -533,7 +538,7 @@ public sealed class SwShTrainersEditSessionService
         string value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var parsedValue = TryParseEditableValue(field, value, diagnostics);
+        var parsedValue = TryParseEditableValue(field, value, diagnostics, pokemon.Evs);
         if (parsedValue is null)
         {
             return null;
@@ -551,7 +556,8 @@ public sealed class SwShTrainersEditSessionService
     private static int? TryParseEditableValue(
         string? field,
         string? value,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        SwShTrainerPokemonStatsRecord? currentEvs = null)
     {
         var editableField = SwShTrainersWorkflowService.GetEditableField(field);
         if (editableField is null)
@@ -560,8 +566,19 @@ public sealed class SwShTrainersEditSessionService
             return null;
         }
 
-        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedValue)
-            || parsedValue < (editableField.MinimumValue ?? int.MinValue)
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{editableField.Label} must be an integer value.",
+                field: editableField.Field,
+                expected: $"Safe trainer {editableField.Label.ToLowerInvariant()}"));
+            return null;
+        }
+
+        parsedValue = NormalizePokemonStatValue(editableField.Field, parsedValue, currentEvs);
+
+        if (parsedValue < (editableField.MinimumValue ?? int.MinValue)
             || parsedValue > (editableField.MaximumValue ?? int.MaxValue))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -573,6 +590,68 @@ public sealed class SwShTrainersEditSessionService
         }
 
         return parsedValue;
+    }
+
+    private static int NormalizePokemonStatValue(
+        string field,
+        int value,
+        SwShTrainerPokemonStatsRecord? currentEvs)
+    {
+        if (IsIvField(field))
+        {
+            return Math.Clamp(value, 0, SwShTrainerTeamFile.MaximumIvValue);
+        }
+
+        if (IsEvField(field))
+        {
+            var clamped = Math.Clamp(value, 0, SwShTrainersWorkflowService.MaximumPokemonEvValue);
+            if (currentEvs is null)
+            {
+                return clamped;
+            }
+
+            var remainingBudget = Math.Max(0, MaximumPokemonEvTotal - GetOtherEvTotal(currentEvs, field));
+            return Math.Min(clamped, remainingBudget);
+        }
+
+        return value;
+    }
+
+    private static int GetOtherEvTotal(SwShTrainerPokemonStatsRecord evs, string field)
+    {
+        return (field == SwShTrainersWorkflowService.EvHpField ? 0 : ClampEvValue(evs.HP))
+            + (field == SwShTrainersWorkflowService.EvAttackField ? 0 : ClampEvValue(evs.Attack))
+            + (field == SwShTrainersWorkflowService.EvDefenseField ? 0 : ClampEvValue(evs.Defense))
+            + (field == SwShTrainersWorkflowService.EvSpecialAttackField ? 0 : ClampEvValue(evs.SpecialAttack))
+            + (field == SwShTrainersWorkflowService.EvSpecialDefenseField ? 0 : ClampEvValue(evs.SpecialDefense))
+            + (field == SwShTrainersWorkflowService.EvSpeedField ? 0 : ClampEvValue(evs.Speed));
+    }
+
+    private static int ClampEvValue(int value)
+    {
+        return Math.Clamp(value, 0, SwShTrainersWorkflowService.MaximumPokemonEvValue);
+    }
+
+    private static bool IsEvField(string field)
+    {
+        return field is
+            SwShTrainersWorkflowService.EvHpField
+            or SwShTrainersWorkflowService.EvAttackField
+            or SwShTrainersWorkflowService.EvDefenseField
+            or SwShTrainersWorkflowService.EvSpecialAttackField
+            or SwShTrainersWorkflowService.EvSpecialDefenseField
+            or SwShTrainersWorkflowService.EvSpeedField;
+    }
+
+    private static bool IsIvField(string field)
+    {
+        return field is
+            SwShTrainersWorkflowService.IvHpField
+            or SwShTrainersWorkflowService.IvAttackField
+            or SwShTrainersWorkflowService.IvDefenseField
+            or SwShTrainersWorkflowService.IvSpecialAttackField
+            or SwShTrainersWorkflowService.IvSpecialDefenseField
+            or SwShTrainersWorkflowService.IvSpeedField;
     }
 
     private static EditSession ReplacePendingTrainerEdit(EditSession session, PendingEdit pendingEdit)

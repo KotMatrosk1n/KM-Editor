@@ -75,7 +75,7 @@ public sealed class SwShRaidBattlesWorkflowServiceTests
             option => option.Value == 133 && option.Label == "133 Eevee");
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShRaidBattlesWorkflowService.FlawlessIvsField).Options,
-            option => option.Value == 6 && option.Label == "6 Perfect IVs");
+            option => option.Value == 6 && option.Label == "6 Guaranteed Perfect IVs");
     }
 
     [Fact]

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-using KM.Core.Editing;
 using KM.Formats.SwSh;
 using KM.SwSh.Rentals;
 using KM.SwSh.Tests.Items;
@@ -23,15 +22,47 @@ public sealed class SwShRentalPokemonEditSessionServiceTests
             session: null,
             rentalIndex: 0,
             field: SwShRentalPokemonWorkflowService.IvAttackField,
-            value: "12");
+            value: "80");
+        result = service.UpdateField(
+            temp.Paths,
+            result.Session,
+            rentalIndex: 0,
+            field: SwShRentalPokemonWorkflowService.IvDefenseField,
+            value: "-50");
+        result = service.UpdateField(
+            temp.Paths,
+            result.Session,
+            rentalIndex: 0,
+            field: SwShRentalPokemonWorkflowService.EvHpField,
+            value: "999");
+        result = service.UpdateField(
+            temp.Paths,
+            result.Session,
+            rentalIndex: 0,
+            field: SwShRentalPokemonWorkflowService.EvAttackField,
+            value: "999");
 
-        var edit = Assert.Single(result.Session.PendingEdits);
-        Assert.Equal("workflow.rentalPokemon", edit.Domain);
-        Assert.Equal(SwShRentalPokemonWorkflowService.IvAttackField, edit.Field);
-        Assert.Equal("rental:0", edit.RecordId);
-        Assert.Equal("12", edit.NewValue);
-        Assert.Equal(12, result.Workflow.Rentals[0].Ivs.Attack);
+        Assert.Equal(4, result.Session.PendingEdits.Count);
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.rentalPokemon"
+            && edit.Field == SwShRentalPokemonWorkflowService.IvAttackField
+            && edit.RecordId == "rental:0"
+            && edit.NewValue == "31");
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShRentalPokemonWorkflowService.IvDefenseField
+            && edit.NewValue == "0");
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShRentalPokemonWorkflowService.EvHpField
+            && edit.NewValue == "252");
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShRentalPokemonWorkflowService.EvAttackField
+            && edit.NewValue == "78");
+        Assert.Equal(31, result.Workflow.Rentals[0].Ivs.Attack);
+        Assert.Equal(0, result.Workflow.Rentals[0].Ivs.Defense);
+        Assert.Equal(252, result.Workflow.Rentals[0].Evs.HP);
+        Assert.Equal(78, result.Workflow.Rentals[0].Evs.Attack);
         Assert.Empty(result.Diagnostics);
+        Assert.True(service.Validate(temp.Paths, result.Session).IsValid);
     }
 
     [Fact]
@@ -85,33 +116,6 @@ public sealed class SwShRentalPokemonEditSessionServiceTests
 
         var output = SwShRentalPokemonArchive.Parse(File.ReadAllBytes(GetOutputRentalPath(temp)));
         Assert.Equal(new SwShRentalPokemonStats(31, 31, 31, 31, 31, 31), output.Rentals[1].Ivs);
-    }
-
-    [Fact]
-    public void ValidateRejectsUnsupportedRentalPokemonIvSentinel()
-    {
-        using var temp = TemporarySwShProject.Create();
-        SwShRentalPokemonWorkflowServiceTests.WriteRentalFixture(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
-        var service = new SwShRentalPokemonEditSessionService();
-        var session = EditSession.Start() with
-        {
-            PendingEdits =
-            [
-                new PendingEdit(
-                    "workflow.rentalPokemon",
-                    "Set unsupported IV sentinel.",
-                    [],
-                    RecordId: "rental:0",
-                    Field: SwShRentalPokemonWorkflowService.IvAttackField,
-                    NewValue: "-1")
-            ],
-        };
-
-        var validation = service.Validate(temp.Paths, session);
-
-        Assert.False(validation.IsValid);
-        Assert.Contains(validation.Diagnostics, diagnostic => diagnostic.Field == SwShRentalPokemonWorkflowService.IvAttackField);
     }
 
     private static string GetOutputRentalPath(TemporarySwShProject temp)

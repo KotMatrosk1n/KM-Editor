@@ -36,6 +36,7 @@ const windowCloseRequestedEvent = 'km-editor://window-close-requested';
 
 const tauriEventMock = vi.hoisted(() => {
   const listeners: Record<string, Array<() => void>> = {};
+
   return {
     listen: vi.fn((eventName: string, handler: () => void) => {
       listeners[eventName] = [...(listeners[eventName] ?? []), handler];
@@ -180,6 +181,19 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Project Health' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Project Paths' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Open Project' }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Viewers' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    expect(screen.getByRole('button', { name: 'Editors' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    expect(screen.getByRole('button', { name: 'Advanced Editors' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    expect(screen.queryByRole('button', { name: 'Pokemon Data' })).not.toBeInTheDocument();
   });
 
   it('switches workbench sections', async () => {
@@ -261,6 +275,27 @@ describe('App', () => {
     expect(screen.getByRole('heading', { level: 4, name: 'Field Use' })).toBeInTheDocument();
     expect(screen.getByText('Restore HP')).toBeInTheDocument();
     expect(screen.getByText('20 HP')).toBeInTheDocument();
+
+    const itemSearch = screen.getByLabelText('Search items');
+    await user.clear(itemSearch);
+    await user.type(itemSearch, 'tm');
+
+    const tm02 = await screen.findByText('TM02 (Razor Leaf)');
+    const tm10 = screen.getByText('TM10 (Magical Leaf)');
+    expect(Boolean(tm02.compareDocumentPosition(tm10) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+      true
+    );
+    expect(screen.queryByText('TR02 (Growl)')).not.toBeInTheDocument();
+
+    await user.clear(itemSearch);
+    await user.type(itemSearch, 'tr');
+
+    const tr02 = await screen.findByText('TR02 (Growl)');
+    const tr10 = screen.getByText('TR10 (Magical Leaf)');
+    expect(Boolean(tr02.compareDocumentPosition(tr10) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+      true
+    );
+    expect(screen.queryByText('TM02 (Razor Leaf)')).not.toBeInTheDocument();
   });
 
   it('opens Pokemon Data, searches records, and shows selected details', async () => {
@@ -415,15 +450,19 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     await user.click(screen.getByRole('button', { name: /002 Ivysaur/ }));
-    const evolutionMethodInput = screen.getByLabelText('Method');
+    const evolutionsBlock = screen
+      .getByRole('heading', { level: 4, name: 'Evolutions' })
+      .closest('.inspector-block') as HTMLElement | null;
+    expect(evolutionsBlock).not.toBeNull();
+    const evolutionMethodInput = within(evolutionsBlock!).getByLabelText('Method');
     await user.clear(evolutionMethodInput);
     await user.type(evolutionMethodInput, '8');
-    const evolutionItemInput = screen.getByLabelText('Item');
+    const evolutionItemInput = within(evolutionsBlock!).getByLabelText('Item');
     await user.clear(evolutionItemInput);
     await user.type(evolutionItemInput, '25');
-    await user.clear(screen.getByLabelText('Form'));
-    await user.type(screen.getByLabelText('Form'), '1');
-    const evolutionLevelInput = screen.getAllByLabelText('Level')[0]!;
+    await user.clear(within(evolutionsBlock!).getByLabelText('Form'));
+    await user.type(within(evolutionsBlock!).getByLabelText('Form'), '1');
+    const evolutionLevelInput = within(evolutionsBlock!).getAllByLabelText('Level')[0]!;
     await user.clear(evolutionLevelInput);
     await user.type(evolutionLevelInput, '32');
     await user.click(screen.getByRole('button', { name: 'Save evolution row' }));
@@ -583,6 +622,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Items' }));
 
     expect(await screen.findByText('Loading backend workflow data.')).toBeInTheDocument();
@@ -660,6 +700,41 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(screen.getByText('Applied Items change plan to the configured LayeredFS output root.')).toBeInTheDocument();
+  });
+
+  it('asks before canceling editor changes and preserves drafts when declined', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Items' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    const buyPriceInput = screen.getByLabelText('Buy price');
+    await user.clear(buyPriceInput);
+    await user.type(buyPriceInput, '450');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Discard All Changes?' })
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'No' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Discard All Changes?' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Buy price')).toHaveDisplayValue('450');
+    expect(screen.getByRole('button', { name: 'Save Item' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(await screen.findByRole('button', { name: 'Yes, Discard' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Discard All Changes?' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Buy price')).toHaveDisplayValue('300');
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
   });
 
   it('saves item metadata edits from backend-provided selectors', async () => {
@@ -755,7 +830,8 @@ describe('App', () => {
     expect(screen.getByLabelText(/Fire Gym \(2\)/)).not.toBeChecked();
     expect(screen.getByLabelText(/Fire Gym \(3\)/)).not.toBeChecked();
     expect(screen.getByLabelText('Heal flag')).toHaveDisplayValue('Yes');
-    expect(screen.getByLabelText('Money multiplier')).toHaveDisplayValue('24');
+    expect(screen.getByLabelText('Prize money')).toHaveDisplayValue('$1,152 (rate 24)');
+    expect(screen.getByLabelText('Gift ID')).toHaveDisplayValue('007 Rare Candy');
     expect(screen.getByLabelText('Species ID')).toHaveDisplayValue('810 Grookey');
     expect(screen.getByLabelText('Held item ID')).toHaveDisplayValue('001 Potion');
     expect(screen.getByLabelText('Move 1 ID')).toHaveDisplayValue('001 Scratch');
@@ -767,6 +843,7 @@ describe('App', () => {
     const levelInput = screen.getByLabelText('Level');
     await user.clear(levelInput);
     await user.type(levelInput, '25');
+    expect(screen.getByLabelText('Prize money')).toHaveDisplayValue('$2,400 (rate 24)');
     await user.click(screen.getByRole('button', { name: 'Save Pokemon' }));
 
     expect(await screen.findByDisplayValue('25')).toBeInTheDocument();
@@ -811,13 +888,18 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     expect(screen.getByLabelText('Ability slot')).toHaveDisplayValue('Ability 1 - 065 Overgrow');
+    const giftIvPresetInput = screen.getByLabelText('IV preset');
+    await user.clear(giftIvPresetInput);
+    await user.type(giftIvPresetInput, 'Custom');
+    await waitFor(() => expect(screen.getByLabelText('HP IV')).not.toBeDisabled());
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('-4');
     await user.clear(hpIvInput);
-    await user.type(hpIvInput, '31');
+    await user.type(hpIvInput, '80');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save Gift' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Save Gift' }));
 
-    expect(await screen.findByDisplayValue('31')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('HP IV')).toHaveDisplayValue('31'));
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
@@ -861,17 +943,22 @@ describe('App', () => {
     expect(screen.getByText('3 guaranteed perfect IVs')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const tradeIvPresetInput = screen.getByLabelText('IV preset');
+    await user.clear(tradeIvPresetInput);
+    await user.type(tradeIvPresetInput, 'Custom');
+    await waitFor(() => expect(screen.getByLabelText('HP IV')).not.toBeDisabled());
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('-4');
     await user.clear(hpIvInput);
-    await user.type(hpIvInput, '31');
+    await user.type(hpIvInput, '-50');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save Trade' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Save Trade' }));
 
-    expect(await screen.findByDisplayValue('31')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('HP IV')).toHaveDisplayValue('0'));
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
-    expect(screen.getByText('Set Trade 001 ivHp to 31.')).toBeInTheDocument();
+    expect(screen.getByText('Set Trade 001 ivHp to 0.')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
@@ -908,10 +995,14 @@ describe('App', () => {
     expect(screen.getAllByText('Calyrex').length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const staticIvPresetInput = screen.getByLabelText('IV preset');
+    await user.clear(staticIvPresetInput);
+    await user.type(staticIvPresetInput, 'Custom');
+    await waitFor(() => expect(screen.getByLabelText('HP IV')).not.toBeDisabled());
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('31');
     await user.clear(hpIvInput);
-    await user.type(hpIvInput, '0');
+    await user.type(hpIvInput, '-50');
     await user.click(screen.getByRole('button', { name: 'Save Encounter' }));
 
     expect(await screen.findByDisplayValue('0')).toBeInTheDocument();
@@ -959,10 +1050,14 @@ describe('App', () => {
     ).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const rentalIvPresetInput = screen.getByLabelText('IV preset');
+    await user.clear(rentalIvPresetInput);
+    await user.type(rentalIvPresetInput, 'Custom');
+    await waitFor(() => expect(screen.getByLabelText('HP IV')).not.toBeDisabled());
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('31');
     await user.clear(hpIvInput);
-    await user.type(hpIvInput, '0');
+    await user.type(hpIvInput, '-50');
     await user.click(screen.getByRole('button', { name: 'Save Rental' }));
 
     await waitFor(() => expect(screen.getByLabelText('HP IV')).toHaveDisplayValue('0'));
@@ -984,6 +1079,32 @@ describe('App', () => {
     expect(
       screen.getByText('Applied Rental Pokemon change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
+  });
+
+  it('clamps Rental Pokemon EV drafts to the remaining legal total', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Rentals' }));
+    await screen.findByRole('heading', { level: 2, name: 'Rental Pokemon' });
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const hpEvInput = screen.getByLabelText('HP EV');
+    expect(hpEvInput).toHaveDisplayValue('4');
+    await user.clear(hpEvInput);
+    await user.type(hpEvInput, '999');
+    await user.click(screen.getByRole('button', { name: 'Save Rental' }));
+
+    await waitFor(() => expect(screen.getByLabelText('HP EV')).toHaveDisplayValue('6'));
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Rental 001 evHp to 6.')).toBeInTheDocument();
   });
 
   it('opens Dynamax Adventures, edits IV rules, reviews a plan, and applies it', async () => {
@@ -1012,7 +1133,9 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Save Adventure' }));
 
     await waitFor(() =>
-      expect(screen.getByLabelText('Guaranteed perfect IVs')).toHaveDisplayValue('6 Perfect IVs')
+      expect(screen.getByLabelText('Guaranteed perfect IVs')).toHaveDisplayValue(
+        '6 Guaranteed Perfect IVs'
+      )
     );
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
@@ -1742,7 +1865,7 @@ function createItemDetailGroups(metadata = createItemMetadata()) {
       details: [
         { label: 'Field use type', value: 'Medicine (1)' },
         { label: 'Can use on Pokemon', value: 'Yes' },
-        { label: 'Use flags 1', value: 'Restore HP' }
+        { label: 'Use flags 1 (decoded)', value: 'Restore HP' }
       ],
       label: 'Field Use'
     },
@@ -1958,11 +2081,79 @@ function createMockProjectBridge(
         sellPrice: 100,
         sharedItemIds: [2],
         wattsPrice: 10
+      },
+      {
+        alternatePrice: 0,
+        buyPrice: 1000,
+        category: 'TMs',
+        detailGroups: createItemDetailGroups(),
+        itemId: 335,
+        metadata: createItemMetadata(),
+        name: 'TM02 (Razor Leaf)',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/pml/item/item.dat',
+          sourceLayer: 'base'
+        },
+        sellPrice: 500,
+        sharedItemIds: [335],
+        wattsPrice: 0
+      },
+      {
+        alternatePrice: 0,
+        buyPrice: 1000,
+        category: 'TMs',
+        detailGroups: createItemDetailGroups(),
+        itemId: 337,
+        metadata: createItemMetadata(),
+        name: 'TM10 (Magical Leaf)',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/pml/item/item.dat',
+          sourceLayer: 'base'
+        },
+        sellPrice: 500,
+        sharedItemIds: [337],
+        wattsPrice: 0
+      },
+      {
+        alternatePrice: 0,
+        buyPrice: 3000,
+        category: 'TRs',
+        detailGroups: createItemDetailGroups(),
+        itemId: 1120,
+        metadata: createItemMetadata(),
+        name: 'TR02 (Growl)',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/pml/item/item.dat',
+          sourceLayer: 'base'
+        },
+        sellPrice: 1500,
+        sharedItemIds: [1120],
+        wattsPrice: 0
+      },
+      {
+        alternatePrice: 0,
+        buyPrice: 3000,
+        category: 'TRs',
+        detailGroups: createItemDetailGroups(),
+        itemId: 1128,
+        metadata: createItemMetadata(),
+        name: 'TR10 (Magical Leaf)',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/pml/item/item.dat',
+          sourceLayer: 'base'
+        },
+        sellPrice: 1500,
+        sharedItemIds: [1128],
+        wattsPrice: 0
       }
     ],
     stats: {
       sourceFileCount: 2,
-      totalItemCount: 2
+      totalItemCount: 6
     },
     summary: {
       availability: canEdit ? 'available' : 'readOnly',
@@ -2691,7 +2882,7 @@ function createMockProjectBridge(
       },
       {
         field: 'money',
-        label: 'Money multiplier',
+        label: 'Prize money',
         maximumValue: 255,
         minimumValue: 0,
         options: [],
@@ -2702,7 +2893,11 @@ function createMockProjectBridge(
         label: 'Gift ID',
         maximumValue: 65535,
         minimumValue: 0,
-        options: [],
+        options: [
+          { label: '000 None', value: 0 },
+          { label: '001 Potion', value: 1 },
+          { label: '007 Rare Candy', value: 7 }
+        ],
         valueKind: 'integer'
       },
       {
@@ -3144,7 +3339,7 @@ function createMockProjectBridge(
         options: [
           { label: 'Random IVs', value: 0 },
           { label: '3 Guaranteed Perfect IVs', value: 3 },
-          { label: '6 Perfect IVs', value: 6 }
+          { label: '6 Guaranteed Perfect IVs', value: 6 }
         ],
         valueKind: 'integer'
       }
@@ -3493,7 +3688,7 @@ function createMockProjectBridge(
         options: [
           { label: 'Random IVs', value: 0 },
           { label: '3 Guaranteed Perfect IVs', value: 3 },
-          { label: '6 Perfect IVs', value: 6 }
+          { label: '6 Guaranteed Perfect IVs', value: 6 }
         ],
         valueKind: 'integer'
       }
@@ -3727,7 +3922,7 @@ function createMockProjectBridge(
         options: [
           { label: 'Random IVs', value: 0 },
           { label: '3 Guaranteed Perfect IVs', value: 3 },
-          { label: '6 Perfect IVs', value: 6 }
+          { label: '6 Guaranteed Perfect IVs', value: 6 }
         ],
         valueKind: 'integer'
       }
@@ -3926,12 +4121,12 @@ function createMockProjectBridge(
       },
       {
         field: 'fixedIvPreset',
-        label: 'Fixed IV preset',
+        label: 'IV preset',
         maximumValue: 31,
         minimumValue: 0,
         options: [
           { label: '0 IVs', value: 0 },
-          { label: '31 IVs', value: 31 }
+          { label: '6 Guaranteed Perfect IVs', value: 31 }
         ],
         valueKind: 'integer'
       }
@@ -4111,7 +4306,7 @@ function createMockProjectBridge(
         options: [
           { label: 'Random IVs', value: 0 },
           { label: '5 Guaranteed Perfect IVs', value: 5 },
-          { label: '6 Perfect IVs', value: 6 }
+          { label: '6 Guaranteed Perfect IVs', value: 6 }
         ],
         valueKind: 'integer'
       },
@@ -4391,7 +4586,7 @@ function createMockProjectBridge(
         options: [
           { label: 'Random IVs', value: 0 },
           { label: '4 Guaranteed Perfect IVs', value: 4 },
-          { label: '6 Perfect IVs', value: 6 }
+          { label: '6 Guaranteed Perfect IVs', value: 6 }
         ],
         valueKind: 'integer'
       },
@@ -4838,6 +5033,17 @@ function createMockProjectBridge(
     },
     summary: spreadsheetImportWorkflowSummary
   };
+
+  let currentGiftPokemonWorkflow = giftPokemonWorkflow;
+  let currentTradePokemonWorkflow = tradePokemonWorkflow;
+  const ivFieldToKey = {
+    ivAttack: 'attack',
+    ivDefense: 'defense',
+    ivHp: 'hp',
+    ivSpecialAttack: 'specialAttack',
+    ivSpecialDefense: 'specialDefense',
+    ivSpeed: 'speed'
+  } as const;
 
   return {
     applyChangePlan: (request) =>
@@ -5482,11 +5688,11 @@ function createMockProjectBridge(
       }),
     loadGiftPokemonWorkflow: () =>
       Promise.resolve({
-        workflow: giftPokemonWorkflow
+        workflow: currentGiftPokemonWorkflow
       }),
     loadTradePokemonWorkflow: () =>
       Promise.resolve({
-        workflow: tradePokemonWorkflow
+        workflow: currentTradePokemonWorkflow
       }),
     loadStaticEncountersWorkflow: () =>
       Promise.resolve({
@@ -6045,98 +6251,110 @@ function createMockProjectBridge(
       }),
     updateGiftPokemonField: (request) => {
       const value = Number.parseInt(request.value, 10);
+      const ivKey = ivFieldToKey[request.field as keyof typeof ivFieldToKey] ?? null;
+      const pendingEdit = {
+        domain: 'workflow.giftPokemon',
+        field: request.field,
+        newValue: request.value,
+        recordId: `gift:${request.giftIndex}`,
+        sources: [
+          {
+            layer: 'base' as const,
+            relativePath: 'romfs/bin/script_event_data/add_poke.bin'
+          }
+        ],
+        summary: `Set Gift 001 ${request.field} to ${request.value}.`
+      };
+      const pendingEdits = [...(request.session?.pendingEdits ?? []), pendingEdit];
+      currentGiftPokemonWorkflow = {
+        ...currentGiftPokemonWorkflow,
+        gifts: currentGiftPokemonWorkflow.gifts.map((gift) =>
+          gift.giftIndex === request.giftIndex
+            ? {
+                ...gift,
+                ivs: ivKey
+                  ? {
+                      ...gift.ivs,
+                      [ivKey]: value
+                    }
+                  : gift.ivs,
+                ivSummary: ivKey
+                  ? `HP ${ivKey === 'hp' ? value : gift.ivs.hp} / Atk ${
+                      ivKey === 'attack' ? value : gift.ivs.attack
+                    } / Def ${ivKey === 'defense' ? value : gift.ivs.defense} / SpA ${
+                      ivKey === 'specialAttack' ? value : gift.ivs.specialAttack
+                    } / SpD ${
+                      ivKey === 'specialDefense' ? value : gift.ivs.specialDefense
+                    } / Spe ${ivKey === 'speed' ? value : gift.ivs.speed}`
+                  : gift.ivSummary,
+                level: request.field === 'level' ? value : gift.level
+              }
+            : gift
+        )
+      };
 
       return Promise.resolve({
         diagnostics: [],
         session: {
           hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.giftPokemon',
-              field: request.field,
-              newValue: request.value,
-              recordId: `gift:${request.giftIndex}`,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/script_event_data/add_poke.bin'
-                }
-              ],
-              summary: `Set Gift 001 ${request.field} to ${request.value}.`
-            }
-          ],
+          pendingEdits,
           sessionId: 'session-1'
         },
-        workflow: {
-          ...giftPokemonWorkflow,
-          gifts: giftPokemonWorkflow.gifts.map((gift) =>
-            gift.giftIndex === request.giftIndex
-              ? {
-                  ...gift,
-                  ivs:
-                    request.field === 'ivHp'
-                      ? {
-                          ...gift.ivs,
-                          hp: value
-                        }
-                      : gift.ivs,
-                  ivSummary:
-                    request.field === 'ivHp'
-                      ? `HP ${value} / Atk -1 / Def -1 / SpA -1 / SpD -1 / Spe -1`
-                      : gift.ivSummary,
-                  level: request.field === 'level' ? value : gift.level
-                }
-              : gift
-          )
-        }
+        workflow: currentGiftPokemonWorkflow
       });
     },
     updateTradePokemonField: (request) => {
       const value = Number.parseInt(request.value, 10);
+      const ivKey = ivFieldToKey[request.field as keyof typeof ivFieldToKey] ?? null;
+      const pendingEdit = {
+        domain: 'workflow.tradePokemon',
+        field: request.field,
+        newValue: request.value,
+        recordId: `trade:${request.tradeIndex}`,
+        sources: [
+          {
+            layer: 'base' as const,
+            relativePath: 'romfs/bin/script_event_data/field_trade.bin'
+          }
+        ],
+        summary: `Set Trade 001 ${request.field} to ${request.value}.`
+      };
+      const pendingEdits = [...(request.session?.pendingEdits ?? []), pendingEdit];
+      currentTradePokemonWorkflow = {
+        ...currentTradePokemonWorkflow,
+        trades: currentTradePokemonWorkflow.trades.map((trade) =>
+          trade.tradeIndex === request.tradeIndex
+            ? {
+                ...trade,
+                ivs: ivKey
+                  ? {
+                      ...trade.ivs,
+                      [ivKey]: value
+                    }
+                  : trade.ivs,
+                ivSummary: ivKey
+                  ? `HP ${ivKey === 'hp' ? value : trade.ivs.hp} / Atk ${
+                      ivKey === 'attack' ? value : trade.ivs.attack
+                    } / Def ${ivKey === 'defense' ? value : trade.ivs.defense} / SpA ${
+                      ivKey === 'specialAttack' ? value : trade.ivs.specialAttack
+                    } / SpD ${
+                      ivKey === 'specialDefense' ? value : trade.ivs.specialDefense
+                    } / Spe ${ivKey === 'speed' ? value : trade.ivs.speed}`
+                  : trade.ivSummary,
+                level: request.field === 'level' ? value : trade.level
+              }
+            : trade
+        )
+      };
 
       return Promise.resolve({
         diagnostics: [],
         session: {
           hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.tradePokemon',
-              field: request.field,
-              newValue: request.value,
-              recordId: `trade:${request.tradeIndex}`,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/script_event_data/field_trade.bin'
-                }
-              ],
-              summary: `Set Trade 001 ${request.field} to ${request.value}.`
-            }
-          ],
+          pendingEdits,
           sessionId: 'session-1'
         },
-        workflow: {
-          ...tradePokemonWorkflow,
-          trades: tradePokemonWorkflow.trades.map((trade) =>
-            trade.tradeIndex === request.tradeIndex
-              ? {
-                  ...trade,
-                  ivs:
-                    request.field === 'ivHp'
-                      ? {
-                          ...trade.ivs,
-                          hp: value
-                        }
-                      : trade.ivs,
-                  ivSummary:
-                    request.field === 'ivHp'
-                      ? `HP ${value} / Atk -1 / Def -1 / SpA -1 / SpD -1 / Spe -1`
-                      : trade.ivSummary,
-                  level: request.field === 'level' ? value : trade.level
-                }
-              : trade
-          )
-        }
+        workflow: currentTradePokemonWorkflow
       });
     },
     updateStaticEncounterField: (request) => {
@@ -6217,6 +6435,13 @@ function createMockProjectBridge(
             rental.rentalIndex === request.rentalIndex
               ? {
                   ...rental,
+                  evs:
+                    request.field === 'evHp'
+                      ? {
+                          ...rental.evs,
+                          hp: value
+                        }
+                      : rental.evs,
                   ivs:
                     request.field === 'ivHp'
                       ? {

@@ -13,6 +13,8 @@ namespace KM.SwSh.Rentals;
 
 public sealed class SwShRentalPokemonEditSessionService
 {
+    private const int MaximumPokemonEvTotal = 510;
+
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShRentalPokemonWorkflowService rentalPokemonWorkflowService;
 
@@ -50,7 +52,8 @@ public sealed class SwShRentalPokemonEditSessionService
             return new SwShRentalPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
-        var rental = workflow.Rentals.FirstOrDefault(candidate => candidate.RentalIndex == rentalIndex);
+        var effectiveWorkflow = OverlayPendingEdits(workflow, currentSession.PendingEdits);
+        var rental = effectiveWorkflow.Rentals.FirstOrDefault(candidate => candidate.RentalIndex == rentalIndex);
         if (rental is null)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -58,13 +61,13 @@ public sealed class SwShRentalPokemonEditSessionService
                 $"Rental Pokemon index {rentalIndex} is not present in the loaded workflow.",
                 field: "rentalIndex",
                 expected: "Existing Rental Pokemon record"));
-            return new SwShRentalPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SwShRentalPokemonEditResult(effectiveWorkflow, currentSession, diagnostics);
         }
 
         var pendingEdit = CreatePendingEdit(rental, field, value, diagnostics);
         if (pendingEdit is null)
         {
-            return new SwShRentalPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SwShRentalPokemonEditResult(effectiveWorkflow, currentSession, diagnostics);
         }
 
         var updatedSession = ReplacePendingRentalEdit(currentSession, pendingEdit);
@@ -86,9 +89,11 @@ public sealed class SwShRentalPokemonEditSessionService
 
         CanEditRentalPokemon(project, workflow, diagnostics);
 
+        var effectiveWorkflow = workflow;
         foreach (var edit in session.PendingEdits)
         {
-            ValidatePendingEdit(workflow, edit, diagnostics);
+            ValidatePendingEdit(effectiveWorkflow, edit, diagnostics);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, edit);
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -268,7 +273,7 @@ public sealed class SwShRentalPokemonEditSessionService
             return null;
         }
 
-        var parsedValue = TryParseFieldValue(editableField, value, diagnostics);
+        var parsedValue = TryParseFieldValue(editableField, value, diagnostics, rental.Evs);
         if (parsedValue is null)
         {
             return null;
@@ -316,7 +321,8 @@ public sealed class SwShRentalPokemonEditSessionService
             return;
         }
 
-        if (workflow.Rentals.All(rental => rental.RentalIndex != rentalIndex))
+        var rental = workflow.Rentals.FirstOrDefault(rental => rental.RentalIndex == rentalIndex);
+        if (rental is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -326,16 +332,17 @@ public sealed class SwShRentalPokemonEditSessionService
             return;
         }
 
-        TryParseFieldValue(editableField, edit.NewValue, diagnostics);
+        TryParseFieldValue(editableField, edit.NewValue, diagnostics, rental.Evs);
         AddLinkedUsageWarning(edit.Field, diagnostics);
     }
 
     private static int? TryParseFieldValue(
         SwShRentalPokemonEditableField editableField,
         string? value,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        SwShRentalPokemonStatsRecord? currentEvs = null)
     {
-        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedValue))
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -345,10 +352,14 @@ public sealed class SwShRentalPokemonEditSessionService
             return null;
         }
 
-        if (IsIvField(editableField.Field) && !IsValidIvValue(parsedValue))
+        if (IsIvField(editableField.Field))
         {
-            diagnostics.Add(CreateIvDiagnostic(editableField.Field));
-            return null;
+            parsedValue = ClampFixedIvValue(parsedValue);
+        }
+
+        if (IsEvField(editableField.Field))
+        {
+            parsedValue = NormalizeEvValue(editableField.Field, parsedValue, currentEvs);
         }
 
         if ((editableField.MinimumValue is not null && parsedValue < editableField.MinimumValue.Value)
@@ -365,6 +376,44 @@ public sealed class SwShRentalPokemonEditSessionService
         return parsedValue;
     }
 
+    private static int ClampFixedIvValue(int value)
+    {
+        return Math.Clamp(
+            value,
+            SwShRentalPokemonArchive.MinimumFixedIvValue,
+            SwShRentalPokemonArchive.MaximumFixedIvValue);
+    }
+
+    private static int NormalizeEvValue(
+        string field,
+        int value,
+        SwShRentalPokemonStatsRecord? currentEvs)
+    {
+        var clamped = ClampEvValue(value);
+        if (currentEvs is null)
+        {
+            return clamped;
+        }
+
+        var remainingBudget = Math.Max(0, MaximumPokemonEvTotal - GetOtherEvTotal(currentEvs, field));
+        return Math.Min(clamped, remainingBudget);
+    }
+
+    private static int GetOtherEvTotal(SwShRentalPokemonStatsRecord evs, string field)
+    {
+        return (field == SwShRentalPokemonWorkflowService.EvHpField ? 0 : ClampEvValue(evs.HP))
+            + (field == SwShRentalPokemonWorkflowService.EvAttackField ? 0 : ClampEvValue(evs.Attack))
+            + (field == SwShRentalPokemonWorkflowService.EvDefenseField ? 0 : ClampEvValue(evs.Defense))
+            + (field == SwShRentalPokemonWorkflowService.EvSpecialAttackField ? 0 : ClampEvValue(evs.SpecialAttack))
+            + (field == SwShRentalPokemonWorkflowService.EvSpecialDefenseField ? 0 : ClampEvValue(evs.SpecialDefense))
+            + (field == SwShRentalPokemonWorkflowService.EvSpeedField ? 0 : ClampEvValue(evs.Speed));
+    }
+
+    private static int ClampEvValue(int value)
+    {
+        return Math.Clamp(value, 0, SwShRentalPokemonWorkflowService.MaximumPokemonEvValue);
+    }
+
     private static bool IsIvField(string field)
     {
         return field is
@@ -377,9 +426,15 @@ public sealed class SwShRentalPokemonEditSessionService
             or SwShRentalPokemonWorkflowService.FixedIvPresetField;
     }
 
-    private static bool IsValidIvValue(int value)
+    private static bool IsEvField(string field)
     {
-        return value is >= SwShRentalPokemonArchive.MinimumFixedIvValue and <= SwShRentalPokemonArchive.MaximumFixedIvValue;
+        return field is
+            SwShRentalPokemonWorkflowService.EvHpField
+            or SwShRentalPokemonWorkflowService.EvAttackField
+            or SwShRentalPokemonWorkflowService.EvDefenseField
+            or SwShRentalPokemonWorkflowService.EvSpecialAttackField
+            or SwShRentalPokemonWorkflowService.EvSpecialDefenseField
+            or SwShRentalPokemonWorkflowService.EvSpeedField;
     }
 
     private static void AddLinkedUsageWarning(

@@ -51,7 +51,8 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
         }
 
-        var encounter = workflow.Encounters.FirstOrDefault(candidate => candidate.EntryIndex == entryIndex);
+        var effectiveWorkflow = OverlayPendingEdits(workflow, currentSession.PendingEdits);
+        var encounter = effectiveWorkflow.Encounters.FirstOrDefault(candidate => candidate.EntryIndex == entryIndex);
         if (encounter is null)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -59,13 +60,13 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 $"Dynamax Adventure entry index {entryIndex} is not present in the loaded workflow.",
                 field: "entryIndex",
                 expected: "Existing Dynamax Adventure record"));
-            return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
+            return new SwShDynamaxAdventuresEditResult(effectiveWorkflow, currentSession, diagnostics);
         }
 
         var pendingEdit = CreatePendingEdit(encounter, field, value, diagnostics);
         if (pendingEdit is null)
         {
-            return new SwShDynamaxAdventuresEditResult(workflow, currentSession, diagnostics);
+            return new SwShDynamaxAdventuresEditResult(effectiveWorkflow, currentSession, diagnostics);
         }
 
         var updatedSession = ReplacePendingEncounterEdit(currentSession, pendingEdit);
@@ -336,7 +337,7 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         string? value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedValue))
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -344,6 +345,11 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 field: editableField.Field,
                 expected: "Integer value"));
             return null;
+        }
+
+        if (IsIndividualIvOverrideField(editableField.Field))
+        {
+            parsedValue = ClampFixedIvValue(parsedValue);
         }
 
         if ((editableField.MinimumValue is not null && parsedValue < editableField.MinimumValue.Value)
@@ -369,6 +375,24 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         }
 
         return parsedValue;
+    }
+
+    private static int ClampFixedIvValue(int value)
+    {
+        return Math.Clamp(
+            value,
+            SwShDynamaxAdventureArchive.MinimumFixedIvValue,
+            SwShDynamaxAdventureArchive.MaximumFixedIvValue);
+    }
+
+    private static bool IsIndividualIvOverrideField(string field)
+    {
+        return field is
+            SwShDynamaxAdventuresWorkflowService.IvAttackField
+            or SwShDynamaxAdventuresWorkflowService.IvDefenseField
+            or SwShDynamaxAdventuresWorkflowService.IvSpeedField
+            or SwShDynamaxAdventuresWorkflowService.IvSpecialAttackField
+            or SwShDynamaxAdventuresWorkflowService.IvSpecialDefenseField;
     }
 
     private static void AddLinkedUsageWarning(

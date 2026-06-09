@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -12,6 +13,8 @@ namespace KM.SwSh.StaticEncounters;
 
 public sealed class SwShStaticEncountersWorkflowService
 {
+    public const int MaximumPokemonEvValue = 252;
+
     public const string SpeciesField = "species";
     public const string FormField = "form";
     public const string LevelField = "level";
@@ -80,7 +83,7 @@ public sealed class SwShStaticEncountersWorkflowService
     [
         new(0, "Random IVs"),
         new(3, "3 Guaranteed Perfect IVs"),
-        new(6, "6 Perfect IVs"),
+        new(6, "6 Guaranteed Perfect IVs"),
     ];
 
     private static readonly IReadOnlyList<SwShStaticEncounterEditableFieldOption> FormOptions =
@@ -167,12 +170,12 @@ public sealed class SwShStaticEncountersWorkflowService
         CreateField(Move1Field, "Move 2", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),
         CreateField(Move2Field, "Move 3", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),
         CreateField(Move3Field, "Move 4", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),
-        CreateField(EvHpField, "HP EV", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue),
-        CreateField(EvAttackField, "Attack EV", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue),
-        CreateField(EvDefenseField, "Defense EV", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue),
-        CreateField(EvSpecialAttackField, "Sp. Atk EV", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue),
-        CreateField(EvSpecialDefenseField, "Sp. Def EV", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue),
-        CreateField(EvSpeedField, "Speed EV", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue),
+        CreateField(EvHpField, "HP EV", "integer", 0, MaximumPokemonEvValue),
+        CreateField(EvAttackField, "Attack EV", "integer", 0, MaximumPokemonEvValue),
+        CreateField(EvDefenseField, "Defense EV", "integer", 0, MaximumPokemonEvValue),
+        CreateField(EvSpecialAttackField, "Sp. Atk EV", "integer", 0, MaximumPokemonEvValue),
+        CreateField(EvSpecialDefenseField, "Sp. Def EV", "integer", 0, MaximumPokemonEvValue),
+        CreateField(EvSpeedField, "Speed EV", "integer", 0, MaximumPokemonEvValue),
         CreateField(IvHpField, "HP IV", "integer", SwShStaticEncounterArchive.ThreePerfectIvSentinel, SwShStaticEncounterArchive.MaximumFixedIvValue),
         CreateField(IvAttackField, "Attack IV", "integer", SwShStaticEncounterArchive.RandomIvValue, SwShStaticEncounterArchive.MaximumFixedIvValue),
         CreateField(IvDefenseField, "Defense IV", "integer", SwShStaticEncounterArchive.RandomIvValue, SwShStaticEncounterArchive.MaximumFixedIvValue),
@@ -468,7 +471,7 @@ public sealed class SwShStaticEncountersWorkflowService
         {
             0 => "Random IVs",
             3 => "3 guaranteed perfect IVs",
-            6 => "6 perfect IVs",
+            6 => "6 guaranteed perfect IVs",
             _ => string.Create(
                 CultureInfo.InvariantCulture,
                 $"HP {ivs.HP} / Atk {ivs.Attack} / Def {ivs.Defense} / SpA {ivs.SpecialAttack} / SpD {ivs.SpecialDefense} / Spe {ivs.Speed}"),
@@ -499,11 +502,12 @@ public sealed class SwShStaticEncountersWorkflowService
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
+        var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new StaticEncounterLookupTables(
             speciesNames,
-            itemNames,
+            itemDisplayNames,
             moveNames,
             abilityResolver,
             CountSource(speciesNames) + CountSource(itemNames) + CountSource(moveNames));

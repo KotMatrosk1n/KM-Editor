@@ -149,7 +149,7 @@ public sealed class SwShTrainersEditSessionServiceTests
             trainerId: 10,
             slot: 1,
             field: SwShTrainersWorkflowService.IvAttackField,
-            value: "31");
+            value: "80");
 
         Assert.Empty(result.Diagnostics);
         var edit = Assert.Single(result.Session.PendingEdits);
@@ -158,6 +158,48 @@ public sealed class SwShTrainersEditSessionServiceTests
         Assert.Equal("10:1", edit.RecordId);
         Assert.Equal("31", edit.NewValue);
         Assert.Equal(31, Assert.Single(result.Workflow.Trainers).Team[0].Ivs.Attack);
+    }
+
+    [Fact]
+    public void UpdateFieldClampsTrainerPartyIvAndEvSpreads()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+
+        var update = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.IvAttackField,
+            value: "-50");
+        update = service.UpdateField(
+            temp.Paths,
+            update.Session,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.EvHpField,
+            value: "999");
+        update = service.UpdateField(
+            temp.Paths,
+            update.Session,
+            trainerId: 10,
+            slot: 1,
+            field: SwShTrainersWorkflowService.EvAttackField,
+            value: "999");
+
+        Assert.Empty(update.Diagnostics);
+        var trainer = Assert.Single(update.Workflow.Trainers);
+        Assert.Equal(0, trainer.Team[0].Ivs.Attack);
+        Assert.Equal(252, trainer.Team[0].Evs.HP);
+        Assert.Equal(78, trainer.Team[0].Evs.Attack);
+        Assert.Contains(update.Session.PendingEdits, edit =>
+            edit.Field == SwShTrainersWorkflowService.IvAttackField && edit.NewValue == "0");
+        Assert.Contains(update.Session.PendingEdits, edit =>
+            edit.Field == SwShTrainersWorkflowService.EvHpField && edit.NewValue == "252");
+        Assert.Contains(update.Session.PendingEdits, edit =>
+            edit.Field == SwShTrainersWorkflowService.EvAttackField && edit.NewValue == "78");
+        Assert.True(service.Validate(temp.Paths, update.Session).IsValid);
     }
 
     [Fact]
@@ -403,7 +445,7 @@ public sealed class SwShTrainersEditSessionServiceTests
     }
 
     [Fact]
-    public void UpdateFieldRejectsOutOfRangePartyStatValue()
+    public void UpdateFieldClampsOutOfRangePartyIvValue()
     {
         using var temp = CreateEditableProject();
         var service = new SwShTrainersEditSessionService();
@@ -416,11 +458,11 @@ public sealed class SwShTrainersEditSessionServiceTests
             field: SwShTrainersWorkflowService.IvHpField,
             value: "32");
 
-        Assert.False(result.Session.HasPendingChanges);
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
-                && diagnostic.Field == SwShTrainersWorkflowService.IvHpField);
+        Assert.Empty(result.Diagnostics);
+        Assert.True(result.Session.HasPendingChanges);
+        var edit = Assert.Single(result.Session.PendingEdits);
+        Assert.Equal("31", edit.NewValue);
+        Assert.Equal(31, Assert.Single(result.Workflow.Trainers).Team[0].Ivs.HP);
     }
 
     private static TemporarySwShProject CreateEditableProject()

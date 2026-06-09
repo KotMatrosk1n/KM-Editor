@@ -146,7 +146,7 @@ public sealed class SwShTradePokemonWorkflowServiceTests
         var trade = workflow.Trades[0];
         Assert.Equal(ProjectFileLayer.Layered, trade.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.LayeredOverride, trade.Provenance.FileState);
-        Assert.Equal("6 perfect IVs", trade.IvSummary);
+        Assert.Equal("6 guaranteed perfect IVs", trade.IvSummary);
     }
 
     [Fact]

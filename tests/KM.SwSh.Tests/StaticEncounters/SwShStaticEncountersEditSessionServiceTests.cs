@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-using KM.Core.Editing;
 using KM.Formats.SwSh;
 using KM.SwSh.StaticEncounters;
 using KM.SwSh.Tests.Items;
@@ -23,15 +22,47 @@ public sealed class SwShStaticEncountersEditSessionServiceTests
             session: null,
             encounterIndex: 0,
             field: SwShStaticEncountersWorkflowService.IvAttackField,
-            value: "12");
+            value: "80");
+        result = service.UpdateField(
+            temp.Paths,
+            result.Session,
+            encounterIndex: 0,
+            field: SwShStaticEncountersWorkflowService.IvDefenseField,
+            value: "-50");
+        result = service.UpdateField(
+            temp.Paths,
+            result.Session,
+            encounterIndex: 0,
+            field: SwShStaticEncountersWorkflowService.EvHpField,
+            value: "999");
+        result = service.UpdateField(
+            temp.Paths,
+            result.Session,
+            encounterIndex: 0,
+            field: SwShStaticEncountersWorkflowService.EvAttackField,
+            value: "999");
 
-        var edit = Assert.Single(result.Session.PendingEdits);
-        Assert.Equal("workflow.staticEncounters", edit.Domain);
-        Assert.Equal(SwShStaticEncountersWorkflowService.IvAttackField, edit.Field);
-        Assert.Equal("static:0", edit.RecordId);
-        Assert.Equal("12", edit.NewValue);
-        Assert.Equal(12, result.Workflow.Encounters[0].Ivs.Attack);
+        Assert.Equal(4, result.Session.PendingEdits.Count);
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.staticEncounters"
+            && edit.Field == SwShStaticEncountersWorkflowService.IvAttackField
+            && edit.RecordId == "static:0"
+            && edit.NewValue == "31");
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShStaticEncountersWorkflowService.IvDefenseField
+            && edit.NewValue == "0");
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShStaticEncountersWorkflowService.EvHpField
+            && edit.NewValue == "252");
+        Assert.Contains(result.Session.PendingEdits, edit =>
+            edit.Field == SwShStaticEncountersWorkflowService.EvAttackField
+            && edit.NewValue == "240");
+        Assert.Equal(31, result.Workflow.Encounters[0].Ivs.Attack);
+        Assert.Equal(0, result.Workflow.Encounters[0].Ivs.Defense);
+        Assert.Equal(252, result.Workflow.Encounters[0].Evs.HP);
+        Assert.Equal(240, result.Workflow.Encounters[0].Evs.Attack);
         Assert.Empty(result.Diagnostics);
+        Assert.True(service.Validate(temp.Paths, result.Session).IsValid);
     }
 
     [Fact]
@@ -83,33 +114,6 @@ public sealed class SwShStaticEncountersEditSessionServiceTests
 
         var output = SwShStaticEncounterArchive.Parse(File.ReadAllBytes(GetOutputStaticEncounterPath(temp)));
         Assert.Equal(new SwShStaticEncounterStats(-4, -1, -1, -1, -1, -1), output.Encounters[1].Ivs);
-    }
-
-    [Fact]
-    public void ValidateRejectsUnsupportedStaticEncounterIvSentinelField()
-    {
-        using var temp = TemporarySwShProject.Create();
-        SwShStaticEncountersWorkflowServiceTests.WriteStaticEncounterFixture(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
-        var service = new SwShStaticEncountersEditSessionService();
-        var session = EditSession.Start() with
-        {
-            PendingEdits =
-            [
-                new PendingEdit(
-                    "workflow.staticEncounters",
-                    "Set unsupported IV sentinel.",
-                    [],
-                    RecordId: "static:0",
-                    Field: SwShStaticEncountersWorkflowService.IvAttackField,
-                    NewValue: "-4")
-            ],
-        };
-
-        var validation = service.Validate(temp.Paths, session);
-
-        Assert.False(validation.IsValid);
-        Assert.Contains(validation.Diagnostics, diagnostic => diagnostic.Field == SwShStaticEncountersWorkflowService.IvAttackField);
     }
 
     private static string GetOutputStaticEncounterPath(TemporarySwShProject temp)

@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Items;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -91,7 +92,7 @@ public sealed class SwShTradePokemonWorkflowService
     [
         new(0, "Random IVs"),
         new(3, "3 Guaranteed Perfect IVs"),
-        new(6, "6 Perfect IVs"),
+        new(6, "6 Guaranteed Perfect IVs"),
     ];
 
     private static readonly IReadOnlyList<SwShTradePokemonEditableFieldOption> FormOptions =
@@ -470,7 +471,7 @@ public sealed class SwShTradePokemonWorkflowService
         {
             0 => "Random IVs",
             3 => "3 guaranteed perfect IVs",
-            6 => "6 perfect IVs",
+            6 => "6 guaranteed perfect IVs",
             _ => string.Create(
                 CultureInfo.InvariantCulture,
                 $"HP {ivs.HP} / Atk {ivs.Attack} / Def {ivs.Defense} / SpA {ivs.SpecialAttack} / SpD {ivs.SpecialDefense} / Spe {ivs.Speed}"),
@@ -501,11 +502,12 @@ public sealed class SwShTradePokemonWorkflowService
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
+        var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new TradeLookupTables(
             speciesNames,
-            itemNames,
+            itemDisplayNames,
             moveNames,
             abilityResolver,
             CountSource(speciesNames) + CountSource(itemNames) + CountSource(moveNames));
