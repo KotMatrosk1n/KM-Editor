@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import { App, getPokemonSpriteId } from './App';
 import {
   type DynamaxAdventuresWorkflow,
@@ -31,14 +32,67 @@ import { type ProjectBridge } from './bridge/projectBridge';
 import { type DesktopServices } from './desktopServices';
 import { useWorkbenchStore } from './workbenchStore';
 
+const windowCloseRequestedEvent = 'km-editor://window-close-requested';
+
+const tauriEventMock = vi.hoisted(() => {
+  const listeners: Record<string, Array<() => void>> = {};
+  return {
+    listen: vi.fn((eventName: string, handler: () => void) => {
+      listeners[eventName] = [...(listeners[eventName] ?? []), handler];
+
+      return Promise.resolve(() => {
+        listeners[eventName] = (listeners[eventName] ?? []).filter(
+          (candidate) => candidate !== handler
+        );
+      });
+    }),
+    listeners
+  };
+});
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: tauriEventMock.listen
+}));
+
 describe('App', () => {
   it('normalizes known hyphenated Pokemon sprite ids', () => {
     expect(getPokemonSpriteId('Kommo-o')).toBe('kommoo');
     expect(getPokemonSpriteId('Toxtricity (Low Key) (Gigantamax)')).toBe('toxtricity-gmax');
   });
 
+  it('defaults Pokemon Data selection to the first real Pokemon instead of Egg', () => {
+    useWorkbenchStore.getState().setPokemonWorkflow({
+      diagnostics: [],
+      editableFields: [],
+      evolutionMethodOptions: [],
+      learnsetMoveOptions: [],
+      pokemon: [
+        { name: 'Egg', personalId: 0 },
+        { name: 'Bulbasaur', personalId: 1 }
+      ],
+      stats: {
+        presentPokemonCount: 1,
+        totalLearnsetMoveCount: 1,
+        totalPokemonCount: 2
+      },
+      summary: {
+        availability: 'available',
+        description: 'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
+        diagnostics: [],
+        id: 'pokemon',
+        label: 'Pokemon Data'
+      }
+    } as unknown as PokemonWorkflow);
+
+    expect(useWorkbenchStore.getState().selectedPokemonPersonalId).toBe(1);
+  });
+
   beforeEach(() => {
     window.localStorage.clear();
+    tauriEventMock.listen.mockClear();
+    for (const eventName of Object.keys(tauriEventMock.listeners)) {
+      delete tauriEventMock.listeners[eventName];
+    }
     useWorkbenchStore.setState({
       activeSection: 'health',
       applyResult: null,
@@ -222,6 +276,11 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
     expect(screen.getAllByText('Bulbasaur').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Tackle/ })).toBeInTheDocument();
+    act(() => {
+      useWorkbenchStore.setState({ selectedPokemonPersonalId: 0 });
+    });
+    expect(screen.getByRole('button', { name: /Tackle/ })).toBeInTheDocument();
+    expect(screen.queryByText('No level-up moves.')).not.toBeInTheDocument();
 
     await user.clear(screen.getByLabelText('Search Pokemon'));
     await user.type(screen.getByLabelText('Search Pokemon'), 'fire');
@@ -283,17 +342,63 @@ describe('App', () => {
       .getByRole('heading', { level: 4, name: 'Learnset' })
       .closest('.inspector-block') as HTMLElement | null;
     expect(learnsetBlock).not.toBeNull();
-    await user.selectOptions(within(learnsetBlock!).getByLabelText('Move'), '345');
+    const learnsetMoveInput = within(learnsetBlock!).getByLabelText('Move');
+    await user.clear(learnsetMoveInput);
+    await user.type(learnsetMoveInput, '345');
     const learnsetLevelInput = within(learnsetBlock!).getAllByLabelText('Level')[0]!;
     await user.clear(learnsetLevelInput);
     await user.type(learnsetLevelInput, '9');
     await user.click(screen.getByRole('button', { name: 'Save learnset row' }));
 
-    expect(await screen.findByRole('button', { name: /Magical Leaf/ })).toBeInTheDocument();
+    expect(await within(learnsetBlock!).findByDisplayValue('345 Magical Leaf')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(screen.getByText('Set Bulbasaur learnset slot 1 to Lv. 9 Magical Leaf.')).toBeInTheDocument();
+  });
+
+  it('reorders Pokemon learnset rows by dragging one move onto another', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const learnsetBlock = screen
+      .getByRole('heading', { level: 4, name: 'Learnset' })
+      .closest('.inspector-block') as HTMLElement | null;
+    expect(learnsetBlock).not.toBeNull();
+    const tackleRow = within(learnsetBlock!).getByLabelText('Move').closest('li');
+    const growlRow = within(learnsetBlock!).getByRole('button', { name: /Growl/ }).closest('li');
+    expect(tackleRow).not.toBeNull();
+    expect(growlRow).not.toBeNull();
+    const dragData = new Map<string, string>();
+    const dataTransfer = {
+      dropEffect: '',
+      effectAllowed: '',
+      getData: (format: string) => dragData.get(format) ?? '',
+      setData: (format: string, data: string) => {
+        dragData.set(format, data);
+      }
+    } as unknown as DataTransfer;
+
+    fireEvent.dragStart(growlRow!, { dataTransfer });
+    fireEvent.dragOver(tackleRow!, { dataTransfer });
+    fireEvent.drop(tackleRow!, { dataTransfer });
+    fireEvent.dragEnd(growlRow!, { dataTransfer });
+
+    expect(await within(learnsetBlock!).findByDisplayValue('045 Growl')).toBeInTheDocument();
+    expect(within(learnsetBlock!).getByRole('button', { name: /Tackle/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Move Bulbasaur learnset slot 1 to slot 0.')).toBeInTheDocument();
   });
 
   it('starts a Pokemon edit session and saves an evolution row change', async () => {
@@ -310,8 +415,12 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     await user.click(screen.getByRole('button', { name: /002 Ivysaur/ }));
-    await user.selectOptions(screen.getByLabelText('Method'), '8');
-    await user.selectOptions(screen.getByLabelText('Item'), '25');
+    const evolutionMethodInput = screen.getByLabelText('Method');
+    await user.clear(evolutionMethodInput);
+    await user.type(evolutionMethodInput, '8');
+    const evolutionItemInput = screen.getByLabelText('Item');
+    await user.clear(evolutionItemInput);
+    await user.type(evolutionItemInput, '25');
     await user.clear(screen.getByLabelText('Form'));
     await user.type(screen.getByLabelText('Form'), '1');
     const evolutionLevelInput = screen.getAllByLabelText('Level')[0]!;
@@ -381,12 +490,10 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(screen.getAllByText('romfs/bin/pml/waza/waza_033.bin').length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Moves Data change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
@@ -548,12 +655,10 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(screen.getAllByText('romfs/bin/pml/item/item.dat').length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(screen.getByText('Applied Items change plan to the configured LayeredFS output root.')).toBeInTheDocument();
   });
 
@@ -569,7 +674,9 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: 'Open Items' }));
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
 
-    await user.selectOptions(screen.getByLabelText('Pouch'), '4');
+    const pouchInput = screen.getByLabelText('Pouch');
+    await user.clear(pouchInput);
+    await user.type(pouchInput, '4');
     await user.click(screen.getByRole('button', { name: 'Save Item' }));
 
     expect(await screen.findByText('Items (4)')).toBeInTheDocument();
@@ -613,14 +720,12 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/message/English/common/story.dat').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(screen.getByText('Applied Text change plan to the configured LayeredFS output root.')).toBeInTheDocument();
   });
 
@@ -676,14 +781,12 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/trainer/trainer_poke/trainer_010.bin').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Trainers change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
@@ -726,14 +829,12 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/script_event_data/add_poke.bin').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Gift Pokemon change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
@@ -778,14 +879,12 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/script_event_data/field_trade.bin').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Trade Pokemon change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
@@ -827,14 +926,12 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/script_event_data/event_encount_data.bin').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
       screen.getByText(
         'Applied Static Encounter change plan to the configured LayeredFS output root.'
@@ -880,12 +977,10 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(screen.getAllByText('romfs/bin/script_event_data/rental.bin').length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Rental Pokemon change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
@@ -912,7 +1007,8 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     const guaranteedIvsSelect = screen.getByLabelText('Guaranteed perfect IVs');
     expect(guaranteedIvsSelect).toHaveDisplayValue('5 Guaranteed Perfect IVs');
-    await user.selectOptions(guaranteedIvsSelect, '6');
+    await user.clear(guaranteedIvsSelect);
+    await user.type(guaranteedIvsSelect, '6');
     await user.click(screen.getByRole('button', { name: 'Save Adventure' }));
 
     await waitFor(() =>
@@ -929,16 +1025,14 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(
       screen.getAllByText(
         'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
       ).length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
       screen.getByText(
         'Applied Dynamax Adventures change plan to the configured LayeredFS output root.'
@@ -966,10 +1060,13 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     const itemSelect = screen.getByLabelText('Shop slot 1 item');
-    await user.selectOptions(itemSelect, '2');
+    await user.clear(itemSelect);
+    await user.type(itemSelect, '2');
     await user.click(screen.getByRole('button', { name: 'Save shop slot 1' }));
 
-    expect(await screen.findByRole('combobox', { name: 'Shop slot 1 item' })).toHaveValue('2');
+    expect(await screen.findByLabelText('Shop slot 1 item')).toHaveDisplayValue(
+      '0002 Antidote (Medicine)'
+    );
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
@@ -981,12 +1078,10 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(screen.getAllByText('romfs/bin/appli/shop/bin/shop_data.bin').length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Shops change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
@@ -1049,17 +1144,206 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/archive/field/resident/data_table.gfpak').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Encounters change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
+  });
+
+  it('copies Normal encounter slots 1-7 to all weather tables', async () => {
+    const user = userEvent.setup();
+    const weatherLabels = [
+      'Overcast',
+      'Raining',
+      'Thunderstorm',
+      'Intense Sun',
+      'Snowing',
+      'Snowstorm',
+      'Sandstorm',
+      'Heavy Fog'
+    ];
+    const sourceWeights = [10, 15, 12, 8, 20, 5, 7, 11, 6, 6];
+    const sourceSlots = sourceWeights.map((weight, index) => ({
+      form: (index + 1) % 4,
+      levelMax: 12,
+      levelMin: 8,
+      slot: index + 1,
+      species: `Species ${101 + index}`,
+      speciesId: 101 + index,
+      timeOfDay: null,
+      weather: 'Normal',
+      weight
+    }));
+    const weatherTableIds = weatherLabels.map(
+      (label, index) => `sword:symbol:0:1122334455667788:${index + 1}`
+    );
+    const workflow: EncountersWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'speciesId',
+          label: 'Species ID',
+          maximumValue: 65535,
+          minimumValue: 0,
+          valueKind: 'integer'
+        },
+        {
+          field: 'form',
+          label: 'Form',
+          maximumValue: 255,
+          minimumValue: 0,
+          valueKind: 'integer'
+        },
+        {
+          field: 'probability',
+          label: 'Probability',
+          maximumValue: 100,
+          minimumValue: 0,
+          valueKind: 'integer'
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalSlotCount: 90,
+        totalTableCount: 9
+      },
+      summary: {
+        availability: 'available',
+        description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
+        diagnostics: [],
+        id: 'encounters',
+        label: 'Encounters and Wild Data'
+      },
+      tables: [
+        {
+          archiveMember: 'encount_symbol_k.bin',
+          area: 'Symbol',
+          encounterType: 'Normal',
+          gameVersion: 'Sword',
+          location: 'Rolling Fields',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+            sourceLayer: 'base'
+          },
+          slots: sourceSlots,
+          tableId: 'sword:symbol:0:1122334455667788:0'
+        },
+        ...weatherLabels.map((label, index) => ({
+          archiveMember: 'encount_symbol_k.bin',
+          area: 'Symbol',
+          encounterType: label,
+          gameVersion: 'Sword',
+          location: 'Rolling Fields',
+          provenance: {
+            fileState: 'baseOnly' as const,
+            sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+            sourceLayer: 'base' as const
+          },
+          slots: Array.from({ length: 10 }, (_, slotIndex) => ({
+            form: 0,
+            levelMax: 10,
+            levelMin: 5,
+            slot: slotIndex + 1,
+            species: 'Empty',
+            speciesId: 0,
+            timeOfDay: null,
+            weather: label,
+            weight: 0
+          })),
+          tableId: weatherTableIds[index]!
+        }))
+      ]
+    };
+    const updates: Array<Parameters<ProjectBridge['updateEncounterSlotField']>[0]> = [];
+    const updateEncounterSlotField: ProjectBridge['updateEncounterSlotField'] = async (request) => {
+      updates.push(request);
+
+      return {
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            ...(request.session?.pendingEdits ?? []),
+            {
+              domain: 'workflow.encounters',
+              field: request.field,
+              newValue: request.value,
+              recordId: `${request.tableId}#${request.slot}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
+                }
+              ],
+              summary: `Set ${request.tableId} slot ${request.slot} ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-1'
+        },
+        workflow
+      };
+    };
+
+    render(
+      <App
+        bridge={createMockProjectBridge(
+          {
+            loadEncountersWorkflow: () =>
+              Promise.resolve({
+                workflow
+              }),
+            updateEncounterSlotField
+          },
+          true
+        )}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Encounters' }));
+
+    expect((await screen.findAllByText('Rolling Fields')).length).toBeGreaterThan(0);
+    const applyToAllWeatherButton = screen.getByRole('button', {
+      name: 'Apply to All Weather'
+    });
+    expect(applyToAllWeatherButton).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(applyToAllWeatherButton).toBeEnabled();
+
+    await user.click(applyToAllWeatherButton);
+
+    await waitFor(() => expect(updates).toHaveLength(168));
+    expect(new Set(updates.map((update) => update.tableId))).toEqual(new Set(weatherTableIds));
+    expect(updates.some((update) => update.slot > 7)).toBe(false);
+
+    for (const tableId of weatherTableIds) {
+      for (let slot = 1; slot <= 7; slot += 1) {
+        const slotUpdates = updates.filter(
+          (update) => update.tableId === tableId && update.slot === slot
+        );
+        expect(slotUpdates.map((update) => update.field)).toEqual([
+          'speciesId',
+          'form',
+          'probability'
+        ]);
+        expect(slotUpdates.map((update) => update.value)).toEqual([
+          String(100 + slot),
+          String(slot % 4),
+          String(sourceWeights[slot - 1])
+        ]);
+      }
+    }
   });
 
   it('opens Raid Rewards, edits a star value, reviews a reward plan, and applies it', async () => {
@@ -1097,14 +1381,12 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/archive/field/resident/data_table.gfpak').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Raid Rewards change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
@@ -1133,7 +1415,9 @@ describe('App', () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
-    await user.selectOptions(screen.getByLabelText('Guaranteed perfect IVs'), '6');
+    const raidBattleIvsInput = screen.getByLabelText('Guaranteed perfect IVs');
+    await user.clear(raidBattleIvsInput);
+    await user.type(raidBattleIvsInput, '6');
     await user.click(screen.getByRole('button', { name: 'Save Battle' }));
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
@@ -1148,14 +1432,12 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(
       screen.getAllByText('romfs/bin/archive/field/resident/data_table.gfpak').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
-    expect(await screen.findByRole('heading', { name: 'Apply Result' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
       screen.getByText('Applied Raid Battles change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
@@ -1241,8 +1523,6 @@ describe('App', () => {
 
     expect((await screen.findAllByText('exefs/main')).length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
-
     expect(
       await screen.findByText('Applied ExeFS patch to the configured LayeredFS output root.')
     ).toBeInTheDocument();
@@ -1299,8 +1579,6 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect((await screen.findAllByText('romfs/bin/pml/item/item.dat')).length).toBeGreaterThan(0);
-
-    await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
     expect(
       await screen.findByText('Applied Royal Candy change plan to the configured LayeredFS output root.')
@@ -1371,14 +1649,73 @@ describe('App', () => {
 
     expect(await screen.findByText('The folder does not exist.')).toBeInTheDocument();
   });
+
+  it('prompts on desktop window close during an edit session and exits after discard', async () => {
+    const user = userEvent.setup();
+    const closeGuardStates: boolean[] = [];
+    const exitApp = vi.fn(async () => undefined);
+    const desktopServices = createMockDesktopServices({
+      exitApp,
+      setCloseGuardEnabled: async (enabled) => {
+        closeGuardStates.push(enabled);
+      }
+    });
+    render(<App bridge={createMockProjectBridge({}, true)} desktopServices={desktopServices} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    await waitFor(() => expect(closeGuardStates).toContain(true));
+    await waitFor(() =>
+      expect(tauriEventMock.listeners[windowCloseRequestedEvent]?.length ?? 0).toBeGreaterThan(0)
+    );
+    await act(async () => {
+      tauriEventMock.listeners[windowCloseRequestedEvent]?.at(-1)?.();
+    });
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Discard Pending Changes?' })
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Yes, Discard' }));
+
+    await waitFor(() => expect(exitApp).toHaveBeenCalledTimes(1));
+    expect(closeGuardStates.at(-1)).toBe(false);
+  });
+
+  it('keeps the desktop close guard disabled when there is no edit session', async () => {
+    const closeGuardStates: boolean[] = [];
+    render(
+      <App
+        bridge={createMockProjectBridge()}
+        desktopServices={createMockDesktopServices({
+          setCloseGuardEnabled: async (enabled) => {
+            closeGuardStates.push(enabled);
+          }
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(closeGuardStates).toContain(false);
+    });
+    expect(screen.queryByRole('dialog', { name: 'Discard Pending Changes?' })).not.toBeInTheDocument();
+  });
 });
 
 function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): DesktopServices {
   return {
+    exitApp: async () => undefined,
     isAvailable: true,
     openPath: async () => undefined,
     pickFile: async () => null,
     pickFolder: async () => null,
+    setCloseGuardEnabled: async () => undefined,
     ...overrides
   };
 }
@@ -5382,6 +5719,8 @@ function createMockProjectBridge(
               newValue:
                 request.moveId !== null && request.level !== null
                   ? `${request.moveId}:${request.level}`
+                  : request.action === 'moveTo' && request.moveId !== null
+                  ? request.moveId.toString()
                   : '1',
               recordId: request.personalId.toString(),
               sources: [
@@ -5397,6 +5736,8 @@ function createMockProjectBridge(
                   ? `Move Bulbasaur learnset slot ${request.slot} up.`
                   : request.action === 'moveDown'
                   ? `Move Bulbasaur learnset slot ${request.slot} down.`
+                  : request.action === 'moveTo'
+                  ? `Move Bulbasaur learnset slot ${request.slot} to slot ${request.moveId}.`
                   : `Set Bulbasaur learnset slot ${request.slot ?? 0} to Lv. ${
                       request.level
                     } ${request.moveId === 345 ? 'Magical Leaf' : `Move ${request.moveId}`}.`
@@ -5441,6 +5782,16 @@ function createMockProjectBridge(
                 learnset[targetSlot]!,
                 learnset[targetSlot + 1]!
               ];
+            } else if (
+              request.action === 'moveTo' &&
+              targetSlot < learnset.length &&
+              request.moveId !== null &&
+              request.moveId < learnset.length
+            ) {
+              const [moved] = learnset.splice(targetSlot, 1);
+              if (moved) {
+                learnset.splice(request.moveId, 0, moved);
+              }
             }
 
             return {

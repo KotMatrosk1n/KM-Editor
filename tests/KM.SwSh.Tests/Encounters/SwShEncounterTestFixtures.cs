@@ -41,13 +41,14 @@ internal static class SwShEncounterTestFixtures
         int speciesOffset = 0,
         int? firstSlotSpecies = null,
         int? firstSlotProbability = null,
-        int? secondSlotProbability = null)
+        int? secondSlotProbability = null,
+        ulong? zoneId = null)
     {
         return new SwShWildEncounterArchive(
             1,
             [
                 new SwShWildEncounterTable(
-                    ZoneId,
+                    zoneId ?? ZoneId,
                     [
                         new SwShWildEncounterSubTable(
                             3,

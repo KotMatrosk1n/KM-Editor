@@ -3,14 +3,21 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
 
 const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
+const WINDOW_CLOSE_REQUESTED_EVENT: &str = "km-editor://window-close-requested";
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+struct CloseGuardState {
+    is_guarded: AtomicBool,
+}
 
 #[tauri::command(rename_all = "camelCase")]
 async fn project_bridge_once(
@@ -37,14 +44,22 @@ fn run_project_bridge_once(
         .spawn()
         .map_err(|error| format!("Could not start the project bridge runner: {error}"))?;
 
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "Project bridge runner did not expose stdin.".to_owned())?;
-    stdin
+    let Some(mut stdin) = child.stdin.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("Project bridge runner did not expose stdin.".to_owned());
+    };
+
+    let write_result = stdin
         .write_all(request_json.as_bytes())
-        .and_then(|_| stdin.write_all(b"\n"))
-        .map_err(|error| format!("Could not send the project bridge request: {error}"))?;
+        .and_then(|_| stdin.write_all(b"\n"));
+    drop(stdin);
+
+    if let Err(error) = write_result {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("Could not send the project bridge request: {error}"));
+    }
 
     let output = child
         .wait_with_output()
@@ -135,6 +150,16 @@ fn open_path(path: String) -> Result<(), String> {
         .map_err(|error| format!("Could not open the folder: {error}"))
 }
 
+#[tauri::command]
+fn set_close_guard_enabled(state: tauri::State<'_, CloseGuardState>, enabled: bool) {
+    state.is_guarded.store(enabled, Ordering::SeqCst);
+}
+
+#[tauri::command]
+fn exit_app(app_handle: tauri::AppHandle) {
+    app_handle.exit(0);
+}
+
 #[cfg(windows)]
 fn create_open_path_command(path: &Path) -> Command {
     let mut command = Command::new("explorer.exe");
@@ -159,10 +184,31 @@ fn create_open_path_command(path: &Path) -> Command {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(CloseGuardState {
+            is_guarded: AtomicBool::new(false),
+        })
         // Register shell support now so the future sidecar bridge can add a narrow command allowlist.
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![project_bridge_once, open_path])
+        .invoke_handler(tauri::generate_handler![
+            project_bridge_once,
+            open_path,
+            set_close_guard_enabled,
+            exit_app
+        ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let app_handle = window.app_handle();
+                let close_guard = app_handle.state::<CloseGuardState>();
+
+                if close_guard.is_guarded.load(Ordering::SeqCst) {
+                    api.prevent_close();
+                    let _ = window.emit(WINDOW_CLOSE_REQUESTED_EVENT, ());
+                } else {
+                    app_handle.exit(0);
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

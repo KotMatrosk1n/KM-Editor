@@ -133,7 +133,7 @@ public sealed class SwShItemsWorkflowServiceTests
                     GroupIndex: 10)));
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/itemname.dat",
-            SwShItemTestFixtures.CreateItemNames("None", "TM10 Magical Leaf"));
+            SwShItemTestFixtures.CreateItemNames("None", "TM10"));
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/wazaname.dat",
             CreateIndexedText(346, (345, "Magical Leaf")));
@@ -144,6 +144,7 @@ public sealed class SwShItemsWorkflowServiceTests
 
         var item = workflow.Items[1];
         Assert.Equal(3, workflow.Stats.SourceFileCount);
+        Assert.Equal("TM10 (Magical Leaf)", item.Name);
         Assert.Equal(10, item.Metadata.MachineSlot);
         Assert.Equal(345, item.Metadata.MachineMoveId);
         Assert.Equal("Magical Leaf", item.Metadata.MachineMoveName);

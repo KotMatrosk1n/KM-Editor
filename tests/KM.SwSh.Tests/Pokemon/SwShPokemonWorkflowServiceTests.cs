@@ -5,6 +5,7 @@ using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
+using KM.SwSh.Tests.Items;
 using System.Buffers.Binary;
 using Xunit;
 
@@ -27,7 +28,7 @@ public sealed class SwShPokemonWorkflowServiceTests
         Assert.Equal(1, workflow.Stats.PresentPokemonCount);
         Assert.Equal(1, workflow.Stats.TotalEvolutionCount);
         Assert.Equal(2, workflow.Stats.TotalLearnsetMoveCount);
-        Assert.Equal(8, workflow.Stats.SourceFileCount);
+        Assert.Equal(9, workflow.Stats.SourceFileCount);
         Assert.Contains(
             workflow.EvolutionMethodOptions,
             option => option.Value == 4
@@ -35,13 +36,22 @@ public sealed class SwShPokemonWorkflowServiceTests
                 && option.ArgumentKind == "level");
         Assert.Contains(
             workflow.EvolutionMethodOptions.Single(option => option.Value == 8).ArgumentOptions,
-            option => option.Value == 1 && option.Label == "001 Potion");
+            option => option.Value == 1 && option.Label == "001 Leaf Stone");
+        Assert.DoesNotContain(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 8).ArgumentOptions,
+            option => option.Value == 2);
+        Assert.Contains(
+            workflow.EvolutionMethodOptions.Single(option => option.Value == 6).ArgumentOptions,
+            option => option.Value == 2 && option.Label == "002 TM10 (Magical Leaf)");
         Assert.Contains(
             workflow.EvolutionMethodOptions.Single(option => option.Value == 21).ArgumentOptions,
             option => option.Value == 45 && option.Label == "045 Growl");
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShPokemonWorkflowService.HeldItem1Field).Options,
-            option => option.Value == 1 && option.Label == "001 Potion");
+            option => option.Value == 1 && option.Label == "001 Leaf Stone");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShPokemonWorkflowService.HeldItem1Field).Options,
+            option => option.Value == 2 && option.Label == "002 TM10 (Magical Leaf)");
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShPokemonWorkflowService.Ability1Field).Options,
             option => option.Value == 65 && option.Label == "065 Overgrow");
@@ -72,7 +82,7 @@ public sealed class SwShPokemonWorkflowServiceTests
         var tmGroup = pokemon.Compatibility.Single(group => group.GroupId == SwShPokemonWorkflowService.TechnicalMachineCompatibilityGroupId);
         Assert.Equal(1, tmGroup.EnabledCount);
         var tm10 = tmGroup.Entries.Single(entry => entry.Slot == 10);
-        Assert.Equal("TM10 Magical Leaf", tm10.Label);
+        Assert.Equal("TM10 (Magical Leaf)", tm10.Label);
         Assert.True(tm10.CanLearn);
         var typeTutorGroup = pokemon.Compatibility.Single(group => group.GroupId == SwShPokemonWorkflowService.TypeTutorCompatibilityGroupId);
         Assert.True(typeTutorGroup.Entries[0].CanLearn);
@@ -278,6 +288,30 @@ public sealed class SwShPokemonWorkflowServiceTests
             "bin/pml/evolution/evo_001.bin",
             CreateEvolutionFile((4, 0, 2, 0, 16)));
         temp.WriteBaseRomFsFile(
+            "bin/pml/item/item.dat",
+            SwShItemTestFixtures.CreateItemTableWithMachineMoves(
+                new Dictionary<int, int> { [10] = 345 },
+                new ItemFixtureRecord(0, 0, 0, 0, 0, SwShItemPouch.Items),
+                new ItemFixtureRecord(
+                    1,
+                    1,
+                    3000,
+                    0,
+                    0,
+                    SwShItemPouch.Items,
+                    CanUseOnPokemon: true,
+                    Boost0: 0x08),
+                new ItemFixtureRecord(
+                    2,
+                    2,
+                    1000,
+                    0,
+                    0,
+                    SwShItemPouch.TMs,
+                    FieldUseType: 2,
+                    GroupType: 4,
+                    GroupIndex: 10)));
+        temp.WriteBaseRomFsFile(
             "bin/message/English/common/pokelist.dat",
             CreateTextTable("None", "Which Pokemon do you want to swap with?"));
         temp.WriteBaseRomFsFile(
@@ -447,11 +481,12 @@ public sealed class SwShPokemonWorkflowServiceTests
 
     private static byte[] CreateIndexedItemNames()
     {
-        var names = Enumerable.Range(0, 2)
+        var names = Enumerable.Range(0, 3)
             .Select(index => $"Item {index}")
             .ToArray();
         names[0] = "None";
-        names[1] = "Potion";
+        names[1] = "Leaf Stone";
+        names[2] = "TM10";
 
         return CreateTextTable(names);
     }
