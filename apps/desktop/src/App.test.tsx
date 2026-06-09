@@ -2,7 +2,7 @@
 
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { App } from './App';
+import { App, getPokemonSpriteId } from './App';
 import {
   type DynamaxAdventuresWorkflow,
   type EncountersWorkflow,
@@ -32,6 +32,11 @@ import { type DesktopServices } from './desktopServices';
 import { useWorkbenchStore } from './workbenchStore';
 
 describe('App', () => {
+  it('normalizes known hyphenated Pokemon sprite ids', () => {
+    expect(getPokemonSpriteId('Kommo-o')).toBe('kommoo');
+    expect(getPokemonSpriteId('Toxtricity (Low Key) (Gigantamax)')).toBe('toxtricity-gmax');
+  });
+
   beforeEach(() => {
     window.localStorage.clear();
     useWorkbenchStore.setState({
@@ -650,7 +655,7 @@ describe('App', () => {
     expect(screen.getByLabelText('Held item ID')).toHaveDisplayValue('001 Potion');
     expect(screen.getByLabelText('Move 1 ID')).toHaveDisplayValue('001 Scratch');
     expect(screen.getByLabelText('Gender')).toHaveDisplayValue('Male');
-    expect(screen.getByLabelText('Ability')).toHaveDisplayValue('Ability 2');
+    expect(screen.getByLabelText('Ability')).toHaveDisplayValue('Ability 2 - 065 Overgrow');
     expect(screen.getByLabelText('Nature')).toHaveDisplayValue('Jolly');
     expect(screen.getByLabelText('Can Gigantamax')).toHaveDisplayValue('Yes');
     expect(screen.getByLabelText('Can Dynamax')).toHaveDisplayValue('No');
@@ -702,6 +707,7 @@ describe('App', () => {
     expect(screen.getByText('3 guaranteed perfect IVs')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByLabelText('Ability slot')).toHaveDisplayValue('Ability 1 - 065 Overgrow');
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('-4');
     await user.clear(hpIvInput);
@@ -954,14 +960,16 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Shops' })).toBeInTheDocument();
     expect(screen.getAllByText('Poke Mart').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Potion, Antidote').length).toBeGreaterThan(0);
-    expect(screen.getByRole('option', { name: 'Slot 1: Potion' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Shop slot 1 item')).toHaveDisplayValue('0001 Potion (Medicine)');
+    expect(screen.getByLabelText('Shop slot 1 price')).toHaveDisplayValue('300');
+    expect(screen.getByLabelText('Shop slot 1 stock')).toHaveDisplayValue('None');
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
-    const itemSelect = screen.getByLabelText('Item');
+    const itemSelect = screen.getByLabelText('Shop slot 1 item');
     await user.selectOptions(itemSelect, '2');
-    await user.click(screen.getByRole('button', { name: 'Save Item' }));
+    await user.click(screen.getByRole('button', { name: 'Save shop slot 1' }));
 
-    expect(await screen.findByRole('combobox', { name: 'Item' })).toHaveValue('2');
+    expect(await screen.findByRole('combobox', { name: 'Shop slot 1 item' })).toHaveValue('2');
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
@@ -974,7 +982,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(await screen.findByRole('heading', { name: 'Review' })).toBeInTheDocument();
-    expect(screen.getAllByText('romfs/bin/app/shop/shop_data.bin').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('romfs/bin/appli/shop/bin/shop_data.bin').length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Apply Changes' }));
 
@@ -995,7 +1003,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Workflows' }));
     await user.click(await screen.findByRole('button', { name: 'Open Shops' }));
 
-    await user.click(await screen.findByRole('button', { name: 'Open in Items' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Potion in Items' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
     expect(screen.getAllByText('Potion').length).toBeGreaterThan(0);
@@ -1070,7 +1078,7 @@ describe('App', () => {
     expect(screen.getByRole('option', { name: 'Slot 1: Exp. Candy L' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
-    const starValueInput = screen.getByLabelText('5-star value');
+    const starValueInput = screen.getByLabelText('5-star drop chance');
     await user.clear(starValueInput);
     await user.type(starValueInput, '77');
     await user.click(screen.getByRole('button', { name: 'Save Reward' }));
@@ -1080,7 +1088,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(
-      screen.getByText('Set Drop 0xAABBCCDD00112233 slot 1 5-star value to 77.')
+      screen.getByText('Set Drop 0xAABBCCDD00112233 slot 1 5-star drop chance to 77.')
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
@@ -2561,6 +2569,12 @@ function createMockProjectBridge(
           {
             ability: 2,
             abilityLabel: 'Ability 2',
+            abilityOptions: [
+              { label: 'Default - 065 Overgrow', value: 0 },
+              { label: 'Ability 1 - 065 Overgrow', value: 1 },
+              { label: 'Ability 2 - 065 Overgrow', value: 2 },
+              { label: 'Hidden Ability - 000 None', value: 3 }
+            ],
             canDynamax: false,
             canGigantamax: true,
             dynamaxLevel: 7,
@@ -2710,7 +2724,7 @@ function createMockProjectBridge(
       {
         field: 'dynamaxLevel',
         label: 'Dynamax level',
-        maximumValue: 255,
+        maximumValue: 10,
         minimumValue: 0,
         options: [],
         valueKind: 'integer'
@@ -2728,7 +2742,7 @@ function createMockProjectBridge(
       },
       {
         field: 'specialMoveId',
-        label: 'Special move',
+        label: 'Special Move',
         maximumValue: 65535,
         minimumValue: 0,
         options: [
@@ -2802,6 +2816,12 @@ function createMockProjectBridge(
       {
         ability: 1,
         abilityLabel: 'Ability 1',
+        abilityOptions: [
+          { label: 'Default - 065 Overgrow', value: 0 },
+          { label: 'Ability 1 - 065 Overgrow', value: 1 },
+          { label: 'Ability 2 - 065 Overgrow', value: 2 },
+          { label: 'Hidden Ability - 000 None', value: 3 }
+        ],
         ballItem: 'Poke Ball',
         ballItemId: 4,
         canGigantamax: false,
@@ -2964,7 +2984,7 @@ function createMockProjectBridge(
       {
         field: 'dynamaxLevel',
         label: 'Dynamax level',
-        maximumValue: 255,
+        maximumValue: 10,
         minimumValue: 0,
         options: [],
         valueKind: 'integer'
@@ -3151,6 +3171,7 @@ function createMockProjectBridge(
       {
         ability: 1,
         abilityLabel: 'Ability 1',
+        abilityOptions: [],
         ballItem: 'Poke Ball',
         ballItemId: 4,
         canGigantamax: false,
@@ -3318,7 +3339,7 @@ function createMockProjectBridge(
       {
         field: 'dynamaxLevel',
         label: 'Dynamax level',
-        maximumValue: 255,
+        maximumValue: 10,
         minimumValue: 0,
         options: [],
         valueKind: 'integer'
@@ -3378,6 +3399,7 @@ function createMockProjectBridge(
       {
         ability: 3,
         abilityLabel: 'Hidden Ability',
+        abilityOptions: [],
         canGigantamax: true,
         dynamaxLevel: 10,
         encounterId: '0x0102030405060708',
@@ -3581,6 +3603,7 @@ function createMockProjectBridge(
       {
         ability: 1,
         abilityLabel: 'Ability 1',
+        abilityOptions: [],
         ballItem: 'Poke Ball',
         ballItemId: 4,
         evs: {
@@ -3783,6 +3806,7 @@ function createMockProjectBridge(
       {
         ability: 0,
         abilityLabel: 'Ability 1',
+        abilityOptions: [],
         adventureIndex: 0,
         ballItem: 'Poke Ball',
         ballItemId: 4,
@@ -3888,7 +3912,7 @@ function createMockProjectBridge(
         name: 'Poke Mart',
         provenance: {
           fileState: 'baseOnly',
-          sourceFile: 'romfs/bin/app/shop/shop_data.bin',
+          sourceFile: 'romfs/bin/appli/shop/bin/shop_data.bin',
           sourceLayer: 'base'
         },
         shopId: 'single:1F3FF031A3A24490',
@@ -4063,6 +4087,7 @@ function createMockProjectBridge(
           {
             ability: 4,
             abilityLabel: 'Any Ability',
+            abilityOptions: [],
             bonusTableHash: '0x1020304050607080',
             bonusRewardLink: {
               isMatched: true,
@@ -4099,6 +4124,7 @@ function createMockProjectBridge(
           {
             ability: 0,
             abilityLabel: 'Ability 1',
+            abilityOptions: [],
             bonusTableHash: '0x0807060504030201',
             bonusRewardLink: {
               isMatched: false,
@@ -4644,10 +4670,10 @@ function createMockProjectBridge(
                         sources: [
                           {
                             layer: 'base',
-                            relativePath: 'romfs/bin/app/shop/shop_data.bin'
+                            relativePath: 'romfs/bin/appli/shop/bin/shop_data.bin'
                           }
                         ],
-                        targetRelativePath: 'romfs/bin/app/shop/shop_data.bin'
+                        targetRelativePath: 'romfs/bin/appli/shop/bin/shop_data.bin'
                       }
                     ]
                   : request.session.pendingEdits[0]?.domain === 'workflow.encounters'
@@ -4688,7 +4714,7 @@ function createMockProjectBridge(
                         ? [
                             {
                               reason:
-                                'Apply pending Raid Rewards edit: Set Drop 0xAABBCCDD00112233 slot 1 5-star value to 77.',
+                                'Apply pending Raid Rewards edit: Set Drop 0xAABBCCDD00112233 slot 1 5-star drop chance to 77.',
                               replacesExistingOutput: false,
                               sources: [
                                 {
@@ -5924,7 +5950,7 @@ function createMockProjectBridge(
               sources: [
                 {
                   layer: 'base',
-                  relativePath: 'romfs/bin/app/shop/shop_data.bin'
+                  relativePath: 'romfs/bin/appli/shop/bin/shop_data.bin'
                 }
               ],
               summary: `Set Poke Mart slot ${request.slot} item ID to ${request.value}.`
@@ -6057,7 +6083,7 @@ function createMockProjectBridge(
                   relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
                 }
               ],
-              summary: `Set Drop 0xAABBCCDD00112233 slot ${request.slot} 5-star value to ${request.value}.`
+              summary: `Set Drop 0xAABBCCDD00112233 slot ${request.slot} 5-star drop chance to ${request.value}.`
             }
           ],
           sessionId: 'session-1'

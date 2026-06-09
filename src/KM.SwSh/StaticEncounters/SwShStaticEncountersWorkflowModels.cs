@@ -51,7 +51,11 @@ public sealed record SwShStaticEncounterEntry(
     int? FlawlessIvCount,
     string IvSummary,
     IReadOnlyList<SwShStaticEncounterMoveRecord> Moves,
-    SwShStaticEncounterProvenance Provenance);
+    SwShStaticEncounterProvenance Provenance)
+{
+    public IReadOnlyList<SwShStaticEncounterEditableFieldOption> AbilityOptions { get; init; } =
+        Array.Empty<SwShStaticEncounterEditableFieldOption>();
+}
 
 public sealed record SwShStaticEncounterEditableField(
     string Field,

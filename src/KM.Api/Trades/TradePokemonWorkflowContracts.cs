@@ -71,7 +71,11 @@ public sealed record TradePokemonRecordDto(
     TradePokemonIvsDto Ivs,
     int? FlawlessIvCount,
     string IvSummary,
-    TradePokemonProvenanceDto Provenance);
+    TradePokemonProvenanceDto Provenance)
+{
+    public IReadOnlyList<TradePokemonEditableFieldOptionDto> AbilityOptions { get; init; } =
+        Array.Empty<TradePokemonEditableFieldOptionDto>();
+}
 
 public sealed record TradePokemonMoveRecordDto(
     int Slot,

@@ -104,7 +104,7 @@ public sealed class SwShTradePokemonWorkflowService
     [
         ..Enumerable.Range(0, 11).Select(value => new SwShTradePokemonEditableFieldOption(
             value,
-            value == 0 ? "0 Off" : $"Level {value}")),
+            value.ToString(CultureInfo.InvariantCulture))),
     ];
 
     private static readonly IReadOnlyList<SwShTradePokemonEditableFieldOption> NatureOptions =
@@ -333,7 +333,7 @@ public sealed class SwShTradePokemonWorkflowService
 
     private static TradeLookupTables CreateEmptyLookupTables()
     {
-        return new TradeLookupTables([], [], [], SourceFileCount: 0);
+        return new TradeLookupTables([], [], [], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShTradePokemonEditableField> CreateEditableFields(TradeLookupTables lookupTables)
@@ -412,7 +412,7 @@ public sealed class SwShTradePokemonWorkflowService
             trade.BallItemId,
             GetIndexedName(trade.BallItemId, lookupTables.ItemNames, "Item"),
             trade.Ability,
-            GetOptionLabel(AbilityOptions, trade.Ability, "Ability slot"),
+            GetAbilityOptionLabel(lookupTables, trade.Species, trade.Form, trade.Ability),
             trade.Nature,
             GetOptionLabel(NatureOptions, trade.Nature, "Nature"),
             trade.Gender,
@@ -442,7 +442,10 @@ public sealed class SwShTradePokemonWorkflowService
             ivs,
             flawlessIvCount,
             FormatIvSummary(ivs, flawlessIvCount),
-            provenance);
+            provenance)
+        {
+            AbilityOptions = CreateAbilityOptions(lookupTables, trade.Species, trade.Form),
+        };
     }
 
     private static string FormatTradeLabel(
@@ -498,12 +501,36 @@ public sealed class SwShTradePokemonWorkflowService
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
+        var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new TradeLookupTables(
             speciesNames,
             itemNames,
             moveNames,
+            abilityResolver,
             CountSource(speciesNames) + CountSource(itemNames) + CountSource(moveNames));
+    }
+
+    private static IReadOnlyList<SwShTradePokemonEditableFieldOption> CreateAbilityOptions(
+        TradeLookupTables lookupTables,
+        int speciesId,
+        int form)
+    {
+        return lookupTables.AbilityResolver
+            .CreateOptions(speciesId, form, SwShAbilityOptionMode.DefaultPlusSlots)
+            .Select(option => new SwShTradePokemonEditableFieldOption(option.Value, option.Label))
+            .ToArray();
+    }
+
+    private static string GetAbilityOptionLabel(
+        TradeLookupTables lookupTables,
+        int speciesId,
+        int form,
+        int value)
+    {
+        return CreateAbilityOptions(lookupTables, speciesId, form)
+            .FirstOrDefault(option => option.Value == value)?.Label
+            ?? GetOptionLabel(AbilityOptions, value, "Ability slot");
     }
 
     private static int CountSource(IReadOnlyList<string> values)
@@ -722,5 +749,6 @@ public sealed class SwShTradePokemonWorkflowService
         IReadOnlyList<string> SpeciesNames,
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,
+        SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);
 }

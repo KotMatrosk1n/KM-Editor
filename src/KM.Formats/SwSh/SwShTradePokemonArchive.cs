@@ -91,6 +91,7 @@ public sealed record SwShTradePokemonArchive(IReadOnlyList<SwShTradePokemonRecor
     public const int ThreePerfectIvSentinel = -4;
     public const int MinimumFixedIvValue = 0;
     public const int MaximumFixedIvValue = 31;
+    public const int MaximumDynamaxLevel = 10;
     public const int MaximumByteValue = byte.MaxValue;
     public const int MaximumIdValue = int.MaxValue;
 
@@ -182,7 +183,7 @@ public sealed record SwShTradePokemonArchive(IReadOnlyList<SwShTradePokemonRecor
         mutableTrades[edit.TradeIndex] = edit.Field switch
         {
             SwShTradePokemonField.Form => trade with { Form = ValidateRange(edit.Value, 0, MaximumByteValue) },
-            SwShTradePokemonField.DynamaxLevel => trade with { DynamaxLevel = ValidateRange(edit.Value, 0, MaximumByteValue) },
+            SwShTradePokemonField.DynamaxLevel => trade with { DynamaxLevel = ValidateRange(edit.Value, 0, MaximumDynamaxLevel) },
             SwShTradePokemonField.BallItemId => trade with { BallItemId = ValidateRange(edit.Value, 0, MaximumIdValue) },
             SwShTradePokemonField.Field03 => trade with { Field03 = ValidateRange(edit.Value, 0, MaximumIdValue) },
             SwShTradePokemonField.CanGigantamax => trade with { CanGigantamax = ValidateBool(edit.Value) },

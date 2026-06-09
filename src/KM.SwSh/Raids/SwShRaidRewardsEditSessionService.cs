@@ -391,20 +391,22 @@ public sealed class SwShRaidRewardsEditSessionService
         string field,
         int value)
     {
+        var valueLabel = table.RewardKind == "drop" ? "drop chance" : "quantity";
+
         return field switch
         {
             SwShRaidRewardsWorkflowService.ItemIdField =>
                 $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} item ID to {value}.",
             SwShRaidRewardsWorkflowService.Star1ValueField =>
-                $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} 1-star value to {value}.",
+                $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} 1-star {valueLabel} to {value}.",
             SwShRaidRewardsWorkflowService.Star2ValueField =>
-                $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} 2-star value to {value}.",
+                $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} 2-star {valueLabel} to {value}.",
             SwShRaidRewardsWorkflowService.Star3ValueField =>
-                $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} 3-star value to {value}.",
+                $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} 3-star {valueLabel} to {value}.",
             SwShRaidRewardsWorkflowService.Star4ValueField =>
-                $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} 4-star value to {value}.",
+                $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} 4-star {valueLabel} to {value}.",
             SwShRaidRewardsWorkflowService.Star5ValueField =>
-                $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} 5-star value to {value}.",
+                $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} 5-star {valueLabel} to {value}.",
             _ => $"Set {table.RewardKindLabel} {table.SourceTableHash} slot {reward.Slot} {field} to {value}.",
         };
     }

@@ -41,7 +41,11 @@ public sealed record TrainerPokemonRecordDto(
     bool CanGigantamax,
     TrainerPokemonStatsDto Ivs,
     bool Shiny,
-    bool CanDynamax);
+    bool CanDynamax)
+{
+    public IReadOnlyList<TrainerEditableFieldOptionDto> AbilityOptions { get; init; } =
+        Array.Empty<TrainerEditableFieldOptionDto>();
+}
 
 public sealed record TrainerPokemonStatsDto(
     int HP,

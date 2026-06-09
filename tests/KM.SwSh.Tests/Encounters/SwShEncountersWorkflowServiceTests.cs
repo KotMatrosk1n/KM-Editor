@@ -48,6 +48,47 @@ public sealed class SwShEncountersWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadFormatsSpeciesZeroAsEmpty()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "encount_symbol_k.bin",
+                    SwShEncounterTestFixtures.CreateArchive(
+                        firstSlotSpecies: 0,
+                        firstSlotProbability: 0,
+                        secondSlotProbability: 100).Write()),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            SwShGameTextFile.Write(
+            [
+                new SwShGameTextLine("Egg", Flags: 0),
+                new SwShGameTextLine("Bulbasaur", Flags: 0),
+                new SwShGameTextLine("Ivysaur", Flags: 0),
+                new SwShGameTextLine("Venusaur", Flags: 0),
+                new SwShGameTextLine("Charmander", Flags: 0),
+            ]));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+
+        var table = Assert.Single(workflow.Tables);
+        Assert.Equal(0, table.Slots[0].SpeciesId);
+        Assert.Equal("Empty", table.Slots[0].Species);
+        var speciesField = workflow.EditableFields.Single(field =>
+            field.Field == SwShEncountersWorkflowService.SpeciesIdField);
+        Assert.Contains(speciesField.Options, option => option.Value == 0 && option.Label == "000 Empty");
+        Assert.DoesNotContain(
+            speciesField.Options,
+            option => option.Value == 0 && option.Label.Contains("Egg", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void LoadReturnsDiagnosticWhenWildDataPackIsMissing()
     {
         using var temp = TemporarySwShProject.Create();

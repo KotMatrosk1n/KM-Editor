@@ -15,8 +15,8 @@ public sealed class SwShRoyalCandyWorkflowService
 {
     public const string ItemPath = "romfs/bin/pml/item/item.dat";
     public const string ItemHashPath = "romfs/bin/pml/item/item_hash_to_index.dat";
-    public const string ShopDataPath = "romfs/bin/app/shop/shop_data.bin";
-    public const string LegacyShopDataPath = "romfs/bin/appli/shop/bin/shop_data.bin";
+    public const string ShopDataPath = "romfs/bin/appli/shop/bin/shop_data.bin";
+    public const string LegacyShopDataPath = "romfs/bin/app/shop/shop_data.bin";
     public const string NestDataPath = "romfs/bin/archive/field/resident/data_table.gfpak";
     public const string PlacementPath = "romfs/bin/archive/field/resident/placement.gfpak";
     public const string BagEventScriptPath = "romfs/bin/script/amx/main_event_0020.amx";

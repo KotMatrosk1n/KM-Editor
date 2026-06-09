@@ -144,6 +144,15 @@ public sealed class SwShStaticEncounterArchiveTests
             () => archive.WriteEdits([new SwShStaticEncounterEdit(0, SwShStaticEncounterField.FlawlessIvCount, 5)]));
     }
 
+    [Fact]
+    public void WriteEditsRejectsInvalidDynamaxLevel()
+    {
+        var archive = CreateArchive();
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => archive.WriteEdits([new SwShStaticEncounterEdit(0, SwShStaticEncounterField.DynamaxLevel, 11)]));
+    }
+
     internal static SwShStaticEncounterArchive CreateArchive()
     {
         return new SwShStaticEncounterArchive(

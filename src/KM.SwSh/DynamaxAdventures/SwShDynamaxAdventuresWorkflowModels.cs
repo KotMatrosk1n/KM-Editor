@@ -64,7 +64,11 @@ public sealed record SwShDynamaxAdventureEntry(
     SwShDynamaxAdventureIvsRecord Ivs,
     int GuaranteedPerfectIvs,
     string IvSummary,
-    SwShDynamaxAdventureProvenance Provenance);
+    SwShDynamaxAdventureProvenance Provenance)
+{
+    public IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> AbilityOptions { get; init; } =
+        Array.Empty<SwShDynamaxAdventureEditableFieldOption>();
+}
 
 public sealed record SwShDynamaxAdventuresWorkflowStats(
     int TotalEncounterCount,

@@ -145,6 +145,15 @@ public sealed class SwShTradePokemonArchiveTests
             () => archive.WriteEdits([new SwShTradePokemonEdit(0, SwShTradePokemonField.FlawlessIvCount, 5)]));
     }
 
+    [Fact]
+    public void WriteEditsRejectsInvalidDynamaxLevel()
+    {
+        var archive = CreateArchive();
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => archive.WriteEdits([new SwShTradePokemonEdit(0, SwShTradePokemonField.DynamaxLevel, 11)]));
+    }
+
     private static SwShTradePokemonArchive CreateArchive()
     {
         return new SwShTradePokemonArchive(

@@ -78,6 +78,7 @@ public sealed record SwShStaticEncounterArchive(IReadOnlyList<SwShStaticEncounte
     public const int ThreePerfectIvSentinel = -4;
     public const int MinimumFixedIvValue = 0;
     public const int MaximumFixedIvValue = 31;
+    public const int MaximumDynamaxLevel = 10;
     public const int MaximumByteValue = byte.MaxValue;
     public const int MaximumIdValue = int.MaxValue;
 
@@ -170,7 +171,7 @@ public sealed record SwShStaticEncounterArchive(IReadOnlyList<SwShStaticEncounte
         mutableEncounters[edit.EncounterIndex] = edit.Field switch
         {
             SwShStaticEncounterField.Form => encounter with { Form = ValidateRange(edit.Value, 0, MaximumByteValue) },
-            SwShStaticEncounterField.DynamaxLevel => encounter with { DynamaxLevel = ValidateRange(edit.Value, 0, MaximumByteValue) },
+            SwShStaticEncounterField.DynamaxLevel => encounter with { DynamaxLevel = ValidateRange(edit.Value, 0, MaximumDynamaxLevel) },
             SwShStaticEncounterField.CanGigantamax => encounter with { CanGigantamax = ValidateBool(edit.Value) },
             SwShStaticEncounterField.HeldItem => encounter with { HeldItem = ValidateRange(edit.Value, 0, MaximumIdValue) },
             SwShStaticEncounterField.Level => encounter with { Level = ValidateRange(edit.Value, 0, MaximumByteValue) },

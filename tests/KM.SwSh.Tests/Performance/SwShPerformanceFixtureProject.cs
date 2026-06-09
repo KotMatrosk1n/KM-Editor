@@ -339,7 +339,7 @@ internal static class SwShPerformanceFixtureProject
             .ToArray();
 
         temp.WriteBaseRomFsFile(
-            "bin/app/shop/shop_data.bin",
+            "bin/appli/shop/bin/shop_data.bin",
             new SwShShopDataFile(singleShops, multiShops).Write());
     }
 
