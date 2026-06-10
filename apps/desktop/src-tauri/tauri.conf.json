@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "KM Editor",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "identifier": "app.kmeditor.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "KM Editor v0.1.0",
+        "title": "KM Editor v0.0.1",
         "width": 1280,
         "height": 720,
         "minWidth": 960,

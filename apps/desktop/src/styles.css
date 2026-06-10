@@ -224,7 +224,7 @@ textarea {
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(220px, 360px) auto;
+  grid-template-columns: minmax(180px, 1fr) auto;
   gap: 16px;
   align-items: center;
   min-height: 88px;
@@ -3095,6 +3095,38 @@ h2 {
   gap: 12px;
   align-items: center;
   margin-top: 16px;
+}
+
+.settings-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.update-status {
+  min-width: min(100%, 360px);
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--color-text-soft);
+  background: #0b1120;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+  font-weight: 800;
+}
+
+.update-status-available,
+.update-status-upToDate {
+  color: #d7f7dd;
+  background: rgb(25 75 45 / 38%);
+  border-color: rgb(86 173 110 / 42%);
+}
+
+.update-status-error {
+  color: #ffd2d2;
+  background: rgb(80 30 30 / 38%);
+  border-color: rgb(255 107 107 / 42%);
 }
 
 .changes-summary .metric {

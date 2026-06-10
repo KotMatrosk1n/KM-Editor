@@ -2,6 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { open as openExternal } from '@tauri-apps/plugin-shell';
 
 export type PickFolderOptions = {
   defaultPath?: string;
@@ -11,6 +12,7 @@ export type PickFolderOptions = {
 export type DesktopServices = {
   exitApp: () => Promise<void>;
   isAvailable: boolean;
+  openExternalUrl: (url: string) => Promise<void>;
   openPath: (path: string) => Promise<void>;
   pickFile: (options: PickFolderOptions) => Promise<string | null>;
   pickFolder: (options: PickFolderOptions) => Promise<string | null>;
@@ -20,6 +22,7 @@ export type DesktopServices = {
 export const desktopServices: DesktopServices = {
   exitApp: () => invoke('exit_app'),
   isAvailable: hasTauriRuntime(),
+  openExternalUrl: (url) => openExternal(url),
   openPath: (path) => invoke('open_path', { path }),
   pickFile: async ({ defaultPath, title }) => {
     const selection = await openDialog({

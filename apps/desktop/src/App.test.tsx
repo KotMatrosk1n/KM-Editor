@@ -174,13 +174,19 @@ describe('App', () => {
     });
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('renders the project workbench shell', () => {
     render(<App />);
 
     expect(screen.getByText('KM Editor')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Project Setup' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Project Paths' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Open Project' }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Validate Paths' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open Project' })).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Search project')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Viewers' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Editors' })).not.toBeInTheDocument();
     expect(
@@ -200,7 +206,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
 
     const navigation = screen.getByRole('navigation', { name: 'Workspace' });
     const topLevelLabels = within(navigation)
@@ -216,7 +222,8 @@ describe('App', () => {
       'Economy',
       'Tools',
       'Advanced Editors',
-      'Changes'
+      'Changes',
+      'Settings'
     ]);
     expect(screen.queryByRole('button', { name: 'Workflows' })).not.toBeInTheDocument();
 
@@ -274,6 +281,11 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(screen.getByRole('heading', { name: 'Changes' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Check for Updates' })).toBeInTheDocument();
   });
 
   it('validates and opens a read-only project shell state', async () => {
@@ -282,7 +294,7 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
 
     expect(await screen.findAllByText('View Only')).toHaveLength(2);
 
@@ -298,7 +310,7 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Items' }));
 
@@ -343,7 +355,7 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
@@ -373,7 +385,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
@@ -414,7 +426,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
@@ -454,7 +466,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
@@ -483,7 +495,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
@@ -527,7 +539,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
@@ -552,7 +564,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
@@ -576,7 +588,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
@@ -671,7 +683,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
@@ -720,7 +732,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
@@ -777,7 +789,7 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Moves' }));
 
@@ -803,7 +815,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Moves' }));
 
@@ -876,7 +888,7 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Items' }));
 
@@ -918,7 +930,7 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Items' }));
 
@@ -945,7 +957,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Tools' }));
     await user.click(screen.getByRole('button', { name: 'Spreadsheet Import' }));
 
@@ -969,7 +981,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Items' }));
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
@@ -1006,7 +1018,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Items' }));
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
@@ -1041,7 +1053,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Items' }));
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
@@ -1067,7 +1079,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Items' }));
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
@@ -1089,7 +1101,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Viewers' }));
     await user.click(screen.getByRole('button', { name: 'Text' }));
 
@@ -1112,7 +1124,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Trainers' }));
 
@@ -1249,7 +1261,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Trainers' }));
     await user.click(screen.getByRole('button', { name: 'Edit' }));
@@ -1285,7 +1297,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Trainers' }));
     await user.click(screen.getByRole('button', { name: 'Edit' }));
@@ -1320,7 +1332,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
@@ -1351,7 +1363,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     await user.click(screen.getByRole('button', { name: 'Gift Pokemon' }));
 
@@ -1404,7 +1416,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     await user.click(screen.getByRole('button', { name: 'Trade Pokemon' }));
 
@@ -1459,7 +1471,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     await user.click(screen.getByRole('button', { name: 'Static Encounters' }));
 
@@ -1512,7 +1524,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     await user.click(screen.getByRole('button', { name: 'Rental Pokemon' }));
 
@@ -1563,7 +1575,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     await user.click(screen.getByRole('button', { name: 'Rental Pokemon' }));
     await screen.findByRole('heading', { level: 2, name: 'Rental Pokemon' });
@@ -1589,7 +1601,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     await user.click(screen.getByRole('button', { name: 'Dynamax Adventures' }));
 
@@ -1645,7 +1657,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Economy' }));
     await user.click(screen.getByRole('button', { name: 'Shops' }));
 
@@ -1655,8 +1667,11 @@ describe('App', () => {
     expect(screen.getByLabelText('Shop slot 1 item')).toHaveDisplayValue('0001 Potion (Medicine)');
     expect(screen.getByLabelText('Shop slot 1 price')).toHaveDisplayValue('300');
     expect(screen.getByLabelText('Shop slot 1 stock')).toHaveDisplayValue('None');
+    expect(screen.getByLabelText('Shop slot 1 stock')).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByLabelText('Shop slot 1 price')).toBeEnabled();
+    expect(screen.getByLabelText('Shop slot 1 stock')).toBeDisabled();
     const itemSelect = screen.getByLabelText('Shop slot 1 item');
     await user.clear(itemSelect);
     await user.type(itemSelect, '2');
@@ -1694,7 +1709,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Economy' }));
     await user.click(screen.getByRole('button', { name: 'Shops' }));
 
@@ -1714,6 +1729,35 @@ describe('App', () => {
     expect(screen.getByText('Set Poke Mart inventory order to 2 items.')).toBeInTheDocument();
   });
 
+  it('edits a shop item price through the item buy price', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Economy' }));
+    await user.click(screen.getByRole('button', { name: 'Shops' }));
+
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    const priceInput = screen.getByLabelText('Shop slot 1 price');
+
+    expect(priceInput).toBeEnabled();
+    expect(screen.getByLabelText('Shop slot 1 stock')).toBeDisabled();
+
+    await user.clear(priceInput);
+    await user.type(priceInput, '450');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    expect(await screen.findByLabelText('Shop slot 1 price')).toHaveDisplayValue('450');
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Potion buy price to 450.')).toBeInTheDocument();
+    expect(screen.getAllByText('Items').length).toBeGreaterThan(0);
+  });
+
   it('opens a linked shop inventory item in Items', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
@@ -1721,7 +1765,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Economy' }));
     await user.click(screen.getByRole('button', { name: 'Shops' }));
 
@@ -1751,7 +1795,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
 
@@ -1954,7 +1998,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
 
@@ -1999,7 +2043,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Economy' }));
     await user.click(screen.getByRole('button', { name: 'Raid Rewards' }));
 
@@ -2045,7 +2089,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     await user.click(screen.getByRole('button', { name: 'Raid Battles' }));
 
@@ -2238,7 +2282,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     await user.click(screen.getByRole('button', { name: 'Raid Battles' }));
     await user.click(screen.getByRole('button', { name: 'Edit' }));
@@ -2283,7 +2327,7 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Viewers' }));
     await user.click(screen.getByRole('button', { name: 'Flagwork / Save' }));
 
@@ -2312,7 +2356,7 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
     await user.click(screen.getByRole('button', { name: 'ExeFS Patches' }));
 
@@ -2340,7 +2384,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output-root');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
     await user.click(screen.getByRole('button', { name: 'ExeFS Patches' }));
     await user.click(await screen.findByRole('button', { name: 'Stage Patch' }));
@@ -2368,7 +2412,7 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
     await user.click(screen.getByRole('button', { name: 'Royal Candy' }));
 
@@ -2395,7 +2439,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output-root');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
     await user.click(screen.getByRole('button', { name: 'Royal Candy' }));
     await user.click(await screen.findByRole('button', { name: 'Stage' }));
@@ -2434,7 +2478,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output-root');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
     await user.click(screen.getByRole('button', { name: 'Royal Candy' }));
     await user.click(
@@ -2474,7 +2518,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output-root');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
     await user.click(screen.getByRole('button', { name: 'Royal Candy' }));
     await user.click(
@@ -2506,6 +2550,137 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
 
     expect(await screen.findByText('Project bridge unavailable.')).toBeInTheDocument();
+  });
+
+  it('checks GitHub releases and opens an updater package when available', async () => {
+    const user = userEvent.setup();
+    const openExternalUrl = vi.fn(async () => undefined);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify([
+            {
+              assets: [
+                {
+                  browser_download_url:
+                    'https://github.example/releases/km-editor-0.2.0.nsis.zip',
+                  name: 'KM Editor_0.2.0_x64-setup.nsis.zip',
+                  size: 42000
+                },
+                {
+                  browser_download_url:
+                    'https://github.example/releases/KM Editor_0.2.0_x64-setup.exe',
+                  name: 'KM Editor_0.2.0_x64-setup.exe',
+                  size: 99000
+                }
+              ],
+              draft: false,
+              html_url: 'https://github.example/releases/tag/v0.2.0',
+              name: 'KM Editor v0.2.0',
+              prerelease: false,
+              tag_name: 'v0.2.0'
+            }
+          ]),
+          { headers: { 'Content-Type': 'application/json' }, status: 200 }
+        )
+      )
+    );
+
+    render(<App desktopServices={createMockDesktopServices({ openExternalUrl })} />);
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.click(screen.getByRole('button', { name: 'Check for Updates' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Update Available' })).toBeInTheDocument();
+    expect(screen.getAllByText(/KM Editor v0\.2\.0 is available/).length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Download Update' }));
+
+    await waitFor(() =>
+      expect(openExternalUrl).toHaveBeenCalledWith(
+        'https://github.example/releases/km-editor-0.2.0.nsis.zip'
+      )
+    );
+    expect(screen.queryByRole('dialog', { name: 'Update Available' })).not.toBeInTheDocument();
+  });
+
+  it('does not directly download full installers when a release lacks an updater package', async () => {
+    const user = userEvent.setup();
+    const openExternalUrl = vi.fn(async () => undefined);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify([
+            {
+              assets: [
+                {
+                  browser_download_url:
+                    'https://github.example/releases/KM Editor_0.2.0_x64-setup.exe',
+                  name: 'KM Editor_0.2.0_x64-setup.exe',
+                  size: 99000
+                }
+              ],
+              draft: false,
+              html_url: 'https://github.example/releases/tag/v0.2.0',
+              name: 'KM Editor v0.2.0',
+              prerelease: false,
+              tag_name: 'v0.2.0'
+            }
+          ]),
+          { headers: { 'Content-Type': 'application/json' }, status: 200 }
+        )
+      )
+    );
+
+    render(<App desktopServices={createMockDesktopServices({ openExternalUrl })} />);
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.click(screen.getByRole('button', { name: 'Check for Updates' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Update Available' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/does not include a smaller updater package/)
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Download Update' }));
+
+    await waitFor(() =>
+      expect(openExternalUrl).toHaveBeenCalledWith('https://github.example/releases/tag/v0.2.0')
+    );
+    expect(openExternalUrl).not.toHaveBeenCalledWith(
+      'https://github.example/releases/KM Editor_0.2.0_x64-setup.exe'
+    );
+  });
+
+  it('reports when KM Editor is already up to date', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify([
+            {
+              assets: [],
+              draft: false,
+              html_url: 'https://github.example/releases/tag/v0.0.1',
+              prerelease: false,
+              tag_name: 'v0.0.1'
+            }
+          ]),
+          { headers: { 'Content-Type': 'application/json' }, status: 200 }
+        )
+      )
+    );
+
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+    await user.click(screen.getByRole('button', { name: 'Check for Updates' }));
+
+    expect(await screen.findByText('KM Editor v0.0.1 is up to date.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Update Available' })).not.toBeInTheDocument();
   });
 
   it('uses desktop folder pickers and opens the output root', async () => {
@@ -2573,7 +2748,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
     await user.click(screen.getByRole('button', { name: 'Edit' }));
@@ -2609,7 +2784,7 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Items' }));
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
@@ -2655,6 +2830,7 @@ function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): De
   return {
     exitApp: async () => undefined,
     isAvailable: true,
+    openExternalUrl: async () => undefined,
     openPath: async () => undefined,
     pickFile: async () => null,
     pickFolder: async () => null,
