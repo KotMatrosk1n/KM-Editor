@@ -141,7 +141,7 @@ public sealed class SwShTradePokemonWorkflowService
     private static readonly IReadOnlyList<SwShTradePokemonEditableField> BaseEditableFields =
     [
         CreateField(SpeciesField, "Species", "integer", 0, SwShTradePokemonArchive.MaximumIdValue),
-        CreateField(FormField, "Form", "integer", 0, 31, FormOptions),
+        CreateField(FormField, "Form", "integer", 0, SwShTradePokemonArchive.MaximumByteValue, FormOptions),
         CreateField(LevelField, "Level", "integer", 0, SwShTradePokemonArchive.MaximumByteValue),
         CreateField(HeldItemIdField, "Held item", "integer", 0, SwShTradePokemonArchive.MaximumIdValue),
         CreateField(BallItemIdField, "Ball item", "integer", 0, SwShTradePokemonArchive.MaximumIdValue),
@@ -153,7 +153,7 @@ public sealed class SwShTradePokemonWorkflowService
         CreateField(DynamaxLevelField, "Dynamax level", "integer", 0, 10, DynamaxLevelOptions),
         CreateField(CanGigantamaxField, "Can Gigantamax", "boolean", 0, 1, BooleanOptions),
         CreateField(RequiredSpeciesField, "Requested species", "integer", 0, SwShTradePokemonArchive.MaximumIdValue),
-        CreateField(RequiredFormField, "Requested form", "integer", 0, 31, FormOptions),
+        CreateField(RequiredFormField, "Requested form", "integer", 0, SwShTradePokemonArchive.MaximumByteValue, FormOptions),
         CreateField(RequiredNatureField, "Requested nature", "integer", 0, 25, NatureOptions),
         CreateField(UnknownRequirementField, "Unknown requirement", "integer", 0, SwShTradePokemonArchive.MaximumByteValue),
         CreateField(TrainerIdField, "Trainer ID", "integer", 0, SwShTradePokemonArchive.MaximumIdValue),

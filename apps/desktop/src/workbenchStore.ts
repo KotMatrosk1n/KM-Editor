@@ -374,10 +374,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'items'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         itemSearchText: '',
         itemsWorkflow,
         selectedItemId
@@ -393,10 +389,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'moves'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         movesSearchText: '',
         movesWorkflow,
         selectedMoveId
@@ -411,10 +403,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'pokemon'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         pokemonSearchText: '',
         pokemonWorkflow,
         selectedPokemonPersonalId
@@ -430,10 +418,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'giftPokemon'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         giftPokemonSearchText: '',
         giftPokemonWorkflow,
         selectedGiftPokemonIndex
@@ -449,10 +433,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'tradePokemon'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         selectedTradePokemonIndex,
         tradePokemonSearchText: '',
         tradePokemonWorkflow
@@ -468,10 +448,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'staticEncounters'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         selectedStaticEncounterIndex,
         staticEncounterSearchText: '',
         staticEncountersWorkflow
@@ -487,10 +463,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'rentalPokemon'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         rentalPokemonSearchText: '',
         rentalPokemonWorkflow,
         selectedRentalPokemonIndex
@@ -506,12 +478,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'dynamaxAdventures'),
-        applyResult: null,
-        changePlan: null,
         dynamaxAdventureSearchText: '',
         dynamaxAdventuresWorkflow,
-        editSession: null,
-        editValidationDiagnostics: [],
         selectedDynamaxAdventureEntryIndex
       };
     }),
@@ -650,10 +618,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'text'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         selectedTextKey,
         textSearchText: '',
         textWorkflow
@@ -669,10 +633,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'trainers'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         selectedTrainerId,
         trainerSearchText: '',
         trainersWorkflow
@@ -688,10 +648,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'shops'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         selectedShopId,
         shopSearchText: '',
         shopsWorkflow
@@ -707,10 +663,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'encounters'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         encounterSearchText: '',
         encountersWorkflow,
         selectedEncounterTableId
@@ -726,10 +678,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'raidBattles'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         raidBattleSearchText: '',
         raidBattlesWorkflow,
         selectedRaidBattleTableId
@@ -745,10 +693,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'raidRewards'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         raidRewardSearchText: '',
         raidRewardsWorkflow,
         selectedRaidRewardTableId
@@ -764,10 +708,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'placement'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         placementSearchText: '',
         placementWorkflow,
         selectedPlacementObjectId
@@ -788,10 +728,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'flagworkSave'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         flagworkSaveSearchText: '',
         flagworkSaveWorkflow,
         selectedFlagId,
@@ -813,10 +749,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'exefsPatches'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         exeFsPatchSearchText: '',
         exeFsPatchWorkflow,
         selectedExeFsCheckId,
@@ -838,10 +770,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'royalCandy'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         royalCandySearchText: '',
         royalCandyWorkflow,
         selectedRoyalCandyCheckId,
@@ -858,10 +786,6 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
       return {
         activeSection: resolveWorkflowLoadSection(state.activeSection, 'spreadsheetImport'),
-        applyResult: null,
-        changePlan: null,
-        editSession: null,
-        editValidationDiagnostics: [],
         selectedSpreadsheetImportProfileId,
         spreadsheetImportPreview: null,
         spreadsheetImportSearchText: '',

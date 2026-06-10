@@ -156,7 +156,7 @@ public sealed class SwShStaticEncountersWorkflowService
     private static readonly IReadOnlyList<SwShStaticEncounterEditableField> BaseEditableFields =
     [
         CreateField(SpeciesField, "Species", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),
-        CreateField(FormField, "Form", "integer", 0, 31, FormOptions),
+        CreateField(FormField, "Form", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue, FormOptions),
         CreateField(LevelField, "Level", "integer", 0, SwShStaticEncounterArchive.MaximumByteValue),
         CreateField(HeldItemIdField, "Held item", "integer", 0, SwShStaticEncounterArchive.MaximumIdValue),
         CreateField(AbilityField, "Ability slot", "integer", 0, 3, AbilityOptions),

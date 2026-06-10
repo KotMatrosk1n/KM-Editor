@@ -1063,6 +1063,14 @@ public sealed class SwShPokemonWorkflowService
             return SwShSpeciesFormLabels.ResolveRegionalFormLabel(owner?.SpeciesId ?? personal.PersonalId, localFormIndex);
         }
 
+        var knownFormLabel = SwShSpeciesFormLabels.ResolveKnownFormLabel(
+            owner?.SpeciesId ?? personal.PersonalId,
+            localFormIndex);
+        if (knownFormLabel is not null)
+        {
+            return knownFormLabel;
+        }
+
         if (localFormIndex != 0)
         {
             return string.Create(CultureInfo.InvariantCulture, $"Form {localFormIndex}");

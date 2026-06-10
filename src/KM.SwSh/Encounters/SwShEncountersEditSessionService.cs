@@ -241,9 +241,7 @@ public sealed class SwShEncountersEditSessionService
 
                 var archive = SwShWildEncounterArchive.Parse(pack.GetFileByName(editGroup.Key));
                 var archiveEdits = editGroup
-                    .Select(edit => ToArchiveEdit(archive, edit, diagnostics))
-                    .Where(edit => edit is not null)
-                    .Select(edit => edit!)
+                    .SelectMany(edit => ToArchiveEdits(archive, edit, diagnostics))
                     .ToArray();
 
                 if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -378,12 +376,25 @@ public sealed class SwShEncountersEditSessionService
                 continue;
             }
 
-            levels[tableId] = edit.Field switch
+            if (edit.Field is SwShEncountersWorkflowService.LevelMinField or SwShEncountersWorkflowService.LevelMaxField)
             {
-                SwShEncountersWorkflowService.LevelMinField => current with { LevelMin = value },
-                SwShEncountersWorkflowService.LevelMaxField => current with { LevelMax = value },
-                _ => current,
-            };
+                foreach (var targetTableId in levels.Keys
+                    .Where(candidateTableId => IsSameEncounterZoneTable(candidateTableId, tableId))
+                    .ToArray())
+                {
+                    var targetCurrent = levels[targetTableId];
+                    levels[targetTableId] = edit.Field switch
+                    {
+                        SwShEncountersWorkflowService.LevelMinField => targetCurrent with { LevelMin = value },
+                        SwShEncountersWorkflowService.LevelMaxField => targetCurrent with { LevelMax = value },
+                        _ => targetCurrent,
+                    };
+                }
+
+                continue;
+            }
+
+            levels[tableId] = current;
         }
 
         foreach (var pair in levels.Where(pair => pair.Value.LevelMin > pair.Value.LevelMax))
@@ -531,9 +542,9 @@ public sealed class SwShEncountersEditSessionService
             SwShEncountersWorkflowService.ProbabilityField =>
                 $"Set {table.GameVersion} {table.Area} {table.Location} {table.EncounterType} slot {slot.Slot} probability to {value}.",
             SwShEncountersWorkflowService.LevelMinField =>
-                $"Set {table.GameVersion} {table.Area} {table.Location} {table.EncounterType} minimum level to {value}.",
+                $"Set {table.GameVersion} {table.Area} {table.Location} minimum level to {value}.",
             SwShEncountersWorkflowService.LevelMaxField =>
-                $"Set {table.GameVersion} {table.Area} {table.Location} {table.EncounterType} maximum level to {value}.",
+                $"Set {table.GameVersion} {table.Area} {table.Location} maximum level to {value}.",
             _ => $"Set {table.Location} encounter {field} to {value}.",
         };
     }
@@ -607,10 +618,29 @@ public sealed class SwShEncountersEditSessionService
             && SwShEncountersWorkflowService.TryParseSlotRecordId(candidate.RecordId, out var candidateTableId, out _)
             && SwShEncountersWorkflowService.TryParseSlotRecordId(pendingEdit.RecordId, out var pendingTableId, out _))
         {
-            return string.Equals(candidateTableId, pendingTableId, StringComparison.Ordinal);
+            return IsSameEncounterZoneTable(candidateTableId, pendingTableId);
         }
 
         return string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal);
+    }
+
+    private static bool IsSameEncounterZoneTable(string leftTableId, string rightTableId)
+    {
+        return SwShEncountersWorkflowService.TryParseTableId(
+                leftTableId,
+                out var leftMember,
+                out var leftTableIndex,
+                out var leftZoneId,
+                out _)
+            && SwShEncountersWorkflowService.TryParseTableId(
+                rightTableId,
+                out var rightMember,
+                out var rightTableIndex,
+                out var rightZoneId,
+                out _)
+            && string.Equals(leftMember.FileName, rightMember.FileName, StringComparison.Ordinal)
+            && leftTableIndex == rightTableIndex
+            && leftZoneId == rightZoneId;
     }
 
     private static SwShEncountersWorkflow OverlayPendingEdits(
@@ -637,10 +667,15 @@ public sealed class SwShEncountersEditSessionService
             return workflow;
         }
 
+        var isZoneLevelEdit = edit.Field is SwShEncountersWorkflowService.LevelMinField
+            or SwShEncountersWorkflowService.LevelMaxField;
+
         return workflow with
         {
             Tables = workflow.Tables
-                .Select(table => table.TableId == tableId
+                .Select(table => (isZoneLevelEdit
+                        ? IsSameEncounterZoneTable(table.TableId, tableId)
+                        : table.TableId == tableId)
                     ? table with
                     {
                         Slots = table.Slots
@@ -685,7 +720,7 @@ public sealed class SwShEncountersEditSessionService
         return member.FileName;
     }
 
-    private static SwShWildEncounterEdit? ToArchiveEdit(
+    private static IReadOnlyList<SwShWildEncounterEdit> ToArchiveEdits(
         SwShWildEncounterArchive archive,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -703,7 +738,7 @@ public sealed class SwShEncountersEditSessionService
                 DiagnosticSeverity.Error,
                 "Pending encounter edit does not include a valid archive target.",
                 expected: "Existing encounter archive target"));
-            return null;
+            return [];
         }
 
         if ((uint)tableIndex >= (uint)archive.Tables.Count
@@ -714,21 +749,32 @@ public sealed class SwShEncountersEditSessionService
                 DiagnosticSeverity.Error,
                 "Pending encounter edit target no longer matches the source archive.",
                 expected: "Current encounter archive target"));
-            return null;
+            return [];
         }
 
         var field = ToArchiveField(edit.Field);
         if (field is null)
         {
             diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
-            return null;
+            return [];
         }
 
-        var slotIndex = field is SwShWildEncounterField.LevelMin or SwShWildEncounterField.LevelMax
-            ? (int?)null
-            : slot - 1;
+        if (field is SwShWildEncounterField.LevelMin or SwShWildEncounterField.LevelMax)
+        {
+            return Enumerable.Range(0, archive.Tables[tableIndex].SubTables.Count)
+                .Select(targetSubTableIndex => new SwShWildEncounterEdit(
+                    tableIndex,
+                    targetSubTableIndex,
+                    SlotIndex: null,
+                    field.Value,
+                    value))
+                .ToArray();
+        }
 
-        return new SwShWildEncounterEdit(tableIndex, subTableIndex, slotIndex, field.Value, value);
+        return
+        [
+            new SwShWildEncounterEdit(tableIndex, subTableIndex, slot - 1, field.Value, value)
+        ];
     }
 
     private static SwShWildEncounterField? ToArchiveField(string? field)

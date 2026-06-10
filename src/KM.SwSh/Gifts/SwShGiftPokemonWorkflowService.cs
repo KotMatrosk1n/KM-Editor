@@ -123,7 +123,7 @@ public sealed class SwShGiftPokemonWorkflowService
     private static readonly IReadOnlyList<SwShGiftPokemonEditableField> BaseEditableFields =
     [
         CreateField(SpeciesField, "Species", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),
-        CreateField(FormField, "Form", "integer", 0, 31, FormOptions),
+        CreateField(FormField, "Form", "integer", 0, SwShGiftPokemonArchive.MaximumByteValue, FormOptions),
         CreateField(LevelField, "Level", "integer", 0, SwShGiftPokemonArchive.MaximumByteValue),
         CreateField(HeldItemIdField, "Held item", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),
         CreateField(BallItemIdField, "Ball item", "integer", 0, SwShGiftPokemonArchive.MaximumIdValue),

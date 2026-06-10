@@ -28,3 +28,5 @@ pnpm --filter @km-editor/desktop tauri:build
 ```
 
 Desktop-specific notes live in [apps/desktop/README.md](apps/desktop/README.md). Backend test notes live in [tests/README.md](tests/README.md).
+
+Release notes and GitHub Release packaging steps live in [docs/releases.md](docs/releases.md).

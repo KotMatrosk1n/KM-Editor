@@ -108,7 +108,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
     private static readonly IReadOnlyList<SwShDynamaxAdventureEditableField> BaseEditableFields =
     [
         CreateField(SpeciesField, "Species", "integer", 0, SwShDynamaxAdventureArchive.MaximumIdValue),
-        CreateField(FormField, "Form", "integer", 0, 31, FormOptions),
+        CreateField(FormField, "Form", "integer", 0, SwShDynamaxAdventureArchive.MaximumByteValue, FormOptions),
         CreateField(LevelField, "Level", "integer", 0, SwShDynamaxAdventureArchive.MaximumByteValue),
         CreateField(BallItemIdField, "Ball item", "integer", 0, SwShDynamaxAdventureArchive.MaximumIdValue),
         CreateField(AbilityField, "Ability roll", "integer", 0, SwShDynamaxAdventureArchive.MaximumAbilityRoll, AbilityOptions),

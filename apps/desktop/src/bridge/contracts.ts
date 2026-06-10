@@ -1522,6 +1522,7 @@ export const raidBattleSlotRecordSchema = z.strictObject({
   entryIndex: z.number().int().nonnegative(),
   flawlessIvs: z.number().int().nonnegative(),
   form: z.number().int().nonnegative(),
+  formOptions: z.array(raidBattleEditableFieldOptionSchema).default([]),
   gender: z.number().int().nonnegative(),
   genderLabel: z.string(),
   isGigantamax: z.boolean(),

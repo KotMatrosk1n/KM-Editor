@@ -70,6 +70,9 @@ public sealed record RaidBattleSlotRecordDto(
 {
     public IReadOnlyList<RaidBattleEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<RaidBattleEditableFieldOptionDto>();
+
+    public IReadOnlyList<RaidBattleEditableFieldOptionDto> FormOptions { get; init; } =
+        Array.Empty<RaidBattleEditableFieldOptionDto>();
 }
 
 public sealed record RaidBattleTableRecordDto(

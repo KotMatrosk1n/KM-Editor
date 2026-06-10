@@ -1398,7 +1398,7 @@ public sealed class SwShPokemonEditSessionService
                 var operation = TryParseLearnsetPendingEdit(edit, pokemon, parseDiagnostics);
                 if (operation is not null)
                 {
-                    var moveName = operation.MoveId is null
+                    var moveName = operation.Action == LearnsetMoveToAction || operation.MoveId is null
                         ? null
                         : ResolveMoveName(workflow, pokemon, operation.MoveId.Value);
                     overlaid[personalId] = ApplyPokemonLearnsetViewOperation(pokemon, operation, moveName);
@@ -1907,19 +1907,17 @@ public sealed class SwShPokemonEditSessionService
                 moves.RemoveAt(operation.Slot);
                 break;
             case LearnsetMoveUpAction when operation.Slot > 0 && operation.Slot < moves.Count:
-                (moves[operation.Slot - 1], moves[operation.Slot]) = (moves[operation.Slot], moves[operation.Slot - 1]);
+                moves = MoveLearnsetMoveIdsKeepingSlotLevels(moves, operation.Slot, operation.Slot - 1);
                 break;
             case LearnsetMoveDownAction when operation.Slot >= 0 && operation.Slot < moves.Count - 1:
-                (moves[operation.Slot + 1], moves[operation.Slot]) = (moves[operation.Slot], moves[operation.Slot + 1]);
+                moves = MoveLearnsetMoveIdsKeepingSlotLevels(moves, operation.Slot, operation.Slot + 1);
                 break;
             case LearnsetMoveToAction when operation.MoveId is not null
                 && operation.Slot >= 0
                 && operation.Slot < moves.Count
                 && operation.MoveId.Value >= 0
                 && operation.MoveId.Value < moves.Count:
-                var moved = moves[operation.Slot];
-                moves.RemoveAt(operation.Slot);
-                moves.Insert(operation.MoveId.Value, moved);
+                moves = MoveLearnsetMoveIdsKeepingSlotLevels(moves, operation.Slot, operation.MoveId.Value);
                 break;
         }
 
@@ -1927,6 +1925,22 @@ public sealed class SwShPokemonEditSessionService
         {
             Moves = NormalizeLearnsetSlots(moves),
         };
+    }
+
+    private static List<SwShPokemonLearnsetMoveRecord> MoveLearnsetMoveIdsKeepingSlotLevels(
+        IReadOnlyList<SwShPokemonLearnsetMoveRecord> moves,
+        int sourceSlot,
+        int destinationSlot)
+    {
+        var slotLevels = moves.Select(move => move.Level).ToArray();
+        var moveIds = moves.Select(move => move.MoveId).ToList();
+        var movedMoveId = moveIds[sourceSlot];
+        moveIds.RemoveAt(sourceSlot);
+        moveIds.Insert(destinationSlot, movedMoveId);
+
+        return moveIds
+            .Select((moveId, index) => new SwShPokemonLearnsetMoveRecord(index, moveId, slotLevels[index]))
+            .ToList();
     }
 
     private static IReadOnlyList<SwShPokemonLearnsetMoveRecord> NormalizeLearnsetSlots(
