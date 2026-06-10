@@ -22836,7 +22836,22 @@ function groupBehaviorFields(fields: BehaviorField[]) {
     group.fields.push(field);
   }
 
-  return groups;
+  return groups
+    .map((group, index) => ({ ...group, index }))
+    .sort((left, right) => {
+      const leftIsBehavior = left.group === 'Behavior';
+      const rightIsBehavior = right.group === 'Behavior';
+
+      if (leftIsBehavior !== rightIsBehavior) {
+        return leftIsBehavior ? -1 : 1;
+      }
+
+      return left.index - right.index;
+    })
+    .map((orderedGroup) => ({
+      group: orderedGroup.group,
+      fields: orderedGroup.fields
+    }));
 }
 
 function createBehaviorDraftDefaults(fields: BehaviorField[], entry: BehaviorEntryRecord) {
