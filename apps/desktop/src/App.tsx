@@ -140,7 +140,8 @@ import {
 } from './bridge/projectBridge';
 import {
   desktopServices as defaultDesktopServices,
-  type DesktopServices
+  type DesktopServices,
+  type NativeUpdate
 } from './desktopServices';
 import {
   type ProjectPathFieldName,
@@ -568,13 +569,7 @@ type PokemonLearnsetDraftFields = {
   moveId: string;
   level: string;
 };
-type GithubReleaseAsset = {
-  browser_download_url?: string;
-  name?: string;
-  size?: number;
-};
 type GithubRelease = {
-  assets?: GithubReleaseAsset[];
   draft?: boolean;
   html_url?: string;
   name?: string | null;
@@ -587,22 +582,30 @@ type ParsedVersion = {
   patch: number;
   prerelease: string | null;
 };
-type UpdateDownloadTarget = {
-  kind: 'releasePage' | 'updaterBundle';
-  name: string;
-  sizeLabel: string | null;
-  url: string;
-};
-type AvailableUpdate = {
-  downloadTarget: UpdateDownloadTarget;
+type AvailableUpdate =
+  | {
+      body?: string;
+      kind: 'native';
+      nativeUpdate: NativeUpdate;
+      version: string;
+    }
+  | ReleasePageUpdate;
+type ReleasePageUpdate = {
+  fallbackReason?: string;
+  kind: 'releasePage';
+  releaseName: string;
+  releaseUrl: string;
   version: string;
 };
 type UpdateCheckStatus =
   | { kind: 'available'; message: string }
   | { kind: 'checking'; message: string }
+  | { kind: 'downloading'; message: string }
   | { kind: 'error'; message: string }
   | { kind: 'idle'; message: string }
+  | { kind: 'installing'; message: string }
   | { kind: 'opening'; message: string }
+  | { kind: 'restarting'; message: string }
   | { kind: 'upToDate'; message: string };
 
 const healthLabels = {
@@ -1288,6 +1291,9 @@ export function App({
   const setSelectedTextKey = useWorkbenchStore((state) => state.setSelectedTextKey);
   const setSelectedTrainerId = useWorkbenchStore((state) => state.setSelectedTrainerId);
   const setSelectedGame = useWorkbenchStore((state) => state.setSelectedGame);
+  const rememberValidatedProjectPaths = useWorkbenchStore(
+    (state) => state.rememberValidatedProjectPaths
+  );
   const setShopSearchText = useWorkbenchStore((state) => state.setShopSearchText);
   const setShopsWorkflow = useWorkbenchStore((state) => state.setShopsWorkflow);
   const setTextSearchText = useWorkbenchStore((state) => state.setTextSearchText);
@@ -1692,6 +1698,9 @@ export function App({
     try {
       const paths = toProjectPaths(draftPaths);
       const response = await bridge.validateProject({ paths });
+      if (response.health.canOpenEditableWorkflows) {
+        rememberValidatedProjectPaths(draftPaths);
+      }
       setProjectHealth(response.health);
       setLazyLoadedWorkflowSections(new Set());
       await refreshWorkflows(paths, response.health.canOpenEditableWorkflows);
@@ -1850,6 +1859,12 @@ export function App({
         outputRootPath
       };
       const nextResponse = await bridge.validateProject({ paths: nextPaths });
+      if (nextResponse.health.canOpenEditableWorkflows) {
+        rememberValidatedProjectPaths({
+          ...draftPaths,
+          outputRootPath
+        });
+      }
       setProjectHealth(nextResponse.health);
       setLazyLoadedWorkflowSections(new Set());
       await refreshWorkflows(nextPaths, nextResponse.health.canOpenEditableWorkflows);
@@ -1865,10 +1880,54 @@ export function App({
     setAvailableUpdate(null);
     setUpdateCheckStatus({
       kind: 'checking',
-      message: 'Checking GitHub Releases'
+      message: desktopServices.isAvailable
+        ? 'Checking for native updates'
+        : 'Checking GitHub Releases'
     });
 
     try {
+      if (desktopServices.isAvailable) {
+        try {
+          const nativeUpdate = await desktopServices.checkForNativeUpdate();
+
+          if (!nativeUpdate) {
+            setUpdateCheckStatus({
+              kind: 'upToDate',
+              message: `KM Editor v${appVersion} is up to date.`
+            });
+            return;
+          }
+
+          setAvailableUpdate({
+            body: nativeUpdate.body,
+            kind: 'native',
+            nativeUpdate,
+            version: nativeUpdate.version
+          });
+          setUpdateCheckStatus({
+            kind: 'available',
+            message: `KM Editor v${nativeUpdate.version} is ready to install.`
+          });
+          return;
+        } catch (nativeError) {
+          const fallbackUpdate = await fetchAvailableUpdate(appVersion);
+
+          if (!fallbackUpdate) {
+            throw nativeError;
+          }
+
+          setAvailableUpdate({
+            ...fallbackUpdate,
+            fallbackReason: toErrorMessage(nativeError)
+          });
+          setUpdateCheckStatus({
+            kind: 'available',
+            message: `KM Editor v${fallbackUpdate.version} is available on GitHub.`
+          });
+          return;
+        }
+      }
+
       const update = await fetchAvailableUpdate(appVersion);
 
       if (!update) {
@@ -1882,10 +1941,7 @@ export function App({
       setAvailableUpdate(update);
       setUpdateCheckStatus({
         kind: 'available',
-        message:
-          update.downloadTarget.kind === 'updaterBundle'
-            ? `KM Editor v${update.version} is available.`
-            : `KM Editor v${update.version} is available, but no updater package is attached.`
+        message: `KM Editor v${update.version} is available on GitHub.`
       });
     } catch (error) {
       setUpdateCheckStatus({
@@ -1893,40 +1949,111 @@ export function App({
         message: toErrorMessage(error)
       });
     }
-  }, []);
+  }, [
+    desktopServices.checkForNativeUpdate,
+    desktopServices.isAvailable
+  ]);
 
   const handleDismissAvailableUpdate = useCallback(() => {
+    if (availableUpdate?.kind === 'native') {
+      void availableUpdate.nativeUpdate.close().catch(() => undefined);
+    }
+
     setAvailableUpdate(null);
-  }, []);
+  }, [availableUpdate]);
 
   const handleDownloadAvailableUpdate = useCallback(async () => {
     if (!availableUpdate) {
       return;
     }
 
-    const { downloadTarget } = availableUpdate;
+    if (availableUpdate.kind === 'native') {
+      let downloadedBytes = 0;
+      let contentLength: number | null = null;
+
+      setUpdateCheckStatus({
+        kind: 'downloading',
+        message: `Downloading KM Editor v${availableUpdate.version}.`
+      });
+
+      try {
+        await availableUpdate.nativeUpdate.install((event) => {
+          switch (event.event) {
+            case 'Started':
+              downloadedBytes = 0;
+              contentLength =
+                typeof event.data.contentLength === 'number' && event.data.contentLength > 0
+                  ? event.data.contentLength
+                  : null;
+              setUpdateCheckStatus({
+                kind: 'downloading',
+                message: contentLength
+                  ? `Downloading KM Editor v${availableUpdate.version} (${formatByteCount(
+                      contentLength
+                    )}).`
+                  : `Downloading KM Editor v${availableUpdate.version}.`
+              });
+              break;
+            case 'Progress':
+              downloadedBytes += event.data.chunkLength;
+              setUpdateCheckStatus({
+                kind: 'downloading',
+                message: contentLength
+                  ? `Downloading update (${formatByteCount(downloadedBytes)} of ${formatByteCount(
+                      contentLength
+                    )}).`
+                  : `Downloading update (${formatByteCount(downloadedBytes)}).`
+              });
+              break;
+            case 'Finished':
+              setUpdateCheckStatus({
+                kind: 'installing',
+                message: 'Installing update.'
+              });
+              break;
+          }
+        });
+
+        setAvailableUpdate(null);
+        setUpdateCheckStatus({
+          kind: 'restarting',
+          message: 'Update installed. Restarting KM Editor.'
+        });
+
+        try {
+          await desktopServices.relaunchApp();
+        } catch {
+          setUpdateCheckStatus({
+            kind: 'available',
+            message: 'Update installed. Restart KM Editor to finish.'
+          });
+        }
+      } catch (error) {
+        setUpdateCheckStatus({
+          kind: 'error',
+          message: toErrorMessage(error)
+        });
+      }
+
+      return;
+    }
+
     setUpdateCheckStatus({
       kind: 'opening',
-      message:
-        downloadTarget.kind === 'updaterBundle'
-          ? `Opening ${downloadTarget.name}`
-          : 'Opening GitHub release'
+      message: 'Opening GitHub release'
     });
 
     try {
       if (desktopServices.isAvailable) {
-        await desktopServices.openExternalUrl(downloadTarget.url);
+        await desktopServices.openExternalUrl(availableUpdate.releaseUrl);
       } else {
-        window.open(downloadTarget.url, '_blank', 'noopener,noreferrer');
+        window.open(availableUpdate.releaseUrl, '_blank', 'noopener,noreferrer');
       }
 
       setAvailableUpdate(null);
       setUpdateCheckStatus({
         kind: 'available',
-        message:
-          downloadTarget.kind === 'updaterBundle'
-            ? `Opened ${downloadTarget.name}.`
-            : 'Opened the GitHub release page.'
+        message: 'Opened the GitHub release page.'
       });
     } catch (error) {
       setUpdateCheckStatus({
@@ -1937,7 +2064,8 @@ export function App({
   }, [
     availableUpdate,
     desktopServices.isAvailable,
-    desktopServices.openExternalUrl
+    desktopServices.openExternalUrl,
+    desktopServices.relaunchApp
   ]);
 
   const handleOpenItemsWorkflow = async () => {
@@ -4921,7 +5049,12 @@ export function App({
       ) : null}
       {availableUpdate ? (
         <UpdatePromptModal
-          isOpening={updateCheckStatus.kind === 'opening'}
+          isApplying={
+            updateCheckStatus.kind === 'downloading' ||
+            updateCheckStatus.kind === 'installing' ||
+            updateCheckStatus.kind === 'opening' ||
+            updateCheckStatus.kind === 'restarting'
+          }
           onDismiss={handleDismissAvailableUpdate}
           onDownload={handleDownloadAvailableUpdate}
           update={availableUpdate}
@@ -18620,7 +18753,12 @@ function SettingsSection({
   onCheckForUpdates: () => void;
   status: UpdateCheckStatus;
 }) {
-  const isBusy = status.kind === 'checking' || status.kind === 'opening';
+  const isBusy =
+    status.kind === 'checking' ||
+    status.kind === 'downloading' ||
+    status.kind === 'installing' ||
+    status.kind === 'opening' ||
+    status.kind === 'restarting';
 
   return (
     <section aria-labelledby="settings-heading" className="panel wide-panel">
@@ -18638,7 +18776,15 @@ function SettingsSection({
           type="button"
         >
           <RefreshCw aria-hidden="true" size={18} />
-          <span>{status.kind === 'checking' ? 'Checking' : 'Check for Updates'}</span>
+          <span>
+            {status.kind === 'checking'
+              ? 'Checking'
+              : status.kind === 'downloading'
+                ? 'Downloading'
+                : status.kind === 'installing'
+                  ? 'Installing'
+                  : 'Check for Updates'}
+          </span>
         </button>
         <p
           className={`update-status update-status-${status.kind}`}
@@ -19016,20 +19162,17 @@ function ShopItemNavigationModal({
 }
 
 function UpdatePromptModal({
-  isOpening,
+  isApplying,
   onDismiss,
   onDownload,
   update
 }: {
-  isOpening: boolean;
+  isApplying: boolean;
   onDismiss: () => void;
   onDownload: () => void;
   update: AvailableUpdate;
 }) {
-  const isUpdaterBundle = update.downloadTarget.kind === 'updaterBundle';
-  const targetDetail = update.downloadTarget.sizeLabel
-    ? `${update.downloadTarget.name} (${update.downloadTarget.sizeLabel})`
-    : update.downloadTarget.name;
+  const isNativeUpdate = update.kind === 'native';
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -19044,20 +19187,46 @@ function UpdatePromptModal({
           <h2 id="update-prompt-heading">Update Available</h2>
         </div>
         <p className="modal-copy">
-          {isUpdaterBundle
-            ? `KM Editor v${update.version} is available. Download ${targetDetail}?`
-            : `KM Editor v${update.version} is available, but this release does not include a smaller updater package. KM Editor will open the GitHub release page instead of downloading a full installer directly.`}
+          {isNativeUpdate
+            ? `KM Editor v${update.version} is available. Install it now?`
+            : `KM Editor v${update.version} is available. KM Editor will open ${update.releaseName}.`}
         </p>
+        {update.kind === 'releasePage' && update.fallbackReason ? (
+          <p className="modal-copy modal-copy-muted">
+            Native update check was not available: {update.fallbackReason}
+          </p>
+        ) : null}
+        {update.kind === 'native' && update.body ? (
+          <p className="modal-copy modal-copy-muted">{update.body}</p>
+        ) : null}
         <div className="modal-actions">
-          <button className="primary-button" disabled={isOpening} onClick={onDownload} type="button">
-            {isUpdaterBundle ? (
+          <button
+            className="primary-button"
+            disabled={isApplying}
+            onClick={onDownload}
+            type="button"
+          >
+            {isNativeUpdate ? (
               <Download aria-hidden="true" size={16} />
             ) : (
               <ExternalLink aria-hidden="true" size={16} />
             )}
-            <span>{isOpening ? 'Opening' : 'Download Update'}</span>
+            <span>
+              {isApplying
+                ? isNativeUpdate
+                  ? 'Installing'
+                  : 'Opening'
+                : isNativeUpdate
+                  ? 'Install Update'
+                  : 'Open Release'}
+            </span>
           </button>
-          <button className="secondary-button" disabled={isOpening} onClick={onDismiss} type="button">
+          <button
+            className="secondary-button"
+            disabled={isApplying}
+            onClick={onDismiss}
+            type="button"
+          >
             <X aria-hidden="true" size={16} />
             <span>Not Now</span>
           </button>
@@ -23842,7 +24011,7 @@ function getPathStatusClassName(pathValidation: ProjectPathValidation | undefine
   return `path-status path-status-${pathValidation.status}`;
 }
 
-async function fetchAvailableUpdate(currentVersion: string): Promise<AvailableUpdate | null> {
+async function fetchAvailableUpdate(currentVersion: string): Promise<ReleasePageUpdate | null> {
   const response = await fetch(githubReleasesApiUrl, {
     headers: {
       Accept: 'application/vnd.github+json'
@@ -23864,7 +24033,7 @@ async function fetchAvailableUpdate(currentVersion: string): Promise<AvailableUp
 function resolveAvailableUpdate(
   releases: GithubRelease[],
   currentVersionText: string
-): AvailableUpdate | null {
+): ReleasePageUpdate | null {
   const currentVersion = parseVersionTag(currentVersionText);
   if (!currentVersion) {
     return null;
@@ -23896,44 +24065,10 @@ function resolveAvailableUpdate(
   const releaseUrl = update.release.html_url ?? githubLatestReleaseUrl;
 
   return {
-    downloadTarget: pickUpdateDownloadTarget(update.release, releaseUrl),
-    version: formatParsedVersion(update.version)
-  };
-}
-
-function pickUpdateDownloadTarget(
-  release: GithubRelease,
-  releaseUrl: string
-): UpdateDownloadTarget {
-  const assets = (release.assets ?? []).filter(
-    (asset): asset is Required<Pick<GithubReleaseAsset, 'browser_download_url' | 'name'>> &
-      GithubReleaseAsset =>
-      typeof asset.browser_download_url === 'string' &&
-      asset.browser_download_url.length > 0 &&
-      typeof asset.name === 'string' &&
-      asset.name.length > 0
-  );
-  const updaterAsset =
-    assets.find((asset) => /\.(nsis|msi)\.zip$/i.test(asset.name)) ??
-    assets.find((asset) => /(?:update|updater).+\.zip$/i.test(asset.name));
-
-  if (updaterAsset) {
-    return {
-      kind: 'updaterBundle',
-      name: updaterAsset.name,
-      sizeLabel:
-        typeof updaterAsset.size === 'number' && updaterAsset.size > 0
-          ? formatByteCount(updaterAsset.size)
-          : null,
-      url: updaterAsset.browser_download_url
-    };
-  }
-
-  return {
     kind: 'releasePage',
-    name: release.name?.trim() || release.tag_name || 'GitHub release',
-    sizeLabel: null,
-    url: releaseUrl
+    releaseName: update.release.name?.trim() || update.release.tag_name || 'GitHub release',
+    releaseUrl,
+    version: formatParsedVersion(update.version)
   };
 }
 

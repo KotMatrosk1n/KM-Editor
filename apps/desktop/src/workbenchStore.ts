@@ -69,8 +69,11 @@ export type ProjectPathDraft = {
 };
 
 export type ProjectPathFieldName = Exclude<keyof ProjectPathDraft, 'selectedGame'>;
+type ProjectPathDraftValues = Pick<ProjectPathDraft, ProjectPathFieldName>;
+type ValidatedProjectPathCache = Partial<Record<ProjectGame, ProjectPathDraftValues>>;
 
 const projectPathDraftStorageKey = 'km-editor.project-path-draft.v1';
+const validatedProjectPathCacheStorageKey = 'km-editor.validated-project-path-cache.v1';
 
 export type OpenProjectState = {
   fileGraph: ProjectFileGraph;
@@ -241,6 +244,7 @@ type WorkbenchState = {
   setTrainersWorkflow: (trainersWorkflow: TrainersWorkflow) => void;
   setWorkflows: (workflows: WorkflowSummary[]) => void;
   clearSelectedGame: () => void;
+  rememberValidatedProjectPaths: (draftPaths: ProjectPathDraft) => void;
   setSelectedGame: (selectedGame: ProjectGame) => void;
 };
 
@@ -958,9 +962,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       };
     }),
   setSelectedGame: (selectedGame) =>
-    set((state) => {
+    set(() => {
+      const cachedPaths = loadValidatedProjectPathDraft(selectedGame);
       const draftPaths = {
-        ...state.draftPaths,
+        ...(cachedPaths ?? createEmptyProjectPathDraftValues()),
         selectedGame
       };
       saveProjectPathDraft(draftPaths);
@@ -970,6 +975,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         draftPaths
       };
     }),
+  rememberValidatedProjectPaths: (draftPaths) => {
+    saveValidatedProjectPathDraft(draftPaths);
+    saveProjectPathDraft(draftPaths);
+  },
   setWorkflows: (workflows) => set({ workflows })
 }));
 
@@ -1003,6 +1012,45 @@ function loadProjectPathDraft(): ProjectPathDraft {
   }
 }
 
+function loadValidatedProjectPathDraft(selectedGame: ProjectGame): ProjectPathDraftValues | null {
+  const cache = loadValidatedProjectPathCache();
+  return cache[selectedGame] ?? null;
+}
+
+function loadValidatedProjectPathCache(): ValidatedProjectPathCache {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(validatedProjectPathCacheStorageKey);
+
+    if (!storedValue) {
+      return {};
+    }
+
+    const parsedValue = JSON.parse(storedValue) as Partial<
+      Record<ProjectGame, Partial<ProjectPathDraftValues>>
+    >;
+
+    const cache: ValidatedProjectPathCache = {};
+    const shieldPaths = coerceProjectPathDraftValues(parsedValue.shield);
+    const swordPaths = coerceProjectPathDraftValues(parsedValue.sword);
+
+    if (shieldPaths) {
+      cache.shield = shieldPaths;
+    }
+
+    if (swordPaths) {
+      cache.sword = swordPaths;
+    }
+
+    return cache;
+  } catch {
+    return {};
+  }
+}
+
 function saveProjectPathDraft(draftPaths: ProjectPathDraft) {
   if (typeof window === 'undefined') {
     return;
@@ -1021,12 +1069,60 @@ function saveProjectPathDraft(draftPaths: ProjectPathDraft) {
   }
 }
 
+function saveValidatedProjectPathDraft(draftPaths: ProjectPathDraft) {
+  if (typeof window === 'undefined' || draftPaths.selectedGame === null) {
+    return;
+  }
+
+  try {
+    const cache = loadValidatedProjectPathCache();
+    cache[draftPaths.selectedGame] = toProjectPathDraftValues(draftPaths);
+    window.localStorage.setItem(
+      validatedProjectPathCacheStorageKey,
+      JSON.stringify(cache)
+    );
+  } catch {
+    // Storage can be unavailable in hardened browser contexts; validation should still work.
+  }
+}
+
 function createEmptyProjectPathDraft(): ProjectPathDraft {
+  return {
+    ...createEmptyProjectPathDraftValues(),
+    selectedGame: null
+  };
+}
+
+function createEmptyProjectPathDraftValues(): ProjectPathDraftValues {
   return {
     baseExeFsPath: '',
     baseRomFsPath: '',
     outputRootPath: '',
-    saveFilePath: '',
-    selectedGame: null
+    saveFilePath: ''
+  };
+}
+
+function coerceProjectPathDraftValues(
+  draftPaths: Partial<ProjectPathDraftValues> | null | undefined
+): ProjectPathDraftValues | undefined {
+  if (!draftPaths) {
+    return undefined;
+  }
+
+  return {
+    baseExeFsPath: typeof draftPaths.baseExeFsPath === 'string' ? draftPaths.baseExeFsPath : '',
+    baseRomFsPath: typeof draftPaths.baseRomFsPath === 'string' ? draftPaths.baseRomFsPath : '',
+    outputRootPath:
+      typeof draftPaths.outputRootPath === 'string' ? draftPaths.outputRootPath : '',
+    saveFilePath: typeof draftPaths.saveFilePath === 'string' ? draftPaths.saveFilePath : ''
+  };
+}
+
+function toProjectPathDraftValues(draftPaths: ProjectPathDraft): ProjectPathDraftValues {
+  return {
+    baseExeFsPath: draftPaths.baseExeFsPath,
+    baseRomFsPath: draftPaths.baseRomFsPath,
+    outputRootPath: draftPaths.outputRootPath,
+    saveFilePath: draftPaths.saveFilePath
   };
 }

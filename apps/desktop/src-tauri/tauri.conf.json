@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "KM Editor",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "identifier": "app.kmeditor.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "KM Editor v0.0.2",
+        "title": "KM Editor v0.0.3",
         "width": 1280,
         "height": 720,
         "minWidth": 960,
@@ -28,6 +28,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "externalBin": [
       "binaries/km-tools-bridge"
@@ -41,6 +42,17 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY1MjI1REJCNTEyODJFMzIKUldReUxpaFJ1MTBpWlNPcDNmZVBTYkRkbXp1bmJRMGRodDNsa2F3QzJHK1FVN0ZvZnZkWkJmYmsK",
+      "endpoints": [
+        "https://github.com/KotMatrosk1n/KM-Editor/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

@@ -10,12 +10,26 @@ The release assets are:
 
 - NSIS setup executable
 - MSI installer
-- Signed Tauri updater bundle ZIPs and signatures when updater artifacts are configured
+- Tauri updater signatures for the Windows installers
+- `latest.json`, which points native update checks at the signed Windows installer
 - `SHA256SUMS.txt` for the uploaded assets
 
 ## Desktop Update Checks
 
-The desktop app can check GitHub Releases from Settings. When a newer published release is available, it prefers signed Tauri updater bundle ZIP assets such as `.nsis.zip` or `.msi.zip`. If a release only has full installers, the app opens the GitHub release page instead of directly downloading the setup executable.
+The desktop app can check for native updates from Settings. Native updates use Tauri's updater plugin, the public key in `apps/desktop/src-tauri/tauri.conf.json`, and the `latest.json` asset attached to the latest published GitHub Release.
+
+If native update checks are unavailable, Settings falls back to opening the newer GitHub Release page.
+
+Users on versions before the native updater was added must manually install the first updater-enabled release. After that install, later releases can update natively.
+
+## Updater Signing
+
+Tauri updater artifacts must be signed. The release workflow expects these GitHub Actions secrets:
+
+- `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, if the private key was created with a password
+
+The private signing key must never be committed. If the private key or password is lost, installed updater-enabled builds cannot receive future native updates signed by a different key.
 
 ## Manual Release
 
@@ -45,6 +59,8 @@ git push origin v0.1.0
 
 Before creating a release, update the desktop app version in:
 
+- `package.json`
+- `apps/desktop/package.json`
 - `apps/desktop/src-tauri/tauri.conf.json`
 - `apps/desktop/src-tauri/Cargo.toml`
 

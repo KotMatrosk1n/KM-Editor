@@ -58,7 +58,9 @@ fn run_project_bridge_once(
     if let Err(error) = write_result {
         let _ = child.kill();
         let _ = child.wait();
-        return Err(format!("Could not send the project bridge request: {error}"));
+        return Err(format!(
+            "Could not send the project bridge request: {error}"
+        ));
     }
 
     let output = child
@@ -211,6 +213,14 @@ pub fn run() {
         // Register shell support now so the future sidecar bridge can add a narrow command allowlist.
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .setup(|app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             project_bridge_once,
             create_directory,
