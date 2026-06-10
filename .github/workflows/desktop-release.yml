@@ -92,7 +92,15 @@ jobs:
 
       - name: Build desktop packages
         shell: pwsh
-        run: pnpm --dir apps/desktop exec tauri build --ci --bundles 'nsis,msi'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) {
+            throw 'TAURI_SIGNING_PRIVATE_KEY must be configured as a GitHub Actions secret before building updater artifacts.'
+          }
+
+          pnpm --dir apps/desktop exec tauri build --ci --bundles 'nsis,msi'
 
       - name: Stage release assets
         shell: pwsh
@@ -106,6 +114,45 @@ jobs:
           Get-ChildItem (Join-Path $env:CARGO_TARGET_DIR 'release/bundle') -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -match '\.(nsis|msi)\.zip$' -or $_.Name -match '\.sig$' } |
             ForEach-Object { Copy-Item $_.FullName $releaseDir }
+
+          $updateInstaller = Get-ChildItem $releaseDir -File -Filter '*.exe' |
+            Sort-Object Name |
+            Select-Object -First 1
+
+          if ($null -eq $updateInstaller) {
+            $updateInstaller = Get-ChildItem $releaseDir -File -Filter '*.msi' |
+              Sort-Object Name |
+              Select-Object -First 1
+          }
+
+          if ($null -eq $updateInstaller) {
+            throw 'Could not find a Windows installer for latest.json.'
+          }
+
+          $signaturePath = Join-Path $releaseDir "$($updateInstaller.Name).sig"
+          if (-not (Test-Path -LiteralPath $signaturePath)) {
+            throw "Could not find updater signature '$($updateInstaller.Name).sig'."
+          }
+
+          $version = $env:RELEASE_TAG.TrimStart('v')
+          $assetName = [System.Uri]::EscapeDataString($updateInstaller.Name)
+          $assetUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:RELEASE_TAG/$assetName"
+          $signature = (Get-Content -Path $signaturePath -Raw).Trim()
+          $latestJson = [ordered]@{
+            version = $version
+            notes = "See the GitHub Release notes for KM Editor $env:RELEASE_TAG."
+            pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            platforms = [ordered]@{
+              'windows-x86_64' = [ordered]@{
+                signature = $signature
+                url = $assetUrl
+              }
+            }
+          }
+
+          $latestJson |
+            ConvertTo-Json -Depth 8 |
+            Set-Content -Path (Join-Path $releaseDir 'latest.json') -Encoding utf8
 
           $hashLines = Get-ChildItem $releaseDir -File |
             Sort-Object Name |

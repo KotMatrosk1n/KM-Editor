@@ -3210,6 +3210,9 @@ h2 {
 }
 
 .update-status-available,
+.update-status-downloading,
+.update-status-installing,
+.update-status-restarting,
 .update-status-upToDate {
   color: #d7f7dd;
   background: rgb(25 75 45 / 38%);
@@ -3345,6 +3348,11 @@ h2 {
   margin: 0;
   color: var(--color-text-soft);
   font-weight: 700;
+}
+
+.modal-copy-muted {
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
 }
 
 .modal-actions {

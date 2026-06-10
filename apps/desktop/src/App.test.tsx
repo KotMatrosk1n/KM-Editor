@@ -30,7 +30,7 @@ import {
   type WorkflowSummary
 } from './bridge/contracts';
 import { type ProjectBridge } from './bridge/projectBridge';
-import { type DesktopServices } from './desktopServices';
+import { type DesktopServices, type NativeUpdate } from './desktopServices';
 import { useWorkbenchStore } from './workbenchStore';
 
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
@@ -232,6 +232,67 @@ describe('App', () => {
     expect(window.localStorage.getItem('km-editor.project-path-draft.v1') ?? '').not.toContain(
       'selectedGame'
     );
+  });
+
+  it('remembers validated path sets separately for each selected game', async () => {
+    const user = userEvent.setup();
+    const validateProject = vi.fn(async (request) => ({
+      health: createHealthForValidatedPaths(
+        request.paths.baseRomFsPath ?? '',
+        request.paths.baseExeFsPath ?? '',
+        request.paths.outputRootPath ?? '',
+        request.paths.saveFilePath
+      )
+    }));
+
+    render(<App bridge={createMockProjectBridge({ validateProject })} />);
+
+    await user.clear(screen.getByLabelText('Base RomFS'));
+    await user.type(screen.getByLabelText('Base RomFS'), 'sword-romfs');
+    await user.clear(screen.getByLabelText('Base ExeFS'));
+    await user.type(screen.getByLabelText('Base ExeFS'), 'sword-exefs');
+    await user.clear(screen.getByLabelText('Output Root'));
+    await user.type(screen.getByLabelText('Output Root'), 'sword-output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+
+    await waitFor(() => expect(validateProject).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('button', { name: 'Editors' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Change Game' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon Shield' }));
+
+    expect(screen.getByLabelText('Base RomFS')).toHaveValue('');
+    expect(screen.getByLabelText('Base ExeFS')).toHaveValue('');
+    expect(screen.getByLabelText('Output Root')).toHaveValue('');
+    expect(screen.queryByRole('button', { name: 'Editors' })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'shield-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'shield-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'shield-output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+
+    await waitFor(() => expect(validateProject).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('button', { name: 'Editors' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Change Game' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon Sword' }));
+
+    expect(screen.getByLabelText('Base RomFS')).toHaveValue('sword-romfs');
+    expect(screen.getByLabelText('Base ExeFS')).toHaveValue('sword-exefs');
+    expect(screen.getByLabelText('Output Root')).toHaveValue('sword-output');
+    expect(screen.queryByRole('button', { name: 'Editors' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+
+    await waitFor(() => expect(validateProject).toHaveBeenCalledTimes(3));
+    expect(validateProject).toHaveBeenLastCalledWith({
+      paths: {
+        baseExeFsPath: 'sword-exefs',
+        baseRomFsPath: 'sword-romfs',
+        outputRootPath: 'sword-output',
+        saveFilePath: null,
+        selectedGame: 'sword'
+      }
+    });
+    expect(await screen.findByRole('button', { name: 'Editors' })).toBeInTheDocument();
   });
 
   it('shows the renamed workflow categories in sidebar order', async () => {
@@ -2762,60 +2823,44 @@ describe('App', () => {
     expect(await screen.findByText('Project bridge unavailable.')).toBeInTheDocument();
   });
 
-  it('checks GitHub releases and opens an updater package when available', async () => {
+  it('checks native updates and installs them in the desktop app', async () => {
     const user = userEvent.setup();
-    const openExternalUrl = vi.fn(async () => undefined);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify([
-            {
-              assets: [
-                {
-                  browser_download_url:
-                    'https://github.example/releases/km-editor-0.2.0.nsis.zip',
-                  name: 'KM Editor_0.2.0_x64-setup.nsis.zip',
-                  size: 42000
-                },
-                {
-                  browser_download_url:
-                    'https://github.example/releases/KM Editor_0.2.0_x64-setup.exe',
-                  name: 'KM Editor_0.2.0_x64-setup.exe',
-                  size: 99000
-                }
-              ],
-              draft: false,
-              html_url: 'https://github.example/releases/tag/v0.2.0',
-              name: 'KM Editor v0.2.0',
-              prerelease: false,
-              tag_name: 'v0.2.0'
-            }
-          ]),
-          { headers: { 'Content-Type': 'application/json' }, status: 200 }
-        )
-      )
-    );
+    const install = vi.fn(async (onProgress?: Parameters<NativeUpdate['install']>[0]) => {
+      onProgress?.({ data: { contentLength: 42000 }, event: 'Started' });
+      onProgress?.({ data: { chunkLength: 42000 }, event: 'Progress' });
+      onProgress?.({ event: 'Finished' });
+    });
+    const relaunchApp = vi.fn(async () => undefined);
 
-    render(<App desktopServices={createMockDesktopServices({ openExternalUrl })} />);
+    render(
+      <App
+        desktopServices={createMockDesktopServices({
+          checkForNativeUpdate: async () =>
+            createNativeUpdate({
+              body: 'Maintenance release',
+              install,
+              version: '0.2.0'
+            }),
+          relaunchApp
+        })}
+      />
+    );
 
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('button', { name: 'Check for Updates' }));
 
     expect(await screen.findByRole('dialog', { name: 'Update Available' })).toBeInTheDocument();
     expect(screen.getAllByText(/KM Editor v0\.2\.0 is available/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Maintenance release')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Download Update' }));
+    await user.click(screen.getByRole('button', { name: 'Install Update' }));
 
-    await waitFor(() =>
-      expect(openExternalUrl).toHaveBeenCalledWith(
-        'https://github.example/releases/km-editor-0.2.0.nsis.zip'
-      )
-    );
+    await waitFor(() => expect(install).toHaveBeenCalledTimes(1));
+    expect(relaunchApp).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('dialog', { name: 'Update Available' })).not.toBeInTheDocument();
   });
 
-  it('does not directly download full installers when a release lacks an updater package', async () => {
+  it('falls back to the GitHub release page when native update checks fail', async () => {
     const user = userEvent.setup();
     const openExternalUrl = vi.fn(async () => undefined);
     vi.stubGlobal(
@@ -2824,14 +2869,6 @@ describe('App', () => {
         new Response(
           JSON.stringify([
             {
-              assets: [
-                {
-                  browser_download_url:
-                    'https://github.example/releases/KM Editor_0.2.0_x64-setup.exe',
-                  name: 'KM Editor_0.2.0_x64-setup.exe',
-                  size: 99000
-                }
-              ],
               draft: false,
               html_url: 'https://github.example/releases/tag/v0.2.0',
               name: 'KM Editor v0.2.0',
@@ -2844,24 +2881,29 @@ describe('App', () => {
       )
     );
 
-    render(<App desktopServices={createMockDesktopServices({ openExternalUrl })} />);
+    render(
+      <App
+        desktopServices={createMockDesktopServices({
+          checkForNativeUpdate: async () => {
+            throw new Error('latest.json was not found.');
+          },
+          openExternalUrl
+        })}
+      />
+    );
 
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('button', { name: 'Check for Updates' }));
 
     expect(await screen.findByRole('dialog', { name: 'Update Available' })).toBeInTheDocument();
-    expect(
-      screen.getByText(/does not include a smaller updater package/)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Native update check was not available/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Download Update' }));
+    await user.click(screen.getByRole('button', { name: 'Open Release' }));
 
     await waitFor(() =>
       expect(openExternalUrl).toHaveBeenCalledWith('https://github.example/releases/tag/v0.2.0')
     );
-    expect(openExternalUrl).not.toHaveBeenCalledWith(
-      'https://github.example/releases/KM Editor_0.2.0_x64-setup.exe'
-    );
+    expect(openExternalUrl).toHaveBeenCalledTimes(1);
   });
 
   it('reports when KM Editor is already up to date', async () => {
@@ -2874,9 +2916,9 @@ describe('App', () => {
             {
               assets: [],
               draft: false,
-              html_url: 'https://github.example/releases/tag/v0.0.2',
+              html_url: 'https://github.example/releases/tag/v0.0.3',
               prerelease: false,
-              tag_name: 'v0.0.2'
+              tag_name: 'v0.0.3'
             }
           ]),
           { headers: { 'Content-Type': 'application/json' }, status: 200 }
@@ -2889,7 +2931,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('button', { name: 'Check for Updates' }));
 
-    expect(await screen.findByText('KM Editor v0.0.2 is up to date.')).toBeInTheDocument();
+    expect(await screen.findByText('KM Editor v0.0.3 is up to date.')).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Update Available' })).not.toBeInTheDocument();
   });
 
@@ -3154,8 +3196,18 @@ describe('App', () => {
   });
 });
 
+function createNativeUpdate(overrides: Partial<NativeUpdate> = {}): NativeUpdate {
+  return {
+    close: async () => undefined,
+    install: async () => undefined,
+    version: '0.2.0',
+    ...overrides
+  };
+}
+
 function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): DesktopServices {
   return {
+    checkForNativeUpdate: async () => null,
     createDirectory: async () => undefined,
     exitApp: async () => undefined,
     isAvailable: true,
@@ -3163,8 +3215,59 @@ function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): De
     openPath: async () => undefined,
     pickFile: async () => null,
     pickFolder: async () => null,
+    relaunchApp: async () => undefined,
     setCloseGuardEnabled: async () => undefined,
     ...overrides
+  };
+}
+
+function createHealthForValidatedPaths(
+  baseRomFsPath: string,
+  baseExeFsPath: string,
+  outputRootPath: string,
+  saveFilePath: string | null
+): ProjectHealth {
+  return {
+    canOpenEditableWorkflows: true,
+    canOpenReadOnlyWorkflows: true,
+    diagnostics: [],
+    fileGraph: {
+      baseFileCount: 2,
+      layeredFileCount: 0,
+      layeredOnlyCount: 0,
+      overrideCount: 0
+    },
+    paths: [
+      {
+        diagnostics: [],
+        isRequired: true,
+        path: baseRomFsPath,
+        role: 'baseRomFs',
+        status: 'valid'
+      },
+      {
+        diagnostics: [],
+        isRequired: true,
+        path: baseExeFsPath,
+        role: 'baseExeFs',
+        status: 'valid'
+      },
+      {
+        diagnostics: [],
+        isRequired: false,
+        path: outputRootPath,
+        role: 'outputRoot',
+        status: 'valid'
+      },
+      {
+        diagnostics: [],
+        isRequired: false,
+        path: saveFilePath,
+        role: 'saveFile',
+        status: saveFilePath ? 'valid' : 'notSet'
+      }
+    ],
+    state: 'editableReady'
   };
 }
 
