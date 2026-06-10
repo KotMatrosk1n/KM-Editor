@@ -1321,6 +1321,19 @@ h2 {
   align-items: center;
 }
 
+.item-edit-form > .secondary-button,
+.item-edit-form > .draft-action-row,
+.text-edit-form > .secondary-button,
+.text-edit-form > .primary-button,
+.trainer-edit-form > .secondary-button,
+.trainer-edit-form > .draft-action-row,
+.encounter-edit-form > .secondary-button,
+.encounter-edit-form > .draft-action-row,
+.pokemon-personal-edit-block > .secondary-button,
+.pokemon-personal-edit-block > .draft-action-row {
+  order: -1;
+}
+
 .draft-action-summary {
   color: var(--color-text-muted);
   font-size: 12px;
