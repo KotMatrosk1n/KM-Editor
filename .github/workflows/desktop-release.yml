@@ -92,7 +92,7 @@ jobs:
 
       - name: Build desktop packages
         shell: pwsh
-        run: pnpm --dir apps/desktop exec tauri build --ci --bundles nsis,msi
+        run: pnpm --dir apps/desktop exec tauri build --ci --bundles 'nsis,msi'
 
       - name: Stage release assets
         shell: pwsh
