@@ -30,6 +30,7 @@ public sealed class SwShRaidBattlesWorkflowService
     private const string MessageRootPath = "romfs/bin/message";
     private const string PreferredLanguage = "English";
     private const int MinimumValue = 0;
+    private const int MaximumFormValue = byte.MaxValue;
 
     private static readonly IReadOnlyList<SwShRaidBattleEditableFieldOption> BooleanOptions =
     [
@@ -74,7 +75,7 @@ public sealed class SwShRaidBattlesWorkflowService
     private static readonly IReadOnlyList<SwShRaidBattleEditableField> BaseEditableFields =
     [
         CreateField(SpeciesField, "Species", "integer", MinimumValue, SwShEncounterNestArchive.MaximumSpeciesId),
-        CreateField(FormField, "Form", "integer", MinimumValue, 31, FormOptions),
+        CreateField(FormField, "Form", "integer", MinimumValue, MaximumFormValue, FormOptions),
         CreateField(AbilityField, "Ability roll", "integer", MinimumValue, SwShEncounterNestArchive.MaximumAbility, AbilityOptions),
         CreateField(IsGigantamaxField, "Gigantamax", "boolean", MinimumValue, 1, BooleanOptions),
         CreateField(GenderField, "Gender", "integer", MinimumValue, SwShEncounterNestArchive.MaximumGender, GenderOptions),
@@ -262,7 +263,7 @@ public sealed class SwShRaidBattlesWorkflowService
 
     private static RaidBattleLookupTables CreateEmptyLookupTables()
     {
-        return new RaidBattleLookupTables([], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
+        return new RaidBattleLookupTables([], [], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShRaidBattleEditableField> CreateEditableFields(RaidBattleLookupTables lookupTables)
@@ -339,6 +340,7 @@ public sealed class SwShRaidBattlesWorkflowService
             CreateRewardLink("bonus", bonusTableHash, rewardLinks))
         {
             AbilityOptions = CreateAbilityOptions(lookupTables, entry.Species, entry.Form),
+            FormOptions = CreateFormOptions(lookupTables, entry.Species, entry.Form),
         };
     }
 
@@ -448,12 +450,41 @@ public sealed class SwShRaidBattlesWorkflowService
     {
         var messageRoot = ResolveLanguageMessageRoot(project, diagnostics);
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
+        var personalRecords = LoadPersonalRecords(project);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new RaidBattleLookupTables(
             speciesNames,
+            personalRecords,
             abilityResolver,
-            SourceFileCount: speciesNames.Length > 0 ? 1 : 0);
+            SourceFileCount: (speciesNames.Length > 0 ? 1 : 0) + (personalRecords.Count > 0 ? 1 : 0));
+    }
+
+    private static IReadOnlyList<SwShRaidBattleEditableFieldOption> CreateFormOptions(
+        RaidBattleLookupTables lookupTables,
+        int speciesId,
+        int currentForm)
+    {
+        var values = new SortedSet<int> { 0 };
+        if ((uint)speciesId < (uint)lookupTables.PersonalRecords.Count)
+        {
+            var formCount = lookupTables.PersonalRecords[speciesId].FormCount;
+            for (var form = 1; form < formCount && form <= MaximumFormValue; form++)
+            {
+                values.Add(form);
+            }
+        }
+
+        if (currentForm >= 0 && currentForm <= MaximumFormValue)
+        {
+            values.Add(currentForm);
+        }
+
+        return values
+            .Select(form => new SwShRaidBattleEditableFieldOption(
+                form,
+                SwShSpeciesFormLabels.FormatSpeciesFormOptionLabel(speciesId, form)))
+            .ToArray();
     }
 
     private static IReadOnlyList<SwShRaidBattleEditableFieldOption> CreateAbilityOptions(
@@ -475,6 +506,32 @@ public sealed class SwShRaidBattlesWorkflowService
         return CreateAbilityOptions(lookupTables, speciesId, form)
             .FirstOrDefault(option => option.Value == value)?.Label
             ?? GetOptionLabel(AbilityOptions, value, "Ability roll");
+    }
+
+    private static IReadOnlyList<SwShPersonalRecord> LoadPersonalRecords(OpenedProject project)
+    {
+        var source = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
+        if (source is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            return SwShPersonalTable.Parse(File.ReadAllBytes(source.AbsolutePath)).Records;
+        }
+        catch (InvalidDataException)
+        {
+            return [];
+        }
+        catch (IOException)
+        {
+            return [];
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return [];
+        }
     }
 
     private static string? ResolveLanguageMessageRoot(
@@ -682,6 +739,7 @@ public sealed class SwShRaidBattlesWorkflowService
 
     private sealed record RaidBattleLookupTables(
         IReadOnlyList<string> SpeciesNames,
+        IReadOnlyList<SwShPersonalRecord> PersonalRecords,
         SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);
 }

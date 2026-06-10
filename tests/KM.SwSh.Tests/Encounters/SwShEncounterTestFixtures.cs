@@ -42,13 +42,15 @@ internal static class SwShEncounterTestFixtures
         int? firstSlotSpecies = null,
         int? firstSlotProbability = null,
         int? secondSlotProbability = null,
-        ulong? zoneId = null)
+        ulong? zoneId = null,
+        IReadOnlyList<SwShWildEncounterSubTable>? subTables = null)
     {
         return new SwShWildEncounterArchive(
             1,
             [
                 new SwShWildEncounterTable(
                     zoneId ?? ZoneId,
+                    subTables ??
                     [
                         new SwShWildEncounterSubTable(
                             3,

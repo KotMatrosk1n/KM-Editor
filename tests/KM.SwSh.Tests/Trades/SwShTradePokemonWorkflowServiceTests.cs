@@ -30,7 +30,7 @@ public sealed class SwShTradePokemonWorkflowServiceTests
 
         var firstTrade = workflow.Trades[0];
         Assert.Equal(0, firstTrade.TradeIndex);
-        Assert.Equal("Trade 001: Pikachu (Form 2) -> Grookey (Form 1) Lv. 50", firstTrade.Label);
+        Assert.Equal("Trade 001: Pikachu (Hoenn Cap) -> Grookey (Form 1) Lv. 50", firstTrade.Label);
         Assert.Equal(810, firstTrade.SpeciesId);
         Assert.Equal("Grookey", firstTrade.Species);
         Assert.Equal(25, firstTrade.RequiredSpeciesId);

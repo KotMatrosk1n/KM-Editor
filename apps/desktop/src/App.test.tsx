@@ -61,7 +61,7 @@ describe('App', () => {
     expect(getPokemonSpriteId('Toxtricity (Low Key) (Gigantamax)')).toBe('toxtricity-gmax');
   });
 
-  it('defaults Pokemon Data selection to the first real Pokemon instead of Egg', () => {
+  it('defaults Pokemon selection to the first real Pokemon instead of Egg', () => {
     useWorkbenchStore.getState().setPokemonWorkflow({
       diagnostics: [],
       editableFields: [],
@@ -81,7 +81,7 @@ describe('App', () => {
         description: 'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
         diagnostics: [],
         id: 'pokemon',
-        label: 'Pokemon Data'
+        label: 'Pokemon'
       }
     } as unknown as PokemonWorkflow);
 
@@ -178,13 +178,69 @@ describe('App', () => {
     render(<App />);
 
     expect(screen.getByText('KM Editor')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Project Health' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Project Setup' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Project Paths' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Open Project' }).length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Viewers' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Editors' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Encounters & Pokemon Sources' })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Economy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tools' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Advanced Editors' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Pokemon Data' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pokemon' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Workflows' })).not.toBeInTheDocument();
+  });
+
+  it('shows the renamed workflow categories in sidebar order', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+
+    const navigation = screen.getByRole('navigation', { name: 'Workspace' });
+    const topLevelLabels = within(navigation)
+      .getAllByRole('button')
+      .filter((button) => !button.classList.contains('nav-child-button'))
+      .map((button) => button.textContent);
+
+    expect(topLevelLabels).toEqual([
+      'Project Setup',
+      'Viewers',
+      'Editors',
+      'Encounters & Pokemon Sources',
+      'Economy',
+      'Tools',
+      'Advanced Editors',
+      'Changes'
+    ]);
+    expect(screen.queryByRole('button', { name: 'Workflows' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Viewers' }));
+    expect(screen.getByRole('button', { name: 'Flagwork / Save' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Text' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    expect(screen.getByRole('button', { name: 'Pokemon' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trainers' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Moves' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Items' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Placement' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    expect(screen.getByRole('button', { name: 'Wild Encounters' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Raid Battles' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Economy' }));
+    expect(screen.getByRole('button', { name: 'Shops' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Raid Rewards' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tools' }));
+    expect(screen.getByRole('button', { name: 'Spreadsheet Import' })).toBeInTheDocument();
   });
 
   it('replaces existing editable field contents when typing after click', async () => {
@@ -228,16 +284,12 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
 
-    expect(await screen.findAllByText('Read-only ready')).toHaveLength(2);
+    expect(await screen.findAllByText('View Only')).toHaveLength(2);
 
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-
-    expect(screen.getByRole('heading', { name: 'Workflow List' })).toBeInTheDocument();
-    expect(
-      screen.getByText('Validate Base RomFS, Base ExeFS, and Output Root before opening editors.')
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { level: 3, name: 'Items' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { level: 3, name: 'Pokemon Data' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Workflows' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Editors' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Items' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pokemon' })).not.toBeInTheDocument();
   });
 
   it('opens Items, searches records, and shows selected provenance', async () => {
@@ -247,8 +299,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Items' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
     expect(screen.getAllByText('Potion').length).toBeGreaterThan(0);
@@ -285,17 +337,17 @@ describe('App', () => {
     expect(screen.queryByText('TM02 (Razor Leaf)')).not.toBeInTheDocument();
   });
 
-  it('opens Pokemon Data, searches records, and shows selected details', async () => {
+  it('opens Pokemon, searches records, and shows selected details', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge()} />);
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon' })).toBeInTheDocument();
     expect(screen.getAllByText('Bulbasaur').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Tackle/ })).toBeInTheDocument();
     act(() => {
@@ -322,10 +374,10 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     const tm00 = screen.getByRole('checkbox', { name: /TM00 Mega Punch/ });
     expect(tm00).not.toBeChecked();
@@ -344,6 +396,15 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(screen.getByText('Set Bulbasaur hp to 99.')).toBeInTheDocument();
+    const pendingRow = screen.getByText('Set Bulbasaur hp to 99.').closest('li');
+    expect(pendingRow).not.toBeNull();
+    expect(within(pendingRow!).getAllByText('Pokemon').length).toBeGreaterThan(0);
+    expect(within(pendingRow!).getByText('Bulbasaur (#1)')).toBeInTheDocument();
+    expect(within(pendingRow!).getByText('HP')).toBeInTheDocument();
+    expect(within(pendingRow!).getByText('99')).toBeInTheDocument();
+    expect(
+      within(pendingRow!).getByText('romfs/bin/pml/personal/personal_total.bin (Base)')
+    ).toBeInTheDocument();
   });
 
   it('starts a Pokemon edit session and saves a learnset row change', async () => {
@@ -354,10 +415,10 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     await user.click(screen.getByRole('button', { name: /Growl/ }));
     const learnsetBlock = screen
@@ -378,6 +439,41 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(screen.getByText('Set Bulbasaur learnset slot 1 to Lv. 9 Magical Leaf.')).toBeInTheDocument();
+    const pendingRow = screen
+      .getByText('Set Bulbasaur learnset slot 1 to Lv. 9 Magical Leaf.')
+      .closest('li');
+    expect(pendingRow).not.toBeNull();
+    expect(within(pendingRow!).getByText('Learnset slot #2 Update')).toBeInTheDocument();
+    expect(within(pendingRow!).getByText('Lv. 9 345 Magical Leaf')).toBeInTheDocument();
+  });
+
+  it('keeps an unsaved learnset move draft when selecting another row', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const learnsetBlock = screen
+      .getByRole('heading', { level: 4, name: 'Learnset' })
+      .closest('.inspector-block') as HTMLElement | null;
+    expect(learnsetBlock).not.toBeNull();
+    const learnsetMoveInput = within(learnsetBlock!).getByLabelText('Move');
+    await user.clear(learnsetMoveInput);
+    await user.type(learnsetMoveInput, 'Razor');
+
+    await user.click(within(learnsetBlock!).getByRole('button', { name: /Growl/ }));
+
+    expect(within(learnsetBlock!).getByRole('button', { name: /Razor Leaf/ })).toBeInTheDocument();
+
+    await user.click(within(learnsetBlock!).getByRole('button', { name: /Razor Leaf/ }));
+
+    expect(within(learnsetBlock!).getByLabelText('Move')).toHaveDisplayValue('075 Razor Leaf');
   });
 
   it('reorders Pokemon learnset rows by dragging one move onto another', async () => {
@@ -388,10 +484,10 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     const learnsetBlock = screen
       .getByRole('heading', { level: 4, name: 'Learnset' })
@@ -432,8 +528,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     const learnsetBlock = screen
@@ -445,7 +541,7 @@ describe('App', () => {
     await user.click(within(learnsetBlock!).getByRole('button', { name: 'Move learnset row up' }));
 
     expect(await within(learnsetBlock!).findByDisplayValue('045 Growl')).toBeInTheDocument();
-    expect(within(learnsetBlock!).getByLabelText('Level')).toHaveDisplayValue('3');
+    expect(within(learnsetBlock!).getByLabelText('Level')).toHaveDisplayValue('1');
     expect(within(learnsetBlock!).getByRole('button', { name: /Tackle/ })).toBeInTheDocument();
   });
 
@@ -457,8 +553,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     const learnsetBlock = screen
@@ -469,7 +565,7 @@ describe('App', () => {
     await user.click(within(learnsetBlock!).getByRole('button', { name: 'Move learnset row down' }));
 
     expect(await within(learnsetBlock!).findByDisplayValue('033 Tackle')).toBeInTheDocument();
-    expect(within(learnsetBlock!).getByLabelText('Level')).toHaveDisplayValue('1');
+    expect(within(learnsetBlock!).getByLabelText('Level')).toHaveDisplayValue('3');
     expect(within(learnsetBlock!).getByRole('button', { name: /Growl/ })).toBeInTheDocument();
   });
 
@@ -481,10 +577,10 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon Data' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     await user.click(screen.getByRole('button', { name: /002 Ivysaur/ }));
     const evolutionsBlock = screen
@@ -576,8 +672,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     const evolutionsBlock = screen
@@ -625,15 +721,15 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
     await user.click(await screen.findByRole('button', { name: 'Remove EV Yield' }));
 
     expect(await screen.findByRole('dialog', { name: 'Remove EV Yield?' })).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Remove EV Yield will set every EV yield stat on every Pokemon to 0. This stages one pending Pokemon Data change and does not write files until you review and save it from Changes.'
+        'Remove EV Yield will set every EV yield stat on every Pokemon to 0. This stages one pending Pokemon change and does not write files until you review and save it from Changes.'
       )
     ).toBeInTheDocument();
     expect(updatePokemonField).not.toHaveBeenCalled();
@@ -675,17 +771,17 @@ describe('App', () => {
     );
   });
 
-  it('opens Moves Data, searches records, and shows selected details', async () => {
+  it('opens Moves, searches records, and shows selected details', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge()} />);
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Moves' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Moves' }));
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Moves Data' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Moves' })).toBeInTheDocument();
     expect(screen.getAllByText('Tackle').length).toBeGreaterThan(0);
     expect(screen.getByText('Makes Contact')).toBeInTheDocument();
 
@@ -708,10 +804,10 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Moves' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Moves' }));
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Moves Data' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'Moves' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     const powerInput = screen.getByLabelText('Power');
     await user.clear(powerInput);
@@ -735,7 +831,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
-      screen.getByText('Applied Moves Data change plan to the configured LayeredFS output root.')
+      screen.getByText('Applied Moves change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
   });
 
@@ -781,8 +877,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Items' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
 
     expect((await screen.findAllByText('Item 0001')).length).toBeGreaterThan(0);
     expect(screen.queryByText('Item 0000')).not.toBeInTheDocument();
@@ -829,12 +925,12 @@ describe('App', () => {
     expect(await screen.findByText('Loading backend workflow data.')).toBeInTheDocument();
     expect(loadItemsCount).toBe(1);
 
-    await user.click(screen.getByRole('button', { name: 'Project Health' }));
+    await user.click(screen.getByRole('button', { name: 'Project Setup' }));
     await act(async () => {
       resolveItemsWorkflow(await baseBridge.loadItemsWorkflow(lastRequest!));
     });
 
-    expect(screen.getByRole('heading', { name: 'Project Health' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Project Setup' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Items' }));
 
@@ -850,8 +946,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Import' }));
+    await user.click(screen.getByRole('button', { name: 'Tools' }));
+    await user.click(screen.getByRole('button', { name: 'Spreadsheet Import' }));
 
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Spreadsheet Import' })
@@ -874,8 +970,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Items' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
 
     const buyPriceInput = screen.getByLabelText('Buy price');
@@ -911,8 +1007,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Items' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
 
     const buyPriceInput = screen.getByLabelText('Buy price');
@@ -946,8 +1042,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Items' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
 
     const buyPriceInput = screen.getByLabelText('Buy price');
@@ -972,8 +1068,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Items' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
 
     const pouchInput = screen.getByLabelText('Pouch');
@@ -986,7 +1082,7 @@ describe('App', () => {
     expect(screen.getByText('Set Potion pouch to 4.')).toBeInTheDocument();
   });
 
-  it('opens Text, edits a line, reviews a message table plan, and applies it', async () => {
+  it('opens Text from Viewers as a view-only workflow', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -994,8 +1090,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Text' }));
+    await user.click(screen.getByRole('button', { name: 'Viewers' }));
+    await user.click(screen.getByRole('button', { name: 'Text' }));
 
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Text and Dialogue Map' })
@@ -1004,31 +1100,9 @@ describe('App', () => {
       screen.getAllByText('romfs/bin/message/English/common/story.dat').length
     ).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
-    const textValue = screen.getByLabelText('Text value');
-    await user.clear(textValue);
-    await user.type(textValue, 'Hello there.');
-    await user.click(screen.getByRole('button', { name: 'Save Text' }));
-
-    expect(await screen.findByDisplayValue('Hello there.')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Changes' }));
-
-    expect(screen.getByText('Set story #0 to "Hello there.".')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
-
-    expect(await screen.findByText('Pending text change is valid.')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
-    expect(
-      screen.getAllByText('romfs/bin/message/English/common/story.dat').length
-    ).toBeGreaterThan(0);
-
-    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
-    expect(screen.getByText('Applied Text change plan to the configured LayeredFS output root.')).toBeInTheDocument();
+    expect(screen.getByText('View Only')).toBeInTheDocument();
+    expect(screen.getByLabelText('Text value')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled();
   });
 
   it('opens Trainers, edits a party level, reviews a trainer plan, and applies it', async () => {
@@ -1039,8 +1113,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Trainers' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Trainers' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Trainers' })).toBeInTheDocument();
     expect(screen.getAllByText('Avery').length).toBeGreaterThan(0);
@@ -1176,8 +1250,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Trainers' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Trainers' }));
     await user.click(screen.getByRole('button', { name: 'Edit' }));
 
     const giftInput = screen.getByLabelText('Gift ID');
@@ -1212,21 +1286,20 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Trainers' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Trainers' }));
     await user.click(screen.getByRole('button', { name: 'Edit' }));
 
     const levelInput = screen.getByLabelText('Level');
     await user.clear(levelInput);
     await user.type(levelInput, '25');
 
-    await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Items' }));
 
     expect(await screen.findByRole('dialog', { name: 'Switch Editors?' })).toBeInTheDocument();
     expect(
       screen.getByText(
-        'This editor has unsaved changes. Switching editors now will revert those local edits.'
+        'This editor has unsaved changes. Switching editors now will revert those edits.'
       )
     ).toBeInTheDocument();
 
@@ -1240,6 +1313,37 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
   });
 
+  it('allows switching editors with staged changes in Changes', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const learnsetBlock = screen
+      .getByRole('heading', { level: 4, name: 'Learnset' })
+      .closest('.inspector-block') as HTMLElement | null;
+    expect(learnsetBlock).not.toBeNull();
+
+    await user.click(within(learnsetBlock!).getByRole('button', { name: 'Move learnset row down' }));
+    expect(await within(learnsetBlock!).findByDisplayValue('033 Tackle')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Switch Editors?' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Move Bulbasaur learnset slot 0 down.')).toBeInTheDocument();
+  });
+
   it('opens Gift Pokemon, edits IVs, reviews a gift plan, and applies it', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
@@ -1248,8 +1352,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Gifts' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Gift Pokemon' }));
 
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Gift Pokemon' })
@@ -1301,8 +1405,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Trades' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Trade Pokemon' }));
 
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Trade Pokemon' })
@@ -1356,8 +1460,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Static Encounters' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Static Encounters' }));
 
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Static Encounters' })
@@ -1409,8 +1513,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Rentals' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Rental Pokemon' }));
 
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Rental Pokemon' })
@@ -1460,8 +1564,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Rentals' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Rental Pokemon' }));
     await screen.findByRole('heading', { level: 2, name: 'Rental Pokemon' });
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
@@ -1486,8 +1590,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Adventures' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Dynamax Adventures' }));
 
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Dynamax Adventures' })
@@ -1542,8 +1646,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Shops' }));
+    await user.click(screen.getByRole('button', { name: 'Economy' }));
+    await user.click(screen.getByRole('button', { name: 'Shops' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Shops' })).toBeInTheDocument();
     expect(screen.getAllByText('Poke Mart').length).toBeGreaterThan(0);
@@ -1583,6 +1687,33 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('reorders shop inventory rows before saving', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Economy' }));
+    await user.click(screen.getByRole('button', { name: 'Shops' }));
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Move shop slot 2 up' }));
+
+    expect(screen.getByLabelText('Shop slot 1 item')).toHaveDisplayValue(
+      '0002 Antidote (Medicine)'
+    );
+    expect(screen.getByLabelText('Shop slot 2 item')).toHaveDisplayValue(
+      '0001 Potion (Medicine)'
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Poke Mart inventory order to 2 items.')).toBeInTheDocument();
+  });
+
   it('opens a linked shop inventory item in Items', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
@@ -1591,8 +1722,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Shops' }));
+    await user.click(screen.getByRole('button', { name: 'Economy' }));
+    await user.click(screen.getByRole('button', { name: 'Shops' }));
 
     const openPotionButton = await screen.findByRole('button', { name: 'Open Potion in Items' });
     expect(openPotionButton).toHaveTextContent('Open in Items');
@@ -1621,11 +1752,11 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Encounters' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
 
     expect(
-      await screen.findByRole('heading', { level: 2, name: 'Encounters and Wild Data' })
+      await screen.findByRole('heading', { level: 2, name: 'Wild Encounters' })
     ).toBeInTheDocument();
     expect(screen.getAllByText('Zone 0x1122334455667788').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /#1.*Bulbasaur/ })).toBeInTheDocument();
@@ -1638,6 +1769,12 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Save Encounter' }));
 
     expect(await screen.findByDisplayValue('40')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Switch Editors?' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
@@ -1660,7 +1797,7 @@ describe('App', () => {
 
     expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(
-      screen.getByText('Applied Encounters change plan to the configured LayeredFS output root.')
+      screen.getByText('Applied Wild Encounters change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
   });
 
@@ -1726,7 +1863,7 @@ describe('App', () => {
         description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
         diagnostics: [],
         id: 'encounters',
-        label: 'Encounters and Wild Data'
+        label: 'Wild Encounters'
       },
       tables: [
         {
@@ -1818,8 +1955,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Encounters' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
 
     expect((await screen.findAllByText('Rolling Fields')).length).toBeGreaterThan(0);
     const applyToAllWeatherButton = screen.getByRole('button', {
@@ -1863,8 +2000,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Raid Rewards' }));
+    await user.click(screen.getByRole('button', { name: 'Economy' }));
+    await user.click(screen.getByRole('button', { name: 'Raid Rewards' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Raid Rewards' })).toBeInTheDocument();
     expect(screen.getAllByText('0xAABBCCDD00112233').length).toBeGreaterThan(0);
@@ -1909,8 +2046,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Raid Battles' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Raid Battles' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Raid Battles' })).toBeInTheDocument();
     expect(screen.getAllByText('0xAABBCCDD00112233').length).toBeGreaterThan(0);
@@ -1952,6 +2089,194 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('limits Raid Battle form options to applicable named forms', async () => {
+    const user = userEvent.setup();
+    const rewardLink = {
+      isMatched: false,
+      preview: 'No loaded drop table matches this hash',
+      rewardItemCount: 0,
+      rewardKind: 'drop',
+      rewardKindLabel: 'Drop',
+      sourceTableHash: '0x0000000000000000',
+      tableId: ''
+    };
+    const workflow: RaidBattlesWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'form',
+          label: 'Form',
+          maximumValue: 255,
+          minimumValue: 0,
+          options: [
+            { label: 'Base', value: 0 },
+            { label: 'Form 1', value: 1 },
+            { label: 'Form 2', value: 2 },
+            { label: 'Form 3', value: 3 }
+          ],
+          valueKind: 'integer'
+        }
+      ],
+      stats: {
+        gigantamaxSlotCount: 0,
+        sourceFileCount: 2,
+        totalSlotCount: 3,
+        totalTableCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Raid Pokemon slots, star probabilities, ability rolls, guaranteed perfect IVs, and source provenance.',
+        diagnostics: [],
+        id: 'raidBattles',
+        label: 'Raid Battles'
+      },
+      tables: [
+        {
+          denId: 'table_AABBCCDD00112233',
+          gameVersion: 'Sword',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+            sourceLayer: 'base'
+          },
+          slots: [
+            {
+              ability: 0,
+              abilityLabel: 'Ability 1',
+              abilityOptions: [],
+              bonusTableHash: '0x0000000000000000',
+              bonusRewardLink: { ...rewardLink, rewardKind: 'bonus', rewardKindLabel: 'Bonus' },
+              dropTableHash: '0x0000000000000000',
+              dropRewardLink: rewardLink,
+              entryIndex: 0,
+              flawlessIvs: 0,
+              form: 0,
+              formOptions: [
+                { label: 'Base', value: 0 },
+                { label: 'Galarian', value: 1 }
+              ],
+              gender: 0,
+              genderLabel: 'Random',
+              isGigantamax: false,
+              levelTableHash: '0x0000000000000000',
+              probabilities: [100, 0, 0, 0, 0],
+              probabilitySummary: '1-star 100% / 2-star 0% / 3-star 0% / 4-star 0% / 5-star 0%',
+              slot: 1,
+              species: 'Weezing',
+              speciesId: 110
+            },
+            {
+              ability: 0,
+              abilityLabel: 'Ability 1',
+              abilityOptions: [],
+              bonusTableHash: '0x0000000000000000',
+              bonusRewardLink: { ...rewardLink, rewardKind: 'bonus', rewardKindLabel: 'Bonus' },
+              dropTableHash: '0x0000000000000000',
+              dropRewardLink: rewardLink,
+              entryIndex: 1,
+              flawlessIvs: 0,
+              form: 0,
+              formOptions: [
+                { label: 'Base', value: 0 },
+                { label: 'Form 1', value: 1 }
+              ],
+              gender: 1,
+              genderLabel: 'Male',
+              isGigantamax: false,
+              levelTableHash: '0x0000000000000000',
+              probabilities: [100, 0, 0, 0, 0],
+              probabilitySummary: '1-star 100% / 2-star 0% / 3-star 0% / 4-star 0% / 5-star 0%',
+              slot: 2,
+              species: 'Indeedee',
+              speciesId: 876
+            },
+            {
+              ability: 0,
+              abilityLabel: 'Ability 1',
+              abilityOptions: [],
+              bonusTableHash: '0x0000000000000000',
+              bonusRewardLink: { ...rewardLink, rewardKind: 'bonus', rewardKindLabel: 'Bonus' },
+              dropTableHash: '0x0000000000000000',
+              dropRewardLink: rewardLink,
+              entryIndex: 2,
+              flawlessIvs: 0,
+              form: 62,
+              formOptions: [
+                { label: 'Base', value: 0 },
+                { label: 'Form 1', value: 1 },
+                { label: 'Form 62', value: 62 }
+              ],
+              gender: 3,
+              genderLabel: 'Genderless',
+              isGigantamax: false,
+              levelTableHash: '0x0000000000000000',
+              probabilities: [100, 0, 0, 0, 0],
+              probabilitySummary: '1-star 100% / 2-star 0% / 3-star 0% / 4-star 0% / 5-star 0%',
+              slot: 3,
+              species: 'Alcremie',
+              speciesId: 869
+            }
+          ],
+          sourceTableHash: '0xAABBCCDD00112233',
+          tableId: 'raid:0:AABBCCDD00112233',
+          tableIndex: 0
+        }
+      ]
+    };
+
+    render(
+      <App
+        bridge={createMockProjectBridge(
+          {
+            loadRaidBattlesWorkflow: () => Promise.resolve({ workflow })
+          },
+          true
+        )}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Raid Battles' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByLabelText('Form')).toHaveDisplayValue('Kanto');
+
+    await user.click(screen.getByRole('button', { name: 'Show Form options' }));
+
+    expect(screen.getByRole('option', { name: 'Kanto' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Galarian' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Form 2' })).not.toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: /#2.*Indeedee/ }));
+
+    expect(screen.getByLabelText('Form')).toHaveDisplayValue('Male');
+
+    await user.click(screen.getByRole('button', { name: 'Show Form options' }));
+
+    expect(screen.getByRole('option', { name: 'Male' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Female' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Form 1' })).not.toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: /#3.*Alcremie/ }));
+
+    expect(screen.getByLabelText('Form')).toHaveDisplayValue('Rainbow Swirl / Ribbon Sweet');
+
+    await user.click(screen.getByRole('button', { name: 'Show Form options' }));
+
+    expect(
+      screen.getByRole('option', { name: 'Vanilla Cream / Strawberry Sweet' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: 'Rainbow Swirl / Ribbon Sweet' })
+    ).toBeInTheDocument();
+  });
+
   it('opens Flagwork and Save Inspectors, searches real keys, and shows provenance', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge()} />);
@@ -1959,8 +2284,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Flagwork' }));
+    await user.click(screen.getByRole('button', { name: 'Viewers' }));
+    await user.click(screen.getByRole('button', { name: 'Flagwork / Save' }));
 
     expect(
       await screen.findByRole('heading', {
@@ -1988,8 +2313,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open ExeFS' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'ExeFS Patches' }));
 
     expect(
       await screen.findByRole('heading', {
@@ -2016,8 +2341,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output-root');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open ExeFS' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'ExeFS Patches' }));
     await user.click(await screen.findByRole('button', { name: 'Stage Patch' }));
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
@@ -2044,8 +2369,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Candy' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Royal Candy' }));
 
     expect(
       await screen.findByRole('heading', {
@@ -2071,8 +2396,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output-root');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Candy' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Royal Candy' }));
     await user.click(await screen.findByRole('button', { name: 'Stage' }));
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
@@ -2110,8 +2435,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output-root');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Candy' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Royal Candy' }));
     await user.click(
       await screen.findByRole('row', { name: /Royal Candy with Story Limits/i })
     );
@@ -2150,8 +2475,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output-root');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Candy' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Royal Candy' }));
     await user.click(
       await screen.findByRole('row', { name: /Royal Candy with Story Limits/i })
     );
@@ -2190,7 +2515,7 @@ describe('App', () => {
       openPath: async (path) => {
         openedPaths.push(path);
       },
-      pickFile: async ({ title }) => (title === 'Select Save File' ? 'picked-save-main' : null),
+      pickFile: async ({ title }) => (title === 'Select Save File (Optional)' ? 'picked-save-main' : null),
       pickFolder: async ({ title }) =>
         ({
           'Select Base ExeFS': 'picked-exefs',
@@ -2203,12 +2528,12 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Browse for Base RomFS' }));
     await user.click(screen.getByRole('button', { name: 'Browse for Base ExeFS' }));
     await user.click(screen.getByRole('button', { name: 'Browse for Output Root' }));
-    await user.click(screen.getByRole('button', { name: 'Browse for Save File' }));
+    await user.click(screen.getByRole('button', { name: 'Browse for Save File (Optional)' }));
 
     expect(screen.getByLabelText('Base RomFS')).toHaveValue('picked-romfs');
     expect(screen.getByLabelText('Base ExeFS')).toHaveValue('picked-exefs');
     expect(screen.getByLabelText('Output Root')).toHaveValue('picked-output');
-    expect(screen.getByLabelText('Save File')).toHaveValue('picked-save-main');
+    expect(screen.getByLabelText('Save File (Optional)')).toHaveValue('picked-save-main');
 
     await user.click(screen.getByRole('button', { name: 'Open Output Root' }));
 
@@ -2249,8 +2574,8 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
-    await user.click(screen.getByRole('button', { name: 'Workflows' }));
-    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
     await user.click(screen.getByRole('button', { name: 'Edit' }));
 
     await waitFor(() => expect(closeGuardStates).toContain(true));
@@ -2269,6 +2594,41 @@ describe('App', () => {
 
     await waitFor(() => expect(exitApp).toHaveBeenCalledTimes(1));
     expect(closeGuardStates.at(-1)).toBe(false);
+  });
+
+  it('keeps the desktop close guard enabled for pending Changes and disables it after Save', async () => {
+    const user = userEvent.setup();
+    const closeGuardStates: boolean[] = [];
+    const desktopServices = createMockDesktopServices({
+      setCloseGuardEnabled: async (enabled) => {
+        closeGuardStates.push(enabled);
+      }
+    });
+    render(<App bridge={createMockProjectBridge({}, true)} desktopServices={desktopServices} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    const buyPriceInput = screen.getByLabelText('Buy price');
+    await user.clear(buyPriceInput);
+    await user.type(buyPriceInput, '450');
+    await user.click(screen.getByRole('button', { name: 'Save Item' }));
+
+    await waitFor(() => expect(closeGuardStates).toContain(true));
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
+    expect(await screen.findByText('Pending item change is valid.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
+    await waitFor(() => expect(closeGuardStates.at(-1)).toBe(false));
   });
 
   it('keeps the desktop close guard disabled when there is no edit session', async () => {
@@ -2628,7 +2988,7 @@ function createMockProjectBridge(
     description: 'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
     diagnostics: [],
     id: 'pokemon',
-    label: 'Pokemon Data'
+    label: 'Pokemon'
   };
   const pokemonWorkflow: PokemonWorkflow = {
     diagnostics: [],
@@ -2990,7 +3350,7 @@ function createMockProjectBridge(
     description: 'Move stats, target behavior, secondary effects, flags, and source provenance.',
     diagnostics: [],
     id: 'moves',
-    label: 'Moves Data'
+    label: 'Moves'
   };
   const movesWorkflow: MovesWorkflow = {
     diagnostics: [],
@@ -4925,7 +5285,7 @@ function createMockProjectBridge(
     description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
     diagnostics: [],
     id: 'encounters',
-    label: 'Encounters and Wild Data'
+    label: 'Wild Encounters'
   };
   const encountersWorkflow: EncountersWorkflow = {
     diagnostics: [],
@@ -5041,6 +5401,18 @@ function createMockProjectBridge(
         valueKind: 'integer'
       },
       {
+        field: 'form',
+        label: 'Form',
+        maximumValue: 31,
+        minimumValue: 0,
+        options: [
+          { label: 'Base', value: 0 },
+          { label: 'Form 1', value: 1 },
+          { label: 'Form 2', value: 2 }
+        ],
+        valueKind: 'integer'
+      },
+      {
         field: 'flawlessIvs',
         label: 'Guaranteed perfect IVs',
         maximumValue: 6,
@@ -5105,6 +5477,10 @@ function createMockProjectBridge(
             entryIndex: 0,
             flawlessIvs: 4,
             form: 1,
+            formOptions: [
+              { label: 'Base', value: 0 },
+              { label: 'Form 1', value: 1 }
+            ],
             gender: 1,
             genderLabel: 'Male',
             isGigantamax: true,
@@ -5142,6 +5518,7 @@ function createMockProjectBridge(
             entryIndex: 1,
             flawlessIvs: 0,
             form: 0,
+            formOptions: [{ label: 'Base', value: 0 }],
             gender: 0,
             genderLabel: 'Random',
             isGigantamax: false,
@@ -5591,7 +5968,7 @@ function createMockProjectBridge(
                 : request.session.pendingEdits[0]?.domain === 'workflow.pokemon'
                   ? [
                       {
-                        reason: 'Apply pending Pokemon Data edit: Set Bulbasaur hp to 99.',
+                        reason: 'Apply pending Pokemon edit: Set Bulbasaur hp to 99.',
                         replacesExistingOutput: false,
                         sources: [
                           {
@@ -5605,7 +5982,7 @@ function createMockProjectBridge(
                 : request.session.pendingEdits[0]?.domain === 'workflow.moves'
                   ? [
                       {
-                        reason: 'Apply pending Moves Data edit: Set Tackle power to 80.',
+                        reason: 'Apply pending Moves edit: Set Tackle power to 80.',
                         replacesExistingOutput: false,
                         sources: [
                           {
@@ -6513,6 +6890,13 @@ function createMockProjectBridge(
             }
 
             const learnset = [...pokemon.learnset];
+            const keepLevelsWithSlots =
+              request.action === 'moveUp' ||
+              request.action === 'moveDown' ||
+              request.action === 'moveTo';
+            const slotLevels = keepLevelsWithSlots
+              ? pokemon.learnset.map((move) => move.level)
+              : [];
             const targetSlot = request.action === 'add' ? learnset.length : request.slot ?? 0;
             if (
               (request.action === 'upsert' || request.action === 'add') &&
@@ -6556,7 +6940,11 @@ function createMockProjectBridge(
 
             return {
               ...pokemon,
-              learnset: learnset.map((move, slot) => ({ ...move, slot }))
+              learnset: learnset.map((move, slot) => ({
+                ...move,
+                level: keepLevelsWithSlots ? slotLevels[slot] ?? move.level : move.level,
+                slot
+              }))
             };
           })
         }
@@ -7353,11 +7741,11 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
   }
 
   if (domain === 'workflow.moves') {
-    return 'Applied Moves Data change plan to the configured LayeredFS output root.';
+    return 'Applied Moves change plan to the configured LayeredFS output root.';
   }
 
   if (domain === 'workflow.pokemon') {
-    return 'Applied Pokemon Data change plan to the configured LayeredFS output root.';
+    return 'Applied Pokemon change plan to the configured LayeredFS output root.';
   }
 
   if (domain === 'workflow.royalCandy') {
@@ -7369,7 +7757,7 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
   }
 
   if (targetRelativePath.includes('/archive/field/resident/')) {
-    return 'Applied Encounters change plan to the configured LayeredFS output root.';
+    return 'Applied Wild Encounters change plan to the configured LayeredFS output root.';
   }
 
   return 'Applied Items change plan to the configured LayeredFS output root.';

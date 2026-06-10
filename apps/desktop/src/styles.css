@@ -93,6 +93,32 @@ textarea {
   letter-spacing: 0;
 }
 
+.brand-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.brand-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brand-version {
+  color: var(--color-gold);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.brand-credit {
+  color: #9aa7bd;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .brand-logo {
   width: 44px;
   height: 44px;
@@ -3085,7 +3111,7 @@ h2 {
 
 .pending-edit-list li {
   display: grid;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
   padding: 10px;
   background: #0b1120;
@@ -3093,13 +3119,22 @@ h2 {
   border-radius: 8px;
 }
 
-.pending-edit-list strong,
-.pending-edit-list span {
+.pending-edit-title-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.pending-edit-title-row strong,
+.pending-edit-title-row span {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.pending-edit-list span {
+.pending-edit-title-row span {
+  flex: 0 0 auto;
   color: #9aa7bd;
   font-size: 13px;
   font-weight: 700;
@@ -3107,9 +3142,15 @@ h2 {
 
 .pending-edit-meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns:
+    minmax(160px, 1fr)
+    minmax(220px, 1.3fr)
+    minmax(160px, 1fr)
+    minmax(160px, 1fr)
+    minmax(140px, 0.85fr)
+    minmax(140px, 0.85fr)
+    minmax(240px, 1.6fr);
   gap: 8px;
-  margin: 6px 0;
 }
 
 .pending-edit-meta div {
@@ -3497,6 +3538,10 @@ input {
 }
 
 @media (max-width: 1300px) {
+  .pending-edit-meta {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+
   .pokemon-layout {
     grid-template-columns: minmax(360px, 0.75fr) minmax(420px, 1fr);
   }

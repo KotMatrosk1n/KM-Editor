@@ -1629,6 +1629,7 @@ public static class SwShBridgeMapper
             ToDto(slot.BonusRewardLink))
         {
             AbilityOptions = slot.AbilityOptions.Select(ToDto).ToArray(),
+            FormOptions = slot.FormOptions.Select(ToDto).ToArray(),
         };
     }
 

@@ -1,0 +1,147 @@
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create, for example v0.1.0"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark the GitHub Release as a prerelease"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows desktop package
+    runs-on: windows-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}\target\tauri
+      RELEASE_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Set up Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Verify release version
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+            throw "Release tag '$env:RELEASE_TAG' must look like v0.1.0."
+          }
+
+          $expectedVersion = $env:RELEASE_TAG.Substring(1)
+          $tauriConfig = Get-Content 'apps/desktop/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
+          $cargoToml = Get-Content 'apps/desktop/src-tauri/Cargo.toml' -Raw
+
+          if ($cargoToml -notmatch '(?m)^version\s*=\s*"([^"]+)"') {
+            throw 'Could not read the desktop Cargo.toml package version.'
+          }
+
+          $cargoVersion = $Matches[1]
+
+          if ($tauriConfig.version -ne $expectedVersion) {
+            throw "Release tag '$env:RELEASE_TAG' does not match tauri.conf.json version '$($tauriConfig.version)'."
+          }
+
+          if ($cargoVersion -ne $expectedVersion) {
+            throw "Release tag '$env:RELEASE_TAG' does not match Cargo.toml version '$cargoVersion'."
+          }
+
+      - name: Install dependencies
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Test backend
+        shell: pwsh
+        run: dotnet test .\KM.Editor.slnx
+
+      - name: Test desktop
+        shell: pwsh
+        run: |
+          pnpm --filter @km-editor/desktop typecheck
+          pnpm --filter @km-editor/desktop test:run
+
+      - name: Build desktop packages
+        shell: pwsh
+        run: pnpm --dir apps/desktop exec tauri build --ci --bundles nsis,msi
+
+      - name: Stage release assets
+        shell: pwsh
+        run: |
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/dist/release'
+          Remove-Item $releaseDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $releaseDir | Out-Null
+
+          Copy-Item (Join-Path $env:CARGO_TARGET_DIR 'release/bundle/nsis/*.exe') $releaseDir
+          Copy-Item (Join-Path $env:CARGO_TARGET_DIR 'release/bundle/msi/*.msi') $releaseDir
+
+          $hashLines = Get-ChildItem $releaseDir -File |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 -Path $_.FullName).Hash.ToLowerInvariant()
+              "$hash  $($_.Name)"
+            }
+
+          $hashLines | Set-Content -Path (Join-Path $releaseDir 'SHA256SUMS.txt') -Encoding utf8
+          Get-ChildItem $releaseDir -File | Sort-Object Name | Format-Table Name, Length
+
+      - name: Create draft GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/dist/release'
+          $assets = Get-ChildItem $releaseDir -File | Sort-Object Name | ForEach-Object { $_.FullName }
+          $arguments = @(
+            'release',
+            'create',
+            $env:RELEASE_TAG
+          ) + $assets + @(
+            '--repo',
+            $env:GITHUB_REPOSITORY,
+            '--target',
+            $env:GITHUB_SHA,
+            '--title',
+            "KM Editor $env:RELEASE_TAG",
+            '--draft',
+            '--generate-notes'
+          )
+
+          if ($env:RELEASE_PRERELEASE -eq 'true') {
+            $arguments += '--prerelease'
+          }
+
+          gh @arguments

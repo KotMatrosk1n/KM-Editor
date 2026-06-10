@@ -144,13 +144,13 @@ public sealed class SwShPokemonEditSessionServiceTests
             {
                 Assert.Equal(0, move.Slot);
                 Assert.Equal(45, move.MoveId);
-                Assert.Equal(3, move.Level);
+                Assert.Equal(1, move.Level);
             },
             move =>
             {
                 Assert.Equal(1, move.Slot);
                 Assert.Equal(33, move.MoveId);
-                Assert.Equal(1, move.Level);
+                Assert.Equal(3, move.Level);
             });
         var edit = Assert.Single(result.Session.PendingEdits);
         Assert.Equal("workflow.pokemon", edit.Domain);
@@ -165,7 +165,7 @@ public sealed class SwShPokemonEditSessionServiceTests
     [Theory]
     [InlineData("moveUp", 1)]
     [InlineData("moveDown", 0)]
-    public void UpdateLearnsetMoveButtonsMoveWholeRowWithLevel(string action, int slot)
+    public void UpdateLearnsetMoveButtonsKeepLevelsWithSlots(string action, int slot)
     {
         using var temp = CreateEditableProject();
         var service = new SwShPokemonEditSessionService();
@@ -187,14 +187,14 @@ public sealed class SwShPokemonEditSessionServiceTests
                 Assert.Equal(0, move.Slot);
                 Assert.Equal(45, move.MoveId);
                 Assert.Equal("Growl", move.MoveName);
-                Assert.Equal(3, move.Level);
+                Assert.Equal(1, move.Level);
             },
             move =>
             {
                 Assert.Equal(1, move.Slot);
                 Assert.Equal(33, move.MoveId);
                 Assert.Equal("Tackle", move.MoveName);
-                Assert.Equal(1, move.Level);
+                Assert.Equal(3, move.Level);
             });
         Assert.Empty(result.Diagnostics);
     }

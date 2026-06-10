@@ -1,0 +1,47 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+  categories:
+    - title: Editors
+      labels:
+        - editor
+        - editors
+        - pokemon
+        - trainers
+        - moves
+        - items
+        - placement
+    - title: Encounters & Pokemon Sources
+      labels:
+        - encounters
+        - wild-encounters
+        - static-encounters
+        - gift-pokemon
+        - trade-pokemon
+        - rental-pokemon
+        - raid-battles
+        - dynamax-adventures
+    - title: Economy
+      labels:
+        - economy
+        - shops
+        - raid-rewards
+    - title: Tools
+      labels:
+        - tools
+        - spreadsheet-import
+    - title: Build & Release
+      labels:
+        - build
+        - release
+        - packaging
+        - desktop
+    - title: Tests & Maintenance
+      labels:
+        - tests
+        - maintenance
+        - refactor
+    - title: Other Changes
+      labels:
+        - "*"

@@ -54,6 +54,9 @@ public sealed record SwShRaidBattleSlotRecord(
 {
     public IReadOnlyList<SwShRaidBattleEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<SwShRaidBattleEditableFieldOption>();
+
+    public IReadOnlyList<SwShRaidBattleEditableFieldOption> FormOptions { get; init; } =
+        Array.Empty<SwShRaidBattleEditableFieldOption>();
 }
 
 public sealed record SwShRaidBattleTableRecord(
