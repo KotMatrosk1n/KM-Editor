@@ -344,11 +344,6 @@ public sealed class SwShPlacementWorkflowService
         SwShPlacementFieldItem fieldItem,
         IReadOnlyDictionary<ulong, int> itemIdsByHash)
     {
-        if (fieldItem.ItemIds.Count > 0)
-        {
-            return checked((int)fieldItem.ItemIds[0]);
-        }
-
         if (fieldItem.ItemHashes.Count > 0 && itemIdsByHash.TryGetValue(fieldItem.ItemHashes[0], out var itemId))
         {
             return itemId;

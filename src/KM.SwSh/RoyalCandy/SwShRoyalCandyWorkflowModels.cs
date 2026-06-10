@@ -16,6 +16,21 @@ public sealed record SwShRoyalCandyWorkflowStepRecord(
     string Label,
     string Description);
 
+public sealed record SwShRoyalCandyLevelCapRecord(
+    int Slot,
+    string MilestoneId,
+    string Label,
+    int LevelCap,
+    int MinimumLevelCap,
+    int MaximumLevelCap,
+    string ProgressKind,
+    string ProgressHash,
+    int? WorkMinimum);
+
+public sealed record SwShRoyalCandyLevelCapSelection(
+    int Slot,
+    int LevelCap);
+
 public sealed record SwShRoyalCandyWorkflowCheckRecord(
     string CheckId,
     string WorkflowId,
@@ -45,6 +60,7 @@ public sealed record SwShRoyalCandyWorkflowRecord(
     int TemplateItemId,
     string Status,
     string Description,
+    IReadOnlyList<SwShRoyalCandyLevelCapRecord> LevelCaps,
     IReadOnlyList<SwShRoyalCandyWorkflowStepRecord> Steps,
     SwShRoyalCandyProvenance Provenance);
 

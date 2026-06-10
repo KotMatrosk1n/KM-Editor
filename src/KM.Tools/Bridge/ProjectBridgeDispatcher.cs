@@ -697,6 +697,9 @@ public sealed class ProjectBridgeDispatcher
         var result = royalCandyEditSessionService.StageWorkflow(
             ProjectBridgeMapper.ToCore(request.Payload.Paths),
             request.Payload.WorkflowId,
+            request.Payload.LevelCaps?.Select(selection => new SwShRoyalCandyLevelCapSelection(
+                selection.Slot,
+                selection.LevelCap)).ToArray(),
             session);
         var response = SwShBridgeMapper.ToDto(result);
 

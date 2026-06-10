@@ -729,6 +729,31 @@ h2 {
   margin-top: 16px;
 }
 
+.pokemon-toolbar {
+  grid-template-columns: minmax(240px, 1fr) minmax(360px, auto);
+  align-items: start;
+}
+
+.pokemon-toolbar-side {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pokemon-toolbar-metrics,
+.pokemon-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pokemon-toolbar-metrics .metric {
+  min-width: 130px;
+  flex: 1 1 130px;
+}
+
 .items-search {
   background: #121b2d;
 }
@@ -1420,7 +1445,7 @@ h2 {
 }
 
 .learnset-inline-row {
-  grid-template-columns: 24px 42px minmax(180px, 1fr) minmax(74px, 0.34fr) 54px auto;
+  grid-template-columns: 24px 42px minmax(180px, 1fr) minmax(74px, 0.34fr) auto;
   align-items: end;
   cursor: default;
 }
@@ -1942,10 +1967,28 @@ h2 {
 
 .shops-layout {
   display: grid;
-  grid-template-columns: var(--editor-list-column) var(--editor-detail-column);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
   margin-top: 16px;
+}
+
+.shops-table-stack {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.shop-table-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.shop-table-section h3 {
+  margin: 0;
+  color: #f4f7fb;
+  font-size: 14px;
 }
 
 .shops-table {
@@ -1954,12 +1997,16 @@ h2 {
   align-self: start;
   grid-auto-rows: max-content;
   min-width: 0;
-  max-height: var(--editor-table-max-height);
+  max-height: min(360px, var(--editor-table-max-height));
   overflow: auto;
   overscroll-behavior: contain;
   border: 1px solid #26344d;
   border-radius: 8px;
   scrollbar-gutter: stable;
+}
+
+.shop-table-empty {
+  padding: 12px;
 }
 
 .shops-row {
@@ -2042,7 +2089,7 @@ h2 {
 }
 
 .shop-inspector > .item-provenance-list {
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   margin-top: 0;
 }
 
@@ -2129,8 +2176,8 @@ h2 {
 .shop-inventory-editor-row {
   display: grid;
   grid-template-columns:
-    54px minmax(220px, 1.35fr) minmax(96px, 0.45fr) minmax(96px, 0.45fr)
-    minmax(190px, 0.9fr);
+    48px minmax(190px, 1fr) minmax(76px, 0.32fr) minmax(76px, 0.32fr)
+    minmax(190px, 0.7fr);
   gap: 10px;
   align-items: end;
   min-width: 0;
@@ -2179,6 +2226,15 @@ h2 {
   gap: 8px;
   align-items: center;
   min-width: 0;
+}
+
+.shop-inventory-add-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, auto);
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+  padding-top: 4px;
 }
 
 .encounters-toolbar {
@@ -2349,6 +2405,13 @@ h2 {
   min-width: 0;
 }
 
+.royal-candy-layout {
+  display: grid;
+  gap: 14px;
+  align-items: start;
+  margin-top: 16px;
+}
+
 .flagwork-table {
   display: grid;
   align-self: start;
@@ -2442,11 +2505,55 @@ h2 {
 }
 
 .royal-candy-workflow-row {
-  grid-template-columns: minmax(170px, 1.1fr) minmax(92px, 0.45fr) minmax(96px, 0.55fr) minmax(92px, 0.45fr) minmax(150px, 1fr);
+  grid-template-columns: minmax(180px, 1.35fr) minmax(92px, 0.52fr) minmax(88px, 0.52fr) minmax(84px, 0.44fr) minmax(150px, 1fr);
 }
 
 .royal-candy-check-row {
   grid-template-columns: minmax(150px, 0.9fr) minmax(92px, 0.45fr) minmax(88px, 0.45fr) minmax(150px, 0.9fr) minmax(220px, 1.4fr);
+}
+
+.royal-candy-target-row {
+  grid-template-columns: minmax(120px, 0.74fr) minmax(92px, 0.42fr) minmax(88px, 0.42fr) minmax(180px, 1.05fr) minmax(220px, 1.45fr);
+}
+
+.royal-candy-workflow-table,
+.royal-candy-target-table {
+  overflow-x: hidden;
+}
+
+.royal-candy-workflow-table {
+  max-height: 180px;
+}
+
+.royal-candy-target-table {
+  max-height: 360px;
+}
+
+.royal-candy-workflow-row span,
+.royal-candy-target-row span {
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.royal-candy-target-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  color: var(--color-gold);
+  background: #0b1120;
+  border-bottom: 1px solid #26344d;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.royal-candy-output-row {
+  cursor: default;
 }
 
 .spreadsheet-import-toolbar {
@@ -2504,6 +2611,14 @@ h2 {
   white-space: nowrap;
 }
 
+.exefs-table .royal-candy-workflow-row span,
+.exefs-table .royal-candy-target-row span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .exefs-row .status-pill {
   min-width: 76px;
 }
@@ -2541,6 +2656,77 @@ h2 {
   color: #9aa7bd;
   font-size: 13px;
   font-weight: 700;
+}
+
+.royal-candy-cap-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.royal-candy-cap-help {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.royal-candy-cap-grid {
+  display: grid;
+  gap: 8px;
+  max-height: none;
+  overflow: visible;
+}
+
+.royal-candy-cap-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 10px;
+  background: #101828;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.royal-candy-cap-row > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.royal-candy-cap-row strong,
+.royal-candy-cap-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.royal-candy-cap-row small {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.royal-candy-cap-row input {
+  width: 100%;
+}
+
+.royal-candy-cap-control {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.royal-candy-cap-control .editable-field-error {
+  min-height: 0;
+  line-height: 1.25;
+}
+
+.input-error {
+  border-color: var(--color-danger) !important;
+  box-shadow: 0 0 0 1px rgb(248 113 113 / 44%);
 }
 
 .royal-candy-output-list {
@@ -2633,6 +2819,58 @@ h2 {
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid #26344d;
+}
+
+.royal-candy-inspector {
+  grid-template-columns: minmax(240px, 0.45fr) minmax(0, 1fr);
+  gap: 14px 18px;
+}
+
+.royal-candy-inspector > .panel-heading {
+  grid-column: 1 / -1;
+}
+
+.royal-candy-inspector > .item-provenance-list {
+  grid-column: 1 / 2;
+  grid-template-columns: 1fr;
+  align-self: start;
+  margin-top: 0;
+}
+
+.royal-candy-inspector > .royal-candy-edit-form {
+  grid-column: 2 / -1;
+}
+
+.royal-candy-edit-form {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.royal-candy-edit-form-with-caps {
+  grid-template-columns: minmax(460px, 1.25fr) minmax(260px, 0.75fr);
+}
+
+.royal-candy-edit-form-no-caps {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.royal-candy-action-column {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+}
+
+.royal-candy-action-column .form-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(88px, max-content));
+  gap: 10px;
+  align-items: center;
+}
+
+.royal-candy-action-column .encounter-slot-detail {
+  grid-template-columns: 1fr;
 }
 
 .encounter-condition-tabs,
@@ -3262,6 +3500,16 @@ input {
   .pokemon-layout {
     grid-template-columns: minmax(360px, 0.75fr) minmax(420px, 1fr);
   }
+
+  .royal-candy-inspector,
+  .royal-candy-edit-form-with-caps {
+    grid-template-columns: 1fr;
+  }
+
+  .royal-candy-inspector > .item-provenance-list,
+  .royal-candy-inspector > .royal-candy-edit-form {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 900px) {
@@ -3271,7 +3519,8 @@ input {
   .trainers-layout,
   .shops-layout,
   .encounters-layout,
-  .flagwork-layout {
+  .flagwork-layout,
+  .royal-candy-layout {
     grid-template-columns: 1fr;
   }
 
@@ -3342,6 +3591,7 @@ input {
   .shops-layout,
   .encounters-layout,
   .flagwork-layout,
+  .royal-candy-layout,
   .change-plan-list li,
   .change-plan-status {
     grid-template-columns: 1fr;
@@ -3381,6 +3631,12 @@ input {
   .compact-dl,
   .trainer-field-grid,
   .encounter-field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .royal-candy-inspector > .item-provenance-list,
+  .royal-candy-inspector > .royal-candy-edit-form,
+  .royal-candy-action-column .form-actions {
     grid-template-columns: 1fr;
   }
 

@@ -13,6 +13,9 @@ namespace KM.SwSh.Shops;
 public sealed class SwShShopsWorkflowService
 {
     public const string ItemIdField = "itemId";
+    public const string AddItemField = "addItem";
+    public const string RemoveItemField = "removeItem";
+    public const string SetInventoryField = "setInventory";
     public const int MinimumItemId = 0;
     public const int MaximumItemId = 65_535;
     public const string ShopDataPath = "romfs/bin/appli/shop/bin/shop_data.bin";
@@ -254,7 +257,10 @@ public sealed class SwShShopsWorkflowService
 
     internal static bool IsEditableField(string? field)
     {
-        return string.Equals(field, ItemIdField, StringComparison.Ordinal);
+        return string.Equals(field, ItemIdField, StringComparison.Ordinal)
+            || string.Equals(field, AddItemField, StringComparison.Ordinal)
+            || string.Equals(field, RemoveItemField, StringComparison.Ordinal)
+            || string.Equals(field, SetInventoryField, StringComparison.Ordinal);
     }
 
     internal static WorkflowFileSource? ResolveShopDataSource(OpenedProject project)
@@ -432,11 +438,17 @@ public sealed class SwShShopsWorkflowService
             var name = FormatMultiShopName(shop.Hash, shopIndex, inventoryRowsByIndex);
             for (var inventoryIndex = 0; inventoryIndex < shop.Inventories.Count; inventoryIndex++)
             {
+                var inventoryLabel = IsBadgeIndexedMultiShop(name, shop.Inventories.Count)
+                    ? FormatBadgeInventoryLabel(inventoryIndex)
+                    : $"Inventory {inventoryIndex + 1} of {shop.Inventories.Count}";
+                var recordName = IsBadgeIndexedMultiShop(name, shop.Inventories.Count)
+                    ? $"{name} [{inventoryLabel}]"
+                    : $"{name} #{inventoryIndex + 1}";
                 shops.Add(ToShopRecord(
                     CreateShopId(SwShShopKind.Multi, shop.Hash, inventoryIndex),
-                    $"{name} #{inventoryIndex + 1}",
+                    recordName,
                     "Multi",
-                    $"Inventory {inventoryIndex + 1} of {shop.Inventories.Count}",
+                    inventoryLabel,
                     inventoryIndex + 1,
                     shop.Inventories.Count,
                     shop.Hash,
@@ -458,6 +470,19 @@ public sealed class SwShShopsWorkflowService
         }
 
         return shops.ToArray();
+    }
+
+    internal static bool IsBadgeIndexedMultiShop(string name, int inventoryCount)
+    {
+        return inventoryCount == 9
+            && name.Contains("0-8 Badges", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatBadgeInventoryLabel(int inventoryIndex)
+    {
+        return inventoryIndex == 1
+            ? "1 Badge"
+            : string.Create(CultureInfo.InvariantCulture, $"{inventoryIndex} Badges");
     }
 
     private static SwShShopRecord ToShopRecord(

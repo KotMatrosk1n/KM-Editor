@@ -125,103 +125,42 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.Equal("request-workflows", response.RequestId);
         var workflows = response.Payload?.Workflows ?? [];
-        Assert.Collection(
-            workflows,
-            workflow =>
-            {
-                Assert.Equal("items", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("pokemon", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("moves", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("text", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("trainers", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("giftPokemon", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("tradePokemon", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("staticEncounters", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("rentalPokemon", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("dynamaxAdventures", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("shops", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("encounters", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("raidBattles", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("raidRewards", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("placement", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("flagworkSave", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("exefsPatches", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("royalCandy", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            },
-            workflow =>
-            {
-                Assert.Equal("spreadsheetImport", workflow.Id);
-                Assert.Equal(WorkflowAvailabilityDto.ReadOnly, workflow.Availability);
-            });
+        Assert.Equal(
+            [
+                "items",
+                "pokemon",
+                "moves",
+                "text",
+                "trainers",
+                "giftPokemon",
+                "tradePokemon",
+                "staticEncounters",
+                "rentalPokemon",
+                "dynamaxAdventures",
+                "shops",
+                "encounters",
+                "raidBattles",
+                "raidRewards",
+                "placement",
+                "flagworkSave",
+                "exefsPatches",
+                "royalCandy",
+                "spreadsheetImport",
+            ],
+            workflows.Select(workflow => workflow.Id).ToArray());
+
+        var items = workflows.Single(workflow => workflow.Id == "items");
+        Assert.Equal(WorkflowAvailabilityDto.Disabled, items.Availability);
+        Assert.Contains(
+            items.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Domain == "workflow.items.dependencies");
+
+        var exeFs = workflows.Single(workflow => workflow.Id == "exefsPatches");
+        Assert.Equal(WorkflowAvailabilityDto.ReadOnly, exeFs.Availability);
+        Assert.DoesNotContain(
+            exeFs.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -1786,7 +1725,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotNull(response.Payload);
         Assert.Equal(3, response.Payload.Workflow.Workflows.Count);
         var workflow = response.Payload.Workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-unlimited");
-        Assert.Equal("Install Unlimited Royal Candy", workflow.Name);
+        Assert.Equal("Unlimited Royal Candy", workflow.Name);
         Assert.Equal("available", workflow.Status);
         Assert.Equal(1128, workflow.ItemId);
         Assert.Equal(ProjectFileLayerDto.Base, workflow.Provenance.SourceLayer);
@@ -1949,6 +1888,98 @@ public sealed class ProjectBridgeDispatcherTests
 
         var outputExeFsMain = File.ReadAllBytes(Path.Combine(temp.OutputRootPath, "exefs", "main"));
         Assert.NotEqual(SwShExeFsBridgeFixtures.CreateCompatibleNso(), outputExeFsMain);
+    }
+
+    [Fact]
+    public void DispatchRoyalCandyStoryLimitsStagesSelectedCapsAndAppliesDynamicExeFsHook()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteRoyalCandyApplyInputs(temp);
+        var baseMainPath = Path.Combine(temp.BaseExeFsPath, "main");
+        var baseMainBytes = File.ReadAllBytes(baseMainPath);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageRoyalCandyWorkflow,
+            new StageRoyalCandyWorkflowRequest(
+                temp.Paths,
+                WorkflowId: "royal-candy-story-limits",
+                Session: null,
+                LevelCaps:
+                [
+                    new RoyalCandyLevelCapSelectionDto(0, 12),
+                    new RoyalCandyLevelCapSelectionDto(1, 16),
+                ]),
+            requestId: "request-royal-candy-story-limits-stage");
+
+        var stageResponse = DeserializeResponse<StageRoyalCandyWorkflowResponse>(dispatcher.Dispatch(stageJson));
+
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+        Assert.Single(stageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("royal-candy-story-limits", stageResponse.Payload.Session.PendingEdits[0].RecordId);
+        Assert.StartsWith("storyLimits|0=12;1=16;2=20", stageResponse.Payload.Session.PendingEdits[0].NewValue, StringComparison.Ordinal);
+        Assert.Contains(";24=90", stageResponse.Payload.Session.PendingEdits[0].NewValue, StringComparison.Ordinal);
+        Assert.Equal(25, stageResponse.Payload.Workflow.Workflows.Single(workflow => workflow.WorkflowId == "royal-candy-story-limits").LevelCaps.Count);
+        Assert.DoesNotContain(
+            stageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-royal-candy-story-limits-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-royal-candy-story-limits-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.True(planResponse.Payload.ChangePlan.CanApply);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ExeFsMainPath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageResponse.Payload.Session,
+                planResponse.Payload.ChangePlan),
+            requestId: "request-royal-candy-story-limits-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.DoesNotContain(
+            applyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        Assert.Equal(baseMainBytes, File.ReadAllBytes(baseMainPath));
+
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var outputMainBytes = File.ReadAllBytes(outputMainPath);
+        Assert.NotEqual(baseMainBytes, outputMainBytes);
+        var outputNso = SwShNsoFile.Parse(outputMainBytes);
+        var outputText = outputNso.Text.DecompressedData;
+        Assert.Equal(EncodeCmpImmediate(register: 9, immediate: 3), ReadInstruction(outputText, 0x007BC1BC));
+        Assert.Equal(EncodeCmpImmediate(register: 9, immediate: 3), ReadInstruction(outputText, 0x007BC1C4));
+        Assert.NotEqual(0x54000321u, ReadInstruction(outputText, 0x007BB208));
+        Assert.NotEqual(0x54000141u, ReadInstruction(outputText, 0x007BB3C4));
+        Assert.NotEqual(0x1A963316u, ReadInstruction(outputText, 0x007BAF3C));
+        Assert.NotEqual(0x2A0003E2u, ReadInstruction(outputText, 0x007B1F20));
+        Assert.Contains(EncodeCmpImmediate(register: 20, immediate: 1128), ReadAlignedInstructions(outputText));
+        Assert.Contains(EncodeCmpImmediate(register: 19, immediate: 1128), ReadAlignedInstructions(outputText));
+        Assert.Contains(EncodeMovzImmediate32(register: 0, immediate: 12), ReadAlignedInstructions(outputText));
+        Assert.Equal(SwShNsoFile.ComputeHash(outputText), outputNso.Text.Hash);
     }
 
     [Fact]
@@ -2248,7 +2279,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(0x60, item.Metadata.Boost0);
         Assert.Contains(
             item.DetailGroups.Single(group => group.Label == "Battle").Details,
-            detail => detail.Label == "Battle boosts" && detail.Value.StartsWith("Atk 6", StringComparison.Ordinal));
+            detail => detail.Label == "Battle boosts" && detail.Value.StartsWith("Atk +6 stages", StringComparison.Ordinal));
         var edit = Assert.Single(response.Payload.Session.PendingEdits);
         Assert.Equal("attackBoost", edit.Field);
         Assert.Equal("6", edit.NewValue);
@@ -2665,6 +2696,11 @@ public sealed class ProjectBridgeDispatcherTests
     private static uint EncodeCmpImmediate(int register, int immediate)
     {
         return (uint)(0x7100001F | ((immediate & 0xFFF) << 10) | ((register & 0x1F) << 5));
+    }
+
+    private static uint EncodeMovzImmediate32(int register, int immediate)
+    {
+        return (uint)(0x52800000 | ((immediate & 0xFFFF) << 5) | (register & 0x1F));
     }
 
     private static void WriteStaticEncounterBridgeFixture(TemporaryBridgeProject temp)

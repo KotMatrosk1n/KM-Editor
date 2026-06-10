@@ -1841,6 +1841,23 @@ export const royalCandyWorkflowStepRecordSchema = z.strictObject({
   step: z.number().int().nonnegative()
 });
 
+export const royalCandyLevelCapRecordSchema = z.strictObject({
+  label: z.string(),
+  levelCap: z.number().int(),
+  maximumLevelCap: z.number().int(),
+  milestoneId: z.string(),
+  minimumLevelCap: z.number().int(),
+  progressHash: z.string(),
+  progressKind: z.string(),
+  slot: z.number().int().nonnegative(),
+  workMinimum: z.number().int().nullable()
+});
+
+export const royalCandyLevelCapSelectionSchema = z.strictObject({
+  levelCap: z.number().int(),
+  slot: z.number().int().nonnegative()
+});
+
 export const royalCandyWorkflowCheckRecordSchema = z.strictObject({
   area: z.string(),
   checkId: z.string(),
@@ -1866,6 +1883,7 @@ export const royalCandyWorkflowRecordSchema = z.strictObject({
   category: z.string(),
   description: z.string(),
   itemId: z.number().int().nonnegative(),
+  levelCaps: z.array(royalCandyLevelCapRecordSchema).default([]),
   mode: z.string(),
   name: z.string(),
   provenance: royalCandyProvenanceSchema,
@@ -1901,6 +1919,7 @@ export const loadRoyalCandyWorkflowResponseSchema = z.strictObject({
 });
 
 export const stageRoyalCandyWorkflowRequestSchema = z.strictObject({
+  levelCaps: z.array(royalCandyLevelCapSelectionSchema).optional(),
   paths: projectPathsSchema,
   session: editSessionSchema.nullable(),
   workflowId: z.string()
@@ -2365,6 +2384,8 @@ export type RoyalCandyOutputRecord = z.infer<typeof royalCandyOutputRecordSchema
 export type RoyalCandyWorkflowCheckRecord = z.infer<
   typeof royalCandyWorkflowCheckRecordSchema
 >;
+export type RoyalCandyLevelCapRecord = z.infer<typeof royalCandyLevelCapRecordSchema>;
+export type RoyalCandyLevelCapSelection = z.infer<typeof royalCandyLevelCapSelectionSchema>;
 export type RoyalCandyWorkflowRecord = z.infer<typeof royalCandyWorkflowRecordSchema>;
 export type RoyalCandyWorkflow = z.infer<typeof royalCandyWorkflowSchema>;
 export type SpreadsheetImportProfileRecord = z.infer<

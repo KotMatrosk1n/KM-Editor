@@ -12,7 +12,8 @@ public sealed record LoadRoyalCandyWorkflowRequest(ProjectPathsDto Paths);
 public sealed record StageRoyalCandyWorkflowRequest(
     ProjectPathsDto Paths,
     string WorkflowId,
-    EditSessionDto? Session);
+    EditSessionDto? Session,
+    IReadOnlyList<RoyalCandyLevelCapSelectionDto>? LevelCaps = null);
 
 public sealed record RoyalCandyProvenanceDto(
     string SourceFile,
@@ -23,6 +24,21 @@ public sealed record RoyalCandyWorkflowStepRecordDto(
     int Step,
     string Label,
     string Description);
+
+public sealed record RoyalCandyLevelCapRecordDto(
+    int Slot,
+    string MilestoneId,
+    string Label,
+    int LevelCap,
+    int MinimumLevelCap,
+    int MaximumLevelCap,
+    string ProgressKind,
+    string ProgressHash,
+    int? WorkMinimum);
+
+public sealed record RoyalCandyLevelCapSelectionDto(
+    int Slot,
+    int LevelCap);
 
 public sealed record RoyalCandyWorkflowCheckRecordDto(
     string CheckId,
@@ -53,6 +69,7 @@ public sealed record RoyalCandyWorkflowRecordDto(
     int TemplateItemId,
     string Status,
     string Description,
+    IReadOnlyList<RoyalCandyLevelCapRecordDto> LevelCaps,
     IReadOnlyList<RoyalCandyWorkflowStepRecordDto> Steps,
     RoyalCandyProvenanceDto Provenance);
 

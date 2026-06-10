@@ -569,7 +569,7 @@ public sealed class SwShItemsEditSessionService
                 ActualValueMultiplier: 1),
             PpUpFlagField => CreateBooleanField(PpUpFlagField, "PP Up flag", SwShItemTableField.PpUpFlag),
             PpMaxFlagField => CreateBooleanField(PpMaxFlagField, "PP Max flag", SwShItemTableField.PpMaxFlag),
-            UseFlags1Field => CreateByteField(UseFlags1Field, "use flags 1", SwShItemTableField.UseFlags1),
+            UseFlags1Field => null,
             UseFlags2Field => CreateByteField(UseFlags2Field, "use flags 2", SwShItemTableField.UseFlags2),
             RestorePpFlagField => CreateBooleanField(
                 RestorePpFlagField,

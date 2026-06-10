@@ -80,6 +80,177 @@ public sealed class SwShShopsEditSessionServiceTests
     }
 
     [Fact]
+    public void ApplyChangePlanCanAddAndRemoveInventoryRows()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShShopsWorkflowServiceTests.WriteShopFixture(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var service = new SwShShopsEditSessionService();
+        var shopId = $"single:{0x1F3FF031A3A24490:X16}";
+        var add = service.UpdateInventoryItem(
+            temp.Paths,
+            session: null,
+            shopId,
+            slot: 3,
+            field: SwShShopsWorkflowService.AddItemField,
+            value: "1");
+        var remove = service.UpdateInventoryItem(
+            temp.Paths,
+            add.Session,
+            shopId,
+            slot: 2,
+            field: SwShShopsWorkflowService.RemoveItemField,
+            value: "2");
+
+        var shop = remove.Workflow.Shops.Single(record => record.ShopId == shopId);
+        Assert.Collection(
+            shop.Inventory,
+            item => Assert.Equal(1, item.ItemId),
+            item => Assert.Equal(1, item.ItemId));
+        var validation = service.Validate(temp.Paths, remove.Session);
+        var plan = service.CreateChangePlan(temp.Paths, remove.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, remove.Session, plan);
+
+        Assert.True(validation.IsValid);
+        Assert.True(plan.CanApply);
+        Assert.Equal(SwShShopsWorkflowService.ShopDataPath, Assert.Single(apply.WrittenFiles).RelativePath);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "appli",
+            "shop",
+            "bin",
+            "shop_data.bin");
+        var output = SwShShopDataFile.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal([1, 1], output.SingleShops[0].Inventory.Items);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ApplyChangePlanCanInsertInventoryRowInMiddle()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShShopsWorkflowServiceTests.WriteShopFixture(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var service = new SwShShopsEditSessionService();
+        var shopId = $"single:{0x1F3FF031A3A24490:X16}";
+        var update = service.UpdateInventoryItem(
+            temp.Paths,
+            session: null,
+            shopId,
+            slot: 2,
+            field: SwShShopsWorkflowService.AddItemField,
+            value: "2");
+
+        var shop = update.Workflow.Shops.Single(record => record.ShopId == shopId);
+        Assert.Collection(
+            shop.Inventory,
+            item => Assert.Equal(1, item.ItemId),
+            item => Assert.Equal(2, item.ItemId),
+            item => Assert.Equal(2, item.ItemId));
+        Assert.Equal([1, 2, 3], shop.Inventory.Select(item => item.Slot).ToArray());
+
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.True(plan.CanApply);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Error);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "appli",
+            "shop",
+            "bin",
+            "shop_data.bin");
+        var output = SwShShopDataFile.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal([1, 2, 2], output.SingleShops[0].Inventory.Items);
+    }
+
+    [Fact]
+    public void ApplyChangePlanWritesInventoryInEditorOrder()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShShopsWorkflowServiceTests.WriteShopFixture(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var service = new SwShShopsEditSessionService();
+        var shopId = $"single:{0x1F3FF031A3A24490:X16}";
+        var update = service.UpdateInventoryItem(
+            temp.Paths,
+            session: null,
+            shopId,
+            slot: 1,
+            field: SwShShopsWorkflowService.SetInventoryField,
+            value: "2,1,2");
+
+        var shop = update.Workflow.Shops.Single(record => record.ShopId == shopId);
+        Assert.Equal([2, 1, 2], shop.Inventory.Select(item => item.ItemId).ToArray());
+        Assert.Equal([1, 2, 3], shop.Inventory.Select(item => item.Slot).ToArray());
+
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.True(plan.CanApply);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Error);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "appli",
+            "shop",
+            "bin",
+            "shop_data.bin");
+        var output = SwShShopDataFile.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal([2, 1, 2], output.SingleShops[0].Inventory.Items);
+    }
+
+    [Fact]
+    public void ApplyChangePlanCanAddAndRemoveBadgeShopInventoryRows()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShShopsWorkflowServiceTests.WriteShopFixture(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var service = new SwShShopsEditSessionService();
+        var shopId = $"multi:{0x66CA73B2966BB871:X16}:1";
+        var add = service.UpdateInventoryItem(
+            temp.Paths,
+            session: null,
+            shopId,
+            slot: 2,
+            field: SwShShopsWorkflowService.AddItemField,
+            value: "1");
+        var remove = service.UpdateInventoryItem(
+            temp.Paths,
+            add.Session,
+            shopId,
+            slot: 1,
+            field: SwShShopsWorkflowService.RemoveItemField,
+            value: "2");
+
+        var shop = remove.Workflow.Shops.Single(record => record.ShopId == shopId);
+        Assert.Collection(shop.Inventory, item => Assert.Equal(1, item.ItemId));
+
+        var validation = service.Validate(temp.Paths, remove.Session);
+        var plan = service.CreateChangePlan(temp.Paths, remove.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, remove.Session, plan);
+
+        Assert.True(validation.IsValid);
+        Assert.True(plan.CanApply);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Error);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "appli",
+            "shop",
+            "bin",
+            "shop_data.bin");
+        var output = SwShShopDataFile.Parse(File.ReadAllBytes(outputPath));
+        Assert.Equal([1], output.MultiShops[0].Inventories[1].Items);
+    }
+
+    [Fact]
     public void ValidateRejectsUnsupportedShopField()
     {
         using var temp = TemporarySwShProject.Create();

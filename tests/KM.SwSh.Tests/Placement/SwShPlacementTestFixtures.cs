@@ -30,7 +30,9 @@ internal static class SwShPlacementTestFixtures
                 "Great Ball"));
     }
 
-    public static byte[] CreatePlacementPack()
+    public static byte[] CreatePlacementPack(
+        ulong? fieldItemHash = null,
+        IReadOnlyList<uint>? fieldItemRawItems = null)
     {
         return SwShGfPackFile.Create(
         [
@@ -52,7 +54,7 @@ internal static class SwShPlacementTestFixtures
                 [
                     new SwShAhtbEntry(ObjectHash, "objects/hidden_item.gfbmdl"),
                 ]).Write()),
-            new SwShGfPackNamedFile(AreaMember, CreatePlacementArchive().Write()),
+            new SwShGfPackNamedFile(AreaMember, CreatePlacementArchive(fieldItemHash, fieldItemRawItems).Write()),
         ]).Write();
     }
 
@@ -65,7 +67,9 @@ internal static class SwShPlacementTestFixtures
         ]).Write();
     }
 
-    public static SwShPlacementZoneArchive CreatePlacementArchive()
+    public static SwShPlacementZoneArchive CreatePlacementArchive(
+        ulong? fieldItemHash = null,
+        IReadOnlyList<uint>? fieldItemRawItems = null)
     {
         return new SwShPlacementZoneArchive(
         [
@@ -80,9 +84,9 @@ internal static class SwShPlacementTestFixtures
                         ObjectIndex: 0,
                         Model: "objects/visible_potion.gfbmdl",
                         Transform: new SwShPlacementTransform(10.5f, 0, -4.25f, 90),
-                        ItemHashes: [PotionHash],
+                        ItemHashes: [fieldItemHash ?? PotionHash],
                         ItemHashOffsets: [],
-                        ItemIds: [],
+                        ItemIds: fieldItemRawItems ?? [],
                         ItemIdOffsets: [],
                         Quantity: 1,
                         QuantityOffset: 0,

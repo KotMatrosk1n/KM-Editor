@@ -112,6 +112,18 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.NatureField).Options,
             option => option.Value == 13 && option.Label == "Jolly (+Spe/-Sp.Atk)");
+        Assert.Equal(
+            "HP",
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.EvHpField).Label);
+        Assert.Equal(
+            "Attack",
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.EvAttackField).Label);
+        Assert.Equal(
+            "HP",
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.IvHpField).Label);
+        Assert.Equal(
+            "Attack",
+            workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.IvAttackField).Label);
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.DynamaxLevelField).Options,
             option => option.Value == 10 && option.Label == "10");

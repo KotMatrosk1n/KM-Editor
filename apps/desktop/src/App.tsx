@@ -76,6 +76,7 @@ import {
   type PokemonEditableFieldOption,
   type PokemonEvolutionMethodOption,
   type PokemonEvolutionRecord,
+  type PokemonLearnsetMove,
   type PokemonRecord,
   type PokemonWorkflow,
   type PlacedObjectRecord,
@@ -95,6 +96,7 @@ import {
   type RentalPokemonEditableField,
   type RentalPokemonRecord,
   type RentalPokemonWorkflow,
+  type RoyalCandyLevelCapSelection,
   type RoyalCandyOutputRecord,
   type RoyalCandyWorkflow,
   type RoyalCandyWorkflowCheckRecord,
@@ -102,7 +104,6 @@ import {
   type SaveBlockRecord,
   type SaveFileRecord,
   type ShopEditableField,
-  type ShopInventoryRecord,
   type ShopRecord,
   type ShopsWorkflow,
   type SpreadsheetImportPreview,
@@ -460,6 +461,32 @@ const pathFields: Array<{
   }
 ];
 type ProjectPathField = (typeof pathFields)[number];
+type PokemonEvolutionDraftChange = {
+  action: string;
+  slot: number | null;
+  method: number | null;
+  argument: number | null;
+  species: number | null;
+  form: number | null;
+  level: number | null;
+};
+type PokemonEvolutionDraftFields = {
+  method: string;
+  argument: string;
+  species: string;
+  form: string;
+  level: string;
+};
+type PokemonLearnsetDraftChange = {
+  action: string;
+  slot: number | null;
+  moveId: number | null;
+  level: number | null;
+};
+type PokemonLearnsetDraftFields = {
+  moveId: string;
+  level: string;
+};
 
 const healthLabels = {
   blocked: 'Blocked',
@@ -483,6 +510,9 @@ const alternatePriceFieldName = 'alternatePrice';
 const itemFieldFlagsFieldName = 'fieldFlags';
 const itemUseFlags1FieldName = 'useFlags1';
 const itemUseFlags2FieldName = 'useFlags2';
+const pokemonGlobalEvYieldFieldName = 'evYieldAll';
+const pokemonRemoveEvYieldValue = 'remove';
+const pokemonRestoreEvYieldValue = 'restore';
 const trainerClassIdFieldName = 'trainerClassId';
 const classBallIdFieldName = 'classBallId';
 const battleTypeFieldName = 'battleType';
@@ -714,6 +744,7 @@ const dynamaxAdventureFieldNames = [
   dynamaxAdventureOtGenderFieldName
 ] as const;
 const shopItemIdFieldName = 'itemId';
+const shopSetInventoryFieldName = 'setInventory';
 const encounterSpeciesFieldName = speciesIdFieldName;
 const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
@@ -778,6 +809,9 @@ const virtualTableRowHeight = 40;
 const CancelEditSessionContext = createContext<((onDiscard?: () => void) => void) | null>(
   null
 );
+const EditorDraftDirtyContext = createContext<
+  ((section: WorkbenchSection, isDirty: boolean) => void) | null
+>(null);
 const observeVirtualTableElementRect:
   | ReactVirtualizerOptions<HTMLDivElement, HTMLDivElement>['observeElementRect']
   | undefined =
@@ -787,6 +821,78 @@ const observeVirtualTableElementRect:
         return () => undefined;
       }
     : undefined;
+const textLikeInputTypes = new Set([
+  '',
+  'email',
+  'number',
+  'password',
+  'search',
+  'tel',
+  'text',
+  'url'
+]);
+
+function useSelectEditableFieldContents() {
+  useEffect(() => {
+    const selectTarget = (target: EventTarget | null) => {
+      const field = getSelectableTextField(target);
+      if (field === null || field.value.length === 0) {
+        return;
+      }
+
+      window.requestAnimationFrame(() => selectTextFieldContents(field));
+    };
+
+    const handleFocusIn = (event: FocusEvent) => selectTarget(event.target);
+    const handlePointerUp = (event: PointerEvent) => selectTarget(event.target);
+
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, []);
+}
+
+function getSelectableTextField(
+  target: EventTarget | null
+): HTMLInputElement | HTMLTextAreaElement | null {
+  if (target instanceof HTMLInputElement) {
+    if (
+      target.disabled ||
+      target.readOnly ||
+      !textLikeInputTypes.has(target.type.toLocaleLowerCase())
+    ) {
+      return null;
+    }
+
+    return target;
+  }
+
+  if (target instanceof HTMLTextAreaElement) {
+    return target.disabled || target.readOnly ? null : target;
+  }
+
+  return null;
+}
+
+function selectTextFieldContents(field: HTMLInputElement | HTMLTextAreaElement) {
+  if (document.activeElement !== field || field.value.length === 0) {
+    return;
+  }
+
+  try {
+    field.select();
+  } catch {
+    try {
+      field.setSelectionRange(0, field.value.length);
+    } catch {
+      // Some browser/input-type combinations cannot expose text selection.
+    }
+  }
+}
 
 export function App({
   bridge = defaultProjectBridge,
@@ -795,6 +901,8 @@ export function App({
   bridge?: ProjectBridge;
   desktopServices?: DesktopServices;
 } = {}) {
+  useSelectEditableFieldContents();
+
   const activeSection = useWorkbenchStore((state) => state.activeSection);
   const applyResult = useWorkbenchStore((state) => state.applyResult);
   const changePlan = useWorkbenchStore((state) => state.changePlan);
@@ -1097,6 +1205,9 @@ export function App({
   const [appliedChangePlan, setAppliedChangePlan] = useState<ChangePlan | null>(null);
   const [saveProgress, setSaveProgress] = useState<SaveProgressState | null>(null);
   const [exitPrompt, setExitPrompt] = useState<ExitPromptState | null>(null);
+  const [editorDraftDirtySections, setEditorDraftDirtySections] = useState<Set<WorkbenchSection>>(
+    () => new Set()
+  );
   const [expandedWorkflowGroups, setExpandedWorkflowGroups] = useState<
     Set<WorkflowNavigationGroup['id']>
   >(() => new Set());
@@ -1126,6 +1237,55 @@ export function App({
     !isChangePlanCreating &&
     !isSessionValidating;
   const activeSectionIsEditor = groupedWorkflowSectionIds.has(activeSection);
+  const activeEditorHasLocalDrafts = editorDraftDirtySections.has(activeSection);
+
+  const registerEditorDraftDirty = useCallback(
+    (section: WorkbenchSection, isDirty: boolean) => {
+      setEditorDraftDirtySections((currentSections) => {
+        const hasSection = currentSections.has(section);
+        if (hasSection === isDirty) {
+          return currentSections;
+        }
+
+        const nextSections = new Set(currentSections);
+        if (isDirty) {
+          nextSections.add(section);
+        } else {
+          nextSections.delete(section);
+        }
+
+        return nextSections;
+      });
+    },
+    []
+  );
+
+  const clearLoadedWorkflowData = useCallback(() => {
+    useWorkbenchStore.setState({
+      dynamaxAdventuresWorkflow: null,
+      encountersWorkflow: null,
+      exeFsPatchWorkflow: null,
+      flagworkSaveWorkflow: null,
+      giftPokemonWorkflow: null,
+      itemsWorkflow: null,
+      movesWorkflow: null,
+      placementWorkflow: null,
+      pokemonWorkflow: null,
+      raidBattlesWorkflow: null,
+      raidRewardsWorkflow: null,
+      rentalPokemonWorkflow: null,
+      royalCandyWorkflow: null,
+      shopsWorkflow: null,
+      spreadsheetImportPreview: null,
+      spreadsheetImportWorkflow: null,
+      staticEncountersWorkflow: null,
+      textWorkflow: null,
+      tradePokemonWorkflow: null,
+      trainersWorkflow: null
+    });
+    setLazyLoadedWorkflowSections(new Set());
+    setEditorDraftDirtySections(new Set());
+  }, []);
 
   const clearPendingEditState = useCallback(() => {
     editSessionRef.current = null;
@@ -1136,6 +1296,7 @@ export function App({
     setValidatedEditSessionSignature(null);
     setChangePlanSessionSignature(null);
     setAppliedChangePlan(null);
+    setEditorDraftDirtySections(new Set());
   }, [setApplyResult, setChangePlan, setEditSession, setEditValidationDiagnostics]);
 
   const requestCancelEditSession = useCallback(
@@ -1167,6 +1328,22 @@ export function App({
     [editSession, setActiveSection]
   );
 
+  const handleNavigateSection = useCallback(
+    (destination: WorkbenchSection) => {
+      if (destination === activeSection) {
+        return;
+      }
+
+      if (activeSectionIsEditor && activeEditorHasLocalDrafts) {
+        setExitPrompt({ destination, kind: 'editorSwitch', mode: 'confirm' });
+        return;
+      }
+
+      setActiveSection(destination);
+    },
+    [activeEditorHasLocalDrafts, activeSection, activeSectionIsEditor, setActiveSection]
+  );
+
   const handleCloseActiveEditor = useCallback(() => {
     requestEditorExit('workflows', 'editor');
   }, [requestEditorExit]);
@@ -1181,13 +1358,30 @@ export function App({
       cancelDiscardActionRef.current?.();
       cancelDiscardActionRef.current = null;
       clearPendingEditState();
+      clearLoadedWorkflowData();
       setBridgeDiagnostics([]);
       setExitPrompt(null);
       return;
     }
 
+    if (prompt.kind === 'editorSwitch') {
+      cancelDiscardActionRef.current = null;
+      setEditorDraftDirtySections((currentSections) => {
+        const nextSections = new Set(currentSections);
+        nextSections.delete(activeSection);
+        return nextSections;
+      });
+      setExitPrompt(null);
+
+      if (prompt.destination) {
+        setActiveSection(prompt.destination);
+      }
+      return;
+    }
+
     cancelDiscardActionRef.current = null;
     clearPendingEditState();
+    clearLoadedWorkflowData();
     setExitPrompt(null);
 
     if (prompt.kind === 'editor' && prompt.destination) {
@@ -1207,7 +1401,9 @@ export function App({
       }
     }
   }, [
+    activeSection,
     clearPendingEditState,
+    clearLoadedWorkflowData,
     desktopServices.isAvailable,
     desktopServices.exitApp,
     desktopServices.setCloseGuardEnabled,
@@ -1289,7 +1485,7 @@ export function App({
       const response = await bridge.validateProject({ paths });
       setProjectHealth(response.health);
       setLazyLoadedWorkflowSections(new Set());
-      await refreshWorkflows(paths, response.health.canOpenReadOnlyWorkflows);
+      await refreshWorkflows(paths, response.health.canOpenEditableWorkflows);
     } catch (error) {
       setProjectStatus('idle');
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -1310,7 +1506,7 @@ export function App({
       });
       setActiveSection('health');
       setLazyLoadedWorkflowSections(new Set());
-      await refreshWorkflows(paths, response.health.canOpenReadOnlyWorkflows);
+      await refreshWorkflows(paths, response.health.canOpenEditableWorkflows);
     } catch (error) {
       setProjectStatus('idle');
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -1689,7 +1885,10 @@ export function App({
     }
   };
 
-  const handleStageRoyalCandyWorkflow = async (workflowId: string) => {
+  const handleStageRoyalCandyWorkflow = async (
+    workflowId: string,
+    levelCaps?: RoyalCandyLevelCapSelection[]
+  ) => {
     setIsRoyalCandyStaging(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
@@ -1698,6 +1897,7 @@ export function App({
 
     try {
       const response = await bridge.stageRoyalCandyWorkflow({
+        levelCaps,
         paths: toProjectPaths(draftPaths),
         session: editSession,
         workflowId
@@ -1729,7 +1929,7 @@ export function App({
   };
 
   useEffect(() => {
-    if (!health?.canOpenReadOnlyWorkflows || lazyLoadedWorkflowSections.has(activeSection)) {
+    if (!health?.canOpenEditableWorkflows || lazyLoadedWorkflowSections.has(activeSection)) {
       return;
     }
 
@@ -1870,7 +2070,7 @@ export function App({
     exeFsPatchWorkflow,
     flagworkSaveWorkflow,
     giftPokemonWorkflow,
-    health?.canOpenReadOnlyWorkflows,
+    health?.canOpenEditableWorkflows,
     isEncountersLoading,
     isExeFsPatchLoading,
     isFlagworkSaveLoading,
@@ -1983,7 +2183,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsItemUpdating(true);
@@ -2013,8 +2213,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsItemUpdating(false);
     }
@@ -2045,10 +2247,12 @@ export function App({
 
   const handleUpdatePokemonFields = async (
     personalId: number,
-    changes: Array<{ field: string; value: string }>
+    changes: Array<{ field: string; value: string }>,
+    evolutionChanges: PokemonEvolutionDraftChange[] = [],
+    learnsetChanges: PokemonLearnsetDraftChange[] = []
   ) => {
-    if (changes.length === 0) {
-      return;
+    if (changes.length === 0 && evolutionChanges.length === 0 && learnsetChanges.length === 0) {
+      return false;
     }
 
     setIsPokemonUpdating(true);
@@ -2073,13 +2277,48 @@ export function App({
         nextDiagnostics = response.diagnostics;
       }
 
+      for (const evolutionChange of evolutionChanges) {
+        const response = await bridge.updatePokemonEvolution({
+          action: evolutionChange.action,
+          argument: evolutionChange.argument,
+          form: evolutionChange.form,
+          level: evolutionChange.level,
+          method: evolutionChange.method,
+          paths: toProjectPaths(draftPaths),
+          personalId,
+          session: nextSession,
+          slot: evolutionChange.slot,
+          species: evolutionChange.species
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      for (const learnsetChange of learnsetChanges) {
+        const response = await bridge.updatePokemonLearnset({
+          action: learnsetChange.action,
+          level: learnsetChange.level,
+          moveId: learnsetChange.moveId,
+          paths: toProjectPaths(draftPaths),
+          personalId,
+          session: nextSession,
+          slot: learnsetChange.slot
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
       if (nextWorkflow) {
         setPokemonWorkflow(nextWorkflow);
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsPokemonUpdating(false);
     }
@@ -2181,7 +2420,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsMoveUpdating(true);
@@ -2211,8 +2450,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsMoveUpdating(false);
     }
@@ -2233,8 +2474,10 @@ export function App({
       setTextWorkflow(response.workflow);
       setEditSession(response.session);
       setEditValidationDiagnostics(response.diagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsTextUpdating(false);
     }
@@ -2275,7 +2518,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsTrainerUpdating(true);
@@ -2306,8 +2549,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsTrainerUpdating(false);
     }
@@ -2345,7 +2590,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsGiftPokemonUpdating(true);
@@ -2375,8 +2620,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsGiftPokemonUpdating(false);
     }
@@ -2414,7 +2661,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsTradePokemonUpdating(true);
@@ -2444,8 +2691,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsTradePokemonUpdating(false);
     }
@@ -2483,7 +2732,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsStaticEncounterUpdating(true);
@@ -2513,8 +2762,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsStaticEncounterUpdating(false);
     }
@@ -2552,7 +2803,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsRentalPokemonUpdating(true);
@@ -2582,8 +2833,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsRentalPokemonUpdating(false);
     }
@@ -2621,7 +2874,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsDynamaxAdventureUpdating(true);
@@ -2651,37 +2904,55 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsDynamaxAdventureUpdating(false);
     }
   };
 
-  const handleUpdateShopInventoryItem = async (
+  const handleUpdateShopInventoryItems = async (
     shopId: string,
-    slot: number,
-    field: string,
-    value: string
+    changes: Array<{ field: string; slot: number; value: string }>
   ) => {
+    if (changes.length === 0) {
+      return false;
+    }
+
     setIsShopUpdating(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updateShopInventoryItem({
-        field,
-        paths: toProjectPaths(draftPaths),
-        session: editSession,
-        shopId,
-        slot,
-        value
-      });
-      setShopsWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
+      let nextSession = editSession;
+      let nextWorkflow = shopsWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateShopInventoryItem({
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          shopId,
+          slot: change.slot,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setShopsWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsShopUpdating(false);
     }
@@ -2728,7 +2999,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsEncounterUpdating(true);
@@ -2759,8 +3030,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsEncounterUpdating(false);
     }
@@ -2881,7 +3154,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsRaidRewardUpdating(true);
@@ -2912,8 +3185,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsRaidRewardUpdating(false);
     }
@@ -2954,7 +3229,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsRaidBattleUpdating(true);
@@ -2985,8 +3260,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsRaidBattleUpdating(false);
     }
@@ -3024,7 +3301,7 @@ export function App({
     changes: Array<{ field: string; value: string }>
   ) => {
     if (changes.length === 0) {
-      return;
+      return false;
     }
 
     setIsPlacementUpdating(true);
@@ -3054,8 +3331,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
     } finally {
       setIsPlacementUpdating(false);
     }
@@ -3217,7 +3496,7 @@ export function App({
       setOpenProject({ ...openProject, fileGraph: fileGraphResponse.fileGraph });
     }
 
-    await refreshWorkflows(paths, health?.canOpenReadOnlyWorkflows ?? true);
+    await refreshWorkflows(paths, health?.canOpenEditableWorkflows ?? true);
 
     const reloadTasks: Array<() => Promise<void>> = [];
     if (itemsWorkflow) {
@@ -3418,9 +3697,9 @@ export function App({
 
   const refreshWorkflows = async (
     paths: ReturnType<typeof toProjectPaths>,
-    canOpenReadOnlyWorkflows: boolean
+    canOpenEditableWorkflows: boolean
   ) => {
-    if (!canOpenReadOnlyWorkflows) {
+    if (!canOpenEditableWorkflows) {
       setWorkflows([]);
       return;
     }
@@ -3429,8 +3708,11 @@ export function App({
     setWorkflows(response.workflows);
   };
 
+  const canShowWorkflowNavigation = Boolean(health?.canOpenEditableWorkflows);
+
   return (
     <CancelEditSessionContext.Provider value={requestCancelEditSession}>
+    <EditorDraftDirtyContext.Provider value={registerEditorDraftDirty}>
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand">
@@ -3449,7 +3731,7 @@ export function App({
                 aria-label={section.label}
                 className="nav-button"
                 key={section.id}
-                onClick={() => setActiveSection(section.id)}
+                onClick={() => handleNavigateSection(section.id)}
                 type="button"
               >
                 <Icon aria-hidden="true" size={18} />
@@ -3458,7 +3740,7 @@ export function App({
             );
           })}
 
-          {workflowNavigationGroups.map((group) => {
+          {canShowWorkflowNavigation ? workflowNavigationGroups.map((group) => {
             const isExpanded = expandedWorkflowGroups.has(group.id);
 
             return (
@@ -3489,7 +3771,7 @@ export function App({
                           aria-label={section.label}
                           className="nav-button nav-child-button"
                           key={section.id}
-                          onClick={() => setActiveSection(section.id)}
+                          onClick={() => handleNavigateSection(section.id)}
                           type="button"
                         >
                           <Icon aria-hidden="true" size={16} />
@@ -3501,7 +3783,7 @@ export function App({
                 ) : null}
               </div>
             );
-          })}
+          }) : null}
 
           {utilityNavigationSections.map((section) => {
             const Icon = section.icon;
@@ -3513,7 +3795,7 @@ export function App({
                 aria-label={section.label}
                 className="nav-button"
                 key={section.id}
-                onClick={() => setActiveSection(section.id)}
+                onClick={() => handleNavigateSection(section.id)}
                 type="button"
               >
                 <Icon aria-hidden="true" size={18} />
@@ -3828,7 +4110,7 @@ export function App({
                 onOpenItem={handleOpenShopItem}
                 onSelectShop={setSelectedShopId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateShopInventoryItem={handleUpdateShopInventoryItem}
+                onUpdateShopInventoryItems={handleUpdateShopInventoryItems}
                 searchText={shopSearchText}
                 selectedShopId={selectedShopId}
                 workflow={shopsWorkflow}
@@ -4019,6 +4301,7 @@ export function App({
         />
       ) : null}
     </main>
+    </EditorDraftDirtyContext.Provider>
     </CancelEditSessionContext.Provider>
   );
 }
@@ -4311,6 +4594,20 @@ function WorkflowsSection({
   pendingEditCount: number;
   workflows: WorkflowSummary[];
 }) {
+  if (!health?.canOpenEditableWorkflows) {
+    return (
+      <section aria-labelledby="workflows-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <ListChecks aria-hidden="true" size={18} />
+          <h2 id="workflows-heading">Workflow List</h2>
+        </div>
+        <p className="empty-copy">
+          Validate Base RomFS, Base ExeFS, and Output Root before opening editors.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section aria-labelledby="workflows-heading" className="panel wide-panel">
       <div className="panel-heading">
@@ -4630,7 +4927,10 @@ function ItemsSection({
   onSelectItem: (itemId: number | null) => void;
   onStartEditSession: () => void;
   onUpdateItemField: (itemId: number, field: string, value: string) => void;
-  onUpdateItemFields: (itemId: number, changes: Array<{ field: string; value: string }>) => void;
+  onUpdateItemFields: (
+    itemId: number,
+    changes: Array<{ field: string; value: string }>
+  ) => Promise<boolean>;
   searchText: string;
   selectedItemId: number | null;
   workflow: ItemsWorkflow | null;
@@ -4762,14 +5062,34 @@ function SelectedItemPanel({
   item: ItemRecord | null;
   onStartEditSession: () => void;
   onUpdateItemField: (itemId: number, field: string, value: string) => void;
-  onUpdateItemFields: (itemId: number, changes: Array<{ field: string; value: string }>) => void;
+  onUpdateItemFields: (
+    itemId: number,
+    changes: Array<{ field: string; value: string }>
+  ) => Promise<boolean>;
 }) {
-  const [fieldDrafts, setFieldDrafts] = useState<Record<string, string>>({});
+  const [fieldDraftsByItemId, setFieldDraftsByItemId] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const itemFieldGroups = useMemo(
     () => groupNumericEditableFields(editableFields, getItemEditableFieldGroup),
     [editableFields]
   );
+  const itemDraftDefaults = useMemo(
+    () =>
+      item
+        ? Object.fromEntries(
+            editableFields.map((field) => [
+              field.field,
+              (getEditableItemFieldValue(item, field.field) ?? '').toString()
+            ])
+          )
+        : {},
+    [editableFields, item]
+  );
+  const fieldDrafts = item
+    ? fieldDraftsByItemId[item.itemId.toString()] ?? itemDraftDefaults
+    : {};
   const itemDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -4779,6 +5099,7 @@ function SelectedItemPanel({
       ),
     [editableFields, fieldDrafts, item]
   );
+  useRegisterEditorDraftDirty('items', countFieldDraftRecords(fieldDraftsByItemId) > 0);
   const canSaveItemDrafts =
     item !== null &&
     editSession !== null &&
@@ -4789,19 +5110,13 @@ function SelectedItemPanel({
 
   useEffect(() => {
     if (!item) {
-      setFieldDrafts({});
       return;
     }
 
-    setFieldDrafts(
-      Object.fromEntries(
-        editableFields.map((field) => [
-          field.field,
-          (getEditableItemFieldValue(item, field.field) ?? '').toString()
-        ])
-      )
+    setFieldDraftsByItemId((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, item.itemId, itemDraftDefaults)
     );
-  }, [editableFields, item]);
+  }, [item, itemDraftDefaults]);
 
   return (
     <aside aria-label="Selected item provenance" className="item-inspector">
@@ -4841,15 +5156,20 @@ function SelectedItemPanel({
                 <button
                   className="primary-button"
                   disabled={!canSaveItemDrafts}
-                  onClick={() =>
-                    onUpdateItemFields(
+                  onClick={async () => {
+                    const didSave = await onUpdateItemFields(
                       item.itemId,
                       itemDraftSummary.changedFields.map((change) => ({
                         field: change.field,
                         value: change.value
                       }))
-                    )
-                  }
+                    );
+                    if (didSave) {
+                      setFieldDraftsByItemId((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, item.itemId)
+                      );
+                    }
+                  }}
                   type="button"
                 >
                   <Save aria-hidden="true" size={16} />
@@ -4860,9 +5180,7 @@ function SelectedItemPanel({
                   disabled={isItemUpdating}
                   onClick={() =>
                     cancelActiveEditSession(() =>
-                      setFieldDrafts(createTrainerDrafts(editableFields, (field) =>
-                        getEditableItemFieldValue(item, field)
-                      ))
+                      setFieldDraftsByItemId({})
                     )
                   }
                   type="button"
@@ -4914,12 +5232,20 @@ function SelectedItemPanel({
                           field={field}
                           idPrefix="item-field"
                           key={field.field}
-                          onChange={(value) =>
-                            setFieldDrafts((currentDrafts) => ({
-                              ...currentDrafts,
+                          onChange={(value) => {
+                            const nextDrafts = {
+                              ...fieldDrafts,
                               [field.field]: value
-                            }))
-                          }
+                            };
+                            setFieldDraftsByItemId((currentDrafts) =>
+                              setFieldDraftRecord(
+                                currentDrafts,
+                                item.itemId,
+                                nextDrafts,
+                                itemDraftDefaults
+                              )
+                            );
+                          }}
                         />
                       );
                     })}
@@ -4978,8 +5304,10 @@ function PokemonSection({
   onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
   onUpdatePokemonFields: (
     personalId: number,
-    changes: Array<{ field: string; value: string }>
-  ) => void;
+    changes: Array<{ field: string; value: string }>,
+    evolutionChanges?: PokemonEvolutionDraftChange[],
+    learnsetChanges?: PokemonLearnsetDraftChange[]
+  ) => Promise<boolean>;
   onUpdatePokemonEvolution: (
     personalId: number,
     action: string,
@@ -5030,6 +5358,18 @@ function PokemonSection({
   );
   const canEditPokemon = workflow?.summary.availability === 'available';
   const pendingPokemonIds = useMemo(() => getPendingPokemonIds(editSession), [editSession]);
+  const canBulkUpdateEvYield = workflow !== null && canEditPokemon && !isPokemonUpdating;
+  const [evYieldConfirmation, setEvYieldConfirmation] =
+    useState<EvYieldConfirmationState>(null);
+  const handleConfirmEvYieldAction = useCallback(() => {
+    if (evYieldConfirmation === 'remove') {
+      onUpdatePokemonField(0, pokemonGlobalEvYieldFieldName, pokemonRemoveEvYieldValue);
+    } else if (evYieldConfirmation === 'restore') {
+      onUpdatePokemonField(0, pokemonGlobalEvYieldFieldName, pokemonRestoreEvYieldValue);
+    }
+
+    setEvYieldConfirmation(null);
+  }, [evYieldConfirmation, onUpdatePokemonField]);
 
   return (
     <>
@@ -5039,7 +5379,7 @@ function PokemonSection({
           <h2 id="pokemon-heading">Pokemon Data</h2>
         </div>
 
-        <div className="items-toolbar">
+        <div className="items-toolbar pokemon-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
@@ -5051,18 +5391,42 @@ function PokemonSection({
               value={searchText}
             />
           </label>
-          <Metric
-            label="Loaded records"
-            value={workflow ? workflow.stats.totalPokemonCount.toString() : '0'}
-          />
-          <Metric
-            label="Present"
-            value={workflow ? workflow.stats.presentPokemonCount.toString() : '0'}
-          />
-          <Metric
-            label="Learnset moves"
-            value={workflow ? workflow.stats.totalLearnsetMoveCount.toString() : '0'}
-          />
+          <div className="pokemon-toolbar-side">
+            <div className="pokemon-toolbar-metrics">
+              <Metric
+                label="Loaded records"
+                value={workflow ? workflow.stats.totalPokemonCount.toString() : '0'}
+              />
+              <Metric
+                label="Present"
+                value={workflow ? workflow.stats.presentPokemonCount.toString() : '0'}
+              />
+              <Metric
+                label="Learnset moves"
+                value={workflow ? workflow.stats.totalLearnsetMoveCount.toString() : '0'}
+              />
+            </div>
+            <div className="pokemon-toolbar-actions">
+              <button
+                className="primary-button compact-button"
+                disabled={!canBulkUpdateEvYield}
+                onClick={() => setEvYieldConfirmation('remove')}
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={14} />
+                <span>Remove EV Yield</span>
+              </button>
+              <button
+                className="primary-button compact-button"
+                disabled={!canBulkUpdateEvYield}
+                onClick={() => setEvYieldConfirmation('restore')}
+                type="button"
+              >
+                <RefreshCw aria-hidden="true" size={14} />
+                <span>Restore EV Yield</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         {workflow ? (
@@ -5134,6 +5498,13 @@ function PokemonSection({
       </section>
 
       <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      {evYieldConfirmation ? (
+        <EvYieldConfirmationModal
+          action={evYieldConfirmation}
+          onCancel={() => setEvYieldConfirmation(null)}
+          onConfirm={handleConfirmEvYieldAction}
+        />
+      ) : null}
     </>
   );
 }
@@ -5166,8 +5537,10 @@ function SelectedPokemonPanel({
   onUpdatePokemonField: (personalId: number, field: string, value: string) => void;
   onUpdatePokemonFields: (
     personalId: number,
-    changes: Array<{ field: string; value: string }>
-  ) => void;
+    changes: Array<{ field: string; value: string }>,
+    evolutionChanges?: PokemonEvolutionDraftChange[],
+    learnsetChanges?: PokemonLearnsetDraftChange[]
+  ) => Promise<boolean>;
   onUpdatePokemonEvolution: (
     personalId: number,
     action: string,
@@ -5191,9 +5564,12 @@ function SelectedPokemonPanel({
     () => createPokemonPersonalDrafts(pokemon, editableFields),
     [editableFields, pokemon]
   );
-  const [personalDrafts, setPersonalDrafts] = useState<Record<string, string>>(
-    personalDraftDefaults
-  );
+  const [personalDraftsByPokemonId, setPersonalDraftsByPokemonId] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const personalDrafts = pokemon
+    ? personalDraftsByPokemonId[pokemon.personalId.toString()] ?? personalDraftDefaults
+    : {};
   const cancelActiveEditSession = useCancelActiveEditSession();
   const [selectedCompatibilityGroupId, setSelectedCompatibilityGroupId] = useState(
     pokemon?.compatibility[0]?.groupId ?? ''
@@ -5206,6 +5582,18 @@ function SelectedPokemonPanel({
     pokemon?.evolutions.find((evolution) => evolution.slot === selectedEvolutionSlot) ??
     pokemon?.evolutions[0] ??
     null;
+  const [evolutionDraftsByPokemonId, setEvolutionDraftsByPokemonId] = useState<
+    Record<string, Record<number, PokemonEvolutionDraftFields>>
+  >({});
+  const [learnsetDraftsByPokemonId, setLearnsetDraftsByPokemonId] = useState<
+    Record<string, Record<number, PokemonLearnsetDraftFields>>
+  >({});
+  const evolutionDraftsBySlot = pokemon
+    ? evolutionDraftsByPokemonId[pokemon.personalId.toString()] ?? {}
+    : {};
+  const learnsetDraftsBySlot = pokemon
+    ? learnsetDraftsByPokemonId[pokemon.personalId.toString()] ?? {}
+    : {};
   const pokemonSpeciesOptions = useMemo(
     () => editableFields.find((field) => field.field === 'hatchedSpecies')?.options ?? [],
     [editableFields]
@@ -5300,9 +5688,78 @@ function SelectedPokemonPanel({
     [learnsetMoveOptions, newLearnsetMoveIdDraft]
   );
 
+  useRegisterEditorDraftDirty(
+    'pokemon',
+    countFieldDraftRecords(personalDraftsByPokemonId) > 0 ||
+      Object.keys(evolutionDraftsByPokemonId).length > 0 ||
+      Object.keys(learnsetDraftsByPokemonId).length > 0
+  );
+
   useEffect(() => {
-    setPersonalDrafts(personalDraftDefaults);
-  }, [personalDraftDefaults]);
+    if (!pokemon) {
+      return;
+    }
+
+    setPersonalDraftsByPokemonId((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, pokemon.personalId, personalDraftDefaults)
+    );
+  }, [personalDraftDefaults, pokemon]);
+
+  useEffect(() => {
+    if (!pokemon) {
+      return;
+    }
+
+    setEvolutionDraftsByPokemonId((currentDrafts) => {
+      const pokemonKey = pokemon.personalId.toString();
+      const currentPokemonDrafts = currentDrafts[pokemonKey];
+      if (!currentPokemonDrafts) {
+        return currentDrafts;
+      }
+
+      const review = reviewPokemonEvolutionDrafts(
+        pokemon,
+        currentPokemonDrafts,
+        evolutionMethodOptions,
+        pokemonSpeciesOptions,
+        pokemonSpeciesLabels
+      );
+      if (review.changes.length > 0 || review.invalidCount > 0) {
+        return currentDrafts;
+      }
+
+      const nextDrafts = { ...currentDrafts };
+      delete nextDrafts[pokemonKey];
+      return nextDrafts;
+    });
+  }, [evolutionMethodOptions, pokemon, pokemonSpeciesLabels, pokemonSpeciesOptions]);
+
+  useEffect(() => {
+    if (!pokemon) {
+      return;
+    }
+
+    setLearnsetDraftsByPokemonId((currentDrafts) => {
+      const pokemonKey = pokemon.personalId.toString();
+      const currentPokemonDrafts = currentDrafts[pokemonKey];
+      if (!currentPokemonDrafts) {
+        return currentDrafts;
+      }
+
+      const review = reviewPokemonLearnsetDrafts(
+        pokemon,
+        currentPokemonDrafts,
+        learnsetMoveOptions
+      );
+      if (review.changes.length > 0 || review.invalidCount > 0) {
+        return currentDrafts;
+      }
+
+      const nextDrafts = { ...currentDrafts };
+      delete nextDrafts[pokemonKey];
+      return nextDrafts;
+    });
+  }, [learnsetMoveOptions, pokemon]);
 
   useEffect(() => {
     if (!pokemon) {
@@ -5341,21 +5798,43 @@ function SelectedPokemonPanel({
   }, [pokemon, selectedEvolutionSlot]);
 
   useEffect(() => {
-    setLearnsetMoveIdDraft(selectedLearnsetMove?.moveId.toString() ?? '');
-    setLearnsetLevelDraft(selectedLearnsetMove?.level.toString() ?? '');
+    const localDraft =
+      selectedLearnsetMove === null
+        ? null
+        : learnsetDraftsBySlot[selectedLearnsetMove.slot] ?? null;
+    setLearnsetMoveIdDraft(
+      localDraft?.moveId ?? selectedLearnsetMove?.moveId.toString() ?? ''
+    );
+    setLearnsetLevelDraft(
+      localDraft?.level ?? selectedLearnsetMove?.level.toString() ?? ''
+    );
   }, [
+    learnsetDraftsBySlot,
     selectedLearnsetMove?.level,
     selectedLearnsetMove?.moveId,
     selectedLearnsetMove?.slot
   ]);
 
   useEffect(() => {
-    setEvolutionMethodDraft(selectedEvolution?.method.toString() ?? '');
-    setEvolutionArgumentDraft(selectedEvolution?.argument.toString() ?? '');
-    setEvolutionSpeciesDraft(selectedEvolution?.species.toString() ?? '');
-    setEvolutionFormDraft(selectedEvolution?.form.toString() ?? '');
-    setEvolutionLevelDraft(selectedEvolution?.level.toString() ?? '');
+    const localDraft =
+      selectedEvolution === null ? null : evolutionDraftsBySlot[selectedEvolution.slot] ?? null;
+    setEvolutionMethodDraft(
+      localDraft?.method ?? selectedEvolution?.method.toString() ?? ''
+    );
+    setEvolutionArgumentDraft(
+      localDraft?.argument ?? selectedEvolution?.argument.toString() ?? ''
+    );
+    setEvolutionSpeciesDraft(
+      localDraft?.species ?? selectedEvolution?.species.toString() ?? ''
+    );
+    setEvolutionFormDraft(
+      localDraft?.form ?? selectedEvolution?.form.toString() ?? ''
+    );
+    setEvolutionLevelDraft(
+      localDraft?.level ?? selectedEvolution?.level.toString() ?? ''
+    );
   }, [
+    evolutionDraftsBySlot,
     selectedEvolution?.argument,
     selectedEvolution?.form,
     selectedEvolution?.level,
@@ -5368,17 +5847,76 @@ function SelectedPokemonPanel({
     () => groupPokemonEditableFields(editableFields),
     [editableFields]
   );
+  const updateSelectedEvolutionDraft = useCallback(
+    (patch: Partial<PokemonEvolutionDraftFields>) => {
+      if (!pokemon || !selectedEvolution) {
+        return;
+      }
+
+      setEvolutionDraftsByPokemonId((currentDraftsByPokemonId) => {
+        const pokemonKey = pokemon.personalId.toString();
+        const currentPokemonDrafts = currentDraftsByPokemonId[pokemonKey] ?? {};
+        const currentDraft =
+          currentPokemonDrafts[selectedEvolution.slot] ??
+          createPokemonEvolutionDraftFields(selectedEvolution);
+        const nextDraft = { ...currentDraft, ...patch };
+        const nextPokemonDrafts = { ...currentPokemonDrafts };
+
+        if (pokemonEvolutionDraftEqualsRecord(nextDraft, selectedEvolution)) {
+          delete nextPokemonDrafts[selectedEvolution.slot];
+        } else {
+          nextPokemonDrafts[selectedEvolution.slot] = nextDraft;
+        }
+
+        const nextDraftsByPokemonId = { ...currentDraftsByPokemonId };
+        if (Object.keys(nextPokemonDrafts).length === 0) {
+          delete nextDraftsByPokemonId[pokemonKey];
+        } else {
+          nextDraftsByPokemonId[pokemonKey] = nextPokemonDrafts;
+        }
+
+        return nextDraftsByPokemonId;
+      });
+    },
+    [pokemon, selectedEvolution]
+  );
+  const updateSelectedLearnsetDraft = useCallback(
+    (patch: Partial<PokemonLearnsetDraftFields>) => {
+      if (!pokemon || !selectedLearnsetMove) {
+        return;
+      }
+
+      setLearnsetDraftsByPokemonId((currentDraftsByPokemonId) => {
+        const pokemonKey = pokemon.personalId.toString();
+        const currentPokemonDrafts = currentDraftsByPokemonId[pokemonKey] ?? {};
+        const currentDraft =
+          currentPokemonDrafts[selectedLearnsetMove.slot] ??
+          createPokemonLearnsetDraftFields(selectedLearnsetMove);
+        const nextDraft = { ...currentDraft, ...patch };
+        const nextPokemonDrafts = { ...currentPokemonDrafts };
+
+        if (pokemonLearnsetDraftEqualsRecord(nextDraft, selectedLearnsetMove)) {
+          delete nextPokemonDrafts[selectedLearnsetMove.slot];
+        } else {
+          nextPokemonDrafts[selectedLearnsetMove.slot] = nextDraft;
+        }
+
+        const nextDraftsByPokemonId = { ...currentDraftsByPokemonId };
+        if (Object.keys(nextPokemonDrafts).length === 0) {
+          delete nextDraftsByPokemonId[pokemonKey];
+        } else {
+          nextDraftsByPokemonId[pokemonKey] = nextPokemonDrafts;
+        }
+
+        return nextDraftsByPokemonId;
+      });
+    },
+    [pokemon, selectedLearnsetMove]
+  );
   const personalDraftSummary = useMemo(
     () => getPokemonPersonalDraftSummary(pokemon, editableFields, personalDrafts),
     [editableFields, personalDrafts, pokemon]
   );
-  const canSavePersonalDrafts =
-    pokemon !== null &&
-    editSession !== null &&
-    canEditPokemon &&
-    !isPokemonUpdating &&
-    personalDraftSummary.changedFields.length > 0 &&
-    personalDraftSummary.invalidFields.length === 0;
   const selectedCompatibilityGroup =
     pokemon?.compatibility.find((group) => group.groupId === selectedCompatibilityGroupId) ??
     pokemon?.compatibility[0] ??
@@ -5435,25 +5973,27 @@ function SelectedPokemonPanel({
     newEvolutionFormOptions
   );
   const parsedNewEvolutionLevel = Number.parseInt(newEvolutionLevelDraft, 10);
-  const parsedLearnsetMoveId = parseEditableIntegerDraft(
-    learnsetMoveIdDraft,
-    learnsetMoveOptionsForDraft
-  );
-  const parsedLearnsetLevel = Number.parseInt(learnsetLevelDraft, 10);
   const parsedNewLearnsetMoveId = parseEditableIntegerDraft(
     newLearnsetMoveIdDraft,
     newLearnsetMoveOptions
   );
   const parsedNewLearnsetLevel = Number.parseInt(newLearnsetLevelDraft, 10);
-  const canSaveLearnsetMove =
-    canEditLearnset &&
-    selectedLearnsetMove !== null &&
-    Number.isInteger(parsedLearnsetMoveId) &&
-    Number.isInteger(parsedLearnsetLevel);
   const canAddLearnsetMove =
     canEditLearnset &&
     Number.isInteger(parsedNewLearnsetMoveId) &&
     Number.isInteger(parsedNewLearnsetLevel);
+  const clearCurrentPokemonLearnsetDrafts = useCallback(() => {
+    if (!pokemon) {
+      return;
+    }
+
+    const pokemonKey = pokemon.personalId.toString();
+    setLearnsetDraftsByPokemonId((currentDrafts) => {
+      const nextDrafts = { ...currentDrafts };
+      delete nextDrafts[pokemonKey];
+      return nextDrafts;
+    });
+  }, [pokemon]);
   const handleDropLearnsetMove = useCallback(
     (targetSlot: number, sourceSlot = draggedLearnsetSlot) => {
       if (
@@ -5468,6 +6008,7 @@ function SelectedPokemonPanel({
         return;
       }
 
+      clearCurrentPokemonLearnsetDrafts();
       onUpdatePokemonLearnset(
         pokemon.personalId,
         'moveTo',
@@ -5479,16 +6020,51 @@ function SelectedPokemonPanel({
       setDraggedLearnsetSlot(null);
       setDragOverLearnsetSlot(null);
     },
-    [canEditLearnset, draggedLearnsetSlot, onUpdatePokemonLearnset, pokemon]
+    [
+      canEditLearnset,
+      clearCurrentPokemonLearnsetDrafts,
+      draggedLearnsetSlot,
+      onUpdatePokemonLearnset,
+      pokemon
+    ]
   );
-  const canSaveEvolution =
-    canEditEvolution &&
-    selectedEvolution !== null &&
-    Number.isInteger(parsedEvolutionMethod) &&
-    Number.isInteger(parsedEvolutionArgument) &&
-    Number.isInteger(parsedEvolutionSpecies) &&
-    Number.isInteger(parsedEvolutionForm) &&
-    Number.isInteger(parsedEvolutionLevel);
+  const evolutionDraftReview = useMemo(
+    () =>
+      reviewPokemonEvolutionDrafts(
+        pokemon,
+        evolutionDraftsBySlot,
+        evolutionMethodOptions,
+        pokemonSpeciesOptions,
+        pokemonSpeciesLabels
+      ),
+    [
+      evolutionDraftsBySlot,
+      evolutionMethodOptions,
+      pokemon,
+      pokemonSpeciesLabels,
+      pokemonSpeciesOptions
+    ]
+  );
+  const learnsetDraftReview = useMemo(
+    () => reviewPokemonLearnsetDrafts(pokemon, learnsetDraftsBySlot, learnsetMoveOptions),
+    [learnsetDraftsBySlot, learnsetMoveOptions, pokemon]
+  );
+  const pokemonDraftInvalidCount =
+    personalDraftSummary.invalidFields.length +
+    (editSession !== null
+      ? evolutionDraftReview.invalidCount + learnsetDraftReview.invalidCount
+      : 0);
+  const pokemonDraftChangedCount =
+    personalDraftSummary.changedFields.length +
+    evolutionDraftReview.changes.length +
+    learnsetDraftReview.changes.length;
+  const canSavePokemonDrafts =
+    pokemon !== null &&
+    editSession !== null &&
+    canEditPokemon &&
+    !isPokemonUpdating &&
+    pokemonDraftChangedCount > 0 &&
+    pokemonDraftInvalidCount === 0;
   const canAddEvolution =
     canEditEvolution &&
     Number.isInteger(parsedNewEvolutionMethod) &&
@@ -5649,12 +6225,20 @@ function SelectedPokemonPanel({
                           draftValue={draftValue}
                           field={field}
                           key={field.field}
-                          onChange={(value) =>
-                            setPersonalDrafts((currentDrafts) => ({
-                              ...currentDrafts,
+                          onChange={(value) => {
+                            const nextDrafts = {
+                              ...personalDrafts,
                               [field.field]: value
-                            }))
-                          }
+                            };
+                            setPersonalDraftsByPokemonId((currentDrafts) =>
+                              setFieldDraftRecord(
+                                currentDrafts,
+                                pokemon.personalId,
+                                nextDrafts,
+                                personalDraftDefaults
+                              )
+                            );
+                          }}
                         />
                       );
                     })}
@@ -5666,16 +6250,29 @@ function SelectedPokemonPanel({
               <div className="draft-action-row">
                 <button
                   className="primary-button"
-                  disabled={!canSavePersonalDrafts}
-                  onClick={() => {
+                  disabled={!canSavePokemonDrafts}
+                  onClick={async () => {
                     if (pokemon) {
-                      onUpdatePokemonFields(
+                      const didSave = await onUpdatePokemonFields(
                         pokemon.personalId,
                         personalDraftSummary.changedFields.map((change) => ({
                           field: change.field,
                           value: change.value
-                        }))
+                        })),
+                        evolutionDraftReview.changes,
+                        learnsetDraftReview.changes
                       );
+                      if (didSave) {
+                        setPersonalDraftsByPokemonId((currentDrafts) =>
+                          deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
+                        );
+                        setEvolutionDraftsByPokemonId((currentDrafts) =>
+                          deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
+                        );
+                        setLearnsetDraftsByPokemonId((currentDrafts) =>
+                          deleteFieldDraftRecord(currentDrafts, pokemon.personalId)
+                        );
+                      }
                     }
                   }}
                   type="button"
@@ -5687,7 +6284,11 @@ function SelectedPokemonPanel({
                   className="danger-button"
                   disabled={isPokemonUpdating}
                   onClick={() =>
-                    cancelActiveEditSession(() => setPersonalDrafts(personalDraftDefaults))
+                    cancelActiveEditSession(() => {
+                      setPersonalDraftsByPokemonId({});
+                      setEvolutionDraftsByPokemonId({});
+                      setLearnsetDraftsByPokemonId({});
+                    })
                   }
                   type="button"
                 >
@@ -5695,11 +6296,11 @@ function SelectedPokemonPanel({
                   <span>Cancel</span>
                 </button>
                 <span className="draft-action-summary">
-                  {personalDraftSummary.invalidFields.length > 0
-                    ? `${personalDraftSummary.invalidFields.length} field${
-                        personalDraftSummary.invalidFields.length === 1 ? '' : 's'
+                  {pokemonDraftInvalidCount > 0
+                    ? `${pokemonDraftInvalidCount} field${
+                        pokemonDraftInvalidCount === 1 ? '' : 's'
                       } need valid values`
-                    : `${personalDraftSummary.changedFields.length} changed`}
+                    : `${pokemonDraftChangedCount} changed`}
                 </span>
               </div>
             ) : null}
@@ -5807,7 +6408,10 @@ function SelectedPokemonPanel({
                                 <SearchableOptionInput
                                   ariaLabel="Move"
                                   disabled={!canEditLearnset}
-                                  onChange={setLearnsetMoveIdDraft}
+                                  onChange={(value) => {
+                                    setLearnsetMoveIdDraft(value);
+                                    updateSelectedLearnsetDraft({ moveId: value });
+                                  }}
                                   options={learnsetMoveOptionsForDraft}
                                   value={learnsetMoveIdDraft}
                                 />
@@ -5815,7 +6419,10 @@ function SelectedPokemonPanel({
                                 <input
                                   disabled={!canEditLearnset}
                                   min={0}
-                                  onChange={(event) => setLearnsetMoveIdDraft(event.target.value)}
+                                  onChange={(event) => {
+                                    setLearnsetMoveIdDraft(event.target.value);
+                                    updateSelectedLearnsetDraft({ moveId: event.target.value });
+                                  }}
                                   type="number"
                                   value={learnsetMoveIdDraft}
                                 />
@@ -5826,44 +6433,30 @@ function SelectedPokemonPanel({
                               <input
                                 disabled={!canEditLearnset}
                                 min={0}
-                                onChange={(event) => setLearnsetLevelDraft(event.target.value)}
+                                onChange={(event) => {
+                                  setLearnsetLevelDraft(event.target.value);
+                                  updateSelectedLearnsetDraft({ level: event.target.value });
+                                }}
                                 type="number"
                                 value={learnsetLevelDraft}
                               />
                             </label>
-                            <span>{move.moveId}</span>
                             <div className="learnset-inline-actions">
-                              <button
-                                aria-label="Save learnset row"
-                                className="secondary-button icon-button"
-                                disabled={!canSaveLearnsetMove}
-                                onClick={() =>
-                                  onUpdatePokemonLearnset(
-                                    pokemon.personalId,
-                                    'upsert',
-                                    move.slot,
-                                    parsedLearnsetMoveId,
-                                    parsedLearnsetLevel
-                                  )
-                                }
-                                title="Save learnset row"
-                                type="button"
-                              >
-                                <Save aria-hidden="true" size={16} />
-                              </button>
                               <button
                                 aria-label="Move learnset row up"
                                 className="secondary-button icon-button"
                                 disabled={!canEditLearnset || move.slot === 0}
-                                onClick={() =>
+                                onClick={() => {
+                                  clearCurrentPokemonLearnsetDrafts();
                                   onUpdatePokemonLearnset(
                                     pokemon.personalId,
                                     'moveUp',
                                     move.slot,
                                     null,
                                     null
-                                  )
-                                }
+                                  );
+                                  setSelectedLearnsetSlot(move.slot - 1);
+                                }}
                                 title="Move learnset row up"
                                 type="button"
                               >
@@ -5873,15 +6466,17 @@ function SelectedPokemonPanel({
                                 aria-label="Move learnset row down"
                                 className="secondary-button icon-button"
                                 disabled={!canEditLearnset || move.slot >= pokemon.learnset.length - 1}
-                                onClick={() =>
+                                onClick={() => {
+                                  clearCurrentPokemonLearnsetDrafts();
                                   onUpdatePokemonLearnset(
                                     pokemon.personalId,
                                     'moveDown',
                                     move.slot,
                                     null,
                                     null
-                                  )
-                                }
+                                  );
+                                  setSelectedLearnsetSlot(move.slot + 1);
+                                }}
                                 title="Move learnset row down"
                                 type="button"
                               >
@@ -5891,15 +6486,16 @@ function SelectedPokemonPanel({
                                 aria-label="Remove learnset row"
                                 className="secondary-button icon-button danger-icon-button"
                                 disabled={!canEditLearnset}
-                                onClick={() =>
+                                onClick={() => {
+                                  clearCurrentPokemonLearnsetDrafts();
                                   onUpdatePokemonLearnset(
                                     pokemon.personalId,
                                     'remove',
                                     move.slot,
                                     null,
                                     null
-                                  )
-                                }
+                                  );
+                                }}
                                 title="Remove learnset row"
                                 type="button"
                               >
@@ -6116,8 +6712,13 @@ function SelectedPokemonPanel({
                           selectedEvolutionMethodOptions,
                           nextMethod
                         );
+                        const nextArgument = getDefaultEvolutionArgumentDraft(nextOption);
                         setEvolutionMethodDraft(nextMethod);
-                        setEvolutionArgumentDraft(getDefaultEvolutionArgumentDraft(nextOption));
+                        setEvolutionArgumentDraft(nextArgument);
+                        updateSelectedEvolutionDraft({
+                          argument: nextArgument,
+                          method: nextMethod
+                        });
                       }}
                       options={selectedEvolutionMethodOptions}
                       value={evolutionMethodDraft}
@@ -6130,7 +6731,10 @@ function SelectedPokemonPanel({
                       <SearchableOptionInput
                         ariaLabel={selectedEvolutionMethodOption?.argumentLabel ?? 'Argument'}
                         disabled={!canEditEvolution}
-                        onChange={setEvolutionArgumentDraft}
+                        onChange={(value) => {
+                          setEvolutionArgumentDraft(value);
+                          updateSelectedEvolutionDraft({ argument: value });
+                        }}
                         options={selectedEvolutionArgumentOptions}
                         value={evolutionArgumentDraft}
                       />
@@ -6142,7 +6746,10 @@ function SelectedPokemonPanel({
                         }
                         max={65535}
                         min={0}
-                        onChange={(event) => setEvolutionArgumentDraft(event.target.value)}
+                        onChange={(event) => {
+                          setEvolutionArgumentDraft(event.target.value);
+                          updateSelectedEvolutionDraft({ argument: event.target.value });
+                        }}
                         type="number"
                         value={evolutionArgumentDraft}
                       />
@@ -6154,7 +6761,10 @@ function SelectedPokemonPanel({
                       <SearchableOptionInput
                         ariaLabel="Species"
                         disabled={!canEditEvolution}
-                        onChange={setEvolutionSpeciesDraft}
+                        onChange={(value) => {
+                          setEvolutionSpeciesDraft(value);
+                          updateSelectedEvolutionDraft({ species: value });
+                        }}
                         options={addCurrentPokemonFieldOption(
                           pokemonSpeciesOptions,
                           evolutionSpeciesDraft,
@@ -6167,7 +6777,10 @@ function SelectedPokemonPanel({
                         disabled={!canEditEvolution}
                         max={65535}
                         min={0}
-                        onChange={(event) => setEvolutionSpeciesDraft(event.target.value)}
+                        onChange={(event) => {
+                          setEvolutionSpeciesDraft(event.target.value);
+                          updateSelectedEvolutionDraft({ species: event.target.value });
+                        }}
                         type="number"
                         value={evolutionSpeciesDraft}
                       />
@@ -6178,7 +6791,10 @@ function SelectedPokemonPanel({
                     <SearchableOptionInput
                       ariaLabel="Form"
                       disabled={!canEditEvolution}
-                      onChange={setEvolutionFormDraft}
+                      onChange={(value) => {
+                        setEvolutionFormDraft(value);
+                        updateSelectedEvolutionDraft({ form: value });
+                      }}
                       options={selectedEvolutionFormOptions}
                       value={evolutionFormDraft}
                     />
@@ -6189,33 +6805,15 @@ function SelectedPokemonPanel({
                       disabled={!canEditEvolution}
                       max={255}
                       min={0}
-                      onChange={(event) => setEvolutionLevelDraft(event.target.value)}
+                      onChange={(event) => {
+                        setEvolutionLevelDraft(event.target.value);
+                        updateSelectedEvolutionDraft({ level: event.target.value });
+                      }}
                       type="number"
                       value={evolutionLevelDraft}
                     />
                   </label>
                   <div className="learnset-button-row">
-                    <button
-                      aria-label="Save evolution row"
-                      className="secondary-button icon-button"
-                      disabled={!canSaveEvolution}
-                      onClick={() =>
-                        onUpdatePokemonEvolution(
-                          pokemon.personalId,
-                          'upsert',
-                          selectedEvolution.slot,
-                          parsedEvolutionMethod,
-                          parsedEvolutionArgument,
-                          parsedEvolutionSpecies,
-                          parsedEvolutionForm,
-                          parsedEvolutionLevel
-                        )
-                      }
-                      title="Save evolution row"
-                      type="button"
-                    >
-                      <Save aria-hidden="true" size={16} />
-                    </button>
                     <button
                       aria-label="Move evolution row up"
                       className="secondary-button icon-button"
@@ -6430,7 +7028,10 @@ function MovesSection({
   onSelectMove: (moveId: number | null) => void;
   onStartEditSession: () => void;
   onUpdateMoveField: (moveId: number, field: string, value: string) => void;
-  onUpdateMoveFields: (moveId: number, changes: Array<{ field: string; value: string }>) => void;
+  onUpdateMoveFields: (
+    moveId: number,
+    changes: Array<{ field: string; value: string }>
+  ) => Promise<boolean>;
   searchText: string;
   selectedMoveId: number | null;
   workflow: MovesWorkflow | null;
@@ -6568,9 +7169,14 @@ function SelectedMovePanel({
   move: MoveRecord | null;
   onStartEditSession: () => void;
   onUpdateMoveField: (moveId: number, field: string, value: string) => void;
-  onUpdateMoveFields: (moveId: number, changes: Array<{ field: string; value: string }>) => void;
+  onUpdateMoveFields: (
+    moveId: number,
+    changes: Array<{ field: string; value: string }>
+  ) => Promise<boolean>;
 }) {
-  const [moveDrafts, setMoveDrafts] = useState<Record<string, string>>({});
+  const [moveDraftsByMoveId, setMoveDraftsByMoveId] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const moveFields = useMemo(
     () => editableFields.map((field) => toNumericEditableField(field)),
@@ -6580,6 +7186,14 @@ function SelectedMovePanel({
     () => groupNumericEditableFields(moveFields, getMoveEditableFieldGroup),
     [moveFields]
   );
+  const moveDraftDefaults = useMemo(
+    () =>
+      move
+        ? createTrainerDrafts(moveFields, (field) => getEditableMoveFieldValue(move, field))
+        : {},
+    [move, moveFields]
+  );
+  const moveDrafts = move ? moveDraftsByMoveId[move.moveId.toString()] ?? moveDraftDefaults : {};
   const moveDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -6589,6 +7203,7 @@ function SelectedMovePanel({
       ),
     [move, moveDrafts, moveFields]
   );
+  useRegisterEditorDraftDirty('moves', countFieldDraftRecords(moveDraftsByMoveId) > 0);
   const activeFlags = move?.flags.filter((flag) => flag.enabled) ?? [];
   const visibleStatChanges =
     move?.statChanges.filter(
@@ -6604,19 +7219,13 @@ function SelectedMovePanel({
 
   useEffect(() => {
     if (!move) {
-      setMoveDrafts({});
       return;
     }
 
-    setMoveDrafts(
-      Object.fromEntries(
-        moveFields.map((field) => [
-          field.field,
-          (getEditableMoveFieldValue(move, field.field) ?? '').toString()
-        ])
-      )
+    setMoveDraftsByMoveId((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, move.moveId, moveDraftDefaults)
     );
-  }, [move, moveFields]);
+  }, [move, moveDraftDefaults]);
 
   return (
     <aside aria-label="Selected move details" className="item-inspector">
@@ -6713,12 +7322,20 @@ function SelectedMovePanel({
                           field={field}
                           idPrefix="move-field"
                           key={field.field}
-                          onChange={(value) =>
-                            setMoveDrafts((currentDrafts) => ({
-                              ...currentDrafts,
+                          onChange={(value) => {
+                            const nextDrafts = {
+                              ...moveDrafts,
                               [field.field]: value
-                            }))
-                          }
+                            };
+                            setMoveDraftsByMoveId((currentDrafts) =>
+                              setFieldDraftRecord(
+                                currentDrafts,
+                                move.moveId,
+                                nextDrafts,
+                                moveDraftDefaults
+                              )
+                            );
+                          }}
                         />
                       );
                     })}
@@ -6732,15 +7349,20 @@ function SelectedMovePanel({
                 <button
                   className="primary-button"
                   disabled={!canSaveMoveDrafts}
-                  onClick={() =>
-                    onUpdateMoveFields(
+                  onClick={async () => {
+                    const didSave = await onUpdateMoveFields(
                       move.moveId,
                       moveDraftSummary.changedFields.map((change) => ({
                         field: change.field,
                         value: change.value
                       }))
-                    )
-                  }
+                    );
+                    if (didSave) {
+                      setMoveDraftsByMoveId((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, move.moveId)
+                      );
+                    }
+                  }}
                   type="button"
                 >
                   <Save aria-hidden="true" size={16} />
@@ -6751,9 +7373,7 @@ function SelectedMovePanel({
                   disabled={isMoveUpdating}
                   onClick={() =>
                     cancelActiveEditSession(() =>
-                      setMoveDrafts(createTrainerDrafts(moveFields, (field) =>
-                        getEditableMoveFieldValue(move, field)
-                      ))
+                      setMoveDraftsByMoveId({})
                     )
                   }
                   type="button"
@@ -6909,7 +7529,7 @@ function TextSection({
   onSearchChange: (searchText: string) => void;
   onSelectTextEntry: (textKey: string | null) => void;
   onStartEditSession: () => void;
-  onUpdateTextEntry: (textKey: string, value: string) => void;
+  onUpdateTextEntry: (textKey: string, value: string) => Promise<boolean>;
   searchText: string;
   selectedTextKey: string | null;
   workflow: TextWorkflow | null;
@@ -7037,14 +7657,36 @@ function SelectedTextPanel({
   isEditStarting: boolean;
   isTextUpdating: boolean;
   onStartEditSession: () => void;
-  onUpdateTextEntry: (textKey: string, value: string) => void;
+  onUpdateTextEntry: (textKey: string, value: string) => Promise<boolean>;
 }) {
-  const [draftValue, setDraftValue] = useState('');
+  const [draftsByTextKey, setDraftsByTextKey] = useState<Record<string, string>>({});
   const valueField = editableFields.find((field) => field.field === 'value');
+  const draftValue = entry ? draftsByTextKey[entry.textKey] ?? entry.value : '';
+  const isTextDraftDirty =
+    entry !== null && (draftsByTextKey[entry.textKey] ?? entry.value) !== entry.value;
+  useRegisterEditorDraftDirty(
+    'text',
+    Object.entries(draftsByTextKey).some(([textKey, value]) => {
+      const sourceEntry = textKey === entry?.textKey ? entry : null;
+      return sourceEntry ? value !== sourceEntry.value : true;
+    })
+  );
 
   useEffect(() => {
-    setDraftValue(entry?.value ?? '');
-  }, [entry?.textKey, entry?.value]);
+    if (!entry || !isTextDraftDirty) {
+      return;
+    }
+
+    setDraftsByTextKey((currentDrafts) => {
+      if (currentDrafts[entry.textKey] !== entry.value) {
+        return currentDrafts;
+      }
+
+      const nextDrafts = { ...currentDrafts };
+      delete nextDrafts[entry.textKey];
+      return nextDrafts;
+    });
+  }, [entry, isTextDraftDirty]);
 
   const draftState = getTextDraftState(draftValue, entry, valueField);
   const canSubmit = editSession !== null && draftState.canSubmit;
@@ -7088,7 +7730,21 @@ function SelectedTextPanel({
                 aria-label={valueField?.label ?? 'Text value'}
                 disabled={!canEditText || editSession === null || isTextUpdating || !entry.canEdit}
                 maxLength={valueField?.maximumLength ?? undefined}
-                onChange={(event) => setDraftValue(event.target.value)}
+                onChange={(event) =>
+                  setDraftsByTextKey((currentDrafts) => {
+                    const nextValue = event.target.value;
+                    if (nextValue === entry.value) {
+                      const nextDrafts = { ...currentDrafts };
+                      delete nextDrafts[entry.textKey];
+                      return nextDrafts;
+                    }
+
+                    return {
+                      ...currentDrafts,
+                      [entry.textKey]: nextValue
+                    };
+                  })
+                }
                 rows={8}
                 value={draftValue}
               />
@@ -7102,7 +7758,14 @@ function SelectedTextPanel({
               <button
                 className="primary-button"
                 disabled={!canSubmit || isTextUpdating}
-                onClick={() => onUpdateTextEntry(entry.textKey, draftValue)}
+                onClick={async () => {
+                  const didSave = await onUpdateTextEntry(entry.textKey, draftValue);
+                  if (didSave) {
+                    setDraftsByTextKey((currentDrafts) =>
+                      deleteFieldDraftRecord(currentDrafts, entry.textKey)
+                    );
+                  }
+                }}
                 type="button"
               >
                 <Save aria-hidden="true" size={16} />
@@ -7157,7 +7820,7 @@ function TrainersSection({
     trainerId: number,
     slot: number | null,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   searchText: string;
   selectedTrainerId: number | null;
   workflow: TrainersWorkflow | null;
@@ -7324,13 +7987,17 @@ function SelectedTrainerPanel({
     trainerId: number,
     slot: number | null,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   selectedPokemon: TrainerPokemonRecord | null;
   selectedSlot: number | null;
   trainer: TrainerRecord | null;
 }) {
-  const [trainerDrafts, setTrainerDrafts] = useState<Record<string, string>>({});
-  const [pokemonDrafts, setPokemonDrafts] = useState<Record<string, string>>({});
+  const [trainerDraftsByTrainerId, setTrainerDraftsByTrainerId] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [pokemonDraftsByTrainerSlot, setPokemonDraftsByTrainerSlot] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const trainerFields = useMemo(
     () =>
@@ -7364,6 +8031,32 @@ function SelectedTrainerPanel({
       }),
     [pokemonFields, selectedPokemon]
   );
+  const trainerDraftDefaults = useMemo(
+    () =>
+      trainer
+        ? createTrainerDrafts(trainerFields, (field) =>
+            getEditableTrainerFieldValue(trainer, field)
+          )
+        : {},
+    [trainer, trainerFields]
+  );
+  const pokemonDraftDefaults = useMemo(
+    () =>
+      selectedPokemon
+        ? createTrainerDrafts(contextualPokemonFields, (field) =>
+            getEditablePokemonFieldValue(selectedPokemon, field)
+          )
+        : {},
+    [contextualPokemonFields, selectedPokemon]
+  );
+  const selectedPokemonDraftKey =
+    trainer && selectedPokemon ? `${trainer.trainerId}:${selectedPokemon.slot}` : null;
+  const trainerDrafts = trainer
+    ? trainerDraftsByTrainerId[trainer.trainerId.toString()] ?? trainerDraftDefaults
+    : {};
+  const pokemonDrafts = selectedPokemonDraftKey
+    ? pokemonDraftsByTrainerSlot[selectedPokemonDraftKey] ?? pokemonDraftDefaults
+    : {};
   const projectedTrainerHighestLevel = useMemo(
     () => getProjectedTrainerHighestLevel(trainer, selectedSlot, pokemonDrafts),
     [pokemonDrafts, selectedSlot, trainer]
@@ -7442,38 +8135,31 @@ function SelectedTrainerPanel({
     !isTrainerUpdating &&
     pokemonDraftSummary.changedFields.length > 0 &&
     pokemonDraftSummary.invalidFields.length === 0;
+  useRegisterEditorDraftDirty(
+    'trainers',
+    countFieldDraftRecords(trainerDraftsByTrainerId) > 0 ||
+      countFieldDraftRecords(pokemonDraftsByTrainerSlot) > 0
+  );
 
   useEffect(() => {
     if (!trainer) {
-      setTrainerDrafts({});
       return;
     }
 
-    setTrainerDrafts(
-      Object.fromEntries(
-        trainerFields.map((field) => [
-          field.field,
-          (getEditableTrainerFieldValue(trainer, field.field) ?? '').toString()
-        ])
-      )
+    setTrainerDraftsByTrainerId((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, trainer.trainerId, trainerDraftDefaults)
     );
-  }, [trainer, trainerFields]);
+  }, [trainer, trainerDraftDefaults]);
 
   useEffect(() => {
-    if (!selectedPokemon) {
-      setPokemonDrafts({});
+    if (!selectedPokemonDraftKey) {
       return;
     }
 
-    setPokemonDrafts(
-      Object.fromEntries(
-        contextualPokemonFields.map((field) => [
-          field.field,
-          (getEditablePokemonFieldValue(selectedPokemon, field.field) ?? '').toString()
-        ])
-      )
+    setPokemonDraftsByTrainerSlot((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, selectedPokemonDraftKey, pokemonDraftDefaults)
     );
-  }, [contextualPokemonFields, selectedPokemon]);
+  }, [pokemonDraftDefaults, selectedPokemonDraftKey]);
 
   return (
     <aside aria-label="Selected trainer provenance" className="trainer-inspector">
@@ -7594,12 +8280,20 @@ function SelectedTrainerPanel({
                           draftValue={draftValue}
                           field={field}
                           key={field.field}
-                          onChange={(value) =>
-                            setTrainerDrafts((currentDrafts) => ({
-                              ...currentDrafts,
+                          onChange={(value) => {
+                            const nextDrafts = {
+                              ...trainerDrafts,
                               [field.field]: value
-                            }))
-                          }
+                            };
+                            setTrainerDraftsByTrainerId((currentDrafts) =>
+                              setFieldDraftRecord(
+                                currentDrafts,
+                                trainer.trainerId,
+                                nextDrafts,
+                                trainerDraftDefaults
+                              )
+                            );
+                          }}
                         />
                       );
                     })}
@@ -7612,16 +8306,21 @@ function SelectedTrainerPanel({
                 <button
                   className="primary-button"
                   disabled={!canSaveTrainerDrafts}
-                  onClick={() =>
-                    onUpdateTrainerFields(
+                  onClick={async () => {
+                    const didSave = await onUpdateTrainerFields(
                       trainer.trainerId,
                       null,
                       trainerDraftSummary.changedFields.map((change) => ({
                         field: change.field,
                         value: change.value
                       }))
-                    )
-                  }
+                    );
+                    if (didSave) {
+                      setTrainerDraftsByTrainerId((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, trainer.trainerId)
+                      );
+                    }
+                  }}
                   type="button"
                 >
                   <Save aria-hidden="true" size={16} />
@@ -7631,11 +8330,10 @@ function SelectedTrainerPanel({
                   className="danger-button"
                   disabled={isTrainerUpdating}
                   onClick={() =>
-                    cancelActiveEditSession(() =>
-                      setTrainerDrafts(createTrainerDrafts(trainerFields, (field) =>
-                        getEditableTrainerFieldValue(trainer, field)
-                      ))
-                    )
+                    cancelActiveEditSession(() => {
+                      setTrainerDraftsByTrainerId({});
+                      setPokemonDraftsByTrainerSlot({});
+                    })
                   }
                   type="button"
                 >
@@ -7724,12 +8422,24 @@ function SelectedTrainerPanel({
                                 field.field,
                                 pokemonNatureEffects
                               )}
-                              onChange={(value) =>
-                                setPokemonDrafts((currentDrafts) => ({
-                                  ...currentDrafts,
+                              onChange={(value) => {
+                                if (!selectedPokemonDraftKey) {
+                                  return;
+                                }
+
+                                const nextDrafts = {
+                                  ...pokemonDrafts,
                                   [field.field]: value
-                                }))
-                              }
+                                };
+                                setPokemonDraftsByTrainerSlot((currentDrafts) =>
+                                  setFieldDraftRecord(
+                                    currentDrafts,
+                                    selectedPokemonDraftKey,
+                                    nextDrafts,
+                                    pokemonDraftDefaults
+                                  )
+                                );
+                              }}
                             />
                           );
                         })}
@@ -7742,16 +8452,21 @@ function SelectedTrainerPanel({
                     <button
                       className="primary-button"
                       disabled={!canSavePokemonDrafts}
-                      onClick={() =>
-                        onUpdateTrainerFields(
+                      onClick={async () => {
+                        const didSave = await onUpdateTrainerFields(
                           trainer.trainerId,
                           selectedPokemon.slot,
                           pokemonDraftSummary.changedFields.map((change) => ({
                             field: change.field,
                             value: change.value
                           }))
-                        )
-                      }
+                        );
+                        if (didSave && selectedPokemonDraftKey) {
+                          setPokemonDraftsByTrainerSlot((currentDrafts) =>
+                            deleteFieldDraftRecord(currentDrafts, selectedPokemonDraftKey)
+                          );
+                        }
+                      }}
                       type="button"
                     >
                       <Save aria-hidden="true" size={16} />
@@ -7761,11 +8476,10 @@ function SelectedTrainerPanel({
                       className="danger-button"
                       disabled={isTrainerUpdating}
                       onClick={() =>
-                        cancelActiveEditSession(() =>
-                          setPokemonDrafts(createTrainerDrafts(contextualPokemonFields, (field) =>
-                            getEditablePokemonFieldValue(selectedPokemon, field)
-                          ))
-                        )
+                        cancelActiveEditSession(() => {
+                          setTrainerDraftsByTrainerId({});
+                          setPokemonDraftsByTrainerSlot({});
+                        })
                       }
                       type="button"
                     >
@@ -8440,7 +9154,7 @@ function getTrainerFieldDraftState(
 
   if (parsedValue === null) {
     return {
-      error: 'Enter a whole number.',
+      error: getIntegerDraftError(normalizedValue),
       isChanged: normalizedValue !== currentText,
       isValid: false,
       normalizedValue: null
@@ -8818,6 +9532,10 @@ function getItemFieldDisabledReason(fieldName: string) {
     return 'Unknown raw field flags are visible for research and locked until their meanings are confirmed.';
   }
 
+  if (fieldName === itemUseFlags1FieldName) {
+    return 'Raw use flags 1 is visible for research and locked. Edit the decoded known flags instead.';
+  }
+
   if (fieldName === itemUseFlags2FieldName) {
     return 'Raw use flags 2 includes unknown bits 5-7. Edit the decoded known flags instead.';
   }
@@ -8947,7 +9665,7 @@ function GiftPokemonSection({
   onUpdateGiftPokemonFields: (
     giftIndex: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   searchText: string;
   selectedGiftIndex: number | null;
   workflow: GiftPokemonWorkflow | null;
@@ -9083,9 +9801,11 @@ function SelectedGiftPokemonPanel({
   onUpdateGiftPokemonFields: (
     giftIndex: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
 }) {
-  const [giftDrafts, setGiftDrafts] = useState<Record<string, string>>({});
+  const [giftDraftsByIndex, setGiftDraftsByIndex] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const giftFields = useMemo(
     () =>
@@ -9100,6 +9820,16 @@ function SelectedGiftPokemonPanel({
     () => groupNumericEditableFields(giftFields, getPokemonInstanceFieldGroup),
     [giftFields]
   );
+  const giftDraftDefaults = useMemo(
+    () =>
+      gift
+        ? createPokemonInstanceDrafts(giftFields, (field) =>
+            getEditableGiftPokemonFieldValue(gift, field)
+          )
+        : {},
+    [gift, giftFields]
+  );
+  const giftDrafts = gift ? giftDraftsByIndex[gift.giftIndex.toString()] ?? giftDraftDefaults : {};
   const giftDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -9110,6 +9840,7 @@ function SelectedGiftPokemonPanel({
       ),
     [gift, giftDrafts, giftFields]
   );
+  useRegisterEditorDraftDirty('giftPokemon', countFieldDraftRecords(giftDraftsByIndex) > 0);
   const canSaveGiftDrafts =
     gift !== null &&
     editSession !== null &&
@@ -9120,16 +9851,13 @@ function SelectedGiftPokemonPanel({
 
   useEffect(() => {
     if (!gift) {
-      setGiftDrafts({});
       return;
     }
 
-    setGiftDrafts(
-      createPokemonInstanceDrafts(giftFields, (field) =>
-        getEditableGiftPokemonFieldValue(gift, field)
-      )
+    setGiftDraftsByIndex((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, gift.giftIndex, giftDraftDefaults)
     );
-  }, [gift, giftFields]);
+  }, [gift, giftDraftDefaults]);
 
   return (
     <aside aria-label="Selected gift Pokemon provenance" className="trainer-inspector">
@@ -9226,12 +9954,20 @@ function SelectedGiftPokemonPanel({
                             speciesId: gift.speciesId
                           }}
                           key={field.field}
-                          onChange={(value) =>
-                            setGiftDrafts((currentDrafts) => ({
-                              ...currentDrafts,
+                          onChange={(value) => {
+                            const nextDrafts = {
+                              ...giftDrafts,
                               [field.field]: value
-                            }))
-                          }
+                            };
+                            setGiftDraftsByIndex((currentDrafts) =>
+                              setFieldDraftRecord(
+                                currentDrafts,
+                                gift.giftIndex,
+                                nextDrafts,
+                                giftDraftDefaults
+                              )
+                            );
+                          }}
                         />
                       );
                     })}
@@ -9244,15 +9980,20 @@ function SelectedGiftPokemonPanel({
                 <button
                   className="primary-button"
                   disabled={!canSaveGiftDrafts}
-                  onClick={() =>
-                    onUpdateGiftPokemonFields(
+                  onClick={async () => {
+                    const didSave = await onUpdateGiftPokemonFields(
                       gift.giftIndex,
                       giftDraftSummary.changedFields.map((change) => ({
                         field: change.field,
                         value: change.value
                       }))
-                    )
-                  }
+                    );
+                    if (didSave) {
+                      setGiftDraftsByIndex((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, gift.giftIndex)
+                      );
+                    }
+                  }}
                   type="button"
                 >
                   <Save aria-hidden="true" size={16} />
@@ -9261,13 +10002,7 @@ function SelectedGiftPokemonPanel({
                 <button
                   className="danger-button"
                   disabled={isGiftPokemonUpdating}
-                  onClick={() =>
-                    cancelActiveEditSession(() =>
-                      setGiftDrafts(createPokemonInstanceDrafts(giftFields, (field) =>
-                        getEditableGiftPokemonFieldValue(gift, field)
-                      ))
-                    )
-                  }
+                  onClick={() => cancelActiveEditSession(() => setGiftDraftsByIndex({}))}
                   type="button"
                 >
                   <X aria-hidden="true" size={16} />
@@ -9366,7 +10101,7 @@ function TradePokemonSection({
   onUpdateTradePokemonFields: (
     tradeIndex: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   searchText: string;
   selectedTradeIndex: number | null;
   workflow: TradePokemonWorkflow | null;
@@ -9520,10 +10255,12 @@ function SelectedTradePokemonPanel({
   onUpdateTradePokemonFields: (
     tradeIndex: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   trade: TradePokemonRecord | null;
 }) {
-  const [tradeDrafts, setTradeDrafts] = useState<Record<string, string>>({});
+  const [tradeDraftsByIndex, setTradeDraftsByIndex] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const tradeFields = useMemo(
     () =>
@@ -9538,6 +10275,18 @@ function SelectedTradePokemonPanel({
     () => groupNumericEditableFields(tradeFields, getPokemonInstanceFieldGroup),
     [tradeFields]
   );
+  const tradeDraftDefaults = useMemo(
+    () =>
+      trade
+        ? createPokemonInstanceDrafts(tradeFields, (field) =>
+            getEditableTradePokemonFieldValue(trade, field)
+          )
+        : {},
+    [trade, tradeFields]
+  );
+  const tradeDrafts = trade
+    ? tradeDraftsByIndex[trade.tradeIndex.toString()] ?? tradeDraftDefaults
+    : {};
   const tradeDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -9548,6 +10297,7 @@ function SelectedTradePokemonPanel({
       ),
     [trade, tradeDrafts, tradeFields]
   );
+  useRegisterEditorDraftDirty('tradePokemon', countFieldDraftRecords(tradeDraftsByIndex) > 0);
   const canSaveTradeDrafts =
     trade !== null &&
     editSession !== null &&
@@ -9558,16 +10308,13 @@ function SelectedTradePokemonPanel({
 
   useEffect(() => {
     if (!trade) {
-      setTradeDrafts({});
       return;
     }
 
-    setTradeDrafts(
-      createPokemonInstanceDrafts(tradeFields, (field) =>
-        getEditableTradePokemonFieldValue(trade, field)
-      )
+    setTradeDraftsByIndex((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, trade.tradeIndex, tradeDraftDefaults)
     );
-  }, [trade, tradeFields]);
+  }, [trade, tradeDraftDefaults]);
 
   return (
     <aside aria-label="Selected trade Pokemon provenance" className="trainer-inspector">
@@ -9714,12 +10461,20 @@ function SelectedTradePokemonPanel({
                                 }
                           }
                           key={field.field}
-                          onChange={(value) =>
-                            setTradeDrafts((currentDrafts) => ({
-                              ...currentDrafts,
+                          onChange={(value) => {
+                            const nextDrafts = {
+                              ...tradeDrafts,
                               [field.field]: value
-                            }))
-                          }
+                            };
+                            setTradeDraftsByIndex((currentDrafts) =>
+                              setFieldDraftRecord(
+                                currentDrafts,
+                                trade.tradeIndex,
+                                nextDrafts,
+                                tradeDraftDefaults
+                              )
+                            );
+                          }}
                         />
                       );
                     })}
@@ -9732,15 +10487,20 @@ function SelectedTradePokemonPanel({
                 <button
                   className="primary-button"
                   disabled={!canSaveTradeDrafts}
-                  onClick={() =>
-                    onUpdateTradePokemonFields(
+                  onClick={async () => {
+                    const didSave = await onUpdateTradePokemonFields(
                       trade.tradeIndex,
                       tradeDraftSummary.changedFields.map((change) => ({
                         field: change.field,
                         value: change.value
                       }))
-                    )
-                  }
+                    );
+                    if (didSave) {
+                      setTradeDraftsByIndex((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, trade.tradeIndex)
+                      );
+                    }
+                  }}
                   type="button"
                 >
                   <Save aria-hidden="true" size={16} />
@@ -9749,13 +10509,7 @@ function SelectedTradePokemonPanel({
                 <button
                   className="danger-button"
                   disabled={isTradePokemonUpdating}
-                  onClick={() =>
-                    cancelActiveEditSession(() =>
-                      setTradeDrafts(createPokemonInstanceDrafts(tradeFields, (field) =>
-                        getEditableTradePokemonFieldValue(trade, field)
-                      ))
-                    )
-                  }
+                  onClick={() => cancelActiveEditSession(() => setTradeDraftsByIndex({}))}
                   type="button"
                 >
                   <X aria-hidden="true" size={16} />
@@ -9854,7 +10608,7 @@ function RentalPokemonSection({
   onUpdateRentalPokemonFields: (
     rentalIndex: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   searchText: string;
   selectedRentalIndex: number | null;
   workflow: RentalPokemonWorkflow | null;
@@ -10002,10 +10756,12 @@ function SelectedRentalPokemonPanel({
   onUpdateRentalPokemonFields: (
     rentalIndex: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   rental: RentalPokemonRecord | null;
 }) {
-  const [rentalDrafts, setRentalDrafts] = useState<Record<string, string>>({});
+  const [rentalDraftsByIndex, setRentalDraftsByIndex] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const rentalFields = useMemo(
     () =>
@@ -10020,6 +10776,18 @@ function SelectedRentalPokemonPanel({
     () => groupNumericEditableFields(rentalFields, getPokemonInstanceFieldGroup),
     [rentalFields]
   );
+  const rentalDraftDefaults = useMemo(
+    () =>
+      rental
+        ? createPokemonInstanceDrafts(rentalFields, (field) =>
+            getEditableRentalPokemonFieldValue(rental, field)
+          )
+        : {},
+    [rental, rentalFields]
+  );
+  const rentalDrafts = rental
+    ? rentalDraftsByIndex[rental.rentalIndex.toString()] ?? rentalDraftDefaults
+    : {};
   const rentalDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -10033,6 +10801,7 @@ function SelectedRentalPokemonPanel({
       ),
     [rental, rentalDrafts, rentalFields]
   );
+  useRegisterEditorDraftDirty('rentalPokemon', countFieldDraftRecords(rentalDraftsByIndex) > 0);
   const canSaveRentalDrafts =
     rental !== null &&
     editSession !== null &&
@@ -10043,16 +10812,13 @@ function SelectedRentalPokemonPanel({
 
   useEffect(() => {
     if (!rental) {
-      setRentalDrafts({});
       return;
     }
 
-    setRentalDrafts(
-      createPokemonInstanceDrafts(rentalFields, (field) =>
-        getEditableRentalPokemonFieldValue(rental, field)
-      )
+    setRentalDraftsByIndex((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, rental.rentalIndex, rentalDraftDefaults)
     );
-  }, [rental, rentalFields]);
+  }, [rental, rentalDraftDefaults]);
 
   return (
     <aside aria-label="Selected rental Pokemon provenance" className="trainer-inspector">
@@ -10179,12 +10945,20 @@ function SelectedRentalPokemonPanel({
                             speciesId: rental.speciesId
                           }}
                           key={field.field}
-                          onChange={(value) =>
-                            setRentalDrafts((currentDrafts) => ({
-                              ...currentDrafts,
+                          onChange={(value) => {
+                            const nextDrafts = {
+                              ...rentalDrafts,
                               [field.field]: value
-                            }))
-                          }
+                            };
+                            setRentalDraftsByIndex((currentDrafts) =>
+                              setFieldDraftRecord(
+                                currentDrafts,
+                                rental.rentalIndex,
+                                nextDrafts,
+                                rentalDraftDefaults
+                              )
+                            );
+                          }}
                         />
                       );
                     })}
@@ -10197,15 +10971,20 @@ function SelectedRentalPokemonPanel({
                 <button
                   className="primary-button"
                   disabled={!canSaveRentalDrafts}
-                  onClick={() =>
-                    onUpdateRentalPokemonFields(
+                  onClick={async () => {
+                    const didSave = await onUpdateRentalPokemonFields(
                       rental.rentalIndex,
                       rentalDraftSummary.changedFields.map((change) => ({
                         field: change.field,
                         value: change.value
                       }))
-                    )
-                  }
+                    );
+                    if (didSave) {
+                      setRentalDraftsByIndex((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, rental.rentalIndex)
+                      );
+                    }
+                  }}
                   type="button"
                 >
                   <Save aria-hidden="true" size={16} />
@@ -10214,13 +10993,7 @@ function SelectedRentalPokemonPanel({
                 <button
                   className="danger-button"
                   disabled={isRentalPokemonUpdating}
-                  onClick={() =>
-                    cancelActiveEditSession(() =>
-                      setRentalDrafts(createPokemonInstanceDrafts(rentalFields, (field) =>
-                        getEditableRentalPokemonFieldValue(rental, field)
-                      ))
-                    )
-                  }
+                  onClick={() => cancelActiveEditSession(() => setRentalDraftsByIndex({}))}
                   type="button"
                 >
                   <X aria-hidden="true" size={16} />
@@ -10321,7 +11094,7 @@ function DynamaxAdventuresSection({
   onUpdateDynamaxAdventureFields: (
     entryIndex: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   searchText: string;
   selectedEntryIndex: number | null;
   workflow: DynamaxAdventuresWorkflow | null;
@@ -10480,9 +11253,11 @@ function SelectedDynamaxAdventurePanel({
   onUpdateDynamaxAdventureFields: (
     entryIndex: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
 }) {
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftsByEntryIndex, setDraftsByEntryIndex] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const adventureFields = useMemo(
     () =>
@@ -10499,6 +11274,18 @@ function SelectedDynamaxAdventurePanel({
     () => groupNumericEditableFields(adventureFields, getPokemonInstanceFieldGroup),
     [adventureFields]
   );
+  const adventureDraftDefaults = useMemo(
+    () =>
+      encounter
+        ? createPokemonInstanceDrafts(adventureFields, (field) =>
+            getEditableDynamaxAdventureFieldValue(encounter, field)
+          )
+        : {},
+    [adventureFields, encounter]
+  );
+  const drafts = encounter
+    ? draftsByEntryIndex[encounter.entryIndex.toString()] ?? adventureDraftDefaults
+    : {};
   const adventureDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -10508,6 +11295,10 @@ function SelectedDynamaxAdventurePanel({
         { clampIvStats: isPokemonInstanceIvCustomSelected(adventureFields, drafts) }
       ),
     [adventureFields, drafts, encounter]
+  );
+  useRegisterEditorDraftDirty(
+    'dynamaxAdventures',
+    countFieldDraftRecords(draftsByEntryIndex) > 0
   );
   const canSaveAdventureDrafts =
     encounter !== null &&
@@ -10519,16 +11310,13 @@ function SelectedDynamaxAdventurePanel({
 
   useEffect(() => {
     if (!encounter) {
-      setDrafts({});
       return;
     }
 
-    setDrafts(
-      createPokemonInstanceDrafts(adventureFields, (field) =>
-        getEditableDynamaxAdventureFieldValue(encounter, field)
-      )
+    setDraftsByEntryIndex((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, encounter.entryIndex, adventureDraftDefaults)
     );
-  }, [adventureFields, encounter]);
+  }, [adventureDraftDefaults, encounter]);
 
   return (
     <aside aria-label="Selected Dynamax Adventure provenance" className="trainer-inspector">
@@ -10660,12 +11448,20 @@ function SelectedDynamaxAdventurePanel({
                             speciesId: encounter.speciesId
                           }}
                           key={field.field}
-                          onChange={(value) =>
-                            setDrafts((currentDrafts) => ({
-                              ...currentDrafts,
+                          onChange={(value) => {
+                            const nextDrafts = {
+                              ...drafts,
                               [field.field]: value
-                            }))
-                          }
+                            };
+                            setDraftsByEntryIndex((currentDrafts) =>
+                              setFieldDraftRecord(
+                                currentDrafts,
+                                encounter.entryIndex,
+                                nextDrafts,
+                                adventureDraftDefaults
+                              )
+                            );
+                          }}
                         />
                       );
                     })}
@@ -10678,15 +11474,20 @@ function SelectedDynamaxAdventurePanel({
                 <button
                   className="primary-button"
                   disabled={!canSaveAdventureDrafts}
-                  onClick={() =>
-                    onUpdateDynamaxAdventureFields(
+                  onClick={async () => {
+                    const didSave = await onUpdateDynamaxAdventureFields(
                       encounter.entryIndex,
                       adventureDraftSummary.changedFields.map((change) => ({
                         field: change.field,
                         value: change.value
                       }))
-                    )
-                  }
+                    );
+                    if (didSave) {
+                      setDraftsByEntryIndex((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, encounter.entryIndex)
+                      );
+                    }
+                  }}
                   type="button"
                 >
                   <Save aria-hidden="true" size={16} />
@@ -10697,13 +11498,7 @@ function SelectedDynamaxAdventurePanel({
                   disabled={
                     isDynamaxAdventureUpdating
                   }
-                  onClick={() =>
-                    cancelActiveEditSession(() =>
-                      setDrafts(createPokemonInstanceDrafts(adventureFields, (field) =>
-                        getEditableDynamaxAdventureFieldValue(encounter, field)
-                      ))
-                    )
-                  }
+                  onClick={() => cancelActiveEditSession(() => setDraftsByEntryIndex({}))}
                   type="button"
                 >
                   <X aria-hidden="true" size={16} />
@@ -10804,7 +11599,7 @@ function StaticEncountersSection({
   onUpdateStaticEncounterFields: (
     encounterIndex: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   searchText: string;
   selectedEncounterIndex: number | null;
   workflow: StaticEncountersWorkflow | null;
@@ -10953,9 +11748,11 @@ function SelectedStaticEncounterPanel({
   onUpdateStaticEncounterFields: (
     encounterIndex: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
 }) {
-  const [encounterDrafts, setEncounterDrafts] = useState<Record<string, string>>({});
+  const [encounterDraftsByIndex, setEncounterDraftsByIndex] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const encounterFields = useMemo(
     () =>
@@ -10972,6 +11769,18 @@ function SelectedStaticEncounterPanel({
     () => groupNumericEditableFields(encounterFields, getPokemonInstanceFieldGroup),
     [encounterFields]
   );
+  const encounterDraftDefaults = useMemo(
+    () =>
+      encounter
+        ? createPokemonInstanceDrafts(encounterFields, (field) =>
+            getEditableStaticEncounterFieldValue(encounter, field)
+          )
+        : {},
+    [encounter, encounterFields]
+  );
+  const encounterDrafts = encounter
+    ? encounterDraftsByIndex[encounter.encounterIndex.toString()] ?? encounterDraftDefaults
+    : {};
   const encounterDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -10985,6 +11794,10 @@ function SelectedStaticEncounterPanel({
       ),
     [encounter, encounterDrafts, encounterFields]
   );
+  useRegisterEditorDraftDirty(
+    'staticEncounters',
+    countFieldDraftRecords(encounterDraftsByIndex) > 0
+  );
   const canSaveEncounterDrafts =
     encounter !== null &&
     editSession !== null &&
@@ -10995,16 +11808,13 @@ function SelectedStaticEncounterPanel({
 
   useEffect(() => {
     if (!encounter) {
-      setEncounterDrafts({});
       return;
     }
 
-    setEncounterDrafts(
-      createPokemonInstanceDrafts(encounterFields, (field) =>
-        getEditableStaticEncounterFieldValue(encounter, field)
-      )
+    setEncounterDraftsByIndex((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, encounter.encounterIndex, encounterDraftDefaults)
     );
-  }, [encounter, encounterFields]);
+  }, [encounter, encounterDraftDefaults]);
 
   return (
     <aside aria-label="Selected static encounter provenance" className="trainer-inspector">
@@ -11076,11 +11886,22 @@ function SelectedStaticEncounterPanel({
                         field.field
                       );
                       const draftValue = encounterDrafts[field.field] ?? '';
-                          const draftState = getTrainerFieldDraftState(
-                            draftValue,
-                            currentValue,
-                            field
-                          );
+                      const draftState = getTrainerFieldDraftState(
+                        draftValue,
+                        currentValue,
+                        field,
+                        {
+                          clampIvStats: isPokemonInstanceIvCustomSelected(
+                            encounterFields,
+                            encounterDrafts
+                          ),
+                          drafts: encounterDrafts,
+                          enforcePokemonEvLimits: true,
+                          fields: encounterFields,
+                          getValue: (fieldName) =>
+                            getEditableStaticEncounterFieldValue(encounter, fieldName)
+                        }
+                      );
 
                       return (
                         <GiftPokemonDraftField
@@ -11106,12 +11927,20 @@ function SelectedStaticEncounterPanel({
                             speciesId: encounter.speciesId
                           }}
                           key={field.field}
-                          onChange={(value) =>
-                            setEncounterDrafts((currentDrafts) => ({
-                              ...currentDrafts,
+                          onChange={(value) => {
+                            const nextDrafts = {
+                              ...encounterDrafts,
                               [field.field]: value
-                            }))
-                          }
+                            };
+                            setEncounterDraftsByIndex((currentDrafts) =>
+                              setFieldDraftRecord(
+                                currentDrafts,
+                                encounter.encounterIndex,
+                                nextDrafts,
+                                encounterDraftDefaults
+                              )
+                            );
+                          }}
                         />
                       );
                     })}
@@ -11124,15 +11953,20 @@ function SelectedStaticEncounterPanel({
                 <button
                   className="primary-button"
                   disabled={!canSaveEncounterDrafts}
-                  onClick={() =>
-                    onUpdateStaticEncounterFields(
+                  onClick={async () => {
+                    const didSave = await onUpdateStaticEncounterFields(
                       encounter.encounterIndex,
                       encounterDraftSummary.changedFields.map((change) => ({
                         field: change.field,
                         value: change.value
                       }))
-                    )
-                  }
+                    );
+                    if (didSave) {
+                      setEncounterDraftsByIndex((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, encounter.encounterIndex)
+                      );
+                    }
+                  }}
                   type="button"
                 >
                   <Save aria-hidden="true" size={16} />
@@ -11143,13 +11977,7 @@ function SelectedStaticEncounterPanel({
                   disabled={
                     isStaticEncounterUpdating
                   }
-                  onClick={() =>
-                    cancelActiveEditSession(() =>
-                      setEncounterDrafts(createPokemonInstanceDrafts(encounterFields, (field) =>
-                        getEditableStaticEncounterFieldValue(encounter, field)
-                      ))
-                    )
-                  }
+                  onClick={() => cancelActiveEditSession(() => setEncounterDraftsByIndex({}))}
                   type="button"
                 >
                   <X aria-hidden="true" size={16} />
@@ -11235,7 +12063,7 @@ function ShopsSection({
   onSearchChange,
   onSelectShop,
   onStartEditSession,
-  onUpdateShopInventoryItem,
+  onUpdateShopInventoryItems,
   searchText,
   selectedShopId,
   workflow
@@ -11247,23 +12075,31 @@ function ShopsSection({
   onSearchChange: (searchText: string) => void;
   onSelectShop: (shopId: string | null) => void;
   onStartEditSession: () => void;
-  onUpdateShopInventoryItem: (
+  onUpdateShopInventoryItems: (
     shopId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => void;
+    changes: Array<{ field: string; slot: number; value: string }>
+  ) => Promise<boolean>;
   searchText: string;
   selectedShopId: string | null;
   workflow: ShopsWorkflow | null;
 }) {
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
-  const filteredShops = filterShops(workflow?.shops ?? [], searchText);
+  const filteredShops = useMemo(
+    () => filterShops(workflow?.shops ?? [], searchText),
+    [searchText, workflow?.shops]
+  );
+  const badgeShops = useMemo(
+    () => filteredShops.filter(isBadgeShopRecord),
+    [filteredShops]
+  );
+  const miscellaneousShops = useMemo(
+    () => filteredShops.filter((shop) => !isBadgeShopRecord(shop)),
+    [filteredShops]
+  );
   const selectedShop =
-    workflow?.shops.find((shop) => shop.shopId === selectedShopId) ?? filteredShops[0] ?? null;
-  const selectedInventoryItem =
-    selectedShop?.inventory.find((item) => item.slot === selectedSlot) ??
-    selectedShop?.inventory[0] ??
+    workflow?.shops.find((shop) => shop.shopId === selectedShopId) ??
+    badgeShops[0] ??
+    miscellaneousShops[0] ??
     null;
   const canEditShops = workflow?.summary.availability === 'available';
   const pendingShopIds = getPendingShopIds(editSession);
@@ -11279,6 +12115,43 @@ function ShopsSection({
       setSelectedSlot(selectedShop.inventory[0]?.slot ?? null);
     }
   }, [selectedShop?.inventory, selectedShop?.shopId, selectedSlot]);
+
+  const renderShopTable = (label: string, shops: ShopRecord[]) => (
+    <section className="shop-table-section" aria-label={label}>
+      <h3>{label}</h3>
+      <div className="shops-table" role="table" aria-label={label}>
+        <div className="shops-row shops-row-heading" role="row">
+          <span role="columnheader">Type</span>
+          <span role="columnheader">Name</span>
+          <span role="columnheader">Inventory</span>
+          <span role="columnheader">Location</span>
+          <span role="columnheader">Items</span>
+          <span role="columnheader">Summary</span>
+        </div>
+        {shops.map((shop) => (
+          <button
+            className={`shops-row ${
+              selectedShop?.shopId === shop.shopId ? 'shops-row-selected' : ''
+            } ${pendingShopIds.has(shop.shopId) ? 'shops-row-pending' : ''}`}
+            key={shop.shopId}
+            onClick={() => onSelectShop(shop.shopId)}
+            role="row"
+            type="button"
+          >
+            <span role="cell">{shop.kind}</span>
+            <span role="cell">{shop.name}</span>
+            <span role="cell">{shop.inventoryLabel}</span>
+            <span role="cell">{shop.location}</span>
+            <span role="cell">{shop.inventory.length}</span>
+            <span role="cell">{shop.inventorySummary}</span>
+          </button>
+        ))}
+        {shops.length === 0 ? (
+          <p className="empty-copy shop-table-empty">No matching shops.</p>
+        ) : null}
+      </div>
+    </section>
+  );
 
   return (
     <>
@@ -11316,46 +12189,21 @@ function ShopsSection({
 
         {workflow ? (
           <div className="shops-layout">
-            <div className="shops-table" role="table" aria-label="Shops">
-              <div className="shops-row shops-row-heading" role="row">
-                <span role="columnheader">Type</span>
-                <span role="columnheader">Name</span>
-                <span role="columnheader">Inventory</span>
-                <span role="columnheader">Location</span>
-                <span role="columnheader">Items</span>
-                <span role="columnheader">Summary</span>
-              </div>
-              {filteredShops.map((shop) => (
-                <button
-                  className={`shops-row ${
-                    selectedShop?.shopId === shop.shopId ? 'shops-row-selected' : ''
-                  } ${pendingShopIds.has(shop.shopId) ? 'shops-row-pending' : ''}`}
-                  key={shop.shopId}
-                  onClick={() => onSelectShop(shop.shopId)}
-                  role="row"
-                  type="button"
-                >
-                  <span role="cell">{shop.kind}</span>
-                  <span role="cell">{shop.name}</span>
-                  <span role="cell">{shop.inventoryLabel}</span>
-                  <span role="cell">{shop.location}</span>
-                  <span role="cell">{shop.inventory.length}</span>
-                  <span role="cell">{shop.inventorySummary}</span>
-                </button>
-              ))}
+            <div className="shops-table-stack">
+              {renderShopTable('Badge Shops', badgeShops)}
+              {renderShopTable('Miscellaneous Shops', miscellaneousShops)}
             </div>
 
             <SelectedShopPanel
               canEditShops={canEditShops}
               editSession={editSession}
               editableFields={workflow.editableFields}
-              inventoryItem={selectedInventoryItem}
               isEditStarting={isEditStarting}
               isShopUpdating={isShopUpdating}
               onOpenItem={onOpenItem}
               onSelectSlot={setSelectedSlot}
               onStartEditSession={onStartEditSession}
-              onUpdateShopInventoryItem={onUpdateShopInventoryItem}
+              onUpdateShopInventoryItems={onUpdateShopInventoryItems}
               selectedSlot={selectedSlot}
               shop={selectedShop}
             />
@@ -11379,42 +12227,203 @@ function SelectedShopPanel({
   onOpenItem,
   onSelectSlot,
   onStartEditSession,
-  onUpdateShopInventoryItem,
+  onUpdateShopInventoryItems,
   selectedSlot,
   shop
 }: {
   canEditShops: boolean;
   editSession: EditSession | null;
   editableFields: ShopEditableField[];
-  inventoryItem: ShopInventoryRecord | null;
   isEditStarting: boolean;
   isShopUpdating: boolean;
   onOpenItem: (itemId: number) => void;
   onSelectSlot: (slot: number | null) => void;
   onStartEditSession: () => void;
-  onUpdateShopInventoryItem: (
+  onUpdateShopInventoryItems: (
     shopId: string,
-    slot: number,
-    field: string,
-    value: string
-  ) => void;
+    changes: Array<{ field: string; slot: number; value: string }>
+  ) => Promise<boolean>;
   selectedSlot: number | null;
   shop: ShopRecord | null;
 }) {
-  const [itemIdDrafts, setItemIdDrafts] = useState<Record<number, string>>({});
+  const [inventoryDraftsByShopId, setInventoryDraftsByShopId] = useState<
+    Record<string, ShopInventoryDraftState>
+  >({});
+  const [pendingOpenItem, setPendingOpenItem] =
+    useState<{ itemId: number; itemName: string } | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const itemIdField = editableFields.find((field) => field.field === shopItemIdFieldName);
   const itemIdOptions = itemIdField?.options ?? [];
   const hasItemIdOptions = itemIdOptions.length > 0;
+  const defaultShopDraft = useMemo<ShopInventoryDraftState>(
+    () => ({
+      addedRows: [],
+      itemIdDrafts: Object.fromEntries(
+        shop?.inventory.map((item) => [item.slot, item.itemId.toString()]) ?? []
+      ),
+      newItemIdDraft: (itemIdOptions[0]?.value ?? 0).toString(),
+      nextAddedRowId: 1,
+      removedSlots: []
+    }),
+    [itemIdOptions, shop?.inventory, shop?.shopId]
+  );
+  const currentShopDraft = shop
+    ? inventoryDraftsByShopId[shop.shopId] ?? defaultShopDraft
+    : defaultShopDraft;
+  const { addedRows, itemIdDrafts, newItemIdDraft, removedSlots } = currentShopDraft;
+  const updateCurrentShopDraft = useCallback(
+    (updater: (currentDraft: ShopInventoryDraftState) => ShopInventoryDraftState) => {
+      if (!shop) {
+        return;
+      }
 
-  useEffect(() => {
-    setItemIdDrafts(
-      Object.fromEntries(shop?.inventory.map((item) => [item.slot, item.itemId.toString()]) ?? [])
+      setInventoryDraftsByShopId((currentDrafts) => ({
+        ...currentDrafts,
+        [shop.shopId]: updater(currentDrafts[shop.shopId] ?? defaultShopDraft)
+      }));
+    },
+    [defaultShopDraft, shop]
+  );
+  const resetShopDrafts = useCallback(() => {
+    setInventoryDraftsByShopId({});
+  }, []);
+  useRegisterEditorDraftDirty('shops', Object.keys(inventoryDraftsByShopId).length > 0);
+
+  const removedSlotSet = useMemo(() => new Set(removedSlots), [removedSlots]);
+  const visibleInventory = useMemo(
+    () => shop?.inventory.filter((item) => !removedSlotSet.has(item.slot)) ?? [],
+    [removedSlotSet, shop?.inventory]
+  );
+  const addedInventoryRows = useMemo(
+    () =>
+      addedRows.map((row, index) => {
+        const parsedItemId = parseEditableIntegerDraft(row.itemIdDraft, itemIdOptions);
+        const option = itemIdOptions.find((candidate) => candidate.value === parsedItemId);
+
+        return {
+          displaySlot: visibleInventory.length + index + 1,
+          draftId: row.draftId,
+          itemIdDraft: row.itemIdDraft,
+          itemName: option?.itemName ?? formatShopItemFallbackOption(row.itemIdDraft),
+          parsedItemId,
+          price: option?.price ?? 0
+        };
+      }),
+    [addedRows, itemIdOptions, visibleInventory.length]
+  );
+  const shopDraftChanges = useMemo(() => {
+    if (!shop || !itemIdField) {
+      return [];
+    }
+
+    const finalItemIds: number[] = [];
+    for (const item of visibleInventory) {
+      const parsedValue = parseEditableIntegerDraft(
+        itemIdDrafts[item.slot] ?? item.itemId.toString(),
+        itemIdField.options
+      );
+      if (parsedValue === null) {
+        return [];
+      }
+
+      finalItemIds.push(parsedValue);
+    }
+
+    for (const row of addedInventoryRows) {
+      if (row.parsedItemId === null) {
+        return [];
+      }
+
+      finalItemIds.push(row.parsedItemId);
+    }
+
+    if (areNumberArraysEqual(finalItemIds, shop.inventory.map((item) => item.itemId))) {
+      return [];
+    }
+
+    return [
+      {
+        field: shopSetInventoryFieldName,
+        slot: 1,
+        value: finalItemIds.join(',')
+      }
+    ];
+  }, [addedInventoryRows, itemIdDrafts, itemIdField, shop, visibleInventory]);
+  const invalidExistingDraftCount = visibleInventory.filter((item) => {
+    const parsedValue = parseEditableIntegerDraft(
+      itemIdDrafts[item.slot] ?? item.itemId.toString(),
+      itemIdField?.options
     );
-  }, [shop?.inventory, shop?.shopId]);
+    return !isIntegerDraftInFieldRange(parsedValue, itemIdField);
+  }).length;
+  const invalidAddedDraftCount = addedInventoryRows.filter(
+    (row) => !isIntegerDraftInFieldRange(row.parsedItemId, itemIdField)
+  ).length;
+  const changedSlotCount = shopDraftChanges.length;
+  const hasInvalidShopDrafts = invalidExistingDraftCount + invalidAddedDraftCount > 0;
+  const canSaveShopDrafts =
+    shop !== null &&
+    editSession !== null &&
+    canEditShops &&
+    !isShopUpdating &&
+    changedSlotCount > 0 &&
+    !hasInvalidShopDrafts;
+  const parsedNewItemId = parseEditableIntegerDraft(newItemIdDraft, itemIdField?.options);
+  const newItemInRange =
+    parsedNewItemId !== null &&
+    (itemIdField?.minimumValue === null ||
+      itemIdField?.minimumValue === undefined ||
+      parsedNewItemId >= itemIdField.minimumValue) &&
+    (itemIdField?.maximumValue === null ||
+      itemIdField?.maximumValue === undefined ||
+      parsedNewItemId <= itemIdField.maximumValue);
+  const canAddInventoryRow =
+    shop !== null &&
+    editSession !== null &&
+    canEditShops &&
+    !isShopUpdating &&
+    itemIdField !== undefined &&
+    newItemInRange;
+  useEffect(() => {
+    if (!shop || hasInvalidShopDrafts || changedSlotCount > 0) {
+      return;
+    }
 
-  const changedSlotCount =
-    shop?.inventory.filter((item) => itemIdDrafts[item.slot] !== item.itemId.toString()).length ?? 0;
+    const currentDraft = inventoryDraftsByShopId[shop.shopId];
+    if (!currentDraft) {
+      return;
+    }
+
+    const hasDefaultExistingItems = shop.inventory.every(
+      (item) => (currentDraft.itemIdDrafts[item.slot] ?? item.itemId.toString()) === item.itemId.toString()
+    );
+    const hasDefaultRowState =
+      currentDraft.addedRows.length === 0 &&
+      currentDraft.removedSlots.length === 0 &&
+      currentDraft.newItemIdDraft === defaultShopDraft.newItemIdDraft &&
+      hasDefaultExistingItems;
+    if (!hasDefaultRowState) {
+      return;
+    }
+
+    setInventoryDraftsByShopId((currentDrafts) => {
+      const nextDrafts = { ...currentDrafts };
+      delete nextDrafts[shop.shopId];
+      return nextDrafts;
+    });
+  }, [
+    changedSlotCount,
+    defaultShopDraft.newItemIdDraft,
+    hasInvalidShopDrafts,
+    inventoryDraftsByShopId,
+    shop
+  ]);
+  const handleConfirmOpenItem = useCallback(() => {
+    if (pendingOpenItem) {
+      onOpenItem(pendingOpenItem.itemId);
+      setPendingOpenItem(null);
+    }
+  }, [onOpenItem, pendingOpenItem]);
 
   return (
     <aside aria-label="Selected shop provenance" className="shop-inspector">
@@ -11464,23 +12473,54 @@ function SelectedShopPanel({
             <div className="shop-inventory-header">
               <strong>Inventory</strong>
               <span className="draft-action-summary">
-                {changedSlotCount} changed / {shop.inventory.length} slots
+                {changedSlotCount} changed / {visibleInventory.length + addedInventoryRows.length} slots
               </span>
             </div>
 
-            {!editSession ? (
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSaveShopDrafts}
+                  onClick={async () => {
+                    const didSave = await onUpdateShopInventoryItems(shop.shopId, shopDraftChanges);
+                    if (didSave) {
+                      setInventoryDraftsByShopId((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, shop.shopId)
+                      );
+                    }
+                  }}
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isShopUpdating ? 'Saving' : 'Save Changes'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={isShopUpdating}
+                  onClick={() => cancelActiveEditSession(resetShopDrafts)}
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">
+                  {hasInvalidShopDrafts ? 'Fix invalid inventory rows.' : `${changedSlotCount} pending inventory change${changedSlotCount === 1 ? '' : 's'}.`}
+                </span>
+              </div>
+            ) : (
               <button
                 className="secondary-button"
-                disabled={!canEditShops || isEditStarting || shop.inventory.length === 0}
+                disabled={!canEditShops || isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
                 <Pencil aria-hidden="true" size={16} />
                 <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
               </button>
-            ) : null}
+            )}
 
-            {shop.inventory.length > 0 ? (
+            {visibleInventory.length + addedInventoryRows.length > 0 ? (
               <div className="shop-inventory-editor-grid">
                 <div className="shop-inventory-editor-row shop-inventory-editor-heading">
                   <span>Slot</span>
@@ -11489,14 +12529,13 @@ function SelectedShopPanel({
                   <span>Stock</span>
                   <span>Actions</span>
                 </div>
-                {shop.inventory.map((item) => {
+                {visibleInventory.map((item) => {
                   const draftValue = itemIdDrafts[item.slot] ?? item.itemId.toString();
                   const draftState = getIntegerDraftState(draftValue, item.itemId, itemIdField);
-                  const canSubmitSlot =
-                    editSession !== null &&
-                    draftState.canSubmit &&
-                    draftState.parsedValue !== null &&
-                    !isShopUpdating;
+                  const draftError =
+                    isIntegerDraftInFieldRange(draftState.parsedValue, itemIdField)
+                      ? null
+                      : getIntegerDraftError(draftValue);
 
                   return (
                     <div
@@ -11514,9 +12553,12 @@ function SelectedShopPanel({
                             ariaLabel={`Shop slot ${item.slot} item`}
                             disabled={!canEditShops || editSession === null || isShopUpdating}
                             onChange={(value) =>
-                              setItemIdDrafts((currentDrafts) => ({
-                                ...currentDrafts,
-                                [item.slot]: value
+                              updateCurrentShopDraft((currentDraft) => ({
+                                ...currentDraft,
+                                itemIdDrafts: {
+                                  ...currentDraft.itemIdDrafts,
+                                  [item.slot]: value
+                                }
                               }))
                             }
                             options={addDraftFallbackOption(
@@ -11533,15 +12575,19 @@ function SelectedShopPanel({
                             max={itemIdField?.maximumValue ?? undefined}
                             min={itemIdField?.minimumValue ?? undefined}
                             onChange={(event) =>
-                              setItemIdDrafts((currentDrafts) => ({
-                                ...currentDrafts,
-                                [item.slot]: event.target.value
+                              updateCurrentShopDraft((currentDraft) => ({
+                                ...currentDraft,
+                                itemIdDrafts: {
+                                  ...currentDraft.itemIdDrafts,
+                                  [item.slot]: event.target.value
+                                }
                               }))
                             }
                             type="number"
                             value={draftValue}
                           />
                         )}
+                        {draftError ? <small className="editable-field-error">{draftError}</small> : null}
                       </label>
                       <label className="path-field shop-read-only-field">
                         <span>{shop.currency}</span>
@@ -11562,57 +12608,135 @@ function SelectedShopPanel({
                             className="secondary-button compact-button shop-item-link"
                             onClick={(event) => {
                               event.stopPropagation();
-                              onOpenItem(item.itemId);
+                              setPendingOpenItem({ itemId: item.itemId, itemName: item.itemName });
                             }}
                             title="Open in Items"
                             type="button"
                           >
                             <ExternalLink aria-hidden="true" size={14} />
-                            <span>Open</span>
+                            <span>Open in Items</span>
                           </button>
                         ) : (
                           <span className="path-status-muted">Missing metadata</span>
                         )}
                         {editSession ? (
-                          <>
-                            <button
-                              aria-label={`Save shop slot ${item.slot}`}
-                              className="primary-button compact-button"
-                              disabled={!canSubmitSlot}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                onUpdateShopInventoryItem(
-                                  shop.shopId,
-                                  item.slot,
-                                  shopItemIdFieldName,
-                                  draftState.parsedValue!.toString()
-                                );
-                              }}
-                              type="button"
-                            >
-                              <Save aria-hidden="true" size={14} />
-                              <span>{isShopUpdating ? 'Saving' : 'Save'}</span>
-                            </button>
-                            <button
-                              aria-label={`Cancel shop slot ${item.slot}`}
-                              className="danger-button compact-button"
-                              disabled={isShopUpdating}
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                cancelActiveEditSession(() =>
-                                  setItemIdDrafts((currentDrafts) => ({
-                                    ...currentDrafts,
-                                    [item.slot]: item.itemId.toString()
-                                  }))
-                                );
-                              }}
-                              type="button"
-                            >
-                              <X aria-hidden="true" size={14} />
-                              <span>Cancel</span>
-                            </button>
-                          </>
+                          <button
+                            aria-label={`Remove shop slot ${item.slot}`}
+                            className="secondary-button icon-button danger-icon-button"
+                            disabled={!canEditShops || isShopUpdating}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              updateCurrentShopDraft((currentDraft) =>
+                                currentDraft.removedSlots.includes(item.slot)
+                                  ? currentDraft
+                                  : {
+                                      ...currentDraft,
+                                      removedSlots: [...currentDraft.removedSlots, item.slot]
+                                    }
+                              );
+                            }}
+                            title="Remove shop slot"
+                            type="button"
+                          >
+                            <Trash2 aria-hidden="true" size={16} />
+                          </button>
                         ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+                {addedInventoryRows.map((item) => {
+                  const draftError =
+                    isIntegerDraftInFieldRange(item.parsedItemId, itemIdField)
+                      ? null
+                      : getIntegerDraftError(item.itemIdDraft);
+
+                  return (
+                    <div
+                      className="shop-inventory-editor-row shop-inventory-editor-row-new"
+                      key={`new-shop-item-${item.draftId}`}
+                    >
+                      <span className="shop-slot-index">#{item.displaySlot}</span>
+                      <label className="path-field shop-inventory-item-field">
+                        <span>{itemIdField?.label ?? 'Item ID'}</span>
+                        {hasItemIdOptions ? (
+                          <SearchableOptionInput
+                            ariaLabel={`New shop slot ${item.displaySlot} item`}
+                            disabled={!canEditShops || editSession === null || isShopUpdating}
+                            onChange={(value) =>
+                              updateCurrentShopDraft((currentDraft) => ({
+                                ...currentDraft,
+                                addedRows: currentDraft.addedRows.map((row) =>
+                                  row.draftId === item.draftId
+                                    ? { ...row, itemIdDraft: value }
+                                    : row
+                                )
+                              }))
+                            }
+                            options={addDraftFallbackOption(
+                              itemIdOptions,
+                              item.itemIdDraft,
+                              formatShopItemFallbackOption(item.itemIdDraft)
+                            )}
+                            value={item.itemIdDraft}
+                          />
+                        ) : (
+                          <input
+                            aria-label={`New shop slot ${item.displaySlot} item`}
+                            disabled={!canEditShops || editSession === null || isShopUpdating}
+                            max={itemIdField?.maximumValue ?? undefined}
+                            min={itemIdField?.minimumValue ?? undefined}
+                            onChange={(event) =>
+                              updateCurrentShopDraft((currentDraft) => ({
+                                ...currentDraft,
+                                addedRows: currentDraft.addedRows.map((row) =>
+                                  row.draftId === item.draftId
+                                    ? { ...row, itemIdDraft: event.target.value }
+                                    : row
+                                )
+                              }))
+                            }
+                            type="number"
+                            value={item.itemIdDraft}
+                          />
+                        )}
+                        {draftError ? <small className="editable-field-error">{draftError}</small> : null}
+                      </label>
+                      <label className="path-field shop-read-only-field">
+                        <span>{shop.currency}</span>
+                        <input
+                          aria-label={`New shop slot ${item.displaySlot} price`}
+                          disabled
+                          value={item.price}
+                        />
+                      </label>
+                      <label className="path-field shop-read-only-field">
+                        <span>Stock</span>
+                        <input
+                          aria-label={`New shop slot ${item.displaySlot} stock`}
+                          disabled
+                          value="None"
+                        />
+                      </label>
+                      <div className="shop-inventory-row-actions">
+                        <span className="path-status-muted">{item.itemName}</span>
+                        <button
+                          aria-label={`Remove new shop slot ${item.displaySlot}`}
+                          className="secondary-button icon-button danger-icon-button"
+                          disabled={isShopUpdating}
+                          onClick={() =>
+                            updateCurrentShopDraft((currentDraft) => ({
+                              ...currentDraft,
+                              addedRows: currentDraft.addedRows.filter(
+                                (row) => row.draftId !== item.draftId
+                              )
+                            }))
+                          }
+                          title="Remove new shop slot"
+                          type="button"
+                        >
+                          <Trash2 aria-hidden="true" size={16} />
+                        </button>
                       </div>
                     </div>
                   );
@@ -11621,17 +12745,97 @@ function SelectedShopPanel({
             ) : (
               <p className="empty-copy">No inventory slots.</p>
             )}
+            {editSession ? (
+              <div className="shop-inventory-add-row">
+                <label className="path-field shop-inventory-item-field">
+                  <span>New item</span>
+                  {hasItemIdOptions ? (
+                    <SearchableOptionInput
+                      ariaLabel="New shop inventory item"
+                      disabled={!canEditShops || isShopUpdating}
+                      onChange={(value) =>
+                        updateCurrentShopDraft((currentDraft) => ({
+                          ...currentDraft,
+                          newItemIdDraft: value
+                        }))
+                      }
+                      options={addDraftFallbackOption(
+                        itemIdOptions,
+                        newItemIdDraft,
+                        formatShopItemFallbackOption(newItemIdDraft)
+                      )}
+                      value={newItemIdDraft}
+                    />
+                  ) : (
+                    <input
+                      aria-label="New shop inventory item"
+                      disabled={!canEditShops || isShopUpdating}
+                      max={itemIdField?.maximumValue ?? undefined}
+                      min={itemIdField?.minimumValue ?? undefined}
+                      onChange={(event) =>
+                        updateCurrentShopDraft((currentDraft) => ({
+                          ...currentDraft,
+                          newItemIdDraft: event.target.value
+                        }))
+                      }
+                      type="number"
+                      value={newItemIdDraft}
+                    />
+                  )}
+                </label>
+                <button
+                  aria-label="Add shop inventory row"
+                  className="secondary-button learnset-add-button"
+                  disabled={!canAddInventoryRow}
+                  onClick={() => {
+                    if (parsedNewItemId !== null) {
+                      updateCurrentShopDraft((currentDraft) => ({
+                        ...currentDraft,
+                        addedRows: [
+                          ...currentDraft.addedRows,
+                          {
+                            draftId: currentDraft.nextAddedRowId,
+                            itemIdDraft: parsedNewItemId.toString()
+                          }
+                        ],
+                        newItemIdDraft: (itemIdOptions[0]?.value ?? 0).toString(),
+                        nextAddedRowId: currentDraft.nextAddedRowId + 1
+                      }));
+                    }
+                  }}
+                  type="button"
+                >
+                  <Plus aria-hidden="true" size={16} />
+                  <span>Add Row</span>
+                </button>
+              </div>
+            ) : null}
           </div>
         </>
       ) : (
         <p className="empty-copy">No shop selected.</p>
       )}
+      {pendingOpenItem ? (
+        <ShopItemNavigationModal
+          itemName={pendingOpenItem.itemName}
+          onCancel={() => setPendingOpenItem(null)}
+          onConfirm={handleConfirmOpenItem}
+        />
+      ) : null}
     </aside>
   );
 }
 
 function formatShopItemFallbackOption(value: string) {
   return `Item ${value}`;
+}
+
+function isBadgeShopRecord(shop: ShopRecord) {
+  return (
+    shop.inventoryCount === 9 &&
+    (shop.name.toLocaleLowerCase().includes('0-8 badges') ||
+      shop.inventoryLabel.toLocaleLowerCase().includes('badge'))
+  );
 }
 
 function EncountersSection({
@@ -11665,7 +12869,7 @@ function EncountersSection({
     tableId: string,
     slot: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   searchText: string;
   selectedTableId: string | null;
   workflow: EncountersWorkflow | null;
@@ -11835,11 +13039,13 @@ function SelectedEncounterPanel({
     tableId: string,
     slot: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   selectedSlot: number | null;
   table: EncounterTableRecord | null;
 }) {
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftsBySlotKey, setDraftsBySlotKey] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const encounterFields = useMemo(
     () =>
@@ -11878,6 +13084,11 @@ function SelectedEncounterPanel({
       table?.tableId
     ]
   );
+  const encounterDraftKey =
+    table && encounterSlot ? `${table.tableId}:${encounterSlot.slot}` : null;
+  const drafts = encounterDraftKey
+    ? draftsBySlotKey[encounterDraftKey] ?? encounterDraftDefaults
+    : {};
   const encounterDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -11887,6 +13098,7 @@ function SelectedEncounterPanel({
       ),
     [drafts, encounterFields, encounterSlot]
   );
+  useRegisterEditorDraftDirty('encounters', countFieldDraftRecords(draftsBySlotKey) > 0);
   const canSaveEncounterDrafts =
     table !== null &&
     encounterSlot !== null &&
@@ -11909,8 +13121,14 @@ function SelectedEncounterPanel({
     targetWeatherTableIds.length > 0;
 
   useEffect(() => {
-    setDrafts(encounterDraftDefaults);
-  }, [encounterDraftDefaults]);
+    if (!encounterDraftKey) {
+      return;
+    }
+
+    setDraftsBySlotKey((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, encounterDraftKey, encounterDraftDefaults)
+    );
+  }, [encounterDraftDefaults, encounterDraftKey]);
 
   return (
     <aside aria-label="Selected encounter provenance" className="encounter-inspector">
@@ -12088,12 +13306,24 @@ function SelectedEncounterPanel({
                               }}
                               idPrefix="encounter-field"
                               key={field.field}
-                              onChange={(value) =>
-                                setDrafts((currentDrafts) => ({
-                                  ...currentDrafts,
+                              onChange={(value) => {
+                                if (!encounterDraftKey) {
+                                  return;
+                                }
+
+                                const nextDrafts = {
+                                  ...drafts,
                                   [field.field]: value
-                                }))
-                              }
+                                };
+                                setDraftsBySlotKey((currentDrafts) =>
+                                  setFieldDraftRecord(
+                                    currentDrafts,
+                                    encounterDraftKey,
+                                    nextDrafts,
+                                    encounterDraftDefaults
+                                  )
+                                );
+                              }}
                             />
                           );
                         })}
@@ -12106,18 +13336,25 @@ function SelectedEncounterPanel({
                     <button
                       className="primary-button"
                       disabled={!canSaveEncounterDrafts}
-                      onClick={() =>
-                        table &&
-                        encounterSlot &&
-                        onUpdateEncounterSlotFields(
+                      onClick={async () => {
+                        if (!table || !encounterSlot || !encounterDraftKey) {
+                          return;
+                        }
+
+                        const didSave = await onUpdateEncounterSlotFields(
                           table.tableId,
                           encounterSlot.slot,
                           encounterDraftSummary.changedFields.map((change) => ({
                             field: change.field,
                             value: change.value
                           }))
-                        )
-                      }
+                        );
+                        if (didSave) {
+                          setDraftsBySlotKey((currentDrafts) =>
+                            deleteFieldDraftRecord(currentDrafts, encounterDraftKey)
+                          );
+                        }
+                      }}
                       type="button"
                     >
                       <Save aria-hidden="true" size={16} />
@@ -12126,9 +13363,7 @@ function SelectedEncounterPanel({
                     <button
                       className="danger-button"
                       disabled={isEncounterUpdating}
-                      onClick={() =>
-                        cancelActiveEditSession(() => setDrafts(encounterDraftDefaults))
-                      }
+                      onClick={() => cancelActiveEditSession(() => setDraftsBySlotKey({}))}
                       type="button"
                     >
                       <X aria-hidden="true" size={16} />
@@ -12193,7 +13428,7 @@ function RaidBattlesSection({
     tableId: string,
     slot: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   searchText: string;
   selectedTableId: string | null;
   workflow: RaidBattlesWorkflow | null;
@@ -12379,11 +13614,13 @@ function SelectedRaidBattlePanel({
     tableId: string,
     slot: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   selectedSlot: number | null;
   table: RaidBattleTableRecord | null;
 }) {
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftsBySlotKey, setDraftsBySlotKey] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const raidBattleFields = useMemo(
     () =>
@@ -12425,6 +13662,10 @@ function SelectedRaidBattlePanel({
       table?.tableId
     ]
   );
+  const raidBattleDraftKey = table && battleSlot ? `${table.tableId}:${battleSlot.slot}` : null;
+  const drafts = raidBattleDraftKey
+    ? draftsBySlotKey[raidBattleDraftKey] ?? raidBattleDraftDefaults
+    : {};
   const raidBattleDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -12434,6 +13675,7 @@ function SelectedRaidBattlePanel({
       ),
     [battleSlot, drafts, raidBattleFields]
   );
+  useRegisterEditorDraftDirty('raidBattles', countFieldDraftRecords(draftsBySlotKey) > 0);
   const canSaveRaidBattleDrafts =
     table !== null &&
     battleSlot !== null &&
@@ -12444,8 +13686,14 @@ function SelectedRaidBattlePanel({
     raidBattleDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
-    setDrafts(raidBattleDraftDefaults);
-  }, [raidBattleDraftDefaults]);
+    if (!raidBattleDraftKey) {
+      return;
+    }
+
+    setDraftsBySlotKey((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, raidBattleDraftKey, raidBattleDraftDefaults)
+    );
+  }, [raidBattleDraftDefaults, raidBattleDraftKey]);
 
   return (
     <aside aria-label="Selected raid battle provenance" className="encounter-inspector">
@@ -12615,12 +13863,24 @@ function SelectedRaidBattlePanel({
                               }}
                               idPrefix="raid-battle-field"
                               key={field.field}
-                              onChange={(value) =>
-                                setDrafts((currentDrafts) => ({
-                                  ...currentDrafts,
+                              onChange={(value) => {
+                                if (!raidBattleDraftKey) {
+                                  return;
+                                }
+
+                                const nextDrafts = {
+                                  ...drafts,
                                   [field.field]: value
-                                }))
-                              }
+                                };
+                                setDraftsBySlotKey((currentDrafts) =>
+                                  setFieldDraftRecord(
+                                    currentDrafts,
+                                    raidBattleDraftKey,
+                                    nextDrafts,
+                                    raidBattleDraftDefaults
+                                  )
+                                );
+                              }}
                             />
                           );
                         })}
@@ -12633,18 +13893,25 @@ function SelectedRaidBattlePanel({
                     <button
                       className="primary-button"
                       disabled={!canSaveRaidBattleDrafts}
-                      onClick={() =>
-                        table &&
-                        battleSlot &&
-                        onUpdateRaidBattleSlotFields(
+                      onClick={async () => {
+                        if (!table || !battleSlot || !raidBattleDraftKey) {
+                          return;
+                        }
+
+                        const didSave = await onUpdateRaidBattleSlotFields(
                           table.tableId,
                           battleSlot.slot,
                           raidBattleDraftSummary.changedFields.map((change) => ({
                             field: change.field,
                             value: change.value
                           }))
-                        )
-                      }
+                        );
+                        if (didSave) {
+                          setDraftsBySlotKey((currentDrafts) =>
+                            deleteFieldDraftRecord(currentDrafts, raidBattleDraftKey)
+                          );
+                        }
+                      }}
                       type="button"
                     >
                       <Save aria-hidden="true" size={16} />
@@ -12653,9 +13920,7 @@ function SelectedRaidBattlePanel({
                     <button
                       className="danger-button"
                       disabled={isRaidBattleUpdating}
-                      onClick={() =>
-                        cancelActiveEditSession(() => setDrafts(raidBattleDraftDefaults))
-                      }
+                      onClick={() => cancelActiveEditSession(() => setDraftsBySlotKey({}))}
                       type="button"
                     >
                       <X aria-hidden="true" size={16} />
@@ -12720,7 +13985,7 @@ function RaidRewardsSection({
     tableId: string,
     slot: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   searchText: string;
   selectedTableId: string | null;
   workflow: RaidRewardsWorkflow | null;
@@ -12888,12 +14153,14 @@ function SelectedRaidRewardPanel({
     tableId: string,
     slot: number,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   reward: RaidRewardItemRecord | null;
   selectedSlot: number | null;
   table: RaidRewardTableRecord | null;
 }) {
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftsBySlotKey, setDraftsBySlotKey] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const raidRewardFields = useMemo(
     () =>
@@ -12915,6 +14182,10 @@ function SelectedRaidRewardPanel({
         : {},
     [raidRewardFields, reward?.itemId, reward?.slot, reward?.values.join('|'), table?.tableId]
   );
+  const raidRewardDraftKey = table && reward ? `${table.tableId}:${reward.slot}` : null;
+  const drafts = raidRewardDraftKey
+    ? draftsBySlotKey[raidRewardDraftKey] ?? raidRewardDraftDefaults
+    : {};
   const raidRewardDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -12924,6 +14195,7 @@ function SelectedRaidRewardPanel({
       ),
     [drafts, raidRewardFields, reward]
   );
+  useRegisterEditorDraftDirty('raidRewards', countFieldDraftRecords(draftsBySlotKey) > 0);
   const canSaveRaidRewardDrafts =
     table !== null &&
     reward !== null &&
@@ -12934,8 +14206,14 @@ function SelectedRaidRewardPanel({
     raidRewardDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
-    setDrafts(raidRewardDraftDefaults);
-  }, [raidRewardDraftDefaults]);
+    if (!raidRewardDraftKey) {
+      return;
+    }
+
+    setDraftsBySlotKey((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, raidRewardDraftKey, raidRewardDraftDefaults)
+    );
+  }, [raidRewardDraftDefaults, raidRewardDraftKey]);
 
   return (
     <aside aria-label="Selected raid reward provenance" className="encounter-inspector">
@@ -13055,12 +14333,24 @@ function SelectedRaidRewardPanel({
                               field={field}
                               idPrefix="raid-reward-field"
                               key={field.field}
-                              onChange={(value) =>
-                                setDrafts((currentDrafts) => ({
-                                  ...currentDrafts,
+                              onChange={(value) => {
+                                if (!raidRewardDraftKey) {
+                                  return;
+                                }
+
+                                const nextDrafts = {
+                                  ...drafts,
                                   [field.field]: value
-                                }))
-                              }
+                                };
+                                setDraftsBySlotKey((currentDrafts) =>
+                                  setFieldDraftRecord(
+                                    currentDrafts,
+                                    raidRewardDraftKey,
+                                    nextDrafts,
+                                    raidRewardDraftDefaults
+                                  )
+                                );
+                              }}
                             />
                           );
                         })}
@@ -13073,18 +14363,25 @@ function SelectedRaidRewardPanel({
                     <button
                       className="primary-button"
                       disabled={!canSaveRaidRewardDrafts}
-                      onClick={() =>
-                        table &&
-                        reward &&
-                        onUpdateRaidRewardFields(
+                      onClick={async () => {
+                        if (!table || !reward || !raidRewardDraftKey) {
+                          return;
+                        }
+
+                        const didSave = await onUpdateRaidRewardFields(
                           table.tableId,
                           reward.slot,
                           raidRewardDraftSummary.changedFields.map((change) => ({
                             field: change.field,
                             value: change.value
                           }))
-                        )
-                      }
+                        );
+                        if (didSave) {
+                          setDraftsBySlotKey((currentDrafts) =>
+                            deleteFieldDraftRecord(currentDrafts, raidRewardDraftKey)
+                          );
+                        }
+                      }}
                       type="button"
                     >
                       <Save aria-hidden="true" size={16} />
@@ -13093,9 +14390,7 @@ function SelectedRaidRewardPanel({
                     <button
                       className="danger-button"
                       disabled={isRaidRewardUpdating}
-                      onClick={() =>
-                        cancelActiveEditSession(() => setDrafts(raidRewardDraftDefaults))
-                      }
+                      onClick={() => cancelActiveEditSession(() => setDraftsBySlotKey({}))}
                       type="button"
                     >
                       <X aria-hidden="true" size={16} />
@@ -13194,7 +14489,7 @@ function PlacementSection({
   onUpdatePlacementObjectFields: (
     objectId: string,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   searchText: string;
   selectedObjectId: string | null;
   workflow: PlacementWorkflow | null;
@@ -13345,10 +14640,12 @@ function SelectedPlacementPanel({
   onUpdatePlacementObjectFields: (
     objectId: string,
     changes: Array<{ field: string; value: string }>
-  ) => void;
+  ) => Promise<boolean>;
   placedObject: PlacedObjectRecord | null;
 }) {
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftsByObjectId, setDraftsByObjectId] = useState<
+    Record<string, Record<string, string>>
+  >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
   const visibleFields = editableFields.filter((field) =>
     placedObject ? isPlacementFieldVisible(placedObject, field.field) : false
@@ -13389,6 +14686,9 @@ function SelectedPlacementPanel({
       visibleFields.map((field) => field.field).join('|')
     ]
   );
+  const drafts = placedObject
+    ? draftsByObjectId[placedObject.objectId] ?? placementDraftDefaults
+    : {};
   const placementDraftSummary = useMemo(
     () =>
       getPlacementDraftSummary(
@@ -13398,6 +14698,7 @@ function SelectedPlacementPanel({
       ),
     [drafts, placedObject, visibleFields]
   );
+  useRegisterEditorDraftDirty('placement', countFieldDraftRecords(draftsByObjectId) > 0);
   const canSavePlacementDrafts =
     placedObject !== null &&
     editSession !== null &&
@@ -13407,8 +14708,14 @@ function SelectedPlacementPanel({
     placementDraftSummary.invalidFields.length === 0;
 
   useEffect(() => {
-    setDrafts(placementDraftDefaults);
-  }, [placementDraftDefaults]);
+    if (!placedObject) {
+      return;
+    }
+
+    setDraftsByObjectId((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, placedObject.objectId, placementDraftDefaults)
+    );
+  }, [placedObject, placementDraftDefaults]);
 
   return (
     <aside aria-label="Selected placement object provenance" className="encounter-inspector">
@@ -13514,12 +14821,20 @@ function SelectedPlacementPanel({
                                 isPlacementUpdating
                               }
                               id={`placement-field-${field.field}`}
-                              onChange={(value) =>
-                                setDrafts((currentDrafts) => ({
-                                  ...currentDrafts,
+                              onChange={(value) => {
+                                const nextDrafts = {
+                                  ...drafts,
                                   [field.field]: value
-                                }))
-                              }
+                                };
+                                setDraftsByObjectId((currentDrafts) =>
+                                  setFieldDraftRecord(
+                                    currentDrafts,
+                                    placedObject.objectId,
+                                    nextDrafts,
+                                    placementDraftDefaults
+                                  )
+                                );
+                              }}
                               options={addDraftFallbackOption(
                                 fieldOptions,
                                 draftValue,
@@ -13539,12 +14854,20 @@ function SelectedPlacementPanel({
                               id={`placement-field-${field.field}`}
                               max={field.maximumValue}
                               min={field.minimumValue}
-                              onChange={(event) =>
-                                setDrafts((currentDrafts) => ({
-                                  ...currentDrafts,
+                              onChange={(event) => {
+                                const nextDrafts = {
+                                  ...drafts,
                                   [field.field]: event.target.value
-                                }))
-                              }
+                                };
+                                setDraftsByObjectId((currentDrafts) =>
+                                  setFieldDraftRecord(
+                                    currentDrafts,
+                                    placedObject.objectId,
+                                    nextDrafts,
+                                    placementDraftDefaults
+                                  )
+                                );
+                              }}
                               step={field.valueKind === 'integer' ? 1 : 'any'}
                               title={getEditableFieldHelp(field)}
                               type="number"
@@ -13572,16 +14895,24 @@ function SelectedPlacementPanel({
                 <button
                   className="primary-button"
                   disabled={!canSavePlacementDrafts}
-                  onClick={() =>
-                    placedObject &&
-                    onUpdatePlacementObjectFields(
+                  onClick={async () => {
+                    if (!placedObject) {
+                      return;
+                    }
+
+                    const didSave = await onUpdatePlacementObjectFields(
                       placedObject.objectId,
                       placementDraftSummary.changedFields.map((change) => ({
                         field: change.field,
                         value: change.value
                       }))
-                    )
-                  }
+                    );
+                    if (didSave) {
+                      setDraftsByObjectId((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, placedObject.objectId)
+                      );
+                    }
+                  }}
                   type="button"
                 >
                   <Save aria-hidden="true" size={16} />
@@ -13590,9 +14921,7 @@ function SelectedPlacementPanel({
                 <button
                   className="danger-button"
                   disabled={isPlacementUpdating}
-                  onClick={() =>
-                    cancelActiveEditSession(() => setDrafts(placementDraftDefaults))
-                  }
+                  onClick={() => cancelActiveEditSession(() => setDraftsByObjectId({}))}
                   type="button"
                 >
                   <X aria-hidden="true" size={16} />
@@ -14200,7 +15529,7 @@ function RoyalCandySection({
   onSearchChange: (value: string) => void;
   onSelectCheck: (checkId: string | null) => void;
   onSelectWorkflow: (workflowId: string | null) => void;
-  onStageWorkflow: (workflowId: string) => void;
+  onStageWorkflow: (workflowId: string, levelCaps?: RoyalCandyLevelCapSelection[]) => void;
   searchText: string;
   selectedCheckId: string | null;
   selectedWorkflowId: string | null;
@@ -14282,73 +15611,44 @@ function RoyalCandySection({
         </div>
 
         {workflow ? (
-          <div className="flagwork-layout">
-            <div className="flagwork-stack">
-              <div className="exefs-table" role="table" aria-label="Royal Candy workflows">
-                <div className="exefs-row royal-candy-workflow-row exefs-row-heading" role="row">
-                  <span role="columnheader">Workflow</span>
-                  <span role="columnheader">Status</span>
-                  <span role="columnheader">Mode</span>
-                  <span role="columnheader">Item</span>
-                  <span role="columnheader">Target</span>
-                </div>
-                {filteredWorkflows.map((candidate) => (
-                  <button
-                    className={`exefs-row royal-candy-workflow-row ${
-                      selectedWorkflow?.workflowId === candidate.workflowId
-                        ? 'exefs-row-selected'
-                        : ''
-                    }`}
-                    key={candidate.workflowId}
-                    onClick={() => onSelectWorkflow(candidate.workflowId)}
-                    role="row"
-                    type="button"
-                  >
-                    <span role="cell">{candidate.name}</span>
-                    <span role="cell">
-                      <span className={`status-pill ${getExeFsStatusClassName(candidate.status)}`}>
-                        {candidate.status}
-                      </span>
-                    </span>
-                    <span role="cell">{candidate.mode}</span>
-                    <span role="cell">
-                      {candidate.itemId} from {candidate.templateItemId}
-                    </span>
-                    <span role="cell">{candidate.target}</span>
-                  </button>
-                ))}
+          <div className="royal-candy-layout">
+            <div
+              className="exefs-table royal-candy-workflow-table"
+              role="table"
+              aria-label="Royal Candy workflows"
+            >
+              <div className="exefs-row royal-candy-workflow-row exefs-row-heading" role="row">
+                <span role="columnheader">Workflow</span>
+                <span role="columnheader">Status</span>
+                <span role="columnheader">Mode</span>
+                <span role="columnheader">Item</span>
+                <span role="columnheader">Target</span>
               </div>
-
-              <div className="exefs-table" role="table" aria-label="Royal Candy preflight checks">
-                <div className="exefs-row royal-candy-check-row exefs-row-heading" role="row">
-                  <span role="columnheader">Check</span>
-                  <span role="columnheader">Status</span>
-                  <span role="columnheader">Area</span>
-                  <span role="columnheader">Target</span>
-                  <span role="columnheader">Message</span>
-                </div>
-                {visibleChecks.map((check) => (
-                  <button
-                    className={`exefs-row royal-candy-check-row ${
-                      selectedCheck?.checkId === check.checkId ? 'exefs-row-selected' : ''
-                    }`}
-                    key={check.checkId}
-                    onClick={() => onSelectCheck(check.checkId)}
-                    role="row"
-                    type="button"
-                  >
-                    <span role="cell">{check.checkId.split(':').pop()}</span>
-                    <span role="cell">
-                      <span className={`status-pill ${getExeFsStatusClassName(check.status)}`}>
-                        {check.status}
-                      </span>
+              {filteredWorkflows.map((candidate) => (
+                <button
+                  className={`exefs-row royal-candy-workflow-row ${
+                    selectedWorkflow?.workflowId === candidate.workflowId
+                      ? 'exefs-row-selected'
+                      : ''
+                  }`}
+                  key={candidate.workflowId}
+                  onClick={() => onSelectWorkflow(candidate.workflowId)}
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{candidate.name}</span>
+                  <span role="cell">
+                    <span className={`status-pill ${getExeFsStatusClassName(candidate.status)}`}>
+                      {formatRoyalCandyStatus(candidate.status)}
                     </span>
-                    <span role="cell">{check.area}</span>
-                    <span role="cell">{check.target}</span>
-                    <span role="cell">{check.message}</span>
-                  </button>
-                ))}
-              </div>
+                  </span>
+                  <span role="cell">{formatRoyalCandyMode(candidate.mode)}</span>
+                  <span role="cell">
+                    {candidate.itemId} from {candidate.templateItemId}
+                  </span>
+                  <span role="cell">{candidate.target}</span>
+                </button>
+              ))}
             </div>
 
             <SelectedRoyalCandyPanel
@@ -14364,6 +15664,67 @@ function RoyalCandySection({
               outputs={visibleOutputs}
               selectedWorkflow={selectedWorkflow}
             />
+
+            <div
+              className="exefs-table royal-candy-target-table"
+              role="table"
+              aria-label="Royal Candy checks and planned outputs"
+            >
+              <div className="exefs-row royal-candy-target-row exefs-row-heading" role="row">
+                <span role="columnheader">Type</span>
+                <span role="columnheader">Status</span>
+                <span role="columnheader">Area</span>
+                <span role="columnheader">Target</span>
+                <span role="columnheader">Message</span>
+              </div>
+              <div className="royal-candy-target-section" role="row">
+                <span role="cell">Preflight Checks</span>
+              </div>
+              {visibleChecks.map((check) => (
+                <button
+                  className={`exefs-row royal-candy-target-row ${
+                    selectedCheck?.checkId === check.checkId ? 'exefs-row-selected' : ''
+                  }`}
+                  key={check.checkId}
+                  onClick={() => onSelectCheck(check.checkId)}
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{check.checkId.split(':').pop()}</span>
+                  <span role="cell">
+                    <span className={`status-pill ${getExeFsStatusClassName(check.status)}`}>
+                      {formatRoyalCandyStatus(check.status)}
+                    </span>
+                  </span>
+                  <span role="cell">{check.area}</span>
+                  <span role="cell">{check.target}</span>
+                  <span role="cell">{check.message}</span>
+                </button>
+              ))}
+              <div className="royal-candy-target-section" role="row">
+                <span role="cell">Planned Outputs</span>
+              </div>
+              {visibleOutputs.map((output) => (
+                <div
+                  className="exefs-row royal-candy-target-row royal-candy-output-row"
+                  key={output.outputId}
+                  role="row"
+                >
+                  <span role="cell">{output.outputKind}</span>
+                  <span role="cell">
+                    <span className={`status-pill ${getExeFsStatusClassName(output.status)}`}>
+                      {formatRoyalCandyStatus(output.status)}
+                    </span>
+                  </span>
+                  <span role="cell">{formatSourceLayer(output.provenance.sourceLayer)}</span>
+                  <span role="cell">{output.relativePath}</span>
+                  <span role="cell">
+                    {output.description}
+                    {output.sourceFile !== output.relativePath ? ` Source: ${output.sourceFile}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <p className="empty-copy">
@@ -14398,18 +15759,72 @@ function SelectedRoyalCandyPanel({
   isStaging: boolean;
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
-  onStageWorkflow: (workflowId: string) => void;
+  onStageWorkflow: (workflowId: string, levelCaps?: RoyalCandyLevelCapSelection[]) => void;
   outputs: RoyalCandyOutputRecord[];
   selectedWorkflow: RoyalCandyWorkflowRecord | null;
 }) {
   const provenance = check?.provenance ?? selectedWorkflow?.provenance ?? outputs[0]?.provenance ?? null;
+  const [levelCapInputs, setLevelCapInputs] = useState<Record<number, string>>({});
+  const selectedLevelCapSignature =
+    selectedWorkflow?.levelCaps
+      .map((levelCap) => `${levelCap.slot}:${levelCap.levelCap}`)
+      .join('|') ?? '';
+  const isStoryLimitWorkflow = selectedWorkflow?.workflowId === 'royal-candy-story-limits';
+  const levelCapRows = isStoryLimitWorkflow ? (selectedWorkflow?.levelCaps ?? []) : [];
+  const parsedLevelCaps = levelCapRows.map((levelCap) => {
+    const rawValue = levelCapInputs[levelCap.slot] ?? levelCap.levelCap.toString();
+    const parsedValue = Number.parseInt(rawValue, 10);
+    return {
+      ...levelCap,
+      rawValue,
+      selectedLevelCap: Number.isFinite(parsedValue) ? parsedValue : Number.NaN
+    };
+  });
+  const getLevelCapError = (
+    levelCap: (typeof parsedLevelCaps)[number],
+    previousLevelCap: number
+  ) => {
+    if (!Number.isFinite(levelCap.selectedLevelCap)) {
+      return 'Enter a level cap.';
+    }
+
+    if (
+      levelCap.selectedLevelCap < levelCap.minimumLevelCap ||
+      levelCap.selectedLevelCap > levelCap.maximumLevelCap
+    ) {
+      return `Use Lv. ${levelCap.minimumLevelCap}-${levelCap.maximumLevelCap}.`;
+    }
+
+    if (!Number.isFinite(previousLevelCap)) {
+      return 'Fix the previous cap first.';
+    }
+
+    if (levelCap.selectedLevelCap < previousLevelCap) {
+      return `Must be Lv. ${previousLevelCap} or higher.`;
+    }
+
+    return null;
+  };
+  const hasLevelCapInputError = parsedLevelCaps.some((levelCap, index) => {
+    const previousLevelCap =
+      index === 0 ? levelCap.minimumLevelCap : parsedLevelCaps[index - 1]!.selectedLevelCap;
+    return getLevelCapError(levelCap, previousLevelCap) !== null;
+  });
+  const selectedLevelCaps = parsedLevelCaps.map((levelCap) => ({
+    levelCap: levelCap.selectedLevelCap,
+    slot: levelCap.slot
+  }));
   const canStage =
     selectedWorkflow !== null &&
     (selectedWorkflow.workflowId === 'royal-candy-unlimited' ||
       selectedWorkflow.workflowId === 'royal-candy-story-limits' ||
       selectedWorkflow.workflowId === 'royal-candy-uninstall') &&
+    (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning') &&
+    !hasLevelCapInputError;
+  const canEditLevelCaps =
+    isStoryLimitWorkflow &&
+    selectedWorkflow !== null &&
     (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning');
-  const isCleanupWorkflow = selectedWorkflow?.workflowId === 'royal-candy-uninstall';
   const stagedRoyalCandyEdit = editSession?.pendingEdits.find(
     (edit) => edit.domain === 'workflow.royalCandy'
   );
@@ -14423,8 +15838,27 @@ function SelectedRoyalCandyPanel({
     changePlan.writes.length > 0 &&
     !isChangePlanApplying;
 
+  useEffect(() => {
+    if (!isStoryLimitWorkflow) {
+      setLevelCapInputs({});
+      return;
+    }
+
+    setLevelCapInputs(
+      Object.fromEntries(
+        (selectedWorkflow?.levelCaps ?? []).map((levelCap) => [
+          levelCap.slot,
+          levelCap.levelCap.toString()
+        ])
+      )
+    );
+  }, [isStoryLimitWorkflow, selectedLevelCapSignature, selectedWorkflow?.workflowId]);
+
   return (
-    <aside aria-label="Selected Royal Candy workflow provenance" className="encounter-inspector">
+    <aside
+      aria-label="Selected Royal Candy workflow provenance"
+      className="encounter-inspector royal-candy-inspector"
+    >
       <div className="panel-heading">
         <CheckCircle aria-hidden="true" size={18} />
         <h3>Selected Workflow</h3>
@@ -14439,11 +15873,11 @@ function SelectedRoyalCandyPanel({
             </div>
             <div>
               <dt>Status</dt>
-              <dd>{selectedWorkflow.status}</dd>
+              <dd>{formatRoyalCandyStatus(selectedWorkflow.status)}</dd>
             </div>
             <div>
               <dt>Mode</dt>
-              <dd>{selectedWorkflow.mode}</dd>
+              <dd>{formatRoyalCandyMode(selectedWorkflow.mode)}</dd>
             </div>
             <div>
               <dt>Item</dt>
@@ -14452,12 +15886,16 @@ function SelectedRoyalCandyPanel({
               </dd>
             </div>
             <div>
+              <dt>Target</dt>
+              <dd>{selectedWorkflow.target}</dd>
+            </div>
+            <div>
               <dt>Check</dt>
               <dd>{check?.checkId.split(':').pop() ?? 'n/a'}</dd>
             </div>
             <div>
               <dt>Check status</dt>
-              <dd>{check?.status ?? 'n/a'}</dd>
+              <dd>{check ? formatRoyalCandyStatus(check.status) : 'n/a'}</dd>
             </div>
             <div>
               <dt>Source file</dt>
@@ -14473,78 +15911,130 @@ function SelectedRoyalCandyPanel({
             </div>
           </dl>
 
-          <div className="encounter-edit-form">
-            <div className="form-actions">
-              <button
-                className="primary-button"
-                disabled={!canStage || isStaging}
-                onClick={() => {
-                  if (selectedWorkflow) {
-                    onStageWorkflow(selectedWorkflow.workflowId);
-                  }
-                }}
-                type="button"
-              >
-                <ClipboardCheck aria-hidden="true" size={16} />
-                <span>{isStaging ? 'Staging' : isCleanupWorkflow ? 'Stage Cleanup' : 'Stage Workflow'}</span>
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canReviewPlan}
-                onClick={onCreateChangePlan}
-                type="button"
-              >
-                <ClipboardCheck aria-hidden="true" size={16} />
-                <span>{isChangePlanCreating ? 'Reviewing' : 'Review Plan'}</span>
-              </button>
-              <button
-                className="primary-button"
-                disabled={!canApplyPlan}
-                onClick={onApplyChangePlan}
-                type="button"
-              >
-                <Save aria-hidden="true" size={16} />
-                <span>{isChangePlanApplying ? 'Applying' : isCleanupWorkflow ? 'Apply Cleanup' : 'Apply Plan'}</span>
-              </button>
+          <div
+            className={`encounter-edit-form royal-candy-edit-form ${
+              isStoryLimitWorkflow ? 'royal-candy-edit-form-with-caps' : 'royal-candy-edit-form-no-caps'
+            }`}
+          >
+            {isStoryLimitWorkflow ? (
+              <div className="royal-candy-cap-editor" aria-label="Royal Candy level caps">
+                <div className="encounter-slot-header">
+                  <strong>Story Level Caps</strong>
+                  <span className="status-pill status-warning">Default start Lv. 1</span>
+                </div>
+                <p className="royal-candy-cap-help">
+                  Each later story cap must be equal to or higher than the cap before it.
+                </p>
+                <div className="royal-candy-cap-grid">
+                  {parsedLevelCaps.map((levelCap, index) => {
+                    const previousLevelCap =
+                      index === 0
+                        ? levelCap.minimumLevelCap
+                        : parsedLevelCaps[index - 1]!.selectedLevelCap;
+                    const rowError = getLevelCapError(levelCap, previousLevelCap);
+                    const errorId = `royal-candy-cap-error-${levelCap.slot}`;
+                    const progressText =
+                      levelCap.progressKind === 'workAtLeast' && levelCap.workMinimum !== null
+                        ? `${levelCap.progressHash} >= ${levelCap.workMinimum}`
+                        : levelCap.progressHash;
+                    const capLabel = `After defeating ${levelCap.label}`;
+
+                    return (
+                      <label className="royal-candy-cap-row" key={levelCap.milestoneId}>
+                        <span>
+                          <strong>{capLabel}</strong>
+                          <small>{progressText}</small>
+                        </span>
+                        <div className="royal-candy-cap-control">
+                          <input
+                            aria-describedby={rowError ? errorId : undefined}
+                            aria-invalid={rowError ? 'true' : undefined}
+                            aria-label={`Level cap after defeating ${levelCap.label}`}
+                            className={rowError ? 'input-error' : undefined}
+                            disabled={!canEditLevelCaps}
+                            max={levelCap.maximumLevelCap}
+                            min={levelCap.minimumLevelCap}
+                            onChange={(event) =>
+                              setLevelCapInputs((current) => ({
+                                ...current,
+                                [levelCap.slot]: event.target.value
+                              }))
+                            }
+                            step={1}
+                            type="number"
+                            value={levelCap.rawValue}
+                          />
+                          {rowError ? (
+                            <small className="editable-field-error" id={errorId}>
+                              {rowError}
+                            </small>
+                          ) : null}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="royal-candy-action-column">
+              <div className="form-actions">
+                <button
+                  className="primary-button"
+                  disabled={!canStage || isStaging}
+                  onClick={() => {
+                    if (selectedWorkflow) {
+                      onStageWorkflow(
+                        selectedWorkflow.workflowId,
+                        isStoryLimitWorkflow ? selectedLevelCaps : undefined
+                      );
+                    }
+                  }}
+                  type="button"
+                >
+                  <ClipboardCheck aria-hidden="true" size={16} />
+                  <span>{isStaging ? 'Staging' : 'Stage'}</span>
+                </button>
+                <button
+                  className="secondary-button"
+                  disabled={!canReviewPlan}
+                  onClick={onCreateChangePlan}
+                  type="button"
+                >
+                  <ClipboardCheck aria-hidden="true" size={16} />
+                  <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={!canApplyPlan}
+                  onClick={onApplyChangePlan}
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                </button>
+              </div>
+
+              <dl className="encounter-slot-detail">
+                <div>
+                  <dt>Description</dt>
+                  <dd>{selectedWorkflow.description}</dd>
+                </div>
+                <div>
+                  <dt>Check message</dt>
+                  <dd>{check?.message ?? 'n/a'}</dd>
+                </div>
+              </dl>
+
+              <ol className="royal-candy-step-list">
+                {selectedWorkflow.steps.map((step) => (
+                  <li key={step.step}>
+                    <strong>{step.label}</strong>
+                    <span>{step.description}</span>
+                  </li>
+                ))}
+              </ol>
             </div>
-
-            <dl className="encounter-slot-detail">
-              <div>
-                <dt>Description</dt>
-                <dd>{selectedWorkflow.description}</dd>
-              </div>
-              <div>
-                <dt>Check message</dt>
-                <dd>{check?.message ?? 'n/a'}</dd>
-              </div>
-            </dl>
-
-            <ol className="royal-candy-step-list">
-              {selectedWorkflow.steps.map((step) => (
-                <li key={step.step}>
-                  <strong>{step.label}</strong>
-                  <span>{step.description}</span>
-                </li>
-              ))}
-            </ol>
-
-            <ul className="royal-candy-output-list" aria-label="Royal Candy planned outputs">
-              {outputs.map((output) => (
-                <li key={output.outputId}>
-                  <div className="royal-candy-output-main">
-                    <span className="royal-candy-output-kind">{output.outputKind}</span>
-                    <span className={`status-pill ${getExeFsStatusClassName(output.status)}`}>
-                      {output.status}
-                    </span>
-                    <strong>{output.relativePath}</strong>
-                  </div>
-                  <span>{output.description}</span>
-                  {output.sourceFile !== output.relativePath ? (
-                    <small>Source: {output.sourceFile}</small>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
           </div>
         </>
       ) : (
@@ -15056,6 +16546,94 @@ function SaveProgressModal({ progress }: { progress: SaveProgressState }) {
   );
 }
 
+function EvYieldConfirmationModal({
+  action,
+  onCancel,
+  onConfirm
+}: {
+  action: Exclude<EvYieldConfirmationState, null>;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const isRestore = action === 'restore';
+  const title = isRestore ? 'Restore EV Yield?' : 'Remove EV Yield?';
+  const description = isRestore
+    ? 'Restore EV Yield will copy every Pokemon EV yield back from vanilla personal data. Any custom EV yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after this is saved.'
+    : 'Remove EV Yield will set every EV yield stat on every Pokemon to 0. This stages one pending Pokemon Data change and does not write files until you review and save it from Changes.';
+  const Icon = isRestore ? RefreshCw : Trash2;
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="ev-yield-confirmation-heading"
+        aria-modal="true"
+        className="modal-panel"
+        role="dialog"
+      >
+        <div className="panel-heading">
+          <Icon aria-hidden="true" size={18} />
+          <h2 id="ev-yield-confirmation-heading">{title}</h2>
+        </div>
+        <p className="modal-copy">{description}</p>
+        <div className="modal-actions">
+          <button
+            className={isRestore ? 'primary-button' : 'danger-button'}
+            onClick={onConfirm}
+            type="button"
+          >
+            <Icon aria-hidden="true" size={16} />
+            <span>{isRestore ? 'Confirm Restore EV Yield' : 'Confirm Remove EV Yield'}</span>
+          </button>
+          <button className="secondary-button" onClick={onCancel} type="button">
+            <X aria-hidden="true" size={16} />
+            <span>Cancel</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ShopItemNavigationModal({
+  itemName,
+  onCancel,
+  onConfirm
+}: {
+  itemName: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="shop-item-navigation-heading"
+        aria-modal="true"
+        className="modal-panel"
+        role="dialog"
+      >
+        <div className="panel-heading">
+          <ExternalLink aria-hidden="true" size={18} />
+          <h2 id="shop-item-navigation-heading">Open in Items?</h2>
+        </div>
+        <p className="modal-copy">
+          Navigating out of Shops before pressing Save Changes will permanently discard unsaved
+          inventory edits in this editor.
+        </p>
+        <div className="modal-actions">
+          <button className="primary-button" onClick={onConfirm} type="button">
+            <ExternalLink aria-hidden="true" size={16} />
+            <span>Open {itemName}</span>
+          </button>
+          <button className="secondary-button" onClick={onCancel} type="button">
+            <X aria-hidden="true" size={16} />
+            <span>Stay in Shops</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ExitPromptModal({
   kind,
   mode,
@@ -15073,6 +16651,7 @@ function ExitPromptModal({
 }) {
   const isConfirmMode = mode === 'confirm';
   const isCancelPrompt = kind === 'cancel';
+  const isEditorSwitchPrompt = kind === 'editorSwitch';
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -15086,7 +16665,9 @@ function ExitPromptModal({
           <X aria-hidden="true" size={18} />
           <h2 id="exit-prompt-heading">
             {isConfirmMode
-              ? isCancelPrompt
+              ? isEditorSwitchPrompt
+                ? 'Switch Editors?'
+                : isCancelPrompt
                 ? 'Discard All Changes?'
                 : 'Discard Pending Changes?'
               : 'Where To Go?'}
@@ -15094,7 +16675,9 @@ function ExitPromptModal({
         </div>
         <p className="modal-copy">
           {isConfirmMode
-            ? isCancelPrompt
+            ? isEditorSwitchPrompt
+              ? 'This editor has unsaved changes. Switching editors now will revert those local edits.'
+              : isCancelPrompt
               ? 'Canceling will discard every pending edit in this edit session. Are you sure you want to discard all changes?'
               : 'This editor has pending changes or an active edit session. Exiting will discard those pending edits.'
             : 'You can stay on this editor or go to Changes to validate and save the pending edits.'}
@@ -15104,11 +16687,15 @@ function ExitPromptModal({
             <>
               <button className="danger-button" onClick={onConfirmDiscard} type="button">
                 <Trash2 aria-hidden="true" size={16} />
-                <span>Yes, Discard</span>
+                <span>{isEditorSwitchPrompt ? 'Switch and Revert' : 'Yes, Discard'}</span>
               </button>
-              <button className="secondary-button" onClick={onDeclineDiscard} type="button">
+              <button
+                className="secondary-button"
+                onClick={isEditorSwitchPrompt ? onStay : onDeclineDiscard}
+                type="button"
+              >
                 <X aria-hidden="true" size={16} />
-                <span>No</span>
+                <span>{isEditorSwitchPrompt ? 'Stay Here' : 'No'}</span>
               </button>
             </>
           ) : (
@@ -15167,7 +16754,7 @@ function DiagnosticsSection({ diagnostics }: { diagnostics: ApiDiagnostic[] }) {
         <ul className="diagnostic-list">
           {diagnostics.map((diagnostic) => (
             <li className={`diagnostic diagnostic-${diagnostic.severity}`} key={diagnostic.message}>
-              <strong>{diagnostic.severity}</strong>
+              <strong>{formatDiagnosticSeverity(diagnostic.severity)}</strong>
               <span>{diagnostic.message}</span>
             </li>
           ))}
@@ -15177,6 +16764,17 @@ function DiagnosticsSection({ diagnostics }: { diagnostics: ApiDiagnostic[] }) {
       )}
     </section>
   );
+}
+
+function formatDiagnosticSeverity(severity: ApiDiagnostic['severity']) {
+  switch (severity) {
+    case 'error':
+      return 'Error';
+    case 'warning':
+      return 'Warning';
+    case 'info':
+      return 'Info';
+  }
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -15384,6 +16982,144 @@ function createEvolutionFormOptions(
       label: context === null ? (form === 0 ? 'Base' : `Form ${form}`) : formatSpeciesFormOptionLabel(form, context),
       value: form
     }));
+}
+
+function createPokemonEvolutionDraftFields(
+  evolution: PokemonEvolutionRecord
+): PokemonEvolutionDraftFields {
+  return {
+    argument: evolution.argument.toString(),
+    form: evolution.form.toString(),
+    level: evolution.level.toString(),
+    method: evolution.method.toString(),
+    species: evolution.species.toString()
+  };
+}
+
+function pokemonEvolutionDraftEqualsRecord(
+  draft: PokemonEvolutionDraftFields,
+  evolution: PokemonEvolutionRecord
+) {
+  return (
+    draft.argument === evolution.argument.toString() &&
+    draft.form === evolution.form.toString() &&
+    draft.level === evolution.level.toString() &&
+    draft.method === evolution.method.toString() &&
+    draft.species === evolution.species.toString()
+  );
+}
+
+function createPokemonLearnsetDraftFields(move: PokemonLearnsetMove): PokemonLearnsetDraftFields {
+  return {
+    level: move.level.toString(),
+    moveId: move.moveId.toString()
+  };
+}
+
+function pokemonLearnsetDraftEqualsRecord(
+  draft: PokemonLearnsetDraftFields,
+  move: PokemonLearnsetMove
+) {
+  return draft.level === move.level.toString() && draft.moveId === move.moveId.toString();
+}
+
+function reviewPokemonLearnsetDrafts(
+  pokemon: PokemonRecord | null,
+  draftsBySlot: Record<number, PokemonLearnsetDraftFields>,
+  learnsetMoveOptions: PokemonEditableFieldOption[]
+): { changes: PokemonLearnsetDraftChange[]; invalidCount: number } {
+  if (!pokemon) {
+    return { changes: [], invalidCount: 0 };
+  }
+
+  const changes: PokemonLearnsetDraftChange[] = [];
+  let invalidCount = 0;
+
+  for (const [slotText, draft] of Object.entries(draftsBySlot)) {
+    const slot = Number.parseInt(slotText, 10);
+    const move = pokemon.learnset.find((candidate) => candidate.slot === slot);
+    if (!move || pokemonLearnsetDraftEqualsRecord(draft, move)) {
+      continue;
+    }
+
+    const moveOptions = addCurrentPokemonFieldOption(learnsetMoveOptions, draft.moveId, 'Move');
+    const moveId = parseEditableIntegerDraft(draft.moveId, moveOptions);
+    const level = Number.parseInt(draft.level, 10);
+
+    if (!Number.isInteger(moveId) || !Number.isInteger(level)) {
+      invalidCount += 1;
+      continue;
+    }
+
+    changes.push({
+      action: 'upsert',
+      level,
+      moveId,
+      slot
+    });
+  }
+
+  return { changes, invalidCount };
+}
+
+function reviewPokemonEvolutionDrafts(
+  pokemon: PokemonRecord | null,
+  draftsBySlot: Record<number, PokemonEvolutionDraftFields>,
+  evolutionMethodOptions: PokemonEvolutionMethodOption[],
+  pokemonSpeciesOptions: PokemonEditableFieldOption[],
+  pokemonSpeciesLabels: ReadonlyMap<number, string>
+): { changes: PokemonEvolutionDraftChange[]; invalidCount: number } {
+  if (!pokemon) {
+    return { changes: [], invalidCount: 0 };
+  }
+
+  const changes: PokemonEvolutionDraftChange[] = [];
+  let invalidCount = 0;
+
+  for (const [slotText, draft] of Object.entries(draftsBySlot)) {
+    const slot = Number.parseInt(slotText, 10);
+    const evolution = pokemon.evolutions.find((candidate) => candidate.slot === slot);
+    if (!evolution || pokemonEvolutionDraftEqualsRecord(draft, evolution)) {
+      continue;
+    }
+
+    const methodOptions = addCurrentEvolutionMethodOption(evolutionMethodOptions, draft.method);
+    const method = parseEditableIntegerDraft(draft.method, methodOptions);
+    const methodOption = findEvolutionMethodOption(methodOptions, draft.method);
+    const argumentOptions = addCurrentPokemonFieldOption(
+      methodOption?.argumentOptions ?? [],
+      draft.argument,
+      methodOption?.argumentLabel ?? 'Argument'
+    );
+    const argument = parseEditableIntegerDraft(draft.argument, argumentOptions);
+    const species = parseEditableIntegerDraft(draft.species, pokemonSpeciesOptions);
+    const formOptions = createEvolutionFormOptions(species, pokemonSpeciesLabels, draft.form);
+    const form = parseEditableIntegerDraft(draft.form, formOptions);
+    const level = Number.parseInt(draft.level, 10);
+
+    if (
+      !Number.isInteger(method) ||
+      !Number.isInteger(argument) ||
+      !Number.isInteger(species) ||
+      !Number.isInteger(form) ||
+      !Number.isInteger(level)
+    ) {
+      invalidCount += 1;
+      continue;
+    }
+
+    changes.push({
+      action: 'upsert',
+      argument,
+      form,
+      level,
+      method,
+      slot,
+      species
+    });
+  }
+
+  return { changes, invalidCount };
 }
 
 function createEvolutionFormOptionContext(
@@ -17103,7 +18839,7 @@ function getPokemonPersonalFieldDraftState(
 
   if (parsedValue === null) {
     return {
-      error: 'Enter a whole number.',
+      error: getIntegerDraftError(normalizedValue),
       isChanged: normalizedValue !== currentText,
       isValid: false,
       normalizedValue: null
@@ -17265,11 +19001,21 @@ type SaveProgressState = {
   totalSteps: number;
 };
 
+type ShopInventoryDraftState = {
+  addedRows: Array<{ draftId: number; itemIdDraft: string }>;
+  itemIdDrafts: Record<number, string>;
+  newItemIdDraft: string;
+  nextAddedRowId: number;
+  removedSlots: number[];
+};
+
 type ExitPromptState = {
   destination: WorkbenchSection | null;
-  kind: 'cancel' | 'editor' | 'window';
+  kind: 'cancel' | 'editor' | 'editorSwitch' | 'window';
   mode: 'confirm' | 'redirect';
 };
+
+type EvYieldConfirmationState = 'remove' | 'restore' | null;
 
 function SearchableOptionInput({
   ariaLabel,
@@ -17292,15 +19038,18 @@ function SearchableOptionInput({
   const [isOpen, setIsOpen] = useState(false);
   const formattedValue = useMemo(() => formatOptionInputValue(value, options), [options, value]);
   const [query, setQuery] = useState(formattedValue);
+  const [hasUserQuery, setHasUserQuery] = useState(false);
+  const optionQuery = hasUserQuery ? query : '';
   const filteredOptions = useMemo(
-    () => getSmartOptionMatches(query, options),
-    [options, query]
+    () => getSmartOptionMatches(optionQuery, options),
+    [optionQuery, options]
   );
   const hasMenu = isOpen && !disabled && filteredOptions.length > 0;
 
   useEffect(() => {
     if (!isOpen) {
       setQuery(formattedValue);
+      setHasUserQuery(false);
     }
   }, [formattedValue, isOpen]);
 
@@ -17328,11 +19077,13 @@ function SearchableOptionInput({
   const selectOption = (option: EditableFieldOption) => {
     onChange(option.value.toString());
     setQuery(option.label);
+    setHasUserQuery(false);
     setIsOpen(false);
   };
 
   const handleInputChange = (nextValue: string) => {
     setQuery(nextValue);
+    setHasUserQuery(true);
     setIsOpen(true);
     onChange(normalizeExactOptionInputValue(nextValue, options));
   };
@@ -17354,6 +19105,7 @@ function SearchableOptionInput({
         onChange={(event) => handleInputChange(event.target.value)}
         onFocus={() => {
           setQuery(formattedValue);
+          setHasUserQuery(false);
           setIsOpen(true);
         }}
         onKeyDown={(event) => {
@@ -17378,7 +19130,8 @@ function SearchableOptionInput({
         onMouseDown={(event) => {
           event.preventDefault();
           setQuery(formattedValue);
-          setIsOpen((current) => !current);
+          setHasUserQuery(false);
+          setIsOpen((current) => (current && !hasUserQuery ? false : true));
         }}
         tabIndex={-1}
         type="button"
@@ -17454,6 +19207,76 @@ function parseEditableIntegerDraft(value: string, options?: EditableFieldOption[
   return prefixMatch ? Number.parseInt(prefixMatch[0], 10) : null;
 }
 
+function areNumberArraysEqual(left: readonly number[], right: readonly number[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function areFieldDraftsEqual(
+  left: Record<string, string>,
+  right: Record<string, string>
+) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if ((left[key] ?? '') !== (right[key] ?? '')) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function setFieldDraftRecord(
+  records: Record<string, Record<string, string>>,
+  recordKey: string | number,
+  nextDrafts: Record<string, string>,
+  defaultDrafts: Record<string, string>
+) {
+  const normalizedKey = recordKey.toString();
+  const nextRecords = { ...records };
+  if (areFieldDraftsEqual(nextDrafts, defaultDrafts)) {
+    delete nextRecords[normalizedKey];
+  } else {
+    nextRecords[normalizedKey] = nextDrafts;
+  }
+
+  return nextRecords;
+}
+
+function pruneFieldDraftRecord(
+  records: Record<string, Record<string, string>>,
+  recordKey: string | number,
+  defaultDrafts: Record<string, string>
+) {
+  const normalizedKey = recordKey.toString();
+  const currentDrafts = records[normalizedKey];
+  if (!currentDrafts || !areFieldDraftsEqual(currentDrafts, defaultDrafts)) {
+    return records;
+  }
+
+  const nextRecords = { ...records };
+  delete nextRecords[normalizedKey];
+  return nextRecords;
+}
+
+function deleteFieldDraftRecord<T>(records: Record<string, T>, recordKey: string | number) {
+  const normalizedKey = recordKey.toString();
+  if (!Object.prototype.hasOwnProperty.call(records, normalizedKey)) {
+    return records;
+  }
+
+  const nextRecords = { ...records };
+  delete nextRecords[normalizedKey];
+  return nextRecords;
+}
+
+function countFieldDraftRecords(records: Record<string, Record<string, string>>) {
+  return Object.keys(records).length;
+}
+
+function getIntegerDraftError(value: string) {
+  return value.trim().length === 0 ? 'Enter a value.' : 'Enter a whole number.';
+}
+
 function getSmartOptionMatches(value: string, options: EditableFieldOption[]) {
   const query = value.trim();
   if (query.length === 0) {
@@ -17507,6 +19330,19 @@ function useCancelActiveEditSession() {
   }
 
   return requestCancelEditSession;
+}
+
+function useRegisterEditorDraftDirty(section: WorkbenchSection, isDirty: boolean) {
+  const registerEditorDraftDirty = useContext(EditorDraftDirtyContext);
+
+  if (!registerEditorDraftDirty) {
+    throw new Error('Editor draft dirty context is not available.');
+  }
+
+  useEffect(() => {
+    registerEditorDraftDirty(section, isDirty);
+    return () => registerEditorDraftDirty(section, false);
+  }, [isDirty, registerEditorDraftDirty, section]);
 }
 
 function PokemonSummaryCard({
@@ -17650,7 +19486,7 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     stat3: 'Third and final Sword/Shield stat-change slot.',
     stat3Percent: 'Percent chance for stat-change slot 3 to apply.',
     stat3Stage: 'Stage delta for stat-change slot 3. Positive raises the stat; negative lowers it.',
-    [itemUseFlags1FieldName]: 'Raw item use bitmask. Decoded bits are shown in item details: PP restore, HP restore, EV flags, and Sp. Atk EV.',
+    [itemUseFlags1FieldName]: 'Raw item use bitmask. Locked from direct editing; use the decoded PP restore, HP restore, and EV flag fields instead.',
     [itemUseFlags2FieldName]: 'Raw item use bitmask. Decoded bits are shown in item details; bits 5-7 remain unknown.'
   };
   const range =
@@ -17773,6 +19609,28 @@ function getIntegerDraftState(
       parsedValue !== currentValue,
     parsedValue
   };
+}
+
+function isIntegerDraftInFieldRange(
+  parsedValue: number | null,
+  field:
+    | EncounterEditableField
+    | RaidBattleEditableField
+    | RaidRewardEditableField
+    | ShopEditableField
+    | TrainerEditableField
+    | undefined
+) {
+  if (field === undefined || parsedValue === null) {
+    return false;
+  }
+
+  const minimumValue = field.minimumValue ?? null;
+  const maximumValue = field.maximumValue ?? null;
+  return (
+    (minimumValue === null || parsedValue >= minimumValue) &&
+    (maximumValue === null || parsedValue <= maximumValue)
+  );
 }
 
 function getGiftPokemonDraftState(
@@ -18136,7 +19994,7 @@ function formatSharedItemIds(item: ItemRecord) {
 }
 
 function getWorkflowState(health: ProjectHealth | null, workflow: WorkflowSummary | undefined) {
-  if (!health?.canOpenReadOnlyWorkflows) {
+  if (!health?.canOpenEditableWorkflows) {
     return {
       availability: 'disabled',
       label: 'Disabled',
@@ -18164,6 +20022,7 @@ function getExeFsStatusClassName(status: string) {
     case 'pass':
     case 'info':
     case 'available':
+    case 'installed':
     case 'ready':
       return 'status-ready';
     case 'readonly':
@@ -18176,6 +20035,47 @@ function getExeFsStatusClassName(status: string) {
       return 'status-blocked';
     default:
       return 'status-warning';
+  }
+}
+
+function formatRoyalCandyStatus(status: string) {
+  switch (status.toLocaleLowerCase()) {
+    case 'installed':
+      return 'Installed';
+    case 'blocked':
+      return 'Blocked';
+    case 'warning':
+      return 'Warning';
+    case 'available':
+      return 'Available';
+    case 'readonly':
+    case 'read-only':
+      return 'Read-only';
+    case 'ready':
+      return 'Ready';
+    case 'review':
+      return 'Review';
+    case 'pass':
+      return 'Pass';
+    case 'fail':
+      return 'Fail';
+    case 'info':
+      return 'Info';
+    default:
+      return status.length > 0 ? `${status[0]!.toLocaleUpperCase()}${status.slice(1)}` : status;
+  }
+}
+
+function formatRoyalCandyMode(mode: string) {
+  switch (mode) {
+    case 'storyLimits':
+      return 'Story limits';
+    case 'unlimited':
+      return 'Unlimited';
+    case 'uninstall':
+      return 'Remove';
+    default:
+      return mode;
   }
 }
 

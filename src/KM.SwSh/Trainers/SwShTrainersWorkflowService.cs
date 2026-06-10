@@ -317,37 +317,37 @@ public sealed class SwShTrainersWorkflowService
             NatureOptions),
         new SwShTrainerEditableField(
             EvHpField,
-            "EV HP",
+            "HP",
             "integer",
             0,
             MaximumPokemonEvValue),
         new SwShTrainerEditableField(
             EvAttackField,
-            "EV Attack",
+            "Attack",
             "integer",
             0,
             MaximumPokemonEvValue),
         new SwShTrainerEditableField(
             EvDefenseField,
-            "EV Defense",
+            "Defense",
             "integer",
             0,
             MaximumPokemonEvValue),
         new SwShTrainerEditableField(
             EvSpecialAttackField,
-            "EV Sp. Atk",
+            "Sp. Atk",
             "integer",
             0,
             MaximumPokemonEvValue),
         new SwShTrainerEditableField(
             EvSpecialDefenseField,
-            "EV Sp. Def",
+            "Sp. Def",
             "integer",
             0,
             MaximumPokemonEvValue),
         new SwShTrainerEditableField(
             EvSpeedField,
-            "EV Speed",
+            "Speed",
             "integer",
             0,
             MaximumPokemonEvValue),
@@ -367,37 +367,37 @@ public sealed class SwShTrainersWorkflowService
             BooleanOptions),
         new SwShTrainerEditableField(
             IvHpField,
-            "IV HP",
+            "HP",
             "integer",
             0,
             SwShTrainerTeamFile.MaximumIvValue),
         new SwShTrainerEditableField(
             IvAttackField,
-            "IV Attack",
+            "Attack",
             "integer",
             0,
             SwShTrainerTeamFile.MaximumIvValue),
         new SwShTrainerEditableField(
             IvDefenseField,
-            "IV Defense",
+            "Defense",
             "integer",
             0,
             SwShTrainerTeamFile.MaximumIvValue),
         new SwShTrainerEditableField(
             IvSpecialAttackField,
-            "IV Sp. Atk",
+            "Sp. Atk",
             "integer",
             0,
             SwShTrainerTeamFile.MaximumIvValue),
         new SwShTrainerEditableField(
             IvSpecialDefenseField,
-            "IV Sp. Def",
+            "Sp. Def",
             "integer",
             0,
             SwShTrainerTeamFile.MaximumIvValue),
         new SwShTrainerEditableField(
             IvSpeedField,
-            "IV Speed",
+            "Speed",
             "integer",
             0,
             SwShTrainerTeamFile.MaximumIvValue),
@@ -559,7 +559,15 @@ public sealed class SwShTrainersWorkflowService
             }
         }
 
-        return CreateWorkflow(summary, trainers.OrderBy(trainer => trainer.TrainerId).ToArray(), diagnostics, parsedSourceFileCount, names);
+        return CreateWorkflow(
+            summary,
+            trainers
+                .Where(trainer => trainer.TrainerId != 0)
+                .OrderBy(trainer => trainer.TrainerId)
+                .ToArray(),
+            diagnostics,
+            parsedSourceFileCount,
+            names);
     }
 
     internal static WorkflowFileSource? ResolveWorkflowFile(OpenedProject project, string relativePath)

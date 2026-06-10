@@ -27,6 +27,10 @@ public sealed class SwShPokemonEditSessionService
     private const string EvolutionRemoveAction = "remove";
     private const string EvolutionMoveUpAction = "moveUp";
     private const string EvolutionMoveDownAction = "moveDown";
+    private const string GlobalEvYieldRecordId = "all";
+    private const string GlobalEvYieldField = "evYieldAll";
+    private const string GlobalEvYieldRemoveValue = "remove";
+    private const string GlobalEvYieldRestoreValue = "restore";
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShPokemonWorkflowService pokemonWorkflowService;
@@ -64,6 +68,22 @@ public sealed class SwShPokemonEditSessionService
         if (!CanEditPokemon(project, workflow, diagnostics))
         {
             return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (IsGlobalEvYieldField(field))
+        {
+            var globalPendingEdit = CreateGlobalEvYieldPendingEdit(project, field, value, diagnostics);
+            if (globalPendingEdit is null)
+            {
+                return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            }
+
+            var globalUpdatedSession = ReplacePendingPokemonEdit(currentSession, globalPendingEdit);
+
+            return new SwShPokemonEditResult(
+                OverlayPendingEdits(loadedWorkflow, globalUpdatedSession.PendingEdits),
+                globalUpdatedSession,
+                diagnostics);
         }
 
         var selectedPokemon = workflow.Pokemon.FirstOrDefault(pokemon => pokemon.PersonalId == personalId);
@@ -245,6 +265,16 @@ public sealed class SwShPokemonEditSessionService
         if (session.PendingEdits.Any(IsLearnsetEdit))
         {
             CanEditLearnsetData(project, diagnostics);
+        }
+
+        if (session.PendingEdits.Any(IsGlobalEvYieldRestoreEdit)
+            && SwShPokemonWorkflowService.ResolveBasePersonalDataSource(project) is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Restore EV Yield requires the base personal data file so vanilla EV yields can be copied back.",
+                field: GlobalEvYieldField,
+                expected: "Readable base personal_total.bin"));
         }
 
         foreach (var edit in session.PendingEdits.Where(IsEvolutionEdit))
@@ -497,6 +527,12 @@ public sealed class SwShPokemonEditSessionService
             return;
         }
 
+        if (IsGlobalEvYieldEdit(edit))
+        {
+            ValidateGlobalEvYieldPendingEdit(edit, diagnostics);
+            return;
+        }
+
         if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -553,6 +589,76 @@ public sealed class SwShPokemonEditSessionService
             RecordId: selectedPokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
             Field: normalizedField,
             NewValue: parsedValue.Value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static PendingEdit? CreateGlobalEvYieldPendingEdit(
+        OpenedProject project,
+        string field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var normalizedField = field.Trim();
+        if (!IsGlobalEvYieldField(normalizedField))
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(normalizedField));
+            return null;
+        }
+
+        var normalizedValue = value.Trim();
+        if (!string.Equals(normalizedValue, GlobalEvYieldRemoveValue, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalizedValue, GlobalEvYieldRestoreValue, StringComparison.OrdinalIgnoreCase))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "EV Yield bulk action must be remove or restore.",
+                field: GlobalEvYieldField,
+                expected: "remove or restore"));
+            return null;
+        }
+
+        normalizedValue = string.Equals(normalizedValue, GlobalEvYieldRemoveValue, StringComparison.OrdinalIgnoreCase)
+            ? GlobalEvYieldRemoveValue
+            : GlobalEvYieldRestoreValue;
+
+        var source = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
+        if (source is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokemon personal data source could not be resolved for EV Yield bulk editing.",
+                file: SwShPokemonWorkflowService.PersonalDataPath,
+                expected: "Loaded Sword/Shield personal_total.bin"));
+            return null;
+        }
+
+        var sources = new List<ProjectFileReference> { CreateSourceReference(source) };
+        if (normalizedValue == GlobalEvYieldRestoreValue)
+        {
+            var baseSource = SwShPokemonWorkflowService.ResolveBasePersonalDataSource(project);
+            if (baseSource is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Restore EV Yield requires the base personal data file so vanilla EV yields can be copied back.",
+                    field: GlobalEvYieldField,
+                    expected: "Readable base personal_total.bin"));
+                return null;
+            }
+
+            sources.Add(CreateSourceReference(baseSource));
+        }
+
+        var summary = normalizedValue == GlobalEvYieldRemoveValue
+            ? "Remove EV yields from all Pokemon."
+            : "Restore all Pokemon EV yields from vanilla personal data.";
+
+        return new PendingEdit(
+            PokemonEditDomain,
+            summary,
+            sources,
+            RecordId: GlobalEvYieldRecordId,
+            Field: GlobalEvYieldField,
+            NewValue: normalizedValue);
     }
 
     private static PendingEdit? CreateLearnsetPendingEdit(
@@ -1237,6 +1343,19 @@ public sealed class SwShPokemonEditSessionService
 
     private static EditSession ReplacePendingPokemonEdit(EditSession session, PendingEdit pendingEdit)
     {
+        if (IsGlobalEvYieldEdit(pendingEdit))
+        {
+            return session with
+            {
+                PendingEdits = session.PendingEdits
+                    .Where(edit => !(
+                        string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal)
+                        && (IsGlobalEvYieldEdit(edit) || IsEvYieldField(edit.Field))))
+                    .Append(pendingEdit)
+                    .ToArray(),
+            };
+        }
+
         return session with
         {
             PendingEdits = session.PendingEdits
@@ -1261,6 +1380,12 @@ public sealed class SwShPokemonEditSessionService
         var overlaid = workflow.Pokemon.ToDictionary(pokemon => pokemon.PersonalId);
         foreach (var edit in edits.Where(edit => string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal)))
         {
+            if (IsGlobalEvYieldEdit(edit))
+            {
+                OverlayGlobalEvYieldEdit(overlaid, edit);
+                continue;
+            }
+
             if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId)
                 || !overlaid.TryGetValue(personalId, out var pokemon))
             {
@@ -1307,6 +1432,43 @@ public sealed class SwShPokemonEditSessionService
             Pokemon = workflow.Pokemon
                 .Select(pokemon => overlaid.TryGetValue(pokemon.PersonalId, out var updated) ? updated : pokemon)
                 .ToArray(),
+        };
+    }
+
+    private static void OverlayGlobalEvYieldEdit(
+        IDictionary<int, SwShPokemonRecord> overlaid,
+        PendingEdit edit)
+    {
+        if (!string.Equals(edit.NewValue, GlobalEvYieldRemoveValue, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        foreach (var personalId in overlaid.Keys.ToArray())
+        {
+            overlaid[personalId] = ClearPokemonViewEvYield(overlaid[personalId]);
+        }
+    }
+
+    private static SwShPokemonRecord ClearPokemonViewEvYield(SwShPokemonRecord pokemon)
+    {
+        return pokemon with
+        {
+            Personal = ClearPokemonPersonalDetailsEvYield(pokemon.Personal),
+        };
+    }
+
+    private static SwShPokemonPersonalDetails ClearPokemonPersonalDetailsEvYield(
+        SwShPokemonPersonalDetails personal)
+    {
+        return personal with
+        {
+            EVYieldHP = 0,
+            EVYieldAttack = 0,
+            EVYieldDefense = 0,
+            EVYieldSpecialAttack = 0,
+            EVYieldSpecialDefense = 0,
+            EVYieldSpeed = 0,
         };
     }
 
@@ -1807,6 +1969,12 @@ public sealed class SwShPokemonEditSessionService
 
             foreach (var edit in edits)
             {
+                if (IsGlobalEvYieldEdit(edit))
+                {
+                    ApplyGlobalEvYieldPersonalDataEdit(project, records, edit, diagnostics);
+                    continue;
+                }
+
                 if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId)
                     || (uint)personalId >= (uint)records.Length)
                 {
@@ -1860,6 +2028,79 @@ public sealed class SwShPokemonEditSessionService
                 file: SwShPokemonWorkflowService.PersonalDataPath,
                 expected: "Readable source and writable output root"));
         }
+    }
+
+    private static void ApplyGlobalEvYieldPersonalDataEdit(
+        OpenedProject project,
+        SwShPersonalRecord[] records,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (string.Equals(edit.NewValue, GlobalEvYieldRemoveValue, StringComparison.Ordinal))
+        {
+            for (var index = 0; index < records.Length; index++)
+            {
+                records[index] = ClearPersonalEvYield(records[index]);
+            }
+
+            return;
+        }
+
+        if (!string.Equals(edit.NewValue, GlobalEvYieldRestoreValue, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "EV Yield bulk action must be remove or restore.",
+                field: GlobalEvYieldField,
+                expected: "remove or restore"));
+            return;
+        }
+
+        var baseSource = SwShPokemonWorkflowService.ResolveBasePersonalDataSource(project);
+        if (baseSource is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Restore EV Yield requires the base personal data file so vanilla EV yields can be copied back.",
+                field: GlobalEvYieldField,
+                expected: "Readable base personal_total.bin"));
+            return;
+        }
+
+        var baseRecords = SwShPersonalTable.Parse(File.ReadAllBytes(baseSource.AbsolutePath)).Records;
+        var count = Math.Min(records.Length, baseRecords.Count);
+        for (var index = 0; index < count; index++)
+        {
+            records[index] = CopyPersonalEvYield(records[index], baseRecords[index]);
+        }
+    }
+
+    private static SwShPersonalRecord ClearPersonalEvYield(SwShPersonalRecord record)
+    {
+        return record with
+        {
+            EVYieldHP = 0,
+            EVYieldAttack = 0,
+            EVYieldDefense = 0,
+            EVYieldSpecialAttack = 0,
+            EVYieldSpecialDefense = 0,
+            EVYieldSpeed = 0,
+        };
+    }
+
+    private static SwShPersonalRecord CopyPersonalEvYield(
+        SwShPersonalRecord target,
+        SwShPersonalRecord source)
+    {
+        return target with
+        {
+            EVYieldHP = source.EVYieldHP,
+            EVYieldAttack = source.EVYieldAttack,
+            EVYieldDefense = source.EVYieldDefense,
+            EVYieldSpecialAttack = source.EVYieldSpecialAttack,
+            EVYieldSpecialDefense = source.EVYieldSpecialDefense,
+            EVYieldSpeed = source.EVYieldSpeed,
+        };
     }
 
     private static void ApplyLearnsetEdits(
@@ -2212,6 +2453,50 @@ public sealed class SwShPokemonEditSessionService
         return string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal)
             && !IsLearnsetEdit(edit)
             && !IsEvolutionEdit(edit);
+    }
+
+    private static bool IsGlobalEvYieldEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, GlobalEvYieldRecordId, StringComparison.Ordinal)
+            && IsGlobalEvYieldField(edit.Field);
+    }
+
+    private static bool IsGlobalEvYieldRestoreEdit(PendingEdit edit)
+    {
+        return IsGlobalEvYieldEdit(edit)
+            && string.Equals(edit.NewValue, GlobalEvYieldRestoreValue, StringComparison.Ordinal);
+    }
+
+    private static bool IsGlobalEvYieldField(string? field)
+    {
+        return string.Equals(field, GlobalEvYieldField, StringComparison.Ordinal);
+    }
+
+    private static bool IsEvYieldField(string? field)
+    {
+        return field is
+            SwShPokemonWorkflowService.EVYieldHPField or
+            SwShPokemonWorkflowService.EVYieldAttackField or
+            SwShPokemonWorkflowService.EVYieldDefenseField or
+            SwShPokemonWorkflowService.EVYieldSpecialAttackField or
+            SwShPokemonWorkflowService.EVYieldSpecialDefenseField or
+            SwShPokemonWorkflowService.EVYieldSpeedField;
+    }
+
+    private static void ValidateGlobalEvYieldPendingEdit(
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(edit.NewValue, GlobalEvYieldRemoveValue, StringComparison.Ordinal)
+            && !string.Equals(edit.NewValue, GlobalEvYieldRestoreValue, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "EV Yield bulk action must be remove or restore.",
+                field: GlobalEvYieldField,
+                expected: "remove or restore"));
+        }
     }
 
     private static bool IsLearnsetEdit(PendingEdit edit)

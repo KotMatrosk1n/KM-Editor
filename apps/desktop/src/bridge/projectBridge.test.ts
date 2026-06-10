@@ -1305,7 +1305,7 @@ describe('projectBridge', () => {
                   description: 'Prepares Royal Candy item 1128 from Rare Candy item 50.',
                   itemId: 1128,
                   mode: 'unlimited',
-                  name: 'Install Unlimited Royal Candy',
+                  name: 'Unlimited Royal Candy',
                   provenance: {
                     fileState: 'baseOnly',
                     sourceFile: 'romfs/bin/pml/item/item.dat',
@@ -1517,7 +1517,7 @@ describe('projectBridge', () => {
     expect(flagworkSave.workflow.saveBlocks[0]?.key).toBe('0xDDEEFF00');
     expect(flagworkSave.workflow.saveFile?.fileName).toBe('main');
     expect(exeFsPatches.workflow.patches[0]?.targetFile).toBe('exefs/main');
-    expect(royalCandy.workflow.workflows[0]?.name).toBe('Install Unlimited Royal Candy');
+    expect(royalCandy.workflow.workflows[0]?.name).toBe('Unlimited Royal Candy');
     expect(royalCandy.workflow.outputs[0]?.relativePath).toBe('romfs/bin/pml/item/item.dat');
     expect(spreadsheetImport.workflow.profiles[0]?.name).toBe('Items Price CSV/TSV');
   });

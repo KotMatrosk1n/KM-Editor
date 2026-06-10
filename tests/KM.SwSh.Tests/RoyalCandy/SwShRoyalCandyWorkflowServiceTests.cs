@@ -26,11 +26,22 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         Assert.Equal(SwShWorkflowAvailability.Available, workflow.Summary.Availability);
         Assert.Equal(3, workflow.Workflows.Count);
         var unlimited = workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-unlimited");
+        Assert.Equal("Unlimited Royal Candy", unlimited.Name);
         Assert.Equal("available", unlimited.Status);
         Assert.Equal("unlimited", unlimited.Mode);
         Assert.Equal(1128, unlimited.ItemId);
         Assert.Equal(50, unlimited.TemplateItemId);
+        Assert.Empty(unlimited.LevelCaps);
         Assert.Equal(ProjectFileLayer.Base, unlimited.Provenance.SourceLayer);
+        var storyLimits = workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-story-limits");
+        Assert.Equal("Royal Candy with Story Limits", storyLimits.Name);
+        Assert.Equal("storyLimits", storyLimits.Mode);
+        Assert.Equal(25, storyLimits.LevelCaps.Count);
+        Assert.Equal("Hop 004/005/006", storyLimits.LevelCaps[0].Label);
+        Assert.Equal(10, storyLimits.LevelCaps[0].LevelCap);
+        Assert.Equal("Gordie 135", storyLimits.LevelCaps.Single(cap => cap.LevelCap == 52).Label);
+        Assert.Equal("workAtLeast", storyLimits.LevelCaps.Single(cap => cap.LevelCap == 20).ProgressKind);
+        Assert.Equal(530, storyLimits.LevelCaps.Single(cap => cap.LevelCap == 20).WorkMinimum);
         Assert.Contains(workflow.Checks, check => check.CheckId.EndsWith(":item-data", StringComparison.Ordinal) && check.Status == "Pass");
         Assert.Contains(
             workflow.Checks,
@@ -68,8 +79,32 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         Assert.True(workflow.Stats.FailCount >= 8);
         Assert.Contains(
             workflow.Diagnostics,
-            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Warning
                 && diagnostic.Domain == "workflow.royalCandy");
+    }
+
+    [Fact]
+    public void LoadMarksMatchingRoyalCandyVariantInstalled()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        temp.WriteOutputFile(
+            "romfs/bin/message/English/common/iteminfo.dat",
+            CreateTextTable(
+                1128,
+                (1128, "A candy packed with strange energy. Its full power follows the current story limit.")));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShRoyalCandyWorkflowService().Load(project);
+
+        var unlimited = workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-unlimited");
+        var storyLimits = workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-story-limits");
+        Assert.Equal("blocked", unlimited.Status);
+        Assert.Equal("installed", storyLimits.Status);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.Contains("Royal Candy with Story Limits is installed", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -88,7 +123,7 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
             workflow.Checks,
             check => check.WorkflowId == uninstall.WorkflowId
                 && check.Status == "Warning"
-                && check.Message.Contains("known Royal Candy output", StringComparison.Ordinal));
+                && check.Message.Contains("Royal Candy target", StringComparison.Ordinal));
         Assert.Contains(
             workflow.Outputs,
             output => output.WorkflowId == uninstall.WorkflowId
@@ -135,6 +170,17 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
             .ToArray();
 
         return SwShItemTestFixtures.CreateItemTable(records);
+    }
+
+    private static byte[] CreateTextTable(int highestIndex, params (int index, string value)[] entries)
+    {
+        var lines = Enumerable.Range(0, highestIndex + 1)
+            .Select(index => new SwShGameTextLine(
+                entries.FirstOrDefault(entry => entry.index == index).value ?? string.Empty,
+                Flags: 0))
+            .ToArray();
+
+        return SwShGameTextFile.Write(lines);
     }
 
     private static byte[] CreateNpdm(ulong titleId)

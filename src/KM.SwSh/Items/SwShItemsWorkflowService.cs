@@ -102,6 +102,16 @@ public sealed class SwShItemsWorkflowService
         new SwShItemEditableFieldOption(1, "Yes"),
     ];
 
+    private static readonly IReadOnlyList<SwShItemEditableFieldOption> BoostStageOptions =
+        Enumerable.Range(0, MaximumBoostValue + 1)
+            .Select(value => new SwShItemEditableFieldOption(value, FormatBoostStageOption(value)))
+            .ToArray();
+
+    private static readonly IReadOnlyList<SwShItemEditableFieldOption> CriticalHitBoostOptions =
+        Enumerable.Range(0, MaximumCriticalHitBoostValue + 1)
+            .Select(value => new SwShItemEditableFieldOption(value, FormatPositiveBoostStage(value)))
+            .ToArray();
+
     private static readonly IReadOnlyList<SwShItemEditableFieldOption> PouchOptions =
         Enumerable.Range(0, MaximumPouchValue + 1)
             .Select(value => new SwShItemEditableFieldOption(value, FormatPouch(value)))
@@ -257,7 +267,7 @@ public sealed class SwShItemsWorkflowService
             "integer",
             MinimumValue: 0,
             MaximumValue: MaximumCriticalHitBoostValue,
-            Options: []),
+            Options: CriticalHitBoostOptions),
         CreateBooleanEditableField(PpUpFlagField, "PP Up flag"),
         CreateBooleanEditableField(PpMaxFlagField, "PP Max flag"),
         new SwShItemEditableField(
@@ -370,7 +380,7 @@ public sealed class SwShItemsWorkflowService
         new(field, label, "boolean", MinimumValue: 0, MaximumValue: 1, Options: BooleanOptions);
 
     private static SwShItemEditableField CreateBoostEditableField(string field, string label) =>
-        new(field, label, "integer", MinimumValue: 0, MaximumValue: MaximumBoostValue, Options: []);
+        new(field, label, "integer", MinimumValue: 0, MaximumValue: MaximumBoostValue, Options: BoostStageOptions);
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
@@ -989,7 +999,7 @@ public sealed class SwShItemsWorkflowService
                         (0x40, "Infatuation"),
                         (0x80, "Guard Spec."))),
                     new SwShItemDetail("Battle boosts", FormatBattleBoosts(item)),
-                    new SwShItemDetail("Critical hit boost", ((item.Boost3 >> 4) & 0x03).ToString(CultureInfo.InvariantCulture)),
+                    new SwShItemDetail("Critical hit boost", FormatPositiveBoostStage((item.Boost3 >> 4) & 0x03)),
                     new SwShItemDetail("PP Up flag", FormatBool((item.Boost3 & 0x40) != 0)),
                     new SwShItemDetail("PP Max flag", FormatBool((item.Boost3 & 0x80) != 0)),
                 ]),
@@ -1092,13 +1102,34 @@ public sealed class SwShItemsWorkflowService
         return string.Join(
             " / ",
             [
-                $"Atk {(item.Boost0 >> 4).ToString(CultureInfo.InvariantCulture)}",
-                $"Def {(item.Boost1 & 0x0F).ToString(CultureInfo.InvariantCulture)}",
-                $"SpA {(item.Boost1 >> 4).ToString(CultureInfo.InvariantCulture)}",
-                $"SpD {(item.Boost2 & 0x0F).ToString(CultureInfo.InvariantCulture)}",
-                $"Spe {(item.Boost2 >> 4).ToString(CultureInfo.InvariantCulture)}",
-                $"Acc {(item.Boost3 & 0x0F).ToString(CultureInfo.InvariantCulture)}",
+                $"Atk {FormatBoostStageValue(item.Boost0 >> 4)}",
+                $"Def {FormatBoostStageValue(item.Boost1 & 0x0F)}",
+                $"SpA {FormatBoostStageValue(item.Boost1 >> 4)}",
+                $"SpD {FormatBoostStageValue(item.Boost2 & 0x0F)}",
+                $"Spe {FormatBoostStageValue(item.Boost2 >> 4)}",
+                $"Acc {FormatBoostStageValue(item.Boost3 & 0x0F)}",
             ]);
+    }
+
+    private static string FormatBoostStageOption(int value)
+    {
+        return value is >= 0 and <= 6
+            ? FormatPositiveBoostStage(value)
+            : string.Create(CultureInfo.InvariantCulture, $"Raw {value} (unused/unknown)");
+    }
+
+    private static string FormatPositiveBoostStage(int value)
+    {
+        return value == 0
+            ? "0 stages"
+            : string.Create(CultureInfo.InvariantCulture, $"+{value} stage{(value == 1 ? string.Empty : "s")}");
+    }
+
+    private static string FormatBoostStageValue(int value)
+    {
+        return value is >= 0 and <= 6
+            ? FormatPositiveBoostStage(value)
+            : string.Create(CultureInfo.InvariantCulture, $"raw {value}");
     }
 
     private static string FormatEvGain(SwShItemMetadata item)
