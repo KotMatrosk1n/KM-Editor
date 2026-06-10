@@ -115,6 +115,13 @@ jobs:
             Where-Object { $_.Name -match '\.(nsis|msi)\.zip$' -or $_.Name -match '\.sig$' } |
             ForEach-Object { Copy-Item $_.FullName $releaseDir }
 
+          Get-ChildItem $releaseDir -File |
+            Where-Object { $_.Name.Contains(' ') } |
+            ForEach-Object {
+              $safeName = $_.Name.Replace(' ', '.')
+              Rename-Item -LiteralPath $_.FullName -NewName $safeName
+            }
+
           $updateInstaller = Get-ChildItem $releaseDir -File -Filter '*.exe' |
             Sort-Object Name |
             Select-Object -First 1
