@@ -11,6 +11,14 @@ public enum SwShShopKind
     Multi,
 }
 
+public enum SwShShopInventoryEditAction
+{
+    Replace,
+    Add,
+    Remove,
+    Set,
+}
+
 public sealed record SwShShopInventory(IReadOnlyList<int> Items);
 
 public sealed record SwShSingleShopRecord(
@@ -26,7 +34,9 @@ public sealed record SwShShopInventoryEdit(
     ulong Hash,
     int InventoryIndex,
     int Slot,
-    int ItemId);
+    int ItemId,
+    SwShShopInventoryEditAction Action = SwShShopInventoryEditAction.Replace,
+    IReadOnlyList<int>? Items = null);
 
 public sealed record SwShShopDataFile(
     IReadOnlyList<SwShSingleShopRecord> SingleShops,
@@ -84,8 +94,8 @@ public sealed record SwShShopDataFile(
     }
 
     private static void ApplyEdit(
-        IReadOnlyList<SwShSingleShopRecord> singleShops,
-        IReadOnlyList<SwShMultiShopRecord> multiShops,
+        SwShSingleShopRecord[] singleShops,
+        SwShMultiShopRecord[] multiShops,
         SwShShopInventoryEdit edit)
     {
         if (edit.Slot < 0)
@@ -95,43 +105,93 @@ public sealed record SwShShopDataFile(
 
         if (edit.Kind == SwShShopKind.Single)
         {
-            var shop = singleShops.FirstOrDefault(candidate => candidate.Hash == edit.Hash);
-            if (shop is null)
+            var shopIndex = Array.FindIndex(singleShops, candidate => candidate.Hash == edit.Hash);
+            if (shopIndex < 0)
             {
                 throw new InvalidDataException($"Single shop 0x{edit.Hash:X16} is not present.");
             }
 
-            ReplaceInventoryItem(shop.Inventory, edit.Slot, edit.ItemId);
+            singleShops[shopIndex] = singleShops[shopIndex] with
+            {
+                Inventory = ApplyInventoryEdit(singleShops[shopIndex].Inventory, edit),
+            };
             return;
         }
 
-        var multiShop = multiShops.FirstOrDefault(candidate => candidate.Hash == edit.Hash);
-        if (multiShop is null)
+        var multiShopIndex = Array.FindIndex(multiShops, candidate => candidate.Hash == edit.Hash);
+        if (multiShopIndex < 0)
         {
             throw new InvalidDataException($"Multi shop 0x{edit.Hash:X16} is not present.");
         }
 
+        var multiShop = multiShops[multiShopIndex];
         if ((uint)edit.InventoryIndex >= (uint)multiShop.Inventories.Count)
         {
             throw new InvalidDataException($"Multi shop 0x{edit.Hash:X16} inventory {edit.InventoryIndex} is not present.");
         }
 
-        ReplaceInventoryItem(multiShop.Inventories[edit.InventoryIndex], edit.Slot, edit.ItemId);
+        var inventories = multiShop.Inventories.ToArray();
+        inventories[edit.InventoryIndex] = ApplyInventoryEdit(inventories[edit.InventoryIndex], edit);
+        multiShops[multiShopIndex] = multiShop with { Inventories = inventories };
     }
 
-    private static void ReplaceInventoryItem(SwShShopInventory inventory, int slot, int itemId)
+    private static SwShShopInventory ApplyInventoryEdit(
+        SwShShopInventory inventory,
+        SwShShopInventoryEdit edit)
+    {
+        return edit.Action switch
+        {
+            SwShShopInventoryEditAction.Replace => ReplaceInventoryItem(inventory, edit.Slot, edit.ItemId),
+            SwShShopInventoryEditAction.Add => InsertInventoryItem(inventory, edit.Slot, edit.ItemId),
+            SwShShopInventoryEditAction.Remove => RemoveInventoryItem(inventory, edit.Slot),
+            SwShShopInventoryEditAction.Set => SetInventoryItems(inventory, edit.Items),
+            _ => throw new InvalidDataException($"Shop inventory edit action '{edit.Action}' is not supported."),
+        };
+    }
+
+    private static SwShShopInventory SetInventoryItems(
+        SwShShopInventory inventory,
+        IReadOnlyList<int>? items)
+    {
+        ArgumentNullException.ThrowIfNull(inventory);
+
+        return new SwShShopInventory((items ?? Array.Empty<int>()).ToArray());
+    }
+
+    private static SwShShopInventory ReplaceInventoryItem(SwShShopInventory inventory, int slot, int itemId)
     {
         if ((uint)slot >= (uint)inventory.Items.Count)
         {
             throw new InvalidDataException($"Shop inventory slot {slot} is not present.");
         }
 
-        if (inventory.Items is not int[] items)
+        var items = inventory.Items.ToArray();
+        items[slot] = itemId;
+        return new SwShShopInventory(items);
+    }
+
+    private static SwShShopInventory InsertInventoryItem(SwShShopInventory inventory, int slot, int itemId)
+    {
+        if ((uint)slot > (uint)inventory.Items.Count)
         {
-            throw new InvalidDataException("Shop inventory is not mutable.");
+            throw new InvalidDataException($"Shop inventory insert slot {slot} is outside the inventory.");
         }
 
-        items[slot] = itemId;
+        var items = inventory.Items.ToList();
+        items.Insert(slot, itemId);
+        return new SwShShopInventory(items.ToArray());
+    }
+
+    private static SwShShopInventory RemoveInventoryItem(SwShShopInventory inventory, int slot)
+    {
+        if ((uint)slot >= (uint)inventory.Items.Count)
+        {
+            throw new InvalidDataException($"Shop inventory slot {slot} is not present.");
+        }
+
+        var items = inventory.Items.ToList();
+        items.RemoveAt(slot);
+        return new SwShShopInventory(items.ToArray());
     }
 
     private static SwShSingleShopRecord ReadSingleShop(ReadOnlySpan<byte> data, int tableOffset)

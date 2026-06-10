@@ -38,6 +38,7 @@ public sealed class SwShRoyalCandyEditSessionService
     public SwShRoyalCandyEditResult StageWorkflow(
         ProjectPaths paths,
         string workflowId,
+        IReadOnlyList<SwShRoyalCandyLevelCapSelection>? levelCaps,
         EditSession? session)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -63,7 +64,13 @@ public sealed class SwShRoyalCandyEditSessionService
             return new SwShRoyalCandyEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(selectedWorkflow);
+        var selectedLevelCaps = NormalizeLevelCapSelections(selectedWorkflow, levelCaps, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShRoyalCandyEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var pendingEdit = CreatePendingEdit(selectedWorkflow, selectedLevelCaps);
         var updatedSession = currentSession with
         {
             PendingEdits = currentSession.PendingEdits
@@ -184,8 +191,21 @@ public sealed class SwShRoyalCandyEditSessionService
         }
 
         var project = projectWorkspaceService.Open(paths);
+        var workflow = royalCandyWorkflowService.Load(project);
         var edit = session.PendingEdits.Single();
         var workflowId = edit.RecordId ?? string.Empty;
+        var selectedWorkflow = GetApplicableWorkflow(workflow, workflowId, diagnostics);
+        if (selectedWorkflow is null)
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+
+        var levelCaps = ParseLevelCapSelections(selectedWorkflow, edit.NewValue, diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+
         var isCleanup = string.Equals(workflowId, UninstallWorkflowId, StringComparison.Ordinal);
 
         foreach (var write in currentPlan.Writes)
@@ -215,7 +235,7 @@ public sealed class SwShRoyalCandyEditSessionService
                     continue;
                 }
 
-                var output = CreateOutputBytes(project, workflowId, write.TargetRelativePath, diagnostics);
+                var output = CreateOutputBytes(project, selectedWorkflow, levelCaps, write.TargetRelativePath, diagnostics);
                 if (output is null)
                 {
                     continue;
@@ -278,7 +298,7 @@ public sealed class SwShRoyalCandyEditSessionService
             return false;
         }
 
-        if (selectedWorkflow.Status == "blocked" || selectedWorkflow.Status == "readOnly")
+        if (selectedWorkflow.Status != "available" && selectedWorkflow.Status != "warning")
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -321,6 +341,7 @@ public sealed class SwShRoyalCandyEditSessionService
         }
 
         CanStage(project, workflow, selectedWorkflow, diagnostics);
+        _ = ParseLevelCapSelections(selectedWorkflow, edit.NewValue, diagnostics);
     }
 
     private static SwShRoyalCandyWorkflowRecord? GetApplicableWorkflow(
@@ -357,7 +378,9 @@ public sealed class SwShRoyalCandyEditSessionService
         return selectedWorkflow;
     }
 
-    private static PendingEdit CreatePendingEdit(SwShRoyalCandyWorkflowRecord workflow)
+    private static PendingEdit CreatePendingEdit(
+        SwShRoyalCandyWorkflowRecord workflow,
+        IReadOnlyList<SwShRoyalCandyLevelCapSelection> levelCaps)
     {
         return new PendingEdit(
             RoyalCandyEditDomain,
@@ -365,7 +388,221 @@ public sealed class SwShRoyalCandyEditSessionService
             [new ProjectFileReference(workflow.Provenance.SourceLayer, workflow.Provenance.SourceFile)],
             RecordId: workflow.WorkflowId,
             Field: WorkflowField,
-            NewValue: workflow.Mode);
+            NewValue: CreatePendingEditValue(workflow, levelCaps));
+    }
+
+    private static string CreatePendingEditValue(
+        SwShRoyalCandyWorkflowRecord workflow,
+        IReadOnlyList<SwShRoyalCandyLevelCapSelection> levelCaps)
+    {
+        if (!UsesStoryLimits(workflow))
+        {
+            return workflow.Mode;
+        }
+
+        var serializedCaps = string.Join(
+            ';',
+            levelCaps
+                .OrderBy(selection => selection.Slot)
+                .Select(selection => string.Create(CultureInfo.InvariantCulture, $"{selection.Slot}={selection.LevelCap}")));
+        return string.Create(CultureInfo.InvariantCulture, $"{workflow.Mode}|{serializedCaps}");
+    }
+
+    private static IReadOnlyList<SwShRoyalCandyLevelCapSelection> ParseLevelCapSelections(
+        SwShRoyalCandyWorkflowRecord workflow,
+        string? value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!UsesStoryLimits(workflow))
+        {
+            return Array.Empty<SwShRoyalCandyLevelCapSelection>();
+        }
+
+        if (string.IsNullOrWhiteSpace(value) || string.Equals(value, workflow.Mode, StringComparison.Ordinal))
+        {
+            return NormalizeLevelCapSelections(workflow, null, diagnostics);
+        }
+
+        var prefix = $"{workflow.Mode}|";
+        if (!value.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Royal Candy story-limit pending edit has an invalid cap payload.",
+                field: "levelCaps",
+                expected: "storyLimits|slot=level;..."));
+            return Array.Empty<SwShRoyalCandyLevelCapSelection>();
+        }
+
+        var selections = new List<SwShRoyalCandyLevelCapSelection>();
+        foreach (var part in value[prefix.Length..].Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var keyValue = part.Split('=', 2, StringSplitOptions.TrimEntries);
+            if (keyValue.Length != 2
+                || !int.TryParse(keyValue[0], NumberStyles.None, CultureInfo.InvariantCulture, out var slot)
+                || !int.TryParse(keyValue[1], NumberStyles.None, CultureInfo.InvariantCulture, out var levelCap))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Royal Candy story-limit cap entry '{part}' is not valid.",
+                    field: "levelCaps",
+                    expected: "slot=level"));
+                continue;
+            }
+
+            selections.Add(new SwShRoyalCandyLevelCapSelection(slot, levelCap));
+        }
+
+        return NormalizeLevelCapSelections(workflow, selections, diagnostics);
+    }
+
+    private static IReadOnlyList<SwShRoyalCandyLevelCapSelection> NormalizeLevelCapSelections(
+        SwShRoyalCandyWorkflowRecord workflow,
+        IReadOnlyList<SwShRoyalCandyLevelCapSelection>? selections,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!UsesStoryLimits(workflow))
+        {
+            return Array.Empty<SwShRoyalCandyLevelCapSelection>();
+        }
+
+        if (workflow.LevelCaps.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Royal Candy story-limit workflow is missing its level-cap definitions.",
+                field: "levelCaps",
+                expected: "Configured story-limit milestone caps"));
+            return Array.Empty<SwShRoyalCandyLevelCapSelection>();
+        }
+
+        var requested = new Dictionary<int, int>();
+        if (selections is not null)
+        {
+            foreach (var selection in selections)
+            {
+                if (requested.ContainsKey(selection.Slot))
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Royal Candy story-limit cap slot {selection.Slot} was supplied more than once.",
+                        field: "levelCaps",
+                        expected: "One cap value per milestone slot"));
+                    continue;
+                }
+
+                requested.Add(selection.Slot, selection.LevelCap);
+            }
+        }
+
+        var knownSlots = workflow.LevelCaps.Select(cap => cap.Slot).ToHashSet();
+        foreach (var slot in requested.Keys.Where(slot => !knownSlots.Contains(slot)).Order())
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Royal Candy story-limit cap slot {slot} is not available.",
+                field: "levelCaps",
+                expected: "Known story-limit milestone slot"));
+        }
+
+        var normalized = new List<SwShRoyalCandyLevelCapSelection>(workflow.LevelCaps.Count);
+        var previousCap = workflow.LevelCaps.Min(cap => cap.MinimumLevelCap);
+        foreach (var definition in workflow.LevelCaps.OrderBy(cap => cap.Slot))
+        {
+            var levelCap = requested.TryGetValue(definition.Slot, out var requestedCap)
+                ? requestedCap
+                : definition.LevelCap;
+
+            if (levelCap < definition.MinimumLevelCap || levelCap > definition.MaximumLevelCap)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Royal Candy cap for {definition.Label} must be between {definition.MinimumLevelCap} and {definition.MaximumLevelCap}."),
+                    field: "levelCaps",
+                    expected: "Story cap between 1 and 100"));
+            }
+
+            if (levelCap < previousCap)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Royal Candy cap for {definition.Label} is {levelCap}, but it must be at least {previousCap}."),
+                    field: "levelCaps",
+                    expected: "Equal or ascending story caps"));
+            }
+
+            normalized.Add(new SwShRoyalCandyLevelCapSelection(definition.Slot, levelCap));
+            previousCap = levelCap;
+        }
+
+        return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            ? Array.Empty<SwShRoyalCandyLevelCapSelection>()
+            : normalized;
+    }
+
+    private static bool UsesStoryLimits(SwShRoyalCandyWorkflowRecord workflow)
+    {
+        return string.Equals(workflow.WorkflowId, StoryLimitsWorkflowId, StringComparison.Ordinal);
+    }
+
+    private static IReadOnlyList<SwShRoyalCandyStoryLevelCap> CreateStoryLevelCapPatches(
+        SwShRoyalCandyWorkflowRecord workflow,
+        IReadOnlyList<SwShRoyalCandyLevelCapSelection> selections,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!UsesStoryLimits(workflow))
+        {
+            return Array.Empty<SwShRoyalCandyStoryLevelCap>();
+        }
+
+        var selectedCaps = selections.ToDictionary(selection => selection.Slot, selection => selection.LevelCap);
+        var storyLevelCaps = new List<SwShRoyalCandyStoryLevelCap>(workflow.LevelCaps.Count);
+        foreach (var definition in workflow.LevelCaps.OrderBy(levelCap => levelCap.Slot))
+        {
+            var progressHashText = definition.ProgressHash.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                ? definition.ProgressHash[2..]
+                : definition.ProgressHash;
+            if (!ulong.TryParse(progressHashText, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var progressHash))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Royal Candy story-limit milestone '{definition.Label}' has an invalid progress hash '{definition.ProgressHash}'.",
+                    field: "levelCaps",
+                    expected: "64-bit progress hash"));
+                continue;
+            }
+
+            var progressKind = definition.ProgressKind switch
+            {
+                "flag" => SwShRoyalCandyStoryLevelCapProgressKind.Flag,
+                "workAtLeast" => SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast,
+                _ => (SwShRoyalCandyStoryLevelCapProgressKind?)null,
+            };
+            if (progressKind is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Royal Candy story-limit milestone '{definition.Label}' has an unknown progress kind '{definition.ProgressKind}'.",
+                    field: "levelCaps",
+                    expected: "flag or workAtLeast"));
+                continue;
+            }
+
+            storyLevelCaps.Add(new SwShRoyalCandyStoryLevelCap(
+                selectedCaps.TryGetValue(definition.Slot, out var selectedCap)
+                    ? selectedCap
+                    : definition.LevelCap,
+                progressHash,
+                definition.Label,
+                progressKind.Value,
+                definition.WorkMinimum ?? 0));
+        }
+
+        return storyLevelCaps;
     }
 
     private static IReadOnlyList<PlannedFileWrite> CreateConcreteWrites(
@@ -438,7 +675,8 @@ public sealed class SwShRoyalCandyEditSessionService
 
     private static byte[]? CreateOutputBytes(
         OpenedProject project,
-        string workflowId,
+        SwShRoyalCandyWorkflowRecord selectedWorkflow,
+        IReadOnlyList<SwShRoyalCandyLevelCapSelection> levelCaps,
         string relativePath,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -496,7 +734,7 @@ public sealed class SwShRoyalCandyEditSessionService
             var lines = textFile.Lines.ToArray();
             var replacement = relativePath.EndsWith("/itemname.dat", StringComparison.OrdinalIgnoreCase)
                 ? RoyalCandyName
-                : GetRoyalCandyDescription(workflowId);
+                : GetRoyalCandyDescription(selectedWorkflow.WorkflowId);
             lines[1128] = lines[1128] with { Text = replacement };
             return SwShGameTextFile.Write(lines);
         }
@@ -508,6 +746,19 @@ public sealed class SwShRoyalCandyEditSessionService
 
         if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase))
         {
+            if (UsesStoryLimits(selectedWorkflow))
+            {
+                var storyLevelCaps = CreateStoryLevelCapPatches(selectedWorkflow, levelCaps, diagnostics);
+                if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                {
+                    return null;
+                }
+
+                return SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+                    File.ReadAllBytes(source.AbsolutePath),
+                    storyLevelCaps);
+            }
+
             return SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(File.ReadAllBytes(source.AbsolutePath));
         }
 

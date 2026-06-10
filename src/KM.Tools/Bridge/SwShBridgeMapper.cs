@@ -1878,8 +1878,23 @@ public static class SwShBridgeMapper
             workflow.TemplateItemId,
             workflow.Status,
             workflow.Description,
+            workflow.LevelCaps.Select(ToDto).ToArray(),
             workflow.Steps.Select(ToDto).ToArray(),
             ToDto(workflow.Provenance));
+    }
+
+    private static RoyalCandyLevelCapRecordDto ToDto(SwShRoyalCandyLevelCapRecord levelCap)
+    {
+        return new RoyalCandyLevelCapRecordDto(
+            levelCap.Slot,
+            levelCap.MilestoneId,
+            levelCap.Label,
+            levelCap.LevelCap,
+            levelCap.MinimumLevelCap,
+            levelCap.MaximumLevelCap,
+            levelCap.ProgressKind,
+            levelCap.ProgressHash,
+            levelCap.WorkMinimum);
     }
 
     private static RoyalCandyWorkflowCheckRecordDto ToDto(SwShRoyalCandyWorkflowCheckRecord check)

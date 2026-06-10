@@ -46,7 +46,8 @@ public sealed class SwShShopsEditSessionService
 
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var workflow = shopsWorkflowService.Load(project);
+        var loadedWorkflow = shopsWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (!CanEditShops(project, workflow, diagnostics))
@@ -65,8 +66,21 @@ public sealed class SwShShopsEditSessionService
             return new SwShShopsEditResult(workflow, currentSession, diagnostics);
         }
 
+        var normalizedField = field.Trim();
+        var isAdd = string.Equals(normalizedField, SwShShopsWorkflowService.AddItemField, StringComparison.Ordinal);
+        var isSetInventory = string.Equals(normalizedField, SwShShopsWorkflowService.SetInventoryField, StringComparison.Ordinal);
         var inventoryItem = selectedShop.Inventory.FirstOrDefault(item => item.Slot == slot);
-        if (inventoryItem is null)
+        if (isAdd && (slot < 1 || slot > selectedShop.Inventory.Count + 1))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Shop '{selectedShop.Name}' can add inventory at slots 1 through {selectedShop.Inventory.Count + 1}.",
+                field: "slot",
+                expected: "Safe shop insert slot"));
+            return new SwShShopsEditResult(workflow, currentSession, diagnostics);
+        }
+
+        if (!isAdd && !isSetInventory && inventoryItem is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -76,7 +90,7 @@ public sealed class SwShShopsEditSessionService
             return new SwShShopsEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(selectedShop, inventoryItem, field, value, diagnostics);
+        var pendingEdit = CreatePendingEdit(selectedShop, slot, inventoryItem, normalizedField, value, diagnostics);
         if (pendingEdit is null)
         {
             return new SwShShopsEditResult(workflow, currentSession, diagnostics);
@@ -85,7 +99,7 @@ public sealed class SwShShopsEditSessionService
         var updatedSession = ReplacePendingShopEdit(currentSession, pendingEdit);
 
         return new SwShShopsEditResult(
-            OverlayPendingEdits(workflow, updatedSession.PendingEdits),
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
             diagnostics);
     }
@@ -101,9 +115,15 @@ public sealed class SwShShopsEditSessionService
 
         CanEditShops(project, workflow, diagnostics);
 
+        var validationWorkflow = workflow;
         foreach (var edit in session.PendingEdits)
         {
-            ValidatePendingEdit(workflow, edit, diagnostics);
+            var errorCount = diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            ValidatePendingEdit(validationWorkflow, edit, diagnostics);
+            if (diagnostics.Count(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) == errorCount)
+            {
+                validationWorkflow = OverlayPendingEdits(validationWorkflow, [edit]);
+            }
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -322,7 +342,39 @@ public sealed class SwShShopsEditSessionService
         }
 
         var shop = workflow.Shops.FirstOrDefault(candidate => candidate.ShopId == shopId);
-        if (shop is null || shop.Inventory.All(item => item.Slot != slot))
+        if (shop is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending shop edit targets a shop that is not loaded.",
+                field: "shopId",
+                expected: "Existing shop record"));
+            return;
+        }
+
+        if (string.Equals(edit.Field, SwShShopsWorkflowService.SetInventoryField, StringComparison.Ordinal))
+        {
+            TryParseItemIdList(edit.NewValue, diagnostics);
+            return;
+        }
+
+        if (string.Equals(edit.Field, SwShShopsWorkflowService.AddItemField, StringComparison.Ordinal))
+        {
+            if (slot > shop.Inventory.Count + 1)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending shop add edit targets an insert slot outside the inventory.",
+                    field: "slot",
+                    expected: "Safe shop insert slot"));
+                return;
+            }
+
+            TryParseItemId(edit.NewValue, diagnostics);
+            return;
+        }
+
+        if (shop.Inventory.All(item => item.Slot != slot))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -332,36 +384,75 @@ public sealed class SwShShopsEditSessionService
             return;
         }
 
-        TryParseItemId(edit.NewValue, diagnostics);
+        if (!string.Equals(edit.Field, SwShShopsWorkflowService.RemoveItemField, StringComparison.Ordinal))
+        {
+            TryParseItemId(edit.NewValue, diagnostics);
+        }
     }
 
     private static PendingEdit? CreatePendingEdit(
         SwShShopRecord shop,
-        SwShShopInventoryRecord inventoryItem,
+        int slot,
+        SwShShopInventoryRecord? inventoryItem,
         string field,
         string value,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var normalizedField = field.Trim();
-        if (!SwShShopsWorkflowService.IsEditableField(normalizedField))
+        if (!SwShShopsWorkflowService.IsEditableField(field))
         {
-            diagnostics.Add(CreateUnsupportedFieldDiagnostic(normalizedField));
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(field));
             return null;
         }
 
-        var itemId = TryParseItemId(value, diagnostics);
+        if (string.Equals(field, SwShShopsWorkflowService.SetInventoryField, StringComparison.Ordinal))
+        {
+            var itemIds = TryParseItemIdList(value, diagnostics);
+            if (itemIds is null)
+            {
+                return null;
+            }
+
+            return new PendingEdit(
+                ShopsEditDomain,
+                $"Set {shop.Name} inventory order to {itemIds.Count} item{(itemIds.Count == 1 ? string.Empty : "s")}.",
+                [new ProjectFileReference(shop.Provenance.SourceLayer, shop.Provenance.SourceFile)],
+                RecordId: SwShShopsWorkflowService.CreateInventoryRecordId(shop.ShopId, 1),
+                Field: field,
+                NewValue: FormatItemIdList(itemIds));
+        }
+
+        var isRemove = string.Equals(field, SwShShopsWorkflowService.RemoveItemField, StringComparison.Ordinal);
+        var itemId = isRemove
+            ? inventoryItem?.ItemId ?? 0
+            : TryParseItemId(value, diagnostics);
         if (itemId is null)
         {
             return null;
         }
 
+        var summary = field switch
+        {
+            var currentField when string.Equals(currentField, SwShShopsWorkflowService.AddItemField, StringComparison.Ordinal) =>
+                $"Add item ID {itemId.Value} to {shop.Name} slot {slot}.",
+            var currentField when string.Equals(currentField, SwShShopsWorkflowService.RemoveItemField, StringComparison.Ordinal) =>
+                $"Remove {shop.Name} slot {slot}{FormatInventoryItemSuffix(inventoryItem)}.",
+            _ => $"Set {shop.Name} slot {slot} item ID to {itemId.Value}.",
+        };
+
         return new PendingEdit(
             ShopsEditDomain,
-            $"Set {shop.Name} slot {inventoryItem.Slot} item ID to {itemId.Value}.",
+            summary,
             [new ProjectFileReference(shop.Provenance.SourceLayer, shop.Provenance.SourceFile)],
-            RecordId: SwShShopsWorkflowService.CreateInventoryRecordId(shop.ShopId, inventoryItem.Slot),
-            Field: SwShShopsWorkflowService.ItemIdField,
+            RecordId: SwShShopsWorkflowService.CreateInventoryRecordId(shop.ShopId, slot),
+            Field: field,
             NewValue: itemId.Value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static string FormatInventoryItemSuffix(SwShShopInventoryRecord? inventoryItem)
+    {
+        return inventoryItem is null
+            ? string.Empty
+            : $" ({inventoryItem.ItemName})";
     }
 
     private static int? TryParseItemId(string? value, ICollection<ValidationDiagnostic> diagnostics)
@@ -381,8 +472,65 @@ public sealed class SwShShopsEditSessionService
         return itemId;
     }
 
+    private static IReadOnlyList<int>? TryParseItemIdList(
+        string? value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<int>();
+        }
+
+        var itemIds = new List<int>();
+        foreach (var part in value.Split(',', StringSplitOptions.None))
+        {
+            var trimmedPart = part.Trim();
+            if (trimmedPart.Length == 0)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Shop inventory item list contains an empty item ID.",
+                    field: SwShShopsWorkflowService.ItemIdField,
+                    expected: "Comma-separated shop item IDs"));
+                return null;
+            }
+
+            var itemId = TryParseItemId(trimmedPart, diagnostics);
+            if (itemId is null)
+            {
+                return null;
+            }
+
+            itemIds.Add(itemId.Value);
+        }
+
+        return itemIds;
+    }
+
+    private static string FormatItemIdList(IReadOnlyList<int> itemIds)
+    {
+        return string.Join(
+            ",",
+            itemIds.Select(itemId => itemId.ToString(CultureInfo.InvariantCulture)));
+    }
+
     private static EditSession ReplacePendingShopEdit(EditSession session, PendingEdit pendingEdit)
     {
+        if (string.Equals(pendingEdit.Field, SwShShopsWorkflowService.SetInventoryField, StringComparison.Ordinal)
+            && SwShShopsWorkflowService.TryParseInventoryRecordId(pendingEdit.RecordId, out var pendingShopId, out _))
+        {
+            return session with
+            {
+                PendingEdits = session.PendingEdits
+                    .Where(edit =>
+                        !string.Equals(edit.Domain, pendingEdit.Domain, StringComparison.Ordinal)
+                        || !SwShShopsWorkflowService.TryParseInventoryRecordId(edit.RecordId, out var shopId, out _)
+                        || !string.Equals(shopId, pendingShopId, StringComparison.Ordinal))
+                    .Append(pendingEdit)
+                    .ToArray(),
+            };
+        }
+
         var pendingEdits = session.PendingEdits
             .Where(edit => !IsSameShopEdit(edit, pendingEdit))
             .Append(pendingEdit)
@@ -416,10 +564,30 @@ public sealed class SwShShopsEditSessionService
     {
         if (!string.Equals(edit.Domain, ShopsEditDomain, StringComparison.Ordinal)
             || !SwShShopsWorkflowService.IsEditableField(edit.Field)
-            || !SwShShopsWorkflowService.TryParseInventoryRecordId(edit.RecordId, out var shopId, out var slot)
-            || TryParseItemId(edit.NewValue, new List<ValidationDiagnostic>()) is not { } itemId)
+            || !SwShShopsWorkflowService.TryParseInventoryRecordId(edit.RecordId, out var shopId, out var slot))
         {
             return workflow;
+        }
+
+        IReadOnlyList<int>? itemIds = null;
+        var itemId = 0;
+        if (string.Equals(edit.Field, SwShShopsWorkflowService.SetInventoryField, StringComparison.Ordinal))
+        {
+            itemIds = TryParseItemIdList(edit.NewValue, new List<ValidationDiagnostic>());
+            if (itemIds is null)
+            {
+                return workflow;
+            }
+        }
+        else if (!string.Equals(edit.Field, SwShShopsWorkflowService.RemoveItemField, StringComparison.Ordinal))
+        {
+            var parsedItemId = TryParseItemId(edit.NewValue, new List<ValidationDiagnostic>());
+            if (parsedItemId is null)
+            {
+                return workflow;
+            }
+
+            itemId = parsedItemId.Value;
         }
 
         var itemOption = ResolveItemOption(workflow, itemId);
@@ -427,7 +595,7 @@ public sealed class SwShShopsEditSessionService
         {
             Shops = workflow.Shops
                 .Select(shop => shop.ShopId == shopId
-                    ? OverlayShopInventoryItem(shop, slot, itemId, itemOption)
+                    ? OverlayShopInventoryItem(shop, slot, itemId, itemIds, itemOption, workflow, edit.Field!)
                     : shop)
                 .ToArray(),
         };
@@ -437,25 +605,104 @@ public sealed class SwShShopsEditSessionService
         SwShShopRecord shop,
         int slot,
         int itemId,
-        SwShShopEditableFieldOption? itemOption)
+        IReadOnlyList<int>? itemIds,
+        SwShShopEditableFieldOption? itemOption,
+        SwShShopsWorkflow workflow,
+        string field)
     {
-        var inventory = shop.Inventory
-            .Select(item => item.Slot == slot
-                ? item with
-                {
-                    ItemId = itemId,
-                    ItemName = itemOption?.ItemName ?? $"Item {itemId}",
-                    Price = itemOption?.Price ?? 0,
-                    IsKnownItem = itemOption is not null,
-                }
-                : item)
-            .ToArray();
+        var inventory = field switch
+        {
+            var currentField when string.Equals(currentField, SwShShopsWorkflowService.SetInventoryField, StringComparison.Ordinal) =>
+                SetShopInventoryItems(itemIds ?? Array.Empty<int>(), workflow),
+            var currentField when string.Equals(currentField, SwShShopsWorkflowService.AddItemField, StringComparison.Ordinal) =>
+                InsertShopInventoryItem(shop.Inventory, slot, itemId, itemOption),
+            var currentField when string.Equals(currentField, SwShShopsWorkflowService.RemoveItemField, StringComparison.Ordinal) =>
+                RemoveShopInventoryItem(shop.Inventory, slot),
+            _ => shop.Inventory
+                .Select(item => item.Slot == slot
+                    ? item with
+                    {
+                        ItemId = itemId,
+                        ItemName = itemOption?.ItemName ?? $"Item {itemId}",
+                        Price = itemOption?.Price ?? 0,
+                        IsKnownItem = itemOption is not null,
+                    }
+                    : item)
+                .ToArray(),
+        };
 
         return shop with
         {
             Inventory = inventory,
             InventorySummary = SwShShopsWorkflowService.FormatInventorySummary(inventory),
         };
+    }
+
+    private static SwShShopInventoryRecord[] InsertShopInventoryItem(
+        IReadOnlyList<SwShShopInventoryRecord> inventory,
+        int slot,
+        int itemId,
+        SwShShopEditableFieldOption? itemOption)
+    {
+        if (slot < 1 || slot > inventory.Count + 1)
+        {
+            return inventory.ToArray();
+        }
+
+        var records = inventory.ToList();
+        records.Insert(
+            slot - 1,
+            new SwShShopInventoryRecord(
+                slot,
+                itemId,
+                itemOption?.ItemName ?? $"Item {itemId}",
+                itemOption?.Price ?? 0,
+                IsKnownItem: itemOption is not null,
+                StockLimit: null));
+
+        return RenumberInventory(records);
+    }
+
+    private static SwShShopInventoryRecord[] RemoveShopInventoryItem(
+        IReadOnlyList<SwShShopInventoryRecord> inventory,
+        int slot)
+    {
+        if (slot < 1 || slot > inventory.Count)
+        {
+            return inventory.ToArray();
+        }
+
+        var records = inventory
+            .Where(item => item.Slot != slot)
+            .ToList();
+        return RenumberInventory(records);
+    }
+
+    private static SwShShopInventoryRecord[] SetShopInventoryItems(
+        IReadOnlyList<int> itemIds,
+        SwShShopsWorkflow workflow)
+    {
+        return itemIds
+            .Select((itemId, index) =>
+            {
+                var itemOption = ResolveItemOption(workflow, itemId);
+                return new SwShShopInventoryRecord(
+                    index + 1,
+                    itemId,
+                    itemOption?.ItemName ?? $"Item {itemId}",
+                    itemOption?.Price ?? 0,
+                    IsKnownItem: itemOption is not null,
+                    StockLimit: null);
+            })
+            .ToArray();
+    }
+
+    private static SwShShopInventoryRecord[] RenumberInventory(
+        IReadOnlyList<SwShShopInventoryRecord> inventory)
+    {
+        return inventory
+            .Select((item, index) => item with { Slot = index + 1 })
+            .ToArray();
     }
 
     private static SwShShopEditableFieldOption? ResolveItemOption(SwShShopsWorkflow workflow, int itemId)
@@ -507,8 +754,20 @@ public sealed class SwShShopsEditSessionService
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var itemId = TryParseItemId(edit.NewValue, diagnostics);
-        if (itemId is null)
+        var action = edit.Field switch
+        {
+            SwShShopsWorkflowService.AddItemField => SwShShopInventoryEditAction.Add,
+            SwShShopsWorkflowService.RemoveItemField => SwShShopInventoryEditAction.Remove,
+            SwShShopsWorkflowService.SetInventoryField => SwShShopInventoryEditAction.Set,
+            _ => SwShShopInventoryEditAction.Replace,
+        };
+        var itemIds = action == SwShShopInventoryEditAction.Set
+            ? TryParseItemIdList(edit.NewValue, diagnostics)
+            : null;
+        var itemId = action == SwShShopInventoryEditAction.Remove || action == SwShShopInventoryEditAction.Set
+            ? 0
+            : TryParseItemId(edit.NewValue, diagnostics);
+        if (itemId is null || (action == SwShShopInventoryEditAction.Set && itemIds is null))
         {
             return null;
         }
@@ -529,7 +788,9 @@ public sealed class SwShShopsEditSessionService
             hash,
             inventoryIndex,
             Slot: slot - 1,
-            itemId.Value);
+            itemId.Value,
+            action,
+            itemIds);
     }
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)

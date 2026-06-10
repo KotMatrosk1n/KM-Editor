@@ -1476,7 +1476,7 @@ describe('bridge contracts', () => {
           description: 'Prepares Royal Candy item 1128 from Rare Candy item 50.',
           itemId: 1128,
           mode: 'unlimited',
-          name: 'Install Unlimited Royal Candy',
+          name: 'Unlimited Royal Candy',
           provenance: {
             fileState: 'baseOnly',
             sourceFile: 'romfs/bin/pml/item/item.dat',

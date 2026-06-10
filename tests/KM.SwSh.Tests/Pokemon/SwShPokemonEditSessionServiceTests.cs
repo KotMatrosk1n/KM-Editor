@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers.Binary;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
@@ -158,6 +159,43 @@ public sealed class SwShPokemonEditSessionServiceTests
         Assert.Equal("0", edit.NewValue);
         Assert.Equal("Move Bulbasaur learnset slot 1 to slot 0.", edit.Summary);
         Assert.Contains(edit.Sources, source => source.RelativePath == SwShPokemonWorkflowService.LearnsetDataPath);
+        Assert.Empty(result.Diagnostics);
+    }
+
+    [Theory]
+    [InlineData("moveUp", 1)]
+    [InlineData("moveDown", 0)]
+    public void UpdateLearnsetMoveButtonsMoveWholeRowWithLevel(string action, int slot)
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPokemonEditSessionService();
+
+        var result = service.UpdateLearnset(
+            temp.Paths,
+            session: null,
+            personalId: 1,
+            action,
+            slot,
+            moveId: null,
+            level: null);
+
+        var pokemon = result.Workflow.Pokemon.Single(record => record.PersonalId == 1);
+        Assert.Collection(
+            pokemon.Learnset,
+            move =>
+            {
+                Assert.Equal(0, move.Slot);
+                Assert.Equal(45, move.MoveId);
+                Assert.Equal("Growl", move.MoveName);
+                Assert.Equal(3, move.Level);
+            },
+            move =>
+            {
+                Assert.Equal(1, move.Slot);
+                Assert.Equal(33, move.MoveId);
+                Assert.Equal("Tackle", move.MoveName);
+                Assert.Equal(1, move.Level);
+            });
         Assert.Empty(result.Diagnostics);
     }
 
@@ -339,6 +377,53 @@ public sealed class SwShPokemonEditSessionServiceTests
     }
 
     [Fact]
+    public void ApplyChangePlanCanRemoveAndRestoreAllEvYields()
+    {
+        using var temp = CreateEditableProject();
+        temp.WriteOutputFile(
+            SwShPokemonWorkflowService.PersonalDataPath,
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                CreateBulbasaurPersonalRecordWithEvYield(hp: 1, attack: 2, defense: 3)));
+        var service = new SwShPokemonEditSessionService();
+
+        var remove = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 0,
+            field: "evYieldAll",
+            value: "remove");
+
+        var removedPokemon = remove.Workflow.Pokemon.Single(record => record.PersonalId == 1);
+        Assert.Equal(0, removedPokemon.Personal.EVYieldHP);
+        Assert.Equal(0, removedPokemon.Personal.EVYieldAttack);
+        Assert.Equal(0, removedPokemon.Personal.EVYieldDefense);
+        var removeEdit = Assert.Single(remove.Session.PendingEdits);
+        Assert.Equal("all", removeEdit.RecordId);
+        Assert.Equal("evYieldAll", removeEdit.Field);
+
+        var restore = service.UpdateField(
+            temp.Paths,
+            remove.Session,
+            personalId: 0,
+            field: "evYieldAll",
+            value: "restore");
+        var plan = service.CreateChangePlan(temp.Paths, restore.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, restore.Session, plan);
+
+        Assert.True(plan.CanApply);
+        Assert.Contains(apply.WrittenFiles, file => file.RelativePath == SwShPokemonWorkflowService.PersonalDataPath);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputBytes = File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.PersonalDataPath.Replace('/', Path.DirectorySeparatorChar)));
+        var outputRecord = SwShPersonalTable.Parse(outputBytes).Records[1];
+        Assert.Equal(0, outputRecord.EVYieldHP);
+        Assert.Equal(0, outputRecord.EVYieldAttack);
+        Assert.Equal(0, outputRecord.EVYieldDefense);
+    }
+
+    [Fact]
     public void ApplyChangePlanWritesOutputLearnsetTableAndLeavesBaseUntouched()
     {
         using var temp = CreateEditableProject();
@@ -501,5 +586,25 @@ public sealed class SwShPokemonEditSessionServiceTests
         SwShPokemonWorkflowServiceTests.WriteBasePokemonData(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         return temp;
+    }
+
+    private static byte[] CreateBulbasaurPersonalRecordWithEvYield(
+        int hp = 0,
+        int attack = 0,
+        int defense = 0,
+        int speed = 0,
+        int specialAttack = 0,
+        int specialDefense = 0)
+    {
+        var record = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord();
+        var evYield =
+            (hp & 0x3)
+            | ((attack & 0x3) << 2)
+            | ((defense & 0x3) << 4)
+            | ((speed & 0x3) << 6)
+            | ((specialAttack & 0x3) << 8)
+            | ((specialDefense & 0x3) << 10);
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x0A), checked((ushort)evYield));
+        return record;
     }
 }

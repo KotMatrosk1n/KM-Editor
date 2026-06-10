@@ -181,19 +181,34 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Project Health' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Project Paths' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Open Project' }).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Viewers' })).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    );
-    expect(screen.getByRole('button', { name: 'Editors' })).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    );
-    expect(screen.getByRole('button', { name: 'Advanced Editors' })).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    );
+    expect(screen.queryByRole('button', { name: 'Viewers' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Editors' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Advanced Editors' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pokemon Data' })).not.toBeInTheDocument();
+  });
+
+  it('replaces existing editable field contents when typing after click', async () => {
+    const user = userEvent.setup();
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: 'C:/old/romfs',
+        outputRootPath: '',
+        saveFilePath: ''
+      }
+    });
+
+    render(<App />);
+
+    const romFsInput = screen.getByLabelText('Base RomFS') as HTMLInputElement;
+    await user.click(romFsInput);
+    await waitFor(() => {
+      expect(romFsInput.selectionStart).toBe(0);
+      expect(romFsInput.selectionEnd).toBe(romFsInput.value.length);
+    });
+    await user.keyboard('C:/new/romfs');
+
+    expect(romFsInput).toHaveValue('C:/new/romfs');
   });
 
   it('switches workbench sections', async () => {
@@ -207,7 +222,7 @@ describe('App', () => {
 
   it('validates and opens a read-only project shell state', async () => {
     const user = userEvent.setup();
-    render(<App bridge={createMockProjectBridge()} />);
+    render(<App bridge={createMockProjectBridge({}, false)} />);
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
@@ -218,39 +233,11 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Workflows' }));
 
     expect(screen.getByRole('heading', { name: 'Workflow List' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Items' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Pokemon Data' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Moves Data' })).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { level: 3, name: 'Text and Dialogue Map' })
+      screen.getByText('Validate Base RomFS, Base ExeFS, and Output Root before opening editors.')
     ).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Trainers' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Gift Pokemon' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Trade Pokemon' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Static Encounters' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Rental Pokemon' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'Dynamax Adventures' })
-    ).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Shops' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'Encounters and Wild Data' })
-    ).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Raid Rewards' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: 'Placement' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'Flagwork and Save Inspectors' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'ExeFS Patch Manager' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'Royal Candy Workflows' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('heading', { level: 3, name: 'Spreadsheet Import' })
-    ).toBeInTheDocument();
-    expect(screen.getAllByText('Read-only').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('heading', { level: 3, name: 'Items' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 3, name: 'Pokemon Data' })).not.toBeInTheDocument();
   });
 
   it('opens Items, searches records, and shows selected provenance', async () => {
@@ -383,7 +370,8 @@ describe('App', () => {
     const learnsetLevelInput = within(learnsetBlock!).getAllByLabelText('Level')[0]!;
     await user.clear(learnsetLevelInput);
     await user.type(learnsetLevelInput, '9');
-    await user.click(screen.getByRole('button', { name: 'Save learnset row' }));
+    expect(screen.queryByRole('button', { name: 'Save learnset row' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     expect(await within(learnsetBlock!).findByDisplayValue('345 Magical Leaf')).toBeInTheDocument();
 
@@ -436,6 +424,55 @@ describe('App', () => {
     expect(screen.getByText('Move Bulbasaur learnset slot 1 to slot 0.')).toBeInTheDocument();
   });
 
+  it('keeps the moved Pokemon learnset row selected after move buttons', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const learnsetBlock = screen
+      .getByRole('heading', { level: 4, name: 'Learnset' })
+      .closest('.inspector-block') as HTMLElement | null;
+    expect(learnsetBlock).not.toBeNull();
+    await user.click(within(learnsetBlock!).getByRole('button', { name: /Growl/ }));
+
+    await user.click(within(learnsetBlock!).getByRole('button', { name: 'Move learnset row up' }));
+
+    expect(await within(learnsetBlock!).findByDisplayValue('045 Growl')).toBeInTheDocument();
+    expect(within(learnsetBlock!).getByLabelText('Level')).toHaveDisplayValue('3');
+    expect(within(learnsetBlock!).getByRole('button', { name: /Tackle/ })).toBeInTheDocument();
+  });
+
+  it('keeps the moved Pokemon learnset row selected after moving down', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const learnsetBlock = screen
+      .getByRole('heading', { level: 4, name: 'Learnset' })
+      .closest('.inspector-block') as HTMLElement | null;
+    expect(learnsetBlock).not.toBeNull();
+
+    await user.click(within(learnsetBlock!).getByRole('button', { name: 'Move learnset row down' }));
+
+    expect(await within(learnsetBlock!).findByDisplayValue('033 Tackle')).toBeInTheDocument();
+    expect(within(learnsetBlock!).getByLabelText('Level')).toHaveDisplayValue('1');
+    expect(within(learnsetBlock!).getByRole('button', { name: /Growl/ })).toBeInTheDocument();
+  });
+
   it('starts a Pokemon edit session and saves an evolution row change', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
@@ -457,21 +494,185 @@ describe('App', () => {
     const evolutionMethodInput = within(evolutionsBlock!).getByLabelText('Method');
     await user.clear(evolutionMethodInput);
     await user.type(evolutionMethodInput, '8');
-    const evolutionItemInput = within(evolutionsBlock!).getByLabelText('Item');
-    await user.clear(evolutionItemInput);
-    await user.type(evolutionItemInput, '25');
+    await user.click(within(evolutionsBlock!).getByRole('button', { name: 'Show Item options' }));
+    expect(within(evolutionsBlock!).getByRole('option', { name: '001 Potion' })).toBeInTheDocument();
+    await user.click(within(evolutionsBlock!).getByRole('option', { name: '025 Thunder Stone' }));
+    const newEvolutionMethodInput = within(evolutionsBlock!).getByLabelText('New method');
+    await user.clear(newEvolutionMethodInput);
+    await user.type(newEvolutionMethodInput, '8');
+    const itemOptionButtons = within(evolutionsBlock!).getAllByRole('button', {
+      name: 'Show Item options'
+    });
+    await user.click(itemOptionButtons[itemOptionButtons.length - 1]!);
+    expect(within(evolutionsBlock!).getByRole('option', { name: '001 Potion' })).toBeInTheDocument();
+    expect(
+      within(evolutionsBlock!).getByRole('option', { name: '025 Thunder Stone' })
+    ).toBeInTheDocument();
+    await user.keyboard('{Escape}');
     await user.clear(within(evolutionsBlock!).getByLabelText('Form'));
     await user.type(within(evolutionsBlock!).getByLabelText('Form'), '1');
     const evolutionLevelInput = within(evolutionsBlock!).getAllByLabelText('Level')[0]!;
     await user.clear(evolutionLevelInput);
     await user.type(evolutionLevelInput, '32');
-    await user.click(screen.getByRole('button', { name: 'Save evolution row' }));
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     expect(await screen.findByRole('button', { name: /008 Use Item/ })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(screen.getByText('Set Bulbasaur evolution slot 0 to species 2 at level 32.')).toBeInTheDocument();
+  });
+
+  it('keeps Pokemon evolution row drafts when switching rows until Save Changes', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const pokemonResponse = await baseBridge.loadPokemonWorkflow({
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        saveFilePath: null
+      }
+    });
+    const bulbasaur = pokemonResponse.workflow.pokemon.find((pokemon) => pokemon.personalId === 1)!;
+    const updatePokemonEvolution = vi.fn(baseBridge.updatePokemonEvolution);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadPokemonWorkflow: async () => ({
+            workflow: {
+              ...pokemonResponse.workflow,
+              pokemon: pokemonResponse.workflow.pokemon.map((pokemon) =>
+                pokemon.personalId === bulbasaur.personalId
+                  ? {
+                      ...pokemon,
+                      evolutions: [
+                        ...pokemon.evolutions,
+                        {
+                          argument: 0,
+                          argumentKind: 'level',
+                          argumentLabel: 'Level',
+                          argumentValue: 'None',
+                          form: 0,
+                          level: 32,
+                          method: 4,
+                          methodName: 'Level Up',
+                          slot: 1,
+                          species: 3
+                        }
+                      ]
+                    }
+                  : pokemon
+              )
+            }
+          }),
+          updatePokemonEvolution
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const evolutionsBlock = screen
+      .getByRole('heading', { level: 4, name: 'Evolutions' })
+      .closest('.inspector-block') as HTMLElement | null;
+    expect(evolutionsBlock).not.toBeNull();
+    const levelInputs = within(evolutionsBlock!).getAllByLabelText('Level');
+    const levelInput = levelInputs[levelInputs.length - 1]!;
+    await user.clear(levelInput);
+    await user.type(levelInput, '24');
+
+    await user.click(within(evolutionsBlock!).getByRole('button', { name: /003 Venusaur/ }));
+    await user.click(within(evolutionsBlock!).getByRole('button', { name: /002 Ivysaur/ }));
+
+    const restoredLevelInputs = within(evolutionsBlock!).getAllByLabelText('Level');
+    expect(restoredLevelInputs[restoredLevelInputs.length - 1]).toHaveValue(24);
+
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    await waitFor(() => expect(updatePokemonEvolution).toHaveBeenCalled());
+    expect(updatePokemonEvolution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'upsert',
+        level: 24,
+        personalId: 1,
+        slot: 0
+      })
+    );
+  });
+
+  it('confirms Pokemon EV Yield bulk actions before staging them', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const updatePokemonField = vi.fn(baseBridge.updatePokemonField);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          updatePokemonField
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Pokemon' }));
+
+    await user.click(await screen.findByRole('button', { name: 'Remove EV Yield' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Remove EV Yield?' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Remove EV Yield will set every EV yield stat on every Pokemon to 0. This stages one pending Pokemon Data change and does not write files until you review and save it from Changes.'
+      )
+    ).toBeInTheDocument();
+    expect(updatePokemonField).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Remove EV Yield?' })).not.toBeInTheDocument();
+    expect(updatePokemonField).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Remove EV Yield' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirm Remove EV Yield' }));
+
+    await waitFor(() => expect(updatePokemonField).toHaveBeenCalledTimes(1));
+    expect(updatePokemonField).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        field: 'evYieldAll',
+        personalId: 0,
+        value: 'remove'
+      })
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Restore EV Yield' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Restore EV Yield?' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Restore EV Yield will copy every Pokemon EV yield back from vanilla personal data. Any custom EV yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after this is saved.'
+      )
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm Restore EV Yield' }));
+
+    await waitFor(() => expect(updatePokemonField).toHaveBeenCalledTimes(2));
+    expect(updatePokemonField).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        field: 'evYieldAll',
+        personalId: 0,
+        value: 'restore'
+      })
+    );
   });
 
   it('opens Moves Data, searches records, and shows selected details', async () => {
@@ -737,6 +938,32 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
   });
 
+  it('reloads imported editor data after canceling already-staged pending changes', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Items' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    const buyPriceInput = screen.getByLabelText('Buy price');
+    await user.clear(buyPriceInput);
+    await user.type(buyPriceInput, '450');
+    await user.click(screen.getByRole('button', { name: 'Save Item' }));
+
+    expect(await screen.findByDisplayValue('450')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(await screen.findByRole('button', { name: 'Yes, Discard' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Buy price')).toHaveDisplayValue('300'));
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+  });
+
   it('saves item metadata edits from backend-provided selectors', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
@@ -837,9 +1064,32 @@ describe('App', () => {
     expect(screen.getByLabelText('Move 1 ID')).toHaveDisplayValue('001 Scratch');
     expect(screen.getByLabelText('Gender')).toHaveDisplayValue('Male');
     expect(screen.getByLabelText('Ability')).toHaveDisplayValue('Ability 2 - 065 Overgrow');
-    expect(screen.getByLabelText('Nature')).toHaveDisplayValue('Jolly');
+    expect(screen.getByLabelText('Nature')).toHaveDisplayValue('Jolly (+Spe/-Sp.Atk)');
     expect(screen.getByLabelText('Can Gigantamax')).toHaveDisplayValue('Yes');
     expect(screen.getByLabelText('Can Dynamax')).toHaveDisplayValue('No');
+    const abilityInput = screen.getByLabelText('Ability');
+    await user.clear(abilityInput);
+    expect(screen.getByText('Enter a value.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show Ability options' }));
+    await user.click(screen.getByRole('option', { name: 'Ability 2 - 065 Overgrow' }));
+    await user.click(screen.getByRole('button', { name: 'Show Gender options' }));
+    expect(screen.getByRole('option', { name: 'Random' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Female' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Genderless' })).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: 'Male' }));
+    await user.click(screen.getByRole('button', { name: 'Show Nature options' }));
+    expect(screen.getByRole('option', { name: 'Hardy' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Adamant (+Atk/-Sp.Atk)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Serious' })).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: 'Jolly (+Spe/-Sp.Atk)' }));
+    const natureInput = screen.getByLabelText('Nature');
+    await user.clear(natureInput);
+    await user.type(natureInput, 'Ser');
+    expect(screen.getByRole('option', { name: 'Serious' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show Nature options' }));
+    expect(screen.getByRole('option', { name: 'Hardy' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Adamant (+Atk/-Sp.Atk)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: 'Jolly (+Spe/-Sp.Atk)' }));
     const levelInput = screen.getByLabelText('Level');
     await user.clear(levelInput);
     await user.type(levelInput, '25');
@@ -867,6 +1117,127 @@ describe('App', () => {
     expect(
       screen.getByText('Applied Trainers change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
+  });
+
+  it('keeps unsaved trainer and party Pokemon drafts when selecting other trainer records', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const trainersResponse = await baseBridge.loadTrainersWorkflow({
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        saveFilePath: null
+      }
+    });
+    const avery = trainersResponse.workflow.trainers[0]!;
+    const secondPartyPokemon = {
+      ...avery.team[0]!,
+      abilityOptions: [
+        { label: 'Default - 007 Torrent', value: 0 },
+        { label: 'Ability 1 - 007 Torrent', value: 1 },
+        { label: 'Ability 2 - 007 Torrent', value: 2 },
+        { label: 'Hidden Ability - 000 None', value: 3 }
+      ],
+      level: 8,
+      slot: 2,
+      species: 'Sobble',
+      speciesId: 816
+    };
+    const hop = {
+      ...avery,
+      location: 'Trainer 11',
+      name: 'Hop',
+      team: [{ ...avery.team[0]!, level: 5, slot: 1, species: 'Scorbunny', speciesId: 813 }],
+      trainerId: 11
+    };
+    const workflow = {
+      ...trainersResponse.workflow,
+      stats: {
+        ...trainersResponse.workflow.stats,
+        totalPokemonCount: 3,
+        totalTrainerCount: 2
+      },
+      trainers: [
+        { ...avery, team: [avery.team[0]!, secondPartyPokemon] },
+        hop
+      ]
+    };
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadTrainersWorkflow: async () => ({ workflow })
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Trainers' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const giftInput = screen.getByLabelText('Gift ID');
+    await user.clear(giftInput);
+    await user.type(giftInput, '1');
+    const levelInput = screen.getByLabelText('Level');
+    await user.clear(levelInput);
+    await user.type(levelInput, '25');
+
+    await user.click(screen.getByRole('button', { name: /Sobble/ }));
+    const secondLevelInput = screen.getByLabelText('Level');
+    await user.clear(secondLevelInput);
+    await user.type(secondLevelInput, '30');
+
+    await user.click(screen.getByRole('row', { name: /11Hop/ }));
+    expect(screen.getByLabelText('Gift ID')).toHaveDisplayValue('007 Rare Candy');
+    expect(screen.getByLabelText('Level')).toHaveDisplayValue('5');
+
+    await user.click(screen.getByRole('row', { name: /10Avery/ }));
+    expect(screen.getByLabelText('Gift ID')).toHaveDisplayValue('001 Potion');
+    expect(screen.getByLabelText('Level')).toHaveDisplayValue('25');
+
+    await user.click(screen.getByRole('button', { name: /Sobble/ }));
+    expect(screen.getByLabelText('Level')).toHaveDisplayValue('30');
+  });
+
+  it('warns before switching editors with unsaved local editor drafts', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Trainers' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const levelInput = screen.getByLabelText('Level');
+    await user.clear(levelInput);
+    await user.type(levelInput, '25');
+
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Switch Editors?' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'This editor has unsaved changes. Switching editors now will revert those local edits.'
+      )
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Stay Here' }));
+    expect(screen.getByRole('heading', { level: 2, name: 'Trainers' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Level')).toHaveDisplayValue('25');
+
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+    await user.click(await screen.findByRole('button', { name: 'Switch and Revert' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
   });
 
   it('opens Gift Pokemon, edits IVs, reviews a gift plan, and applies it', async () => {
@@ -1185,7 +1556,9 @@ describe('App', () => {
     const itemSelect = screen.getByLabelText('Shop slot 1 item');
     await user.clear(itemSelect);
     await user.type(itemSelect, '2');
-    await user.click(screen.getByRole('button', { name: 'Save shop slot 1' }));
+    expect(screen.queryByRole('button', { name: 'Save shop slot 1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel shop slot 1' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
     expect(await screen.findByLabelText('Shop slot 1 item')).toHaveDisplayValue(
       '0002 Antidote (Medicine)'
@@ -1193,7 +1566,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
-    expect(screen.getByText('Set Poke Mart slot 1 item ID to 2.')).toBeInTheDocument();
+    expect(screen.getByText('Set Poke Mart inventory order to 2 items.')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
@@ -1221,7 +1594,20 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Workflows' }));
     await user.click(await screen.findByRole('button', { name: 'Open Shops' }));
 
-    await user.click(await screen.findByRole('button', { name: 'Open Potion in Items' }));
+    const openPotionButton = await screen.findByRole('button', { name: 'Open Potion in Items' });
+    expect(openPotionButton).toHaveTextContent('Open in Items');
+    expect(openPotionButton).toHaveAttribute('title', 'Open in Items');
+
+    await user.click(openPotionButton);
+
+    expect(await screen.findByRole('dialog', { name: 'Open in Items?' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Navigating out of Shops before pressing Save Changes will permanently discard unsaved inventory edits in this editor.'
+      )
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Open Potion' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
     expect(screen.getAllByText('Potion').length).toBeGreaterThan(0);
@@ -1667,7 +2053,7 @@ describe('App', () => {
         name: 'Royal Candy Workflows'
       })
     ).toBeInTheDocument();
-    expect(screen.getAllByText('Install Unlimited Royal Candy').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Unlimited Royal Candy').length).toBeGreaterThan(0);
     expect(screen.getAllByText('romfs/bin/pml/item/item.dat').length).toBeGreaterThan(0);
     expect(screen.getAllByText('exefs/main').length).toBeGreaterThan(0);
 
@@ -1687,12 +2073,12 @@ describe('App', () => {
     await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
     await user.click(screen.getByRole('button', { name: 'Workflows' }));
     await user.click(await screen.findByRole('button', { name: 'Open Candy' }));
-    await user.click(await screen.findByRole('button', { name: 'Stage Workflow' }));
+    await user.click(await screen.findByRole('button', { name: 'Stage' }));
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(
-      await screen.findByText('Stage Royal Candy workflow: Install Unlimited Royal Candy.')
+      await screen.findByText('Stage Royal Candy workflow: Unlimited Royal Candy.')
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
@@ -1706,6 +2092,80 @@ describe('App', () => {
     expect(
       await screen.findByText('Applied Royal Candy change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
+  });
+
+  it('shows and stages Royal Candy story level caps', async () => {
+    const stageRoyalCandyWorkflow = vi.fn(createMockProjectBridge({}, true).stageRoyalCandyWorkflow);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...createMockProjectBridge({}, true),
+          stageRoyalCandyWorkflow
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Candy' }));
+    await user.click(
+      await screen.findByRole('row', { name: /Royal Candy with Story Limits/i })
+    );
+
+    expect(await screen.findByText('Story Level Caps')).toBeInTheDocument();
+    const firstCap = screen.getByLabelText('Level cap after defeating Hop 004/005/006');
+    await user.clear(firstCap);
+    await user.type(firstCap, '12');
+    await user.click(screen.getByRole('button', { name: 'Stage' }));
+
+    await waitFor(() => expect(stageRoyalCandyWorkflow).toHaveBeenCalled());
+    expect(stageRoyalCandyWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        levelCaps: [
+          { levelCap: 12, slot: 0 },
+          { levelCap: 16, slot: 1 }
+        ],
+        workflowId: 'royal-candy-story-limits'
+      })
+    );
+  });
+
+  it('blocks Royal Candy story caps that drop below the previous milestone', async () => {
+    const stageRoyalCandyWorkflow = vi.fn(createMockProjectBridge({}, true).stageRoyalCandyWorkflow);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...createMockProjectBridge({}, true),
+          stageRoyalCandyWorkflow
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getAllByRole('button', { name: 'Open Project' })[1]!);
+    await user.click(screen.getByRole('button', { name: 'Workflows' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Candy' }));
+    await user.click(
+      await screen.findByRole('row', { name: /Royal Candy with Story Limits/i })
+    );
+
+    expect(
+      await screen.findByText('Each later story cap must be equal to or higher than the cap before it.')
+    ).toBeInTheDocument();
+    const secondCap = screen.getByLabelText('Level cap after defeating Hop 007/008/009');
+    await user.clear(secondCap);
+    await user.type(secondCap, '9');
+
+    expect(await screen.findByText('Must be Lv. 10 or higher.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stage' })).toBeDisabled();
+    expect(stageRoyalCandyWorkflow).not.toHaveBeenCalled();
   });
 
   it('shows bridge diagnostics when project validation fails before reaching the backend', async () => {
@@ -1925,7 +2385,7 @@ function createItemMetadata(): ItemRecord['metadata'] {
 
 function createMockProjectBridge(
   overrides: Partial<ProjectBridge> = {},
-  canEdit = false
+  canEdit = true
 ): ProjectBridge {
   const health: ProjectHealth = {
     canOpenEditableWorkflows: canEdit,
@@ -3011,7 +3471,9 @@ function createMockProjectBridge(
         minimumValue: 0,
         options: [
           { label: 'Hardy', value: 0 },
-          { label: 'Jolly', value: 13 }
+          { label: 'Adamant (+Atk/-Sp.Atk)', value: 3 },
+          { label: 'Serious', value: 12 },
+          { label: 'Jolly (+Spe/-Sp.Atk)', value: 13 }
         ],
         valueKind: 'integer'
       },
@@ -4979,6 +5441,30 @@ function createMockProjectBridge(
     id: 'royalCandy',
     label: 'Royal Candy Workflows'
   };
+  const royalCandyLevelCaps = [
+    {
+      label: 'Hop 004/005/006',
+      levelCap: 10,
+      maximumLevelCap: 100,
+      milestoneId: '0:A9C039F0598B8A31:0',
+      minimumLevelCap: 1,
+      progressHash: '0xA9C039F0598B8A31',
+      progressKind: 'flag',
+      slot: 0,
+      workMinimum: null
+    },
+    {
+      label: 'Hop 007/008/009',
+      levelCap: 16,
+      maximumLevelCap: 100,
+      milestoneId: '1:005A329212277F11:0',
+      minimumLevelCap: 1,
+      progressHash: '0x005A329212277F11',
+      progressKind: 'flag',
+      slot: 1,
+      workMinimum: null
+    }
+  ];
   const spreadsheetImportWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'CSV and TSV import profiles that execute through backend edit sessions.',
@@ -5208,7 +5694,7 @@ function createMockProjectBridge(
                 : request.session.pendingEdits[0]?.domain === 'workflow.shops'
                   ? [
                       {
-                        reason: 'Apply pending Shops edit: Set Poke Mart slot 1 item ID to 2.',
+                        reason: 'Apply pending Shops edit: Set Poke Mart inventory order to 2 items.',
                         replacesExistingOutput: false,
                         sources: [
                           {
@@ -5448,8 +5934,8 @@ function createMockProjectBridge(
             passCount: 2,
             sourceFileCount: 2,
             totalCheckCount: 2,
-            totalStepCount: 2,
-            totalWorkflowCount: 1,
+            totalStepCount: 4,
+            totalWorkflowCount: 2,
             warningCount: 0
           },
           summary: royalCandyWorkflowSummary,
@@ -5458,8 +5944,9 @@ function createMockProjectBridge(
               category: 'Build',
               description: 'Prepares Royal Candy item 1128 from Rare Candy item 50.',
               itemId: 1128,
+              levelCaps: [],
               mode: 'unlimited',
-              name: 'Install Unlimited Royal Candy',
+              name: 'Unlimited Royal Candy',
               provenance: {
                 fileState: 'baseOnly',
                 sourceFile: 'romfs/bin/pml/item/item.dat',
@@ -5481,6 +5968,35 @@ function createMockProjectBridge(
               target: 'RomFS + ExeFS LayeredFS',
               templateItemId: 50,
               workflowId: 'royal-candy-unlimited'
+            },
+            {
+              category: 'Build',
+              description: 'Prepares Royal Candy item 1128 with story-cap checks.',
+              itemId: 1128,
+              levelCaps: royalCandyLevelCaps,
+              mode: 'storyLimits',
+              name: 'Royal Candy with Story Limits',
+              provenance: {
+                fileState: 'baseOnly',
+                sourceFile: 'romfs/bin/pml/item/item.dat',
+                sourceLayer: 'base'
+              },
+              status: canEdit ? 'available' : 'readOnly',
+              steps: [
+                {
+                  description: 'Use story-cap flag milestones before enabling higher levels.',
+                  label: 'Apply story limits',
+                  step: 1
+                },
+                {
+                  description: 'Review generated output targets before apply.',
+                  label: 'Review LayeredFS output',
+                  step: 2
+                }
+              ],
+              target: 'RomFS + ExeFS LayeredFS',
+              templateItemId: 50,
+              workflowId: 'royal-candy-story-limits'
             }
           ]
         }
@@ -5499,7 +6015,12 @@ function createMockProjectBridge(
             {
               domain: 'workflow.royalCandy',
               field: 'workflowId',
-              newValue: 'unlimited',
+              newValue:
+                request.workflowId === 'royal-candy-story-limits'
+                  ? `storyLimits|${(request.levelCaps ?? [])
+                      .map((levelCap) => `${levelCap.slot}=${levelCap.levelCap}`)
+                      .join(';')}`
+                  : 'unlimited',
               recordId: request.workflowId,
               sources: [
                 {
@@ -5507,7 +6028,10 @@ function createMockProjectBridge(
                   relativePath: 'romfs/bin/pml/item/item.dat'
                 }
               ],
-              summary: 'Stage Royal Candy workflow: Install Unlimited Royal Candy.'
+              summary:
+                request.workflowId === 'royal-candy-story-limits'
+                  ? 'Stage Royal Candy workflow: Royal Candy with Story Limits.'
+                  : 'Stage Royal Candy workflow: Unlimited Royal Candy.'
             }
           ],
           sessionId: request.session?.sessionId ?? 'session-royal-candy'
@@ -5551,8 +6075,8 @@ function createMockProjectBridge(
             passCount: 1,
             sourceFileCount: 1,
             totalCheckCount: 1,
-            totalStepCount: 2,
-            totalWorkflowCount: 1,
+            totalStepCount: 4,
+            totalWorkflowCount: 2,
             warningCount: 0
           },
           summary: royalCandyWorkflowSummary,
@@ -5561,8 +6085,9 @@ function createMockProjectBridge(
               category: 'Build',
               description: 'Prepares Royal Candy item 1128 from Rare Candy item 50.',
               itemId: 1128,
+              levelCaps: [],
               mode: 'unlimited',
-              name: 'Install Unlimited Royal Candy',
+              name: 'Unlimited Royal Candy',
               provenance: {
                 fileState: 'baseOnly',
                 sourceFile: 'romfs/bin/pml/item/item.dat',
@@ -5584,6 +6109,35 @@ function createMockProjectBridge(
               target: 'RomFS + ExeFS LayeredFS',
               templateItemId: 50,
               workflowId: 'royal-candy-unlimited'
+            },
+            {
+              category: 'Build',
+              description: 'Prepares Royal Candy item 1128 with story-cap checks.',
+              itemId: 1128,
+              levelCaps: royalCandyLevelCaps,
+              mode: 'storyLimits',
+              name: 'Royal Candy with Story Limits',
+              provenance: {
+                fileState: 'baseOnly',
+                sourceFile: 'romfs/bin/pml/item/item.dat',
+                sourceLayer: 'base'
+              },
+              status: 'available',
+              steps: [
+                {
+                  description: 'Use story-cap flag milestones before enabling higher levels.',
+                  label: 'Apply story limits',
+                  step: 1
+                },
+                {
+                  description: 'Review generated output targets before apply.',
+                  label: 'Review LayeredFS output',
+                  step: 2
+                }
+              ],
+              target: 'RomFS + ExeFS LayeredFS',
+              templateItemId: 50,
+              workflowId: 'royal-candy-story-limits'
             }
           ]
         }
@@ -6512,8 +7066,28 @@ function createMockProjectBridge(
         }
       });
     },
-    updateShopInventoryItem: (request) =>
-      Promise.resolve({
+    updateShopInventoryItem: (request) => {
+      const orderedItemIds =
+        request.field === 'setInventory'
+          ? request.value
+              .split(',')
+              .filter((value) => value.length > 0)
+              .map((value) => Number.parseInt(value, 10))
+          : null;
+      const formatItem = (itemId: number, slot: number) => {
+        const item = itemsWorkflow.items.find((candidate) => candidate.itemId === itemId);
+
+        return {
+          isKnownItem: item !== undefined,
+          itemId,
+          itemName: item?.name ?? `Item ${itemId}`,
+          price: item?.buyPrice ?? 0,
+          slot,
+          stockLimit: null
+        };
+      };
+
+      return Promise.resolve({
         diagnostics: [],
         session: {
           hasPendingChanges: true,
@@ -6529,7 +7103,10 @@ function createMockProjectBridge(
                   relativePath: 'romfs/bin/appli/shop/bin/shop_data.bin'
                 }
               ],
-              summary: `Set Poke Mart slot ${request.slot} item ID to ${request.value}.`
+              summary:
+                request.field === 'setInventory'
+                  ? `Set Poke Mart inventory order to ${orderedItemIds?.length ?? 0} items.`
+                  : `Set Poke Mart slot ${request.slot} item ID to ${request.value}.`
             }
           ],
           sessionId: 'session-1'
@@ -6540,21 +7117,20 @@ function createMockProjectBridge(
             shop.shopId === request.shopId
               ? {
                   ...shop,
-                  inventory: shop.inventory.map((item) =>
-                    item.slot === request.slot
-                      ? {
-                          ...item,
-                          itemId: Number.parseInt(request.value, 10),
-                          itemName: `Item ${request.value}`,
-                          price: 0
-                        }
-                      : item
-                  )
+                  inventory:
+                    orderedItemIds !== null
+                      ? orderedItemIds.map((itemId, index) => formatItem(itemId, index + 1))
+                      : shop.inventory.map((item) =>
+                          item.slot === request.slot
+                            ? formatItem(Number.parseInt(request.value, 10), item.slot)
+                            : item
+                        )
                 }
               : shop
           )
         }
-      }),
+      });
+    },
     updateEncounterSlotField: (request) =>
       Promise.resolve({
         diagnostics: [],

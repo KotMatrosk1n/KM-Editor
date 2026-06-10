@@ -56,6 +56,36 @@ public sealed class SwShPlacementWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadResolvesFieldItemsByHashBeforeRawItemsVector()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/placement.gfpak",
+            SwShPlacementTestFixtures.CreatePlacementPack(
+                fieldItemHash: SwShPlacementTestFixtures.GreatBallHash,
+                fieldItemRawItems: [1]));
+        temp.WriteBaseRomFsFile(
+            "bin/pml/item/item_hash_to_index.dat",
+            SwShPlacementTestFixtures.CreateItemHashTable());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname.dat",
+            SwShItemTestFixtures.CreateItemNames(
+                "",
+                "Potion",
+                "Great Ball"));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShPlacementWorkflowService().Load(project);
+
+        var fieldItem = workflow.Objects.Single(placedObject => placedObject.ObjectType == "FieldItem");
+        Assert.Equal(2u, fieldItem.ItemId);
+        Assert.Equal("Great Ball", fieldItem.ItemName);
+        Assert.Equal("Field item: Great Ball", fieldItem.Label);
+        Assert.Equal("0xAABBCCDD00112244", fieldItem.ItemHash);
+    }
+
+    [Fact]
     public void LoadReturnsDiagnosticWhenPlacementPackIsMissing()
     {
         using var temp = TemporarySwShProject.Create();

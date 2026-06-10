@@ -97,28 +97,33 @@ public sealed class SwShWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
 
+        var summaries = new[]
+        {
+            itemsWorkflowService.CreateSummary(project),
+            pokemonWorkflowService.CreateSummary(project),
+            movesWorkflowService.CreateSummary(project),
+            textWorkflowService.CreateSummary(project),
+            trainersWorkflowService.CreateSummary(project),
+            giftPokemonWorkflowService.CreateSummary(project),
+            tradePokemonWorkflowService.CreateSummary(project),
+            staticEncountersWorkflowService.CreateSummary(project),
+            rentalPokemonWorkflowService.CreateSummary(project),
+            dynamaxAdventuresWorkflowService.CreateSummary(project),
+            shopsWorkflowService.CreateSummary(project),
+            encountersWorkflowService.CreateSummary(project),
+            raidBattlesWorkflowService.CreateSummary(project),
+            raidRewardsWorkflowService.CreateSummary(project),
+            placementWorkflowService.CreateSummary(project),
+            flagworkSaveWorkflowService.CreateSummary(project),
+            exeFsPatchWorkflowService.CreateSummary(project),
+            royalCandyWorkflowService.CreateSummary(project),
+            spreadsheetImportWorkflowService.CreateSummary(project),
+        };
+
         return new SwShWorkflowList(
-            [
-                itemsWorkflowService.CreateSummary(project),
-                pokemonWorkflowService.CreateSummary(project),
-                movesWorkflowService.CreateSummary(project),
-                textWorkflowService.CreateSummary(project),
-                trainersWorkflowService.CreateSummary(project),
-                giftPokemonWorkflowService.CreateSummary(project),
-                tradePokemonWorkflowService.CreateSummary(project),
-                staticEncountersWorkflowService.CreateSummary(project),
-                rentalPokemonWorkflowService.CreateSummary(project),
-                dynamaxAdventuresWorkflowService.CreateSummary(project),
-                shopsWorkflowService.CreateSummary(project),
-                encountersWorkflowService.CreateSummary(project),
-                raidBattlesWorkflowService.CreateSummary(project),
-                raidRewardsWorkflowService.CreateSummary(project),
-                placementWorkflowService.CreateSummary(project),
-                flagworkSaveWorkflowService.CreateSummary(project),
-                exeFsPatchWorkflowService.CreateSummary(project),
-                royalCandyWorkflowService.CreateSummary(project),
-                spreadsheetImportWorkflowService.CreateSummary(project),
-            ]);
+            summaries
+                .Select(summary => SwShWorkflowDependencyValidator.Apply(project, summary))
+                .ToArray());
     }
 
     public SwShItemsWorkflow LoadItems(ProjectPaths paths)

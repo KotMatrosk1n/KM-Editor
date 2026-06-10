@@ -35,6 +35,8 @@ internal static class SwShExeFsBridgeFixtures
 
         WriteInstruction(text, 0x007BC1BC, EncodeCmpImmediate(9, 4));
         WriteInstruction(text, 0x007BC1C4, EncodeCmpImmediate(9, 4));
+        WriteInstruction(text, 0x007BAF38, 0x6B36231F);
+        WriteInstruction(text, 0x007BAF3C, 0x1A963316);
         WriteInstruction(text, 0x007B1F20, 0x2A0003E2);
         WriteInstruction(text, 0x007DDA8C, EncodeCmpImmediate(8, 0x32));
         return text;

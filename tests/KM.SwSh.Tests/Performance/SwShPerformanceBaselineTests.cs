@@ -64,7 +64,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         Assert.Equal(SwShPerformanceFixtureProject.PokemonCount, pokemon.Stats.TotalPokemonCount);
         Assert.Equal(SwShPerformanceFixtureProject.MoveCount, moves.Stats.TotalMoveCount);
         Assert.True(text.Stats.TotalTextEntryCount >= SwShPerformanceFixtureProject.TextTableCount * SwShPerformanceFixtureProject.TextLinesPerTable);
-        Assert.Equal(SwShPerformanceFixtureProject.TrainerCount, trainers.Stats.TotalTrainerCount);
+        Assert.Equal(SwShPerformanceFixtureProject.VisibleTrainerCount, trainers.Stats.TotalTrainerCount);
         Assert.True(giftPokemon.Summary.Availability != SwShWorkflowAvailability.Disabled);
         Assert.Equal(2, tradePokemon.Stats.TotalTradeCount);
         Assert.Equal(2, staticEncounters.Stats.TotalEncounterCount);
@@ -120,7 +120,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         Assert.Single(exeFs.Patches);
         Assert.True(royalCandy.Outputs.Count > 0);
         Assert.True(text.Entries.Count > 0);
-        Assert.Equal(SwShPerformanceFixtureProject.TrainerCount, trainers.Trainers.Count);
+        Assert.Equal(SwShPerformanceFixtureProject.VisibleTrainerCount, trainers.Trainers.Count);
         Assert.True(giftPokemon.Summary.Availability != SwShWorkflowAvailability.Disabled);
         Assert.Equal(2, tradePokemon.Trades.Count);
         Assert.Equal(2, staticEncounters.Encounters.Count);

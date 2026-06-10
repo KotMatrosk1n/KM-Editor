@@ -285,7 +285,7 @@ public sealed class SwShPokemonWorkflowService
         CreateEvolutionMethod(42, "Use Item Wormhole", EvolutionArgumentKindItem, "Item"),
         CreateEvolutionMethod(43, "Critical Hits In Battle", EvolutionArgumentKindVersion, "Version"),
         CreateEvolutionMethod(44, "HP Lost In Battle", EvolutionArgumentKindVersion, "Version"),
-        CreateEvolutionMethod(45, "Spin", EvolutionArgumentKindItem, "Held item"),
+        CreateEvolutionMethod(45, "Spin", EvolutionArgumentKindNone, "None"),
         CreateEvolutionMethod(46, "Level Up Nature Amped", EvolutionArgumentKindNone, "None"),
         CreateEvolutionMethod(47, "Level Up Nature Low Key", EvolutionArgumentKindNone, "None"),
         CreateEvolutionMethod(48, "Tower Of Darkness", EvolutionArgumentKindNone, "None"),
@@ -1249,6 +1249,27 @@ public sealed class SwShPokemonWorkflowService
     internal static WorkflowFileSource? ResolvePersonalDataSource(OpenedProject project)
     {
         return ResolveWorkflowFile(project, PersonalDataPath);
+    }
+
+    internal static WorkflowFileSource? ResolveBasePersonalDataSource(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
+            string.Equals(entry.RelativePath, PersonalDataPath, StringComparison.OrdinalIgnoreCase)
+            && entry.BaseFile is not null);
+        if (graphEntry is null)
+        {
+            return null;
+        }
+
+        var sourcePath = PersonalDataPath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
+            ? CombineGraphPath(project.Paths.BaseRomFsPath, PersonalDataPath["romfs/".Length..])
+            : null;
+
+        return sourcePath is not null && File.Exists(sourcePath)
+            ? new WorkflowFileSource(graphEntry, sourcePath)
+            : null;
     }
 
     internal static WorkflowFileSource? ResolveLearnsetDataSource(OpenedProject project)

@@ -5,11 +5,27 @@ using System.Buffers.Binary;
 
 namespace KM.SwSh.ExeFs;
 
+internal enum SwShRoyalCandyStoryLevelCapProgressKind
+{
+    Flag,
+    WorkAtLeast,
+}
+
+internal sealed record SwShRoyalCandyStoryLevelCap(
+    int LevelCap,
+    ulong ProgressHash,
+    string Label,
+    SwShRoyalCandyStoryLevelCapProgressKind ProgressKind = SwShRoyalCandyStoryLevelCapProgressKind.Flag,
+    int WorkMinimum = 0);
+
 internal static class SwShExeFsRoyalCandyMainPatcher
 {
     private const int RareCandyItemId = 50;
     private const int RoyalCandyItemId = 1128;
     private const int RareCandyUiHookCodeCaveSearchStart = 0x007BC338;
+    private const int StoryDefaultLevelCap = 1;
+    private const int StoryUseGateCompareOffset = 0x007BB204;
+    private const int StoryQuantityMaxCompareOffset = 0x007BB3C0;
 
     public static byte[] ApplyBasePatch(byte[] mainBytes)
     {
@@ -25,10 +41,40 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         return nso.Write(textDecompressedData: text);
     }
 
-    private static void PatchRoyalCandyUiRoute(byte[] text)
+    public static byte[] ApplyStoryLimitsPatch(
+        byte[] mainBytes,
+        IReadOnlyList<SwShRoyalCandyStoryLevelCap> levelCaps)
+    {
+        ArgumentNullException.ThrowIfNull(mainBytes);
+        ArgumentNullException.ThrowIfNull(levelCaps);
+
+        if (levelCaps.Count == 0)
+        {
+            throw new InvalidDataException("Royal Candy story-limit patch requires at least one level-cap milestone.");
+        }
+
+        var nso = SwShNsoFile.Parse(mainBytes);
+        var text = nso.Text.DecompressedData.ToArray();
+
+        PatchExpCandyFixedAmountBypass(text);
+        PatchInfiniteRoyalCandyUse(text);
+        PatchStoryCapLadder(text, levelCaps);
+        PatchRoyalCandyUiRoute(text, skipStoryLimitHooks: true);
+
+        return nso.Write(textDecompressedData: text);
+    }
+
+    private static void PatchRoyalCandyUiRoute(byte[] text, bool skipStoryLimitHooks = false)
     {
         foreach (var check in UiRouteChecks)
         {
+            if (skipStoryLimitHooks
+                && (check.CompareOffset == StoryUseGateCompareOffset
+                    || check.CompareOffset == StoryQuantityMaxCompareOffset))
+            {
+                continue;
+            }
+
             var caveOffset = FindCodeCave(text, 0x0C, $"Royal Candy UI route check at text+0x{check.CompareOffset:X}");
             ExpectInstruction(
                 text,
@@ -118,6 +164,229 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         WriteInstruction(text, caveOffset + 8, EncodeBranch(caveOffset + 8, resumeOffset));
     }
 
+    private static void PatchStoryCapLadder(
+        byte[] text,
+        IReadOnlyList<SwShRoyalCandyStoryLevelCap> levelCaps)
+    {
+        var milestones = levelCaps
+            .OrderByDescending(levelCap => levelCap.LevelCap)
+            .ToArray();
+        var capHelperOffset = WriteStoryCapHelper(text, milestones, StoryDefaultLevelCap);
+        PatchUseGateDynamicCap(text, capHelperOffset);
+        PatchQuantityMaxDynamicCap(text, capHelperOffset);
+        PatchQuantityInventoryClampBypass(text);
+    }
+
+    private static int WriteStoryCapHelper(
+        byte[] text,
+        IReadOnlyList<SwShRoyalCandyStoryLevelCap> milestones,
+        int defaultCap)
+    {
+        const int flagworkGlobalAddress = 0x02610798;
+        const int flagworkObjectOffset = 0x1B8;
+        const int flagGetOffset = 0x01410F00;
+        const int workGetOffset = 0x014114C0;
+
+        var checks = milestones.Select((milestone, index) => new
+        {
+            Milestone = milestone,
+            Chunks = AllocateCapCheckChunks(text, index),
+        }).ToArray();
+        var defaultReturn = AllocateCodeCave(text, 0x08, "Royal Candy cap ladder default return");
+
+        for (var i = 0; i < checks.Length; i++)
+        {
+            var current = checks[i];
+            var nextOffset = i == checks.Length - 1 ? defaultReturn : checks[i + 1].Chunks.LoadGlobal;
+            WriteLevelCapCheck(
+                text,
+                current.Chunks,
+                current.Milestone,
+                nextOffset,
+                flagworkGlobalAddress,
+                flagworkObjectOffset,
+                flagGetOffset,
+                workGetOffset);
+        }
+
+        WriteInstruction(text, defaultReturn, EncodeMovzImmediate32(0, defaultCap));
+        WriteInstruction(text, defaultReturn + 4, EncodeRet());
+        return checks[0].Chunks.LoadGlobal;
+    }
+
+    private static RoyalCandyLevelCapCheckChunks AllocateCapCheckChunks(byte[] text, int index)
+    {
+        return new RoyalCandyLevelCapCheckChunks(
+            AllocateCodeCave(text, 0x0C, $"Royal Candy cap ladder check {index} load global"),
+            AllocateCodeCave(text, 0x0C, $"Royal Candy cap ladder check {index} load table"),
+            AllocateCodeCave(text, 0x0C, $"Royal Candy cap ladder check {index} hash low"),
+            AllocateCodeCave(text, 0x0C, $"Royal Candy cap ladder check {index} hash high"),
+            AllocateCodeCave(text, 0x0C, $"Royal Candy cap ladder check {index} call flag getter"),
+            AllocateCodeCave(text, 0x0C, $"Royal Candy cap ladder check {index} restore link register"),
+            AllocateCodeCave(text, 0x0C, $"Royal Candy cap ladder check {index} decision"),
+            AllocateCodeCave(text, 0x08, $"Royal Candy cap ladder check {index} cap return"));
+    }
+
+    private static void WriteLevelCapCheck(
+        byte[] text,
+        RoyalCandyLevelCapCheckChunks chunks,
+        SwShRoyalCandyStoryLevelCap milestone,
+        int nextOffset,
+        int flagworkGlobalAddress,
+        int flagworkObjectOffset,
+        int flagGetOffset,
+        int workGetOffset)
+    {
+        WriteInstruction(text, chunks.LoadGlobal, EncodeAdrp(8, chunks.LoadGlobal, flagworkGlobalAddress));
+        WriteInstruction(text, chunks.LoadGlobal + 4, EncodeLdrUnsigned64(8, 8, flagworkGlobalAddress & 0xFFF));
+        WriteInstruction(text, chunks.LoadGlobal + 8, EncodeBranch(chunks.LoadGlobal + 8, chunks.LoadTable));
+
+        WriteInstruction(text, chunks.LoadTable, EncodeLdrUnsigned64(8, 8, 0));
+        WriteInstruction(text, chunks.LoadTable + 4, EncodeLdrUnsigned64(0, 8, flagworkObjectOffset));
+        WriteInstruction(text, chunks.LoadTable + 8, EncodeBranch(chunks.LoadTable + 8, chunks.HashLow));
+
+        WriteInstruction(text, chunks.HashLow, EncodeMovzImmediate64(1, (int)(milestone.ProgressHash & 0xFFFF), 0));
+        WriteInstruction(text, chunks.HashLow + 4, EncodeMovkImmediate64(1, (int)((milestone.ProgressHash >> 16) & 0xFFFF), 16));
+        WriteInstruction(text, chunks.HashLow + 8, EncodeBranch(chunks.HashLow + 8, chunks.HashHigh));
+
+        WriteInstruction(text, chunks.HashHigh, EncodeMovkImmediate64(1, (int)((milestone.ProgressHash >> 32) & 0xFFFF), 32));
+        WriteInstruction(text, chunks.HashHigh + 4, EncodeMovkImmediate64(1, (int)((milestone.ProgressHash >> 48) & 0xFFFF), 48));
+        WriteInstruction(text, chunks.HashHigh + 8, EncodeBranch(chunks.HashHigh + 8, chunks.Call));
+
+        var accessorOffset = milestone.ProgressKind == SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast
+            ? workGetOffset
+            : flagGetOffset;
+        WriteInstruction(text, chunks.Call, 0xA9BF7BFD);
+        WriteInstruction(text, chunks.Call + 4, EncodeBranchLink(chunks.Call + 4, accessorOffset));
+        WriteInstruction(text, chunks.Call + 8, EncodeBranch(chunks.Call + 8, chunks.Restore));
+
+        WriteInstruction(text, chunks.Restore, 0xA8C17BFD);
+        WriteInstruction(text, chunks.Restore + 4, EncodeBranch(chunks.Restore + 4, chunks.Decision));
+        WriteInstruction(text, chunks.Restore + 8, EncodeNop());
+
+        if (milestone.ProgressKind == SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast)
+        {
+            WriteInstruction(text, chunks.Decision, EncodeCmpImmediate(0, milestone.WorkMinimum));
+            WriteInstruction(text, chunks.Decision + 4, EncodeConditionalBranch(chunks.Decision + 4, chunks.ReturnCap, Arm64Condition.HS));
+            WriteInstruction(text, chunks.Decision + 8, EncodeBranch(chunks.Decision + 8, nextOffset));
+        }
+        else
+        {
+            WriteInstruction(text, chunks.Decision, EncodeCompareAndBranchNonZero32(chunks.Decision, chunks.ReturnCap, 0));
+            WriteInstruction(text, chunks.Decision + 4, EncodeBranch(chunks.Decision + 4, nextOffset));
+            WriteInstruction(text, chunks.Decision + 8, EncodeNop());
+        }
+
+        WriteInstruction(text, chunks.ReturnCap, EncodeMovzImmediate32(0, milestone.LevelCap));
+        WriteInstruction(text, chunks.ReturnCap + 4, EncodeRet());
+    }
+
+    private static void PatchUseGateDynamicCap(byte[] text, int capHelperOffset)
+    {
+        const int branchOffset = StoryUseGateCompareOffset + 4;
+        const int nonRareCandyOffset = 0x007BB26C;
+        const int epilogueOffset = 0x007BB2E0;
+        const int getLevelOffset = 0x0077A5F0;
+        const int itemRegister = 20;
+        const uint expectedBranch = 0x54000321;
+        const uint moveSelectedPokemonToX0 = 0xAA1303E0;
+
+        ExpectInstruction(text, StoryUseGateCompareOffset, EncodeCmpImmediate(itemRegister, RareCandyItemId), "Rare Candy use-gate compare");
+        ExpectInstruction(text, branchOffset, expectedBranch, "Rare Candy use-gate branch");
+
+        var itemCheckCaveOffset = FindNearbyConditionalBranchZeroRun(text, 0x0C, branchOffset);
+        if (itemCheckCaveOffset < 0)
+        {
+            throw NoCodeCave(text, 0x0C, "Royal Candy dynamic use-gate item check");
+        }
+
+        WriteInstruction(text, branchOffset, EncodeConditionalBranch(branchOffset, itemCheckCaveOffset, Arm64Condition.NE));
+        WriteInstruction(text, itemCheckCaveOffset, EncodeCmpImmediate(itemRegister, RoyalCandyItemId));
+        WriteInstruction(text, itemCheckCaveOffset + 4, EncodeConditionalBranch(itemCheckCaveOffset + 4, nonRareCandyOffset, Arm64Condition.NE));
+
+        var logicChunks = AllocateCodeCaves(text, 4, "Royal Candy dynamic use-gate logic");
+        WriteInstruction(text, itemCheckCaveOffset + 8, EncodeBranch(itemCheckCaveOffset + 8, logicChunks[0]));
+        WriteInstruction(text, logicChunks[0], moveSelectedPokemonToX0);
+        WriteInstruction(text, logicChunks[0] + 4, EncodeBranchLink(logicChunks[0] + 4, getLevelOffset));
+        WriteInstruction(text, logicChunks[0] + 8, EncodeBranch(logicChunks[0] + 8, logicChunks[1]));
+        WriteInstruction(text, logicChunks[1], EncodeMovRegister32(21, 0));
+        WriteInstruction(text, logicChunks[1] + 4, EncodeBranchLink(logicChunks[1] + 4, capHelperOffset));
+        WriteInstruction(text, logicChunks[1] + 8, EncodeBranch(logicChunks[1] + 8, logicChunks[2]));
+        WriteInstruction(text, logicChunks[2], EncodeCmpRegister32(21, 0));
+        WriteInstruction(text, logicChunks[2] + 4, EncodeMovzImmediate32(8, 1));
+        WriteInstruction(text, logicChunks[2] + 8, EncodeBranch(logicChunks[2] + 8, logicChunks[3]));
+        WriteInstruction(text, logicChunks[3], EncodeConditionalSelect32(0, 8, 31, Arm64Condition.LT));
+        WriteInstruction(text, logicChunks[3] + 4, EncodeBranch(logicChunks[3] + 4, epilogueOffset));
+    }
+
+    private static void PatchQuantityMaxDynamicCap(byte[] text, int capHelperOffset)
+    {
+        const int branchOffset = StoryQuantityMaxCompareOffset + 4;
+        const int nonRareCandyOffset = 0x007BB3EC;
+        const int epilogueOffset = 0x007BB458;
+        const int getLevelOffset = 0x0077A5F0;
+        const int itemRegister = 19;
+        const uint expectedBranch = 0x54000141;
+        const uint moveSelectedPokemonToX0 = 0xAA1403E0;
+
+        ExpectInstruction(text, StoryQuantityMaxCompareOffset, EncodeCmpImmediate(itemRegister, RareCandyItemId), "Rare Candy quantity-cap compare");
+        ExpectInstruction(text, branchOffset, expectedBranch, "Rare Candy quantity-cap branch");
+
+        var itemCheckCaveOffset = FindNearbyConditionalBranchZeroRun(text, 0x0C, branchOffset);
+        if (itemCheckCaveOffset < 0)
+        {
+            throw NoCodeCave(text, 0x0C, "Royal Candy dynamic quantity item check");
+        }
+
+        WriteInstruction(text, branchOffset, EncodeConditionalBranch(branchOffset, itemCheckCaveOffset, Arm64Condition.NE));
+        WriteInstruction(text, itemCheckCaveOffset, EncodeCmpImmediate(itemRegister, RoyalCandyItemId));
+        WriteInstruction(text, itemCheckCaveOffset + 4, EncodeConditionalBranch(itemCheckCaveOffset + 4, nonRareCandyOffset, Arm64Condition.NE));
+
+        var logicChunks = AllocateCodeCaves(text, 4, "Royal Candy dynamic quantity logic");
+        WriteInstruction(text, itemCheckCaveOffset + 8, EncodeBranch(itemCheckCaveOffset + 8, logicChunks[0]));
+        WriteInstruction(text, logicChunks[0], moveSelectedPokemonToX0);
+        WriteInstruction(text, logicChunks[0] + 4, EncodeBranchLink(logicChunks[0] + 4, getLevelOffset));
+        WriteInstruction(text, logicChunks[0] + 8, EncodeBranch(logicChunks[0] + 8, logicChunks[1]));
+        WriteInstruction(text, logicChunks[1], EncodeMovRegister32(21, 0));
+        WriteInstruction(text, logicChunks[1] + 4, EncodeBranchLink(logicChunks[1] + 4, capHelperOffset));
+        WriteInstruction(text, logicChunks[1] + 8, EncodeBranch(logicChunks[1] + 8, logicChunks[2]));
+        WriteInstruction(text, logicChunks[2], EncodeSubRegister32(0, 0, 21));
+        WriteInstruction(text, logicChunks[2] + 4, EncodeCmpImmediate(0, 0));
+        WriteInstruction(text, logicChunks[2] + 8, EncodeBranch(logicChunks[2] + 8, logicChunks[3]));
+        WriteInstruction(text, logicChunks[3], EncodeConditionalSelect32(0, 0, 31, Arm64Condition.GT));
+        WriteInstruction(text, logicChunks[3] + 4, EncodeBranch(logicChunks[3] + 4, epilogueOffset));
+    }
+
+    private static void PatchQuantityInventoryClampBypass(byte[] text)
+    {
+        const int originalCompareOffset = 0x007BAF38;
+        const int clampSelectOffset = 0x007BAF3C;
+        const int resumeOffset = 0x007BAF40;
+        const int getItemIdOffset = 0x007C8330;
+        const uint expectedCompare = 0x6B36231F;
+        const uint expectedClampSelect = 0x1A963316;
+        const uint moveSelectedItemToX0 = 0xAA1703E0;
+
+        ExpectInstruction(text, originalCompareOffset, expectedCompare, "quantity clamp compare");
+        ExpectInstruction(text, clampSelectOffset, expectedClampSelect, "quantity clamp CSEL");
+
+        var firstCaveOffset = AllocateCodeCave(text, 0x0C, "Royal Candy inventory clamp first stub");
+        WriteInstruction(text, firstCaveOffset, moveSelectedItemToX0);
+        WriteInstruction(text, firstCaveOffset + 4, EncodeBranchLink(firstCaveOffset + 4, getItemIdOffset));
+
+        var secondCaveOffset = AllocateCodeCave(text, 0x0C, "Royal Candy inventory clamp item check");
+        WriteInstruction(text, firstCaveOffset + 8, EncodeBranch(firstCaveOffset + 8, secondCaveOffset));
+        WriteInstruction(text, secondCaveOffset, EncodeCmpImmediate(0, RoyalCandyItemId));
+        WriteInstruction(text, secondCaveOffset + 4, EncodeConditionalBranch(secondCaveOffset + 4, resumeOffset, Arm64Condition.EQ));
+
+        var thirdCaveOffset = AllocateCodeCave(text, 0x0C, "Royal Candy inventory clamp vanilla replay");
+        WriteInstruction(text, secondCaveOffset + 8, EncodeBranch(secondCaveOffset + 8, thirdCaveOffset));
+        WriteInstruction(text, thirdCaveOffset, expectedCompare);
+        WriteInstruction(text, thirdCaveOffset + 4, expectedClampSelect);
+        WriteInstruction(text, thirdCaveOffset + 8, EncodeBranch(thirdCaveOffset + 8, resumeOffset));
+        WriteInstruction(text, clampSelectOffset, EncodeBranch(clampSelectOffset, firstCaveOffset));
+    }
+
     private static int FindCodeCave(byte[] text, int requiredBytes, string label)
     {
         var caveOffset = FindZeroRun(text, requiredBytes, RareCandyUiHookCodeCaveSearchStart);
@@ -135,6 +404,24 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         throw NoCodeCave(text, requiredBytes, label);
     }
 
+    private static int AllocateCodeCave(byte[] text, int requiredBytes, string label)
+    {
+        var caveOffset = FindCodeCave(text, requiredBytes, label);
+        ReserveCodeCave(text, caveOffset, requiredBytes);
+        return caveOffset;
+    }
+
+    private static int[] AllocateCodeCaves(byte[] text, int count, string label)
+    {
+        var offsets = new int[count];
+        for (var index = 0; index < offsets.Length; index++)
+        {
+            offsets[index] = AllocateCodeCave(text, 0x0C, $"{label} chunk {index}");
+        }
+
+        return offsets;
+    }
+
     private static InvalidDataException NoCodeCave(byte[] text, int requiredBytes, string label)
     {
         var largest = FindLargestZeroRun(text);
@@ -146,6 +433,54 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     {
         var runStart = -1;
         for (var offset = Math.Max(0, startOffset); offset < data.Length; offset++)
+        {
+            if (data[offset] == 0)
+            {
+                if (runStart < 0)
+                {
+                    runStart = offset;
+                }
+
+                var alignedStart = (runStart + 3) & ~3;
+                if (offset - alignedStart + 1 >= requiredBytes)
+                {
+                    return alignedStart;
+                }
+
+                continue;
+            }
+
+            runStart = -1;
+        }
+
+        return -1;
+    }
+
+    private static int FindNearbyConditionalBranchZeroRun(byte[] text, int requiredBytes, int anchorOffset)
+    {
+        const int ConditionalBranchReachBytes = (1 << 18) * 4;
+        var minOffset = Math.Max(0, anchorOffset - ConditionalBranchReachBytes + requiredBytes);
+        var maxOffset = Math.Min(text.Length - requiredBytes, anchorOffset + ConditionalBranchReachBytes - requiredBytes);
+        if (minOffset > maxOffset)
+        {
+            return -1;
+        }
+
+        var afterAnchor = FindZeroRunWithin(text, requiredBytes, anchorOffset, maxOffset);
+        if (afterAnchor >= 0)
+        {
+            return afterAnchor;
+        }
+
+        return FindZeroRunWithin(text, requiredBytes, minOffset, anchorOffset);
+    }
+
+    private static int FindZeroRunWithin(byte[] data, int requiredBytes, int startOffset, int endOffset)
+    {
+        var runStart = -1;
+        var start = Math.Max(0, startOffset);
+        var end = Math.Min(data.Length - 1, endOffset);
+        for (var offset = start; offset <= end; offset++)
         {
             if (data[offset] == 0)
             {
@@ -222,6 +557,14 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         BinaryPrimitives.WriteUInt32LittleEndian(text.AsSpan(offset, 4), instruction);
     }
 
+    private static void ReserveCodeCave(byte[] text, int offset, int length)
+    {
+        for (var current = offset; current < offset + length; current += 4)
+        {
+            WriteInstruction(text, current, EncodeNop());
+        }
+    }
+
     private static uint EncodeCmpImmediate(int register, int immediate)
     {
         return (uint)(0x7100001F | ((immediate & 0xFFF) << 10) | ((register & 0x1F) << 5));
@@ -261,6 +604,40 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         return (uint)(0x14000000 | (imm26 & 0x03FFFFFF));
     }
 
+    private static uint EncodeCompareAndBranchNonZero32(int sourceOffset, int targetOffset, int register)
+    {
+        var delta = targetOffset - sourceOffset;
+        if ((delta & 3) != 0)
+        {
+            throw new InvalidDataException("Compare-and-branch target must be 4-byte aligned.");
+        }
+
+        var imm19 = delta >> 2;
+        if (imm19 < -(1 << 18) || imm19 >= (1 << 18))
+        {
+            throw new InvalidDataException("Compare-and-branch target is outside ARM64 range.");
+        }
+
+        return (uint)(0x35000000 | ((imm19 & 0x7FFFF) << 5) | (register & 0x1F));
+    }
+
+    private static uint EncodeBranchLink(int sourceOffset, int targetOffset)
+    {
+        var delta = targetOffset - sourceOffset;
+        if ((delta & 3) != 0)
+        {
+            throw new InvalidDataException("Branch-link target must be 4-byte aligned.");
+        }
+
+        var imm26 = delta >> 2;
+        if (imm26 < -(1 << 25) || imm26 >= (1 << 25))
+        {
+            throw new InvalidDataException("Branch-link target is outside ARM64 range.");
+        }
+
+        return (uint)(0x94000000 | (imm26 & 0x03FFFFFF));
+    }
+
     private static uint EncodeConditionalSelect32(
         int destinationRegister,
         int trueRegister,
@@ -274,9 +651,116 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             | (destinationRegister & 0x1F));
     }
 
+    private static uint EncodeMovzImmediate32(int register, int immediate)
+    {
+        if (immediate is < 0 or > 0xFFFF)
+        {
+            throw new InvalidDataException("MOVZ immediate must fit in 16 bits.");
+        }
+
+        return (uint)(0x52800000 | ((immediate & 0xFFFF) << 5) | (register & 0x1F));
+    }
+
+    private static uint EncodeMovzImmediate64(int register, int immediate, int shift)
+    {
+        if (immediate is < 0 or > 0xFFFF)
+        {
+            throw new InvalidDataException("MOVZ immediate must fit in 16 bits.");
+        }
+
+        if (shift is not (0 or 16 or 32 or 48))
+        {
+            throw new InvalidDataException("MOVZ 64-bit shift must be 0, 16, 32, or 48.");
+        }
+
+        return 0xD2800000u
+            | (uint)((shift / 16) << 21)
+            | (uint)((immediate & 0xFFFF) << 5)
+            | (uint)(register & 0x1F);
+    }
+
+    private static uint EncodeMovkImmediate64(int register, int immediate, int shift)
+    {
+        if (immediate is < 0 or > 0xFFFF)
+        {
+            throw new InvalidDataException("MOVK immediate must fit in 16 bits.");
+        }
+
+        if (shift is not (0 or 16 or 32 or 48))
+        {
+            throw new InvalidDataException("MOVK 64-bit shift must be 0, 16, 32, or 48.");
+        }
+
+        return 0xF2800000u
+            | (uint)((shift / 16) << 21)
+            | (uint)((immediate & 0xFFFF) << 5)
+            | (uint)(register & 0x1F);
+    }
+
+    private static uint EncodeMovRegister32(int destinationRegister, int sourceRegister)
+    {
+        return (uint)(0x2A0003E0 | ((sourceRegister & 0x1F) << 16) | (destinationRegister & 0x1F));
+    }
+
+    private static uint EncodeCmpRegister32(int leftRegister, int rightRegister)
+    {
+        return (uint)(0x6B00001F | ((rightRegister & 0x1F) << 16) | ((leftRegister & 0x1F) << 5));
+    }
+
+    private static uint EncodeSubRegister32(int destinationRegister, int leftRegister, int rightRegister)
+    {
+        return (uint)(0x4B000000
+            | ((rightRegister & 0x1F) << 16)
+            | ((leftRegister & 0x1F) << 5)
+            | (destinationRegister & 0x1F));
+    }
+
+    private static uint EncodeLdrUnsigned64(int targetRegister, int baseRegister, int byteOffset)
+    {
+        if ((byteOffset & 7) != 0)
+        {
+            throw new InvalidDataException("64-bit LDR unsigned offset must be 8-byte aligned.");
+        }
+
+        var scaled = byteOffset >> 3;
+        if (scaled is < 0 or > 0xFFF)
+        {
+            throw new InvalidDataException("64-bit LDR unsigned offset must fit the ARM64 imm12 field.");
+        }
+
+        return 0xF9400000u
+            | (uint)(scaled << 10)
+            | (uint)((baseRegister & 0x1F) << 5)
+            | (uint)(targetRegister & 0x1F);
+    }
+
+    private static uint EncodeAdrp(int register, int sourceOffset, int targetAddress)
+    {
+        var sourcePage = sourceOffset & ~0xFFF;
+        var targetPage = targetAddress & ~0xFFF;
+        var pageDelta = (targetPage - sourcePage) >> 12;
+        if (pageDelta < -(1 << 20) || pageDelta >= (1 << 20))
+        {
+            throw new InvalidDataException("ADRP target is outside ARM64 range.");
+        }
+
+        var immediate = pageDelta & 0x1FFFFF;
+        var immediateLow = immediate & 0x3;
+        var immediateHigh = (immediate >> 2) & 0x7FFFF;
+        return 0x90000000u
+            | (uint)(immediateLow << 29)
+            | (uint)(immediateHigh << 5)
+            | (uint)(register & 0x1F);
+    }
+
     private static uint EncodeNop()
     {
         return 0xD503201F;
+    }
+
+    private static uint EncodeRet()
+    {
+        return 0xD65F03C0;
     }
 
     private static readonly RareCandyUiCheck[] UiRouteChecks =
@@ -306,6 +790,9 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     {
         EQ = 0,
         NE = 1,
+        HS = 2,
+        LT = 11,
+        GT = 12,
     }
 
     private sealed record RareCandyUiCheck(
@@ -319,6 +806,16 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         int ItemRegister,
         int TargetOffset,
         int FallthroughOffset);
+
+    private sealed record RoyalCandyLevelCapCheckChunks(
+        int LoadGlobal,
+        int LoadTable,
+        int HashLow,
+        int HashHigh,
+        int Call,
+        int Restore,
+        int Decision,
+        int ReturnCap);
 
     private sealed record ZeroRun(int Offset, int Length);
 }

@@ -15,6 +15,7 @@ internal static class SwShPerformanceFixtureProject
 {
     public const int ItemCount = 1_500;
     public const int TrainerCount = 120;
+    public const int VisibleTrainerCount = TrainerCount - 1;
     public const int PokemonCount = 920;
     public const int MoveCount = 200;
     public const int TextTableCount = 120;
