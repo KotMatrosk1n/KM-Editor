@@ -37,10 +37,8 @@ jobs:
           node-version: 24.16.0
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.5.2
-          run_install: false
+        shell: pwsh
+        run: npm install --global pnpm@11.5.2
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
