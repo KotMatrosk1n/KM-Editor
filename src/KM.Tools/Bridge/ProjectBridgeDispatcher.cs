@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Bridge;
+using KM.Api.Behavior;
 using KM.Api.DynamaxAdventures;
 using KM.Api.Editing;
 using KM.Api.Encounters;
@@ -26,6 +27,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Behavior;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
@@ -58,6 +60,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShItemsEditSessionService itemsEditSessionService;
     private readonly SwShMovesEditSessionService movesEditSessionService;
     private readonly SwShPlacementEditSessionService placementEditSessionService;
+    private readonly SwShBehaviorEditSessionService behaviorEditSessionService;
     private readonly SwShPokemonEditSessionService pokemonEditSessionService;
     private readonly SwShRaidBattlesEditSessionService raidBattlesEditSessionService;
     private readonly SwShRaidRewardsEditSessionService raidRewardsEditSessionService;
@@ -80,6 +83,7 @@ public sealed class ProjectBridgeDispatcher
         SwShItemsEditSessionService? itemsEditSessionService = null,
         SwShMovesEditSessionService? movesEditSessionService = null,
         SwShPlacementEditSessionService? placementEditSessionService = null,
+        SwShBehaviorEditSessionService? behaviorEditSessionService = null,
         SwShPokemonEditSessionService? pokemonEditSessionService = null,
         SwShRaidBattlesEditSessionService? raidBattlesEditSessionService = null,
         SwShRaidRewardsEditSessionService? raidRewardsEditSessionService = null,
@@ -101,6 +105,7 @@ public sealed class ProjectBridgeDispatcher
         this.itemsEditSessionService = itemsEditSessionService ?? new SwShItemsEditSessionService(this.projectWorkspaceService);
         this.movesEditSessionService = movesEditSessionService ?? new SwShMovesEditSessionService(this.projectWorkspaceService);
         this.placementEditSessionService = placementEditSessionService ?? new SwShPlacementEditSessionService(this.projectWorkspaceService);
+        this.behaviorEditSessionService = behaviorEditSessionService ?? new SwShBehaviorEditSessionService(this.projectWorkspaceService);
         this.pokemonEditSessionService = pokemonEditSessionService ?? new SwShPokemonEditSessionService(this.projectWorkspaceService);
         this.raidBattlesEditSessionService = raidBattlesEditSessionService ?? new SwShRaidBattlesEditSessionService(this.projectWorkspaceService);
         this.raidRewardsEditSessionService = raidRewardsEditSessionService ?? new SwShRaidRewardsEditSessionService(this.projectWorkspaceService);
@@ -163,8 +168,12 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateRaidBattleSlotField => DispatchUpdateRaidBattleSlotField(requestJson),
                 KmCommandNames.LoadRaidRewardsWorkflow => DispatchLoadRaidRewardsWorkflow(requestJson),
                 KmCommandNames.UpdateRaidRewardField => DispatchUpdateRaidRewardField(requestJson),
+                KmCommandNames.LoadRaidBonusRewardsWorkflow => DispatchLoadRaidBonusRewardsWorkflow(requestJson),
+                KmCommandNames.UpdateRaidBonusRewardField => DispatchUpdateRaidBonusRewardField(requestJson),
                 KmCommandNames.LoadPlacementWorkflow => DispatchLoadPlacementWorkflow(requestJson),
                 KmCommandNames.UpdatePlacementObjectField => DispatchUpdatePlacementObjectField(requestJson),
+                KmCommandNames.LoadBehaviorWorkflow => DispatchLoadBehaviorWorkflow(requestJson),
+                KmCommandNames.UpdateBehaviorEntryField => DispatchUpdateBehaviorEntryField(requestJson),
                 KmCommandNames.LoadFlagworkSaveWorkflow => DispatchLoadFlagworkSaveWorkflow(requestJson),
                 KmCommandNames.LoadExeFsPatchWorkflow => DispatchLoadExeFsPatchWorkflow(requestJson),
                 KmCommandNames.StageExeFsPatch => DispatchStageExeFsPatch(requestJson),
@@ -620,6 +629,33 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadRaidBonusRewardsWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadRaidBonusRewardsWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadRaidBonusRewards(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToBonusDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateRaidBonusRewardField(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateRaidBonusRewardFieldRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = raidRewardsEditSessionService.UpdateBonusRewardField(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            request.Payload.TableId,
+            request.Payload.Slot,
+            request.Payload.Field,
+            request.Payload.Value);
+        var response = SwShBridgeMapper.ToBonusDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadPlacementWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadPlacementWorkflowRequest>(requestJson);
@@ -639,6 +675,32 @@ public sealed class ProjectBridgeDispatcher
             ProjectBridgeMapper.ToCore(request.Payload.Paths),
             session,
             request.Payload.ObjectId,
+            request.Payload.Field,
+            request.Payload.Value);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadBehaviorWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadBehaviorWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadBehavior(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateBehaviorEntryField(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateBehaviorEntryFieldRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = behaviorEditSessionService.UpdateEntryField(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            request.Payload.EntryId,
             request.Payload.Field,
             request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
@@ -772,8 +834,10 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
+            EditSessionDomain.Behavior => behaviorEditSessionService.Validate(paths, session),
             EditSessionDomain.RaidBattles => raidBattlesEditSessionService.Validate(paths, session),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.Validate(paths, session),
+            EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.Validate(paths, session),
             EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.Validate(paths, session),
             EditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
             EditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
@@ -804,8 +868,10 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Behavior => behaviorEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RaidBattles => raidBattlesEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session),
@@ -837,8 +903,10 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.Behavior => behaviorEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.RaidBattles => raidBattlesEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.RaidRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, changePlan),
@@ -880,8 +948,10 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.dynamaxAdventures"] => EditSessionDomain.DynamaxAdventures,
             ["workflow.staticEncounters"] => EditSessionDomain.StaticEncounters,
             ["workflow.placement"] => EditSessionDomain.Placement,
+            ["workflow.behavior"] => EditSessionDomain.Behavior,
             ["workflow.raidBattles"] => EditSessionDomain.RaidBattles,
             ["workflow.raidRewards"] => EditSessionDomain.RaidRewards,
+            ["workflow.raidBonusRewards"] => EditSessionDomain.RaidBonusRewards,
             ["workflow.royalCandy"] => EditSessionDomain.RoyalCandy,
             _ => EditSessionDomain.Mixed,
         };
@@ -975,8 +1045,10 @@ public sealed class ProjectBridgeDispatcher
         DynamaxAdventures,
         StaticEncounters,
         Placement,
+        Behavior,
         RaidBattles,
         RaidRewards,
+        RaidBonusRewards,
         RoyalCandy,
         Mixed,
     }

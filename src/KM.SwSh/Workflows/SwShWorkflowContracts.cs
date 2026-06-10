@@ -20,7 +20,9 @@ public static class SwShWorkflowIds
     public const string Encounters = "encounters";
     public const string RaidBattles = "raidBattles";
     public const string RaidRewards = "raidRewards";
+    public const string RaidBonusRewards = "raidBonusRewards";
     public const string Placement = "placement";
+    public const string Behavior = "behavior";
     public const string FlagworkSave = "flagworkSave";
     public const string ExeFsPatches = "exefsPatches";
     public const string RoyalCandy = "royalCandy";

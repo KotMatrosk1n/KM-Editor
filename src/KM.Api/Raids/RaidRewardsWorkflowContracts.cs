@@ -9,6 +9,8 @@ namespace KM.Api.Raids;
 
 public sealed record LoadRaidRewardsWorkflowRequest(ProjectPathsDto Paths);
 
+public sealed record LoadRaidBonusRewardsWorkflowRequest(ProjectPathsDto Paths);
+
 public sealed record UpdateRaidRewardFieldRequest(
     ProjectPathsDto Paths,
     EditSessionDto? Session,
@@ -17,7 +19,20 @@ public sealed record UpdateRaidRewardFieldRequest(
     string Field,
     string Value);
 
+public sealed record UpdateRaidBonusRewardFieldRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    string TableId,
+    int Slot,
+    string Field,
+    string Value);
+
 public sealed record UpdateRaidRewardFieldResponse(
+    RaidRewardsWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateRaidBonusRewardFieldResponse(
     RaidRewardsWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
@@ -38,6 +53,7 @@ public sealed record RaidRewardItemRecordDto(
 
 public sealed record RaidRewardTableRecordDto(
     string TableId,
+    string DisplayName,
     string DenId,
     int Rank,
     string GameVersion,
@@ -74,3 +90,5 @@ public sealed record RaidRewardsWorkflowDto(
     IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record LoadRaidRewardsWorkflowResponse(RaidRewardsWorkflowDto Workflow);
+
+public sealed record LoadRaidBonusRewardsWorkflowResponse(RaidRewardsWorkflowDto Workflow);

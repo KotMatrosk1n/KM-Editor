@@ -5,6 +5,12 @@ using KM.Api.Diagnostics;
 
 namespace KM.Api.Projects;
 
+public enum ProjectGameDto
+{
+    Sword,
+    Shield,
+}
+
 public sealed record ProjectPathsDto
 {
     [JsonConstructor]
@@ -12,12 +18,23 @@ public sealed record ProjectPathsDto
         string? BaseRomFsPath,
         string? BaseExeFsPath,
         string? OutputRootPath,
-        string? SaveFilePath)
+        string? SaveFilePath,
+        ProjectGameDto? SelectedGame)
     {
         this.BaseRomFsPath = BaseRomFsPath;
         this.BaseExeFsPath = BaseExeFsPath;
         this.OutputRootPath = OutputRootPath;
         this.SaveFilePath = SaveFilePath;
+        this.SelectedGame = SelectedGame;
+    }
+
+    public ProjectPathsDto(
+        string? BaseRomFsPath,
+        string? BaseExeFsPath,
+        string? OutputRootPath,
+        string? SaveFilePath)
+        : this(BaseRomFsPath, BaseExeFsPath, OutputRootPath, SaveFilePath, SelectedGame: null)
+    {
     }
 
     public ProjectPathsDto(
@@ -35,6 +52,8 @@ public sealed record ProjectPathsDto
     public string? OutputRootPath { get; init; }
 
     public string? SaveFilePath { get; init; }
+
+    public ProjectGameDto? SelectedGame { get; init; }
 }
 
 public sealed record OpenProjectRequest(ProjectPathsDto Paths);

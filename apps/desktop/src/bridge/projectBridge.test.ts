@@ -6,7 +6,8 @@ const projectPaths = {
   baseExeFsPath: 'base-exefs',
   baseRomFsPath: 'base-romfs',
   outputRootPath: null,
-  saveFilePath: null
+  saveFilePath: null,
+  selectedGame: 'sword' as const
 };
 
 const editableProjectPaths = {
@@ -227,6 +228,13 @@ describe('projectBridge', () => {
                 diagnostics: [],
                 id: 'raidRewards',
                 label: 'Raid Rewards'
+              },
+              {
+                availability: 'readOnly',
+                description: 'Raid bonus reward tables, item quantities, den usage, and source provenance.',
+                diagnostics: [],
+                id: 'raidBonusRewards',
+                label: 'Raid Bonus Rewards'
               },
               {
                 availability: 'readOnly',
@@ -1008,6 +1016,7 @@ describe('projectBridge', () => {
                 {
                   archiveMember: 'nest_hole_drop_rewards.bin',
                   denId: 'table_AABBCCDD00112233',
+                  displayName: 'Drop 000 | SW Den 0 Slot 00, 1-5-Star Eevee-1',
                   gameVersion: 'Sword/Shield',
                   provenance: {
                     fileState: 'baseOnly',
@@ -1030,6 +1039,69 @@ describe('projectBridge', () => {
                   ],
                   sourceTableHash: '0xAABBCCDD00112233',
                   tableId: 'drop:0:AABBCCDD00112233',
+                  tableIndex: 0
+                }
+              ]
+            }
+          }
+        });
+      }
+
+      if (request.command === 'raidBonusRewards.load') {
+        return JSON.stringify({
+          error: null,
+          payload: {
+            workflow: {
+              diagnostics: [],
+              editableFields: [
+                {
+                  field: 'itemId',
+                  label: 'Item ID',
+                  maximumValue: 65535,
+                  minimumValue: 0,
+                  valueKind: 'integer'
+                }
+              ],
+              stats: {
+                sourceFileCount: 1,
+                totalRewardItemCount: 1,
+                totalTableCount: 1
+              },
+              summary: {
+                availability: 'readOnly',
+                description:
+                  'Raid bonus reward tables, item quantities, den usage, and source provenance.',
+                diagnostics: [],
+                id: 'raidBonusRewards',
+                label: 'Raid Bonus Rewards'
+              },
+              tables: [
+                {
+                  archiveMember: 'nest_hole_bonus_rewards.bin',
+                  denId: 'table_1020304050607080',
+                  displayName: 'Bonus 000 | SW Den 0 Slot 00, 1-5-Star Eevee-1',
+                  gameVersion: 'Sword/Shield',
+                  provenance: {
+                    fileState: 'baseOnly',
+                    sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+                    sourceLayer: 'base'
+                  },
+                  rank: 0,
+                  rewardKind: 'bonus',
+                  rewardKindLabel: 'Bonus',
+                  rewards: [
+                    {
+                      entryId: 20,
+                      itemId: 4,
+                      itemName: 'Armorite Ore',
+                      quantity: 1,
+                      slot: 1,
+                      values: [1, 2, 3, 4, 5],
+                      weight: 0
+                    }
+                  ],
+                  sourceTableHash: '0x1020304050607080',
+                  tableId: 'bonus:0:1020304050607080',
                   tableIndex: 0
                 }
               ]
@@ -1474,6 +1546,7 @@ describe('projectBridge', () => {
     const shops = await bridge.loadShopsWorkflow({ paths: projectPaths });
     const encounters = await bridge.loadEncountersWorkflow({ paths: projectPaths });
     const raidRewards = await bridge.loadRaidRewardsWorkflow({ paths: projectPaths });
+    const raidBonusRewards = await bridge.loadRaidBonusRewardsWorkflow({ paths: projectPaths });
     const placement = await bridge.loadPlacementWorkflow({ paths: projectPaths });
     const flagworkSave = await bridge.loadFlagworkSaveWorkflow({ paths: projectPaths });
     const exeFsPatches = await bridge.loadExeFsPatchWorkflow({ paths: projectPaths });
@@ -1490,11 +1563,12 @@ describe('projectBridge', () => {
     expect(workflows.workflows[7]?.id).toBe('shops');
     expect(workflows.workflows[8]?.id).toBe('encounters');
     expect(workflows.workflows[9]?.id).toBe('raidRewards');
-    expect(workflows.workflows[10]?.id).toBe('placement');
-    expect(workflows.workflows[11]?.id).toBe('flagworkSave');
-    expect(workflows.workflows[12]?.id).toBe('exefsPatches');
-    expect(workflows.workflows[13]?.id).toBe('royalCandy');
-    expect(workflows.workflows[14]?.id).toBe('spreadsheetImport');
+    expect(workflows.workflows[10]?.id).toBe('raidBonusRewards');
+    expect(workflows.workflows[11]?.id).toBe('placement');
+    expect(workflows.workflows[12]?.id).toBe('flagworkSave');
+    expect(workflows.workflows[13]?.id).toBe('exefsPatches');
+    expect(workflows.workflows[14]?.id).toBe('royalCandy');
+    expect(workflows.workflows[15]?.id).toBe('spreadsheetImport');
     expect(items.workflow.editableFields).toHaveLength(4);
     expect(items.workflow.items[0]?.name).toBe('Potion');
     expect(pokemon.workflow.editableFields[0]?.field).toBe('hp');
@@ -1512,6 +1586,7 @@ describe('projectBridge', () => {
     expect(encounters.workflow.editableFields[0]?.field).toBe('probability');
     expect(encounters.workflow.tables[0]?.slots[0]?.species).toBe('Bulbasaur');
     expect(raidRewards.workflow.tables[0]?.rewards[0]?.itemName).toBe('Exp. Candy L');
+    expect(raidBonusRewards.workflow.tables[0]?.rewards[0]?.itemName).toBe('Armorite Ore');
     expect(placement.workflow.objects[0]?.label).toBe('Hidden item: Potion');
     expect(flagworkSave.workflow.flags[0]?.name).toBe('FE_TEST_FLAG');
     expect(flagworkSave.workflow.saveBlocks[0]?.key).toBe('0xDDEEFF00');

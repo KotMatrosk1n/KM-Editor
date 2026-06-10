@@ -31,6 +31,7 @@ public sealed class SwShRaidBattlesWorkflowServiceTests
 
         var table = workflow.Tables[0];
         Assert.Equal("table_AABBCCDD00112233", table.DenId);
+        Assert.Equal("Sword - 0", table.DisplayName);
         Assert.Equal("Sword", table.GameVersion);
         Assert.Equal("0xAABBCCDD00112233", table.SourceTableHash);
         Assert.Equal(ProjectFileLayer.Base, table.Provenance.SourceLayer);

@@ -13,6 +13,7 @@ namespace KM.SwSh.Shops;
 
 public sealed class SwShShopsEditSessionService
 {
+    private const int NoneItemId = 0;
     private const string ShopsEditDomain = "workflow.shops";
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
@@ -501,7 +502,10 @@ public sealed class SwShShopsEditSessionService
                 return null;
             }
 
-            itemIds.Add(itemId.Value);
+            if (itemId.Value != NoneItemId)
+            {
+                itemIds.Add(itemId.Value);
+            }
         }
 
         return itemIds;
@@ -683,6 +687,7 @@ public sealed class SwShShopsEditSessionService
         SwShShopsWorkflow workflow)
     {
         return itemIds
+            .Where(itemId => itemId != NoneItemId)
             .Select((itemId, index) =>
             {
                 var itemOption = ResolveItemOption(workflow, itemId);

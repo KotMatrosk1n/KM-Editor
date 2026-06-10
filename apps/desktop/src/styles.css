@@ -70,6 +70,67 @@ textarea {
     radial-gradient(circle at 58% 0%, rgb(79 70 229 / 12%), transparent 34rem);
 }
 
+.game-selection-shell {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+  background:
+    linear-gradient(135deg, rgb(5 8 16 / 82%), rgb(12 18 32 / 92%)),
+    radial-gradient(circle at 50% 12%, rgb(214 168 66 / 12%), transparent 28rem);
+}
+
+.game-selection-panel {
+  display: grid;
+  gap: 24px;
+  width: min(620px, 100%);
+  padding: 28px;
+  background:
+    linear-gradient(180deg, rgb(20 31 52 / 96%), rgb(14 21 36 / 96%)),
+    var(--color-surface);
+  border: 1px solid rgb(93 113 151 / 42%);
+  border-radius: 8px;
+  box-shadow: var(--shadow-panel), var(--shadow-inset);
+}
+
+.game-selection-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border: 1px solid rgb(214 168 66 / 62%);
+  border-radius: 8px;
+}
+
+.game-selection-panel h1 {
+  font-size: 28px;
+}
+
+.game-choice-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.game-choice-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 0 16px;
+  color: var(--color-text);
+  background: #19233a;
+  border: 1px solid #31415f;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.game-choice-button:hover {
+  background: linear-gradient(135deg, #27217a, var(--color-accent));
+  border-color: rgb(109 115 255 / 72%);
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -349,6 +410,40 @@ h2 {
   grid-template-columns: repeat(3, minmax(180px, 1fr));
   gap: 12px;
   margin-top: 16px;
+}
+
+.selected-game-banner {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 12px;
+  background: #0b1120;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.selected-game-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--color-text);
+  font-weight: 900;
+}
+
+.selected-game-label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-game-banner code {
+  color: var(--color-gold);
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .path-field {
@@ -1140,6 +1235,12 @@ h2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 156px), 1fr));
   gap: 10px;
+}
+
+.field-group-action-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 10px;
 }
 
 .editable-field-control {
@@ -2945,14 +3046,6 @@ h2 {
   opacity: 0.78;
 }
 
-.encounter-apply-weather-button {
-  flex: 0 0 auto;
-  margin-left: auto;
-  min-height: 34px;
-  padding: 0 12px;
-  white-space: nowrap;
-}
-
 .slot-tab-button {
   display: grid;
   grid-template-rows: 34px auto auto auto;
@@ -3143,12 +3236,24 @@ h2 {
 
 .pending-edit-list li {
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
   gap: 8px;
   min-width: 0;
   padding: 10px;
   background: #0b1120;
   border: 1px solid #26344d;
   border-radius: 8px;
+}
+
+.pending-edit-remove-button {
+  color: #ffd2d2;
+}
+
+.pending-edit-content {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
 }
 
 .pending-edit-title-row {
@@ -3644,6 +3749,11 @@ input {
   .content-grid {
     grid-template-columns: 1fr;
     padding: 16px;
+  }
+
+  .game-choice-actions,
+  .selected-game-banner {
+    grid-template-columns: 1fr;
   }
 
   .workspace-content {

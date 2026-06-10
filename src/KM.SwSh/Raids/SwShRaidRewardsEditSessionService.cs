@@ -13,7 +13,8 @@ namespace KM.SwSh.Raids;
 
 public sealed class SwShRaidRewardsEditSessionService
 {
-    private const string RaidRewardsEditDomain = "workflow.raidRewards";
+    internal const string RaidRewardsEditDomain = "workflow.raidRewards";
+    internal const string RaidBonusRewardsEditDomain = "workflow.raidBonusRewards";
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShRaidRewardsWorkflowService raidRewardsWorkflowService;
@@ -39,6 +40,46 @@ public sealed class SwShRaidRewardsEditSessionService
         string field,
         string value)
     {
+        return UpdateRewardField(
+            paths,
+            session,
+            tableId,
+            slot,
+            field,
+            value,
+            SwShRaidRewardWorkflowKind.Drop,
+            RaidRewardsEditDomain);
+    }
+
+    public SwShRaidRewardsEditResult UpdateBonusRewardField(
+        ProjectPaths paths,
+        EditSession? session,
+        string tableId,
+        int slot,
+        string field,
+        string value)
+    {
+        return UpdateRewardField(
+            paths,
+            session,
+            tableId,
+            slot,
+            field,
+            value,
+            SwShRaidRewardWorkflowKind.Bonus,
+            RaidBonusRewardsEditDomain);
+    }
+
+    private SwShRaidRewardsEditResult UpdateRewardField(
+        ProjectPaths paths,
+        EditSession? session,
+        string tableId,
+        int slot,
+        string field,
+        string value,
+        SwShRaidRewardWorkflowKind kind,
+        string editDomain)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(tableId);
         ArgumentNullException.ThrowIfNull(field);
@@ -46,11 +87,11 @@ public sealed class SwShRaidRewardsEditSessionService
 
         var currentSession = session ?? StartSession();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = raidRewardsWorkflowService.Load(project);
-        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var loadedWorkflow = raidRewardsWorkflowService.Load(project, kind);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits, editDomain);
         var diagnostics = new List<ValidationDiagnostic>();
 
-        if (!CanEditRaidRewards(project, workflow, diagnostics))
+        if (!CanEditRaidRewards(project, workflow, diagnostics, editDomain))
         {
             return new SwShRaidRewardsEditResult(workflow, currentSession, diagnostics);
         }
@@ -59,6 +100,7 @@ public sealed class SwShRaidRewardsEditSessionService
         if (table is null)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
                 $"Raid reward table '{tableId}' is not present in the loaded workflow.",
                 field: "tableId",
@@ -70,6 +112,7 @@ public sealed class SwShRaidRewardsEditSessionService
         if (reward is null)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
                 $"Raid reward table '{table.DenId}' does not have reward slot {slot}.",
                 field: "slot",
@@ -77,7 +120,7 @@ public sealed class SwShRaidRewardsEditSessionService
             return new SwShRaidRewardsEditResult(workflow, currentSession, diagnostics);
         }
 
-        var pendingEdit = CreatePendingEdit(table, reward, field, value, diagnostics);
+        var pendingEdit = CreatePendingEdit(table, reward, field, value, editDomain, diagnostics);
         if (pendingEdit is null)
         {
             return new SwShRaidRewardsEditResult(workflow, currentSession, diagnostics);
@@ -86,7 +129,7 @@ public sealed class SwShRaidRewardsEditSessionService
         var updatedSession = ReplacePendingRaidRewardEdit(currentSession, pendingEdit);
 
         return new SwShRaidRewardsEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits, editDomain),
             updatedSession,
             diagnostics);
     }
@@ -97,19 +140,21 @@ public sealed class SwShRaidRewardsEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = raidRewardsWorkflowService.Load(project);
+        var editDomain = GetEditDomain(session);
+        var workflow = raidRewardsWorkflowService.Load(project, GetWorkflowKind(editDomain));
         var diagnostics = new List<ValidationDiagnostic>();
 
-        CanEditRaidRewards(project, workflow, diagnostics);
+        CanEditRaidRewards(project, workflow, diagnostics, editDomain);
 
         foreach (var edit in session.PendingEdits)
         {
-            ValidatePendingEdit(workflow, edit, diagnostics);
+            ValidatePendingEdit(workflow, edit, diagnostics, editDomain);
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Info,
                 "Pending raid reward change is valid."));
         }
@@ -127,12 +172,15 @@ public sealed class SwShRaidRewardsEditSessionService
 
         var validation = Validate(paths, session);
         var diagnostics = validation.Diagnostics.ToList();
+        var editDomain = GetEditDomain(session);
+        var workflowLabel = GetWorkflowLabel(editDomain);
 
         if (session.PendingEdits.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                "Create a pending Raid Rewards edit before reviewing a change plan.",
+                $"Create a pending {workflowLabel} edit before reviewing a change plan.",
                 expected: "Pending raid reward edit"));
         }
 
@@ -146,8 +194,9 @@ public sealed class SwShRaidRewardsEditSessionService
         if (dataSource is null)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                "Raid Rewards change plan could not resolve the source nest archive.",
+                $"{workflowLabel} change plan could not resolve the source nest archive.",
                 expected: SwShRaidRewardsWorkflowService.NestDataPath));
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
@@ -156,8 +205,9 @@ public sealed class SwShRaidRewardsEditSessionService
         if (targetPath is null)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                "Raid Rewards apply target must stay inside the configured output root.",
+                $"{workflowLabel} apply target must stay inside the configured output root.",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Output-root-contained target"));
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
@@ -168,10 +218,11 @@ public sealed class SwShRaidRewardsEditSessionService
             [new ProjectFileReference(GetSourceLayer(dataSource.GraphEntry), dataSource.GraphEntry.RelativePath)],
             File.Exists(targetPath),
             session.PendingEdits.Count == 1
-                ? $"Apply pending Raid Rewards edit: {session.PendingEdits[0].Summary}"
-                : $"Apply {session.PendingEdits.Count} pending Raid Rewards edits.");
+                ? $"Apply pending {workflowLabel} edit: {session.PendingEdits[0].Summary}"
+                : $"Apply {session.PendingEdits.Count} pending {workflowLabel} edits.");
 
         diagnostics.Add(CreateDiagnostic(
+            editDomain,
             DiagnosticSeverity.Info,
             "Change plan preview contains 1 target file."));
 
@@ -186,6 +237,8 @@ public sealed class SwShRaidRewardsEditSessionService
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
+        var editDomain = GetEditDomain(session);
+        var workflowLabel = GetWorkflowLabel(editDomain);
         var currentPlan = CreateChangePlan(paths, session);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
@@ -193,9 +246,10 @@ public sealed class SwShRaidRewardsEditSessionService
         if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
                 "Reviewed change plan is stale. Review the change plan again before applying.",
-                expected: "Current reviewed Raid Rewards change plan"));
+                expected: $"Current reviewed {workflowLabel} change plan"));
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -208,13 +262,14 @@ public sealed class SwShRaidRewardsEditSessionService
         if (dataSource is null)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                "Raid Rewards apply could not resolve the source nest archive.",
+                $"{workflowLabel} apply could not resolve the source nest archive.",
                 expected: SwShRaidRewardsWorkflowService.NestDataPath));
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
         }
 
-        var targetPath = ResolveOutputPath(paths, dataSource.GraphEntry.RelativePath, diagnostics);
+        var targetPath = ResolveOutputPath(paths, dataSource.GraphEntry.RelativePath, editDomain, diagnostics);
         if (targetPath is null)
         {
             return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
@@ -229,6 +284,7 @@ public sealed class SwShRaidRewardsEditSessionService
                 if (string.IsNullOrWhiteSpace(editGroup.Key))
                 {
                     diagnostics.Add(CreateDiagnostic(
+                        editDomain,
                         DiagnosticSeverity.Error,
                         "Pending raid reward edit does not include a valid archive member.",
                         expected: "Known Sword/Shield raid reward member"));
@@ -254,30 +310,34 @@ public sealed class SwShRaidRewardsEditSessionService
             File.WriteAllBytes(targetPath, pack.Write());
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, dataSource.GraphEntry.RelativePath));
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Info,
-                "Applied Raid Rewards change plan to the configured LayeredFS output root."));
+                $"Applied {workflowLabel} change plan to the configured LayeredFS output root."));
         }
         catch (InvalidDataException exception)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                $"Raid Rewards source file could not be decoded: {exception.Message}",
+                $"{workflowLabel} source file could not be decoded: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield nest reward data"));
         }
         catch (IOException exception)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                $"Raid Rewards output file could not be written: {exception.Message}",
+                $"{workflowLabel} output file could not be written: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Writable output root"));
         }
         catch (UnauthorizedAccessException exception)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                $"Raid Rewards output file could not be written: {exception.Message}",
+                $"{workflowLabel} output file could not be written: {exception.Message}",
                 file: dataSource.GraphEntry.RelativePath,
                 expected: "Writable output root"));
         }
@@ -288,13 +348,15 @@ public sealed class SwShRaidRewardsEditSessionService
     private static bool CanEditRaidRewards(
         OpenedProject project,
         SwShRaidRewardsWorkflow workflow,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        string editDomain)
     {
         if (!project.Health.CanOpenEditableWorkflows || workflow.Summary.Availability != SwShWorkflowAvailability.Available)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                "Raid Rewards edits require valid base RomFS, base ExeFS, and output root paths.",
+                $"{GetWorkflowLabel(editDomain)} edits require valid base RomFS, base ExeFS, and output root paths.",
                 expected: "Editable workflow project paths"));
             return false;
         }
@@ -302,8 +364,9 @@ public sealed class SwShRaidRewardsEditSessionService
         if (workflow.Tables.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                "Raid Rewards edits require loaded reward tables.",
+                $"{GetWorkflowLabel(editDomain)} edits require loaded reward tables.",
                 expected: "Loaded raid reward data"));
             return false;
         }
@@ -314,20 +377,23 @@ public sealed class SwShRaidRewardsEditSessionService
     private static void ValidatePendingEdit(
         SwShRaidRewardsWorkflow workflow,
         PendingEdit edit,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        string editDomain)
     {
-        if (!string.Equals(edit.Domain, RaidRewardsEditDomain, StringComparison.Ordinal))
+        if (!string.Equals(edit.Domain, editDomain, StringComparison.Ordinal))
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                $"Pending edit domain '{edit.Domain}' does not belong to Raid Rewards.",
-                expected: RaidRewardsEditDomain));
+                $"Pending edit domain '{edit.Domain}' does not belong to {GetWorkflowLabel(editDomain)}.",
+                expected: editDomain));
             return;
         }
 
         if (!SwShRaidRewardsWorkflowService.TryParseRewardRecordId(edit.RecordId, out var tableId, out var slot))
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
                 "Pending raid reward edit does not target a valid reward record.",
                 expected: "tableId#slot record id"));
@@ -338,6 +404,7 @@ public sealed class SwShRaidRewardsEditSessionService
         if (table is null)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
                 $"Pending raid reward table '{tableId}' is no longer available.",
                 expected: "Current raid reward table"));
@@ -347,13 +414,14 @@ public sealed class SwShRaidRewardsEditSessionService
         if (!table.Rewards.Any(candidate => candidate.Slot == slot))
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
                 $"Pending raid reward slot {slot} is no longer available.",
                 expected: "Current raid reward slot"));
             return;
         }
 
-        _ = TryParseValue(table, edit.Field, edit.NewValue, diagnostics);
+        _ = TryParseValue(table, edit.Field, edit.NewValue, editDomain, diagnostics);
     }
 
     private static PendingEdit? CreatePendingEdit(
@@ -361,23 +429,24 @@ public sealed class SwShRaidRewardsEditSessionService
         SwShRaidRewardItemRecord reward,
         string field,
         string value,
+        string editDomain,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var normalizedField = field.Trim();
         if (!SwShRaidRewardsWorkflowService.IsEditableField(normalizedField))
         {
-            diagnostics.Add(CreateUnsupportedFieldDiagnostic(normalizedField));
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(normalizedField, editDomain));
             return null;
         }
 
-        var parsedValue = TryParseValue(table, normalizedField, value, diagnostics);
+        var parsedValue = TryParseValue(table, normalizedField, value, editDomain, diagnostics);
         if (parsedValue is null)
         {
             return null;
         }
 
         return new PendingEdit(
-            RaidRewardsEditDomain,
+            editDomain,
             CreateSummary(table, reward, normalizedField, parsedValue.Value),
             [new ProjectFileReference(table.Provenance.SourceLayer, table.Provenance.SourceFile)],
             RecordId: SwShRaidRewardsWorkflowService.CreateRewardRecordId(table.TableId, reward.Slot),
@@ -415,11 +484,13 @@ public sealed class SwShRaidRewardsEditSessionService
         SwShRaidRewardTableRecord table,
         string? field,
         string? value,
+        string editDomain,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedValue))
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
                 "Raid reward edit value must be an integer.",
                 field: field,
@@ -431,6 +502,7 @@ public sealed class SwShRaidRewardsEditSessionService
         if (parsedValue < minimum || parsedValue > maximum)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
                 $"Raid reward {field} must be between {minimum} and {maximum}.",
                 field: field,
@@ -478,21 +550,25 @@ public sealed class SwShRaidRewardsEditSessionService
 
     private static SwShRaidRewardsWorkflow OverlayPendingEdits(
         SwShRaidRewardsWorkflow workflow,
-        IEnumerable<PendingEdit> edits)
+        IEnumerable<PendingEdit> edits,
+        string editDomain)
     {
         var updatedWorkflow = workflow;
 
         foreach (var edit in edits)
         {
-            updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit);
+            updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit, editDomain);
         }
 
         return updatedWorkflow;
     }
 
-    private static SwShRaidRewardsWorkflow OverlayPendingEdit(SwShRaidRewardsWorkflow workflow, PendingEdit edit)
+    private static SwShRaidRewardsWorkflow OverlayPendingEdit(
+        SwShRaidRewardsWorkflow workflow,
+        PendingEdit edit,
+        string editDomain)
     {
-        if (!string.Equals(edit.Domain, RaidRewardsEditDomain, StringComparison.Ordinal)
+        if (!string.Equals(edit.Domain, editDomain, StringComparison.Ordinal)
             || !SwShRaidRewardsWorkflowService.IsEditableField(edit.Field)
             || !SwShRaidRewardsWorkflowService.TryParseRewardRecordId(edit.RecordId, out var tableId, out var slot))
         {
@@ -500,7 +576,8 @@ public sealed class SwShRaidRewardsEditSessionService
         }
 
         var table = workflow.Tables.FirstOrDefault(candidate => candidate.TableId == tableId);
-        if (table is null || TryParseValue(table, edit.Field, edit.NewValue, new List<ValidationDiagnostic>()) is not { } value)
+        if (table is null
+            || TryParseValue(table, edit.Field, edit.NewValue, editDomain, new List<ValidationDiagnostic>()) is not { } value)
         {
             return workflow;
         }
@@ -594,6 +671,7 @@ public sealed class SwShRaidRewardsEditSessionService
                 out var sourceTableId))
         {
             diagnostics.Add(CreateDiagnostic(
+                edit.Domain,
                 DiagnosticSeverity.Error,
                 "Pending raid reward edit does not include a valid archive target.",
                 expected: "Existing raid reward archive target"));
@@ -605,6 +683,7 @@ public sealed class SwShRaidRewardsEditSessionService
             || (uint)(slot - 1) >= (uint)archive.Tables[tableIndex].Rewards.Count)
         {
             diagnostics.Add(CreateDiagnostic(
+                edit.Domain,
                 DiagnosticSeverity.Error,
                 "Pending raid reward edit target no longer matches the source archive.",
                 expected: "Current raid reward archive target"));
@@ -613,6 +692,7 @@ public sealed class SwShRaidRewardsEditSessionService
 
         var workflowTable = new SwShRaidRewardTableRecord(
             tableId,
+            $"table_{sourceTableId:X16}",
             $"table_{sourceTableId:X16}",
             Rank: 0,
             GameVersion: "Sword/Shield",
@@ -623,7 +703,7 @@ public sealed class SwShRaidRewardsEditSessionService
             $"0x{sourceTableId:X16}",
             Array.Empty<SwShRaidRewardItemRecord>(),
             new SwShRaidRewardProvenance(string.Empty, ProjectFileLayer.Base, ProjectFileGraphEntryState.BaseOnly));
-        if (TryParseValue(workflowTable, edit.Field, edit.NewValue, diagnostics) is not { } value)
+        if (TryParseValue(workflowTable, edit.Field, edit.NewValue, edit.Domain, diagnostics) is not { } value)
         {
             return null;
         }
@@ -631,7 +711,7 @@ public sealed class SwShRaidRewardsEditSessionService
         var field = ToArchiveField(edit.Field);
         if (field is null)
         {
-            diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)"));
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(edit.Field ?? "(missing)", edit.Domain));
             return null;
         }
 
@@ -655,13 +735,15 @@ public sealed class SwShRaidRewardsEditSessionService
     private static string? ResolveOutputPath(
         ProjectPaths paths,
         string targetRelativePath,
+        string editDomain,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                "Raid Rewards apply requires a configured output root.",
+                $"{GetWorkflowLabel(editDomain)} apply requires a configured output root.",
                 expected: "Valid output root"));
             return null;
         }
@@ -669,8 +751,9 @@ public sealed class SwShRaidRewardsEditSessionService
         if (Path.IsPathRooted(targetRelativePath))
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                "Raid Rewards apply target must be relative to the output root.",
+                $"{GetWorkflowLabel(editDomain)} apply target must be relative to the output root.",
                 file: targetRelativePath,
                 expected: "Relative output target"));
             return null;
@@ -680,8 +763,9 @@ public sealed class SwShRaidRewardsEditSessionService
         if (targetPath is null)
         {
             diagnostics.Add(CreateDiagnostic(
+                editDomain,
                 DiagnosticSeverity.Error,
-                "Raid Rewards apply target must stay inside the configured output root.",
+                $"{GetWorkflowLabel(editDomain)} apply target must stay inside the configured output root.",
                 file: targetRelativePath,
                 expected: "Output-root-contained target"));
         }
@@ -732,11 +816,34 @@ public sealed class SwShRaidRewardsEditSessionService
             : ProjectFileLayer.Base;
     }
 
-    private static ValidationDiagnostic CreateUnsupportedFieldDiagnostic(string field)
+    private static string GetEditDomain(EditSession session)
+    {
+        return session.PendingEdits.Any(edit =>
+            string.Equals(edit.Domain, RaidBonusRewardsEditDomain, StringComparison.Ordinal))
+                ? RaidBonusRewardsEditDomain
+                : RaidRewardsEditDomain;
+    }
+
+    private static SwShRaidRewardWorkflowKind GetWorkflowKind(string editDomain)
+    {
+        return string.Equals(editDomain, RaidBonusRewardsEditDomain, StringComparison.Ordinal)
+            ? SwShRaidRewardWorkflowKind.Bonus
+            : SwShRaidRewardWorkflowKind.Drop;
+    }
+
+    private static string GetWorkflowLabel(string editDomain)
+    {
+        return string.Equals(editDomain, RaidBonusRewardsEditDomain, StringComparison.Ordinal)
+            ? "Raid Bonus Rewards"
+            : "Raid Rewards";
+    }
+
+    private static ValidationDiagnostic CreateUnsupportedFieldDiagnostic(string field, string editDomain)
     {
         return CreateDiagnostic(
+            editDomain,
             DiagnosticSeverity.Error,
-            $"Raid reward field '{field}' is not supported by the Raid Rewards workflow yet.",
+            $"Raid reward field '{field}' is not supported by the {GetWorkflowLabel(editDomain)} workflow yet.",
             field: "field",
             expected: string.Join(
                 ", ",
@@ -751,6 +858,7 @@ public sealed class SwShRaidRewardsEditSessionService
     }
 
     private static ValidationDiagnostic CreateDiagnostic(
+        string editDomain,
         DiagnosticSeverity severity,
         string message,
         string? file = null,
@@ -762,7 +870,7 @@ public sealed class SwShRaidRewardsEditSessionService
             message,
             File: file,
             Field: field,
-            Domain: RaidRewardsEditDomain,
+            Domain: editDomain,
             Expected: expected);
     }
 }

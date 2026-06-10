@@ -42,6 +42,9 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Fire Gym (1)" && !flag.Enabled);
         Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Fire Gym (2)" && !flag.Enabled);
         Assert.Contains(trainer.AiFlagStates, flag => flag.Label == "Fire Gym (3)" && !flag.Enabled);
+        var aiFlagLabels = trainer.AiFlagStates.Select(flag => flag.Label).ToList();
+        Assert.Equal(aiFlagLabels.IndexOf("Fire Gym (2)") + 1, aiFlagLabels.IndexOf("Fire Gym (3)"));
+        Assert.Equal(11, trainer.AiFlagStates.Single(flag => flag.Label == "Fire Gym (3)").Bit);
         Assert.True(trainer.Heal);
         Assert.Equal(24, trainer.Money);
         Assert.Equal(7, trainer.Gift);
@@ -112,6 +115,19 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.NatureField).Options,
             option => option.Value == 13 && option.Label == "Jolly (+Spe/-Sp.Atk)");
+        Assert.Equal(
+            [
+                "Lonely (+Atk/-Def)",
+                "Adamant (+Atk/-Sp.Atk)",
+                "Naughty (+Atk/-Sp.Def)",
+                "Brave (+Atk/-Spe)",
+                "Bold (+Def/-Atk)",
+            ],
+            workflow.EditableFields
+                .Single(field => field.Field == SwShTrainersWorkflowService.NatureField)
+                .Options
+                .Take(5)
+                .Select(option => option.Label));
         Assert.Equal(
             "HP",
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.EvHpField).Label);

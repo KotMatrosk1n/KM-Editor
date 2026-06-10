@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SwSh.Behavior;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
@@ -153,11 +154,21 @@ internal static class SwShWorkflowDependencyValidator
                 File("raid reward data", SwShRaidRewardsWorkflowService.NestDataPath),
                 File("item names", SwShRaidRewardsWorkflowService.EnglishItemNamePath),
             ],
+            SwShWorkflowIds.RaidBonusRewards =>
+            [
+                File("raid bonus reward data", SwShRaidRewardsWorkflowService.NestDataPath),
+                File("item names", SwShRaidRewardsWorkflowService.EnglishItemNamePath),
+            ],
             SwShWorkflowIds.Placement =>
             [
                 File("placement data", SwShPlacementWorkflowService.PlacementDataPath),
                 File("item hash table", SwShPlacementWorkflowService.ItemHashPath),
                 File("item names", SwShPlacementWorkflowService.EnglishItemNamePath),
+            ],
+            SwShWorkflowIds.Behavior =>
+            [
+                File("behavior data", SwShBehaviorWorkflowService.BehaviorDataPath),
+                File("species names", SwShBehaviorWorkflowService.EnglishSpeciesNamePath),
             ],
             SwShWorkflowIds.FlagworkSave =>
             [

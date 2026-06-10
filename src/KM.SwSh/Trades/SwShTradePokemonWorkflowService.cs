@@ -110,32 +110,9 @@ public sealed class SwShTradePokemonWorkflowService
 
     private static readonly IReadOnlyList<SwShTradePokemonEditableFieldOption> NatureOptions =
     [
-        new(0, "Hardy"),
-        new(1, "Lonely"),
-        new(2, "Brave"),
-        new(3, "Adamant"),
-        new(4, "Naughty"),
-        new(5, "Bold"),
-        new(6, "Docile"),
-        new(7, "Relaxed"),
-        new(8, "Impish"),
-        new(9, "Lax"),
-        new(10, "Timid"),
-        new(11, "Hasty"),
-        new(12, "Serious"),
-        new(13, "Jolly"),
-        new(14, "Naive"),
-        new(15, "Modest"),
-        new(16, "Mild"),
-        new(17, "Quiet"),
-        new(18, "Bashful"),
-        new(19, "Rash"),
-        new(20, "Calm"),
-        new(21, "Gentle"),
-        new(22, "Sassy"),
-        new(23, "Careful"),
-        new(24, "Quirky"),
-        new(25, "Random"),
+        ..SwShNatureLabels.WithRandom.Select(nature => new SwShTradePokemonEditableFieldOption(
+            nature.Value,
+            nature.Label)),
     ];
 
     private static readonly IReadOnlyList<SwShTradePokemonEditableField> BaseEditableFields =

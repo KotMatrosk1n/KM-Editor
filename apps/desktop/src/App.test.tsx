@@ -3,8 +3,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import { App, getPokemonSpriteId } from './App';
+import { App, getPokemonSpriteId, getPokemonSpriteIds } from './App';
 import {
+  type BehaviorWorkflow,
   type DynamaxAdventuresWorkflow,
   type EncountersWorkflow,
   type ExeFsPatchWorkflow,
@@ -61,6 +62,10 @@ describe('App', () => {
     expect(getPokemonSpriteId('Toxtricity (Low Key) (Gigantamax)')).toBe('toxtricity-gmax');
   });
 
+  it('falls back from form-specific Pokemon sprite ids to the base species id', () => {
+    expect(getPokemonSpriteIds('Unfezant (Male)')).toEqual(['unfezant-male', 'unfezant']);
+  });
+
   it('defaults Pokemon selection to the first real Pokemon instead of Egg', () => {
     useWorkbenchStore.getState().setPokemonWorkflow({
       diagnostics: [],
@@ -102,7 +107,8 @@ describe('App', () => {
         baseExeFsPath: '',
         baseRomFsPath: '',
         outputRootPath: '',
-        saveFilePath: ''
+        saveFilePath: '',
+        selectedGame: 'sword'
       },
       editSession: null,
       editValidationDiagnostics: [],
@@ -182,6 +188,7 @@ describe('App', () => {
     render(<App />);
 
     expect(screen.getByText('KM Editor')).toBeInTheDocument();
+    expect(screen.getByText('Pokemon Sword Editor')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Project Setup' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Project Paths' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Validate Paths' })).toBeInTheDocument();
@@ -197,6 +204,34 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Advanced Editors' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pokemon' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Workflows' })).not.toBeInTheDocument();
+  });
+
+  it('asks for the game before showing the workbench', async () => {
+    const user = userEvent.setup();
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        selectedGame: null
+      }
+    });
+
+    render(<App />);
+
+    expect(
+      screen.getByRole('heading', { name: 'Which game are you using?' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Project Setup' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Pokemon Shield' }));
+
+    expect(screen.getByRole('heading', { name: 'Project Setup' })).toBeInTheDocument();
+    expect(screen.getByText('Pokemon Shield Editor')).toBeInTheDocument();
+    expect(window.localStorage.getItem('km-editor.project-path-draft.v1') ?? '').not.toContain(
+      'selectedGame'
+    );
   });
 
   it('shows the renamed workflow categories in sidebar order', async () => {
@@ -257,7 +292,8 @@ describe('App', () => {
         baseExeFsPath: '',
         baseRomFsPath: 'C:/old/romfs',
         outputRootPath: '',
-        saveFilePath: ''
+        saveFilePath: '',
+        selectedGame: 'sword'
       }
     });
 
@@ -302,6 +338,46 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Editors' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Items' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pokemon' })).not.toBeInTheDocument();
+  });
+
+  it('blocks editors when validated ExeFS belongs to the wrong selected game', async () => {
+    const user = userEvent.setup();
+    const listWorkflows = vi.fn(async () => ({ workflows: [] }));
+    const wrongGameHealth = createWrongGameHealth();
+
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        selectedGame: 'shield'
+      }
+    });
+
+    render(
+      <App
+        bridge={createMockProjectBridge(
+          {
+            listWorkflows,
+            validateProject: (request) => {
+              expect(request.paths.selectedGame).toBe('shield');
+              return Promise.resolve({ health: wrongGameHealth });
+            }
+          },
+          true
+        )}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+
+    expect(await screen.findByText(/Base ExeFS contains Pokemon Sword/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Editors' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pokemon' })).not.toBeInTheDocument();
+    expect(listWorkflows).not.toHaveBeenCalled();
   });
 
   it('opens Items, searches records, and shows selected provenance', async () => {
@@ -417,6 +493,98 @@ describe('App', () => {
     expect(
       within(pendingRow!).getByText('romfs/bin/pml/personal/personal_total.bin (Base)')
     ).toBeInTheDocument();
+  });
+
+  it('removes one pending change from Changes without discarding the rest', async () => {
+    const user = userEvent.setup();
+    const validateEditSession = vi.fn(
+      (request: Parameters<ProjectBridge['validateEditSession']>[0]) =>
+        Promise.resolve({
+          diagnostics: [],
+          isValid: true,
+          session: request.session
+        })
+    );
+
+    render(
+      <App
+        bridge={createMockProjectBridge(
+          {
+            startEditSession: () =>
+              Promise.resolve({
+                session: {
+                  hasPendingChanges: true,
+                  pendingEdits: [
+                    {
+                      domain: 'workflow.pokemon',
+                      field: 'hp',
+                      newValue: '99',
+                      recordId: '1',
+                      sources: [
+                        {
+                          layer: 'base',
+                          relativePath: 'romfs/bin/pml/personal/personal_total.bin'
+                        }
+                      ],
+                      summary: 'Set Bulbasaur hp to 99.'
+                    },
+                    {
+                      domain: 'workflow.pokemon',
+                      field: 'attack',
+                      newValue: '88',
+                      recordId: '1',
+                      sources: [
+                        {
+                          layer: 'base',
+                          relativePath: 'romfs/bin/pml/personal/personal_total.bin'
+                        }
+                      ],
+                      summary: 'Set Bulbasaur attack to 88.'
+                    }
+                  ],
+                  sessionId: 'session-1'
+                }
+              }),
+            validateEditSession
+          },
+          true
+        )}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Bulbasaur hp to 99.')).toBeInTheDocument();
+    expect(screen.getByText('Set Bulbasaur attack to 88.')).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: /Remove pending change 1: Set Bulbasaur hp to 99\./ })
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByText('Set Bulbasaur hp to 99.')).not.toBeInTheDocument()
+    );
+    expect(screen.getByText('Set Bulbasaur attack to 88.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
+
+    await waitFor(() => expect(validateEditSession).toHaveBeenCalledTimes(1));
+    expect(validateEditSession.mock.calls[0]![0].session.pendingEdits).toEqual([
+      expect.objectContaining({
+        field: 'attack',
+        newValue: '88',
+        summary: 'Set Bulbasaur attack to 88.'
+      })
+    ]);
   });
 
   it('starts a Pokemon edit session and saves a learnset row change', async () => {
@@ -638,7 +806,8 @@ describe('App', () => {
         baseExeFsPath: 'base-exefs',
         baseRomFsPath: 'base-romfs',
         outputRootPath: 'output',
-        saveFilePath: null
+        saveFilePath: null,
+        selectedGame: 'sword'
       }
     });
     const bulbasaur = pokemonResponse.workflow.pokemon.find((pokemon) => pokemon.personalId === 1)!;
@@ -855,7 +1024,8 @@ describe('App', () => {
         baseExeFsPath: 'base-exefs',
         baseRomFsPath: 'base-romfs',
         outputRootPath: null,
-        saveFilePath: null
+        saveFilePath: null,
+        selectedGame: 'sword'
       }
     });
     const seedItem = baseItemsResponse.workflow.items[0]!;
@@ -1153,6 +1323,14 @@ describe('App', () => {
     expect(screen.getByLabelText('Nature')).toHaveDisplayValue('Jolly (+Spe/-Sp.Atk)');
     expect(screen.getByLabelText('Can Gigantamax')).toHaveDisplayValue('Yes');
     expect(screen.getByLabelText('Can Dynamax')).toHaveDisplayValue('No');
+    expect(screen.getByLabelText('Dynamax level')).toBeDisabled();
+    expect(screen.getByLabelText('Can Gigantamax')).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText('Can Dynamax'), '1');
+    expect(screen.getByLabelText('Dynamax level')).not.toBeDisabled();
+    expect(screen.getByLabelText('Can Gigantamax')).not.toBeDisabled();
+    await user.selectOptions(screen.getByLabelText('Can Dynamax'), '0');
+    expect(screen.getByLabelText('Dynamax level')).toBeDisabled();
+    expect(screen.getByLabelText('Can Gigantamax')).toBeDisabled();
     const abilityInput = screen.getByLabelText('Ability');
     await user.clear(abilityInput);
     expect(screen.getByText('Enter a value.')).toBeInTheDocument();
@@ -1212,7 +1390,8 @@ describe('App', () => {
         baseExeFsPath: 'base-exefs',
         baseRomFsPath: 'base-romfs',
         outputRootPath: 'output',
-        saveFilePath: null
+        saveFilePath: null,
+        selectedGame: 'sword'
       }
     });
     const avery = trainersResponse.workflow.trainers[0]!;
@@ -1325,7 +1504,37 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
   });
 
-  it('allows switching editors with staged changes in Changes', async () => {
+  it('warns before switching editors with an active edit session', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Wild Encounters' })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Switch Editors?' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Stay Here' }));
+    expect(screen.getByRole('heading', { level: 2, name: 'Wild Encounters' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+    await user.click(await screen.findByRole('button', { name: 'Switch and Revert' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+  });
+
+  it('allows reviewing staged changes in Changes and returning to the source editor', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -1346,14 +1555,14 @@ describe('App', () => {
     await user.click(within(learnsetBlock!).getByRole('button', { name: 'Move learnset row down' }));
     expect(await within(learnsetBlock!).findByDisplayValue('033 Tackle')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Items' }));
-
-    expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Switch Editors?' })).not.toBeInTheDocument();
-
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(screen.getByText('Move Bulbasaur learnset slot 0 down.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Switch Editors?' })).not.toBeInTheDocument();
   });
 
   it('opens Gift Pokemon, edits IVs, reviews a gift plan, and applies it', async () => {
@@ -1729,6 +1938,32 @@ describe('App', () => {
     expect(screen.getByText('Set Poke Mart inventory order to 2 items.')).toBeInTheDocument();
   });
 
+  it('removes None shop inventory rows when saving changes', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Economy' }));
+    await user.click(screen.getByRole('button', { name: 'Shops' }));
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const secondItemInput = screen.getByLabelText('Shop slot 2 item');
+    await user.clear(secondItemInput);
+    await user.type(secondItemInput, '0');
+
+    expect(secondItemInput).toHaveDisplayValue('0');
+
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    expect(await screen.findByLabelText('Shop slot 1 item')).toHaveDisplayValue(
+      '0001 Potion (Medicine)'
+    );
+    expect(screen.queryByLabelText('Shop slot 2 item')).not.toBeInTheDocument();
+  });
+
   it('edits a shop item price through the item buy price', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
@@ -1782,7 +2017,9 @@ describe('App', () => {
       )
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Open Potion' }));
+    const confirmOpenButton = screen.getByRole('button', { name: 'Open in Items' });
+    expect(confirmOpenButton).toHaveClass('danger-button');
+    await user.click(confirmOpenButton);
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
     expect(screen.getAllByText('Potion').length).toBeGreaterThan(0);
@@ -1814,12 +2051,6 @@ describe('App', () => {
 
     expect(await screen.findByDisplayValue('40')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Editors' }));
-    await user.click(screen.getByRole('button', { name: 'Items' }));
-
-    expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Switch Editors?' })).not.toBeInTheDocument();
-
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(
@@ -1845,9 +2076,9 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('copies Normal encounter slots 1-7 to all weather tables', async () => {
+  it('applies encounter level drafts to the entire selected zone', async () => {
     const user = userEvent.setup();
-    const weatherLabels = [
+    const conditionLabels = [
       'Overcast',
       'Raining',
       'Thunderstorm',
@@ -1855,7 +2086,9 @@ describe('App', () => {
       'Snowing',
       'Snowstorm',
       'Sandstorm',
-      'Heavy Fog'
+      'Heavy Fog',
+      'Fishing',
+      'Shaking Trees'
     ];
     const sourceWeights = [10, 15, 12, 8, 20, 5, 7, 11, 6, 6];
     const sourceSlots = sourceWeights.map((weight, index) => ({
@@ -1869,38 +2102,19 @@ describe('App', () => {
       weather: 'Normal',
       weight
     }));
-    const weatherTableIds = weatherLabels.map(
+    const conditionTableIds = conditionLabels.map(
       (label, index) => `sword:symbol:0:1122334455667788:${index + 1}`
     );
     const workflow: EncountersWorkflow = {
       diagnostics: [],
       editableFields: [
-        {
-          field: 'speciesId',
-          label: 'Species ID',
-          maximumValue: 65535,
-          minimumValue: 0,
-          valueKind: 'integer'
-        },
-        {
-          field: 'form',
-          label: 'Form',
-          maximumValue: 255,
-          minimumValue: 0,
-          valueKind: 'integer'
-        },
-        {
-          field: 'probability',
-          label: 'Probability',
-          maximumValue: 100,
-          minimumValue: 0,
-          valueKind: 'integer'
-        }
+        { field: 'levelMin', label: 'Min Level', maximumValue: 100, minimumValue: 1, valueKind: 'integer' },
+        { field: 'levelMax', label: 'Max Level', maximumValue: 100, minimumValue: 1, valueKind: 'integer' }
       ],
       stats: {
         sourceFileCount: 1,
-        totalSlotCount: 90,
-        totalTableCount: 9
+        totalSlotCount: 110,
+        totalTableCount: 11
       },
       summary: {
         availability: 'available',
@@ -1924,7 +2138,7 @@ describe('App', () => {
           slots: sourceSlots,
           tableId: 'sword:symbol:0:1122334455667788:0'
         },
-        ...weatherLabels.map((label, index) => ({
+        ...conditionLabels.map((label, index) => ({
           archiveMember: 'encount_symbol_k.bin',
           area: 'Symbol',
           encounterType: label,
@@ -1946,7 +2160,7 @@ describe('App', () => {
             weather: label,
             weight: 0
           })),
-          tableId: weatherTableIds[index]!
+          tableId: conditionTableIds[index]!
         }))
       ]
     };
@@ -2003,37 +2217,32 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
 
     expect((await screen.findAllByText('Rolling Fields')).length).toBeGreaterThan(0);
-    const applyToAllWeatherButton = screen.getByRole('button', {
-      name: 'Apply to All Weather'
+    expect(screen.getByRole('tab', { name: 'Fishing' })).toBeEnabled();
+    expect(screen.getByRole('tab', { name: 'Shaking Trees' })).toBeEnabled();
+    const applyToEntireZoneButton = screen.getByRole('button', {
+      name: 'Apply to Entire Zone'
     });
-    expect(applyToAllWeatherButton).toBeDisabled();
+    expect(applyToEntireZoneButton).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
-    expect(applyToAllWeatherButton).toBeEnabled();
+    const minLevelInput = screen.getByLabelText('Min Level');
+    const maxLevelInput = screen.getByLabelText('Max Level');
+    await user.clear(minLevelInput);
+    await user.type(minLevelInput, '9');
+    await user.clear(maxLevelInput);
+    await user.type(maxLevelInput, '15');
+    expect(applyToEntireZoneButton).toBeEnabled();
 
-    await user.click(applyToAllWeatherButton);
+    await user.click(applyToEntireZoneButton);
 
-    await waitFor(() => expect(updates).toHaveLength(168));
-    expect(new Set(updates.map((update) => update.tableId))).toEqual(new Set(weatherTableIds));
-    expect(updates.some((update) => update.slot > 7)).toBe(false);
-
-    for (const tableId of weatherTableIds) {
-      for (let slot = 1; slot <= 7; slot += 1) {
-        const slotUpdates = updates.filter(
-          (update) => update.tableId === tableId && update.slot === slot
-        );
-        expect(slotUpdates.map((update) => update.field)).toEqual([
-          'speciesId',
-          'form',
-          'probability'
-        ]);
-        expect(slotUpdates.map((update) => update.value)).toEqual([
-          String(100 + slot),
-          String(slot % 4),
-          String(sourceWeights[slot - 1])
-        ]);
-      }
-    }
+    await waitFor(() => expect(updates).toHaveLength(2));
+    expect(updates.map((update) => update.tableId)).toEqual([
+      'sword:symbol:0:1122334455667788:0',
+      'sword:symbol:0:1122334455667788:0'
+    ]);
+    expect(updates.map((update) => update.slot)).toEqual([1, 1]);
+    expect(updates.map((update) => update.field)).toEqual(['levelMin', 'levelMax']);
+    expect(updates.map((update) => update.value)).toEqual(['9', '15']);
   });
 
   it('opens Raid Rewards, edits a star value, reviews a reward plan, and applies it', async () => {
@@ -2177,6 +2386,7 @@ describe('App', () => {
       tables: [
         {
           denId: 'table_AABBCCDD00112233',
+          displayName: 'Sword - 0',
           gameVersion: 'Sword',
           provenance: {
             fileState: 'baseOnly',
@@ -2664,9 +2874,9 @@ describe('App', () => {
             {
               assets: [],
               draft: false,
-              html_url: 'https://github.example/releases/tag/v0.0.1',
+              html_url: 'https://github.example/releases/tag/v0.0.2',
               prerelease: false,
-              tag_name: 'v0.0.1'
+              tag_name: 'v0.0.2'
             }
           ]),
           { headers: { 'Content-Type': 'application/json' }, status: 200 }
@@ -2679,7 +2889,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('button', { name: 'Check for Updates' }));
 
-    expect(await screen.findByText('KM Editor v0.0.1 is up to date.')).toBeInTheDocument();
+    expect(await screen.findByText('KM Editor v0.0.2 is up to date.')).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Update Available' })).not.toBeInTheDocument();
   });
 
@@ -2716,6 +2926,124 @@ describe('App', () => {
     expect(window.localStorage.getItem('km-editor.project-path-draft.v1')).toContain(
       'picked-output'
     );
+  });
+
+  it('creates a Shield output root folder from sibling base paths', async () => {
+    const user = userEvent.setup();
+    const createdPaths: string[] = [];
+    const validateProject = vi.fn((request) => {
+      const outputRootPath = request.paths.outputRootPath;
+      const health: ProjectHealth = {
+        canOpenEditableWorkflows: outputRootPath !== null,
+        canOpenReadOnlyWorkflows: true,
+        diagnostics: [],
+        fileGraph: {
+          baseFileCount: 2,
+          layeredFileCount: outputRootPath === null ? 0 : 1,
+          layeredOnlyCount: 0,
+          overrideCount: 0
+        },
+        paths: [
+          {
+            diagnostics: [],
+            isRequired: true,
+            path: request.paths.baseRomFsPath,
+            role: 'baseRomFs',
+            status: 'valid'
+          },
+          {
+            diagnostics: [],
+            isRequired: true,
+            path: request.paths.baseExeFsPath,
+            role: 'baseExeFs',
+            status: 'valid'
+          },
+          {
+            diagnostics: [],
+            isRequired: false,
+            path: outputRootPath,
+            role: 'outputRoot',
+            status: outputRootPath === null ? 'notSet' : 'valid'
+          }
+        ],
+        state: outputRootPath === null ? 'readOnlyReady' : 'editableReady'
+      };
+
+      return Promise.resolve({ health });
+    });
+    const desktopServices = createMockDesktopServices({
+      createDirectory: async (path) => {
+        createdPaths.push(path);
+      }
+    });
+
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        selectedGame: 'shield'
+      }
+    });
+
+    render(
+      <App
+        bridge={createMockProjectBridge({ validateProject })}
+        desktopServices={desktopServices}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'C:\\SH\\romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'C:\\SH\\exefs');
+    await user.click(screen.getByRole('button', { name: 'Create Output Root Folder' }));
+
+    await waitFor(() => {
+      expect(createdPaths).toEqual(['C:\\SH\\01008DB008C2C000']);
+    });
+    expect(screen.getByLabelText('Output Root')).toHaveValue('C:\\SH\\01008DB008C2C000');
+    expect(screen.getByRole('button', { name: 'Create Output Root Folder' })).toBeDisabled();
+    expect(validateProject).toHaveBeenCalledWith({
+      paths: {
+        baseExeFsPath: 'C:\\SH\\exefs',
+        baseRomFsPath: 'C:\\SH\\romfs',
+        outputRootPath: null,
+        saveFilePath: null,
+        selectedGame: 'shield'
+      }
+    });
+  });
+
+  it('does not create an output root folder when the selected game validation fails', async () => {
+    const user = userEvent.setup();
+    const createDirectory = vi.fn(async () => undefined);
+
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        selectedGame: 'shield'
+      }
+    });
+
+    render(
+      <App
+        bridge={createMockProjectBridge({
+          validateProject: () => Promise.resolve({ health: createWrongGameHealth() })
+        })}
+        desktopServices={createMockDesktopServices({ createDirectory })}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'C:\\SH\\romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'C:\\SH\\exefs');
+    await user.click(screen.getByRole('button', { name: 'Create Output Root Folder' }));
+
+    expect(await screen.findByText(/requires Base RomFS and Base ExeFS/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Output Root')).toHaveValue('');
+    expect(createDirectory).not.toHaveBeenCalled();
   });
 
   it('shows desktop diagnostics when opening the output root fails', async () => {
@@ -2828,6 +3156,7 @@ describe('App', () => {
 
 function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): DesktopServices {
   return {
+    createDirectory: async () => undefined,
     exitApp: async () => undefined,
     isAvailable: true,
     openExternalUrl: async () => undefined,
@@ -4014,6 +4343,18 @@ function createMockProjectBridge(
         valueKind: 'integer'
       },
       {
+        field: 'dynamaxLevel',
+        label: 'Dynamax level',
+        maximumValue: 10,
+        minimumValue: 0,
+        options: [
+          { label: '0', value: 0 },
+          { label: '7', value: 7 },
+          { label: '10', value: 10 }
+        ],
+        valueKind: 'integer'
+      },
+      {
         field: 'canGigantamax',
         label: 'Can Gigantamax',
         maximumValue: 1,
@@ -4133,7 +4474,7 @@ function createMockProjectBridge(
             moveIds: [1, 2, 0, 0],
             moves: ['Scratch', 'Growl', 'None', 'None'],
             nature: 13,
-            natureLabel: 'Jolly',
+            natureLabel: 'Jolly (+Spe/-Sp.Atk)',
             shiny: true,
             slot: 1,
             species: 'Grookey',
@@ -4224,6 +4565,7 @@ function createMockProjectBridge(
         minimumValue: 0,
         options: [
           { label: 'Hardy', value: 0 },
+          { label: 'Adamant (+Atk/-Sp.Atk)', value: 3 },
           { label: 'Random', value: 25 }
         ],
         valueKind: 'integer'
@@ -4247,7 +4589,8 @@ function createMockProjectBridge(
         minimumValue: 0,
         options: [
           { label: 'Random', value: 0 },
-          { label: 'Never Shiny', value: 1 }
+          { label: 'Always Shiny', value: 1 },
+          { label: 'Never Shiny', value: 2 }
         ],
         valueKind: 'integer'
       },
@@ -4484,6 +4827,7 @@ function createMockProjectBridge(
         minimumValue: 0,
         options: [
           { label: 'Hardy', value: 0 },
+          { label: 'Adamant (+Atk/-Sp.Atk)', value: 3 },
           { label: 'Random', value: 25 }
         ],
         valueKind: 'integer'
@@ -4556,6 +4900,7 @@ function createMockProjectBridge(
         minimumValue: 0,
         options: [
           { label: 'Hardy', value: 0 },
+          { label: 'Adamant (+Atk/-Sp.Atk)', value: 3 },
           { label: 'Random', value: 25 }
         ],
         valueKind: 'integer'
@@ -4828,6 +5173,7 @@ function createMockProjectBridge(
         minimumValue: 0,
         options: [
           { label: 'Hardy', value: 0 },
+          { label: 'Adamant (+Atk/-Sp.Atk)', value: 3 },
           { label: 'Random', value: 25 }
         ],
         valueKind: 'integer'
@@ -5062,11 +5408,12 @@ function createMockProjectBridge(
       {
         field: 'nature',
         label: 'Nature',
-        maximumValue: 25,
+        maximumValue: 24,
         minimumValue: 0,
         options: [
           { label: 'Hardy', value: 0 },
-          { label: 'Random', value: 25 }
+          { label: 'Adamant (+Atk/-Sp.Atk)', value: 3 },
+          { label: 'Jolly (+Spe/-Sp.Atk)', value: 13 }
         ],
         valueKind: 'integer'
       },
@@ -5407,7 +5754,8 @@ function createMockProjectBridge(
         minimumValue: 0,
         options: [
           { itemName: 'Potion', label: '0001 Potion (Medicine)', price: 300, value: 1 },
-          { itemName: 'Antidote', label: '0002 Antidote (Medicine)', price: 200, value: 2 }
+          { itemName: 'Antidote', label: '0002 Antidote (Medicine)', price: 200, value: 2 },
+          { itemName: 'None', label: '0000 None (Medicine)', price: 0, value: 0 }
         ],
         valueKind: 'integer'
       }
@@ -5555,6 +5903,13 @@ function createMockProjectBridge(
     id: 'raidRewards',
     label: 'Raid Rewards'
   };
+  const raidBonusRewardsWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Raid bonus reward tables, item quantities, den usage, and source provenance.',
+    diagnostics: [],
+    id: 'raidBonusRewards',
+    label: 'Raid Bonus Rewards'
+  };
   const raidBattlesWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Raid Pokemon slots, star probabilities, ability rolls, guaranteed perfect IVs, and source provenance.',
@@ -5619,6 +5974,7 @@ function createMockProjectBridge(
     tables: [
       {
         denId: 'table_AABBCCDD00112233',
+        displayName: 'Sword - 0',
         gameVersion: 'Sword',
         provenance: {
           fileState: 'baseOnly',
@@ -5740,6 +6096,7 @@ function createMockProjectBridge(
       {
         archiveMember: 'nest_hole_drop_rewards.bin',
         denId: 'table_AABBCCDD00112233',
+        displayName: 'Drop 000 | SW Den 0 Slot 00, 1-5-Star Eevee-1',
         gameVersion: 'Sword/Shield',
         provenance: {
           fileState: 'baseOnly',
@@ -5765,6 +6122,19 @@ function createMockProjectBridge(
         tableIndex: 0
       }
     ]
+  };
+  const raidBonusRewardsWorkflow: RaidRewardsWorkflow = {
+    ...raidRewardsWorkflow,
+    summary: raidBonusRewardsWorkflowSummary,
+    tables: raidRewardsWorkflow.tables.map((table) => ({
+      ...table,
+      archiveMember: 'nest_hole_bonus_rewards.bin',
+      displayName: 'Bonus 000 | SW Den 0 Slot 00, 1-5-Star Eevee-1',
+      rewardKind: 'bonus',
+      rewardKindLabel: 'Bonus',
+      sourceTableHash: '0x1020304050607080',
+      tableId: 'bonus:0:1020304050607080'
+    }))
   };
   const placementWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
@@ -5817,6 +6187,98 @@ function createMockProjectBridge(
       totalObjectCount: 1
     },
     summary: placementWorkflowSummary
+  };
+  const behaviorWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Symbol encounter behavior parameters and source provenance.',
+    diagnostics: [],
+    id: 'behavior',
+    label: 'Behavior'
+  };
+  const behaviorWorkflow: BehaviorWorkflow = {
+    diagnostics: [],
+    entries: [
+      {
+        behavior: 'Common',
+        behaviorLabel: 'Common',
+        entryId: 'behavior:0',
+        fields: [
+          { field: 'speciesId', value: '25' },
+          { field: 'form', value: '0' },
+          { field: 'behavior', value: 'Common' },
+          { field: 'modelPart', value: 'body' },
+          { field: 'hitboxRadius', value: '1.5' },
+          { field: 'grassShakeRadius', value: '2' },
+          { field: 'hash1', value: '0x0000000000000001' }
+        ],
+        form: 0,
+        grassShakeRadius: 2,
+        hash1: '0x0000000000000001',
+        hash2: '0x0000000000000002',
+        hitboxRadius: 1.5,
+        index: 0,
+        internalSpeciesName: 'PIKACHU',
+        label: '#0 Pikachu - Common',
+        modelPart: 'body',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/field/param/symbol_encount_mons_param/symbol_encount_mons_param.bin',
+          sourceLayer: 'base'
+        },
+        speciesId: 25,
+        speciesName: 'Pikachu'
+      }
+    ],
+    fields: [
+      {
+        description: 'Species ID used by this symbol encounter behavior entry.',
+        field: 'speciesId',
+        group: 'Identity',
+        isReadOnly: false,
+        label: 'Pokemon',
+        maximumValue: 999,
+        minimumValue: 0,
+        options: [{ label: 'Pikachu', value: '25' }],
+        valueKind: 'integer'
+      },
+      {
+        description: 'Form index used by this symbol encounter behavior entry.',
+        field: 'form',
+        group: 'Identity',
+        isReadOnly: false,
+        label: 'Form',
+        maximumValue: 999,
+        minimumValue: 0,
+        valueKind: 'integer'
+      },
+      {
+        description: 'Named movement behavior used by this symbol encounter.',
+        field: 'behavior',
+        group: 'Behavior',
+        isReadOnly: false,
+        label: 'Behavior',
+        maximumValue: 128,
+        minimumValue: 0,
+        options: [{ label: 'Common', value: 'Common' }],
+        valueKind: 'string'
+      },
+      {
+        description: 'Internal reference hash. This is shown for inspection only.',
+        field: 'hash1',
+        group: 'Internal References',
+        isReadOnly: true,
+        label: 'Hash 1',
+        maximumValue: Number.MAX_SAFE_INTEGER,
+        minimumValue: 0,
+        valueKind: 'hash'
+      }
+    ],
+    stats: {
+      sourceFileCount: 1,
+      totalBehaviorCount: 1,
+      totalEntryCount: 1
+    },
+    summary: behaviorWorkflowSummary
   };
   const flagworkSaveWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
@@ -6371,6 +6833,7 @@ function createMockProjectBridge(
           encountersWorkflowSummary,
           raidBattlesWorkflowSummary,
           raidRewardsWorkflowSummary,
+          raidBonusRewardsWorkflowSummary,
           placementWorkflowSummary,
           flagworkSaveWorkflowSummary,
           exeFsPatchWorkflowSummary,
@@ -6765,6 +7228,10 @@ function createMockProjectBridge(
       Promise.resolve({
         workflow: placementWorkflow
       }),
+    loadBehaviorWorkflow: () =>
+      Promise.resolve({
+        workflow: behaviorWorkflow
+      }),
     loadRaidBattlesWorkflow: () =>
       Promise.resolve({
         workflow: raidBattlesWorkflow
@@ -6772,6 +7239,10 @@ function createMockProjectBridge(
     loadRaidRewardsWorkflow: () =>
       Promise.resolve({
         workflow: raidRewardsWorkflow
+      }),
+    loadRaidBonusRewardsWorkflow: () =>
+      Promise.resolve({
+        workflow: raidBonusRewardsWorkflow
       }),
     loadItemsWorkflow: () =>
       Promise.resolve({
@@ -7827,6 +8298,51 @@ function createMockProjectBridge(
           )
         }
       }),
+    updateRaidBonusRewardField: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.raidBonusRewards',
+              field: request.field,
+              newValue: request.value,
+              recordId: `${request.tableId}#${request.slot}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
+                }
+              ],
+              summary: `Set Bonus 0x1020304050607080 slot ${request.slot} 5-star quantity to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...raidBonusRewardsWorkflow,
+          tables: raidBonusRewardsWorkflow.tables.map((table) =>
+            table.tableId === request.tableId
+              ? {
+                  ...table,
+                  rewards: table.rewards.map((reward) =>
+                    reward.slot === request.slot
+                      ? {
+                          ...reward,
+                          values: reward.values.map((value, index) =>
+                            request.field === 'star5Value' && index === 4
+                              ? Number.parseInt(request.value, 10)
+                              : value
+                          )
+                        }
+                      : reward
+                  )
+                }
+              : table
+          )
+        }
+      }),
     updatePlacementObjectField: (request) =>
       Promise.resolve({
         diagnostics: [],
@@ -7858,6 +8374,55 @@ function createMockProjectBridge(
           )
         }
       }),
+    updateBehaviorEntryField: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.behavior',
+              field: request.field,
+              newValue: request.value,
+              recordId: request.entryId,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath:
+                    'romfs/bin/field/param/symbol_encount_mons_param/symbol_encount_mons_param.bin'
+                }
+              ],
+              summary: `Set Pikachu ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: {
+          ...behaviorWorkflow,
+          entries: behaviorWorkflow.entries.map((entry) =>
+            entry.entryId === request.entryId
+              ? {
+                  ...entry,
+                  behavior:
+                    request.field === 'behavior'
+                      ? request.value
+                      : entry.behavior,
+                  behaviorLabel:
+                    request.field === 'behavior'
+                      ? request.value
+                      : entry.behaviorLabel,
+                  fields: entry.fields.map((field) =>
+                    field.field === request.field ? { ...field, value: request.value } : field
+                  ),
+                  speciesId:
+                    request.field === 'speciesId'
+                      ? Number.parseInt(request.value, 10)
+                      : entry.speciesId
+                }
+              : entry
+          )
+        }
+      }),
     validateEditSession: (request) =>
       Promise.resolve({
         diagnostics: [
@@ -7872,6 +8437,50 @@ function createMockProjectBridge(
       }),
     validateProject: () => Promise.resolve({ health }),
     ...overrides
+  };
+}
+
+function wrongGameHealthDiagnostic() {
+  return [
+    {
+      domain: 'project',
+      expected: '0x01008DB008C2C000 for Pokemon Shield',
+      file: 'base-exefs',
+      message:
+        'Selected Pokemon Shield, but Base ExeFS contains Pokemon Sword title id 0x0100ABF008968000.',
+      severity: 'error' as const
+    }
+  ];
+}
+
+function createWrongGameHealth(): ProjectHealth {
+  return {
+    canOpenEditableWorkflows: false,
+    canOpenReadOnlyWorkflows: false,
+    diagnostics: wrongGameHealthDiagnostic(),
+    fileGraph: {
+      baseFileCount: 2,
+      layeredFileCount: 0,
+      layeredOnlyCount: 0,
+      overrideCount: 0
+    },
+    paths: [
+      {
+        diagnostics: [],
+        isRequired: true,
+        path: 'base-romfs',
+        role: 'baseRomFs',
+        status: 'valid'
+      },
+      {
+        diagnostics: wrongGameHealthDiagnostic(),
+        isRequired: true,
+        path: 'base-exefs',
+        role: 'baseExeFs',
+        status: 'unsafe'
+      }
+    ],
+    state: 'blocked'
   };
 }
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers.Binary;
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Core.Tests;
@@ -9,6 +10,10 @@ namespace KM.Core.Tests.Projects;
 
 public sealed class ProjectValidatorTests
 {
+    private const int NpdmTitleIdOffset = 0x290;
+    private const ulong SwordTitleId = 0x0100ABF008968000;
+    private const ulong ShieldTitleId = 0x01008DB008C2C000;
+
     [Fact]
     public void ValidateReturnsEditableReadyWhenBaseAndOutputPathsAreSafe()
     {
@@ -111,6 +116,92 @@ public sealed class ProjectValidatorTests
             health.Diagnostics,
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
                 && diagnostic.Message.Contains("must not overlap", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateAcceptsSelectedShieldGameWhenBaseExeFsTitleMatches()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", "base-main");
+        WriteBaseExeFsBytes(temp, "main.npdm", CreateNpdm(ShieldTitleId));
+
+        var health = new ProjectValidator().Validate(temp.Paths with { SelectedGame = ProjectGame.Shield });
+
+        Assert.Equal(ProjectHealthState.EditableReady, health.State);
+        Assert.True(health.CanOpenEditableWorkflows);
+        Assert.Contains(
+            health.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.Contains("matches selected Pokemon Shield", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateBlocksSelectedGameWhenBaseExeFsTitleIsForOtherGame()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", "base-main");
+        WriteBaseExeFsBytes(temp, "main.npdm", CreateNpdm(SwordTitleId));
+
+        var health = new ProjectValidator().Validate(temp.Paths with { SelectedGame = ProjectGame.Shield });
+
+        Assert.Equal(ProjectHealthState.Blocked, health.State);
+        Assert.False(health.CanOpenReadOnlyWorkflows);
+        Assert.False(health.CanOpenEditableWorkflows);
+        Assert.Contains(
+            health.Paths,
+            path => path.Role == ProjectPathRole.BaseExeFs && path.Status == ProjectPathStatus.Unsafe);
+        Assert.Contains(
+            health.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Selected Pokemon Shield", StringComparison.Ordinal)
+                && diagnostic.Message.Contains("Pokemon Sword", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateBlocksSelectedGameWhenOutputRootUsesOtherGameTitleId()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", "base-main");
+        WriteBaseExeFsBytes(temp, "main.npdm", CreateNpdm(ShieldTitleId));
+        var swordOutputRoot = Directory.CreateDirectory(
+            Path.Combine(temp.RootPath, SwordTitleId.ToString("X16"))).FullName;
+
+        var health = new ProjectValidator().Validate(
+            temp.Paths with
+            {
+                OutputRootPath = swordOutputRoot,
+                SelectedGame = ProjectGame.Shield,
+            });
+
+        Assert.Equal(ProjectHealthState.Blocked, health.State);
+        Assert.False(health.CanOpenEditableWorkflows);
+        Assert.Contains(
+            health.Paths,
+            path => path.Role == ProjectPathRole.OutputRoot && path.Status == ProjectPathStatus.Unsafe);
+        Assert.Contains(
+            health.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Output Root folder is the Pokemon Sword title id", StringComparison.Ordinal));
+    }
+
+    private static byte[] CreateNpdm(ulong titleId)
+    {
+        var npdm = new byte[NpdmTitleIdOffset + sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64LittleEndian(npdm.AsSpan(NpdmTitleIdOffset), titleId);
+        return npdm;
+    }
+
+    private static void WriteBaseExeFsBytes(
+        TemporaryProjectFolders temp,
+        string relativePath,
+        byte[] contents)
+    {
+        var filePath = Path.Combine(temp.BaseExeFsPath, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        File.WriteAllBytes(filePath, contents);
     }
 }
 

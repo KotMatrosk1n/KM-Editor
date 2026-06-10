@@ -33,6 +33,8 @@ import {
   loadPlacementWorkflowResponseSchema,
   loadRaidRewardsWorkflowRequestSchema,
   loadRaidRewardsWorkflowResponseSchema,
+  loadRaidBonusRewardsWorkflowRequestSchema,
+  loadRaidBonusRewardsWorkflowResponseSchema,
   loadRoyalCandyWorkflowRequestSchema,
   loadRoyalCandyWorkflowResponseSchema,
   loadSpreadsheetImportWorkflowRequestSchema,
@@ -165,17 +167,19 @@ describe('bridge contracts', () => {
     const parsed = requestSchema.parse({
       command: kmCommandNames.openProject,
       payload: {
-        paths: {
-          baseExeFsPath: 'base-exefs',
-          baseRomFsPath: 'base-romfs',
-          outputRootPath: null,
-          saveFilePath: null
-        }
-      },
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null,
+            saveFilePath: null,
+            selectedGame: 'shield'
+          }
+        },
       requestId: 'request-1'
     });
 
     expect(parsed.command).toBe('project.open');
+    expect(parsed.payload.paths.selectedGame).toBe('shield');
   });
 
   it('validates success and failure response envelopes', () => {
@@ -311,6 +315,12 @@ describe('bridge contracts', () => {
     );
     const raidRewardsResponseSchema = createBridgeResponseSchema(
       loadRaidRewardsWorkflowResponseSchema
+    );
+    const raidBonusRewardsRequestSchema = createBridgeRequestSchema(
+      loadRaidBonusRewardsWorkflowRequestSchema
+    );
+    const raidBonusRewardsResponseSchema = createBridgeResponseSchema(
+      loadRaidBonusRewardsWorkflowResponseSchema
     );
     const placementRequestSchema = createBridgeRequestSchema(loadPlacementWorkflowRequestSchema);
     const placementResponseSchema = createBridgeResponseSchema(
@@ -1214,6 +1224,7 @@ describe('bridge contracts', () => {
         {
           archiveMember: 'nest_hole_drop_rewards.bin',
           denId: 'table_AABBCCDD00112233',
+          displayName: 'Drop 000 | SW Den 0 Slot 00, 1-5-Star Eevee-1',
           gameVersion: 'Sword/Shield',
           provenance: {
             fileState: 'baseOnly',
@@ -1239,6 +1250,25 @@ describe('bridge contracts', () => {
           tableIndex: 0
         }
       ]
+    } as const;
+    const raidBonusRewardsWorkflow = {
+      ...raidRewardsWorkflow,
+      summary: {
+        availability: 'readOnly',
+        description: 'Raid bonus reward tables, item quantities, den usage, and source provenance.',
+        diagnostics: [],
+        id: 'raidBonusRewards',
+        label: 'Raid Bonus Rewards'
+      },
+      tables: raidRewardsWorkflow.tables.map((table) => ({
+        ...table,
+        archiveMember: 'nest_hole_bonus_rewards.bin',
+        displayName: 'Bonus 000 | SW Den 0 Slot 00, 1-5-Star Eevee-1',
+        rewardKind: 'bonus',
+        rewardKindLabel: 'Bonus',
+        sourceTableHash: '0x1020304050607080',
+        tableId: 'bonus:0:1020304050607080'
+      }))
     } as const;
     const placementWorkflow = {
       diagnostics: [],
@@ -1812,6 +1842,28 @@ describe('bridge contracts', () => {
       raidRewardsResponseSchema.safeParse({
         payload: {
           workflow: raidRewardsWorkflow
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      raidBonusRewardsRequestSchema.safeParse({
+        command: kmCommandNames.loadRaidBonusRewardsWorkflow,
+        payload: {
+          paths: {
+            baseExeFsPath: 'base-exefs',
+            baseRomFsPath: 'base-romfs',
+            outputRootPath: null,
+            saveFilePath: null
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
+      raidBonusRewardsResponseSchema.safeParse({
+        payload: {
+          workflow: raidBonusRewardsWorkflow
         }
       }).success
     ).toBe(true);

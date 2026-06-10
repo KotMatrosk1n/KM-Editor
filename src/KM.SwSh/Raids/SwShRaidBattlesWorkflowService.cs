@@ -299,6 +299,7 @@ public sealed class SwShRaidBattlesWorkflowService
         return archive.Tables
             .Select((table, tableIndex) => new SwShRaidBattleTableRecord(
                 CreateTableId(tableIndex, table.TableId),
+                FormatRaidTableDisplayName(table, tableIndex),
                 $"table_{table.TableId:X16}",
                 tableIndex,
                 FormatGameVersion(table.GameVersion),
@@ -347,7 +348,7 @@ public sealed class SwShRaidBattlesWorkflowService
     private static IReadOnlyDictionary<(string RewardKind, string SourceTableHash), SwShRaidBattleRewardLinkRecord> LoadRewardLinks(
         OpenedProject project)
     {
-        var rewardWorkflow = new SwShRaidRewardsWorkflowService().Load(project);
+        var rewardWorkflow = new SwShRaidRewardsWorkflowService().LoadAll(project);
 
         return rewardWorkflow.Tables
             .Select(table => new SwShRaidBattleRewardLinkRecord(
@@ -435,6 +436,13 @@ public sealed class SwShRaidBattlesWorkflowService
             2 => "Shield",
             _ => $"Version {gameVersion.ToString(CultureInfo.InvariantCulture)}",
         };
+    }
+
+    private static string FormatRaidTableDisplayName(SwShEncounterNestTable table, int tableIndex)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{FormatGameVersion(table.GameVersion)} - {tableIndex / 2}");
     }
 
     private static string GetIndexedName(int id, IReadOnlyList<string> names, string fallbackPrefix)

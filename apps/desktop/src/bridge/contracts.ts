@@ -37,8 +37,12 @@ export const kmCommandNameValues = [
   'raidBattles.slot.update',
   'raidRewards.load',
   'raidRewards.reward.update',
+  'raidBonusRewards.load',
+  'raidBonusRewards.reward.update',
   'placement.load',
   'placement.object.update',
+  'behavior.load',
+  'behavior.entry.update',
   'flagworkSave.load',
   'exefsPatches.load',
   'exefsPatches.patch.stage',
@@ -92,8 +96,12 @@ export const kmCommandNames = {
   updateRaidBattleSlotField: 'raidBattles.slot.update',
   loadRaidRewardsWorkflow: 'raidRewards.load',
   updateRaidRewardField: 'raidRewards.reward.update',
+  loadRaidBonusRewardsWorkflow: 'raidBonusRewards.load',
+  updateRaidBonusRewardField: 'raidBonusRewards.reward.update',
   loadPlacementWorkflow: 'placement.load',
   updatePlacementObjectField: 'placement.object.update',
+  loadBehaviorWorkflow: 'behavior.load',
+  updateBehaviorEntryField: 'behavior.entry.update',
   loadFlagworkSaveWorkflow: 'flagworkSave.load',
   loadExeFsPatchWorkflow: 'exefsPatches.load',
   stageExeFsPatch: 'exefsPatches.patch.stage',
@@ -126,11 +134,15 @@ export const apiErrorSchema = z.strictObject({
   message: z.string()
 });
 
+export const projectGameSchema = z.enum(['sword', 'shield']);
+export type ProjectGame = z.infer<typeof projectGameSchema>;
+
 export const projectPathsSchema = z.strictObject({
   baseExeFsPath: z.string().nullable(),
   baseRomFsPath: z.string().nullable(),
   outputRootPath: z.string().nullable(),
-  saveFilePath: z.string().nullable()
+  saveFilePath: z.string().nullable(),
+  selectedGame: projectGameSchema.nullable().default(null)
 });
 
 export const openProjectRequestSchema = z.strictObject({
@@ -205,7 +217,15 @@ export const loadRaidRewardsWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
+export const loadRaidBonusRewardsWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
 export const loadPlacementWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadBehaviorWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -1536,6 +1556,7 @@ export const raidBattleSlotRecordSchema = z.strictObject({
 
 export const raidBattleTableRecordSchema = z.strictObject({
   denId: z.string(),
+  displayName: z.string(),
   gameVersion: z.string(),
   provenance: raidBattleProvenanceSchema,
   slots: z.array(raidBattleSlotRecordSchema),
@@ -1591,6 +1612,7 @@ export const raidRewardItemRecordSchema = z.strictObject({
 export const raidRewardTableRecordSchema = z.strictObject({
   archiveMember: z.string(),
   denId: z.string(),
+  displayName: z.string(),
   gameVersion: z.string(),
   provenance: raidRewardProvenanceSchema,
   rank: z.number().int().nonnegative(),
@@ -1631,6 +1653,10 @@ export const raidRewardsWorkflowSchema = z.strictObject({
 });
 
 export const loadRaidRewardsWorkflowResponseSchema = z.strictObject({
+  workflow: raidRewardsWorkflowSchema
+});
+
+export const loadRaidBonusRewardsWorkflowResponseSchema = z.strictObject({
   workflow: raidRewardsWorkflowSchema
 });
 
@@ -1692,6 +1718,71 @@ export const placementWorkflowSchema = z.strictObject({
 
 export const loadPlacementWorkflowResponseSchema = z.strictObject({
   workflow: placementWorkflowSchema
+});
+
+export const behaviorProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const behaviorFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.string()
+});
+
+export const behaviorFieldSchema = z.strictObject({
+  description: z.string(),
+  field: z.string(),
+  group: z.string(),
+  isReadOnly: z.boolean(),
+  label: z.string(),
+  maximumValue: z.number(),
+  minimumValue: z.number(),
+  options: z.array(behaviorFieldOptionSchema).optional(),
+  valueKind: z.string()
+});
+
+export const behaviorFieldValueSchema = z.strictObject({
+  field: z.string(),
+  value: z.string()
+});
+
+export const behaviorEntryRecordSchema = z.strictObject({
+  behavior: z.string(),
+  behaviorLabel: z.string(),
+  entryId: z.string(),
+  fields: z.array(behaviorFieldValueSchema),
+  form: z.number().int(),
+  grassShakeRadius: z.number(),
+  hash1: z.string(),
+  hash2: z.string(),
+  hitboxRadius: z.number(),
+  index: z.number().int().nonnegative(),
+  internalSpeciesName: z.string(),
+  label: z.string(),
+  modelPart: z.string(),
+  provenance: behaviorProvenanceSchema,
+  speciesId: z.number().int(),
+  speciesName: z.string()
+});
+
+export const behaviorWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalBehaviorCount: z.number().int().nonnegative(),
+  totalEntryCount: z.number().int().nonnegative()
+});
+
+export const behaviorWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  entries: z.array(behaviorEntryRecordSchema),
+  fields: z.array(behaviorFieldSchema),
+  stats: behaviorWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadBehaviorWorkflowResponseSchema = z.strictObject({
+  workflow: behaviorWorkflowSchema
 });
 
 export const flagworkSaveProvenanceSchema = z.strictObject({
@@ -2194,6 +2285,21 @@ export const updateRaidRewardFieldResponseSchema = z.strictObject({
   workflow: raidRewardsWorkflowSchema
 });
 
+export const updateRaidBonusRewardFieldRequestSchema = z.strictObject({
+  field: z.string(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  slot: z.number().int().nonnegative(),
+  tableId: z.string(),
+  value: z.string()
+});
+
+export const updateRaidBonusRewardFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: raidRewardsWorkflowSchema
+});
+
 export const updatePlacementObjectFieldRequestSchema = z.strictObject({
   field: z.string(),
   objectId: z.string(),
@@ -2206,6 +2312,20 @@ export const updatePlacementObjectFieldResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
   workflow: placementWorkflowSchema
+});
+
+export const updateBehaviorEntryFieldRequestSchema = z.strictObject({
+  entryId: z.string(),
+  field: z.string(),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  value: z.string()
+});
+
+export const updateBehaviorEntryFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: behaviorWorkflowSchema
 });
 
 export const startEditSessionResponseSchema = z.strictObject({
@@ -2373,6 +2493,10 @@ export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
 export type PlacedObjectRecord = z.infer<typeof placedObjectRecordSchema>;
 export type PlacementEditableField = z.infer<typeof placementEditableFieldSchema>;
 export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
+export type BehaviorEntryRecord = z.infer<typeof behaviorEntryRecordSchema>;
+export type BehaviorField = z.infer<typeof behaviorFieldSchema>;
+export type BehaviorFieldOption = z.infer<typeof behaviorFieldOptionSchema>;
+export type BehaviorWorkflow = z.infer<typeof behaviorWorkflowSchema>;
 export type FlagRecord = z.infer<typeof flagRecordSchema>;
 export type SaveBlockRecord = z.infer<typeof saveBlockRecordSchema>;
 export type SaveFileRecord = z.infer<typeof saveFileRecordSchema>;
@@ -2456,6 +2580,12 @@ export type LoadRaidBattlesWorkflowResponse = z.infer<
 >;
 export type LoadRaidRewardsWorkflowRequest = z.infer<typeof loadRaidRewardsWorkflowRequestSchema>;
 export type LoadRaidRewardsWorkflowResponse = z.infer<typeof loadRaidRewardsWorkflowResponseSchema>;
+export type LoadRaidBonusRewardsWorkflowRequest = z.infer<
+  typeof loadRaidBonusRewardsWorkflowRequestSchema
+>;
+export type LoadRaidBonusRewardsWorkflowResponse = z.infer<
+  typeof loadRaidBonusRewardsWorkflowResponseSchema
+>;
 export type UpdateRaidBattleSlotFieldRequest = z.infer<
   typeof updateRaidBattleSlotFieldRequestSchema
 >;
@@ -2464,6 +2594,12 @@ export type UpdateRaidBattleSlotFieldResponse = z.infer<
 >;
 export type UpdateRaidRewardFieldRequest = z.infer<typeof updateRaidRewardFieldRequestSchema>;
 export type UpdateRaidRewardFieldResponse = z.infer<typeof updateRaidRewardFieldResponseSchema>;
+export type UpdateRaidBonusRewardFieldRequest = z.infer<
+  typeof updateRaidBonusRewardFieldRequestSchema
+>;
+export type UpdateRaidBonusRewardFieldResponse = z.infer<
+  typeof updateRaidBonusRewardFieldResponseSchema
+>;
 export type LoadPlacementWorkflowRequest = z.infer<typeof loadPlacementWorkflowRequestSchema>;
 export type LoadPlacementWorkflowResponse = z.infer<typeof loadPlacementWorkflowResponseSchema>;
 export type UpdatePlacementObjectFieldRequest = z.infer<
@@ -2471,6 +2607,14 @@ export type UpdatePlacementObjectFieldRequest = z.infer<
 >;
 export type UpdatePlacementObjectFieldResponse = z.infer<
   typeof updatePlacementObjectFieldResponseSchema
+>;
+export type LoadBehaviorWorkflowRequest = z.infer<typeof loadBehaviorWorkflowRequestSchema>;
+export type LoadBehaviorWorkflowResponse = z.infer<typeof loadBehaviorWorkflowResponseSchema>;
+export type UpdateBehaviorEntryFieldRequest = z.infer<
+  typeof updateBehaviorEntryFieldRequestSchema
+>;
+export type UpdateBehaviorEntryFieldResponse = z.infer<
+  typeof updateBehaviorEntryFieldResponseSchema
 >;
 export type LoadFlagworkSaveWorkflowRequest = z.infer<typeof loadFlagworkSaveWorkflowRequestSchema>;
 export type LoadFlagworkSaveWorkflowResponse = z.infer<typeof loadFlagworkSaveWorkflowResponseSchema>;

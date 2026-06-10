@@ -38,7 +38,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
             "The synthetic baseline must include enough files to exercise project graph enumeration.");
 
         var workflowList = Record(measurements, "workflows.list", () => workflowService.List(temp.Paths));
-        Assert.Equal(19, workflowList.Workflows.Count);
+        Assert.Equal(21, workflowList.Workflows.Count);
 
         var items = Record(measurements, "items.load", () => workflowService.LoadItems(temp.Paths));
         var pokemon = Record(measurements, "pokemon.load", () => workflowService.LoadPokemon(temp.Paths));
@@ -54,7 +54,9 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var encounters = Record(measurements, "encounters.load", () => workflowService.LoadEncounters(temp.Paths));
         var raidBattles = Record(measurements, "raidBattles.load", () => workflowService.LoadRaidBattles(temp.Paths));
         var raidRewards = Record(measurements, "raidRewards.load", () => workflowService.LoadRaidRewards(temp.Paths));
+        var raidBonusRewards = Record(measurements, "raidBonusRewards.load", () => workflowService.LoadRaidBonusRewards(temp.Paths));
         var placement = Record(measurements, "placement.load", () => workflowService.LoadPlacement(temp.Paths));
+        var behavior = Record(measurements, "behavior.load", () => workflowService.LoadBehavior(temp.Paths));
         var flagwork = Record(measurements, "flagworkSave.load", () => workflowService.LoadFlagworkSave(temp.Paths));
         var exeFs = Record(measurements, "exefsPatches.load", () => workflowService.LoadExeFsPatches(temp.Paths));
         var royalCandy = Record(measurements, "royalCandy.load", () => workflowService.LoadRoyalCandy(temp.Paths));
@@ -76,8 +78,10 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         Assert.Equal(
             SwShPerformanceFixtureProject.RaidBattleTableCount * SwShPerformanceFixtureProject.RaidBattleSlotsPerTable,
             raidBattles.Stats.TotalSlotCount);
-        Assert.Equal(SwShPerformanceFixtureProject.RaidRewardTableCount * 2, raidRewards.Stats.TotalTableCount);
+        Assert.Equal(SwShPerformanceFixtureProject.RaidRewardTableCount, raidRewards.Stats.TotalTableCount);
+        Assert.Equal(SwShPerformanceFixtureProject.RaidRewardTableCount, raidBonusRewards.Stats.TotalTableCount);
         Assert.True(placement.Stats.TotalObjectCount > 0);
+        Assert.Equal(SwShPerformanceFixtureProject.SymbolBehaviorEntryCount, behavior.Stats.TotalEntryCount);
         Assert.Equal(
             SwShPerformanceFixtureProject.FlagworkTableCount * SwShPerformanceFixtureProject.FlagworkRowsPerTable,
             flagwork.Stats.TotalFlagCount);

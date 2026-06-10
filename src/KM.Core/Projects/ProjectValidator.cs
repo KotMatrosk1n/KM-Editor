@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers.Binary;
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 
@@ -7,6 +8,11 @@ namespace KM.Core.Projects;
 
 public sealed class ProjectValidator
 {
+    private const int NpdmTitleIdOffset = 0x290;
+    private const int NpdmMinimumTitleIdLength = NpdmTitleIdOffset + sizeof(ulong);
+    private const ulong SwordTitleId = 0x0100ABF008968000;
+    private const ulong ShieldTitleId = 0x01008DB008C2C000;
+
     private readonly ProjectFileGraphBuilder fileGraphBuilder;
 
     public ProjectValidator(ProjectFileGraphBuilder? fileGraphBuilder = null)
@@ -33,6 +39,7 @@ public sealed class ProjectValidator
 
         AddBasePathSafetyDiagnostics(baseRomFs, baseExeFs);
         AddOutputRootSafetyDiagnostics(outputRoot, baseRomFs, baseExeFs);
+        AddSelectedGameDiagnostics(baseExeFs, outputRoot, paths.SelectedGame);
 
         var pathResults = new[]
         {
@@ -78,7 +85,7 @@ public sealed class ProjectValidator
         PathValidationDraft baseExeFs,
         PathValidationDraft outputRoot)
     {
-        if (!baseRomFs.IsValid || !baseExeFs.IsValid)
+        if (IsMissingRequiredBasePath(baseRomFs) || IsMissingRequiredBasePath(baseExeFs))
         {
             return ProjectHealthState.NeedsPaths;
         }
@@ -93,6 +100,13 @@ public sealed class ProjectValidator
         return outputRoot.IsValid
             ? ProjectHealthState.EditableReady
             : ProjectHealthState.ReadOnlyReady;
+    }
+
+    private static bool IsMissingRequiredBasePath(PathValidationDraft path)
+    {
+        return path.Status is ProjectPathStatus.NotSet
+            or ProjectPathStatus.Missing
+            or ProjectPathStatus.WrongKind;
     }
 
     private static PathValidationDraft ValidateRequiredDirectory(
@@ -255,6 +269,162 @@ public sealed class ProjectValidator
             DiagnosticSeverity.Error,
             "Output root must not overlap base RomFS or base ExeFS.",
             expected: "Separate LayeredFS output directory");
+    }
+
+    private static void AddSelectedGameDiagnostics(
+        PathValidationDraft baseExeFs,
+        PathValidationDraft outputRoot,
+        ProjectGame? selectedGame)
+    {
+        if (selectedGame is null)
+        {
+            return;
+        }
+
+        AddBaseExeFsGameDiagnostic(baseExeFs, selectedGame.Value);
+        AddOutputRootGameDiagnostic(outputRoot, selectedGame.Value);
+    }
+
+    private static void AddBaseExeFsGameDiagnostic(PathValidationDraft baseExeFs, ProjectGame selectedGame)
+    {
+        if (!baseExeFs.IsValid)
+        {
+            return;
+        }
+
+        var npdmPath = Path.Combine(baseExeFs.Path!, "main.npdm");
+        if (!File.Exists(npdmPath))
+        {
+            baseExeFs.Status = ProjectPathStatus.Unsafe;
+            baseExeFs.AddDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Base ExeFS game could not be verified for {FormatGame(selectedGame)} because main.npdm is missing.",
+                expected: $"main.npdm with {FormatGame(selectedGame)} title id");
+            return;
+        }
+
+        try
+        {
+            var npdm = File.ReadAllBytes(npdmPath);
+            if (npdm.Length < NpdmMinimumTitleIdLength)
+            {
+                baseExeFs.Status = ProjectPathStatus.Unsafe;
+                baseExeFs.AddDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Base ExeFS game could not be verified for {FormatGame(selectedGame)} because main.npdm is too small.",
+                    expected: $"main.npdm with {FormatGame(selectedGame)} title id");
+                return;
+            }
+
+            var titleId = BinaryPrimitives.ReadUInt64LittleEndian(
+                npdm.AsSpan(NpdmTitleIdOffset, sizeof(ulong)));
+            var detectedGame = DetectGame(titleId);
+            if (detectedGame is null)
+            {
+                baseExeFs.Status = ProjectPathStatus.Unsafe;
+                baseExeFs.AddDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Base ExeFS title id 0x{titleId:X16} is not recognized as Pokemon Sword or Pokemon Shield.",
+                    expected: $"0x{GetTitleId(selectedGame):X16} for {FormatGame(selectedGame)}");
+                return;
+            }
+
+            if (detectedGame.Value != selectedGame)
+            {
+                baseExeFs.Status = ProjectPathStatus.Unsafe;
+                baseExeFs.AddDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Selected {FormatGame(selectedGame)}, but Base ExeFS contains {FormatGame(detectedGame.Value)} title id 0x{titleId:X16}.",
+                    expected: $"0x{GetTitleId(selectedGame):X16} for {FormatGame(selectedGame)}");
+                return;
+            }
+
+            baseExeFs.AddDiagnostic(
+                DiagnosticSeverity.Info,
+                $"Base ExeFS matches selected {FormatGame(selectedGame)} title id 0x{titleId:X16}.",
+                expected: $"0x{GetTitleId(selectedGame):X16} for {FormatGame(selectedGame)}");
+        }
+        catch (IOException exception)
+        {
+            baseExeFs.Status = ProjectPathStatus.Unsafe;
+            baseExeFs.AddDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Base ExeFS game could not be verified from main.npdm: {exception.Message}",
+                expected: $"Readable main.npdm with {FormatGame(selectedGame)} title id");
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            baseExeFs.Status = ProjectPathStatus.Unsafe;
+            baseExeFs.AddDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Base ExeFS game could not be verified from main.npdm: {exception.Message}",
+                expected: $"Readable main.npdm with {FormatGame(selectedGame)} title id");
+        }
+    }
+
+    private static void AddOutputRootGameDiagnostic(PathValidationDraft outputRoot, ProjectGame selectedGame)
+    {
+        if (!outputRoot.IsValid || string.IsNullOrWhiteSpace(outputRoot.Path))
+        {
+            return;
+        }
+
+        var folderName = Path.GetFileName(Path.TrimEndingDirectorySeparator(outputRoot.Path));
+        if (string.IsNullOrWhiteSpace(folderName))
+        {
+            return;
+        }
+
+        var selectedTitleId = GetTitleId(selectedGame).ToString("X16");
+        if (string.Equals(folderName, selectedTitleId, StringComparison.OrdinalIgnoreCase))
+        {
+            outputRoot.AddDiagnostic(
+                DiagnosticSeverity.Info,
+                $"Output root folder matches selected {FormatGame(selectedGame)} title id 0x{selectedTitleId}.",
+                expected: $"LayeredFS output folder named {selectedTitleId}");
+            return;
+        }
+
+        var otherGame = selectedGame == ProjectGame.Sword ? ProjectGame.Shield : ProjectGame.Sword;
+        var otherTitleId = GetTitleId(otherGame).ToString("X16");
+        if (string.Equals(folderName, otherTitleId, StringComparison.OrdinalIgnoreCase))
+        {
+            outputRoot.Status = ProjectPathStatus.Unsafe;
+            outputRoot.AddDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Selected {FormatGame(selectedGame)}, but Output Root folder is the {FormatGame(otherGame)} title id 0x{otherTitleId}.",
+                expected: $"LayeredFS output folder named {selectedTitleId}");
+        }
+    }
+
+    private static ProjectGame? DetectGame(ulong titleId)
+    {
+        return titleId switch
+        {
+            SwordTitleId => ProjectGame.Sword,
+            ShieldTitleId => ProjectGame.Shield,
+            _ => null,
+        };
+    }
+
+    private static ulong GetTitleId(ProjectGame game)
+    {
+        return game switch
+        {
+            ProjectGame.Sword => SwordTitleId,
+            ProjectGame.Shield => ShieldTitleId,
+            _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
+        };
+    }
+
+    private static string FormatGame(ProjectGame game)
+    {
+        return game switch
+        {
+            ProjectGame.Sword => "Pokemon Sword",
+            ProjectGame.Shield => "Pokemon Shield",
+            _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
+        };
     }
 
     private static bool PathsOverlap(string? firstPath, string? secondPath)

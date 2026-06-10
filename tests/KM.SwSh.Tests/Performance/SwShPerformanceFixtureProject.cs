@@ -31,6 +31,7 @@ internal static class SwShPerformanceFixtureProject
     public const int PlacementAreaCount = 12;
     public const int FlagworkTableCount = 4;
     public const int FlagworkRowsPerTable = 64;
+    public const int SymbolBehaviorEntryCount = 64;
 
     private const ulong SwordTitleId = 0x0100ABF008968000;
 
@@ -50,6 +51,7 @@ internal static class SwShPerformanceFixtureProject
         WriteShopData(temp);
         WriteDataTablePack(temp);
         WritePlacement(temp);
+        WriteBehavior(temp);
         WriteFlagwork(temp);
         WriteRoyalCandyPreflightInputs(temp);
         WriteExeFs(temp);
@@ -503,6 +505,61 @@ internal static class SwShPerformanceFixtureProject
             0x0123456700000000UL + (ulong)areaIndex,
             $"Synthetic placement archive {areaIndex:D2}",
             []);
+    }
+
+    private static void WriteBehavior(TemporarySwShProject temp)
+    {
+        var entries = Enumerable.Range(0, SymbolBehaviorEntryCount)
+            .Select(CreateSymbolBehaviorEntry)
+            .ToArray();
+
+        temp.WriteBaseRomFsFile(
+            "bin/field/param/symbol_encount_mons_param/symbol_encount_mons_param.bin",
+            new SwShSymbolBehaviorArchive(entries).Write());
+    }
+
+    private static SwShSymbolBehaviorEntry CreateSymbolBehaviorEntry(int index)
+    {
+        var fields = SwShSymbolBehaviorArchive.FieldSpecs
+            .Select(spec => new SwShSymbolBehaviorFieldValue(
+                spec.Field,
+                spec.FieldIndex,
+                spec.FieldType,
+                CreateSymbolBehaviorValue(spec, index)))
+            .ToArray();
+
+        return new SwShSymbolBehaviorEntry(index, fields);
+    }
+
+    private static object CreateSymbolBehaviorValue(SwShSymbolBehaviorFieldSpec spec, int index)
+    {
+        return spec.Field switch
+        {
+            SwShSymbolBehaviorArchive.ModelPartField => "body",
+            SwShSymbolBehaviorArchive.Hash1Field => 0x1000000000000000UL + (ulong)index,
+            SwShSymbolBehaviorArchive.Hash2Field => 0x2000000000000000UL + (ulong)index,
+            SwShSymbolBehaviorArchive.HitboxRadiusField => 1.5f + (index % 3),
+            SwShSymbolBehaviorArchive.FormField => index % 4,
+            SwShSymbolBehaviorArchive.SpeciesIdField => 1 + (index % 900),
+            SwShSymbolBehaviorArchive.InternalSpeciesNameField => $"SPECIES_{index:D3}",
+            SwShSymbolBehaviorArchive.GrassShakeRadiusField => 2.0f + (index % 5),
+            SwShSymbolBehaviorArchive.BehaviorField => (index % 4) switch
+            {
+                0 => "Common",
+                1 => "Approach",
+                2 => "Escape",
+                _ => "WaterDash",
+            },
+            _ => spec.FieldType switch
+            {
+                SwShSymbolBehaviorFieldType.Single => index + (spec.FieldIndex / 100f),
+                SwShSymbolBehaviorFieldType.Int32 => index + spec.FieldIndex,
+                SwShSymbolBehaviorFieldType.Byte => (byte)((index + spec.FieldIndex) % byte.MaxValue),
+                SwShSymbolBehaviorFieldType.UInt64 => 0x3000000000000000UL + (ulong)index + (uint)spec.FieldIndex,
+                SwShSymbolBehaviorFieldType.String => string.Empty,
+                _ => throw new ArgumentOutOfRangeException(nameof(spec), $"Unsupported symbol behavior field type '{spec.FieldType}'."),
+            },
+        };
     }
 
     private static void WriteFlagwork(TemporarySwShProject temp)

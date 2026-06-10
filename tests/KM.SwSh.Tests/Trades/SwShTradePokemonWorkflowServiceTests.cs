@@ -78,6 +78,9 @@ public sealed class SwShTradePokemonWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTradePokemonWorkflowService.RelearnMove1Field).Options,
             option => option.Value == 2 && option.Label == "002 Growl");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShTradePokemonWorkflowService.NatureField).Options,
+            option => option.Value == 3 && option.Label == "Adamant (+Atk/-Sp.Atk)");
     }
 
     [Fact]
