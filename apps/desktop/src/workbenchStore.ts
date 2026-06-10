@@ -53,7 +53,8 @@ export type WorkbenchSection =
   | 'exefsPatches'
   | 'royalCandy'
   | 'spreadsheetImport'
-  | 'changes';
+  | 'changes'
+  | 'settings';
 
 export type ProjectPathDraft = {
   baseExeFsPath: string;

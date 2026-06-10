@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   Dna,
+  Download,
   ExternalLink,
   FileSpreadsheet,
   FolderOpen,
@@ -22,6 +23,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Settings as SettingsIcon,
   ShieldCheck,
   Trash2,
   Wrench,
@@ -258,6 +260,11 @@ const sections: Array<{
     id: 'changes',
     label: 'Changes',
     icon: ClipboardCheck
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    icon: SettingsIcon
   }
 ];
 
@@ -321,7 +328,12 @@ const viewerSectionIds = new Set<WorkbenchSection>(['flagworkSave', 'text']);
 const primaryNavigationSections = sections.filter(
   (section) => section.id === 'health'
 );
-const utilityNavigationSections = sections.filter((section) => section.id === 'changes');
+const utilityNavigationSections = sections.filter((section) =>
+  section.id === 'changes' || section.id === 'settings'
+);
+
+const githubReleasesApiUrl = 'https://api.github.com/repos/KotMatrosk1n/KM-Editor/releases';
+const githubLatestReleaseUrl = 'https://github.com/KotMatrosk1n/KM-Editor/releases/latest';
 
 const workflowDefinitions: Array<{
   id: string;
@@ -504,6 +516,42 @@ type PokemonLearnsetDraftFields = {
   moveId: string;
   level: string;
 };
+type GithubReleaseAsset = {
+  browser_download_url?: string;
+  name?: string;
+  size?: number;
+};
+type GithubRelease = {
+  assets?: GithubReleaseAsset[];
+  draft?: boolean;
+  html_url?: string;
+  name?: string | null;
+  prerelease?: boolean;
+  tag_name?: string;
+};
+type ParsedVersion = {
+  major: number;
+  minor: number;
+  patch: number;
+  prerelease: string | null;
+};
+type UpdateDownloadTarget = {
+  kind: 'releasePage' | 'updaterBundle';
+  name: string;
+  sizeLabel: string | null;
+  url: string;
+};
+type AvailableUpdate = {
+  downloadTarget: UpdateDownloadTarget;
+  version: string;
+};
+type UpdateCheckStatus =
+  | { kind: 'available'; message: string }
+  | { kind: 'checking'; message: string }
+  | { kind: 'error'; message: string }
+  | { kind: 'idle'; message: string }
+  | { kind: 'opening'; message: string }
+  | { kind: 'upToDate'; message: string };
 
 const healthLabels = {
   blocked: 'Blocked',
@@ -762,6 +810,15 @@ const dynamaxAdventureFieldNames = [
 ] as const;
 const shopItemIdFieldName = 'itemId';
 const shopSetInventoryFieldName = 'setInventory';
+const maximumShopItemPrice = 999_999;
+const shopPriceEditableField: ShopEditableField = {
+  field: buyPriceFieldName,
+  label: 'Price',
+  maximumValue: maximumShopItemPrice,
+  minimumValue: 0,
+  options: [],
+  valueKind: 'integer'
+};
 const encounterSpeciesFieldName = speciesIdFieldName;
 const encounterFormFieldName = 'form';
 const encounterProbabilityFieldName = 'probability';
@@ -1223,6 +1280,11 @@ export function App({
   const [appliedChangePlan, setAppliedChangePlan] = useState<ChangePlan | null>(null);
   const [saveProgress, setSaveProgress] = useState<SaveProgressState | null>(null);
   const [exitPrompt, setExitPrompt] = useState<ExitPromptState | null>(null);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<UpdateCheckStatus>({
+    kind: 'idle',
+    message: 'Not checked'
+  });
+  const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
   const [editorDraftDirtySections, setEditorDraftDirtySections] = useState<Set<WorkbenchSection>>(
     () => new Set()
   );
@@ -1528,27 +1590,6 @@ export function App({
     }
   };
 
-  const handleOpenProject = async () => {
-    setProjectStatus('opening');
-    setBridgeDiagnostics([]);
-
-    try {
-      const paths = toProjectPaths(draftPaths);
-      const response = await bridge.openProject({ paths });
-      setOpenProject({
-        fileGraph: response.fileGraph,
-        health: response.health,
-        projectId: response.projectId
-      });
-      setActiveSection('health');
-      setLazyLoadedWorkflowSections(new Set());
-      await refreshWorkflows(paths, response.health.canOpenEditableWorkflows);
-    } catch (error) {
-      setProjectStatus('idle');
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    }
-  };
-
   useEffect(() => {
     if (!desktopServices.isAvailable) {
       return undefined;
@@ -1633,6 +1674,85 @@ export function App({
       setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not open output root.'));
     }
   };
+
+  const handleCheckForUpdates = useCallback(async () => {
+    setAvailableUpdate(null);
+    setUpdateCheckStatus({
+      kind: 'checking',
+      message: 'Checking GitHub Releases'
+    });
+
+    try {
+      const update = await fetchAvailableUpdate(appVersion);
+
+      if (!update) {
+        setUpdateCheckStatus({
+          kind: 'upToDate',
+          message: `KM Editor v${appVersion} is up to date.`
+        });
+        return;
+      }
+
+      setAvailableUpdate(update);
+      setUpdateCheckStatus({
+        kind: 'available',
+        message:
+          update.downloadTarget.kind === 'updaterBundle'
+            ? `KM Editor v${update.version} is available.`
+            : `KM Editor v${update.version} is available, but no updater package is attached.`
+      });
+    } catch (error) {
+      setUpdateCheckStatus({
+        kind: 'error',
+        message: toErrorMessage(error)
+      });
+    }
+  }, []);
+
+  const handleDismissAvailableUpdate = useCallback(() => {
+    setAvailableUpdate(null);
+  }, []);
+
+  const handleDownloadAvailableUpdate = useCallback(async () => {
+    if (!availableUpdate) {
+      return;
+    }
+
+    const { downloadTarget } = availableUpdate;
+    setUpdateCheckStatus({
+      kind: 'opening',
+      message:
+        downloadTarget.kind === 'updaterBundle'
+          ? `Opening ${downloadTarget.name}`
+          : 'Opening GitHub release'
+    });
+
+    try {
+      if (desktopServices.isAvailable) {
+        await desktopServices.openExternalUrl(downloadTarget.url);
+      } else {
+        window.open(downloadTarget.url, '_blank', 'noopener,noreferrer');
+      }
+
+      setAvailableUpdate(null);
+      setUpdateCheckStatus({
+        kind: 'available',
+        message:
+          downloadTarget.kind === 'updaterBundle'
+            ? `Opened ${downloadTarget.name}.`
+            : 'Opened the GitHub release page.'
+      });
+    } catch (error) {
+      setUpdateCheckStatus({
+        kind: 'error',
+        message: toErrorMessage(error)
+      });
+    }
+  }, [
+    availableUpdate,
+    desktopServices.isAvailable,
+    desktopServices.openExternalUrl
+  ]);
 
   const handleOpenItemsWorkflow = async () => {
     setIsItemsLoading(true);
@@ -2949,24 +3069,29 @@ export function App({
     }
   };
 
-  const handleUpdateShopInventoryItems = async (
+  const handleUpdateShopChanges = async (
     shopId: string,
-    changes: Array<{ field: string; slot: number; value: string }>
+    inventoryChanges: ShopInventoryDraftChange[],
+    priceChanges: ShopItemPriceChange[]
   ) => {
-    if (changes.length === 0) {
+    if (inventoryChanges.length === 0 && priceChanges.length === 0) {
       return false;
     }
 
     setIsShopUpdating(true);
+    if (priceChanges.length > 0) {
+      setIsItemUpdating(true);
+    }
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
 
     try {
       let nextSession = editSession;
-      let nextWorkflow = shopsWorkflow;
+      let nextShopsWorkflow = shopsWorkflow;
+      let nextItemsWorkflow = itemsWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
+      for (const change of inventoryChanges) {
         const response = await bridge.updateShopInventoryItem({
           field: change.field,
           paths: toProjectPaths(draftPaths),
@@ -2976,12 +3101,29 @@ export function App({
           value: change.value
         });
         nextSession = response.session;
-        nextWorkflow = response.workflow;
+        nextShopsWorkflow = response.workflow;
         nextDiagnostics = response.diagnostics;
       }
 
-      if (nextWorkflow) {
-        setShopsWorkflow(nextWorkflow);
+      for (const change of priceChanges) {
+        const response = await bridge.updateItemField({
+          field: buyPriceFieldName,
+          itemId: change.itemId,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextItemsWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextItemsWorkflow) {
+        setItemsWorkflow(nextItemsWorkflow);
+      }
+
+      if (nextShopsWorkflow) {
+        setShopsWorkflow(overlayShopWorkflowItemPrices(nextShopsWorkflow, priceChanges));
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
@@ -2991,6 +3133,9 @@ export function App({
       return false;
     } finally {
       setIsShopUpdating(false);
+      if (priceChanges.length > 0) {
+        setIsItemUpdating(false);
+      }
     }
   };
 
@@ -3842,7 +3987,7 @@ export function App({
               >
                 <Icon aria-hidden="true" size={18} />
                 <span>{section.label}</span>
-                {pendingEditCount > 0 ? (
+                {section.id === 'changes' && pendingEditCount > 0 ? (
                   <span className="nav-count" aria-label={`${pendingEditCount} pending changes`}>
                     {pendingEditCount}
                   </span>
@@ -3860,20 +4005,6 @@ export function App({
             <h1>{activeSectionLabel}</h1>
           </div>
 
-          <label className="search-box">
-            <Search aria-hidden="true" size={18} />
-            <input disabled placeholder="Search project" type="search" />
-          </label>
-
-          <button
-            className="primary-button"
-            disabled={isBusy}
-            onClick={handleOpenProject}
-            type="button"
-          >
-            <FolderOpen aria-hidden="true" size={18} />
-            <span>{projectStatus === 'opening' ? 'Opening' : 'Open Project'}</span>
-          </button>
           {activeSectionIsEditor ? (
             <button
               aria-label="Close Editor"
@@ -3895,7 +4026,6 @@ export function App({
               isDesktopAvailable={desktopServices.isAvailable}
               bridgeDiagnostics={bridgeDiagnostics}
               isBusy={isBusy}
-              onOpenProject={handleOpenProject}
               onOpenOutputRoot={handleOpenOutputRoot}
               onPickProjectPath={handlePickProjectPath}
               onSetDraftPath={setDraftPath}
@@ -4147,12 +4277,13 @@ export function App({
               <ShopsSection
                 editSession={editSession}
                 isEditStarting={isEditStarting}
+                isItemUpdating={isItemUpdating}
                 isShopUpdating={isShopUpdating}
                 onSearchChange={setShopSearchText}
                 onOpenItem={handleOpenShopItem}
                 onSelectShop={setSelectedShopId}
                 onStartEditSession={handleStartEditSession}
-                onUpdateShopInventoryItems={handleUpdateShopInventoryItems}
+                onUpdateShopChanges={handleUpdateShopChanges}
                 searchText={shopSearchText}
                 selectedShopId={selectedShopId}
                 workflow={shopsWorkflow}
@@ -4346,6 +4477,13 @@ export function App({
               onValidateEditSession={handleValidateEditSession}
             />
           ) : null}
+          {activeSection === 'settings' ? (
+            <SettingsSection
+              appVersion={appVersion}
+              onCheckForUpdates={handleCheckForUpdates}
+              status={updateCheckStatus}
+            />
+          ) : null}
           {activeSection !== 'health' && bridgeDiagnostics.length > 0 ? (
             <DiagnosticsSection diagnostics={bridgeDiagnostics} />
           ) : null}
@@ -4360,6 +4498,14 @@ export function App({
           onDeclineDiscard={handleDeclineExitDiscard}
           onGoToChanges={handleGoToChangesAfterExitDecline}
           onStay={handleStayAfterExitDecline}
+        />
+      ) : null}
+      {availableUpdate ? (
+        <UpdatePromptModal
+          isOpening={updateCheckStatus.kind === 'opening'}
+          onDismiss={handleDismissAvailableUpdate}
+          onDownload={handleDownloadAvailableUpdate}
+          update={availableUpdate}
         />
       ) : null}
     </main>
@@ -4441,7 +4587,6 @@ function HealthSection({
   health,
   isBusy,
   isDesktopAvailable,
-  onOpenProject,
   onOpenOutputRoot,
   onPickProjectPath,
   onSetDraftPath,
@@ -4454,7 +4599,6 @@ function HealthSection({
   health: ProjectHealth | null;
   isBusy: boolean;
   isDesktopAvailable: boolean;
-  onOpenProject: () => void;
   onOpenOutputRoot: () => void;
   onPickProjectPath: (pathField: ProjectPathField) => void;
   onSetDraftPath: (field: keyof ProjectPathDraft, value: string) => void;
@@ -4523,15 +4667,6 @@ function HealthSection({
           >
             <RefreshCw aria-hidden="true" size={18} />
             <span>{projectStatus === 'validating' ? 'Validating' : 'Validate Paths'}</span>
-          </button>
-          <button
-            className="primary-button"
-            disabled={isBusy}
-            onClick={onOpenProject}
-            type="button"
-          >
-            <FolderOpen aria-hidden="true" size={18} />
-            <span>{projectStatus === 'opening' ? 'Opening' : 'Open Project'}</span>
           </button>
           <button
             className="secondary-button"
@@ -12729,26 +12864,29 @@ function StaticEncounterFieldInput({
 function ShopsSection({
   editSession,
   isEditStarting,
+  isItemUpdating,
   isShopUpdating,
   onOpenItem,
   onSearchChange,
   onSelectShop,
   onStartEditSession,
-  onUpdateShopInventoryItems,
+  onUpdateShopChanges,
   searchText,
   selectedShopId,
   workflow
 }: {
   editSession: EditSession | null;
   isEditStarting: boolean;
+  isItemUpdating: boolean;
   isShopUpdating: boolean;
   onOpenItem: (itemId: number) => void;
   onSearchChange: (searchText: string) => void;
   onSelectShop: (shopId: string | null) => void;
   onStartEditSession: () => void;
-  onUpdateShopInventoryItems: (
+  onUpdateShopChanges: (
     shopId: string,
-    changes: Array<{ field: string; slot: number; value: string }>
+    inventoryChanges: ShopInventoryDraftChange[],
+    priceChanges: ShopItemPriceChange[]
   ) => Promise<boolean>;
   searchText: string;
   selectedShopId: string | null;
@@ -12870,11 +13008,12 @@ function ShopsSection({
               editSession={editSession}
               editableFields={workflow.editableFields}
               isEditStarting={isEditStarting}
+              isItemUpdating={isItemUpdating}
               isShopUpdating={isShopUpdating}
               onOpenItem={onOpenItem}
               onSelectSlot={setSelectedSlot}
               onStartEditSession={onStartEditSession}
-              onUpdateShopInventoryItems={onUpdateShopInventoryItems}
+              onUpdateShopChanges={onUpdateShopChanges}
               selectedSlot={selectedSlot}
               shop={selectedShop}
             />
@@ -12894,11 +13033,12 @@ function SelectedShopPanel({
   editSession,
   editableFields,
   isEditStarting,
+  isItemUpdating,
   isShopUpdating,
   onOpenItem,
   onSelectSlot,
   onStartEditSession,
-  onUpdateShopInventoryItems,
+  onUpdateShopChanges,
   selectedSlot,
   shop
 }: {
@@ -12906,13 +13046,15 @@ function SelectedShopPanel({
   editSession: EditSession | null;
   editableFields: ShopEditableField[];
   isEditStarting: boolean;
+  isItemUpdating: boolean;
   isShopUpdating: boolean;
   onOpenItem: (itemId: number) => void;
   onSelectSlot: (slot: number | null) => void;
   onStartEditSession: () => void;
-  onUpdateShopInventoryItems: (
+  onUpdateShopChanges: (
     shopId: string,
-    changes: Array<{ field: string; slot: number; value: string }>
+    inventoryChanges: ShopInventoryDraftChange[],
+    priceChanges: ShopItemPriceChange[]
   ) => Promise<boolean>;
   selectedSlot: number | null;
   shop: ShopRecord | null;
@@ -12934,6 +13076,7 @@ function SelectedShopPanel({
       ),
       newItemIdDraft: (itemIdOptions[0]?.value ?? 0).toString(),
       nextAddedRowId: 1,
+      priceDrafts: {},
       rowOrder: shop?.inventory.map((item) => getShopExistingRowKey(item.slot)) ?? [],
       removedSlots: []
     }),
@@ -12994,16 +13137,47 @@ function SelectedShopPanel({
       }
     ];
   }, [itemIdField, shop, shopInventoryRows]);
-  const invalidShopDraftCount = shopInventoryRows.filter(
+  const shopPriceDraftChanges = useMemo<ShopItemPriceChange[]>(() => {
+    const changes: ShopItemPriceChange[] = [];
+    const changedItemIds = new Set<number>();
+
+    for (const row of shopInventoryRows) {
+      const parsedPrice = row.parsedPrice;
+      if (
+        !row.isKnownItem ||
+        row.parsedItemId === null ||
+        parsedPrice === null ||
+        !isIntegerDraftInFieldRange(parsedPrice, shopPriceEditableField) ||
+        parsedPrice === row.price ||
+        changedItemIds.has(row.parsedItemId)
+      ) {
+        continue;
+      }
+
+      changedItemIds.add(row.parsedItemId);
+      changes.push({
+        itemId: row.parsedItemId,
+        value: parsedPrice.toString()
+      });
+    }
+
+    return changes;
+  }, [shopInventoryRows]);
+  const invalidShopItemDraftCount = shopInventoryRows.filter(
     (row) => !isIntegerDraftInFieldRange(row.parsedItemId, itemIdField)
   ).length;
-  const changedSlotCount = shopDraftChanges.length;
-  const hasInvalidShopDrafts = invalidShopDraftCount > 0;
+  const invalidShopPriceDraftCount = shopInventoryRows.filter(
+    (row) =>
+      row.isKnownItem && !isIntegerDraftInFieldRange(row.parsedPrice, shopPriceEditableField)
+  ).length;
+  const changedSlotCount = shopDraftChanges.length + shopPriceDraftChanges.length;
+  const hasInvalidShopDrafts = invalidShopItemDraftCount > 0 || invalidShopPriceDraftCount > 0;
   const canSaveShopDrafts =
     shop !== null &&
     editSession !== null &&
     canEditShops &&
     !isShopUpdating &&
+    !isItemUpdating &&
     changedSlotCount > 0 &&
     !hasInvalidShopDrafts;
   const parsedNewItemId = parseEditableIntegerDraft(newItemIdDraft, itemIdField?.options);
@@ -13020,6 +13194,7 @@ function SelectedShopPanel({
     editSession !== null &&
     canEditShops &&
     !isShopUpdating &&
+    !isItemUpdating &&
     itemIdField !== undefined &&
     newItemInRange;
   useEffect(() => {
@@ -13035,6 +13210,12 @@ function SelectedShopPanel({
     const hasDefaultExistingItems = shop.inventory.every(
       (item) => (currentDraft.itemIdDrafts[item.slot] ?? item.itemId.toString()) === item.itemId.toString()
     );
+    const hasDefaultExistingPrices = shopInventoryRows.every(
+      (item) =>
+        item.sourceSlot === null ||
+        (currentDraft.priceDrafts[item.sourceSlot] ?? item.price.toString()) ===
+          item.price.toString()
+    );
     const hasDefaultRowState =
       currentDraft.addedRows.length === 0 &&
       currentDraft.removedSlots.length === 0 &&
@@ -13043,7 +13224,8 @@ function SelectedShopPanel({
         defaultShopDraft.rowOrder
       ) &&
       currentDraft.newItemIdDraft === defaultShopDraft.newItemIdDraft &&
-      hasDefaultExistingItems;
+      hasDefaultExistingItems &&
+      hasDefaultExistingPrices;
     if (!hasDefaultRowState) {
       return;
     }
@@ -13059,7 +13241,8 @@ function SelectedShopPanel({
     defaultShopDraft.rowOrder,
     hasInvalidShopDrafts,
     inventoryDraftsByShopId,
-    shop
+    shop,
+    shopInventoryRows
   ]);
   const handleConfirmOpenItem = useCallback(() => {
     if (pendingOpenItem) {
@@ -13126,7 +13309,11 @@ function SelectedShopPanel({
                   className="primary-button"
                   disabled={!canSaveShopDrafts}
                   onClick={async () => {
-                    const didSave = await onUpdateShopInventoryItems(shop.shopId, shopDraftChanges);
+                    const didSave = await onUpdateShopChanges(
+                      shop.shopId,
+                      shopDraftChanges,
+                      shopPriceDraftChanges
+                    );
                     if (didSave) {
                       setInventoryDraftsByShopId((currentDrafts) =>
                         deleteFieldDraftRecord(currentDrafts, shop.shopId)
@@ -13136,11 +13323,11 @@ function SelectedShopPanel({
                   type="button"
                 >
                   <Save aria-hidden="true" size={16} />
-                  <span>{isShopUpdating ? 'Saving' : 'Save Changes'}</span>
+                  <span>{isShopUpdating || isItemUpdating ? 'Saving' : 'Save Changes'}</span>
                 </button>
                 <button
                   className="danger-button"
-                  disabled={isShopUpdating}
+                  disabled={isShopUpdating || isItemUpdating}
                   onClick={() => cancelActiveEditSession(resetShopDrafts)}
                   type="button"
                 >
@@ -13148,7 +13335,11 @@ function SelectedShopPanel({
                   <span>Cancel</span>
                 </button>
                 <span className="draft-action-summary">
-                  {hasInvalidShopDrafts ? 'Fix invalid inventory rows.' : `${changedSlotCount} pending inventory change${changedSlotCount === 1 ? '' : 's'}.`}
+                  {hasInvalidShopDrafts
+                    ? invalidShopPriceDraftCount > 0
+                      ? 'Fix invalid prices.'
+                      : 'Fix invalid inventory rows.'
+                    : `${changedSlotCount} pending shop change${changedSlotCount === 1 ? '' : 's'}.`}
                 </span>
               </div>
             ) : (
@@ -13185,6 +13376,17 @@ function SelectedShopPanel({
                   const rowAriaLabel = item.isAdded
                     ? `New shop slot ${item.displaySlot} item`
                     : `Shop slot ${item.displaySlot} item`;
+                  const priceDraftError =
+                    item.isKnownItem &&
+                    !isIntegerDraftInFieldRange(item.parsedPrice, shopPriceEditableField)
+                      ? getIntegerDraftError(item.priceDraft)
+                      : null;
+                  const isPriceDisabled =
+                    !canEditShops ||
+                    editSession === null ||
+                    isShopUpdating ||
+                    isItemUpdating ||
+                    !item.isKnownItem;
 
                   return (
                     <div
@@ -13206,26 +13408,36 @@ function SelectedShopPanel({
                         {hasItemIdOptions ? (
                           <SearchableOptionInput
                             ariaLabel={rowAriaLabel}
-                            disabled={!canEditShops || editSession === null || isShopUpdating}
+                            disabled={
+                              !canEditShops ||
+                              editSession === null ||
+                              isShopUpdating ||
+                              isItemUpdating
+                            }
                             onChange={(value) =>
-                              updateCurrentShopDraft((currentDraft) => ({
-                                ...currentDraft,
-                                addedRows:
-                                  item.draftId === null
-                                    ? currentDraft.addedRows
-                                    : currentDraft.addedRows.map((row) =>
-                                        row.draftId === item.draftId
-                                          ? { ...row, itemIdDraft: value }
-                                          : row
-                                      ),
-                                itemIdDrafts:
-                                  item.sourceSlot === null
-                                    ? currentDraft.itemIdDrafts
-                                    : {
-                                        ...currentDraft.itemIdDrafts,
-                                        [item.sourceSlot]: value
-                                      }
-                              }))
+                              updateCurrentShopDraft((currentDraft) =>
+                                clearShopInventoryRowPriceDraft(
+                                  {
+                                    ...currentDraft,
+                                    addedRows:
+                                      item.draftId === null
+                                        ? currentDraft.addedRows
+                                        : currentDraft.addedRows.map((row) =>
+                                            row.draftId === item.draftId
+                                              ? { ...row, itemIdDraft: value }
+                                              : row
+                                          ),
+                                    itemIdDrafts:
+                                      item.sourceSlot === null
+                                        ? currentDraft.itemIdDrafts
+                                        : {
+                                            ...currentDraft.itemIdDrafts,
+                                            [item.sourceSlot]: value
+                                          }
+                                  },
+                                  item
+                                )
+                              )
                             }
                             options={addDraftFallbackOption(
                               itemIdOptions,
@@ -13237,28 +13449,38 @@ function SelectedShopPanel({
                         ) : (
                           <input
                             aria-label={rowAriaLabel}
-                            disabled={!canEditShops || editSession === null || isShopUpdating}
+                            disabled={
+                              !canEditShops ||
+                              editSession === null ||
+                              isShopUpdating ||
+                              isItemUpdating
+                            }
                             max={itemIdField?.maximumValue ?? undefined}
                             min={itemIdField?.minimumValue ?? undefined}
                             onChange={(event) =>
-                              updateCurrentShopDraft((currentDraft) => ({
-                                ...currentDraft,
-                                addedRows:
-                                  item.draftId === null
-                                    ? currentDraft.addedRows
-                                    : currentDraft.addedRows.map((row) =>
-                                        row.draftId === item.draftId
-                                          ? { ...row, itemIdDraft: event.target.value }
-                                          : row
-                                      ),
-                                itemIdDrafts:
-                                  item.sourceSlot === null
-                                    ? currentDraft.itemIdDrafts
-                                    : {
-                                        ...currentDraft.itemIdDrafts,
-                                        [item.sourceSlot]: event.target.value
-                                      }
-                              }))
+                              updateCurrentShopDraft((currentDraft) =>
+                                clearShopInventoryRowPriceDraft(
+                                  {
+                                    ...currentDraft,
+                                    addedRows:
+                                      item.draftId === null
+                                        ? currentDraft.addedRows
+                                        : currentDraft.addedRows.map((row) =>
+                                            row.draftId === item.draftId
+                                              ? { ...row, itemIdDraft: event.target.value }
+                                              : row
+                                          ),
+                                    itemIdDrafts:
+                                      item.sourceSlot === null
+                                        ? currentDraft.itemIdDrafts
+                                        : {
+                                            ...currentDraft.itemIdDrafts,
+                                            [item.sourceSlot]: event.target.value
+                                          }
+                                  },
+                                  item
+                                )
+                              )
                             }
                             type="number"
                             value={item.itemIdDraft}
@@ -13266,19 +13488,41 @@ function SelectedShopPanel({
                         )}
                         {draftError ? <small className="editable-field-error">{draftError}</small> : null}
                       </label>
-                      <label className="path-field shop-read-only-field">
+                      <label
+                        className={`path-field ${
+                          isPriceDisabled ? 'shop-read-only-field' : ''
+                        }`}
+                      >
                         <span>{shop.currency}</span>
                         <input
                           aria-label={`Shop slot ${item.displaySlot} price`}
-                          disabled
-                          value={item.price}
+                          disabled={isPriceDisabled}
+                          max={maximumShopItemPrice}
+                          min={0}
+                          onChange={(event) =>
+                            updateCurrentShopDraft((currentDraft) =>
+                              setShopItemPriceDraft(
+                                currentDraft,
+                                shopInventoryRows,
+                                item,
+                                event.target.value
+                              )
+                            )
+                          }
+                          title="Changes the item buy price used wherever this item is sold."
+                          type="number"
+                          value={item.priceDraft}
                         />
+                        {priceDraftError ? (
+                          <small className="editable-field-error">{priceDraftError}</small>
+                        ) : null}
                       </label>
                       <label className="path-field shop-read-only-field">
                         <span>Stock</span>
                         <input
                           aria-label={`Shop slot ${item.displaySlot} stock`}
                           disabled
+                          title="Shop inventory data does not expose a limited-stock value here."
                           value={item.stockLimit ?? 'None'}
                         />
                       </label>
@@ -13305,7 +13549,7 @@ function SelectedShopPanel({
                             <button
                               aria-label={`Move shop slot ${item.displaySlot} up`}
                               className="secondary-button icon-button"
-                              disabled={!canEditShops || isShopUpdating || index === 0}
+                              disabled={!canEditShops || isShopUpdating || isItemUpdating || index === 0}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 updateCurrentShopDraft((currentDraft) =>
@@ -13323,6 +13567,7 @@ function SelectedShopPanel({
                               disabled={
                                 !canEditShops ||
                                 isShopUpdating ||
+                                isItemUpdating ||
                                 index >= shopInventoryRows.length - 1
                               }
                               onClick={(event) => {
@@ -13339,7 +13584,7 @@ function SelectedShopPanel({
                             <button
                               aria-label={`Remove shop slot ${item.displaySlot}`}
                               className="secondary-button icon-button danger-icon-button"
-                              disabled={!canEditShops || isShopUpdating}
+                              disabled={!canEditShops || isShopUpdating || isItemUpdating}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 updateCurrentShopDraft((currentDraft) =>
@@ -13368,7 +13613,7 @@ function SelectedShopPanel({
                   {hasItemIdOptions ? (
                     <SearchableOptionInput
                       ariaLabel="New shop inventory item"
-                      disabled={!canEditShops || isShopUpdating}
+                      disabled={!canEditShops || isShopUpdating || isItemUpdating}
                       onChange={(value) =>
                         updateCurrentShopDraft((currentDraft) => ({
                           ...currentDraft,
@@ -13385,7 +13630,7 @@ function SelectedShopPanel({
                   ) : (
                     <input
                       aria-label="New shop inventory item"
-                      disabled={!canEditShops || isShopUpdating}
+                      disabled={!canEditShops || isShopUpdating || isItemUpdating}
                       max={itemIdField?.maximumValue ?? undefined}
                       min={itemIdField?.minimumValue ?? undefined}
                       onChange={(event) =>
@@ -13471,14 +13716,21 @@ function normalizeShopInventoryDraft(
   shop: ShopRecord | null
 ): ShopInventoryDraftState {
   if (!shop) {
-    return draft;
+    return {
+      ...draft,
+      priceDrafts: draft.priceDrafts ?? {}
+    };
   }
 
-  const rowOrder = normalizeShopInventoryRowOrder(draft, shop);
-  return areStringArraysEqual(rowOrder, draft.rowOrder ?? [])
-    ? draft
+  const nextDraft = {
+    ...draft,
+    priceDrafts: draft.priceDrafts ?? {}
+  };
+  const rowOrder = normalizeShopInventoryRowOrder(nextDraft, shop);
+  return areStringArraysEqual(rowOrder, nextDraft.rowOrder ?? [])
+    ? nextDraft
     : {
-        ...draft,
+        ...nextDraft,
         rowOrder
       };
 }
@@ -13539,6 +13791,8 @@ function createShopInventoryDraftRows(
         const itemOption =
           parsedItemId === null ? undefined : itemOptionsById.get(parsedItemId);
         const isOriginalItem = parsedItemId === inventoryItem.itemId;
+        const price = itemOption?.price ?? (isOriginalItem ? inventoryItem.price : 0);
+        const priceDraft = normalizedDraft.priceDrafts[sourceSlot] ?? price.toString();
 
         return {
           displaySlot: index + 1,
@@ -13552,7 +13806,9 @@ function createShopInventoryDraftRows(
             (isOriginalItem ? inventoryItem.itemName : formatShopItemFallbackOption(itemIdDraft)),
           key,
           parsedItemId,
-          price: itemOption?.price ?? (isOriginalItem ? inventoryItem.price : 0),
+          parsedPrice: parseEditableIntegerDraft(priceDraft),
+          price,
+          priceDraft,
           sourceSlot,
           stockLimit: isOriginalItem ? inventoryItem.stockLimit : null
         };
@@ -13571,6 +13827,8 @@ function createShopInventoryDraftRows(
       const parsedItemId = parseEditableIntegerDraft(addedRow.itemIdDraft, itemOptions);
       const itemOption =
         parsedItemId === null ? undefined : itemOptionsById.get(parsedItemId);
+      const price = itemOption?.price ?? 0;
+      const priceDraft = addedRow.priceDraft ?? price.toString();
 
       return {
         displaySlot: index + 1,
@@ -13582,7 +13840,9 @@ function createShopInventoryDraftRows(
         itemName: itemOption?.itemName ?? formatShopItemFallbackOption(addedRow.itemIdDraft),
         key,
         parsedItemId,
-        price: itemOption?.price ?? 0,
+        parsedPrice: parseEditableIntegerDraft(priceDraft),
+        price,
+        priceDraft,
         sourceSlot: null,
         stockLimit: null
       };
@@ -13637,6 +13897,114 @@ function removeShopInventoryDraftRow(
     ...draft,
     addedRows: draft.addedRows.filter((draftRow) => draftRow.draftId !== row.draftId),
     rowOrder: draft.rowOrder.filter((key) => key !== row.key)
+  };
+}
+
+function clearShopInventoryRowPriceDraft(
+  draft: ShopInventoryDraftState,
+  row: ShopInventoryDraftRow
+): ShopInventoryDraftState {
+  const nextDraft = {
+    ...draft,
+    priceDrafts: {
+      ...draft.priceDrafts
+    }
+  };
+
+  if (row.sourceSlot !== null) {
+    delete nextDraft.priceDrafts[row.sourceSlot];
+  }
+
+  if (row.draftId !== null) {
+    nextDraft.addedRows = nextDraft.addedRows.map((draftRow) => {
+      if (draftRow.draftId !== row.draftId || draftRow.priceDraft === undefined) {
+        return draftRow;
+      }
+
+      const nextRow = { ...draftRow };
+      delete nextRow.priceDraft;
+      return nextRow;
+    });
+  }
+
+  return nextDraft;
+}
+
+function setShopItemPriceDraft(
+  draft: ShopInventoryDraftState,
+  rows: ShopInventoryDraftRow[],
+  targetRow: ShopInventoryDraftRow,
+  value: string
+): ShopInventoryDraftState {
+  if (targetRow.parsedItemId === null) {
+    return draft;
+  }
+
+  const matchingDraftIds = new Set<number>();
+  const nextPriceDrafts = { ...draft.priceDrafts };
+  for (const row of rows) {
+    if (row.parsedItemId !== targetRow.parsedItemId) {
+      continue;
+    }
+
+    if (row.sourceSlot !== null) {
+      nextPriceDrafts[row.sourceSlot] = value;
+    }
+
+    if (row.draftId !== null) {
+      matchingDraftIds.add(row.draftId);
+    }
+  }
+
+  return {
+    ...draft,
+    addedRows: draft.addedRows.map((row) =>
+      matchingDraftIds.has(row.draftId) ? { ...row, priceDraft: value } : row
+    ),
+    priceDrafts: nextPriceDrafts
+  };
+}
+
+function overlayShopWorkflowItemPrices(
+  workflow: ShopsWorkflow,
+  priceChanges: ShopItemPriceChange[]
+): ShopsWorkflow {
+  const priceByItemId = new Map<number, number>();
+  for (const change of priceChanges) {
+    const price = Number.parseInt(change.value, 10);
+    if (Number.isInteger(price)) {
+      priceByItemId.set(change.itemId, price);
+    }
+  }
+
+  if (priceByItemId.size === 0) {
+    return workflow;
+  }
+
+  return {
+    ...workflow,
+    editableFields: workflow.editableFields.map((field) => ({
+      ...field,
+      options: field.options.map((option) =>
+        priceByItemId.has(option.value)
+          ? {
+              ...option,
+              price: priceByItemId.get(option.value)!
+            }
+          : option
+      )
+    })),
+    shops: workflow.shops.map((shop) => ({
+      ...shop,
+      inventory: shop.inventory.map((item) =>
+        priceByItemId.has(item.itemId)
+          ? {
+              ...item,
+              price: priceByItemId.get(item.itemId)!
+            }
+          : item
+      )
+    }))
   };
 }
 
@@ -17147,6 +17515,46 @@ type PendingEditContext = {
   trainersWorkflow: TrainersWorkflow | null;
 };
 
+function SettingsSection({
+  appVersion,
+  onCheckForUpdates,
+  status
+}: {
+  appVersion: string;
+  onCheckForUpdates: () => void;
+  status: UpdateCheckStatus;
+}) {
+  const isBusy = status.kind === 'checking' || status.kind === 'opening';
+
+  return (
+    <section aria-labelledby="settings-heading" className="panel wide-panel">
+      <div className="panel-heading">
+        <SettingsIcon aria-hidden="true" size={18} />
+        <h2 id="settings-heading">Settings</h2>
+      </div>
+
+      <div className="settings-summary">
+        <Metric label="Installed version" value={`v${appVersion}`} />
+        <button
+          className="primary-button"
+          disabled={isBusy}
+          onClick={onCheckForUpdates}
+          type="button"
+        >
+          <RefreshCw aria-hidden="true" size={18} />
+          <span>{status.kind === 'checking' ? 'Checking' : 'Check for Updates'}</span>
+        </button>
+        <p
+          className={`update-status update-status-${status.kind}`}
+          role={status.kind === 'error' ? 'alert' : 'status'}
+        >
+          {status.message}
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function ChangesSection({
   applyResult,
   canSaveValidatedChanges,
@@ -17492,6 +17900,58 @@ function ShopItemNavigationModal({
           <button className="secondary-button" onClick={onCancel} type="button">
             <X aria-hidden="true" size={16} />
             <span>Stay in Shops</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function UpdatePromptModal({
+  isOpening,
+  onDismiss,
+  onDownload,
+  update
+}: {
+  isOpening: boolean;
+  onDismiss: () => void;
+  onDownload: () => void;
+  update: AvailableUpdate;
+}) {
+  const isUpdaterBundle = update.downloadTarget.kind === 'updaterBundle';
+  const targetDetail = update.downloadTarget.sizeLabel
+    ? `${update.downloadTarget.name} (${update.downloadTarget.sizeLabel})`
+    : update.downloadTarget.name;
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="update-prompt-heading"
+        aria-modal="true"
+        className="modal-panel"
+        role="dialog"
+      >
+        <div className="panel-heading">
+          <Download aria-hidden="true" size={18} />
+          <h2 id="update-prompt-heading">Update Available</h2>
+        </div>
+        <p className="modal-copy">
+          {isUpdaterBundle
+            ? `KM Editor v${update.version} is available. Download ${targetDetail}?`
+            : `KM Editor v${update.version} is available, but this release does not include a smaller updater package. KM Editor will open the GitHub release page instead of downloading a full installer directly.`}
+        </p>
+        <div className="modal-actions">
+          <button className="primary-button" disabled={isOpening} onClick={onDownload} type="button">
+            {isUpdaterBundle ? (
+              <Download aria-hidden="true" size={16} />
+            ) : (
+              <ExternalLink aria-hidden="true" size={16} />
+            )}
+            <span>{isOpening ? 'Opening' : 'Download Update'}</span>
+          </button>
+          <button className="secondary-button" disabled={isOpening} onClick={onDismiss} type="button">
+            <X aria-hidden="true" size={16} />
+            <span>Not Now</span>
           </button>
         </div>
       </section>
@@ -19896,11 +20356,23 @@ type SaveProgressState = {
   totalSteps: number;
 };
 
+type ShopInventoryDraftChange = {
+  field: string;
+  slot: number;
+  value: string;
+};
+
+type ShopItemPriceChange = {
+  itemId: number;
+  value: string;
+};
+
 type ShopInventoryDraftState = {
-  addedRows: Array<{ draftId: number; itemIdDraft: string }>;
+  addedRows: Array<{ draftId: number; itemIdDraft: string; priceDraft?: string }>;
   itemIdDrafts: Record<number, string>;
   newItemIdDraft: string;
   nextAddedRowId: number;
+  priceDrafts: Record<number, string>;
   rowOrder: string[];
   removedSlots: number[];
 };
@@ -19915,7 +20387,9 @@ type ShopInventoryDraftRow = {
   itemName: string;
   key: string;
   parsedItemId: number | null;
+  parsedPrice: number | null;
   price: number;
+  priceDraft: string;
   sourceSlot: number | null;
   stockLimit: number | null;
 };
@@ -21981,6 +22455,155 @@ function getPathStatusClassName(pathValidation: ProjectPathValidation | undefine
   return `path-status path-status-${pathValidation.status}`;
 }
 
+async function fetchAvailableUpdate(currentVersion: string): Promise<AvailableUpdate | null> {
+  const response = await fetch(githubReleasesApiUrl, {
+    headers: {
+      Accept: 'application/vnd.github+json'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub update check failed (${response.status}).`);
+  }
+
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) {
+    throw new Error('GitHub update response was not a release list.');
+  }
+
+  return resolveAvailableUpdate(payload as GithubRelease[], currentVersion);
+}
+
+function resolveAvailableUpdate(
+  releases: GithubRelease[],
+  currentVersionText: string
+): AvailableUpdate | null {
+  const currentVersion = parseVersionTag(currentVersionText);
+  if (!currentVersion) {
+    return null;
+  }
+
+  const updateCandidates = releases
+    .map((release) => {
+      const version = parseVersionTag(release.tag_name ?? '');
+      return version ? { release, version } : null;
+    })
+    .filter((candidate): candidate is { release: GithubRelease; version: ParsedVersion } => {
+      if (!candidate) {
+        return false;
+      }
+
+      return (
+        candidate.release.draft !== true &&
+        candidate.release.prerelease !== true &&
+        compareVersions(candidate.version, currentVersion) > 0
+      );
+    })
+    .sort((left, right) => compareVersions(right.version, left.version));
+
+  const update = updateCandidates[0];
+  if (!update) {
+    return null;
+  }
+
+  const releaseUrl = update.release.html_url ?? githubLatestReleaseUrl;
+
+  return {
+    downloadTarget: pickUpdateDownloadTarget(update.release, releaseUrl),
+    version: formatParsedVersion(update.version)
+  };
+}
+
+function pickUpdateDownloadTarget(
+  release: GithubRelease,
+  releaseUrl: string
+): UpdateDownloadTarget {
+  const assets = (release.assets ?? []).filter(
+    (asset): asset is Required<Pick<GithubReleaseAsset, 'browser_download_url' | 'name'>> &
+      GithubReleaseAsset =>
+      typeof asset.browser_download_url === 'string' &&
+      asset.browser_download_url.length > 0 &&
+      typeof asset.name === 'string' &&
+      asset.name.length > 0
+  );
+  const updaterAsset =
+    assets.find((asset) => /\.(nsis|msi)\.zip$/i.test(asset.name)) ??
+    assets.find((asset) => /(?:update|updater).+\.zip$/i.test(asset.name));
+
+  if (updaterAsset) {
+    return {
+      kind: 'updaterBundle',
+      name: updaterAsset.name,
+      sizeLabel:
+        typeof updaterAsset.size === 'number' && updaterAsset.size > 0
+          ? formatByteCount(updaterAsset.size)
+          : null,
+      url: updaterAsset.browser_download_url
+    };
+  }
+
+  return {
+    kind: 'releasePage',
+    name: release.name?.trim() || release.tag_name || 'GitHub release',
+    sizeLabel: null,
+    url: releaseUrl
+  };
+}
+
+function parseVersionTag(versionText: string): ParsedVersion | null {
+  const match = versionText.trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    major: Number.parseInt(match[1], 10),
+    minor: Number.parseInt(match[2], 10),
+    patch: Number.parseInt(match[3], 10),
+    prerelease: match[4] ?? null
+  };
+}
+
+function compareVersions(left: ParsedVersion, right: ParsedVersion) {
+  const majorDelta = left.major - right.major;
+  if (majorDelta !== 0) {
+    return majorDelta;
+  }
+
+  const minorDelta = left.minor - right.minor;
+  if (minorDelta !== 0) {
+    return minorDelta;
+  }
+
+  const patchDelta = left.patch - right.patch;
+  if (patchDelta !== 0) {
+    return patchDelta;
+  }
+
+  if (left.prerelease === right.prerelease) {
+    return 0;
+  }
+
+  if (left.prerelease === null) {
+    return 1;
+  }
+
+  if (right.prerelease === null) {
+    return -1;
+  }
+
+  return left.prerelease.localeCompare(right.prerelease, undefined, {
+    numeric: true,
+    sensitivity: 'base'
+  });
+}
+
+function formatParsedVersion(version: ParsedVersion) {
+  return `${version.major}.${version.minor}.${version.patch}${
+    version.prerelease ? `-${version.prerelease}` : ''
+  }`;
+}
+
 function getProjectStateLabel(
   health: ProjectHealth | null,
   projectStatus: 'idle' | 'validating' | 'opening' | 'open',
@@ -22082,4 +22705,16 @@ function toDesktopDiagnostics(error: unknown, fallbackMessage: string): ApiDiagn
       severity: 'error'
     }
   ];
+}
+
+function toErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  return 'Update check failed.';
 }

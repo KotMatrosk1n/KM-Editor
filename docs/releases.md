@@ -10,7 +10,12 @@ The release assets are:
 
 - NSIS setup executable
 - MSI installer
+- Signed Tauri updater bundle ZIPs and signatures when updater artifacts are configured
 - `SHA256SUMS.txt` for the uploaded assets
+
+## Desktop Update Checks
+
+The desktop app can check GitHub Releases from Settings. When a newer published release is available, it prefers signed Tauri updater bundle ZIP assets such as `.nsis.zip` or `.msi.zip`. If a release only has full installers, the app opens the GitHub release page instead of directly downloading the setup executable.
 
 ## Manual Release
 
