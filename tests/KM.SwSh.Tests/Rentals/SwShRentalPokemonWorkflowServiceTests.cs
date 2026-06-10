@@ -41,7 +41,7 @@ public sealed class SwShRentalPokemonWorkflowServiceTests
         Assert.Equal(2, firstRental.Ability);
         Assert.Equal("Hidden Ability", firstRental.AbilityLabel);
         Assert.Equal(13, firstRental.Nature);
-        Assert.Equal("Jolly", firstRental.NatureLabel);
+        Assert.Equal("Jolly (+Spe/-Sp.Atk)", firstRental.NatureLabel);
         Assert.Equal(1, firstRental.Gender);
         Assert.Equal("Male", firstRental.GenderLabel);
         Assert.Equal(12345u, firstRental.TrainerId);
@@ -64,6 +64,9 @@ public sealed class SwShRentalPokemonWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShRentalPokemonWorkflowService.Move1Field).Options,
             option => option.Value == 2 && option.Label == "002 Growl");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShRentalPokemonWorkflowService.NatureField).Options,
+            option => option.Value == 3 && option.Label == "Adamant (+Atk/-Sp.Atk)");
     }
 
     [Fact]

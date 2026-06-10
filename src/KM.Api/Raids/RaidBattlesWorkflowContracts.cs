@@ -77,6 +77,7 @@ public sealed record RaidBattleSlotRecordDto(
 
 public sealed record RaidBattleTableRecordDto(
     string TableId,
+    string DisplayName,
     string DenId,
     int TableIndex,
     string GameVersion,

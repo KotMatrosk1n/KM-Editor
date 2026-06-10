@@ -100,31 +100,9 @@ public sealed class SwShTrainersWorkflowService
 
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> NatureOptions =
     [
-        new SwShTrainerEditableFieldOption(0, "Hardy"),
-        new SwShTrainerEditableFieldOption(1, "Lonely (+Atk/-Def)"),
-        new SwShTrainerEditableFieldOption(2, "Brave (+Atk/-Spe)"),
-        new SwShTrainerEditableFieldOption(3, "Adamant (+Atk/-Sp.Atk)"),
-        new SwShTrainerEditableFieldOption(4, "Naughty (+Atk/-Sp.Def)"),
-        new SwShTrainerEditableFieldOption(5, "Bold (+Def/-Atk)"),
-        new SwShTrainerEditableFieldOption(6, "Docile"),
-        new SwShTrainerEditableFieldOption(7, "Relaxed (+Def/-Spe)"),
-        new SwShTrainerEditableFieldOption(8, "Impish (+Def/-Sp.Atk)"),
-        new SwShTrainerEditableFieldOption(9, "Lax (+Def/-Sp.Def)"),
-        new SwShTrainerEditableFieldOption(10, "Timid (+Spe/-Atk)"),
-        new SwShTrainerEditableFieldOption(11, "Hasty (+Spe/-Def)"),
-        new SwShTrainerEditableFieldOption(12, "Serious"),
-        new SwShTrainerEditableFieldOption(13, "Jolly (+Spe/-Sp.Atk)"),
-        new SwShTrainerEditableFieldOption(14, "Naive (+Spe/-Sp.Def)"),
-        new SwShTrainerEditableFieldOption(15, "Modest (+Sp.Atk/-Atk)"),
-        new SwShTrainerEditableFieldOption(16, "Mild (+Sp.Atk/-Def)"),
-        new SwShTrainerEditableFieldOption(17, "Quiet (+Sp.Atk/-Spe)"),
-        new SwShTrainerEditableFieldOption(18, "Bashful"),
-        new SwShTrainerEditableFieldOption(19, "Rash (+Sp.Atk/-Sp.Def)"),
-        new SwShTrainerEditableFieldOption(20, "Calm (+Sp.Def/-Atk)"),
-        new SwShTrainerEditableFieldOption(21, "Gentle (+Sp.Def/-Def)"),
-        new SwShTrainerEditableFieldOption(22, "Sassy (+Sp.Def/-Spe)"),
-        new SwShTrainerEditableFieldOption(23, "Careful (+Sp.Def/-Sp.Atk)"),
-        new SwShTrainerEditableFieldOption(24, "Quirky"),
+        ..SwShNatureLabels.Fixed.Select(nature => new SwShTrainerEditableFieldOption(
+            nature.Value,
+            nature.Label)),
     ];
 
     private static readonly IReadOnlyList<TrainerAiFlagDefinition> AiFlagDefinitions =
@@ -138,9 +116,9 @@ public sealed class SwShTrainersWorkflowService
         new(6, "PokeChange", "Allows AI-driven Pokemon switching."),
         new(7, "Fire Gym (1)", "Enables the first Fire Gym behavior bit."),
         new(8, "Fire Gym (2)", "Enables the second Fire Gym behavior bit."),
+        new(11, "Fire Gym (3)", "Enables the third Fire Gym behavior bit."),
         new(9, "Unused 1", "Reserved trainer AI bit."),
         new(10, "Item", "Allows AI-driven trainer item usage."),
-        new(11, "Fire Gym (3)", "Enables the third Fire Gym behavior bit."),
         new(12, "Unused 2", "Reserved trainer AI bit."),
     ];
 

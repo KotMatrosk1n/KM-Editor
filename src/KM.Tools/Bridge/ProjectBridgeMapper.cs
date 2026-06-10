@@ -18,7 +18,8 @@ public static class ProjectBridgeMapper
             paths.BaseRomFsPath,
             paths.BaseExeFsPath,
             paths.OutputRootPath,
-            paths.SaveFilePath);
+            paths.SaveFilePath,
+            ToCore(paths.SelectedGame));
     }
 
     public static ProjectHealthDto ToDto(ProjectHealth health)
@@ -130,6 +131,17 @@ public static class ProjectBridgeMapper
             ProjectHealthState.EditableReady => ProjectHealthStateDto.EditableReady,
             ProjectHealthState.Blocked => ProjectHealthStateDto.Blocked,
             _ => throw new ArgumentOutOfRangeException(nameof(state), state, null),
+        };
+    }
+
+    private static ProjectGame? ToCore(ProjectGameDto? game)
+    {
+        return game switch
+        {
+            ProjectGameDto.Sword => ProjectGame.Sword,
+            ProjectGameDto.Shield => ProjectGame.Shield,
+            null => null,
+            _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
         };
     }
 

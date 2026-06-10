@@ -141,7 +141,9 @@ public sealed class ProjectBridgeDispatcherTests
                 "encounters",
                 "raidBattles",
                 "raidRewards",
+                "raidBonusRewards",
                 "placement",
+                "behavior",
                 "flagworkSave",
                 "exefsPatches",
                 "royalCandy",
@@ -1354,14 +1356,43 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Null(response.Error);
         Assert.Equal("request-raid-rewards", response.RequestId);
         Assert.NotNull(response.Payload);
-        Assert.Equal(2, response.Payload.Workflow.Tables.Count);
+        Assert.Single(response.Payload.Workflow.Tables);
         var table = response.Payload.Workflow.Tables.Single(table => table.RewardKind == "drop");
+        Assert.Equal("Drop 000", table.DisplayName);
         Assert.Equal("nest_hole_drop_rewards.bin", table.ArchiveMember);
         Assert.Equal("0xAABBCCDD00112233", table.SourceTableHash);
         Assert.Equal(ProjectFileLayerDto.Base, table.Provenance.SourceLayer);
         var reward = table.Rewards[0];
         Assert.Equal("Exp. Candy L", reward.ItemName);
         Assert.Equal([40, 30, 20, 10, 5], reward.Values);
+        Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
+    }
+
+    [Fact]
+    public void DispatchLoadRaidBonusRewardsWorkflowReturnsRealBonusRewardTables()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShRaidRewardBridgeFixtures.WriteBaseRaidRewards(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadRaidBonusRewardsWorkflow,
+            new LoadRaidBonusRewardsWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-raid-bonus-rewards");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadRaidBonusRewardsWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-raid-bonus-rewards", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var table = Assert.Single(response.Payload.Workflow.Tables);
+        Assert.Equal("bonus", table.RewardKind);
+        Assert.Equal("Bonus 000", table.DisplayName);
+        Assert.Equal("nest_hole_bonus_rewards.bin", table.ArchiveMember);
+        Assert.Equal("0x1020304050607080", table.SourceTableHash);
+        var reward = table.Rewards[0];
+        Assert.Equal("Armorite Ore", reward.ItemName);
+        Assert.Equal([1, 2, 3, 4, 5], reward.Values);
         Assert.Equal(1, response.Payload.Workflow.Stats.SourceFileCount);
     }
 

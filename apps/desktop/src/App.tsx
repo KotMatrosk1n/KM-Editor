@@ -25,6 +25,7 @@ import {
   Search,
   Settings as SettingsIcon,
   ShieldCheck,
+  Swords,
   Trash2,
   Wrench,
   X,
@@ -49,6 +50,10 @@ import {
 import {
   type ApiDiagnostic,
   type ApplyResult,
+  type BehaviorEntryRecord,
+  type BehaviorField,
+  type BehaviorFieldOption,
+  type BehaviorWorkflow,
   type ChangePlan,
   type DynamaxAdventureEditableField,
   type DynamaxAdventureRecord,
@@ -85,6 +90,7 @@ import {
   type PlacementEditableField,
   type PlacementWorkflow,
   type ProjectHealth,
+  type ProjectGame,
   type ProjectPathRole,
   type ProjectPathValidation,
   type RaidBattleEditableField,
@@ -137,6 +143,7 @@ import {
   type DesktopServices
 } from './desktopServices';
 import {
+  type ProjectPathFieldName,
   type ProjectPathDraft,
   type WorkbenchSection,
   useWorkbenchStore
@@ -145,6 +152,29 @@ import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
 
 const appVersion = tauriConfig.version;
+
+const gameDefinitions = {
+  sword: {
+    icon: Swords,
+    label: 'Pokemon Sword',
+    title: 'Pokemon Sword Editor',
+    titleId: '0100ABF008968000'
+  },
+  shield: {
+    icon: ShieldCheck,
+    label: 'Pokemon Shield',
+    title: 'Pokemon Shield Editor',
+    titleId: '01008DB008C2C000'
+  }
+} as const satisfies Record<
+  ProjectGame,
+  {
+    icon: LucideIcon;
+    label: string;
+    title: string;
+    titleId: string;
+  }
+>;
 
 const sections: Array<{
   id: WorkbenchSection;
@@ -232,9 +262,19 @@ const sections: Array<{
     icon: ShieldCheck
   },
   {
+    id: 'raidBonusRewards',
+    label: 'Raid Bonus Rewards',
+    icon: ShieldCheck
+  },
+  {
     id: 'placement',
     label: 'Placement',
     icon: MapPin
+  },
+  {
+    id: 'behavior',
+    label: 'Behavior',
+    icon: Activity
   },
   {
     id: 'flagworkSave',
@@ -289,7 +329,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'editors',
     label: 'Editors',
-    sectionIds: ['pokemon', 'trainers', 'moves', 'items', 'placement']
+    sectionIds: ['pokemon', 'trainers', 'moves', 'items', 'placement', 'behavior']
   },
   {
     id: 'encountersPokemonSources',
@@ -307,7 +347,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'economy',
     label: 'Economy',
-    sectionIds: ['shops', 'raidRewards']
+    sectionIds: ['shops', 'raidRewards', 'raidBonusRewards']
   },
   {
     id: 'tools',
@@ -427,10 +467,22 @@ const workflowDefinitions: Array<{
     icon: ShieldCheck
   },
   {
+    id: 'raidBonusRewards',
+    label: 'Raid Bonus Rewards',
+    description: 'Raid bonus reward tables, item quantities, den usage, and source provenance.',
+    icon: ShieldCheck
+  },
+  {
     id: 'placement',
     label: 'Placement',
     description: 'Placed objects, map coordinates, script links, and source provenance.',
     icon: MapPin
+  },
+  {
+    id: 'behavior',
+    label: 'Behavior',
+    description: 'Symbol encounter behavior profiles, model anchors, collision radii, and source provenance.',
+    icon: Activity
   },
   {
     id: 'flagworkSave',
@@ -459,7 +511,7 @@ const workflowDefinitions: Array<{
 ];
 
 const pathFields: Array<{
-  field: keyof ProjectPathDraft;
+  field: ProjectPathFieldName;
   kind: 'directory' | 'file';
   label: string;
   role: ProjectPathRole;
@@ -612,6 +664,7 @@ const maximumPokemonEvValue = 252;
 const maximumPokemonEvTotal = 510;
 const dynamaxLevelFieldName = 'dynamaxLevel';
 const canGigantamaxFieldName = 'canGigantamax';
+const dynamaxDependentFieldNames = [dynamaxLevelFieldName, canGigantamaxFieldName] as const;
 const ivFieldNames = [
   'ivHp',
   'ivAttack',
@@ -810,6 +863,7 @@ const dynamaxAdventureFieldNames = [
 ] as const;
 const shopItemIdFieldName = 'itemId';
 const shopSetInventoryFieldName = 'setInventory';
+const shopNoneItemId = 0;
 const maximumShopItemPrice = 999_999;
 const shopPriceEditableField: ShopEditableField = {
   field: buyPriceFieldName,
@@ -837,16 +891,6 @@ const encounterConditionLabels = [
   'Fishing',
   'Shaking Trees'
 ] as const;
-const encounterWeatherCopyLabels = new Set([
-  'Overcast',
-  'Raining',
-  'Thunderstorm',
-  'Intense Sun',
-  'Snowing',
-  'Snowstorm',
-  'Sandstorm',
-  'Heavy Fog'
-]);
 const raidBattleSpeciesFieldName = 'species';
 const raidBattleFormFieldName = 'form';
 const raidBattleAbilityFieldName = 'ability';
@@ -1014,6 +1058,8 @@ export function App({
   const movesSearchText = useWorkbenchStore((state) => state.movesSearchText);
   const movesWorkflow = useWorkbenchStore((state) => state.movesWorkflow);
   const openProject = useWorkbenchStore((state) => state.openProject);
+  const behaviorSearchText = useWorkbenchStore((state) => state.behaviorSearchText);
+  const behaviorWorkflow = useWorkbenchStore((state) => state.behaviorWorkflow);
   const placementSearchText = useWorkbenchStore((state) => state.placementSearchText);
   const placementWorkflow = useWorkbenchStore((state) => state.placementWorkflow);
   const pokemonSearchText = useWorkbenchStore((state) => state.pokemonSearchText);
@@ -1023,6 +1069,12 @@ export function App({
   const raidBattlesWorkflow = useWorkbenchStore((state) => state.raidBattlesWorkflow);
   const raidRewardSearchText = useWorkbenchStore((state) => state.raidRewardSearchText);
   const raidRewardsWorkflow = useWorkbenchStore((state) => state.raidRewardsWorkflow);
+  const raidBonusRewardSearchText = useWorkbenchStore(
+    (state) => state.raidBonusRewardSearchText
+  );
+  const raidBonusRewardsWorkflow = useWorkbenchStore(
+    (state) => state.raidBonusRewardsWorkflow
+  );
   const royalCandySearchText = useWorkbenchStore((state) => state.royalCandySearchText);
   const royalCandyWorkflow = useWorkbenchStore((state) => state.royalCandyWorkflow);
   const spreadsheetImportPreview = useWorkbenchStore(
@@ -1048,6 +1100,12 @@ export function App({
   );
   const selectedRaidRewardTableId = useWorkbenchStore(
     (state) => state.selectedRaidRewardTableId
+  );
+  const selectedRaidBonusRewardTableId = useWorkbenchStore(
+    (state) => state.selectedRaidBonusRewardTableId
+  );
+  const selectedBehaviorEntryId = useWorkbenchStore(
+    (state) => state.selectedBehaviorEntryId
   );
   const selectedPlacementObjectId = useWorkbenchStore(
     (state) => state.selectedPlacementObjectId
@@ -1139,6 +1197,8 @@ export function App({
   const setMovesSearchText = useWorkbenchStore((state) => state.setMovesSearchText);
   const setMovesWorkflow = useWorkbenchStore((state) => state.setMovesWorkflow);
   const setOpenProject = useWorkbenchStore((state) => state.setOpenProject);
+  const setBehaviorSearchText = useWorkbenchStore((state) => state.setBehaviorSearchText);
+  const setBehaviorWorkflow = useWorkbenchStore((state) => state.setBehaviorWorkflow);
   const setPlacementSearchText = useWorkbenchStore((state) => state.setPlacementSearchText);
   const setPlacementWorkflow = useWorkbenchStore((state) => state.setPlacementWorkflow);
   const setPokemonSearchText = useWorkbenchStore((state) => state.setPokemonSearchText);
@@ -1149,6 +1209,12 @@ export function App({
   const setRaidBattlesWorkflow = useWorkbenchStore((state) => state.setRaidBattlesWorkflow);
   const setRaidRewardSearchText = useWorkbenchStore((state) => state.setRaidRewardSearchText);
   const setRaidRewardsWorkflow = useWorkbenchStore((state) => state.setRaidRewardsWorkflow);
+  const setRaidBonusRewardSearchText = useWorkbenchStore(
+    (state) => state.setRaidBonusRewardSearchText
+  );
+  const setRaidBonusRewardsWorkflow = useWorkbenchStore(
+    (state) => state.setRaidBonusRewardsWorkflow
+  );
   const setRoyalCandySearchText = useWorkbenchStore((state) => state.setRoyalCandySearchText);
   const setRoyalCandyWorkflow = useWorkbenchStore((state) => state.setRoyalCandyWorkflow);
   const setSpreadsheetImportPreview = useWorkbenchStore(
@@ -1166,8 +1232,14 @@ export function App({
   const setSelectedRaidRewardTableId = useWorkbenchStore(
     (state) => state.setSelectedRaidRewardTableId
   );
+  const setSelectedRaidBonusRewardTableId = useWorkbenchStore(
+    (state) => state.setSelectedRaidBonusRewardTableId
+  );
   const setSelectedRaidBattleTableId = useWorkbenchStore(
     (state) => state.setSelectedRaidBattleTableId
+  );
+  const setSelectedBehaviorEntryId = useWorkbenchStore(
+    (state) => state.setSelectedBehaviorEntryId
   );
   const setSelectedPlacementObjectId = useWorkbenchStore(
     (state) => state.setSelectedPlacementObjectId
@@ -1215,6 +1287,7 @@ export function App({
   const setSelectedShopId = useWorkbenchStore((state) => state.setSelectedShopId);
   const setSelectedTextKey = useWorkbenchStore((state) => state.setSelectedTextKey);
   const setSelectedTrainerId = useWorkbenchStore((state) => state.setSelectedTrainerId);
+  const setSelectedGame = useWorkbenchStore((state) => state.setSelectedGame);
   const setShopSearchText = useWorkbenchStore((state) => state.setShopSearchText);
   const setShopsWorkflow = useWorkbenchStore((state) => state.setShopsWorkflow);
   const setTextSearchText = useWorkbenchStore((state) => state.setTextSearchText);
@@ -1222,7 +1295,9 @@ export function App({
   const setTrainerSearchText = useWorkbenchStore((state) => state.setTrainerSearchText);
   const setTrainersWorkflow = useWorkbenchStore((state) => state.setTrainersWorkflow);
   const setWorkflows = useWorkbenchStore((state) => state.setWorkflows);
+  const clearSelectedGame = useWorkbenchStore((state) => state.clearSelectedGame);
   const health = openProject?.health ?? null;
+  const selectedGame = draftPaths.selectedGame;
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
   const activeProjectStateLabel = getProjectStateLabel(health, projectStatus, activeSection);
   const isBusy = projectStatus === 'opening' || projectStatus === 'validating';
@@ -1256,8 +1331,12 @@ export function App({
   const [isRaidBattleUpdating, setIsRaidBattleUpdating] = useState(false);
   const [isRaidRewardsLoading, setIsRaidRewardsLoading] = useState(false);
   const [isRaidRewardUpdating, setIsRaidRewardUpdating] = useState(false);
+  const [isRaidBonusRewardsLoading, setIsRaidBonusRewardsLoading] = useState(false);
+  const [isRaidBonusRewardUpdating, setIsRaidBonusRewardUpdating] = useState(false);
   const [isPlacementLoading, setIsPlacementLoading] = useState(false);
   const [isPlacementUpdating, setIsPlacementUpdating] = useState(false);
+  const [isBehaviorLoading, setIsBehaviorLoading] = useState(false);
+  const [isBehaviorUpdating, setIsBehaviorUpdating] = useState(false);
   const [isFlagworkSaveLoading, setIsFlagworkSaveLoading] = useState(false);
   const [isExeFsPatchLoading, setIsExeFsPatchLoading] = useState(false);
   const [isExeFsPatchStaging, setIsExeFsPatchStaging] = useState(false);
@@ -1265,6 +1344,7 @@ export function App({
   const [isRoyalCandyStaging, setIsRoyalCandyStaging] = useState(false);
   const [isSpreadsheetImportLoading, setIsSpreadsheetImportLoading] = useState(false);
   const [isSpreadsheetImportPreviewing, setIsSpreadsheetImportPreviewing] = useState(false);
+  const [isOutputRootCreating, setIsOutputRootCreating] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -1285,6 +1365,7 @@ export function App({
     message: 'Not checked'
   });
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
+  const [editSessionSection, setEditSessionSection] = useState<WorkbenchSection | null>(null);
   const [editorDraftDirtySections, setEditorDraftDirtySections] = useState<Set<WorkbenchSection>>(
     () => new Set()
   );
@@ -1318,6 +1399,12 @@ export function App({
     !isSessionValidating;
   const activeSectionIsEditor = groupedWorkflowSectionIds.has(activeSection);
   const activeEditorHasLocalDrafts = editorDraftDirtySections.has(activeSection);
+  const activeSectionOwnsEditSession =
+    editSession !== null && editSessionSection !== null && editSessionSection === activeSection;
+  const getEditSessionForSection = useCallback(
+    (section: WorkbenchSection) => (editSessionSection === section ? editSession : null),
+    [editSession, editSessionSection]
+  );
 
   const registerEditorDraftDirty = useCallback(
     (section: WorkbenchSection, isDirty: boolean) => {
@@ -1349,10 +1436,12 @@ export function App({
       giftPokemonWorkflow: null,
       itemsWorkflow: null,
       movesWorkflow: null,
+      behaviorWorkflow: null,
       placementWorkflow: null,
       pokemonWorkflow: null,
       raidBattlesWorkflow: null,
       raidRewardsWorkflow: null,
+      raidBonusRewardsWorkflow: null,
       rentalPokemonWorkflow: null,
       royalCandyWorkflow: null,
       shopsWorkflow: null,
@@ -1370,6 +1459,7 @@ export function App({
   const clearPendingEditState = useCallback(() => {
     editSessionRef.current = null;
     setEditSession(null);
+    setEditSessionSection(null);
     setChangePlan(null);
     setApplyResult(null);
     setEditValidationDiagnostics([]);
@@ -1414,17 +1504,35 @@ export function App({
         return;
       }
 
-      if (
-        destination !== 'changes' &&
-        activeSectionIsEditor &&
-        activeEditorHasLocalDrafts
-      ) {
-        setExitPrompt({
-          destination,
-          kind: 'editorSwitch',
-          mode: 'confirm'
-        });
-        return;
+      if (destination !== 'changes') {
+        const destinationOwnsEditSession =
+          editSession !== null && editSessionSection !== null && destination === editSessionSection;
+        const isLeavingActiveEditSession =
+          editSession !== null &&
+          (
+            activeSectionOwnsEditSession ||
+            (activeSection === 'changes' && !destinationOwnsEditSession) ||
+            (activeSectionIsEditor && !destinationOwnsEditSession)
+          );
+
+        if (isLeavingActiveEditSession) {
+          setExitPrompt({
+            destination,
+            discardPendingSession: true,
+            kind: 'editorSwitch',
+            mode: 'confirm'
+          });
+          return;
+        }
+
+        if (activeSectionIsEditor && activeEditorHasLocalDrafts) {
+          setExitPrompt({
+            destination,
+            kind: 'editorSwitch',
+            mode: 'confirm'
+          });
+          return;
+        }
       }
 
       setActiveSection(destination);
@@ -1433,6 +1541,9 @@ export function App({
       activeEditorHasLocalDrafts,
       activeSection,
       activeSectionIsEditor,
+      activeSectionOwnsEditSession,
+      editSession,
+      editSessionSection,
       setActiveSection
     ]
   );
@@ -1672,6 +1783,81 @@ export function App({
       await desktopServices.openPath(outputRootPath);
     } catch (error) {
       setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not open output root.'));
+    }
+  };
+
+  const handleCreateOutputRootFolder = async () => {
+    if (!selectedGame) {
+      return;
+    }
+
+    if (!desktopServices.isAvailable) {
+      setBridgeDiagnostics([
+        {
+          domain: 'desktop',
+          message: 'Folder creation is only available in the desktop app.',
+          severity: 'warning'
+        }
+      ]);
+      return;
+    }
+
+    if (draftPaths.outputRootPath.trim().length > 0) {
+      return;
+    }
+
+    const outputRootPath = resolveOutputRootCreationPath(draftPaths, selectedGame);
+    if (!outputRootPath) {
+      setBridgeDiagnostics([
+        {
+          domain: 'desktop',
+          message:
+            'Base RomFS and Base ExeFS must be sibling folders before creating an output root folder.',
+          severity: 'error'
+        }
+      ]);
+      return;
+    }
+
+    setIsOutputRootCreating(true);
+    setProjectStatus('validating');
+    setBridgeDiagnostics([]);
+
+    try {
+      const validationPaths = {
+        ...toProjectPaths(draftPaths),
+        outputRootPath: null
+      };
+      const validationResponse = await bridge.validateProject({ paths: validationPaths });
+      setProjectHealth(validationResponse.health);
+
+      if (!validationResponse.health.canOpenReadOnlyWorkflows) {
+        setBridgeDiagnostics([
+          {
+            domain: 'project',
+            message: `Output root creation requires Base RomFS and Base ExeFS to validate for ${gameDefinitions[selectedGame].label}.`,
+            severity: 'error'
+          }
+        ]);
+        return;
+      }
+
+      await desktopServices.createDirectory(outputRootPath);
+      setDraftPath('outputRootPath', outputRootPath);
+
+      const nextPaths = {
+        ...validationPaths,
+        outputRootPath
+      };
+      const nextResponse = await bridge.validateProject({ paths: nextPaths });
+      setProjectHealth(nextResponse.health);
+      setLazyLoadedWorkflowSections(new Set());
+      await refreshWorkflows(nextPaths, nextResponse.health.canOpenEditableWorkflows);
+    } catch (error) {
+      setProjectStatus('idle');
+      setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not create the output root folder.'));
+    } finally {
+      setIsOutputRootCreating(false);
     }
   };
 
@@ -1956,6 +2142,22 @@ export function App({
     }
   };
 
+  const handleOpenRaidBonusRewardsWorkflow = async () => {
+    setIsRaidBonusRewardsLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadRaidBonusRewardsWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setRaidBonusRewardsWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRaidBonusRewardsLoading(false);
+    }
+  };
+
   const handleOpenPlacementWorkflow = async () => {
     setIsPlacementLoading(true);
     setBridgeDiagnostics([]);
@@ -1967,6 +2169,20 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsPlacementLoading(false);
+    }
+  };
+
+  const handleOpenBehaviorWorkflow = async () => {
+    setIsBehaviorLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadBehaviorWorkflow({ paths: toProjectPaths(draftPaths) });
+      setBehaviorWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsBehaviorLoading(false);
     }
   };
 
@@ -2017,6 +2233,7 @@ export function App({
       });
       setExeFsPatchWorkflow(response.workflow);
       setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
       setEditValidationDiagnostics(response.diagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2060,6 +2277,7 @@ export function App({
       });
       setRoyalCandyWorkflow(response.workflow);
       setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
       setEditValidationDiagnostics(response.diagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2186,10 +2404,22 @@ export function App({
           void handleOpenRaidRewardsWorkflow();
         }
         break;
+      case 'raidBonusRewards':
+        if (!raidBonusRewardsWorkflow && !isRaidBonusRewardsLoading) {
+          markLazyLoadStarted();
+          void handleOpenRaidBonusRewardsWorkflow();
+        }
+        break;
       case 'placement':
         if (!placementWorkflow && !isPlacementLoading) {
           markLazyLoadStarted();
           void handleOpenPlacementWorkflow();
+        }
+        break;
+      case 'behavior':
+        if (!behaviorWorkflow && !isBehaviorLoading) {
+          markLazyLoadStarted();
+          void handleOpenBehaviorWorkflow();
         }
         break;
       case 'flagworkSave':
@@ -2236,10 +2466,12 @@ export function App({
     isTradePokemonLoading,
     isStaticEncountersLoading,
     isItemsLoading,
+    isBehaviorLoading,
     isMovesLoading,
     isPlacementLoading,
     isPokemonLoading,
     isRaidBattlesLoading,
+    isRaidBonusRewardsLoading,
     isRaidRewardsLoading,
     isRoyalCandyLoading,
     isShopsLoading,
@@ -2249,9 +2481,11 @@ export function App({
     itemsWorkflow,
     lazyLoadedWorkflowSections,
     movesWorkflow,
+    behaviorWorkflow,
     placementWorkflow,
     pokemonWorkflow,
     raidBattlesWorkflow,
+    raidBonusRewardsWorkflow,
     raidRewardsWorkflow,
     rentalPokemonWorkflow,
     royalCandyWorkflow,
@@ -2279,6 +2513,7 @@ export function App({
       setSpreadsheetImportWorkflow(response.workflow);
       setSpreadsheetImportPreview(response.preview);
       setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
       setEditValidationDiagnostics(response.diagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2300,6 +2535,7 @@ export function App({
     try {
       const response = await bridge.startEditSession({ paths: toProjectPaths(draftPaths) });
       setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -2310,6 +2546,45 @@ export function App({
   const handleCancelEditSession = () => {
     requestCancelEditSession(() => setBridgeDiagnostics([]));
   };
+
+  const handleRemovePendingEdit = useCallback(
+    (editIndex: number) => {
+      if (!editSession || editIndex < 0 || editIndex >= editSession.pendingEdits.length) {
+        return;
+      }
+
+      const nextPendingEdits = editSession.pendingEdits.filter((_, index) => index !== editIndex);
+      if (nextPendingEdits.length === 0) {
+        clearPendingEditState();
+        clearLoadedWorkflowData();
+        return;
+      }
+
+      const nextSession: EditSession = {
+        ...editSession,
+        hasPendingChanges: true,
+        pendingEdits: nextPendingEdits
+      };
+
+      editSessionRef.current = nextSession;
+      setEditSession(nextSession);
+      setEditValidationDiagnostics([]);
+      setChangePlan(null);
+      setApplyResult(null);
+      setValidatedEditSessionSignature(null);
+      setChangePlanSessionSignature(null);
+      setAppliedChangePlan(null);
+    },
+    [
+      clearLoadedWorkflowData,
+      clearPendingEditState,
+      editSession,
+      setApplyResult,
+      setChangePlan,
+      setEditSession,
+      setEditValidationDiagnostics
+    ]
+  );
 
   const handleUpdateItemField = async (itemId: number, field: string, value: string) => {
     setIsItemUpdating(true);
@@ -3140,6 +3415,7 @@ export function App({
   };
 
   const handleOpenShopItem = (itemId: number) => {
+    clearPendingEditState();
     setSelectedItemId(itemId);
     setItemSearchText('');
     setActiveSection('items');
@@ -3220,86 +3496,6 @@ export function App({
     }
   };
 
-  const handleApplyEncounterNormalToAllWeather = async (
-    sourceTableId: string,
-    targetTableIds: string[]
-  ) => {
-    if (!encountersWorkflow || targetTableIds.length === 0) {
-      return;
-    }
-
-    const sourceTable = encountersWorkflow.tables.find((table) => table.tableId === sourceTableId);
-    if (!sourceTable) {
-      return;
-    }
-
-    const sourceSlots = sourceTable.slots
-      .filter((slot) => slot.slot >= 1 && slot.slot <= 7)
-      .map((slot) => ({
-        form: slot.form.toString(),
-        probability: slot.weight.toString(),
-        slot: slot.slot,
-        speciesId: slot.speciesId.toString()
-      }));
-
-    if (sourceSlots.length === 0) {
-      return;
-    }
-
-    setIsEncounterUpdating(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-
-    try {
-      let nextSession = editSession;
-      let nextWorkflow = encountersWorkflow;
-      let nextDiagnostics: ApiDiagnostic[] = [];
-
-      for (const targetTableId of targetTableIds) {
-        const targetTable = nextWorkflow?.tables.find((table) => table.tableId === targetTableId);
-        if (!targetTable) {
-          continue;
-        }
-
-        for (const sourceSlot of sourceSlots) {
-          if (!targetTable.slots.some((slot) => slot.slot === sourceSlot.slot)) {
-            continue;
-          }
-
-          const changes = [
-            { field: encounterSpeciesFieldName, value: sourceSlot.speciesId },
-            { field: encounterFormFieldName, value: sourceSlot.form },
-            { field: encounterProbabilityFieldName, value: sourceSlot.probability }
-          ];
-
-          for (const change of changes) {
-            const response = await bridge.updateEncounterSlotField({
-              field: change.field,
-              paths: toProjectPaths(draftPaths),
-              session: nextSession,
-              slot: sourceSlot.slot,
-              tableId: targetTableId,
-              value: change.value
-            });
-            nextWorkflow = response.workflow;
-            nextSession = response.session;
-            nextDiagnostics = response.diagnostics;
-          }
-        }
-      }
-
-      if (nextWorkflow) {
-        setEncountersWorkflow(nextWorkflow);
-      }
-      setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
-    } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsEncounterUpdating(false);
-    }
-  };
-
   const handleUpdateRaidRewardField = async (
     tableId: string,
     slot: number,
@@ -3372,6 +3568,81 @@ export function App({
       return false;
     } finally {
       setIsRaidRewardUpdating(false);
+    }
+  };
+
+  const handleUpdateRaidBonusRewardField = async (
+    tableId: string,
+    slot: number,
+    field: string,
+    value: string
+  ) => {
+    setIsRaidBonusRewardUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateRaidBonusRewardField({
+        field,
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        slot,
+        tableId,
+        value
+      });
+      setRaidBonusRewardsWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsRaidBonusRewardUpdating(false);
+    }
+  };
+
+  const handleUpdateRaidBonusRewardFields = async (
+    tableId: string,
+    slot: number,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return false;
+    }
+
+    setIsRaidBonusRewardUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = raidBonusRewardsWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateRaidBonusRewardField({
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          slot,
+          tableId,
+          value: change.value
+        });
+        nextWorkflow = response.workflow;
+        nextSession = response.session;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setRaidBonusRewardsWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+      return true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsRaidBonusRewardUpdating(false);
     }
   };
 
@@ -3521,6 +3792,50 @@ export function App({
     }
   };
 
+  const handleUpdateBehaviorEntryFields = async (
+    entryId: string,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return false;
+    }
+
+    setIsBehaviorUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = behaviorWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const change of changes) {
+        const response = await bridge.updateBehaviorEntryField({
+          entryId,
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          value: change.value
+        });
+        nextWorkflow = response.workflow;
+        nextSession = response.session;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setBehaviorWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+      return true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsBehaviorUpdating(false);
+    }
+  };
+
   const handleValidateEditSession = async () => {
     if (!editSession) {
       return;
@@ -3645,6 +3960,7 @@ export function App({
         setAppliedChangePlan(visibleChangePlan);
         editSessionRef.current = null;
         setEditSession(null);
+        setEditSessionSection(null);
         setEditValidationDiagnostics([]);
         setValidatedEditSessionSignature(null);
         setChangePlanSessionSignature(null);
@@ -3792,6 +4108,14 @@ export function App({
         }
       );
     }
+    if (raidBonusRewardsWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadRaidBonusRewardsWorkflow({ paths });
+          setRaidBonusRewardsWorkflow(response.workflow);
+        }
+      );
+    }
     if (placementWorkflow) {
       reloadTasks.push(
         async () => {
@@ -3860,6 +4184,7 @@ export function App({
 
       if (!hasApplyErrors) {
         setEditSession(null);
+        setEditSessionSection(null);
         setChangePlan(null);
         setValidatedEditSessionSignature(null);
         setChangePlanSessionSignature(null);
@@ -3888,6 +4213,41 @@ export function App({
     const response = await bridge.listWorkflows({ paths });
     setWorkflows(response.workflows);
   };
+
+  const handleSelectGame = useCallback(
+    (nextGame: ProjectGame) => {
+      clearPendingEditState();
+      clearLoadedWorkflowData();
+      setBridgeDiagnostics([]);
+      setExpandedWorkflowGroups(new Set());
+      setProjectStatus('idle');
+      setSelectedGame(nextGame);
+    },
+    [
+      clearLoadedWorkflowData,
+      clearPendingEditState,
+      setProjectStatus,
+      setSelectedGame
+    ]
+  );
+
+  const handleChangeGame = useCallback(() => {
+    clearPendingEditState();
+    clearLoadedWorkflowData();
+    setBridgeDiagnostics([]);
+    setExpandedWorkflowGroups(new Set());
+    setProjectStatus('idle');
+    clearSelectedGame();
+  }, [
+    clearLoadedWorkflowData,
+    clearPendingEditState,
+    clearSelectedGame,
+    setProjectStatus
+  ]);
+
+  if (!selectedGame) {
+    return <GameSelectionPage onSelectGame={handleSelectGame} />;
+  }
 
   const canShowWorkflowNavigation = Boolean(health?.canOpenEditableWorkflows);
 
@@ -4026,12 +4386,16 @@ export function App({
               isDesktopAvailable={desktopServices.isAvailable}
               bridgeDiagnostics={bridgeDiagnostics}
               isBusy={isBusy}
+              isOutputRootCreating={isOutputRootCreating}
+              onChangeGame={handleChangeGame}
+              onCreateOutputRootFolder={handleCreateOutputRootFolder}
               onOpenOutputRoot={handleOpenOutputRoot}
               onPickProjectPath={handlePickProjectPath}
               onSetDraftPath={setDraftPath}
               onValidateProject={handleValidateProject}
               pendingEditCount={pendingEditCount}
               projectStatus={projectStatus}
+              selectedGame={selectedGame}
             />
           ) : null}
           {activeSection === 'workflows' ? (
@@ -4046,7 +4410,9 @@ export function App({
               isEncountersLoading={isEncountersLoading}
               isRaidBattlesLoading={isRaidBattlesLoading}
               isRaidRewardsLoading={isRaidRewardsLoading}
+              isRaidBonusRewardsLoading={isRaidBonusRewardsLoading}
               isPlacementLoading={isPlacementLoading}
+              isBehaviorLoading={isBehaviorLoading}
               isFlagworkSaveLoading={isFlagworkSaveLoading}
               isGiftPokemonLoading={isGiftPokemonLoading}
               isTradePokemonLoading={isTradePokemonLoading}
@@ -4068,8 +4434,10 @@ export function App({
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
               onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
               onOpenPlacementWorkflow={handleOpenPlacementWorkflow}
+              onOpenBehaviorWorkflow={handleOpenBehaviorWorkflow}
               onOpenRaidBattlesWorkflow={handleOpenRaidBattlesWorkflow}
               onOpenRaidRewardsWorkflow={handleOpenRaidRewardsWorkflow}
+              onOpenRaidBonusRewardsWorkflow={handleOpenRaidBonusRewardsWorkflow}
               onOpenRoyalCandyWorkflow={handleOpenRoyalCandyWorkflow}
               onOpenShopsWorkflow={handleOpenShopsWorkflow}
               onOpenSpreadsheetImportWorkflow={handleOpenSpreadsheetImportWorkflow}
@@ -4091,7 +4459,7 @@ export function App({
                 onUpdateItemFields={handleUpdateItemFields}
                 searchText={itemSearchText}
                 selectedItemId={selectedItemId}
-                editSession={editSession}
+                editSession={getEditSessionForSection('items')}
                 isEditStarting={isEditStarting}
                 isItemUpdating={isItemUpdating}
                 workflow={itemsWorkflow}
@@ -4103,7 +4471,7 @@ export function App({
               <WorkflowLoadingPanel label="Pokemon" />
             ) : (
               <PokemonSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('pokemon')}
                 isEditStarting={isEditStarting}
                 isPokemonUpdating={isPokemonUpdating}
                 onSearchChange={setPokemonSearchText}
@@ -4124,7 +4492,7 @@ export function App({
               <WorkflowLoadingPanel label="Moves" />
             ) : (
               <MovesSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('moves')}
                 isEditStarting={isEditStarting}
                 isMoveUpdating={isMoveUpdating}
                 onSearchChange={setMovesSearchText}
@@ -4143,7 +4511,7 @@ export function App({
               <WorkflowLoadingPanel label="Text and Dialogue Map" />
             ) : (
               <TextSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('text')}
                 isEditStarting={isEditStarting}
                 isTextUpdating={isTextUpdating}
                 onSearchChange={setTextSearchText}
@@ -4161,7 +4529,7 @@ export function App({
               <WorkflowLoadingPanel label="Trainers" />
             ) : (
               <TrainersSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('trainers')}
                 isEditStarting={isEditStarting}
                 isTrainerUpdating={isTrainerUpdating}
                 onSearchChange={setTrainerSearchText}
@@ -4180,7 +4548,7 @@ export function App({
               <WorkflowLoadingPanel label="Gift Pokemon" />
             ) : (
               <GiftPokemonSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('giftPokemon')}
                 isEditStarting={isEditStarting}
                 isGiftPokemonUpdating={isGiftPokemonUpdating}
                 onSearchChange={setGiftPokemonSearchText}
@@ -4199,7 +4567,7 @@ export function App({
               <WorkflowLoadingPanel label="Trade Pokemon" />
             ) : (
               <TradePokemonSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('tradePokemon')}
                 isEditStarting={isEditStarting}
                 isTradePokemonUpdating={isTradePokemonUpdating}
                 onSearchChange={setTradePokemonSearchText}
@@ -4218,7 +4586,7 @@ export function App({
               <WorkflowLoadingPanel label="Static Encounters" />
             ) : (
               <StaticEncountersSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('staticEncounters')}
                 isEditStarting={isEditStarting}
                 isStaticEncounterUpdating={isStaticEncounterUpdating}
                 onSearchChange={setStaticEncounterSearchText}
@@ -4237,7 +4605,7 @@ export function App({
               <WorkflowLoadingPanel label="Rental Pokemon" />
             ) : (
               <RentalPokemonSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('rentalPokemon')}
                 isEditStarting={isEditStarting}
                 isRentalPokemonUpdating={isRentalPokemonUpdating}
                 onSearchChange={setRentalPokemonSearchText}
@@ -4256,7 +4624,7 @@ export function App({
               <WorkflowLoadingPanel label="Dynamax Adventures" />
             ) : (
               <DynamaxAdventuresSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('dynamaxAdventures')}
                 isDynamaxAdventureUpdating={isDynamaxAdventureUpdating}
                 isEditStarting={isEditStarting}
                 onSearchChange={setDynamaxAdventureSearchText}
@@ -4275,7 +4643,7 @@ export function App({
               <WorkflowLoadingPanel label="Shops" />
             ) : (
               <ShopsSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('shops')}
                 isEditStarting={isEditStarting}
                 isItemUpdating={isItemUpdating}
                 isShopUpdating={isShopUpdating}
@@ -4295,10 +4663,9 @@ export function App({
               <WorkflowLoadingPanel label="Wild Encounters" />
             ) : (
               <EncountersSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('encounters')}
                 isEditStarting={isEditStarting}
                 isEncounterUpdating={isEncounterUpdating}
-                onApplyNormalToAllWeather={handleApplyEncounterNormalToAllWeather}
                 onSearchChange={setEncounterSearchText}
                 onSelectTable={setSelectedEncounterTableId}
                 onStartEditSession={handleStartEditSession}
@@ -4315,7 +4682,9 @@ export function App({
               <WorkflowLoadingPanel label="Raid Rewards" />
             ) : (
               <RaidRewardsSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('raidRewards')}
+                emptyCopy="Load Raid Rewards to review reward tables."
+                headingId="raid-rewards-heading"
                 isEditStarting={isEditStarting}
                 isRaidRewardUpdating={isRaidRewardUpdating}
                 onSearchChange={setRaidRewardSearchText}
@@ -4323,9 +4692,38 @@ export function App({
                 onStartEditSession={handleStartEditSession}
                 onUpdateRaidRewardField={handleUpdateRaidRewardField}
                 onUpdateRaidRewardFields={handleUpdateRaidRewardFields}
+                pendingDomain="workflow.raidRewards"
                 searchText={raidRewardSearchText}
+                searchPlaceholder="Search raid reward tables..."
+                sectionId="raidRewards"
                 selectedTableId={selectedRaidRewardTableId}
+                title="Raid Rewards"
                 workflow={raidRewardsWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'raidBonusRewards' ? (
+            isRaidBonusRewardsLoading && !raidBonusRewardsWorkflow ? (
+              <WorkflowLoadingPanel label="Raid Bonus Rewards" />
+            ) : (
+              <RaidRewardsSection
+                editSession={getEditSessionForSection('raidBonusRewards')}
+                emptyCopy="Load Raid Bonus Rewards to review bonus reward tables."
+                headingId="raid-bonus-rewards-heading"
+                isEditStarting={isEditStarting}
+                isRaidRewardUpdating={isRaidBonusRewardUpdating}
+                onSearchChange={setRaidBonusRewardSearchText}
+                onSelectTable={setSelectedRaidBonusRewardTableId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateRaidRewardField={handleUpdateRaidBonusRewardField}
+                onUpdateRaidRewardFields={handleUpdateRaidBonusRewardFields}
+                pendingDomain="workflow.raidBonusRewards"
+                searchText={raidBonusRewardSearchText}
+                searchPlaceholder="Search raid bonus reward tables..."
+                sectionId="raidBonusRewards"
+                selectedTableId={selectedRaidBonusRewardTableId}
+                title="Raid Bonus Rewards"
+                workflow={raidBonusRewardsWorkflow}
               />
             )
           ) : null}
@@ -4334,7 +4732,7 @@ export function App({
               <WorkflowLoadingPanel label="Raid Battles" />
             ) : (
               <RaidBattlesSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('raidBattles')}
                 isEditStarting={isEditStarting}
                 isRaidBattleUpdating={isRaidBattleUpdating}
                 onSearchChange={setRaidBattleSearchText}
@@ -4353,7 +4751,7 @@ export function App({
               <WorkflowLoadingPanel label="Placement" />
             ) : (
               <PlacementSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('placement')}
                 isEditStarting={isEditStarting}
                 isPlacementUpdating={isPlacementUpdating}
                 onSearchChange={setPlacementSearchText}
@@ -4364,6 +4762,24 @@ export function App({
                 searchText={placementSearchText}
                 selectedObjectId={selectedPlacementObjectId}
                 workflow={placementWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'behavior' ? (
+            isBehaviorLoading && !behaviorWorkflow ? (
+              <WorkflowLoadingPanel label="Behavior" />
+            ) : (
+              <BehaviorSection
+                editSession={getEditSessionForSection('behavior')}
+                isBehaviorUpdating={isBehaviorUpdating}
+                isEditStarting={isEditStarting}
+                onSearchChange={setBehaviorSearchText}
+                onSelectEntry={setSelectedBehaviorEntryId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateBehaviorEntryFields={handleUpdateBehaviorEntryFields}
+                searchText={behaviorSearchText}
+                selectedEntryId={selectedBehaviorEntryId}
+                workflow={behaviorWorkflow}
               />
             )
           ) : null}
@@ -4405,7 +4821,7 @@ export function App({
             ) : (
               <RoyalCandySection
                 changePlan={changePlan}
-                editSession={editSession}
+                editSession={getEditSessionForSection('royalCandy')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isStaging={isRoyalCandyStaging}
@@ -4427,7 +4843,7 @@ export function App({
               <WorkflowLoadingPanel label="Spreadsheet Import" />
             ) : (
               <SpreadsheetImportSection
-                editSession={editSession}
+                editSession={getEditSessionForSection('spreadsheetImport')}
                 isPreviewing={isSpreadsheetImportPreviewing}
                 onPreviewImport={handlePreviewSpreadsheetImport}
                 onSearchChange={setSpreadsheetImportSearchText}
@@ -4454,11 +4870,13 @@ export function App({
                 exeFsPatchWorkflow,
                 flagworkSaveWorkflow,
                 giftPokemonWorkflow,
+                behaviorWorkflow,
                 itemsWorkflow,
                 movesWorkflow,
                 placementWorkflow,
                 pokemonWorkflow,
                 raidBattlesWorkflow,
+                raidBonusRewardsWorkflow,
                 raidRewardsWorkflow,
                 rentalPokemonWorkflow,
                 royalCandyWorkflow,
@@ -4473,6 +4891,7 @@ export function App({
               isChangePlanCreating={isChangePlanCreating}
               isSessionValidating={isSessionValidating}
               onCancelEditSession={handleCancelEditSession}
+              onRemovePendingEdit={handleRemovePendingEdit}
               onSaveValidatedChanges={handleSaveValidatedChanges}
               onValidateEditSession={handleValidateEditSession}
             />
@@ -4511,6 +4930,39 @@ export function App({
     </main>
     </EditorDraftDirtyContext.Provider>
     </CancelEditSessionContext.Provider>
+  );
+}
+
+function GameSelectionPage({
+  onSelectGame
+}: {
+  onSelectGame: (selectedGame: ProjectGame) => void;
+}) {
+  return (
+    <main className="game-selection-shell">
+      <section aria-labelledby="game-selection-heading" className="game-selection-panel">
+        <img alt="" aria-hidden="true" className="game-selection-logo" src={kmLogoUrl} />
+        <h1 id="game-selection-heading">Which game are you using?</h1>
+        <div className="game-choice-actions">
+          {(['sword', 'shield'] as const).map((game) => {
+            const definition = gameDefinitions[game];
+            const Icon = definition.icon;
+
+            return (
+              <button
+                className="game-choice-button"
+                key={game}
+                onClick={() => onSelectGame(game)}
+                type="button"
+              >
+                <Icon aria-hidden="true" size={24} />
+                <span>{definition.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+    </main>
   );
 }
 
@@ -4587,26 +5039,36 @@ function HealthSection({
   health,
   isBusy,
   isDesktopAvailable,
+  isOutputRootCreating,
+  onChangeGame,
+  onCreateOutputRootFolder,
   onOpenOutputRoot,
   onPickProjectPath,
   onSetDraftPath,
   onValidateProject,
   pendingEditCount,
-  projectStatus
+  projectStatus,
+  selectedGame
 }: {
   bridgeDiagnostics: ApiDiagnostic[];
   draftPaths: ProjectPathDraft;
   health: ProjectHealth | null;
   isBusy: boolean;
   isDesktopAvailable: boolean;
+  isOutputRootCreating: boolean;
+  onChangeGame: () => void;
+  onCreateOutputRootFolder: () => void;
   onOpenOutputRoot: () => void;
   onPickProjectPath: (pathField: ProjectPathField) => void;
-  onSetDraftPath: (field: keyof ProjectPathDraft, value: string) => void;
+  onSetDraftPath: (field: ProjectPathFieldName, value: string) => void;
   onValidateProject: () => void;
   pendingEditCount: number;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
+  selectedGame: ProjectGame;
 }) {
   const outputRootPath = draftPaths.outputRootPath.trim();
+  const gameDefinition = gameDefinitions[selectedGame];
+  const GameIcon = gameDefinition.icon;
 
   return (
     <>
@@ -4614,6 +5076,23 @@ function HealthSection({
         <div className="panel-heading">
           <FolderOpen aria-hidden="true" size={18} />
           <h2 id="project-gate-heading">Project Paths</h2>
+        </div>
+
+        <div className="selected-game-banner">
+          <div className="selected-game-label">
+            <GameIcon aria-hidden="true" size={22} />
+            <span>{gameDefinition.title}</span>
+          </div>
+          <code>{gameDefinition.titleId}</code>
+          <button
+            className="secondary-button"
+            disabled={isBusy || pendingEditCount > 0}
+            onClick={onChangeGame}
+            type="button"
+          >
+            <ArrowLeftRight aria-hidden="true" size={18} />
+            <span>Change Game</span>
+          </button>
         </div>
 
         <div className="path-form">
@@ -4677,6 +5156,22 @@ function HealthSection({
             <ExternalLink aria-hidden="true" size={18} />
             <span>Open Output Root</span>
           </button>
+          <button
+            className="secondary-button"
+            disabled={
+              !isDesktopAvailable ||
+              isBusy ||
+              isOutputRootCreating ||
+              outputRootPath.length > 0
+            }
+            onClick={onCreateOutputRootFolder}
+            type="button"
+          >
+            <Plus aria-hidden="true" size={18} />
+            <span>
+              {isOutputRootCreating ? 'Creating Output Root Folder' : 'Create Output Root Folder'}
+            </span>
+          </button>
         </div>
       </section>
 
@@ -4718,7 +5213,9 @@ function WorkflowsSection({
   isTrainersLoading,
   isRaidBattlesLoading,
   isRaidRewardsLoading,
+  isRaidBonusRewardsLoading,
   isPlacementLoading,
+  isBehaviorLoading,
   isFlagworkSaveLoading,
   isGiftPokemonLoading,
   isTradePokemonLoading,
@@ -4739,8 +5236,10 @@ function WorkflowsSection({
   onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
   onOpenPlacementWorkflow,
+  onOpenBehaviorWorkflow,
   onOpenRaidBattlesWorkflow,
   onOpenRaidRewardsWorkflow,
+  onOpenRaidBonusRewardsWorkflow,
   onOpenRoyalCandyWorkflow,
   onOpenShopsWorkflow,
   onOpenSpreadsheetImportWorkflow,
@@ -4760,7 +5259,9 @@ function WorkflowsSection({
   isTrainersLoading: boolean;
   isRaidBattlesLoading: boolean;
   isRaidRewardsLoading: boolean;
+  isRaidBonusRewardsLoading: boolean;
   isPlacementLoading: boolean;
+  isBehaviorLoading: boolean;
   isFlagworkSaveLoading: boolean;
   isGiftPokemonLoading: boolean;
   isTradePokemonLoading: boolean;
@@ -4781,8 +5282,10 @@ function WorkflowsSection({
   onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
   onOpenPlacementWorkflow: () => void;
+  onOpenBehaviorWorkflow: () => void;
   onOpenRaidBattlesWorkflow: () => void;
   onOpenRaidRewardsWorkflow: () => void;
+  onOpenRaidBonusRewardsWorkflow: () => void;
   onOpenRoyalCandyWorkflow: () => void;
   onOpenShopsWorkflow: () => void;
   onOpenSpreadsheetImportWorkflow: () => void;
@@ -4831,7 +5334,9 @@ function WorkflowsSection({
           const isEncountersWorkflow = definition.id === 'encounters';
           const isRaidBattlesWorkflow = definition.id === 'raidBattles';
           const isRaidRewardsWorkflow = definition.id === 'raidRewards';
+          const isRaidBonusRewardsWorkflow = definition.id === 'raidBonusRewards';
           const isPlacementWorkflow = definition.id === 'placement';
+          const isBehaviorWorkflow = definition.id === 'behavior';
           const isFlagworkSaveWorkflow = definition.id === 'flagworkSave';
           const isExeFsPatchWorkflow = definition.id === 'exefsPatches';
           const isRoyalCandyWorkflow = definition.id === 'royalCandy';
@@ -4858,8 +5363,12 @@ function WorkflowsSection({
             isRaidBattlesWorkflow && workflowState.availability !== 'disabled';
           const canOpenRaidRewards =
             isRaidRewardsWorkflow && workflowState.availability !== 'disabled';
+          const canOpenRaidBonusRewards =
+            isRaidBonusRewardsWorkflow && workflowState.availability !== 'disabled';
           const canOpenPlacement =
             isPlacementWorkflow && workflowState.availability !== 'disabled';
+          const canOpenBehavior =
+            isBehaviorWorkflow && workflowState.availability !== 'disabled';
           const canOpenFlagworkSave =
             isFlagworkSaveWorkflow && workflowState.availability !== 'disabled';
           const canOpenExeFsPatch =
@@ -5040,6 +5549,19 @@ function WorkflowsSection({
                     <span>{isRaidRewardsLoading ? 'Loading' : 'Open Raid Rewards'}</span>
                   </button>
                 ) : null}
+                {isRaidBonusRewardsWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenRaidBonusRewards || isRaidBonusRewardsLoading}
+                    onClick={onOpenRaidBonusRewardsWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>
+                      {isRaidBonusRewardsLoading ? 'Loading' : 'Open Raid Bonus Rewards'}
+                    </span>
+                  </button>
+                ) : null}
                 {isPlacementWorkflow ? (
                   <button
                     className="secondary-button compact-button"
@@ -5049,6 +5571,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isPlacementLoading ? 'Loading' : 'Open Placement'}</span>
+                  </button>
+                ) : null}
+                {isBehaviorWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenBehavior || isBehaviorLoading}
+                    onClick={onOpenBehaviorWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isBehaviorLoading ? 'Loading' : 'Open Behavior'}</span>
                   </button>
                 ) : null}
                 {isFlagworkSaveWorkflow ? (
@@ -8308,6 +8841,32 @@ function SelectedTrainerPanel({
     const natureDraftValue = pokemonDrafts[natureFieldName] ?? selectedPokemon.nature.toString();
     return getNatureStatEffects(parseEditableIntegerDraft(natureDraftValue, natureField?.options));
   }, [contextualPokemonFields, pokemonDrafts, selectedPokemon]);
+  const selectedPokemonCanDynamax = useMemo(() => {
+    if (!selectedPokemon) {
+      return true;
+    }
+
+    const pokemonCanDynamaxField =
+      contextualPokemonFields.find((field) => field.field === canDynamaxFieldName) ?? null;
+    if (!pokemonCanDynamaxField) {
+      return true;
+    }
+
+    const currentValue = getEditablePokemonFieldValue(selectedPokemon, canDynamaxFieldName);
+    const draftValue =
+      pokemonDrafts[canDynamaxFieldName] ?? currentValue?.toString() ?? '';
+    const draftState = getTrainerFieldDraftState(
+      draftValue,
+      currentValue,
+      pokemonCanDynamaxField
+    );
+
+    if (!draftState.isValid || draftState.normalizedValue === null) {
+      return currentValue === 1;
+    }
+
+    return draftState.normalizedValue === '1';
+  }, [contextualPokemonFields, pokemonDrafts, selectedPokemon]);
   const trainerDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -8609,6 +9168,13 @@ function SelectedTrainerPanel({
                                 getEditablePokemonFieldValue(selectedPokemon, fieldName)
                             }
                           );
+                          const isDynamaxDependentField = dynamaxDependentFieldNames.includes(
+                            field.field as (typeof dynamaxDependentFieldNames)[number]
+                          );
+                          const disabledReason =
+                            isDynamaxDependentField && !selectedPokemonCanDynamax
+                              ? 'Set Can Dynamax to Yes to edit this field.'
+                              : undefined;
 
                           return (
                             <TrainerDraftField
@@ -8616,6 +9182,7 @@ function SelectedTrainerPanel({
                               disabled={
                                 !canEditTrainers || editSession === null || isTrainerUpdating
                               }
+                              disabledReason={disabledReason}
                               draftState={draftState}
                               draftValue={draftValue}
                               field={field}
@@ -8638,6 +9205,12 @@ function SelectedTrainerPanel({
                                   ...pokemonDrafts,
                                   [field.field]: value
                                 };
+                                if (field.field === canDynamaxFieldName && value === '0') {
+                                  for (const dependentField of dynamaxDependentFieldNames) {
+                                    nextDrafts[dependentField] =
+                                      pokemonDraftDefaults[dependentField] ?? '';
+                                  }
+                                }
                                 setPokemonDraftsByTrainerSlot((currentDrafts) =>
                                   setFieldDraftRecord(
                                     currentDrafts,
@@ -9425,11 +9998,13 @@ function formatPendingEditDomain(domain: string) {
     'workflow.exefs': 'ExeFS Patches',
     'workflow.exefsPatches': 'ExeFS Patches',
     'workflow.giftPokemon': 'Gift Pokemon',
+    'workflow.behavior': 'Behavior',
     'workflow.items': 'Items',
     'workflow.moves': 'Moves',
     'workflow.placement': 'Placement',
     'workflow.pokemon': 'Pokemon',
     'workflow.raidBattles': 'Raid Battles',
+    'workflow.raidBonusRewards': 'Raid Bonus Rewards',
     'workflow.raidRewards': 'Raid Rewards',
     'workflow.rentalPokemon': 'Rental Pokemon',
     'workflow.royalCandy': 'Royal Candy',
@@ -9445,7 +10020,7 @@ function formatPendingEditDomain(domain: string) {
 
 type PendingEditableOption = {
   label: string;
-  value: number;
+  value: number | string;
 };
 
 type PendingEditableField = {
@@ -9601,7 +10176,17 @@ function getPendingEditDisplayDetails(
     case 'workflow.raidBattles':
       return getRaidBattlePendingEditDisplayDetails(edit, context, editorLabel);
     case 'workflow.raidRewards':
-      return getRaidRewardPendingEditDisplayDetails(edit, context, editorLabel);
+      return getRaidRewardPendingEditDisplayDetails(
+        edit,
+        context.raidRewardsWorkflow,
+        editorLabel
+      );
+    case 'workflow.raidBonusRewards':
+      return getRaidRewardPendingEditDisplayDetails(
+        edit,
+        context.raidBonusRewardsWorkflow,
+        editorLabel
+      );
     case 'workflow.placement': {
       const placedObject = context.placementWorkflow?.objects.find(
         (candidate) => candidate.objectId === edit.recordId
@@ -9613,6 +10198,19 @@ function getPendingEditDisplayDetails(
         fieldLabel: field?.label,
         newValueLabel: formatPendingEditValue(edit.newValue, field),
         recordLabel: placedObject?.label
+      });
+    }
+    case 'workflow.behavior': {
+      const entry = context.behaviorWorkflow?.entries.find(
+        (candidate) => candidate.entryId === edit.recordId
+      );
+      const field = findPendingEditableField(context.behaviorWorkflow?.fields, edit.field);
+
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: field?.label,
+        newValueLabel: formatPendingEditValue(edit.newValue, field),
+        recordLabel: entry?.label
       });
     }
     case 'workflow.royalCandy': {
@@ -9812,21 +10410,21 @@ function getRaidBattlePendingEditDisplayDetails(
     newValueLabel: formatPendingEditValue(edit.newValue, field),
     recordLabel:
       table && slotRecord
-        ? `${table.denId} ${table.gameVersion} slot #${slotRecord.slot}: ${slotRecord.species}`
-        : table?.denId
+        ? `${table.displayName} slot #${slotRecord.slot}: ${slotRecord.species}`
+        : table?.displayName
   });
 }
 
 function getRaidRewardPendingEditDisplayDetails(
   edit: PendingEdit,
-  context: PendingEditContext,
+  workflow: RaidRewardsWorkflow | null,
   editorLabel: string
 ) {
   const [tableId, slotText] = (edit.recordId ?? '').split('#');
   const slot = parseOptionalInteger(slotText);
-  const table = context.raidRewardsWorkflow?.tables.find((candidate) => candidate.tableId === tableId);
+  const table = workflow?.tables.find((candidate) => candidate.tableId === tableId);
   const reward = slot === null ? null : table?.rewards.find((candidate) => candidate.slot === slot);
-  const field = findPendingEditableField(context.raidRewardsWorkflow?.editableFields, edit.field);
+  const field = findPendingEditableField(workflow?.editableFields, edit.field);
 
   return createPendingEditDisplayDetails(edit, {
     editorLabel,
@@ -9834,9 +10432,9 @@ function getRaidRewardPendingEditDisplayDetails(
     newValueLabel: formatPendingEditValue(edit.newValue, field),
     recordLabel:
       table && reward
-        ? `${table.denId} ${table.rewardKindLabel} ${table.gameVersion} slot #${reward.slot}: ${reward.itemName}`
+        ? `${table.displayName} slot #${reward.slot}: ${reward.itemName}`
         : table
-          ? `${table.denId} ${table.rewardKindLabel} ${table.gameVersion}`
+          ? table.displayName
           : undefined
   });
 }
@@ -9872,6 +10470,11 @@ function findPendingEditableOption(
   options: readonly PendingEditableOption[] | undefined,
   value: string
 ) {
+  const exactOption = options?.find((option) => option.value.toString() === value);
+  if (exactOption) {
+    return exactOption;
+  }
+
   const parsedValue = Number.parseInt(value, 10);
   if (!Number.isFinite(parsedValue)) {
     return null;
@@ -13122,7 +13725,9 @@ function SelectedShopPanel({
         return [];
       }
 
-      finalItemIds.push(item.parsedItemId);
+      if (item.parsedItemId !== shopNoneItemId) {
+        finalItemIds.push(item.parsedItemId);
+      }
     }
 
     if (areNumberArraysEqual(finalItemIds, shop.inventory.map((item) => item.itemId))) {
@@ -13146,6 +13751,7 @@ function SelectedShopPanel({
       if (
         !row.isKnownItem ||
         row.parsedItemId === null ||
+        row.parsedItemId === shopNoneItemId ||
         parsedPrice === null ||
         !isIntegerDraftInFieldRange(parsedPrice, shopPriceEditableField) ||
         parsedPrice === row.price ||
@@ -13682,7 +14288,6 @@ function SelectedShopPanel({
       )}
       {pendingOpenItem ? (
         <ShopItemNavigationModal
-          itemName={pendingOpenItem.itemName}
           onCancel={() => setPendingOpenItem(null)}
           onConfirm={handleConfirmOpenItem}
         />
@@ -14020,7 +14625,6 @@ function EncountersSection({
   editSession,
   isEditStarting,
   isEncounterUpdating,
-  onApplyNormalToAllWeather,
   onSearchChange,
   onSelectTable,
   onStartEditSession,
@@ -14033,7 +14637,6 @@ function EncountersSection({
   editSession: EditSession | null;
   isEditStarting: boolean;
   isEncounterUpdating: boolean;
-  onApplyNormalToAllWeather: (sourceTableId: string, targetTableIds: string[]) => void;
   onSearchChange: (searchText: string) => void;
   onSelectTable: (tableId: string | null) => void;
   onStartEditSession: () => void;
@@ -14159,7 +14762,6 @@ function EncountersSection({
               conditionTabs={conditionTabs}
               isEditStarting={isEditStarting}
               isEncounterUpdating={isEncounterUpdating}
-              onApplyNormalToAllWeather={onApplyNormalToAllWeather}
               onSelectSlot={setSelectedSlot}
               onSelectTable={onSelectTable}
               onStartEditSession={onStartEditSession}
@@ -14187,7 +14789,6 @@ function SelectedEncounterPanel({
   encounterSlot,
   isEditStarting,
   isEncounterUpdating,
-  onApplyNormalToAllWeather,
   onSelectSlot,
   onSelectTable,
   onStartEditSession,
@@ -14203,7 +14804,6 @@ function SelectedEncounterPanel({
   encounterSlot: EncounterSlotRecord | null;
   isEditStarting: boolean;
   isEncounterUpdating: boolean;
-  onApplyNormalToAllWeather: (sourceTableId: string, targetTableIds: string[]) => void;
   onSelectSlot: (slot: number | null) => void;
   onSelectTable: (tableId: string | null) => void;
   onStartEditSession: () => void;
@@ -14287,16 +14887,21 @@ function SelectedEncounterPanel({
     encounterDraftSummary.invalidFields.length === 0;
   const encounterProbabilityTotal =
     table?.slots.slice(0, 10).reduce((total, slot) => total + slot.weight, 0) ?? 0;
-  const targetWeatherTableIds = conditionTabs
-    .filter((tab) => tab.isWeatherCopyTarget && tab.tableId !== null)
-    .map((tab) => tab.tableId!);
-  const canApplyNormalToAllWeather =
+  const encounterLevelFieldNames = [encounterLevelMinFieldName, encounterLevelMaxFieldName];
+  const encounterLevelZoneChanges = encounterSlot
+    ? getEncounterLevelZoneChanges(encounterSlot, encounterDraftSummary.changedFields)
+    : [];
+  const hasInvalidEncounterLevelDraft = encounterDraftSummary.invalidFields.some((field) =>
+    encounterLevelFieldNames.includes(field.field)
+  );
+  const canApplyEncounterLevelsToZone =
     table !== null &&
-    table.encounterType === 'Normal' &&
+    encounterSlot !== null &&
     editSession !== null &&
     canEditEncounters &&
     !isEncounterUpdating &&
-    targetWeatherTableIds.length > 0;
+    encounterLevelZoneChanges.length > 0 &&
+    !hasInvalidEncounterLevelDraft;
 
   useEffect(() => {
     if (!encounterDraftKey) {
@@ -14375,15 +14980,6 @@ function SelectedEncounterPanel({
                     {conditionTab.label}
                   </button>
                 ))}
-                <button
-                  className="secondary-button encounter-apply-weather-button"
-                  disabled={!canApplyNormalToAllWeather}
-                  onClick={() => onApplyNormalToAllWeather(table.tableId, targetWeatherTableIds)}
-                  title="Copy Normal slots 1-7 species, forms, and probabilities to every weather table."
-                  type="button"
-                >
-                  Apply to All Weather
-                </button>
               </div>
             ) : null}
 
@@ -14506,6 +15102,39 @@ function SelectedEncounterPanel({
                           );
                         })}
                       </div>
+                      {group.group === 'Levels' ? (
+                        <div className="field-group-action-row">
+                          <button
+                            className="secondary-button"
+                            disabled={!canApplyEncounterLevelsToZone}
+                            onClick={async () => {
+                              if (!table || !encounterSlot || !encounterDraftKey) {
+                                return;
+                              }
+
+                              const didSave = await onUpdateEncounterSlotFields(
+                                table.tableId,
+                                encounterSlot.slot,
+                                encounterLevelZoneChanges
+                              );
+                              if (didSave) {
+                                setDraftsBySlotKey((currentDrafts) =>
+                                  removeDraftFieldsFromRecord(
+                                    currentDrafts,
+                                    encounterDraftKey,
+                                    encounterDraftDefaults,
+                                    encounterLevelFieldNames
+                                  )
+                                );
+                              }
+                            }}
+                            title="Apply this slot's level changes to every editable table in the current zone."
+                            type="button"
+                          >
+                            Apply to Entire Zone
+                          </button>
+                        </div>
+                      ) : null}
                     </fieldset>
                   ))}
                 </div>
@@ -14621,6 +15250,7 @@ function RaidBattlesSection({
 
       return [
         table.denId,
+        table.displayName,
         table.gameVersion,
         table.sourceTableHash,
         ...table.slots.flatMap((slot) => [
@@ -14892,6 +15522,10 @@ function SelectedRaidBattlePanel({
           <dl className="item-provenance-list">
             <div>
               <dt>Table</dt>
+              <dd>{table.displayName}</dd>
+            </div>
+            <div>
+              <dt>Hash</dt>
               <dd>{table.sourceTableHash}</dd>
             </div>
             <div>
@@ -15144,6 +15778,8 @@ function SelectedRaidBattlePanel({
 
 function RaidRewardsSection({
   editSession,
+  emptyCopy,
+  headingId,
   isEditStarting,
   isRaidRewardUpdating,
   onSearchChange,
@@ -15151,11 +15787,17 @@ function RaidRewardsSection({
   onStartEditSession,
   onUpdateRaidRewardField,
   onUpdateRaidRewardFields,
+  pendingDomain,
   searchText,
+  searchPlaceholder,
+  sectionId,
   selectedTableId,
+  title,
   workflow
 }: {
   editSession: EditSession | null;
+  emptyCopy: string;
+  headingId: string;
   isEditStarting: boolean;
   isRaidRewardUpdating: boolean;
   onSearchChange: (value: string) => void;
@@ -15172,8 +15814,12 @@ function RaidRewardsSection({
     slot: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  pendingDomain: string;
   searchText: string;
+  searchPlaceholder: string;
+  sectionId: WorkbenchSection;
   selectedTableId: string | null;
+  title: string;
   workflow: RaidRewardsWorkflow | null;
 }) {
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
@@ -15187,6 +15833,7 @@ function RaidRewardsSection({
       return [
         table.archiveMember,
         table.denId,
+        table.displayName,
         table.rewardKindLabel,
         table.sourceTableHash,
         ...table.rewards.flatMap((reward) => [reward.itemName, reward.itemId.toString()])
@@ -15206,7 +15853,7 @@ function RaidRewardsSection({
     selectedTable?.rewards[0] ??
     null;
   const canEditRaidRewards = workflow?.summary.availability === 'available';
-  const pendingRaidRewardTableIds = getPendingRaidRewardTableIds(editSession);
+  const pendingRaidRewardTableIds = getPendingRaidRewardTableIds(editSession, pendingDomain);
 
   useEffect(() => {
     if (!selectedTable) {
@@ -15222,10 +15869,10 @@ function RaidRewardsSection({
 
   return (
     <>
-      <section aria-labelledby="raid-rewards-heading" className="panel wide-panel">
+      <section aria-labelledby={headingId} className="panel wide-panel">
         <div className="panel-heading">
           <ShieldCheck aria-hidden="true" size={18} />
-          <h2 id="raid-rewards-heading">Raid Rewards</h2>
+          <h2 id={headingId}>{title}</h2>
         </div>
 
         <div className="items-toolbar encounters-toolbar">
@@ -15235,7 +15882,7 @@ function RaidRewardsSection({
               aria-label="Search raid rewards"
               disabled={!workflow}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search raid rewards"
+              placeholder={searchPlaceholder}
               type="search"
               value={searchText}
             />
@@ -15256,10 +15903,10 @@ function RaidRewardsSection({
 
         {workflow ? (
           <div className="encounters-layout">
-            <div className="raid-rewards-table" role="table" aria-label="Raid reward tables">
+            <div className="raid-rewards-table" role="table" aria-label={`${title} tables`}>
               <div className="raid-rewards-row raid-rewards-row-heading" role="row">
                 <span role="columnheader">Table</span>
-                <span role="columnheader">Kind</span>
+                <span role="columnheader">Hash</span>
                 <span role="columnheader">Rewards</span>
                 <span role="columnheader">Member</span>
               </div>
@@ -15275,8 +15922,8 @@ function RaidRewardsSection({
                   role="row"
                   type="button"
                 >
+                  <span role="cell">{table.displayName}</span>
                   <span role="cell">{table.sourceTableHash}</span>
-                  <span role="cell">{table.rewardKindLabel}</span>
                   <span role="cell">{table.rewards.length}</span>
                   <span role="cell">{table.archiveMember}</span>
                 </button>
@@ -15294,12 +15941,13 @@ function RaidRewardsSection({
               onUpdateRaidRewardField={onUpdateRaidRewardField}
               onUpdateRaidRewardFields={onUpdateRaidRewardFields}
               reward={selectedReward}
+              sectionId={sectionId}
               selectedSlot={selectedSlot}
               table={selectedTable}
             />
           </div>
         ) : (
-          <p className="empty-copy">Open Raid Rewards from Workflows to load backend reward data.</p>
+          <p className="empty-copy">{emptyCopy}</p>
         )}
       </section>
 
@@ -15319,6 +15967,7 @@ function SelectedRaidRewardPanel({
   onUpdateRaidRewardField,
   onUpdateRaidRewardFields,
   reward,
+  sectionId,
   selectedSlot,
   table
 }: {
@@ -15341,6 +15990,7 @@ function SelectedRaidRewardPanel({
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
   reward: RaidRewardItemRecord | null;
+  sectionId: WorkbenchSection;
   selectedSlot: number | null;
   table: RaidRewardTableRecord | null;
 }) {
@@ -15381,7 +16031,7 @@ function SelectedRaidRewardPanel({
       ),
     [drafts, raidRewardFields, reward]
   );
-  useRegisterEditorDraftDirty('raidRewards', countFieldDraftRecords(draftsBySlotKey) > 0);
+  useRegisterEditorDraftDirty(sectionId, countFieldDraftRecords(draftsBySlotKey) > 0);
   const canSaveRaidRewardDrafts =
     table !== null &&
     reward !== null &&
@@ -15650,6 +16300,450 @@ function formatRaidRewardSlotSummary(rewardKind: string, reward: RaidRewardItemR
   return rewardKind === 'drop'
     ? `Drop chance ${reward.values.slice(0, 5).join('/')}%`
     : `Quantity ${reward.values.slice(0, 5).join('/')}`;
+}
+
+function BehaviorSection({
+  editSession,
+  isBehaviorUpdating,
+  isEditStarting,
+  onSearchChange,
+  onSelectEntry,
+  onStartEditSession,
+  onUpdateBehaviorEntryFields,
+  searchText,
+  selectedEntryId,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isBehaviorUpdating: boolean;
+  isEditStarting: boolean;
+  onSearchChange: (value: string) => void;
+  onSelectEntry: (entryId: string | null) => void;
+  onStartEditSession: () => void;
+  onUpdateBehaviorEntryFields: (
+    entryId: string,
+    changes: Array<{ field: string; value: string }>
+  ) => Promise<boolean>;
+  searchText: string;
+  selectedEntryId: string | null;
+  workflow: BehaviorWorkflow | null;
+}) {
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+  const filteredEntries =
+    workflow?.entries.filter((entry) => {
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return [
+        entry.behavior,
+        entry.behaviorLabel,
+        entry.form.toString(),
+        entry.internalSpeciesName,
+        entry.label,
+        entry.modelPart,
+        entry.speciesId.toString(),
+        entry.speciesName
+      ]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(normalizedSearch);
+    }) ?? [];
+  const selectedEntry =
+    filteredEntries.find((entry) => entry.entryId === selectedEntryId) ??
+    workflow?.entries.find((entry) => entry.entryId === selectedEntryId) ??
+    filteredEntries[0] ??
+    workflow?.entries[0] ??
+    null;
+  const canEditBehavior = workflow?.summary.availability === 'available';
+  const pendingBehaviorEntryIds = getPendingBehaviorEntryIds(editSession);
+
+  useEffect(() => {
+    if (selectedEntry && selectedEntry.entryId !== selectedEntryId) {
+      onSelectEntry(selectedEntry.entryId);
+    }
+  }, [onSelectEntry, selectedEntry?.entryId, selectedEntryId]);
+
+  return (
+    <>
+      <section aria-labelledby="behavior-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Activity aria-hidden="true" size={18} />
+          <h2 id="behavior-heading">Behavior</h2>
+        </div>
+
+        <div className="items-toolbar encounters-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label="Search behavior"
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder="Search behavior"
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded entries"
+            value={workflow ? workflow.stats.totalEntryCount.toString() : '0'}
+          />
+          <Metric
+            label="Profiles"
+            value={workflow ? workflow.stats.totalBehaviorCount.toString() : '0'}
+          />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="encounters-layout">
+            <div className="raid-rewards-table" role="table" aria-label="Behavior entries">
+              <div className="raid-rewards-row raid-rewards-row-heading" role="row">
+                <span role="columnheader">Pokemon</span>
+                <span role="columnheader">Behavior</span>
+                <span role="columnheader">Anchor</span>
+                <span role="columnheader">Range</span>
+              </div>
+              {filteredEntries.map((entry) => (
+                <button
+                  className={`raid-rewards-row ${
+                    selectedEntry?.entryId === entry.entryId
+                      ? 'raid-rewards-row-selected'
+                      : ''
+                  } ${
+                    pendingBehaviorEntryIds.has(entry.entryId) ? 'raid-rewards-row-pending' : ''
+                  }`}
+                  key={entry.entryId}
+                  onClick={() => onSelectEntry(entry.entryId)}
+                  role="row"
+                  type="button"
+                >
+                  <span role="cell">{formatBehaviorSpecies(entry)}</span>
+                  <span role="cell">{entry.behaviorLabel}</span>
+                  <span role="cell">{entry.modelPart || 'n/a'}</span>
+                  <span role="cell">{formatBehaviorRanges(entry)}</span>
+                </button>
+              ))}
+            </div>
+
+            <SelectedBehaviorPanel
+              canEditBehavior={canEditBehavior}
+              editSession={editSession}
+              entry={selectedEntry}
+              fields={workflow.fields}
+              isBehaviorUpdating={isBehaviorUpdating}
+              isEditStarting={isEditStarting}
+              onStartEditSession={onStartEditSession}
+              onUpdateBehaviorEntryFields={onUpdateBehaviorEntryFields}
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Behavior from Workflows to load symbol behavior data.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function SelectedBehaviorPanel({
+  canEditBehavior,
+  editSession,
+  entry,
+  fields,
+  isBehaviorUpdating,
+  isEditStarting,
+  onStartEditSession,
+  onUpdateBehaviorEntryFields
+}: {
+  canEditBehavior: boolean;
+  editSession: EditSession | null;
+  entry: BehaviorEntryRecord | null;
+  fields: BehaviorField[];
+  isBehaviorUpdating: boolean;
+  isEditStarting: boolean;
+  onStartEditSession: () => void;
+  onUpdateBehaviorEntryFields: (
+    entryId: string,
+    changes: Array<{ field: string; value: string }>
+  ) => Promise<boolean>;
+}) {
+  const [draftsByEntryId, setDraftsByEntryId] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const cancelActiveEditSession = useCancelActiveEditSession();
+  const behaviorFieldGroups = useMemo(() => groupBehaviorFields(fields), [fields]);
+  const behaviorDraftDefaults = useMemo(
+    () => (entry ? createBehaviorDraftDefaults(fields, entry) : {}),
+    [entry?.entryId, entry?.fields, fields]
+  );
+  const drafts = entry ? draftsByEntryId[entry.entryId] ?? behaviorDraftDefaults : {};
+  const behaviorDraftSummary = useMemo(
+    () => getBehaviorDraftSummary(fields, drafts, entry),
+    [drafts, entry, fields]
+  );
+  useRegisterEditorDraftDirty('behavior', countFieldDraftRecords(draftsByEntryId) > 0);
+  const canSaveBehaviorDrafts =
+    entry !== null &&
+    editSession !== null &&
+    canEditBehavior &&
+    !isBehaviorUpdating &&
+    behaviorDraftSummary.changedFields.length > 0 &&
+    behaviorDraftSummary.invalidFields.length === 0;
+
+  useEffect(() => {
+    if (!entry) {
+      return;
+    }
+
+    setDraftsByEntryId((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, entry.entryId, behaviorDraftDefaults)
+    );
+  }, [entry, behaviorDraftDefaults]);
+
+  return (
+    <aside aria-label="Selected behavior entry provenance" className="encounter-inspector">
+      <div className="panel-heading">
+        <Activity aria-hidden="true" size={18} />
+        <h3>Selected Behavior</h3>
+      </div>
+
+      {entry ? (
+        <>
+          <dl className="item-provenance-list">
+            <div>
+              <dt>Pokemon</dt>
+              <dd>{formatBehaviorSpecies(entry)}</dd>
+            </div>
+            <div>
+              <dt>Behavior</dt>
+              <dd>{entry.behaviorLabel}</dd>
+            </div>
+            <div>
+              <dt>Model anchor</dt>
+              <dd>{entry.modelPart || 'n/a'}</dd>
+            </div>
+            <div>
+              <dt>Source file</dt>
+              <dd>{entry.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(entry.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(entry.provenance.fileState)}</dd>
+            </div>
+          </dl>
+
+          <div className="encounter-edit-form">
+            <dl className="encounter-slot-detail">
+              <div>
+                <dt>Hitbox radius</dt>
+                <dd>{formatBehaviorNumber(entry.hitboxRadius)}</dd>
+              </div>
+              <div>
+                <dt>Grass shake radius</dt>
+                <dd>{formatBehaviorNumber(entry.grassShakeRadius)}</dd>
+              </div>
+              <div>
+                <dt>Internal name</dt>
+                <dd>{entry.internalSpeciesName || 'n/a'}</dd>
+              </div>
+              <div>
+                <dt>Hash 1</dt>
+                <dd>{entry.hash1}</dd>
+              </div>
+              <div>
+                <dt>Hash 2</dt>
+                <dd>{entry.hash2}</dd>
+              </div>
+              <div>
+                <dt>Entry</dt>
+                <dd>#{entry.index}</dd>
+              </div>
+            </dl>
+
+            <div className="editable-field-groups behavior-field-groups">
+              {behaviorFieldGroups.map((group) => (
+                <fieldset className="editable-field-group" key={group.group}>
+                  <legend>{group.group}</legend>
+                  <div className="editable-field-grid">
+                    {group.fields.map((field) => {
+                      const currentValue = getBehaviorEntryFieldValue(entry, field.field);
+                      const draftValue = drafts[field.field] ?? currentValue;
+                      const draftState = getBehaviorDraftState(draftValue, currentValue, field);
+                      const isDirty = draftValue !== currentValue;
+                      const isInvalid =
+                        !field.isReadOnly &&
+                        isDirty &&
+                        draftState.normalizedValue === null;
+                      const isChanged =
+                        !field.isReadOnly && isDirty && draftState.normalizedValue !== null;
+                      const isDisabled =
+                        !canEditBehavior ||
+                        editSession === null ||
+                        isBehaviorUpdating ||
+                        field.isReadOnly;
+                      const statusText = field.isReadOnly
+                        ? field.description || 'Read-only'
+                        : isInvalid
+                          ? getBehaviorFieldRangeText(field)
+                          : isChanged
+                            ? 'Changed'
+                            : null;
+
+                      return (
+                        <label
+                          className={`path-field editable-field-control ${
+                            isChanged ? 'editable-field-changed' : ''
+                          } ${isInvalid ? 'editable-field-invalid' : ''}`}
+                          htmlFor={`behavior-field-${field.field}`}
+                          key={field.field}
+                        >
+                          <span>{field.label}</span>
+                          {field.options && field.options.length > 0 ? (
+                            <select
+                              aria-label={field.label}
+                              disabled={isDisabled}
+                              id={`behavior-field-${field.field}`}
+                              onChange={(event) => {
+                                const nextDrafts = {
+                                  ...drafts,
+                                  [field.field]: event.target.value
+                                };
+                                setDraftsByEntryId((currentDrafts) =>
+                                  setFieldDraftRecord(
+                                    currentDrafts,
+                                    entry.entryId,
+                                    nextDrafts,
+                                    behaviorDraftDefaults
+                                  )
+                                );
+                              }}
+                              title={field.description}
+                              value={draftValue}
+                            >
+                              {addBehaviorDraftFallbackOption(
+                                field.options,
+                                draftValue,
+                                currentValue
+                              ).map((option) => (
+                                <option key={`${field.field}-${option.value}`} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              aria-label={field.label}
+                              disabled={isDisabled}
+                              id={`behavior-field-${field.field}`}
+                              max={field.valueKind === 'string' ? undefined : field.maximumValue}
+                              min={field.valueKind === 'string' ? undefined : field.minimumValue}
+                              onChange={(event) => {
+                                const nextDrafts = {
+                                  ...drafts,
+                                  [field.field]: event.target.value
+                                };
+                                setDraftsByEntryId((currentDrafts) =>
+                                  setFieldDraftRecord(
+                                    currentDrafts,
+                                    entry.entryId,
+                                    nextDrafts,
+                                    behaviorDraftDefaults
+                                  )
+                                );
+                              }}
+                              step={field.valueKind === 'integer' ? 1 : 'any'}
+                              title={field.description}
+                              type={field.valueKind === 'string' || field.valueKind === 'hash' ? 'text' : 'number'}
+                              value={draftValue}
+                            />
+                          )}
+                          {statusText ? (
+                            <small
+                              className={
+                                isInvalid ? 'editable-field-error' : 'editable-field-status'
+                              }
+                            >
+                              {statusText}
+                            </small>
+                          ) : null}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              ))}
+            </div>
+
+            {editSession ? (
+              <div className="draft-action-row">
+                <button
+                  className="primary-button"
+                  disabled={!canSaveBehaviorDrafts}
+                  onClick={async () => {
+                    if (!entry) {
+                      return;
+                    }
+
+                    const didSave = await onUpdateBehaviorEntryFields(
+                      entry.entryId,
+                      behaviorDraftSummary.changedFields.map((change) => ({
+                        field: change.field,
+                        value: change.value
+                      }))
+                    );
+                    if (didSave) {
+                      setDraftsByEntryId((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, entry.entryId)
+                      );
+                    }
+                  }}
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isBehaviorUpdating ? 'Saving' : 'Save Behavior'}</span>
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={isBehaviorUpdating}
+                  onClick={() => cancelActiveEditSession(() => setDraftsByEntryId({}))}
+                  type="button"
+                >
+                  <X aria-hidden="true" size={16} />
+                  <span>Cancel</span>
+                </button>
+                <span className="draft-action-summary">
+                  {formatDraftSummary(behaviorDraftSummary)}
+                </span>
+              </div>
+            ) : null}
+
+            {!editSession ? (
+              <button
+                className="secondary-button"
+                disabled={!canEditBehavior || isEditStarting}
+                onClick={onStartEditSession}
+                type="button"
+              >
+                <Pencil aria-hidden="true" size={16} />
+                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+              </button>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <p className="empty-copy">No behavior entry selected.</p>
+      )}
+    </aside>
+  );
 }
 
 function PlacementSection({
@@ -17500,11 +18594,13 @@ type PendingEditContext = {
   exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
   flagworkSaveWorkflow: FlagworkSaveWorkflow | null;
   giftPokemonWorkflow: GiftPokemonWorkflow | null;
+  behaviorWorkflow: BehaviorWorkflow | null;
   itemsWorkflow: ItemsWorkflow | null;
   movesWorkflow: MovesWorkflow | null;
   placementWorkflow: PlacementWorkflow | null;
   pokemonWorkflow: PokemonWorkflow | null;
   raidBattlesWorkflow: RaidBattlesWorkflow | null;
+  raidBonusRewardsWorkflow: RaidRewardsWorkflow | null;
   raidRewardsWorkflow: RaidRewardsWorkflow | null;
   rentalPokemonWorkflow: RentalPokemonWorkflow | null;
   royalCandyWorkflow: RoyalCandyWorkflow | null;
@@ -17567,6 +18663,7 @@ function ChangesSection({
   isChangePlanCreating,
   isSessionValidating,
   onCancelEditSession,
+  onRemovePendingEdit,
   onSaveValidatedChanges,
   onValidateEditSession
 }: {
@@ -17581,6 +18678,7 @@ function ChangesSection({
   isChangePlanCreating: boolean;
   isSessionValidating: boolean;
   onCancelEditSession: () => void;
+  onRemovePendingEdit: (editIndex: number) => void;
   onSaveValidatedChanges: () => void;
   onValidateEditSession: () => void;
 }) {
@@ -17653,40 +18751,52 @@ function ChangesSection({
 
               return (
                 <li key={`${edit.domain}-${edit.recordId ?? index}-${edit.field ?? 'field'}`}>
-                  <div className="pending-edit-title-row">
-                    <strong>{edit.summary}</strong>
-                    <span>{details.editorLabel}</span>
+                  <button
+                    aria-label={`Remove pending change ${index + 1}: ${edit.summary}`}
+                    className="danger-button icon-button pending-edit-remove-button"
+                    disabled={isSessionValidating || isChangePlanCreating || isChangePlanApplying}
+                    onClick={() => onRemovePendingEdit(index)}
+                    title="Remove this pending change"
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" size={16} />
+                  </button>
+                  <div className="pending-edit-content">
+                    <div className="pending-edit-title-row">
+                      <strong>{edit.summary}</strong>
+                      <span>{details.editorLabel}</span>
+                    </div>
+                    <dl className="pending-edit-meta">
+                      <div>
+                        <dt>Editor</dt>
+                        <dd>{details.editorLabel}</dd>
+                      </div>
+                      <div>
+                        <dt>Record</dt>
+                        <dd>{details.recordLabel}</dd>
+                      </div>
+                      <div>
+                        <dt>Field</dt>
+                        <dd>{details.fieldLabel}</dd>
+                      </div>
+                      <div>
+                        <dt>New value</dt>
+                        <dd>{details.newValueLabel}</dd>
+                      </div>
+                      <div>
+                        <dt>Record key</dt>
+                        <dd>{details.recordKey}</dd>
+                      </div>
+                      <div>
+                        <dt>Field key</dt>
+                        <dd>{details.fieldKey}</dd>
+                      </div>
+                      <div>
+                        <dt>Source</dt>
+                        <dd>{details.sourceLabel}</dd>
+                      </div>
+                    </dl>
                   </div>
-                  <dl className="pending-edit-meta">
-                    <div>
-                      <dt>Editor</dt>
-                      <dd>{details.editorLabel}</dd>
-                    </div>
-                    <div>
-                      <dt>Record</dt>
-                      <dd>{details.recordLabel}</dd>
-                    </div>
-                    <div>
-                      <dt>Field</dt>
-                      <dd>{details.fieldLabel}</dd>
-                    </div>
-                    <div>
-                      <dt>New value</dt>
-                      <dd>{details.newValueLabel}</dd>
-                    </div>
-                    <div>
-                      <dt>Record key</dt>
-                      <dd>{details.recordKey}</dd>
-                    </div>
-                    <div>
-                      <dt>Field key</dt>
-                      <dd>{details.fieldKey}</dd>
-                    </div>
-                    <div>
-                      <dt>Source</dt>
-                      <dd>{details.sourceLabel}</dd>
-                    </div>
-                  </dl>
                 </li>
               );
             })}
@@ -17868,11 +18978,9 @@ function EvYieldConfirmationModal({
 }
 
 function ShopItemNavigationModal({
-  itemName,
   onCancel,
   onConfirm
 }: {
-  itemName: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -17893,9 +19001,9 @@ function ShopItemNavigationModal({
           inventory edits in this editor.
         </p>
         <div className="modal-actions">
-          <button className="primary-button" onClick={onConfirm} type="button">
+          <button className="danger-button" onClick={onConfirm} type="button">
             <ExternalLink aria-hidden="true" size={16} />
-            <span>Open {itemName}</span>
+            <span>Open in Items</span>
           </button>
           <button className="secondary-button" onClick={onCancel} type="button">
             <X aria-hidden="true" size={16} />
@@ -19010,7 +20118,6 @@ function buildEncounterConditionTabs(
     const table = tablesByLabel.get(label) ?? null;
     return {
       isAvailable: table !== null,
-      isWeatherCopyTarget: encounterWeatherCopyLabels.has(label),
       label,
       table,
       tableId: table?.tableId ?? null
@@ -19020,7 +20127,6 @@ function buildEncounterConditionTabs(
     .filter((table) => !knownLabels.has(table.encounterType))
     .map((table) => ({
       isAvailable: true,
-      isWeatherCopyTarget: encounterWeatherCopyLabels.has(table.encounterType),
       label: table.encounterType,
       table,
       tableId: table.tableId
@@ -19596,6 +20702,53 @@ function getEditableEncounterFieldValue(encounterSlot: EncounterSlotRecord, fiel
     default:
       return null;
   }
+}
+
+function getEncounterLevelZoneChanges(
+  encounterSlot: EncounterSlotRecord,
+  changedFields: TrainerDraftChange[]
+) {
+  const changes = changedFields
+    .filter(
+      (change) =>
+        change.field === encounterLevelMinFieldName || change.field === encounterLevelMaxFieldName
+    )
+    .map((change) => ({ field: change.field, value: change.value }));
+
+  if (changes.length === 0) {
+    return [];
+  }
+
+  const nextMinimumLevel = Number.parseInt(
+    changes.find((change) => change.field === encounterLevelMinFieldName)?.value ??
+      encounterSlot.levelMin.toString(),
+    10
+  );
+  const nextMaximumLevel = Number.parseInt(
+    changes.find((change) => change.field === encounterLevelMaxFieldName)?.value ??
+      encounterSlot.levelMax.toString(),
+    10
+  );
+
+  if (
+    !Number.isInteger(nextMinimumLevel) ||
+    !Number.isInteger(nextMaximumLevel) ||
+    nextMinimumLevel > nextMaximumLevel
+  ) {
+    return [];
+  }
+
+  const updateMaximumFirst = nextMinimumLevel > encounterSlot.levelMax;
+  const updateMinimumFirst = nextMaximumLevel < encounterSlot.levelMin;
+  const preferredOrder = updateMaximumFirst
+    ? [encounterLevelMaxFieldName, encounterLevelMinFieldName]
+    : updateMinimumFirst
+      ? [encounterLevelMinFieldName, encounterLevelMaxFieldName]
+      : [encounterLevelMinFieldName, encounterLevelMaxFieldName];
+
+  return [...changes].sort(
+    (left, right) => preferredOrder.indexOf(left.field) - preferredOrder.indexOf(right.field)
+  );
 }
 
 function getEditableTrainerFieldValue(trainer: TrainerRecord, field: string) {
@@ -20342,7 +21495,6 @@ type SpeciesFormOptionContext = {
 
 type EncounterConditionTab = {
   isAvailable: boolean;
-  isWeatherCopyTarget: boolean;
   label: string;
   table: EncounterTableRecord | null;
   tableId: string | null;
@@ -20678,6 +21830,26 @@ function deleteFieldDraftRecord<T>(records: Record<string, T>, recordKey: string
   return nextRecords;
 }
 
+function removeDraftFieldsFromRecord(
+  records: Record<string, Record<string, string>>,
+  recordKey: string | number,
+  defaultDrafts: Record<string, string>,
+  fields: readonly string[]
+) {
+  const normalizedKey = recordKey.toString();
+  const currentDrafts = records[normalizedKey];
+  if (!currentDrafts) {
+    return records;
+  }
+
+  const nextDrafts = { ...currentDrafts };
+  for (const field of fields) {
+    delete nextDrafts[field];
+  }
+
+  return setFieldDraftRecord(records, recordKey, nextDrafts, defaultDrafts);
+}
+
 function countFieldDraftRecords(records: Record<string, Record<string, string>>) {
   return Object.keys(records).length;
 }
@@ -20807,18 +21979,20 @@ function PokemonSprite({
 }
 
 function getPokemonSpriteUrls(name: string, preferStatic: boolean) {
-  const spriteId = getPokemonSpriteId(name);
-  if (!spriteId) {
+  const spriteIds = getPokemonSpriteIds(name);
+  if (spriteIds.length === 0) {
     return [];
   }
 
-  const localStatic = `/sprites/gen5/${spriteId}.png`;
-  const localAnimated = `/sprites/ani/${spriteId}.gif`;
-  const remoteStatic = `https://play.pokemonshowdown.com/sprites/gen5/${spriteId}.png`;
+  return spriteIds.flatMap((spriteId) => {
+    const localStatic = `/sprites/gen5/${spriteId}.png`;
+    const localAnimated = `/sprites/ani/${spriteId}.gif`;
+    const remoteStatic = `https://play.pokemonshowdown.com/sprites/gen5/${spriteId}.png`;
 
-  return preferStatic
-    ? [localStatic, remoteStatic]
-    : [localAnimated, localStatic, remoteStatic];
+    return preferStatic
+      ? [localStatic, remoteStatic]
+      : [localAnimated, localStatic, remoteStatic];
+  });
 }
 
 const pokemonSpriteIdOverrides = new Map<string, string>([
@@ -20845,6 +22019,24 @@ export function getPokemonSpriteId(name: string) {
     .map(toPokemonSpriteIdPart)
     .filter(Boolean)
     .join('-');
+}
+
+export function getPokemonSpriteIds(name: string) {
+  const spriteId = getPokemonSpriteId(name);
+  if (!spriteId) {
+    return [];
+  }
+
+  const spriteIds = [spriteId];
+  let fallbackId = spriteId;
+  while (fallbackId.includes('-')) {
+    fallbackId = fallbackId.replace(/-[^-]+$/, '');
+    if (fallbackId && !spriteIds.includes(fallbackId)) {
+      spriteIds.push(fallbackId);
+    }
+  }
+
+  return spriteIds;
 }
 
 function normalizePokemonSpriteName(name: string) {
@@ -20879,7 +22071,7 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     effectSequence: 'Raw battle effect script/sequence ID. This controls special behavior and is not fully mapped yet.',
     [itemFieldFlagsFieldName]: 'Unknown raw item field flags. Visible for research, locked from editing until the bits are mapped.',
     flinch: 'Percent chance that the move causes flinching.',
-    gift: 'Raw trainer gift/item ID. pkNX marks the Gen 8 trainer field as unused/unknown, so confirm event scripts before treating it as a player reward.',
+    gift: 'Raw trainer gift/item ID. KM Editor treats this Gen 8 trainer field as unused/unknown, so confirm event scripts before treating it as a player reward.',
     inflictPercent: 'Percent chance to inflict the selected condition or secondary effect.',
     money: 'Prize payout stored as a trainer rate. Sword/Shield payout is rate x highest team level x 4; KM shows the derived cash amount.',
     rawHealing: 'Move healing behavior. 253/254/255 are shown as signed raw values -3/-2/-1 for quarter, half, and full HP.',
@@ -20908,7 +22100,7 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
   const optionHint = optionCount > 0 ? `${optionCount} available option${optionCount === 1 ? '' : 's'}` : null;
   const specificText =
     field.field === healFieldName && field.label.toLocaleLowerCase().includes('flag')
-      ? 'Raw trainer header flag. pkNX marks this Gen 8 trainer field as unused/unknown; do not assume it heals the player after battle.'
+      ? 'Raw trainer header flag. KM Editor treats this Gen 8 trainer field as unused/unknown; do not assume it heals the player after battle.'
       : field.field === healFieldName
         ? 'True if the move is treated as a healing move for battle rules and move interactions.'
         : field.field
@@ -21430,10 +22622,10 @@ function getPendingEncounterTableIds(editSession: EditSession | null) {
   );
 }
 
-function getPendingRaidRewardTableIds(editSession: EditSession | null) {
+function getPendingRaidRewardTableIds(editSession: EditSession | null, domain: string) {
   return new Set(
     (editSession?.pendingEdits ?? [])
-      .filter((edit) => edit.domain === 'workflow.raidRewards' && edit.recordId)
+      .filter((edit) => edit.domain === domain && edit.recordId)
       .map((edit) => edit.recordId!.split('#')[0])
   );
 }
@@ -21446,12 +22638,207 @@ function getPendingRaidBattleTableIds(editSession: EditSession | null) {
   );
 }
 
+function getPendingBehaviorEntryIds(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.behavior' && edit.recordId)
+      .map((edit) => edit.recordId!)
+  );
+}
+
 function getPendingPlacementObjectIds(editSession: EditSession | null) {
   return new Set(
     (editSession?.pendingEdits ?? [])
       .filter((edit) => edit.domain === 'workflow.placement' && edit.recordId)
       .map((edit) => edit.recordId!)
   );
+}
+
+function groupBehaviorFields(fields: BehaviorField[]) {
+  const groups: Array<{ group: string; fields: BehaviorField[] }> = [];
+
+  for (const field of fields) {
+    let group = groups.find((candidate) => candidate.group === field.group);
+    if (!group) {
+      group = { group: field.group, fields: [] };
+      groups.push(group);
+    }
+
+    group.fields.push(field);
+  }
+
+  return groups;
+}
+
+function createBehaviorDraftDefaults(fields: BehaviorField[], entry: BehaviorEntryRecord) {
+  return Object.fromEntries(
+    fields.map((field) => [field.field, getBehaviorEntryFieldValue(entry, field.field)])
+  );
+}
+
+function getBehaviorEntryFieldValue(entry: BehaviorEntryRecord, field: string) {
+  return entry.fields.find((fieldValue) => fieldValue.field === field)?.value ?? '';
+}
+
+function getBehaviorDraftState(
+  draftValue: string,
+  currentValue: string,
+  field: BehaviorField
+) {
+  const normalizedValue = draftValue.trim();
+  if (field.isReadOnly || !normalizedValue) {
+    return {
+      isChanged: false,
+      normalizedValue: null
+    };
+  }
+
+  if (field.valueKind === 'string') {
+    const isKnownOption =
+      !field.options ||
+      field.options.length === 0 ||
+      field.options.some((option) => option.value === normalizedValue);
+    const isInRange =
+      normalizedValue.length >= field.minimumValue &&
+      normalizedValue.length <= field.maximumValue;
+
+    return {
+      isChanged:
+        isKnownOption && isInRange && normalizedValue !== currentValue
+          ? true
+          : false,
+      normalizedValue:
+        isKnownOption && isInRange && normalizedValue !== currentValue
+          ? normalizedValue
+          : null
+    };
+  }
+
+  if (field.valueKind === 'integer') {
+    const parsedValue = Number.parseInt(normalizedValue, 10);
+    const isValid =
+      Number.isInteger(parsedValue) &&
+      parsedValue.toString() === normalizedValue &&
+      parsedValue >= field.minimumValue &&
+      parsedValue <= field.maximumValue &&
+      (!field.options ||
+        field.options.length === 0 ||
+        field.options.some((option) => option.value === normalizedValue));
+
+    return {
+      isChanged: isValid && normalizedValue !== currentValue,
+      normalizedValue: isValid && normalizedValue !== currentValue ? normalizedValue : null
+    };
+  }
+
+  if (field.valueKind === 'number') {
+    const parsedValue = Number(normalizedValue);
+    const isValid =
+      Number.isFinite(parsedValue) &&
+      parsedValue >= field.minimumValue &&
+      parsedValue <= field.maximumValue;
+    const nextValue = parsedValue.toString();
+
+    return {
+      isChanged: isValid && nextValue !== Number(currentValue).toString(),
+      normalizedValue: isValid && nextValue !== Number(currentValue).toString() ? nextValue : null
+    };
+  }
+
+  return {
+    isChanged: false,
+    normalizedValue: null
+  };
+}
+
+function getBehaviorDraftSummary(
+  fields: BehaviorField[],
+  drafts: Record<string, string>,
+  entry: BehaviorEntryRecord | null
+): { changedFields: TrainerDraftChange[]; dirtyFieldCount: number; invalidFields: TrainerDraftChange[] } {
+  const changedFields: TrainerDraftChange[] = [];
+  const invalidFields: TrainerDraftChange[] = [];
+  let dirtyFieldCount = 0;
+
+  if (!entry) {
+    return { changedFields, dirtyFieldCount, invalidFields };
+  }
+
+  for (const field of fields) {
+    if (field.isReadOnly) {
+      continue;
+    }
+
+    const currentValue = getBehaviorEntryFieldValue(entry, field.field);
+    const draftValue = drafts[field.field] ?? currentValue;
+    const draftState = getBehaviorDraftState(draftValue, currentValue, field);
+    const isDirty = draftValue !== currentValue;
+    const isChanged = isDirty && draftState.normalizedValue !== null;
+    const isInvalid = isDirty && draftState.normalizedValue === null;
+
+    if (isChanged || isInvalid) {
+      dirtyFieldCount += 1;
+    }
+
+    if (isInvalid) {
+      invalidFields.push({ field: field.field, label: field.label, value: draftValue });
+      continue;
+    }
+
+    if (draftState.normalizedValue !== null) {
+      changedFields.push({
+        field: field.field,
+        label: field.label,
+        value: draftState.normalizedValue
+      });
+    }
+  }
+
+  return { changedFields, dirtyFieldCount, invalidFields };
+}
+
+function addBehaviorDraftFallbackOption(
+  options: BehaviorFieldOption[],
+  draftValue: string,
+  currentValue: string
+) {
+  if (options.some((option) => option.value === draftValue)) {
+    return options;
+  }
+
+  if (draftValue.trim().length === 0) {
+    return options;
+  }
+
+  return [
+    {
+      label: currentValue === draftValue ? draftValue : `${draftValue} (custom)`,
+      value: draftValue
+    },
+    ...options
+  ];
+}
+
+function getBehaviorFieldRangeText(field: BehaviorField) {
+  if (field.valueKind === 'string') {
+    return `Use 1-${field.maximumValue} characters.`;
+  }
+
+  return `Allowed range: ${field.minimumValue}-${field.maximumValue}.`;
+}
+
+function formatBehaviorSpecies(entry: BehaviorEntryRecord) {
+  return entry.form === 0 ? entry.speciesName : `${entry.speciesName}-${entry.form}`;
+}
+
+function formatBehaviorRanges(entry: BehaviorEntryRecord) {
+  return `Hitbox ${formatBehaviorNumber(entry.hitboxRadius)} / Grass ${formatBehaviorNumber(
+    entry.grassShakeRadius
+  )}`;
+}
+
+function formatBehaviorNumber(value: number) {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
 }
 
 function getTextDraftState(
@@ -22629,8 +24016,34 @@ function toProjectPaths(draftPaths: ProjectPathDraft) {
     baseExeFsPath: normalizeDraftPath(draftPaths.baseExeFsPath),
     baseRomFsPath: normalizeDraftPath(draftPaths.baseRomFsPath),
     outputRootPath: normalizeDraftPath(draftPaths.outputRootPath),
-    saveFilePath: normalizeDraftPath(draftPaths.saveFilePath)
+    saveFilePath: normalizeDraftPath(draftPaths.saveFilePath),
+    selectedGame: draftPaths.selectedGame
   };
+}
+
+function resolveOutputRootCreationPath(
+  draftPaths: ProjectPathDraft,
+  selectedGame: ProjectGame
+) {
+  const baseRomFsPath = trimTrailingPathSeparators(draftPaths.baseRomFsPath);
+  const baseExeFsPath = trimTrailingPathSeparators(draftPaths.baseExeFsPath);
+
+  if (!baseRomFsPath || !baseExeFsPath) {
+    return null;
+  }
+
+  const romFsParentPath = getParentDirectoryPath(baseRomFsPath);
+  const exeFsParentPath = getParentDirectoryPath(baseExeFsPath);
+
+  if (
+    !romFsParentPath ||
+    !exeFsParentPath ||
+    !pathsEqual(romFsParentPath, exeFsParentPath)
+  ) {
+    return null;
+  }
+
+  return joinDirectoryPath(romFsParentPath, gameDefinitions[selectedGame].titleId);
 }
 
 function formatByteCount(value: number) {
@@ -22641,6 +24054,33 @@ function normalizeDraftPath(path: string) {
   const trimmedPath = path.trim();
 
   return trimmedPath.length > 0 ? trimmedPath : null;
+}
+
+function trimTrailingPathSeparators(path: string) {
+  return path.trim().replace(/[\\/]+$/, '');
+}
+
+function getParentDirectoryPath(path: string) {
+  const separatorIndex = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'));
+
+  if (separatorIndex <= 0) {
+    return null;
+  }
+
+  return path.slice(0, separatorIndex);
+}
+
+function joinDirectoryPath(parentPath: string, childName: string) {
+  const separator = parentPath.includes('\\') ? '\\' : '/';
+  return `${trimTrailingPathSeparators(parentPath)}${separator}${childName}`;
+}
+
+function pathsEqual(left: string, right: string) {
+  return normalizePathForComparison(left) === normalizePathForComparison(right);
+}
+
+function normalizePathForComparison(path: string) {
+  return trimTrailingPathSeparators(path).replaceAll('\\', '/').toLowerCase();
 }
 
 function getEditSessionSignature(editSession: EditSession | null) {

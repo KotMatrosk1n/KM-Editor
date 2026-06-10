@@ -6,13 +6,23 @@ public sealed record ProjectPaths(
     string? BaseRomFsPath,
     string? BaseExeFsPath,
     string? OutputRootPath,
-    string? SaveFilePath)
+    string? SaveFilePath,
+    ProjectGame? SelectedGame)
 {
     public ProjectPaths(
         string? BaseRomFsPath,
         string? BaseExeFsPath,
+        string? OutputRootPath,
+        string? SaveFilePath)
+        : this(BaseRomFsPath, BaseExeFsPath, OutputRootPath, SaveFilePath, SelectedGame: null)
+    {
+    }
+
+    public ProjectPaths(
+        string? BaseRomFsPath,
+        string? BaseExeFsPath,
         string? OutputRootPath)
-        : this(BaseRomFsPath, BaseExeFsPath, OutputRootPath, SaveFilePath: null)
+        : this(BaseRomFsPath, BaseExeFsPath, OutputRootPath, SaveFilePath: null, SelectedGame: null)
     {
     }
 }

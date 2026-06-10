@@ -111,7 +111,7 @@ public sealed class SwShEncountersWorkflowService
             var tables = new List<SwShEncounterTableRecord>();
             var provenance = CreateProvenance(dataSource.GraphEntry);
 
-            foreach (var member in ArchiveMembers)
+            foreach (var member in GetArchiveMembers(project.Paths.SelectedGame))
             {
                 if (!pack.TryGetFileByName(member.FileName, out var memberData))
                 {
@@ -128,7 +128,7 @@ public sealed class SwShEncountersWorkflowService
                     DiagnosticSeverity.Warning,
                     "Encounters and Wild Data source did not contain supported Sword/Shield encounter members.",
                     file: dataSource.GraphEntry.RelativePath,
-                    expected: "encount_symbol_k/t.bin or encount_k/t.bin inside data_table.gfpak"));
+                    expected: FormatExpectedArchiveMembers(project.Paths.SelectedGame)));
             }
 
             return CreateWorkflow(summary, tables, sourceFileCount: 1, speciesNames, diagnostics);
@@ -170,6 +170,16 @@ public sealed class SwShEncountersWorkflowService
             or ProbabilityField
             or LevelMinField
             or LevelMaxField;
+    }
+
+    internal static IReadOnlyList<WildArchiveMember> GetArchiveMembers(ProjectGame? selectedGame)
+    {
+        return selectedGame switch
+        {
+            ProjectGame.Sword => ArchiveMembers.Where(member => member.GameKey == "sword").ToArray(),
+            ProjectGame.Shield => ArchiveMembers.Where(member => member.GameKey == "shield").ToArray(),
+            _ => ArchiveMembers,
+        };
     }
 
     internal static WorkflowFileSource? ResolveWildDataSource(OpenedProject project)
@@ -386,6 +396,16 @@ public sealed class SwShEncountersWorkflowService
         return (uint)subTableIndex < (uint)SubTableLabels.Length
             ? SubTableLabels[subTableIndex]
             : $"Subtable {subTableIndex.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    private static string FormatExpectedArchiveMembers(ProjectGame? selectedGame)
+    {
+        return selectedGame switch
+        {
+            ProjectGame.Sword => "encount_symbol_k.bin or encount_k.bin inside data_table.gfpak",
+            ProjectGame.Shield => "encount_symbol_t.bin or encount_t.bin inside data_table.gfpak",
+            _ => "encount_symbol_k/t.bin or encount_k/t.bin inside data_table.gfpak",
+        };
     }
 
     private static string[] LoadSpeciesNames(

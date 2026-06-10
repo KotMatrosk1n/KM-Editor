@@ -80,6 +80,107 @@ public sealed class SwShEncountersWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadFiltersEncounterArchivesToSelectedGame()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile("encount_symbol_k.bin", SwShEncounterTestFixtures.CreateArchive().Write()),
+                new SwShGfPackNamedFile("encount_k.bin", SwShEncounterTestFixtures.CreateArchive(speciesOffset: 2).Write()),
+                new SwShGfPackNamedFile("encount_symbol_t.bin", SwShEncounterTestFixtures.CreateArchive(speciesOffset: 4).Write()),
+                new SwShGfPackNamedFile("encount_t.bin", SwShEncounterTestFixtures.CreateArchive(speciesOffset: 6).Write()),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            SwShGameTextFile.Write(
+            [
+                new SwShGameTextLine("", Flags: 0),
+                new SwShGameTextLine("Bulbasaur", Flags: 0),
+                new SwShGameTextLine("Ivysaur", Flags: 0),
+                new SwShGameTextLine("Venusaur", Flags: 0),
+                new SwShGameTextLine("Charmander", Flags: 0),
+                new SwShGameTextLine("Charmeleon", Flags: 0),
+                new SwShGameTextLine("Charizard", Flags: 0),
+                new SwShGameTextLine("Squirtle", Flags: 0),
+                new SwShGameTextLine("Wartortle", Flags: 0),
+                new SwShGameTextLine("Blastoise", Flags: 0),
+            ]));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, ProjectGame.Shield);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Shield };
+        var project = new ProjectWorkspaceService().Open(paths);
+
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+
+        Assert.Equal(SwShWorkflowAvailability.Available, workflow.Summary.Availability);
+        Assert.Equal(2, workflow.Tables.Count);
+        Assert.All(workflow.Tables, table => Assert.Equal("Shield", table.GameVersion));
+        Assert.Contains(workflow.Tables, table =>
+            table.ArchiveMember == "encount_symbol_t.bin" && table.Area == "Symbol");
+        Assert.Contains(workflow.Tables, table =>
+            table.ArchiveMember == "encount_t.bin" && table.Area == "Hidden");
+        Assert.DoesNotContain(workflow.Tables, table => table.ArchiveMember.EndsWith("_k.bin", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LoadExposesSurfingAndFlyingSymbolZonesAsEditableTables()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "encount_symbol_t.bin",
+                    SwShEncounterTestFixtures.CreateArchiveForZones(
+                        SwShEncounterTestFixtures.BallimereLakeSurfingZoneId,
+                        SwShEncounterTestFixtures.BridgeFieldFlyingZoneId).Write()),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            SwShGameTextFile.Write(
+            [
+                new SwShGameTextLine("", Flags: 0),
+                new SwShGameTextLine("Bulbasaur", Flags: 0),
+                new SwShGameTextLine("Ivysaur", Flags: 0),
+                new SwShGameTextLine("Venusaur", Flags: 0),
+                new SwShGameTextLine("Charmander", Flags: 0),
+                new SwShGameTextLine("Charmeleon", Flags: 0),
+                new SwShGameTextLine("Charizard", Flags: 0),
+            ]));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, ProjectGame.Shield);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Shield };
+        var project = new ProjectWorkspaceService().Open(paths);
+
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+
+        Assert.Equal(SwShWorkflowAvailability.Available, workflow.Summary.Availability);
+        var surfingTable = Assert.Single(workflow.Tables, table => table.Location == "Ballimere Lake (Surfing)");
+        var flyingTable = Assert.Single(workflow.Tables, table => table.Location == "Bridge Field (Flying)");
+        Assert.Equal("Symbol", surfingTable.Area);
+        Assert.Equal("Symbol", flyingTable.Area);
+        Assert.Equal("encount_symbol_t.bin", surfingTable.ArchiveMember);
+        Assert.NotEmpty(surfingTable.Slots);
+        Assert.Contains(workflow.EditableFields, field => field.Field == SwShEncountersWorkflowService.SpeciesIdField);
+
+        var update = new SwShEncountersEditSessionService().UpdateSlotField(
+            paths,
+            session: null,
+            surfingTable.TableId,
+            slot: 1,
+            field: SwShEncountersWorkflowService.SpeciesIdField,
+            value: "6");
+
+        Assert.DoesNotContain(update.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(
+            6,
+            update.Workflow.Tables.Single(table => table.TableId == surfingTable.TableId).Slots[0].SpeciesId);
+    }
+
+    [Fact]
     public void LoadFormatsSpeciesZeroAsEmpty()
     {
         using var temp = TemporarySwShProject.Create();

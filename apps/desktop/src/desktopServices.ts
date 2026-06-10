@@ -10,6 +10,7 @@ export type PickFolderOptions = {
 };
 
 export type DesktopServices = {
+  createDirectory: (path: string) => Promise<void>;
   exitApp: () => Promise<void>;
   isAvailable: boolean;
   openExternalUrl: (url: string) => Promise<void>;
@@ -20,6 +21,7 @@ export type DesktopServices = {
 };
 
 export const desktopServices: DesktopServices = {
+  createDirectory: (path) => invoke('create_directory', { path }),
   exitApp: () => invoke('exit_app'),
   isAvailable: hasTauriRuntime(),
   openExternalUrl: (url) => openExternal(url),

@@ -150,6 +150,27 @@ fn open_path(path: String) -> Result<(), String> {
         .map_err(|error| format!("Could not open the folder: {error}"))
 }
 
+#[tauri::command(rename_all = "camelCase")]
+fn create_directory(path: String) -> Result<(), String> {
+    let trimmed_path = path.trim();
+
+    if trimmed_path.is_empty() {
+        return Err("No folder path was provided.".to_owned());
+    }
+
+    let path = PathBuf::from(trimmed_path);
+
+    if path.exists() {
+        return if path.is_dir() {
+            Err("The output root folder already exists.".to_owned())
+        } else {
+            Err("A file already exists at the output root path.".to_owned())
+        };
+    }
+
+    std::fs::create_dir(&path).map_err(|error| format!("Could not create the folder: {error}"))
+}
+
 #[tauri::command]
 fn set_close_guard_enabled(state: tauri::State<'_, CloseGuardState>, enabled: bool) {
     state.is_guarded.store(enabled, Ordering::SeqCst);
@@ -192,6 +213,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             project_bridge_once,
+            create_directory,
             open_path,
             set_close_guard_enabled,
             exit_app

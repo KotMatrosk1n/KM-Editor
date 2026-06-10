@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers.Binary;
+using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Tests.Items;
 
@@ -7,7 +9,13 @@ namespace KM.SwSh.Tests.Encounters;
 
 internal static class SwShEncounterTestFixtures
 {
+    private const int NpdmTitleIdOffset = 0x290;
+    private const ulong SwordTitleId = 0x0100ABF008968000;
+    private const ulong ShieldTitleId = 0x01008DB008C2C000;
+
     public const ulong ZoneId = 0x1122334455667788;
+    public const ulong BridgeFieldFlyingZoneId = 0x5F4E0AB29FD3F13A;
+    public const ulong BallimereLakeSurfingZoneId = 0x9BDD6D11FFBEDA3F;
 
     public static void WriteBaseEncounters(TemporarySwShProject temp)
     {
@@ -37,6 +45,13 @@ internal static class SwShEncounterTestFixtures
         ]).Write();
     }
 
+    public static void WriteSelectedGameNpdm(TemporarySwShProject temp, ProjectGame game)
+    {
+        temp.WriteBaseExeFsFile(
+            "main.npdm",
+            CreateNpdm(game == ProjectGame.Sword ? SwordTitleId : ShieldTitleId));
+    }
+
     public static SwShWildEncounterArchive CreateArchive(
         int speciesOffset = 0,
         int? firstSlotSpecies = null,
@@ -61,5 +76,29 @@ internal static class SwShEncounterTestFixtures
                             ]),
                     ]),
             ]);
+    }
+
+    public static SwShWildEncounterArchive CreateArchiveForZones(params ulong[] zoneIds)
+    {
+        return new SwShWildEncounterArchive(
+            1,
+            zoneIds.Select((zoneId, index) => new SwShWildEncounterTable(
+                zoneId,
+                [
+                    new SwShWildEncounterSubTable(
+                        3,
+                        8,
+                        [
+                            new SwShWildEncounterSlot(35, 1 + index, 0),
+                            new SwShWildEncounterSlot(65, 4 + index, 1),
+                        ]),
+                ])).ToArray());
+    }
+
+    private static byte[] CreateNpdm(ulong titleId)
+    {
+        var npdm = new byte[NpdmTitleIdOffset + sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64LittleEndian(npdm.AsSpan(NpdmTitleIdOffset), titleId);
+        return npdm;
     }
 }

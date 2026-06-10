@@ -61,6 +61,7 @@ public sealed record SwShRaidBattleSlotRecord(
 
 public sealed record SwShRaidBattleTableRecord(
     string TableId,
+    string DisplayName,
     string DenId,
     int TableIndex,
     string GameVersion,

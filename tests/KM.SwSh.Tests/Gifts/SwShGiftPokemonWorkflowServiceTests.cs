@@ -72,6 +72,15 @@ public sealed class SwShGiftPokemonWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShGiftPokemonWorkflowService.SpecialMoveIdField).Options,
             option => option.Value == 2 && option.Label == "002 Growl");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShGiftPokemonWorkflowService.NatureField).Options,
+            option => option.Value == 3 && option.Label == "Adamant (+Atk/-Sp.Atk)");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShGiftPokemonWorkflowService.ShinyLockField).Options,
+            option => option.Value == 1 && option.Label == "Always Shiny");
+        Assert.Contains(
+            workflow.EditableFields.Single(field => field.Field == SwShGiftPokemonWorkflowService.ShinyLockField).Options,
+            option => option.Value == 2 && option.Label == "Never Shiny");
     }
 
     [Fact]

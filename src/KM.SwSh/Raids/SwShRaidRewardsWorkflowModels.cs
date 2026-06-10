@@ -45,6 +45,7 @@ public sealed record SwShRaidRewardItemRecord(
 
 public sealed record SwShRaidRewardTableRecord(
     string TableId,
+    string DisplayName,
     string DenId,
     int Rank,
     string GameVersion,

@@ -32,6 +32,8 @@ import {
   type LoadMovesWorkflowResponse,
   type LoadPokemonWorkflowRequest,
   type LoadPokemonWorkflowResponse,
+  type LoadBehaviorWorkflowRequest,
+  type LoadBehaviorWorkflowResponse,
   type LoadRaidBattlesWorkflowRequest,
   type LoadRaidBattlesWorkflowResponse,
   type UpdatePokemonEvolutionRequest,
@@ -44,6 +46,8 @@ import {
   type LoadPlacementWorkflowResponse,
   type LoadRaidRewardsWorkflowRequest,
   type LoadRaidRewardsWorkflowResponse,
+  type LoadRaidBonusRewardsWorkflowRequest,
+  type LoadRaidBonusRewardsWorkflowResponse,
   type LoadRoyalCandyWorkflowRequest,
   type LoadRoyalCandyWorkflowResponse,
   type StageExeFsPatchRequest,
@@ -85,10 +89,14 @@ import {
   type UpdateEncounterSlotFieldResponse,
   type UpdatePlacementObjectFieldRequest,
   type UpdatePlacementObjectFieldResponse,
+  type UpdateBehaviorEntryFieldRequest,
+  type UpdateBehaviorEntryFieldResponse,
   type UpdateRaidBattleSlotFieldRequest,
   type UpdateRaidBattleSlotFieldResponse,
   type UpdateRaidRewardFieldRequest,
   type UpdateRaidRewardFieldResponse,
+  type UpdateRaidBonusRewardFieldRequest,
+  type UpdateRaidBonusRewardFieldResponse,
   type UpdateShopInventoryItemRequest,
   type UpdateShopInventoryItemResponse,
   type UpdateTextEntryRequest,
@@ -115,9 +123,11 @@ import {
   loadItemsWorkflowResponseSchema,
   loadMovesWorkflowResponseSchema,
   loadPokemonWorkflowResponseSchema,
+  loadBehaviorWorkflowResponseSchema,
   loadPlacementWorkflowResponseSchema,
   loadRaidBattlesWorkflowResponseSchema,
   loadRaidRewardsWorkflowResponseSchema,
+  loadRaidBonusRewardsWorkflowResponseSchema,
   loadRoyalCandyWorkflowResponseSchema,
   stageExeFsPatchResponseSchema,
   stageRoyalCandyWorkflowResponseSchema,
@@ -141,8 +151,10 @@ import {
   updatePokemonLearnsetResponseSchema,
   updateEncounterSlotFieldResponseSchema,
   updatePlacementObjectFieldResponseSchema,
+  updateBehaviorEntryFieldResponseSchema,
   updateRaidBattleSlotFieldResponseSchema,
   updateRaidRewardFieldResponseSchema,
+  updateRaidBonusRewardFieldResponseSchema,
   updateShopInventoryItemResponseSchema,
   updateTextEntryResponseSchema,
   updateTrainerFieldResponseSchema,
@@ -196,12 +208,18 @@ export type ProjectBridge = {
   loadPlacementWorkflow: (
     request: LoadPlacementWorkflowRequest
   ) => Promise<LoadPlacementWorkflowResponse>;
+  loadBehaviorWorkflow: (
+    request: LoadBehaviorWorkflowRequest
+  ) => Promise<LoadBehaviorWorkflowResponse>;
   loadRaidBattlesWorkflow: (
     request: LoadRaidBattlesWorkflowRequest
   ) => Promise<LoadRaidBattlesWorkflowResponse>;
   loadRaidRewardsWorkflow: (
     request: LoadRaidRewardsWorkflowRequest
   ) => Promise<LoadRaidRewardsWorkflowResponse>;
+  loadRaidBonusRewardsWorkflow: (
+    request: LoadRaidBonusRewardsWorkflowRequest
+  ) => Promise<LoadRaidBonusRewardsWorkflowResponse>;
   loadRoyalCandyWorkflow: (
     request: LoadRoyalCandyWorkflowRequest
   ) => Promise<LoadRoyalCandyWorkflowResponse>;
@@ -248,9 +266,15 @@ export type ProjectBridge = {
   updateRaidRewardField: (
     request: UpdateRaidRewardFieldRequest
   ) => Promise<UpdateRaidRewardFieldResponse>;
+  updateRaidBonusRewardField: (
+    request: UpdateRaidBonusRewardFieldRequest
+  ) => Promise<UpdateRaidBonusRewardFieldResponse>;
   updatePlacementObjectField: (
     request: UpdatePlacementObjectFieldRequest
   ) => Promise<UpdatePlacementObjectFieldResponse>;
+  updateBehaviorEntryField: (
+    request: UpdateBehaviorEntryFieldRequest
+  ) => Promise<UpdateBehaviorEntryFieldResponse>;
   updateShopInventoryItem: (
     request: UpdateShopInventoryItemRequest
   ) => Promise<UpdateShopInventoryItemResponse>;
@@ -400,6 +424,13 @@ export function createProjectBridge(
         request,
         loadPlacementWorkflowResponseSchema
       ),
+    loadBehaviorWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadBehaviorWorkflow,
+        request,
+        loadBehaviorWorkflowResponseSchema
+      ),
     loadRaidBattlesWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,
@@ -413,6 +444,13 @@ export function createProjectBridge(
         kmCommandNames.loadRaidRewardsWorkflow,
         request,
         loadRaidRewardsWorkflowResponseSchema
+      ),
+    loadRaidBonusRewardsWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadRaidBonusRewardsWorkflow,
+        request,
+        loadRaidBonusRewardsWorkflowResponseSchema
       ),
     loadRoyalCandyWorkflow: (request) =>
       sendProjectBridgeRequest(
@@ -575,12 +613,26 @@ export function createProjectBridge(
         request,
         updateRaidRewardFieldResponseSchema
       ),
+    updateRaidBonusRewardField: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateRaidBonusRewardField,
+        request,
+        updateRaidBonusRewardFieldResponseSchema
+      ),
     updatePlacementObjectField: (request) =>
       sendProjectBridgeRequest(
         transport,
         kmCommandNames.updatePlacementObjectField,
         request,
         updatePlacementObjectFieldResponseSchema
+      ),
+    updateBehaviorEntryField: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.updateBehaviorEntryField,
+        request,
+        updateBehaviorEntryFieldResponseSchema
       ),
     updateShopInventoryItem: (request) =>
       sendProjectBridgeRequest(

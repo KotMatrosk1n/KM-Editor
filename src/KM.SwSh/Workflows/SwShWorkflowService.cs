@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Projects;
+using KM.SwSh.Behavior;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
@@ -36,6 +37,7 @@ public sealed class SwShWorkflowService
     private readonly SwShRentalPokemonWorkflowService rentalPokemonWorkflowService;
     private readonly SwShDynamaxAdventuresWorkflowService dynamaxAdventuresWorkflowService;
     private readonly SwShPlacementWorkflowService placementWorkflowService;
+    private readonly SwShBehaviorWorkflowService behaviorWorkflowService;
     private readonly SwShRaidBattlesWorkflowService raidBattlesWorkflowService;
     private readonly SwShRaidRewardsWorkflowService raidRewardsWorkflowService;
     private readonly SwShRoyalCandyWorkflowService royalCandyWorkflowService;
@@ -57,6 +59,7 @@ public sealed class SwShWorkflowService
         SwShRaidBattlesWorkflowService? raidBattlesWorkflowService = null,
         SwShRaidRewardsWorkflowService? raidRewardsWorkflowService = null,
         SwShPlacementWorkflowService? placementWorkflowService = null,
+        SwShBehaviorWorkflowService? behaviorWorkflowService = null,
         SwShFlagworkSaveWorkflowService? flagworkSaveWorkflowService = null,
         SwShGiftPokemonWorkflowService? giftPokemonWorkflowService = null,
         SwShTradePokemonWorkflowService? tradePokemonWorkflowService = null,
@@ -82,6 +85,7 @@ public sealed class SwShWorkflowService
         this.rentalPokemonWorkflowService = rentalPokemonWorkflowService ?? new SwShRentalPokemonWorkflowService();
         this.dynamaxAdventuresWorkflowService = dynamaxAdventuresWorkflowService ?? new SwShDynamaxAdventuresWorkflowService();
         this.placementWorkflowService = placementWorkflowService ?? new SwShPlacementWorkflowService();
+        this.behaviorWorkflowService = behaviorWorkflowService ?? new SwShBehaviorWorkflowService();
         this.raidBattlesWorkflowService = raidBattlesWorkflowService ?? new SwShRaidBattlesWorkflowService();
         this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
         this.royalCandyWorkflowService = royalCandyWorkflowService ?? new SwShRoyalCandyWorkflowService(this.exeFsPatchWorkflowService);
@@ -113,7 +117,9 @@ public sealed class SwShWorkflowService
             encountersWorkflowService.CreateSummary(project),
             raidBattlesWorkflowService.CreateSummary(project),
             raidRewardsWorkflowService.CreateSummary(project),
+            raidRewardsWorkflowService.CreateBonusSummary(project),
             placementWorkflowService.CreateSummary(project),
+            behaviorWorkflowService.CreateSummary(project),
             flagworkSaveWorkflowService.CreateSummary(project),
             exeFsPatchWorkflowService.CreateSummary(project),
             royalCandyWorkflowService.CreateSummary(project),
@@ -243,6 +249,15 @@ public sealed class SwShWorkflowService
         return raidRewardsWorkflowService.Load(project);
     }
 
+    public SwShRaidRewardsWorkflow LoadRaidBonusRewards(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return raidRewardsWorkflowService.LoadBonus(project);
+    }
+
     public SwShRaidBattlesWorkflow LoadRaidBattles(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -259,6 +274,15 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return placementWorkflowService.Load(project);
+    }
+
+    public SwShBehaviorWorkflow LoadBehavior(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return behaviorWorkflowService.Load(project);
     }
 
     public SwShFlagworkSaveWorkflow LoadFlagworkSave(ProjectPaths paths)

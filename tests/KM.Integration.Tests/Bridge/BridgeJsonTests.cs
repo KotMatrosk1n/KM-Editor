@@ -13,7 +13,12 @@ public sealed class BridgeJsonTests
     [Fact]
     public void SerializesRequestEnvelopeWithCamelCaseNames()
     {
-        var paths = new ProjectPathsDto("base-romfs", "base-exefs", OutputRootPath: null);
+        var paths = new ProjectPathsDto(
+            "base-romfs",
+            "base-exefs",
+            OutputRootPath: null,
+            SaveFilePath: null,
+            SelectedGame: ProjectGameDto.Shield);
         var request = new BridgeRequest<OpenProjectRequest>(
             KmCommandNames.OpenProject,
             new OpenProjectRequest(paths),
@@ -24,6 +29,7 @@ public sealed class BridgeJsonTests
         Assert.Contains("\"command\":\"project.open\"", json);
         Assert.Contains("\"requestId\":\"request-1\"", json);
         Assert.Contains("\"baseRomFsPath\":\"base-romfs\"", json);
+        Assert.Contains("\"selectedGame\":\"shield\"", json);
         Assert.DoesNotContain("BaseRomFsPath", json);
     }
 

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-using KM.Api.Items;
 using KM.Api.Editing;
+using KM.Api.Behavior;
 using KM.Api.DynamaxAdventures;
 using KM.Api.Encounters;
 using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Gifts;
+using KM.Api.Items;
 using KM.Api.Placement;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
@@ -20,7 +21,7 @@ using KM.Api.SpreadsheetImport;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
-using KM.SwSh.Items;
+using KM.SwSh.Behavior;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
@@ -39,6 +40,7 @@ using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.Trainers;
 using KM.SwSh.Trades;
 using KM.SwSh.Workflows;
+using KM.SwSh.Items;
 
 namespace KM.Tools.Bridge;
 
@@ -182,6 +184,13 @@ public static class SwShBridgeMapper
         return new LoadRaidRewardsWorkflowResponse(ToRaidRewardsWorkflowDto(workflow));
     }
 
+    public static LoadRaidBonusRewardsWorkflowResponse ToBonusDto(SwShRaidRewardsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadRaidBonusRewardsWorkflowResponse(ToRaidRewardsWorkflowDto(workflow));
+    }
+
     public static LoadRaidBattlesWorkflowResponse ToDto(SwShRaidBattlesWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -194,6 +203,13 @@ public static class SwShBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadPlacementWorkflowResponse(ToPlacementWorkflowDto(workflow));
+    }
+
+    public static LoadBehaviorWorkflowResponse ToDto(SwShBehaviorWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadBehaviorWorkflowResponse(ToBehaviorWorkflowDto(workflow));
     }
 
     public static LoadFlagworkSaveWorkflowResponse ToDto(SwShFlagworkSaveWorkflow workflow)
@@ -365,6 +381,16 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateRaidBonusRewardFieldResponse ToBonusDto(SwShRaidRewardsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateRaidBonusRewardFieldResponse(
+            ToRaidRewardsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static UpdateRaidBattleSlotFieldResponse ToDto(SwShRaidBattlesEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -381,6 +407,16 @@ public static class SwShBridgeMapper
 
         return new UpdatePlacementObjectFieldResponse(
             ToPlacementWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateBehaviorEntryFieldResponse ToDto(SwShBehaviorEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateBehaviorEntryFieldResponse(
+            ToBehaviorWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -962,6 +998,19 @@ public static class SwShBridgeMapper
             new PlacementWorkflowStatsDto(
                 workflow.Stats.TotalObjectCount,
                 workflow.Stats.TotalAreaCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static BehaviorWorkflowDto ToBehaviorWorkflowDto(SwShBehaviorWorkflow workflow)
+    {
+        return new BehaviorWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Entries.Select(ToDto).ToArray(),
+            workflow.Fields.Select(ToDto).ToArray(),
+            new BehaviorWorkflowStatsDto(
+                workflow.Stats.TotalEntryCount,
+                workflow.Stats.TotalBehaviorCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1598,6 +1647,7 @@ public static class SwShBridgeMapper
     {
         return new RaidBattleTableRecordDto(
             table.TableId,
+            table.DisplayName,
             table.DenId,
             table.TableIndex,
             table.GameVersion,
@@ -1673,6 +1723,7 @@ public static class SwShBridgeMapper
     {
         return new RaidRewardTableRecordDto(
             table.TableId,
+            table.DisplayName,
             table.DenId,
             table.Rank,
             table.GameVersion,
@@ -1764,6 +1815,59 @@ public static class SwShBridgeMapper
     private static PlacementProvenanceDto ToDto(SwShPlacementProvenance provenance)
     {
         return new PlacementProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static BehaviorEntryRecordDto ToDto(SwShBehaviorEntryRecord entry)
+    {
+        return new BehaviorEntryRecordDto(
+            entry.EntryId,
+            entry.Index,
+            entry.Label,
+            entry.SpeciesId,
+            entry.SpeciesName,
+            entry.Form,
+            entry.Behavior,
+            entry.BehaviorLabel,
+            entry.ModelPart,
+            entry.HitboxRadius,
+            entry.GrassShakeRadius,
+            entry.Hash1,
+            entry.Hash2,
+            entry.InternalSpeciesName,
+            entry.Fields.Select(ToDto).ToArray(),
+            ToDto(entry.Provenance));
+    }
+
+    private static BehaviorFieldDto ToDto(SwShBehaviorField field)
+    {
+        return new BehaviorFieldDto(
+            field.Field,
+            field.Label,
+            field.Group,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.IsReadOnly,
+            field.Description,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static BehaviorFieldOptionDto ToDto(SwShBehaviorFieldOption option)
+    {
+        return new BehaviorFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static BehaviorFieldValueDto ToDto(SwShBehaviorFieldValue value)
+    {
+        return new BehaviorFieldValueDto(value.Field, value.Value);
+    }
+
+    private static BehaviorProvenanceDto ToDto(SwShBehaviorProvenance provenance)
+    {
+        return new BehaviorProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));
