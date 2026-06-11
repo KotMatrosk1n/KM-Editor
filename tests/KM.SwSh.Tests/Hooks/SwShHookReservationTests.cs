@@ -6,6 +6,7 @@ using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
 using KM.SwSh.ExeFs;
+using KM.SwSh.IvScreen;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.StartingItems;
 using KM.SwSh.Tests.Items;
@@ -60,6 +61,7 @@ public sealed class SwShHookReservationTests
 
         var bagHook = new SwShBagHookWorkflowService().Load(project);
         var catchCap = new SwShCatchCapWorkflowService().Load(project);
+        var ivScreen = new SwShIvScreenWorkflowService().Load(project);
         var royalCandy = new SwShRoyalCandyWorkflowService().Load(project);
         var startingItems = new SwShStartingItemsWorkflowService().Load(project);
 
@@ -74,6 +76,11 @@ public sealed class SwShHookReservationTests
         Assert.Equal(SwShWorkflowAvailability.Available, catchCap.Summary.Availability);
         Assert.Equal("available", catchCap.InstallStatus);
         Assert.Equal(9, catchCap.Caps.Count);
+
+        Assert.Equal(SwShWorkflowAvailability.Available, ivScreen.Summary.Availability);
+        Assert.Equal("available", ivScreen.InstallStatus);
+        Assert.Equal("SWSH_IV_DISPLAY_V1", ivScreen.Marker);
+        Assert.Contains(ivScreen.ReservedRegions, region => region.RegionId == "iv-screen-hook-site");
 
         Assert.Equal(SwShWorkflowAvailability.Available, royalCandy.Summary.Availability);
         Assert.Contains(
@@ -143,13 +150,31 @@ public sealed class SwShHookReservationTests
 
     [Theory]
     [MemberData(nameof(RoyalCandyVariantsByGame))]
-    public void RoyalCandyCleanupPreservesBagHookStartingItemsAndCatchCap(ProjectGame game, string workflowId)
+    public void IvScreenInstallsAlongsideCatchCapAndRoyalCandy(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyCatchCap(paths);
+        ApplyRoyalCandy(paths, workflowId);
+        ApplyIvScreen(paths);
+
+        var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
+        Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
+        Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
+        Assert.Equal(ExpectedRoyalCandySignature(workflowId), SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void RoyalCandyCleanupPreservesBagHookStartingItemsCatchCapAndIvScreen(ProjectGame game, string workflowId)
     {
         using var temp = CreateHookProject(game);
         var paths = temp.Paths with { SelectedGame = game };
         InstallEmptyBagHook(paths);
         ApplyStartingItems(paths);
         ApplyCatchCap(paths);
+        ApplyIvScreen(paths);
         ApplyRoyalCandy(paths, workflowId);
 
         ApplyRoyalCandyCleanup(paths);
@@ -166,6 +191,7 @@ public sealed class SwShHookReservationTests
 
         var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
         Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
+        Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
         Assert.Equal(SwShRoyalCandyExeFsSignatureKind.NotInstalled, SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
     }
 
@@ -209,13 +235,34 @@ public sealed class SwShHookReservationTests
 
     [Theory]
     [MemberData(nameof(RoyalCandyVariantsByGame))]
-    public void CatchCapCleanupPreservesBagHookStartingItemsAndRoyalCandy(ProjectGame game, string workflowId)
+    public void BagHookCleanupRemovesDependentsAndPreservesIvScreen(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, workflowId);
+        ApplyIvScreen(paths);
+
+        ApplyBagHookCleanup(paths);
+
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
+
+        var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
+        Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
+        Assert.Equal(SwShRoyalCandyExeFsSignatureKind.NotInstalled, SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void CatchCapCleanupPreservesBagHookStartingItemsRoyalCandyAndIvScreen(ProjectGame game, string workflowId)
     {
         using var temp = CreateHookProject(game);
         var paths = temp.Paths with { SelectedGame = game };
         InstallEmptyBagHook(paths);
         ApplyStartingItems(paths);
         ApplyRoyalCandy(paths, workflowId);
+        ApplyIvScreen(paths);
         ApplyCatchCap(paths);
 
         ApplyCatchCapCleanup(paths);
@@ -233,6 +280,7 @@ public sealed class SwShHookReservationTests
 
         var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
         Assert.Equal(SwShCatchCapInstallKind.NotInstalled, SwShCatchCapMainPatcher.Analyze(main).Kind);
+        Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
         Assert.Equal(ExpectedRoyalCandySignature(workflowId), SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
     }
 
@@ -246,6 +294,39 @@ public sealed class SwShHookReservationTests
         ApplyCatchCap(paths);
 
         ApplyCatchCapCleanup(paths);
+
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void IvScreenCleanupPreservesCatchCapAndRoyalCandy(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyCatchCap(paths);
+        ApplyRoyalCandy(paths, workflowId);
+        ApplyIvScreen(paths);
+
+        ApplyIvScreenCleanup(paths);
+
+        var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
+        Assert.Equal(SwShIvScreenInstallKind.NotInstalled, SwShIvScreenMainPatcher.Analyze(main).Kind);
+        Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
+        Assert.Equal(ExpectedRoyalCandySignature(workflowId), SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void IvScreenCleanupRemovesExeFsOutputWhenNoOtherExeFsHookRemains(ProjectGame game)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        ApplyIvScreen(paths);
+
+        ApplyIvScreenCleanup(paths);
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
     }
@@ -536,6 +617,32 @@ public sealed class SwShHookReservationTests
         Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
+    private static void ApplyIvScreen(ProjectPaths paths)
+    {
+        var service = new SwShIvScreenEditSessionService();
+        var stage = service.StageInstall(paths, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    private static void ApplyIvScreenCleanup(ProjectPaths paths)
+    {
+        var service = new SwShIvScreenEditSessionService();
+        var stage = service.StageUninstall(paths, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
     private static void ApplyRoyalCandy(ProjectPaths paths, string workflowId)
     {
         var service = new SwShRoyalCandyEditSessionService();
@@ -589,9 +696,10 @@ public sealed class SwShHookReservationTests
 
     private static byte[] CreateSharedHookNso()
     {
-        var text = new byte[0x013AF6C0];
+        var text = new byte[0x0157D000];
         WriteRoyalCandyVanillaAnchors(text);
         WriteCatchCapVanillaAnchors(text);
+        WriteIvScreenVanillaAnchors(text);
         return CreateNso(text, [0x10], [0x20]);
     }
 
@@ -640,6 +748,65 @@ public sealed class SwShHookReservationTests
         WriteInstruction(text, 0x013AE3B0, 0xA9417BFD);
         WriteInstruction(text, 0x013AE3C8, 0xA8C24FF4);
         WriteInstruction(text, 0x013AE3CC, 0xD65F03C0);
+    }
+
+    private static void WriteIvScreenVanillaAnchors(byte[] text)
+    {
+        WriteInstruction(text, 0x0137F634, 0x94001F27);
+        WriteInstruction(text, 0x0138F268, 0x9400023E);
+        WriteInstruction(text, 0x013872D0, 0xD103C3FF);
+        WriteInstruction(text, 0x01385A70, 0xD10143FF);
+        WriteInstruction(text, 0x0138F990, 0xA9BC5FF8);
+        WriteInstruction(text, 0x0138FB60, 0xD10243FF);
+        WriteInstruction(text, 0x0138A1A0, 0xD10503FF);
+        WriteInstruction(text, 0x0138B1E0, 0xD10183FF);
+        WriteInstruction(text, 0x0138B1FC, 0x39592408);
+        WriteInstruction(text, 0x0138B200, 0x52000108);
+        WriteInstruction(text, 0x0139FB60, 0x340000A8);
+        WriteInstruction(text, 0x013B2F90, 0xD10143FF);
+        WriteInstruction(text, 0x013CA220, 0xF81D0FF5);
+        WriteInstruction(text, 0x00779070, 0x7100143F);
+        WriteInstruction(text, 0x007790D0, 0xA9BE4FF4);
+        WriteIvScreenCallSiteAnchors(text);
+    }
+
+    private static void WriteIvScreenCallSiteAnchors(byte[] text)
+    {
+        foreach (var (offset, instruction) in new (int Offset, uint Instruction)[]
+        {
+            (0x0138FBE8, 0x97CFA48E),
+            (0x0138FC38, 0x97CFA47A),
+            (0x0138FC74, 0x97CFA46B),
+            (0x0138FC9C, 0x97CFA461),
+            (0x0138FD2C, 0x97CFA43D),
+            (0x0138FD5C, 0x97CFA431),
+            (0x0138FD84, 0x97CFA427),
+            (0x0138FEA0, 0x97CFA3E0),
+            (0x0138AA50, 0x97CFBD40),
+            (0x0138AA60, 0x97CFC074),
+            (0x0138AA90, 0x97CFBD30),
+            (0x0138AAA0, 0x97CFC064),
+            (0x0138AAD0, 0x97CFBD20),
+            (0x0138AAE0, 0x97CFC054),
+            (0x0138AB10, 0x97CFBD10),
+            (0x0138AB20, 0x97CFC044),
+            (0x0138AB50, 0x97CFBD00),
+            (0x0138AB60, 0x97CFC034),
+            (0x0138AB90, 0x97CFBCF0),
+            (0x0138ABA0, 0x97CFC024),
+            (0x0138AC88, 0x0B130008),
+            (0x0138ACAC, 0x0B130008),
+            (0x0138ACD0, 0x0B130008),
+            (0x0138ACF8, 0x0B170008),
+            (0x0138AD1C, 0x0B130008),
+            (0x0138AD40, 0x0B130008),
+            (0x01392EA8, 0x97FFDCBE),
+            (0x01393310, 0x97FFDBA4),
+            (0x0139EF4C, 0x97FFAC95),
+        })
+        {
+            WriteInstruction(text, offset, instruction);
+        }
     }
 
     private static void WriteInstruction(byte[] text, int offset, uint instruction)

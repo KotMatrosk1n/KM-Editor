@@ -15,6 +15,7 @@ import {
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
   type ItemsWorkflow,
+  type IvScreenWorkflow,
   type MovesWorkflow,
   type PlacementWorkflow,
   type PokemonWorkflow,
@@ -59,6 +60,7 @@ export type WorkbenchSection =
   | 'flagworkSave'
   | 'bagHook'
   | 'catchCap'
+  | 'ivScreen'
   | 'exefsPatches'
   | 'royalCandy'
   | 'startingItems'
@@ -98,6 +100,7 @@ type WorkbenchState = {
   encounterSearchText: string;
   encountersWorkflow: EncountersWorkflow | null;
   catchCapWorkflow: CatchCapWorkflow | null;
+  ivScreenWorkflow: IvScreenWorkflow | null;
   exeFsPatchSearchText: string;
   exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
   flagworkSaveSearchText: string;
@@ -181,6 +184,7 @@ type WorkbenchState = {
   setEncounterSearchText: (encounterSearchText: string) => void;
   setEncountersWorkflow: (encountersWorkflow: EncountersWorkflow) => void;
   setCatchCapWorkflow: (catchCapWorkflow: CatchCapWorkflow) => void;
+  setIvScreenWorkflow: (ivScreenWorkflow: IvScreenWorkflow) => void;
   setExeFsPatchSearchText: (exeFsPatchSearchText: string) => void;
   setExeFsPatchWorkflow: (exeFsPatchWorkflow: ExeFsPatchWorkflow) => void;
   setFlagworkSaveSearchText: (flagworkSaveSearchText: string) => void;
@@ -311,6 +315,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     encounterSearchText: '',
     encountersWorkflow: null,
     catchCapWorkflow: null,
+    ivScreenWorkflow: null,
     exeFsPatchSearchText: '',
     exeFsPatchWorkflow: null,
     flagworkSaveSearchText: '',
@@ -398,6 +403,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   encounterSearchText: '',
   encountersWorkflow: null,
   catchCapWorkflow: null,
+  ivScreenWorkflow: null,
   exeFsPatchSearchText: '',
   exeFsPatchWorkflow: null,
   flagworkSaveSearchText: '',
@@ -657,6 +663,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       encounterSearchText: '',
       encountersWorkflow: null,
       catchCapWorkflow: null,
+      ivScreenWorkflow: null,
       exeFsPatchSearchText: '',
       exeFsPatchWorkflow: null,
       flagworkSaveSearchText: '',
@@ -972,6 +979,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         selectedCatchCapBadgeCount
       };
     }),
+  setIvScreenWorkflow: (ivScreenWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'ivScreen'),
+      ivScreenWorkflow
+    })),
   setExeFsPatchWorkflow: (exeFsPatchWorkflow) =>
     set((state) => {
       const selectedExeFsPatchId = exeFsPatchWorkflow.patches.some(

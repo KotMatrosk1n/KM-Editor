@@ -8,6 +8,7 @@ using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
 using KM.SwSh.ExeFs;
+using KM.SwSh.IvScreen;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -954,7 +955,9 @@ public sealed class SwShRoyalCandyEditSessionService
 
     private static bool ContainsIndependentExeFsHook(byte[] mainBytes)
     {
-        return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1;
+        var ivScreenKind = SwShIvScreenMainPatcher.Analyze(mainBytes).Kind;
+        return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1
+            || ivScreenKind is SwShIvScreenInstallKind.InstalledV1 or SwShIvScreenInstallKind.InstalledLegacyV1;
     }
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)

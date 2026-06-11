@@ -9,6 +9,7 @@ using KM.Api.Encounters;
 using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Items;
+using KM.Api.IvScreen;
 using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
@@ -27,6 +28,7 @@ using KM.Api.Workflows;
 using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
 using KM.SwSh.ExeFs;
+using KM.SwSh.IvScreen;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
 using KM.Tools.Bridge;
@@ -150,6 +152,7 @@ public sealed class ProjectBridgeDispatcherTests
                 "flagworkSave",
                 "bagHook",
                 "catchCap",
+                "ivScreen",
                 "royalCandy",
                 "startingItems",
                 "spreadsheetImport",
@@ -1720,6 +1723,89 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotEqual(0x2A0003E2u, ReadInstruction(outputText, 0x007B1F20));
         Assert.Contains(EncodeCmpImmediate(register: 22, immediate: 1128), ReadAlignedInstructions(outputText));
         Assert.Equal(SwShNsoFile.ComputeHash(outputText), outputNso.Text.Hash);
+    }
+
+    [Fact]
+    public void DispatchIvScreenStageValidatePlanAndApplyWritesLayeredMain()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loadJson = SerializeRequest(
+            KmCommandNames.LoadIvScreenWorkflow,
+            new LoadIvScreenWorkflowRequest(temp.Paths),
+            requestId: "request-iv-screen-load");
+        var loadResponse = DeserializeResponse<LoadIvScreenWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.Null(loadResponse.Error);
+        Assert.NotNull(loadResponse.Payload);
+        Assert.Equal("available", loadResponse.Payload.Workflow.InstallStatus);
+
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageIvScreenInstall,
+            new StageIvScreenInstallRequest(temp.Paths, Session: null),
+            requestId: "request-iv-screen-stage");
+        var stageResponse = DeserializeResponse<StageIvScreenInstallResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+        Assert.Single(stageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.ivScreen", stageResponse.Payload.Session.PendingEdits[0].Domain);
+        Assert.DoesNotContain(
+            stageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-iv-screen-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-iv-screen-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.True(planResponse.Payload.ChangePlan.CanApply);
+        var write = Assert.Single(planResponse.Payload.ChangePlan.Writes);
+        Assert.Equal(SwShIvScreenWorkflowService.ExeFsMainPath, write.TargetRelativePath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageResponse.Payload.Session,
+                planResponse.Payload.ChangePlan),
+            requestId: "request-iv-screen-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.DoesNotContain(
+            applyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShIvScreenWorkflowService.ExeFsMainPath);
+
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var outputText = SwShNsoFile.Parse(File.ReadAllBytes(outputMainPath)).Text.DecompressedData;
+        Assert.Equal(0x94001F27u, ReadInstruction(outputText, 0x0137F634));
+        Assert.Equal(0x9400023Eu, ReadInstruction(outputText, 0x0138F268));
+        Assert.NotEqual(0x97FFDCBEu, ReadInstruction(outputText, 0x01392EA8));
+        Assert.NotEqual(0x97CFBD40u, ReadInstruction(outputText, 0x0138AA50));
+        Assert.Equal(0x14000005u, ReadInstruction(outputText, 0x0139FB60));
+
+        var reloadResponse = DeserializeResponse<LoadIvScreenWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.Null(reloadResponse.Error);
+        Assert.NotNull(reloadResponse.Payload);
+        Assert.Equal("installed", reloadResponse.Payload.Workflow.InstallStatus);
     }
 
     [Fact]

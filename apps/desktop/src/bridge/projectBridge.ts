@@ -16,6 +16,8 @@ import {
   type LoadBagHookWorkflowResponse,
   type LoadCatchCapWorkflowRequest,
   type LoadCatchCapWorkflowResponse,
+  type LoadIvScreenWorkflowRequest,
+  type LoadIvScreenWorkflowResponse,
   type LoadExeFsPatchWorkflowRequest,
   type LoadExeFsPatchWorkflowResponse,
   type LoadFlagworkSaveWorkflowRequest,
@@ -64,6 +66,10 @@ import {
   type StageCatchCapResponse,
   type StageCatchCapUninstallRequest,
   type StageCatchCapUninstallResponse,
+  type StageIvScreenInstallRequest,
+  type StageIvScreenInstallResponse,
+  type StageIvScreenUninstallRequest,
+  type StageIvScreenUninstallResponse,
   type StageExeFsPatchRequest,
   type StageExeFsPatchResponse,
   type StageRoyalCandyWorkflowRequest,
@@ -131,6 +137,7 @@ import {
   loadEncountersWorkflowResponseSchema,
   loadBagHookWorkflowResponseSchema,
   loadCatchCapWorkflowResponseSchema,
+  loadIvScreenWorkflowResponseSchema,
   loadExeFsPatchWorkflowResponseSchema,
   loadFlagworkSaveWorkflowResponseSchema,
   loadGiftPokemonWorkflowResponseSchema,
@@ -152,6 +159,8 @@ import {
   stageBagHookUninstallResponseSchema,
   stageCatchCapResponseSchema,
   stageCatchCapUninstallResponseSchema,
+  stageIvScreenInstallResponseSchema,
+  stageIvScreenUninstallResponseSchema,
   stageExeFsPatchResponseSchema,
   stageRoyalCandyWorkflowResponseSchema,
   stageStartingItemsResponseSchema,
@@ -260,6 +269,15 @@ export type ProjectBridge = {
   stageCatchCapUninstall: (
     request: StageCatchCapUninstallRequest
   ) => Promise<StageCatchCapUninstallResponse>;
+  loadIvScreenWorkflow: (
+    request: LoadIvScreenWorkflowRequest
+  ) => Promise<LoadIvScreenWorkflowResponse>;
+  stageIvScreenInstall: (
+    request: StageIvScreenInstallRequest
+  ) => Promise<StageIvScreenInstallResponse>;
+  stageIvScreenUninstall: (
+    request: StageIvScreenUninstallRequest
+  ) => Promise<StageIvScreenUninstallResponse>;
   loadRoyalCandyWorkflow: (
     request: LoadRoyalCandyWorkflowRequest
   ) => Promise<LoadRoyalCandyWorkflowResponse>;
@@ -427,6 +445,27 @@ export function createProjectBridge(
         kmCommandNames.stageCatchCapUninstall,
         request,
         stageCatchCapUninstallResponseSchema
+      ),
+    loadIvScreenWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadIvScreenWorkflow,
+        request,
+        loadIvScreenWorkflowResponseSchema
+      ),
+    stageIvScreenInstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageIvScreenInstall,
+        request,
+        stageIvScreenInstallResponseSchema
+      ),
+    stageIvScreenUninstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageIvScreenUninstall,
+        request,
+        stageIvScreenUninstallResponseSchema
       ),
     loadExeFsPatchWorkflow: (request) =>
       sendProjectBridgeRequest(

@@ -6,6 +6,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.CatchCap;
 using KM.SwSh.ExeFs;
+using KM.SwSh.IvScreen;
 using KM.SwSh.Items;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Workflows;
@@ -639,7 +640,9 @@ public sealed class SwShBagHookEditSessionService
 
     private static bool ContainsIndependentExeFsHook(byte[] mainBytes)
     {
-        return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1;
+        var ivScreenKind = SwShIvScreenMainPatcher.Analyze(mainBytes).Kind;
+        return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1
+            || ivScreenKind is SwShIvScreenInstallKind.InstalledV1 or SwShIvScreenInstallKind.InstalledLegacyV1;
     }
 
     private static bool IsRoyalCandyDependentOutput(OpenedProject project, ProjectFileGraphEntry entry)
