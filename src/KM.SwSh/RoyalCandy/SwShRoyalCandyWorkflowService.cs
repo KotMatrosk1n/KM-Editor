@@ -51,8 +51,8 @@ public sealed class SwShRoyalCandyWorkflowService
 
     private static readonly FileRequirement[] RequiredInputs =
     [
-        new("item-data", "RomFS", "Item data", [ItemPath], "RomFS data", "Clones the Rare Candy template row into the Royal Candy item slot."),
-        new("item-hash", "RomFS", "Item hash table", [ItemHashPath], "RomFS data", "Updates item hash lookup data for the Royal Candy item slot."),
+        new("item-data", "RomFS", "Item data", [ItemPath], "RomFS data", "Appends the Rare Candy template as a unique Royal Candy key-item row and points item 1128 at it."),
+        new("item-hash", "RomFS", "Item hash table", [ItemHashPath], "RomFS data", "Preserves the existing item hash lookup while verifying item 1128 is present."),
         new("shop-data", "RomFS", "Shop data", [ShopDataPath, LegacyShopDataPath], "RomFS data", "Adds controlled acquisition entries to shop data where the workflow supports it."),
         new("nest-data", "RomFS", "Raid reward data", [NestDataPath], "RomFS archive", "Adds controlled acquisition entries to raid reward data."),
         new("placement-data", "RomFS", "Placement data", [PlacementPath], "RomFS archive", "Adds controlled pickup placement entries."),
@@ -596,7 +596,7 @@ public sealed class SwShRoyalCandyWorkflowService
                 provenance.SourceLayer,
                 provenance.FileState);
 
-        if (bagHookWorkflow.InstallStatus != "installed")
+        if (!IsBagHookInstalledForSlotWrites(bagHookWorkflow.InstallStatus))
         {
             AddCheck(
                 checks,
@@ -650,6 +650,12 @@ public sealed class SwShRoyalCandyWorkflowService
                 ? "Bag Hook slot 1 is reserved for Royal Candy and can hold item 1128 x1."
                 : $"Bag Hook slot 1 is occupied by {slot.ItemName}; only Royal Candy item 1128 can use slot 1.",
             royalCandyProvenance);
+    }
+
+    private static bool IsBagHookInstalledForSlotWrites(string installStatus)
+    {
+        return installStatus is SwShBagHookWorkflowService.InstalledStatus
+            or SwShBagHookWorkflowService.RepairableStatus;
     }
 
     private static void AddOutputRootCheck(
@@ -748,7 +754,7 @@ public sealed class SwShRoyalCandyWorkflowService
         var steps = new List<SwShRoyalCandyWorkflowStepRecord>
         {
             new(1, "Validate sources", "Resolve required RomFS files, ExeFS main, main.npdm, and item text language sets from the project graph."),
-            new(2, "Prepare item records", $"Clone item {RareCandyItemId} into item {RoyalCandyItemId} and update item hash lookup data."),
+            new(2, "Prepare item records", $"Append a unique Royal Candy item row from item {RareCandyItemId} into item {RoyalCandyItemId} and preserve item hash lookup data."),
             new(3, "Patch item text", "Patch Royal Candy names and descriptions in every discovered item text language set."),
             new(4, "Plan acquisition edits", "Plan controlled shop, raid reward, placement, and bag event script output targets."),
             new(5, "Validate ExeFS anchors", "Verify the Royal Candy reserved item-route/decrement anchors are vanilla, already KM-owned, or blocked as a foreign signature before writing."),
@@ -985,8 +991,11 @@ public sealed class SwShRoyalCandyWorkflowService
         var layeredEntries = GetKnownRoyalCandyLayeredEntries(project)
             .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
             .ToArray();
+        var identifyingEntries = layeredEntries
+            .Where(entry => !string.Equals(entry.RelativePath, ItemHashPath, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
 
-        if (layeredEntries.Length == 0)
+        if (identifyingEntries.Length == 0)
         {
             return new RoyalCandyInstallationState(
                 RoyalCandyInstallKind.None,
@@ -995,8 +1004,8 @@ public sealed class SwShRoyalCandyWorkflowService
                 "No Royal Candy LayeredFS output was detected.");
         }
 
-        var installKind = DetectRoyalCandyTextInstallKind(project, layeredEntries)
-            ?? DetectRoyalCandyExeFsInstallKind(project, layeredEntries);
+        var installKind = DetectRoyalCandyTextInstallKind(project, identifyingEntries)
+            ?? DetectRoyalCandyExeFsInstallKind(project, identifyingEntries);
         if (installKind is not null)
         {
             var workflowId = installKind.Value == RoyalCandyInstallKind.StoryLimits

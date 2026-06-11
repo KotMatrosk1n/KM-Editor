@@ -319,6 +319,143 @@ public sealed class SwShHookReservationTests
                 && diagnostic.Message.Contains("Bag Hook", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void StartingItemsHideRoyalCandyReservedItemWhenRoyalCandyIsInstalled(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, workflowId);
+
+        var workflow = new SwShStartingItemsWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+
+        Assert.DoesNotContain(
+            workflow.ItemOptions,
+            option => option.ItemId == SwShBagHookAmxPatcher.RoyalCandyItemId);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void StartingItemsRejectRoyalCandyReservedItemWhenRoyalCandyIsInstalled(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, workflowId);
+
+        var result = new SwShStartingItemsEditSessionService().StageGrants(
+            paths,
+            [new SwShStartingItemGrantSelection(2, SwShBagHookAmxPatcher.RoyalCandyItemId, 1)],
+            session: null);
+
+        Assert.Empty(result.Session.PendingEdits);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Royal Candy and EXP Candy XL", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BagHookInstallStoresSignatureOutsideExecutableAmxCode()
+    {
+        var patched = SwShBagHookAmxPatcher.InstallEmptyHook(CreateVanillaBagEventScript());
+        var decoded = DecodeTestAmx(patched);
+        var codeCells = ReadTestCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, cellSize: 8);
+        var markerCells = ReadTestCells(decoded.Expanded, decoded.Header.Hea - 5 * 8, 5 * 8, cellSize: 8);
+
+        Assert.Equal(5022 + 103, codeCells.Length);
+        Assert.DoesNotContain(0x4741425F48535753UL, codeCells);
+        Assert.DoesNotContain(0x32565F4B4F4F485FUL, codeCells);
+        Assert.Equal(
+            [0x4741425F48535753UL, 0x32565F4B4F4F485FUL, 20UL, 5UL, 70UL],
+            markerCells);
+
+        var analysis = SwShBagHookAmxPatcher.Analyze(patched);
+        Assert.Equal(SwShBagHookInstallKind.InstalledV2, analysis.Kind);
+    }
+
+    [Fact]
+    public void SlotPatchesMigrateLegacyCodeSectionBagHookSignature()
+    {
+        var legacy = MoveTestMarkerFromDataToCode(SwShBagHookAmxPatcher.InstallEmptyHook(CreateVanillaBagEventScript()));
+
+        var legacyAnalysis = SwShBagHookAmxPatcher.Analyze(legacy);
+        Assert.Equal(SwShBagHookInstallKind.InstalledV2, legacyAnalysis.Kind);
+        Assert.Contains("legacy code-section marker", legacyAnalysis.Message, StringComparison.Ordinal);
+
+        var patched = SwShBagHookAmxPatcher.ApplySlotPatches(
+            legacy,
+            [new SwShBagHookSlotPatch(1, SwShBagHookAmxPatcher.RoyalCandyItemId, 1)]);
+
+        var decoded = DecodeTestAmx(patched);
+        var codeCells = ReadTestCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, cellSize: 8);
+        var markerCells = ReadTestCells(decoded.Expanded, decoded.Header.Hea - 5 * 8, 5 * 8, cellSize: 8);
+        Assert.Equal(5022 + 103, codeCells.Length);
+        Assert.DoesNotContain(0x4741425F48535753UL, codeCells);
+        Assert.Equal(
+            [0x4741425F48535753UL, 0x32565F4B4F4F485FUL, 20UL, 5UL, 70UL],
+            markerCells);
+
+        var analysis = SwShBagHookAmxPatcher.Analyze(patched);
+        var slot1 = analysis.Slots.Single(slot => slot.Slot == 1);
+        Assert.Equal(SwShBagHookInstallKind.InstalledV2, analysis.Kind);
+        Assert.Equal("occupied", slot1.Status);
+        Assert.Equal(SwShBagHookAmxPatcher.RoyalCandyItemId, slot1.ItemId);
+        Assert.Equal(1, slot1.Quantity);
+        Assert.DoesNotContain("legacy code-section marker", analysis.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BagHookStageInstallRepairsLegacyCodeSectionSignature()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        var targetPath = OutputPath(paths, SwShBagHookWorkflowService.BagEventScriptPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+        File.WriteAllBytes(
+            targetPath,
+            MoveTestMarkerFromDataToCode(SwShBagHookAmxPatcher.InstallEmptyHook(CreateVanillaBagEventScript())));
+
+        var workflow = new SwShBagHookWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+        Assert.Equal(SwShBagHookWorkflowService.RepairableStatus, workflow.InstallStatus);
+
+        var service = new SwShBagHookEditSessionService();
+        var stage = service.StageInstall(paths, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        workflow = new SwShBagHookWorkflowService().Load(new ProjectWorkspaceService().Open(paths));
+        Assert.Equal(SwShBagHookWorkflowService.InstalledStatus, workflow.InstallStatus);
+
+        var decoded = DecodeTestAmx(File.ReadAllBytes(targetPath));
+        var codeCells = ReadTestCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, cellSize: 8);
+        Assert.DoesNotContain(0x4741425F48535753UL, codeCells);
+    }
+
+    [Fact]
+    public void CatchCapStageRejectsDescendingBadgeCaps()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+
+        var result = new SwShCatchCapEditSessionService().StageCaps(
+            paths,
+            Enumerable.Range(0, SwShCatchCapMainPatcher.CapCount)
+                .Select(index => new SwShCatchCapSelection(index, index == 1 ? 19 : 20 + index * 5))
+                .ToArray(),
+            session: null);
+
+        Assert.Empty(result.Session.PendingEdits);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("same as or higher", StringComparison.Ordinal));
+    }
+
     private static bool IsSameFeatureFamily(string leftOwner, string rightOwner)
     {
         return IsRoyalCandyFamily(leftOwner) && IsRoyalCandyFamily(rightOwner);
@@ -616,6 +753,141 @@ public sealed class SwShHookReservationTests
         return data;
     }
 
+    private static byte[] MoveTestMarkerFromDataToCode(byte[] safeBagHook)
+    {
+        var decoded = DecodeTestAmx(safeBagHook);
+        const int markerLength = 5 * 8;
+        var legacyHeader = decoded.Header with
+        {
+            Dat = decoded.Header.Dat + markerLength,
+        };
+        var legacyExpanded = new byte[decoded.Header.Hea];
+        Array.Copy(decoded.Expanded, 0, legacyExpanded, 0, decoded.Header.Dat);
+        Array.Copy(decoded.Expanded, decoded.Header.Hea - markerLength, legacyExpanded, decoded.Header.Dat, markerLength);
+        var shiftedDataLength = decoded.Header.Hea - decoded.Header.Dat - markerLength;
+        if (shiftedDataLength > 0)
+        {
+            Array.Copy(decoded.Expanded, decoded.Header.Dat, legacyExpanded, legacyHeader.Dat, shiftedDataLength);
+        }
+
+        WriteAmxHeaderFields(legacyExpanded, legacyHeader);
+        return BuildTestCompactAmx(legacyExpanded[..legacyHeader.Cod], legacyHeader, legacyExpanded);
+    }
+
+    private static TestAmx DecodeTestAmx(byte[] data)
+    {
+        var header = ReadTestHeader(data);
+        var expanded = ExpandTestCompactAmx(data, header, cellSize: 8);
+        return new TestAmx(header, expanded);
+    }
+
+    private static TestAmxHeader ReadTestHeader(byte[] data)
+    {
+        return new TestAmxHeader(
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x00)),
+            BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(0x04)),
+            data[0x06],
+            data[0x07],
+            BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(0x08)),
+            BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(0x0A)),
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x0C)),
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x10)),
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x14)),
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x18)),
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x1C)),
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x20)),
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x24)),
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x28)),
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x2C)),
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x30)),
+            BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(0x34)));
+    }
+
+    private static byte[] ExpandTestCompactAmx(byte[] data, TestAmxHeader header, int cellSize)
+    {
+        var expanded = new byte[header.Hea];
+        Array.Copy(data, expanded, Math.Min(header.Cod, data.Length));
+
+        var src = header.Size - header.Cod;
+        var dst = header.Hea - header.Cod;
+        while (src > 0)
+        {
+            ulong cell = 0;
+            var shift = 0;
+            var signSource = 0;
+            do
+            {
+                src--;
+                signSource = header.Cod + src;
+                var current = data[signSource];
+                cell |= (ulong)(current & 0x7F) << shift;
+                shift += 7;
+            } while (src > 0 && (data[header.Cod + src - 1] & 0x80) != 0);
+
+            if ((data[signSource] & 0x40) != 0)
+            {
+                while (shift < cellSize * 8)
+                {
+                    cell |= 0xFFUL << shift;
+                    shift += 8;
+                }
+            }
+
+            dst -= cellSize;
+            WriteTestCell(expanded, header.Cod + dst, cell);
+        }
+
+        return expanded;
+    }
+
+    private static ulong[] ReadTestCells(byte[] data, int offset, int length, int cellSize)
+    {
+        var cells = new ulong[length / cellSize];
+        for (var i = 0; i < cells.Length; i++)
+        {
+            cells[i] = BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(offset + i * cellSize));
+        }
+
+        return cells;
+    }
+
+    private static byte[] BuildTestCompactAmx(byte[] prefix, TestAmxHeader header, byte[] expanded)
+    {
+        var cells = ReadTestCells(expanded, header.Cod, header.Hea - header.Cod, cellSize: 8);
+        var compactBody = CompactAmxCells(cells);
+        var result = new byte[header.Cod + compactBody.Length];
+        Array.Copy(prefix, result, prefix.Length);
+        Array.Copy(compactBody, 0, result, header.Cod, compactBody.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(result.AsSpan(0x00), result.Length);
+        return result;
+    }
+
+    private static void WriteAmxHeaderFields(byte[] data, TestAmxHeader header)
+    {
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x00), header.Size);
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(0x04), header.Magic);
+        data[0x06] = header.FileVersion;
+        data[0x07] = header.AmxVersion;
+        BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(0x08), header.Flags);
+        BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(0x0A), header.DefSize);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x0C), header.Cod);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x10), header.Dat);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x14), header.Hea);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x18), header.Stp);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x1C), header.Cip);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x20), header.Publics);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x24), header.Natives);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x28), header.Libraries);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x2C), header.PubVars);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x30), header.Tags);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(0x34), header.NameTable);
+    }
+
+    private static void WriteTestCell(byte[] data, int offset, ulong value)
+    {
+        BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(offset), value);
+    }
+
     private static byte[] CompactAmxCells(IEnumerable<ulong> cells)
     {
         var compact = new List<byte>();
@@ -689,4 +961,25 @@ public sealed class SwShHookReservationTests
         EQ = 0,
         NE = 1,
     }
+
+    private sealed record TestAmx(TestAmxHeader Header, byte[] Expanded);
+
+    private sealed record TestAmxHeader(
+        int Size,
+        ushort Magic,
+        byte FileVersion,
+        byte AmxVersion,
+        short Flags,
+        short DefSize,
+        int Cod,
+        int Dat,
+        int Hea,
+        int Stp,
+        int Cip,
+        int Publics,
+        int Natives,
+        int Libraries,
+        int PubVars,
+        int Tags,
+        int NameTable);
 }

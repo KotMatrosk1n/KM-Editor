@@ -14,6 +14,8 @@ namespace KM.SwSh.BagHook;
 public sealed class SwShBagHookWorkflowService
 {
     public const string BagEventScriptPath = SwShRoyalCandyWorkflowService.BagEventScriptPath;
+    public const string InstalledStatus = "installed";
+    public const string RepairableStatus = "repairable";
 
     private readonly SwShItemsWorkflowService itemsWorkflowService;
 
@@ -99,9 +101,10 @@ public sealed class SwShBagHookWorkflowService
         try
         {
             var analysis = SwShBagHookAmxPatcher.Analyze(File.ReadAllBytes(sourcePath));
+            var hasLegacyCodeMarker = analysis.Message.Contains("legacy code-section marker", StringComparison.Ordinal);
             var installStatus = analysis.Kind switch
             {
-                SwShBagHookInstallKind.InstalledV2 => "installed",
+                SwShBagHookInstallKind.InstalledV2 => hasLegacyCodeMarker ? RepairableStatus : InstalledStatus,
                 SwShBagHookInstallKind.NotInstalled => summary.Availability == SwShWorkflowAvailability.Available ? "available" : "readOnly",
                 SwShBagHookInstallKind.LegacySingleGrant => "legacy",
                 _ => "blocked",

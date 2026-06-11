@@ -101,7 +101,8 @@ public sealed class SwShStartingItemsEditSessionService
                 continue;
             }
 
-            _ = ParsePendingGrants(edit.NewValue, diagnostics);
+            var parsedGrants = ParsePendingGrants(edit.NewValue, diagnostics);
+            _ = NormalizeGrants(project, parsedGrants.Values.ToArray(), diagnostics);
             CanStage(project, workflow, diagnostics);
         }
 
@@ -239,6 +240,7 @@ public sealed class SwShStartingItemsEditSessionService
         IReadOnlyList<SwShStartingItemGrantSelection> grants,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        var royalCandyInstalled = startingItemsWorkflowService.HasInstalledRoyalCandy(project);
         var itemLookup = startingItemsWorkflowService.LoadItemOptionLookup(project, diagnostics);
         var normalized = new List<SwShStartingItemGrantSelection>();
         var seenSlots = new HashSet<int>();
@@ -272,11 +274,33 @@ public sealed class SwShStartingItemsEditSessionService
 
             if (!itemLookup.TryGetValue(grant.ItemId.Value, out var item))
             {
+                if (royalCandyInstalled
+                    && grant.ItemId.Value == SwShBagHookAmxPatcher.RoyalCandyItemId)
+                {
+                    diagnostics.Add(CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        "Royal Candy and EXP Candy XL are reserved by Royal Candy while Royal Candy is installed.",
+                        field: GrantsField,
+                        expected: "Use Royal Candy slot 1; choose a different Starting Items item for slots 2-20"));
+                    continue;
+                }
+
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
                     $"Starting item id {grant.ItemId} is not available.",
                     field: GrantsField,
                     expected: "Known item id"));
+                continue;
+            }
+
+            if (royalCandyInstalled
+                && SwShStartingItemsWorkflowService.IsReservedRoyalCandyStartingItem(item.ItemId, item.Name))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Royal Candy and EXP Candy XL cannot be added through Starting Items while Royal Candy is installed.",
+                    field: GrantsField,
+                    expected: "Use Royal Candy slot 1; choose a different Starting Items item for slots 2-20"));
                 continue;
             }
 

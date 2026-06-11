@@ -114,15 +114,25 @@ internal static class SwShCatchCapMainPatcher
             throw new InvalidDataException("Catch Cap Editor requires exactly nine cap values for badge counts 0-8.");
         }
 
-        var capBytes = caps.Select(cap =>
+        var capBytes = new byte[caps.Count];
+        for (var index = 0; index < caps.Count; index++)
         {
+            var cap = caps[index];
             if (cap is < MinimumCap or > MaximumCap)
             {
                 throw new InvalidDataException($"Catch cap {cap} must be between {MinimumCap} and {MaximumCap}.");
             }
 
-            return checked((byte)cap);
-        }).ToArray();
+            if (index > 0 && cap < caps[index - 1])
+            {
+                throw new InvalidDataException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Catch cap for badge count {index} must be level {caps[index - 1]} or higher."));
+            }
+
+            capBytes[index] = checked((byte)cap);
+        }
 
         var nso = SwShNsoFile.Parse(mainBytes);
         var text = nso.Text.DecompressedData.ToArray();

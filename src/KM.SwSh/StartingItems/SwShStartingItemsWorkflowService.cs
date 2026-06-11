@@ -49,19 +49,21 @@ public sealed class SwShStartingItemsWorkflowService
 
         var summary = CreateSummary(project);
         var diagnostics = new List<ValidationDiagnostic>(summary.Diagnostics);
-        var itemOptions = LoadItemOptions(project, diagnostics);
-        var itemLookup = itemOptions.ToDictionary(item => item.ItemId);
         var bagHook = bagHookWorkflowService.Load(project);
         diagnostics.AddRange(bagHook.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
+        var royalCandyInstalled = IsRoyalCandyInstalled(bagHook);
+        var itemOptions = LoadItemOptions(project, diagnostics, royalCandyInstalled);
+        var itemLookup = itemOptions.ToDictionary(item => item.ItemId);
 
-        var installStatus = bagHook.InstallStatus == "installed"
+        var bagHookInstalled = IsBagHookInstalledForSlotWrites(bagHook.InstallStatus);
+        var installStatus = bagHookInstalled
             ? summary.Availability == SwShWorkflowAvailability.Available ? "available" : "readOnly"
             : "blocked";
-        var installMessage = bagHook.InstallStatus == "installed"
+        var installMessage = bagHookInstalled
             ? "Starting Items can claim Bag Hook slots 2-20. Slot 1 is never used because it is reserved for Royal Candy."
             : "Install Bag Hook before adding Starting Items.";
 
-        if (bagHook.InstallStatus != "installed")
+        if (!bagHookInstalled)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
@@ -88,21 +90,38 @@ public sealed class SwShStartingItemsWorkflowService
             diagnostics);
     }
 
+    private static bool IsBagHookInstalledForSlotWrites(string installStatus)
+    {
+        return installStatus is SwShBagHookWorkflowService.InstalledStatus
+            or SwShBagHookWorkflowService.RepairableStatus;
+    }
+
     internal IReadOnlyDictionary<int, SwShStartingItemOptionRecord> LoadItemOptionLookup(
         OpenedProject project,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        return LoadItemOptions(project, diagnostics).ToDictionary(item => item.ItemId);
+        var bagHook = bagHookWorkflowService.Load(project);
+        return LoadItemOptions(project, diagnostics, IsRoyalCandyInstalled(bagHook))
+            .ToDictionary(item => item.ItemId);
+    }
+
+    internal bool HasInstalledRoyalCandy(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        return IsRoyalCandyInstalled(bagHookWorkflowService.Load(project));
     }
 
     private IReadOnlyList<SwShStartingItemOptionRecord> LoadItemOptions(
         OpenedProject project,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        bool royalCandyInstalled)
     {
         try
         {
             return itemsWorkflowService.Load(project).Items
                 .Where(item => item.ItemId > 0 && !string.Equals(item.Name, "None", StringComparison.OrdinalIgnoreCase))
+                .Where(item => !royalCandyInstalled || !IsReservedRoyalCandyStartingItem(item.ItemId, item.Name))
                 .Select(item => new SwShStartingItemOptionRecord(
                     item.ItemId,
                     item.Name,
@@ -130,6 +149,38 @@ public sealed class SwShStartingItemsWorkflowService
         }
 
         return Array.Empty<SwShStartingItemOptionRecord>();
+    }
+
+    internal static bool IsReservedRoyalCandyStartingItem(int itemId, string? itemName = null)
+    {
+        if (itemId == SwShBagHookAmxPatcher.RoyalCandyItemId)
+        {
+            return true;
+        }
+
+        return IsExpCandyXlName(itemName);
+    }
+
+    private static bool IsRoyalCandyInstalled(SwShBagHookWorkflow bagHook)
+    {
+        var slot1 = bagHook.Slots.FirstOrDefault(slot => slot.Slot == SwShBagHookAmxPatcher.RoyalCandySlot);
+        return slot1?.Status == "occupied"
+            && slot1.ItemId == SwShBagHookAmxPatcher.RoyalCandyItemId;
+    }
+
+    private static bool IsExpCandyXlName(string? itemName)
+    {
+        if (string.IsNullOrWhiteSpace(itemName))
+        {
+            return false;
+        }
+
+        var normalized = new string(
+            itemName
+                .Where(char.IsLetterOrDigit)
+                .Select(char.ToUpperInvariant)
+                .ToArray());
+        return normalized is "EXPCANDYXL" or "EXPERIENCECANDYXL";
     }
 
     private static SwShStartingItemGrantRecord ToGrant(

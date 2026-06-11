@@ -406,8 +406,9 @@ public sealed class SwShCatchCapEditSessionService
             requested.Add(selection.BadgeCount, selection.LevelCap);
         }
 
+        var definitions = workflow.Caps.OrderBy(cap => cap.BadgeCount).ToArray();
         var normalized = new List<int>(SwShCatchCapMainPatcher.CapCount);
-        foreach (var definition in workflow.Caps.OrderBy(cap => cap.BadgeCount))
+        foreach (var definition in definitions)
         {
             var levelCap = requested.TryGetValue(definition.BadgeCount, out var requestedCap)
                 ? requestedCap
@@ -424,6 +425,8 @@ public sealed class SwShCatchCapEditSessionService
 
             normalized.Add(levelCap);
         }
+
+        ValidateCapOrder(normalized, definitions.Select(definition => definition.Label).ToArray(), diagnostics);
 
         return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             ? Array.Empty<int>()
@@ -474,11 +477,54 @@ public sealed class SwShCatchCapEditSessionService
                     field: CapsField,
                     expected: "Nine badge caps"));
             }
+
+            if (seen[index] &&
+                (values[index] is < SwShCatchCapMainPatcher.MinimumCap or > SwShCatchCapMainPatcher.MaximumCap))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Catch Cap badge count {index} must be between {SwShCatchCapMainPatcher.MinimumCap} and {SwShCatchCapMainPatcher.MaximumCap}.",
+                    field: CapsField,
+                    expected: "Level cap between 1 and 100"));
+            }
+        }
+
+        if (seen.All(isSeen => isSeen))
+        {
+            ValidateCapOrder(values, labels: null, diagnostics);
         }
 
         return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
             ? Array.Empty<int>()
             : values;
+    }
+
+    private static void ValidateCapOrder(
+        IReadOnlyList<int> caps,
+        IReadOnlyList<string>? labels,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (caps.Count != SwShCatchCapMainPatcher.CapCount)
+        {
+            return;
+        }
+
+        for (var index = 1; index < caps.Count; index++)
+        {
+            if (caps[index] >= caps[index - 1])
+            {
+                continue;
+            }
+
+            var label = labels is not null && index < labels.Count
+                ? labels[index]
+                : string.Create(CultureInfo.InvariantCulture, $"badge count {index}");
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Catch cap for {label} must be the same as or higher than the previous badge level (level {caps[index - 1]}).",
+                field: CapsField,
+                expected: "Each badge level must be the same or higher than the previous badge level"));
+        }
     }
 
     private static bool CanStage(

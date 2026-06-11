@@ -57,8 +57,15 @@ internal static class SwShBagHookAmxPatcher
     private const int HookProcedureHeaderCellCount = 1;
     private const int HookTrailerCellCount = 2;
     private const int HookMarkerCellCount = 5;
+    private const int HookCodeCellCount = HookProcedureHeaderCellCount + (SlotCount * SlotWidth) + HookTrailerCellCount;
     private const ulong MarkerCell0 = 0x4741425F48535753; // SWSH_BAG
     private const ulong MarkerCell1 = 0x32565F4B4F4F485F; // _HOOK_V2
+
+    private enum MarkerPlacement
+    {
+        DataSection,
+        LegacyCodeSection,
+    }
 
     public static SwShBagHookAnalysis Analyze(byte[] data)
     {
@@ -76,11 +83,15 @@ internal static class SwShBagHookAmxPatcher
                 return CreateConflict("Bag Hook call site is not a local AMX CALL with a readable target.");
             }
 
-            if (TryReadV2Slots(codeCells, targetCell.Value, out var slots))
+            if (TryReadV2Slots(decoded, codeCells, targetCell.Value, out var slots, out var markerPlacement))
             {
+                var message = markerPlacement == MarkerPlacement.LegacyCodeSection
+                    ? "Bag Hook V2 is installed with the legacy code-section marker. Stage and apply Bag Hook, Royal Candy, or Starting Items to migrate the marker into AMX data and keep the script VM-safe."
+                    : "Bag Hook V2 is installed. Slot 1 is reserved for Royal Candy; slots 2-20 are available for Starting Items.";
+
                 return new SwShBagHookAnalysis(
                     SwShBagHookInstallKind.InstalledV2,
-                    "Bag Hook V2 is installed. Slot 1 is reserved for Royal Candy; slots 2-20 are available for Starting Items.",
+                    message,
                     slots);
             }
 
@@ -119,7 +130,7 @@ internal static class SwShBagHookAmxPatcher
         var analysis = Analyze(data);
         if (analysis.Kind == SwShBagHookInstallKind.InstalledV2)
         {
-            return data.ToArray();
+            return MigrateLegacyCodeMarkerIfNeeded(data) ?? data.ToArray();
         }
 
         if (analysis.Kind is not SwShBagHookInstallKind.NotInstalled)
@@ -134,13 +145,22 @@ internal static class SwShBagHookAmxPatcher
 
         var bagProcCell = codeCells.Length;
         var hookCells = CreateEmptyHookCells();
+        var markerCells = CreateHookMarkerCells();
+        var hookCodeLength = hookCells.Length * decoded.CellSize;
+        var markerLength = markerCells.Length * decoded.CellSize;
         var patchedHeader = decoded.Header with
         {
-            Dat = decoded.Header.Dat + hookCells.Length * decoded.CellSize,
-            Hea = decoded.Header.Hea + hookCells.Length * decoded.CellSize,
-            Stp = decoded.Header.Stp + hookCells.Length * decoded.CellSize,
+            Dat = decoded.Header.Dat + hookCodeLength,
+            Hea = decoded.Header.Hea + hookCodeLength + markerLength,
+            Stp = decoded.Header.Stp + hookCodeLength + markerLength,
         };
-        var patchedExpanded = InsertAmxCodeCells(decoded.Expanded, decoded.Header, patchedHeader, hookCells, decoded.CellSize);
+        var patchedExpanded = InsertAmxCodeCellsAndAppendDataMarker(
+            decoded.Expanded,
+            decoded.Header,
+            patchedHeader,
+            hookCells,
+            markerCells,
+            decoded.CellSize);
 
         codeCells = ReadCells(patchedExpanded, patchedHeader.Cod, patchedHeader.Dat - patchedHeader.Cod, decoded.CellSize);
         codeCells[DuplicateNativeCallCell + 1] = DuplicateNativeIndex;
@@ -169,9 +189,21 @@ internal static class SwShBagHookAmxPatcher
         var bagProcCell = TryDecodeLocalCallTarget(codeCells, GrantStubCallerCell, decoded.CellSize)
             ?? throw new InvalidDataException("Bag Hook call site is not a readable local AMX CALL.");
 
-        if (!TryReadV2Slots(codeCells, bagProcCell, out _))
+        if (!TryReadV2Slots(decoded, codeCells, bagProcCell, out _, out var markerPlacement))
         {
             throw new InvalidDataException("Bag Hook V2 must be installed before slot grants can be edited.");
+        }
+
+        if (markerPlacement == MarkerPlacement.LegacyCodeSection)
+        {
+            decoded = MoveLegacyCodeMarkerToDataSection(decoded, bagProcCell);
+            codeCells = ReadCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, decoded.CellSize);
+            bagProcCell = TryDecodeLocalCallTarget(codeCells, GrantStubCallerCell, decoded.CellSize)
+                ?? throw new InvalidDataException("Bag Hook call site is not a readable local AMX CALL after marker migration.");
+            if (!TryReadV2Slots(decoded, codeCells, bagProcCell, out _, out _))
+            {
+                throw new InvalidDataException("Bag Hook V2 marker migration did not produce a readable slot bank.");
+            }
         }
 
         foreach (var patch in patches)
@@ -217,6 +249,26 @@ internal static class SwShBagHookAmxPatcher
             CreateEmptySlots("conflict", "Slot state cannot be trusted until the Bag-event script conflict is resolved."));
     }
 
+    private static byte[]? MigrateLegacyCodeMarkerIfNeeded(byte[] data)
+    {
+        var decoded = Decode(data);
+        var codeCells = ReadCells(decoded.Expanded, decoded.Header.Cod, decoded.Header.Dat - decoded.Header.Cod, decoded.CellSize);
+        var bagProcCell = TryDecodeLocalCallTarget(codeCells, GrantStubCallerCell, decoded.CellSize);
+        if (bagProcCell is null
+            || !TryReadV2Slots(decoded, codeCells, bagProcCell.Value, out _, out var markerPlacement)
+            || markerPlacement != MarkerPlacement.LegacyCodeSection)
+        {
+            return null;
+        }
+
+        decoded = MoveLegacyCodeMarkerToDataSection(decoded, bagProcCell.Value);
+        var patchedPrefix = data[..decoded.Header.Cod].ToArray();
+        WriteAmxHeaderFields(patchedPrefix, decoded.Header);
+        var patched = BuildCompactAmx(patchedPrefix, decoded.Header, decoded.Expanded, decoded.CellSize);
+        VerifyExpandedMemory(patched, decoded.Expanded);
+        return patched;
+    }
+
     private static IReadOnlyList<SwShBagHookSlotState> CreateEmptySlots(string status, string notes)
     {
         return Enumerable.Range(1, SlotCount)
@@ -234,12 +286,15 @@ internal static class SwShBagHookAmxPatcher
     }
 
     private static bool TryReadV2Slots(
+        DecodedAmx decoded,
         IReadOnlyList<ulong> codeCells,
         int bagProcCell,
-        out IReadOnlyList<SwShBagHookSlotState> slots)
+        out IReadOnlyList<SwShBagHookSlotState> slots,
+        out MarkerPlacement markerPlacement)
     {
         slots = Array.Empty<SwShBagHookSlotState>();
-        var minimumLength = bagProcCell + HookProcedureHeaderCellCount + (SlotCount * SlotWidth) + HookTrailerCellCount + HookMarkerCellCount;
+        markerPlacement = MarkerPlacement.DataSection;
+        var minimumLength = bagProcCell + HookCodeCellCount;
         if (bagProcCell < 0 || minimumLength > codeCells.Count)
         {
             return false;
@@ -247,12 +302,20 @@ internal static class SwShBagHookAmxPatcher
 
         if (SignedCellValue(codeCells[bagProcCell], 8) != OpProc
             || SignedCellValue(codeCells[bagProcCell + 101], 8) != OpZeroPri
-            || SignedCellValue(codeCells[bagProcCell + 102], 8) != OpRetn
-            || codeCells[bagProcCell + 103] != MarkerCell0
-            || codeCells[bagProcCell + 104] != MarkerCell1
-            || SignedCellValue(codeCells[bagProcCell + 105], 8) != SlotCount
-            || SignedCellValue(codeCells[bagProcCell + 106], 8) != SlotWidth
-            || SignedCellValue(codeCells[bagProcCell + 107], 8) != FreedNativeIndex)
+            || SignedCellValue(codeCells[bagProcCell + 102], 8) != OpRetn)
+        {
+            return false;
+        }
+
+        if (TryReadDataMarker(decoded))
+        {
+            markerPlacement = MarkerPlacement.DataSection;
+        }
+        else if (TryReadLegacyCodeMarker(codeCells, bagProcCell))
+        {
+            markerPlacement = MarkerPlacement.LegacyCodeSection;
+        }
+        else
         {
             return false;
         }
@@ -336,7 +399,7 @@ internal static class SwShBagHookAmxPatcher
 
     private static ulong[] CreateEmptyHookCells()
     {
-        var cells = new ulong[HookProcedureHeaderCellCount + (SlotCount * SlotWidth) + HookTrailerCellCount + HookMarkerCellCount];
+        var cells = new ulong[HookCodeCellCount];
         cells[0] = OpProc;
         for (var slot = 1; slot <= SlotCount; slot++)
         {
@@ -345,12 +408,19 @@ internal static class SwShBagHookAmxPatcher
 
         cells[101] = OpZeroPri;
         cells[102] = OpRetn;
-        cells[103] = MarkerCell0;
-        cells[104] = MarkerCell1;
-        cells[105] = SlotCount;
-        cells[106] = SlotWidth;
-        cells[107] = FreedNativeIndex;
         return cells;
+    }
+
+    private static ulong[] CreateHookMarkerCells()
+    {
+        return
+        [
+            MarkerCell0,
+            MarkerCell1,
+            SlotCount,
+            SlotWidth,
+            FreedNativeIndex,
+        ];
     }
 
     private static void WriteEmptySlot(IList<ulong> cells, int slotStart)
@@ -445,7 +515,13 @@ internal static class SwShBagHookAmxPatcher
         }
     }
 
-    private static byte[] InsertAmxCodeCells(byte[] expanded, SwShAmxHeader header, SwShAmxHeader patchedHeader, ulong[] cellsToAppend, int cellSize)
+    private static byte[] InsertAmxCodeCellsAndAppendDataMarker(
+        byte[] expanded,
+        SwShAmxHeader header,
+        SwShAmxHeader patchedHeader,
+        ulong[] cellsToAppend,
+        ulong[] markerCells,
+        int cellSize)
     {
         if (patchedHeader.Cod != header.Cod)
         {
@@ -453,7 +529,8 @@ internal static class SwShBagHookAmxPatcher
         }
 
         var appendLength = cellsToAppend.Length * cellSize;
-        if (patchedHeader.Dat != header.Dat + appendLength || patchedHeader.Hea != header.Hea + appendLength)
+        var markerLength = markerCells.Length * cellSize;
+        if (patchedHeader.Dat != header.Dat + appendLength || patchedHeader.Hea != header.Hea + appendLength + markerLength)
         {
             throw new InvalidDataException("AMX patched header does not match the requested appended code length.");
         }
@@ -462,7 +539,64 @@ internal static class SwShBagHookAmxPatcher
         Array.Copy(expanded, 0, result, 0, header.Dat);
         WriteCells(result, header.Dat, cellsToAppend, cellSize);
         Array.Copy(expanded, header.Dat, result, patchedHeader.Dat, header.Hea - header.Dat);
+        WriteCells(result, patchedHeader.Hea - markerLength, markerCells, cellSize);
         return result;
+    }
+
+    private static DecodedAmx MoveLegacyCodeMarkerToDataSection(DecodedAmx decoded, int bagProcCell)
+    {
+        var markerLength = HookMarkerCellCount * decoded.CellSize;
+        var codeMarkerOffset = decoded.Header.Cod + (bagProcCell + HookCodeCellCount) * decoded.CellSize;
+        if (codeMarkerOffset + markerLength != decoded.Header.Dat)
+        {
+            throw new InvalidDataException("Legacy Bag Hook marker is not at the end of the AMX code section; refusing automatic migration.");
+        }
+
+        var patchedHeader = decoded.Header with
+        {
+            Dat = decoded.Header.Dat - markerLength,
+        };
+        var patchedExpanded = new byte[decoded.Header.Hea];
+        Array.Copy(decoded.Expanded, 0, patchedExpanded, 0, codeMarkerOffset);
+        Array.Copy(decoded.Expanded, decoded.Header.Dat, patchedExpanded, patchedHeader.Dat, decoded.Header.Hea - decoded.Header.Dat);
+        Array.Copy(decoded.Expanded, codeMarkerOffset, patchedExpanded, decoded.Header.Hea - markerLength, markerLength);
+        WriteAmxHeaderFields(patchedExpanded, patchedHeader);
+        return new DecodedAmx(patchedHeader, decoded.CellSize, patchedExpanded);
+    }
+
+    private static bool TryReadDataMarker(DecodedAmx decoded)
+    {
+        var markerLength = HookMarkerCellCount * decoded.CellSize;
+        if (decoded.Header.Hea - decoded.Header.Dat < markerLength)
+        {
+            return false;
+        }
+
+        var markerStart = decoded.Header.Hea - markerLength;
+        var markerCells = ReadCells(decoded.Expanded, markerStart, markerLength, decoded.CellSize);
+        return IsHookMarker(markerCells);
+    }
+
+    private static bool TryReadLegacyCodeMarker(IReadOnlyList<ulong> codeCells, int bagProcCell)
+    {
+        var markerStart = bagProcCell + HookCodeCellCount;
+        if (markerStart + HookMarkerCellCount > codeCells.Count)
+        {
+            return false;
+        }
+
+        var markerCells = codeCells.Skip(markerStart).Take(HookMarkerCellCount).ToArray();
+        return IsHookMarker(markerCells);
+    }
+
+    private static bool IsHookMarker(IReadOnlyList<ulong> markerCells)
+    {
+        return markerCells.Count == HookMarkerCellCount
+            && markerCells[0] == MarkerCell0
+            && markerCells[1] == MarkerCell1
+            && SignedCellValue(markerCells[2], 8) == SlotCount
+            && SignedCellValue(markerCells[3], 8) == SlotWidth
+            && SignedCellValue(markerCells[4], 8) == FreedNativeIndex;
     }
 
     private static void WriteAmxHeaderFields(byte[] data, SwShAmxHeader header)
