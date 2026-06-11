@@ -3296,9 +3296,9 @@ describe('App', () => {
             {
               assets: [],
               draft: false,
-              html_url: 'https://github.example/releases/tag/v0.0.4',
+              html_url: 'https://github.example/releases/tag/v1.0.0',
               prerelease: false,
-              tag_name: 'v0.0.4'
+              tag_name: 'v1.0.0'
             }
           ]),
           { headers: { 'Content-Type': 'application/json' }, status: 200 }
@@ -3311,7 +3311,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('button', { name: 'Check for Updates' }));
 
-    expect(await screen.findByText('KM Editor v0.0.4 is up to date.')).toBeInTheDocument();
+    expect(await screen.findByText('KM Editor v1.0.0 is up to date.')).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Update Available' })).not.toBeInTheDocument();
   });
 

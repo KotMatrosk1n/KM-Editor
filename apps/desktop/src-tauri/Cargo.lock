@@ -1729,7 +1729,7 @@ dependencies = [
 
 [[package]]
 name = "km-editor-desktop"
-version = "0.0.4"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
