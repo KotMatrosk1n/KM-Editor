@@ -602,6 +602,64 @@ public sealed class SwShItemTable
         return result;
     }
 
+    public byte[] WriteRoyalCandyRow(int templateItemId, int targetItemId)
+    {
+        if (!recordsByItemId.TryGetValue(templateItemId, out var templateRecord))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(templateItemId),
+                $"Template item {templateItemId} is not present in the item table.");
+        }
+
+        if (!recordsByItemId.TryGetValue(targetItemId, out var targetRecord))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(targetItemId),
+                $"Target item {targetItemId} is not present in the item table.");
+        }
+
+        var maxRowIndex = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(MaxRowIndexOffset));
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(maxRowIndex, ushort.MaxValue);
+
+        var result = new byte[data.Length + RowSize];
+        data.CopyTo(result.AsSpan());
+
+        var templateRowOffset = RowsStart + (templateRecord.RawRowIndex * RowSize);
+        var appendedRowOffset = data.Length;
+        result.AsSpan(templateRowOffset, RowSize).CopyTo(result.AsSpan(appendedRowOffset, RowSize));
+        if (targetRecord.SharedItemIds.Count == 1)
+        {
+            result.AsSpan(templateRowOffset, RowSize).CopyTo(result.AsSpan(RowsStart + (targetRecord.RawRowIndex * RowSize), RowSize));
+            WriteRoyalCandyRowShape(result, RowsStart + (targetRecord.RawRowIndex * RowSize), templateRecord);
+        }
+
+        BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(MaxRowIndexOffset), checked((ushort)(maxRowIndex + 1)));
+        BinaryPrimitives.WriteUInt16LittleEndian(
+            result.AsSpan(EntryTableOffset + (targetItemId * sizeof(ushort))),
+            maxRowIndex);
+
+        WriteRoyalCandyRowShape(result, appendedRowOffset, templateRecord);
+
+        return result;
+    }
+
+    private static void WriteRoyalCandyRowShape(byte[] data, int rowOffset, SwShItemTableRecord templateRecord)
+    {
+        WriteUInt32(data, rowOffset + BuyPriceOffset, 1);
+        WriteUInt32(data, rowOffset + WattsPriceOffset, 0);
+        WriteUInt32(data, rowOffset + AlternatePriceOffset, checked((int)templateRecord.AlternatePrice));
+        WritePackedNibble(data, rowOffset + PouchOffset, (int)SwShItemPouch.KeyItems, writeHighNibble: false);
+        WritePackedNibble(data, rowOffset + PouchOffset, templateRecord.PouchFlags, writeHighNibble: true);
+        WriteByte(data, rowOffset + FieldUseTypeOffset, templateRecord.FieldUseType);
+        WriteBooleanByte(data, rowOffset + CanUseOnPokemonOffset, 1);
+        WriteByte(data, rowOffset + ItemTypeOffset, 9);
+        WriteByte(data, rowOffset + SortIndexOffset, templateRecord.SortIndex);
+        WriteInt16(data, rowOffset + ItemSpriteOffset, templateRecord.ItemSprite);
+        WriteByte(data, rowOffset + GroupTypeOffset, 0);
+        WriteByte(data, rowOffset + GroupIndexOffset, 0);
+        WritePackedBit(data, rowOffset + Boost0Offset, 2, 1);
+    }
+
     private SwShItemTableRecord ReadRecord(int itemId, int rawRowIndex, IReadOnlyList<int> aliases)
     {
         var rowOffset = RowsStart + (rawRowIndex * RowSize);

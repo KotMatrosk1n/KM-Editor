@@ -761,17 +761,15 @@ public sealed class SwShRoyalCandyEditSessionService
         if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemPath, StringComparison.OrdinalIgnoreCase))
         {
             return SwShItemTable.Parse(File.ReadAllBytes(source.AbsolutePath))
-                .WriteClonedRows(
-                [
-                    new SwShItemTableCloneEdit(
-                        TemplateItemId: 50,
-                        TargetItemId: 1128),
-                ]);
+                .WriteRoyalCandyRow(
+                    templateItemId: 50,
+                    targetItemId: 1128);
         }
 
         if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemHashPath, StringComparison.OrdinalIgnoreCase))
         {
-            var itemHashTable = SwShItemHashTable.Parse(File.ReadAllBytes(source.AbsolutePath));
+            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+            var itemHashTable = SwShItemHashTable.Parse(sourceBytes);
             if (itemHashTable.Entries.All(entry => entry.ItemId != 1128))
             {
                 diagnostics.Add(CreateDiagnostic(
@@ -782,7 +780,17 @@ public sealed class SwShRoyalCandyEditSessionService
                 return null;
             }
 
-            return itemHashTable.Write();
+            if (TryRestoreFilteredItemHashFromBase(project.Paths, source, sourceBytes, itemHashTable, out var restoredHashBytes))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    "Royal Candy detected a previously filtered item hash output and will restore the full base item hash table.",
+                    file: relativePath,
+                    expected: "Full base item hash table"));
+                return restoredHashBytes;
+            }
+
+            return sourceBytes;
         }
 
         if (IsItemTextOutput(relativePath))
@@ -892,6 +900,56 @@ public sealed class SwShRoyalCandyEditSessionService
         }
 
         return null;
+    }
+
+    private static bool TryRestoreFilteredItemHashFromBase(
+        ProjectPaths paths,
+        WorkflowFileSource source,
+        byte[] sourceBytes,
+        SwShItemHashTable sourceTable,
+        out byte[] restoredBytes)
+    {
+        restoredBytes = [];
+        if (source.GraphEntry.LayeredFile is null || source.GraphEntry.BaseFile is null)
+        {
+            return false;
+        }
+
+        var basePath = ResolveBaseSourcePath(paths, SwShRoyalCandyWorkflowService.ItemHashPath);
+        if (basePath is null || !File.Exists(basePath))
+        {
+            return false;
+        }
+
+        var baseBytes = File.ReadAllBytes(basePath);
+        if (sourceBytes.Length >= baseBytes.Length)
+        {
+            return false;
+        }
+
+        SwShItemHashTable baseTable;
+        try
+        {
+            baseTable = SwShItemHashTable.Parse(baseBytes);
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+
+        if (baseTable.Entries.All(entry => entry.ItemId != 1128))
+        {
+            return false;
+        }
+
+        var baseEntries = baseTable.Entries.ToDictionary(entry => entry.ItemId, entry => entry.Hash);
+        if (sourceTable.Entries.Any(entry => !baseEntries.TryGetValue(entry.ItemId, out var hash) || hash != entry.Hash))
+        {
+            return false;
+        }
+
+        restoredBytes = baseBytes;
+        return true;
     }
 
     private static bool ContainsIndependentExeFsHook(byte[] mainBytes)

@@ -822,6 +822,8 @@ h2 {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .status-ready {
@@ -2665,7 +2667,7 @@ h2 {
 }
 
 .starting-items-row {
-  grid-template-columns: 72px minmax(92px, 0.45fr) minmax(220px, 1.4fr) minmax(116px, 0.7fr) minmax(132px, 0.8fr);
+  grid-template-columns: 72px minmax(92px, 0.45fr) minmax(260px, 1.5fr) minmax(116px, 0.7fr);
 }
 
 .workflow-description {
@@ -2784,11 +2786,11 @@ h2 {
   white-space: nowrap;
 }
 
-.exefs-table .royal-candy-workflow-row span,
-.exefs-table .royal-candy-target-row span,
-.exefs-table .bag-hook-row span,
-.exefs-table .catch-cap-row span,
-.exefs-table .starting-items-row span {
+.exefs-table .royal-candy-workflow-row > span,
+.exefs-table .royal-candy-target-row > span,
+.exefs-table .bag-hook-row > span,
+.exefs-table .catch-cap-row > span,
+.exefs-table .starting-items-row > span {
   overflow: visible;
   text-overflow: clip;
   white-space: normal;
@@ -2796,7 +2798,9 @@ h2 {
 }
 
 .exefs-row .status-pill {
-  min-width: 76px;
+  min-width: 92px;
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 
 .exefs-segment-list {

@@ -373,7 +373,7 @@ public sealed class SwShBagHookEditSessionService
             return false;
         }
 
-        if (workflow.InstallStatus == "installed")
+        if (workflow.InstallStatus == SwShBagHookWorkflowService.InstalledStatus)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -382,12 +382,12 @@ public sealed class SwShBagHookEditSessionService
             return false;
         }
 
-        if (workflow.InstallStatus != "available")
+        if (workflow.InstallStatus != "available" && workflow.InstallStatus != SwShBagHookWorkflowService.RepairableStatus)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Bag Hook V2 cannot be installed while the Bag-event script is blocked, legacy, or conflicting.",
-                expected: "Vanilla Bag-event script"));
+                "Bag Hook V2 cannot be installed or repaired while the Bag-event script is blocked, legacy, or conflicting.",
+                expected: "Vanilla Bag-event script or repairable Bag Hook V2 output"));
             return false;
         }
 
@@ -413,7 +413,8 @@ public sealed class SwShBagHookEditSessionService
             return false;
         }
 
-        if (workflow.InstallStatus != "installed")
+        if (workflow.InstallStatus is not SwShBagHookWorkflowService.InstalledStatus
+            and not SwShBagHookWorkflowService.RepairableStatus)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,

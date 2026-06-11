@@ -1795,6 +1795,13 @@ public sealed class ProjectBridgeDispatcherTests
     {
         using var temp = TemporaryBridgeProject.Create();
         WriteRoyalCandyApplyInputs(temp);
+        temp.WriteOutputFile(
+            SwShRoyalCandyWorkflowService.ItemHashPath,
+            new SwShItemHashTable(
+            [
+                new SwShItemHashEntry(50, 0xAABBCCDD00112233),
+                new SwShItemHashEntry(1128, 0xAABBCCDD00112800),
+            ]).Write());
         var baseItemPath = Path.Combine(temp.BaseRomFsPath, "bin", "pml", "item", "item.dat");
         var baseItemBytes = File.ReadAllBytes(baseItemPath);
         var dispatcher = new ProjectBridgeDispatcher();
@@ -1878,11 +1885,16 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(baseItemBytes, File.ReadAllBytes(baseItemPath));
 
         var outputItemPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        var baseItemBytesForAssert = File.ReadAllBytes(Path.Combine(temp.BaseRomFsPath, "bin", "pml", "item", "item.dat"));
         var outputItemTable = SwShItemTable.Parse(File.ReadAllBytes(outputItemPath));
         var royalCandy = outputItemTable.Records.Single(record => record.ItemId == 1128);
-        Assert.Equal(300u, royalCandy.BuyPrice);
-        Assert.Equal(15u, royalCandy.WattsPrice);
-        Assert.Equal(SwShItemPouch.Medicine, royalCandy.Pouch);
+        Assert.Equal(baseItemBytesForAssert.Length + 0x30, File.ReadAllBytes(outputItemPath).Length);
+        Assert.Equal(1129, royalCandy.RawRowIndex);
+        Assert.Equal(1u, royalCandy.BuyPrice);
+        Assert.Equal(0u, royalCandy.WattsPrice);
+        Assert.Equal(SwShItemPouch.KeyItems, royalCandy.Pouch);
+        Assert.True(royalCandy.CanUseOnPokemon);
+        Assert.Equal(9, royalCandy.ItemType);
 
         var outputNames = SwShGameTextFile.Parse(File.ReadAllBytes(Path.Combine(
             temp.OutputRootPath,
@@ -1904,13 +1916,21 @@ public sealed class ProjectBridgeDispatcherTests
             "iteminfo.dat")));
         Assert.Contains("strange energy", outputInfo.Lines[1128].Text, StringComparison.Ordinal);
 
-        var outputHashTable = SwShItemHashTable.Parse(File.ReadAllBytes(Path.Combine(
+        var baseHashBytes = File.ReadAllBytes(Path.Combine(
+            temp.BaseRomFsPath,
+            "bin",
+            "pml",
+            "item",
+            "item_hash_to_index.dat"));
+        var outputHashBytes = File.ReadAllBytes(Path.Combine(
             temp.OutputRootPath,
             "romfs",
             "bin",
             "pml",
             "item",
-            "item_hash_to_index.dat")));
+            "item_hash_to_index.dat"));
+        Assert.Equal(baseHashBytes, outputHashBytes);
+        var outputHashTable = SwShItemHashTable.Parse(outputHashBytes);
         Assert.Contains(outputHashTable.Entries, entry => entry.ItemId == 1128);
 
         var outputBagScript = File.ReadAllBytes(Path.Combine(
@@ -2940,11 +2960,7 @@ public sealed class ProjectBridgeDispatcherTests
             CreateRoyalCandyItemTable());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.ItemHashPath["romfs/".Length..],
-            new SwShItemHashTable(
-            [
-                new SwShItemHashEntry(50, 0xAABBCCDD00112233),
-                new SwShItemHashEntry(1128, 0xAABBCCDD00112800),
-            ]).Write());
+            CreateRoyalCandyHashTable());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
             [0x02]);
@@ -3066,7 +3082,24 @@ public sealed class ProjectBridgeDispatcherTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rareCandyOffset + 0x04), 15u);
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rareCandyOffset + 0x08), 3u);
         data[rareCandyOffset + 0x11] = (byte)SwShItemPouch.Medicine;
+        data[rareCandyOffset + 0x13] = 1;
+        data[rareCandyOffset + 0x15] = 1;
+        data[rareCandyOffset + 0x16] = 1;
+        data[rareCandyOffset + 0x18] = 4;
+        BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(rareCandyOffset + 0x1A), 50);
+        data[rareCandyOffset + 0x1F] = 0x04;
 
+        return data;
+    }
+
+    private static byte[] CreateRoyalCandyHashTable()
+    {
+        var data = new byte[sizeof(int) + (3 * 0x10)];
+        BinaryPrimitives.WriteInt32LittleEndian(data, 3);
+        BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(sizeof(int)), 0xAABBCCDD00112233);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(sizeof(int) + sizeof(ulong)), 50);
+        BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(sizeof(int) + 0x20), 0xAABBCCDD00112800);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(sizeof(int) + 0x20 + sizeof(ulong)), 1128);
         return data;
     }
 

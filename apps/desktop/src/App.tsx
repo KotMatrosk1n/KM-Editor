@@ -10907,6 +10907,32 @@ function formatStartingItemsPendingValue(
   return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
+function parseStartingItemsPendingGrantInputs(value: string | null | undefined) {
+  const grants = new Map<number, { itemId: string; quantity: string }>();
+  if (!value) {
+    return grants;
+  }
+
+  for (const part of value.split(';')) {
+    const [slotText, itemIdText, quantityText] = part.split(':');
+    const slot = Number.parseInt(slotText ?? '', 10);
+    if (
+      !Number.isInteger(slot) ||
+      itemIdText === undefined ||
+      quantityText === undefined
+    ) {
+      continue;
+    }
+
+    grants.set(slot, {
+      itemId: itemIdText === '0' ? '' : itemIdText,
+      quantity: quantityText
+    });
+  }
+
+  return grants;
+}
+
 function getPokemonPendingEditDisplayDetails(
   edit: PendingEdit,
   context: PendingEditContext,
@@ -18179,9 +18205,12 @@ function BagHookSection({
   const isInstallStaged = stagedBagHookEdit?.recordId === 'bag-hook-v2';
   const isUninstallStaged = stagedBagHookEdit?.recordId === 'bag-hook-v2-uninstall';
   const canStageInstall =
-    workflow?.summary.availability === 'available' && workflow.installStatus === 'available';
+    workflow?.summary.availability === 'available' &&
+    (workflow.installStatus === 'available' || workflow.installStatus === 'repairable');
   const canStageUninstall =
-    workflow?.summary.availability === 'available' && workflow.installStatus === 'installed';
+    workflow?.summary.availability === 'available' &&
+    (workflow.installStatus === 'installed' || workflow.installStatus === 'repairable');
+  const stageInstallLabel = workflow?.installStatus === 'repairable' ? 'Stage Repair' : 'Stage Install';
   const canReviewPlan = (isInstallStaged || isUninstallStaged) && !isChangePlanCreating;
   const canApplyPlan =
     (isInstallStaged || isUninstallStaged) &&
@@ -18263,7 +18292,11 @@ function BagHookSection({
                         ? 'Empty'
                         : `${slot.itemName} (#${slot.itemId}) x${slot.quantity ?? 1}`}
                     </span>
-                    <span role="cell">{slot.owner}</span>
+                    <span role="cell">
+                      {slot.itemId === null || slot.status === 'empty' || slot.status === 'unavailable'
+                        ? ''
+                        : slot.owner}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -18321,7 +18354,7 @@ function BagHookSection({
                         type="button"
                       >
                         <Wrench aria-hidden="true" size={16} />
-                        <span>{isStaging ? 'Staging' : 'Stage Install'}</span>
+                        <span>{isStaging ? 'Staging' : stageInstallLabel}</span>
                       </button>
                       <button
                         className="danger-button"
@@ -18425,23 +18458,40 @@ function CatchCapSection({
   const [capInputs, setCapInputs] = useState<Record<number, string>>({});
   const capSignature =
     workflow?.caps.map((cap) => `${cap.badgeCount}:${cap.levelCap}`).join('|') ?? '';
-  const parsedCaps = (workflow?.caps ?? []).map((cap) => {
+  const parsedCaps = (workflow?.caps ?? []).reduce<
+    Array<
+      CatchCapRecord & {
+        error: string | null;
+        rawValue: string;
+        selectedLevelCap: number;
+      }
+    >
+  >((caps, cap) => {
     const rawValue = capInputs[cap.badgeCount] ?? cap.levelCap.toString();
     const parsedValue = Number.parseInt(rawValue, 10);
     const isInteger = Number.isInteger(parsedValue) && parsedValue.toString() === rawValue.trim();
-    const error = !isInteger
+    const rangeError = !isInteger
       ? 'Enter a whole level.'
       : parsedValue < cap.minimumLevelCap || parsedValue > cap.maximumLevelCap
         ? `Use Lv. ${cap.minimumLevelCap}-${cap.maximumLevelCap}.`
         : null;
+    const previousCap = caps[caps.length - 1];
+    const orderError =
+      rangeError === null &&
+      previousCap !== undefined &&
+      Number.isFinite(previousCap.selectedLevelCap) &&
+      parsedValue < previousCap.selectedLevelCap
+        ? `Must be Lv. ${previousCap.selectedLevelCap} or higher.`
+        : null;
 
-    return {
+    caps.push({
       ...cap,
-      error,
+      error: rangeError ?? orderError,
       rawValue,
       selectedLevelCap: isInteger ? parsedValue : Number.NaN
-    };
-  });
+    });
+    return caps;
+  }, []);
   const selectedCap =
     parsedCaps.find((cap) => cap.badgeCount === selectedBadgeCount) ?? parsedCaps[0] ?? null;
   const hasInputError = parsedCaps.some((cap) => cap.error !== null);
@@ -19589,6 +19639,22 @@ function StartingItemsSection({
     () => new Map((workflow?.itemOptions ?? []).map((option) => [option.itemId, option])),
     [workflow?.itemOptions]
   );
+  const startingItemOptions = useMemo(
+    () =>
+      (workflow?.itemOptions ?? []).map((option) => ({
+        label: formatStartingItemOption(option),
+        value: option.itemId
+      })),
+    [workflow?.itemOptions]
+  );
+  const stagedStartingItemsEdit = editSession?.pendingEdits.find(
+    (edit) => edit.domain === 'workflow.startingItems'
+  );
+  const stagedStartingItemsGrantInputs = useMemo(
+    () => parseStartingItemsPendingGrantInputs(stagedStartingItemsEdit?.newValue),
+    [stagedStartingItemsEdit?.newValue]
+  );
+  const stagedStartingItemsSignature = stagedStartingItemsEdit?.newValue ?? '';
   const parsedGrants = (workflow?.grants ?? []).map((grant) => {
     const input = grantInputs[grant.slot] ?? {
       itemId: grant.itemId?.toString() ?? '',
@@ -19631,8 +19697,12 @@ function StartingItemsSection({
     (grant) => grant.itemError !== null || grant.quantityError !== null
   );
   const hasLocalDrafts = parsedGrants.some((grant) => {
-    const currentItemId = grant.itemId?.toString() ?? '';
-    const currentQuantity = grant.itemId === null ? '1' : grant.quantity.toString();
+    const stagedGrantInput = stagedStartingItemsEdit
+      ? stagedStartingItemsGrantInputs.get(grant.slot) ?? { itemId: '', quantity: '1' }
+      : null;
+    const currentItemId = stagedGrantInput?.itemId ?? grant.itemId?.toString() ?? '';
+    const currentQuantity =
+      stagedGrantInput?.quantity ?? (grant.itemId === null ? '1' : grant.quantity.toString());
     return grant.inputItemId.trim() !== currentItemId || grant.inputQuantity.trim() !== currentQuantity;
   });
   const selectedGrants = parsedGrants
@@ -19642,9 +19712,6 @@ function StartingItemsSection({
       quantity: grant.selectedItem?.isKeyItem ? 1 : grant.selectedQuantity,
       slot: grant.slot
     }));
-  const stagedStartingItemsEdit = editSession?.pendingEdits.find(
-    (edit) => edit.domain === 'workflow.startingItems'
-  );
   const isStartingItemsStaged = stagedStartingItemsEdit?.recordId === 'starting-items';
   const canStage =
     workflow?.summary.availability === 'available' &&
@@ -19663,16 +19730,22 @@ function StartingItemsSection({
   useEffect(() => {
     setGrantInputs(
       Object.fromEntries(
-        (workflow?.grants ?? []).map((grant) => [
-          grant.slot,
-          {
-            itemId: grant.itemId?.toString() ?? '',
-            quantity: grant.quantity.toString()
-          }
-        ])
+        (workflow?.grants ?? []).map((grant) => {
+          const stagedGrantInput = stagedStartingItemsEdit
+            ? stagedStartingItemsGrantInputs.get(grant.slot) ?? { itemId: '', quantity: '1' }
+            : null;
+
+          return [
+            grant.slot,
+            stagedGrantInput ?? {
+              itemId: grant.itemId?.toString() ?? '',
+              quantity: grant.quantity.toString()
+            }
+          ];
+        })
       )
     );
-  }, [grantSignature, workflow?.grants]);
+  }, [grantSignature, stagedStartingItemsEdit, stagedStartingItemsGrantInputs, stagedStartingItemsSignature, workflow?.grants]);
 
   useEffect(() => {
     if (selectedGrant && selectedGrant.slot !== selectedSlot) {
@@ -19728,12 +19801,10 @@ function StartingItemsSection({
                   <span role="columnheader">Status</span>
                   <span role="columnheader">Item</span>
                   <span role="columnheader">Quantity</span>
-                  <span role="columnheader">Owner</span>
                 </div>
                 {parsedGrants.map((grant) => {
                   const quantityErrorId = `starting-item-quantity-error-${grant.slot}`;
                   const itemErrorId = `starting-item-error-${grant.slot}`;
-                  const rowError = grant.itemError ?? grant.quantityError;
 
                   return (
                     <div
@@ -19751,33 +19822,28 @@ function StartingItemsSection({
                         </span>
                       </span>
                       <div className="table-cell-control" role="cell">
-                        <select
-                          aria-describedby={grant.itemError ? itemErrorId : undefined}
-                          aria-invalid={grant.itemError ? 'true' : undefined}
-                          aria-label={`Item for Bag Hook slot ${grant.slot}`}
+                        <SearchableOptionInput
+                          ariaLabel={`Item for Bag Hook slot ${grant.slot}`}
+                          ariaDescribedBy={grant.itemError ? itemErrorId : undefined}
+                          ariaInvalid={grant.itemError ? true : undefined}
                           disabled={workflow.installStatus !== 'available'}
-                          onChange={(event) => {
-                            const nextItem = event.target.value
-                              ? itemOptionLookup.get(Number.parseInt(event.target.value, 10))
+                          emptyOptionLabel="No item"
+                          onChange={(nextValue) => {
+                            const nextItem = nextValue.trim().length > 0
+                              ? itemOptionLookup.get(Number.parseInt(nextValue, 10))
                               : null;
                             setGrantInputs((current) => ({
                               ...current,
                               [grant.slot]: {
-                                itemId: event.target.value,
+                                itemId: nextValue,
                                 quantity: nextItem?.isKeyItem ? '1' : (current[grant.slot]?.quantity ?? '1')
                               }
                             }));
                           }}
                           onFocus={() => onSelectSlot(grant.slot)}
+                          options={startingItemOptions}
                           value={grant.inputItemId}
-                        >
-                          <option value="">No item</option>
-                          {workflow.itemOptions.map((option) => (
-                            <option key={option.itemId} value={option.itemId}>
-                              {formatStartingItemOption(option)}
-                            </option>
-                          ))}
-                        </select>
+                        />
                         {grant.itemError ? (
                           <small className="editable-field-error" id={itemErrorId}>
                             {grant.itemError}
@@ -19817,9 +19883,6 @@ function StartingItemsSection({
                           </small>
                         ) : null}
                       </div>
-                      <span role="cell">
-                        {rowError ? rowError : grant.selectedItem?.isKeyItem ? 'Key item' : grant.owner}
-                      </span>
                     </div>
                   );
                 })}
@@ -23263,32 +23326,49 @@ type EvYieldConfirmationState = 'remove' | 'restore' | null;
 
 function SearchableOptionInput({
   ariaLabel,
+  ariaDescribedBy,
+  ariaInvalid,
   disabled,
+  emptyOptionLabel,
   id,
   onChange,
+  onFocus,
   options,
   title,
   value
 }: {
   ariaLabel: string;
+  ariaDescribedBy?: string;
+  ariaInvalid?: boolean;
   disabled: boolean;
+  emptyOptionLabel?: string;
   id?: string;
   onChange: (value: string) => void;
+  onFocus?: () => void;
   options: EditableFieldOption[];
   title?: string;
   value: string;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const formattedValue = useMemo(() => formatOptionInputValue(value, options), [options, value]);
+  const formattedValue = useMemo(
+    () => formatOptionInputValue(value, options, emptyOptionLabel),
+    [emptyOptionLabel, options, value]
+  );
   const [query, setQuery] = useState(formattedValue);
   const [hasUserQuery, setHasUserQuery] = useState(false);
   const optionQuery = hasUserQuery ? query : '';
+  const trimmedOptionQuery = optionQuery.trim().toLocaleLowerCase();
+  const hasEmptyOption = emptyOptionLabel !== undefined;
+  const emptyOptionMatches =
+    hasEmptyOption &&
+    (trimmedOptionQuery.length === 0 ||
+      emptyOptionLabel.toLocaleLowerCase().includes(trimmedOptionQuery));
   const filteredOptions = useMemo(
     () => getSmartOptionMatches(optionQuery, options),
     [optionQuery, options]
   );
-  const hasMenu = isOpen && !disabled && filteredOptions.length > 0;
+  const hasMenu = isOpen && !disabled && (emptyOptionMatches || filteredOptions.length > 0);
 
   useEffect(() => {
     if (!isOpen) {
@@ -23325,8 +23405,23 @@ function SearchableOptionInput({
     setIsOpen(false);
   };
 
+  const selectEmptyOption = () => {
+    onChange('');
+    setQuery(emptyOptionLabel ?? '');
+    setHasUserQuery(false);
+    setIsOpen(false);
+  };
+
   const commitTypedOption = () => {
     const trimmedQuery = query.trim();
+    if (
+      emptyOptionLabel !== undefined &&
+      trimmedQuery.toLocaleLowerCase() === emptyOptionLabel.toLocaleLowerCase()
+    ) {
+      selectEmptyOption();
+      return;
+    }
+
     const shouldCommit =
       hasUserQuery &&
       filteredOptions.length > 0 &&
@@ -23343,7 +23438,7 @@ function SearchableOptionInput({
     setQuery(nextValue);
     setHasUserQuery(true);
     setIsOpen(true);
-    onChange(normalizeExactOptionInputValue(nextValue, options));
+    onChange(normalizeExactOptionInputValue(nextValue, options, emptyOptionLabel));
   };
 
   return (
@@ -23352,9 +23447,11 @@ function SearchableOptionInput({
       ref={containerRef}
     >
       <input
+        aria-describedby={ariaDescribedBy}
         aria-expanded={hasMenu}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
+        aria-invalid={ariaInvalid}
         autoComplete="off"
         disabled={disabled}
         id={id}
@@ -23365,6 +23462,7 @@ function SearchableOptionInput({
           setQuery(formattedValue);
           setHasUserQuery(false);
           setIsOpen(true);
+          onFocus?.();
         }}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
@@ -23398,6 +23496,20 @@ function SearchableOptionInput({
       </button>
       {hasMenu ? (
         <div className="searchable-option-menu" role="listbox">
+          {emptyOptionMatches ? (
+            <button
+              className="searchable-option-row"
+              key={`${ariaLabel}:empty`}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                selectEmptyOption();
+              }}
+              role="option"
+              type="button"
+            >
+              <span>{emptyOptionLabel}</span>
+            </button>
+          ) : null}
           {filteredOptions.map((option) => (
             <button
               className="searchable-option-row"
@@ -23418,10 +23530,21 @@ function SearchableOptionInput({
   );
 }
 
-function normalizeExactOptionInputValue(value: string, options: EditableFieldOption[]) {
+function normalizeExactOptionInputValue(
+  value: string,
+  options: EditableFieldOption[],
+  emptyOptionLabel?: string
+) {
   const normalizedValue = value.trim().toLocaleLowerCase();
   if (normalizedValue.length === 0) {
     return value;
+  }
+
+  if (
+    emptyOptionLabel !== undefined &&
+    normalizedValue === emptyOptionLabel.toLocaleLowerCase()
+  ) {
+    return '';
   }
 
   const optionMatch = options.find(
@@ -23438,10 +23561,14 @@ function normalizeExactOptionInputValue(value: string, options: EditableFieldOpt
   return smartMatches.length === 1 ? smartMatches[0]!.value.toString() : value;
 }
 
-function formatOptionInputValue(value: string, options: EditableFieldOption[]) {
+function formatOptionInputValue(
+  value: string,
+  options: EditableFieldOption[],
+  emptyOptionLabel?: string
+) {
   const trimmedValue = value.trim();
   if (trimmedValue.length === 0) {
-    return value;
+    return emptyOptionLabel ?? value;
   }
 
   return (
@@ -24689,6 +24816,8 @@ function formatBagHookStatus(status: string) {
       return 'Legacy';
     case 'occupied':
       return 'Occupied';
+    case 'repairable':
+      return 'Repair needed';
     case 'readonly':
     case 'read-only':
       return 'Read-only';

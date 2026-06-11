@@ -2644,7 +2644,7 @@ describe('App', () => {
     expect(screen.getByText('01020304')).toBeInTheDocument();
   });
 
-  it('opens Bag Hook from Hooks and shows slot ownership', async () => {
+  it('opens Bag Hook from Hooks and shows reserved slots without empty owner copy', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge()} />);
 
@@ -2661,7 +2661,8 @@ describe('App', () => {
       })
     ).toBeInTheDocument();
     expect(screen.getAllByText('Royal Candy').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Available for Starting Items').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Starting Items').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Available for Starting Items')).not.toBeInTheDocument();
     expect(screen.getAllByText('romfs/bin/script/amx/main_event_0020.amx').length).toBeGreaterThan(0);
   });
 
@@ -2782,6 +2783,34 @@ describe('App', () => {
     );
   });
 
+  it('blocks Catch Cap staging when badge caps decrease', async () => {
+    const stageCatchCap = vi.fn(createMockProjectBridge({}, true).stageCatchCap);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...createMockProjectBridge({}, true),
+          stageCatchCap
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Catch Cap' }));
+
+    const secondCap = await screen.findByLabelText('Catch cap for 1 badges');
+    await user.clear(secondCap);
+    await user.type(secondCap, '19');
+
+    expect((await screen.findAllByText('Must be Lv. 20 or higher.')).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Stage Caps' })).toBeDisabled();
+    expect(stageCatchCap).not.toHaveBeenCalled();
+  });
+
   it('stages Catch Cap uninstall for review', async () => {
     const mockBridge = createMockProjectBridge({}, true);
     const stageCatchCapUninstall = vi.fn(mockBridge.stageCatchCapUninstall);
@@ -2832,12 +2861,17 @@ describe('App', () => {
   });
 
   it('locks Starting Items key item quantities to one', async () => {
-    const stageStartingItems = vi.fn(createMockProjectBridge({}, true).stageStartingItems);
+    const baseBridge = createMockProjectBridge({}, true);
+    const stageStartingItems = vi.fn(baseBridge.stageStartingItems);
+    const createChangePlan = vi.fn(baseBridge.createChangePlan);
+    const applyChangePlan = vi.fn(baseBridge.applyChangePlan);
     const user = userEvent.setup();
     render(
       <App
         bridge={{
-          ...createMockProjectBridge({}, true),
+          ...baseBridge,
+          applyChangePlan,
+          createChangePlan,
           stageStartingItems
         }}
       />
@@ -2856,8 +2890,13 @@ describe('App', () => {
         name: 'Starting Items'
       })
     ).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Owner' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Available for Starting Items')).not.toBeInTheDocument();
 
-    await user.selectOptions(screen.getByLabelText('Item for Bag Hook slot 3'), '700');
+    const slotItemInput = screen.getByLabelText('Item for Bag Hook slot 3');
+    await user.clear(slotItemInput);
+    await user.type(slotItemInput, 'Bike');
+    await user.click(await screen.findByRole('option', { name: 'Bike (#700) [Key]' }));
     expect(screen.getByLabelText('Quantity for Bag Hook slot 3')).toBeDisabled();
     expect(screen.getByLabelText('Quantity for Bag Hook slot 3')).toHaveValue(1);
     await user.click(screen.getByRole('button', { name: 'Stage Items' }));
@@ -2868,6 +2907,14 @@ describe('App', () => {
         grants: expect.arrayContaining([{ itemId: 700, quantity: 1, slot: 3 }])
       })
     );
+    expect(screen.getByLabelText('Item for Bag Hook slot 3')).toHaveValue('Bike (#700) [Key]');
+
+    await user.click(screen.getByRole('button', { name: 'Review' }));
+
+    await waitFor(() => expect(createChangePlan).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => expect(applyChangePlan).toHaveBeenCalled());
   });
 
   it('warns when Starting Items is staged before Bag Hook is installed', async () => {
