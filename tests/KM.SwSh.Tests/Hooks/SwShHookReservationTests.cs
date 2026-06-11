@@ -214,7 +214,7 @@ public sealed class SwShHookReservationTests
 
     [Theory]
     [MemberData(nameof(RoyalCandyVariantsByGame))]
-    public void BagHookCleanupRemovesDependentsAndPreservesCatchCap(ProjectGame game, string workflowId)
+    public void BagHookCleanupRemovesBagScriptAndRoyalCandyExeFsAndPreservesCatchCap(ProjectGame game, string workflowId)
     {
         using var temp = CreateHookProject(game);
         var paths = temp.Paths with { SelectedGame = game };
@@ -226,7 +226,7 @@ public sealed class SwShHookReservationTests
         ApplyBagHookCleanup(paths);
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
-        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
+        Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
 
         var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
         Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
@@ -235,7 +235,7 @@ public sealed class SwShHookReservationTests
 
     [Theory]
     [MemberData(nameof(RoyalCandyVariantsByGame))]
-    public void BagHookCleanupRemovesDependentsAndPreservesIvScreen(ProjectGame game, string workflowId)
+    public void BagHookCleanupRemovesBagScriptAndRoyalCandyExeFsAndPreservesIvScreen(ProjectGame game, string workflowId)
     {
         using var temp = CreateHookProject(game);
         var paths = temp.Paths with { SelectedGame = game };
@@ -246,7 +246,7 @@ public sealed class SwShHookReservationTests
         ApplyBagHookCleanup(paths);
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
-        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
+        Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
 
         var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
         Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
@@ -333,7 +333,7 @@ public sealed class SwShHookReservationTests
 
     [Theory]
     [MemberData(nameof(RoyalCandyVariantsByGame))]
-    public void BagHookCleanupRemovesExeFsWhenRoyalCandyWasOnlyExeFsMod(ProjectGame game, string workflowId)
+    public void BagHookCleanupRemovesExeFsAndPreservesRomFsWhenRoyalCandyWasOnlyExeFsMod(ProjectGame game, string workflowId)
     {
         using var temp = CreateHookProject(game);
         var paths = temp.Paths with { SelectedGame = game };
@@ -344,7 +344,54 @@ public sealed class SwShHookReservationTests
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
-        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
+        Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void BagHookCleanupPreservesUnownedRoyalCandyCandidateRomFsFiles(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, workflowId);
+        var candidateFiles = WriteUnownedRoyalCandyCandidateRomFsFiles(temp);
+
+        ApplyBagHookCleanup(paths);
+
+        AssertUnownedRoyalCandyCandidateRomFsFiles(paths, candidateFiles);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void RoyalCandyCleanupPreservesUnownedRoyalCandyCandidateRomFsFiles(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, workflowId);
+        var candidateFiles = WriteUnownedRoyalCandyCandidateRomFsFiles(temp);
+
+        ApplyRoyalCandyCleanup(paths);
+
+        AssertUnownedRoyalCandyCandidateRomFsFiles(paths, candidateFiles);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void RoyalCandyCleanupRestoresOwnedTextRowsAndPreservesOtherLayeredTextEdits(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, workflowId);
+        WriteLayeredTextEdit(paths, "romfs/bin/message/English/common/itemname.dat", 10, "User-edited item name");
+        WriteLayeredTextEdit(paths, "romfs/bin/message/English/common/iteminfo.dat", 10, "User-edited item info");
+
+        ApplyRoyalCandyCleanup(paths);
+
+        AssertRestoredRoyalCandyTextRow(paths, "romfs/bin/message/English/common/itemname.dat", 10, "User-edited item name");
+        AssertRestoredRoyalCandyTextRow(paths, "romfs/bin/message/English/common/iteminfo.dat", 10, "User-edited item info");
     }
 
     [Theory]
@@ -689,9 +736,69 @@ public sealed class SwShHookReservationTests
             : SwShRoyalCandyExeFsSignatureKind.Unlimited;
     }
 
+    private static IReadOnlyDictionary<string, byte[]> WriteUnownedRoyalCandyCandidateRomFsFiles(TemporarySwShProject temp)
+    {
+        var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            [SwShRoyalCandyWorkflowService.ItemPath] = [0xA0, 0x01, 0x02, 0x03],
+            [SwShRoyalCandyWorkflowService.ItemHashPath] = [0xB0, 0x01, 0x02, 0x03],
+            [SwShRoyalCandyWorkflowService.ShopDataPath] = [0xC0, 0x01, 0x02, 0x03],
+            [SwShRoyalCandyWorkflowService.NestDataPath] = [0xD0, 0x01, 0x02, 0x03],
+            [SwShRoyalCandyWorkflowService.PlacementPath] = [0xE0, 0x01, 0x02, 0x03],
+        };
+
+        foreach (var (relativePath, contents) in files)
+        {
+            temp.WriteOutputFile(relativePath, contents);
+        }
+
+        return files;
+    }
+
+    private static void AssertUnownedRoyalCandyCandidateRomFsFiles(
+        ProjectPaths paths,
+        IReadOnlyDictionary<string, byte[]> expectedFiles)
+    {
+        foreach (var (relativePath, contents) in expectedFiles)
+        {
+            Assert.True(File.Exists(OutputPath(paths, relativePath)));
+            Assert.Equal(contents, File.ReadAllBytes(OutputPath(paths, relativePath)));
+        }
+    }
+
+    private static void WriteLayeredTextEdit(
+        ProjectPaths paths,
+        string relativePath,
+        int lineIndex,
+        string text)
+    {
+        var targetPath = OutputPath(paths, relativePath);
+        var textFile = SwShGameTextFile.Parse(File.ReadAllBytes(targetPath));
+        var lines = textFile.Lines.ToArray();
+        lines[lineIndex] = lines[lineIndex] with { Text = text };
+        File.WriteAllBytes(targetPath, SwShGameTextFile.Write(lines));
+    }
+
+    private static void AssertRestoredRoyalCandyTextRow(
+        ProjectPaths paths,
+        string relativePath,
+        int editedLineIndex,
+        string editedText)
+    {
+        var targetText = SwShGameTextFile.Parse(File.ReadAllBytes(OutputPath(paths, relativePath)));
+        var baseText = SwShGameTextFile.Parse(File.ReadAllBytes(BasePath(paths, relativePath)));
+        Assert.Equal(editedText, targetText.Lines[editedLineIndex].Text);
+        Assert.Equal(baseText.Lines[SwShBagHookAmxPatcher.RoyalCandyItemId].Text, targetText.Lines[SwShBagHookAmxPatcher.RoyalCandyItemId].Text);
+    }
+
     private static string OutputPath(ProjectPaths paths, string relativePath)
     {
         return Path.Combine(paths.OutputRootPath!, relativePath.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    private static string BasePath(ProjectPaths paths, string relativePath)
+    {
+        return Path.Combine(paths.BaseRomFsPath!, relativePath["romfs/".Length..].Replace('/', Path.DirectorySeparatorChar));
     }
 
     private static byte[] CreateSharedHookNso()

@@ -32,6 +32,7 @@ public sealed class SwShRoyalCandyWorkflowService
     private const int RoyalCandyItemId = 1128;
     private const string UnlimitedRoyalCandyName = "Unlimited Royal Candy";
     private const string StoryLimitsRoyalCandyName = "Royal Candy with Story Limits";
+    private const string AppliedRoyalCandyName = "Royal Candy";
     private const string RemoveRoyalCandyName = "Remove Royal Candy";
     private const string UnlimitedRoyalCandyDescription = "A candy packed with strange energy. It can be used repeatedly by compatible Pokemon.";
     private const string StoryLimitsRoyalCandyDescription = "A candy packed with strange energy. Its full power follows the current story limit.";
@@ -1126,11 +1127,54 @@ public sealed class SwShRoyalCandyWorkflowService
                 continue;
             }
 
-            if (IsKnownRoyalCandyOutputPath(entry.RelativePath))
+            if (HasRoyalCandyItemText(project, entry))
             {
                 yield return entry;
             }
         }
+    }
+
+    private static bool HasRoyalCandyItemText(OpenedProject project, ProjectFileGraphEntry entry)
+    {
+        if (!IsItemMessageOutputPath(entry.RelativePath)
+            || !TryParseMessageCommonFile(entry.RelativePath, out _, out var fileName))
+        {
+            return false;
+        }
+
+        var sourcePath = ResolveSourcePath(project.Paths, entry);
+        if (sourcePath is null || !File.Exists(sourcePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var text = SwShGameTextFile.Parse(File.ReadAllBytes(sourcePath));
+            if (text.Lines.Count <= RoyalCandyItemId)
+            {
+                return false;
+            }
+
+            var value = text.Lines[RoyalCandyItemId].Text;
+            if (fileName.StartsWith("itemname", StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Equals(value, AppliedRoyalCandyName, StringComparison.Ordinal)
+                    || string.Equals(value, UnlimitedRoyalCandyName, StringComparison.Ordinal)
+                    || string.Equals(value, StoryLimitsRoyalCandyName, StringComparison.Ordinal);
+            }
+
+            return string.Equals(value, UnlimitedRoyalCandyDescription, StringComparison.Ordinal)
+                || string.Equals(value, StoryLimitsRoyalCandyDescription, StringComparison.Ordinal);
+        }
+        catch (InvalidDataException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+
+        return false;
     }
 
     private static bool HasRoyalCandyExeFsSignature(OpenedProject project, ProjectFileGraphEntry entry)
@@ -1249,18 +1293,6 @@ public sealed class SwShRoyalCandyWorkflowService
     private static string ResolveShopOutputPath(IReadOnlyDictionary<string, ProjectFileGraphEntry> sourceMap)
     {
         return FindSource(sourceMap, ShopDataPath, LegacyShopDataPath)?.RelativePath ?? ShopDataPath;
-    }
-
-    private static bool IsKnownRoyalCandyOutputPath(string relativePath)
-    {
-        return string.Equals(relativePath, ItemPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, ItemHashPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, ShopDataPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, LegacyShopDataPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, NestDataPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, PlacementPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
-            || IsItemMessageOutputPath(relativePath);
     }
 
     private static ProjectFileGraphEntry? FindRoyalCandyBagHookOutput(OpenedProject project)
