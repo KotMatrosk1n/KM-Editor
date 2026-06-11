@@ -584,6 +584,87 @@ public sealed class SwShHookReservationTests
                 && diagnostic.Message.Contains("same as or higher", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void CatchCapStageRejectsEighthBadgeOverride()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+
+        var result = new SwShCatchCapEditSessionService().StageCaps(
+            paths,
+            Enumerable.Range(0, SwShCatchCapMainPatcher.CapCount)
+                .Select(index => new SwShCatchCapSelection(
+                    index,
+                    index == SwShCatchCapMainPatcher.FinalBadgeCount ? 33 : 20 + index * 5))
+                .ToArray(),
+            session: null);
+
+        Assert.Empty(result.Session.PendingEdits);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("fixed at level 100", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CatchCapApplyRejectsEighthBadgeOverride()
+    {
+        var caps = Enumerable.Range(0, SwShCatchCapMainPatcher.CapCount)
+            .Select(index => index == SwShCatchCapMainPatcher.FinalBadgeCount ? 33 : 20 + index * 5)
+            .ToArray();
+
+        var exception = Assert.Throws<InvalidDataException>(() =>
+            SwShCatchCapMainPatcher.Apply(CreateSharedHookNso(), caps));
+
+        Assert.Contains("fixed at level 100", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CatchCapAnalysisNormalizesStaleEighthBadgeMetadata()
+    {
+        var patched = SwShCatchCapMainPatcher.Apply(
+            CreateSharedHookNso(),
+            Enumerable.Range(0, SwShCatchCapMainPatcher.CapCount)
+                .Select(index => index == SwShCatchCapMainPatcher.FinalBadgeCount ? 100 : 20 + index * 5)
+                .ToArray());
+        var nso = SwShNsoFile.Parse(patched);
+        var text = nso.Text.DecompressedData.ToArray();
+        text[SwShCatchCapMainPatcher.ExeFsTableOffset + SwShCatchCapMainPatcher.FinalBadgeCount] = 33;
+
+        var analysis = SwShCatchCapMainPatcher.Analyze(nso.Write(textDecompressedData: text));
+
+        Assert.Equal(SwShCatchCapInstallKind.InstalledV1, analysis.Kind);
+        Assert.Equal(100, analysis.Caps[SwShCatchCapMainPatcher.FinalBadgeCount]);
+        Assert.Contains("stale Lv.33 metadata", analysis.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CatchCapStagesCustomCapsBeforeFinalBadge()
+    {
+        using var temp = CreateHookProject(ProjectGame.Sword);
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        int[] caps = [18, 22, 27, 33, 38, 44, 49, 60, 100];
+        var service = new SwShCatchCapEditSessionService();
+
+        var stage = service.StageCaps(
+            paths,
+            caps.Select((cap, index) => new SwShCatchCapSelection(index, cap)).ToArray(),
+            session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var analysis = SwShCatchCapMainPatcher.Analyze(
+            File.ReadAllBytes(OutputPath(paths, SwShCatchCapWorkflowService.ExeFsMainPath)));
+        Assert.Equal(SwShCatchCapInstallKind.InstalledV1, analysis.Kind);
+        Assert.Equal(caps.Select(cap => (byte)cap), analysis.Caps);
+        Assert.Equal("badge_count < 8 ? cap_table[badge_count] : 100", analysis.LogicExpression);
+    }
+
     private static bool IsSameFeatureFamily(string leftOwner, string rightOwner)
     {
         return IsRoyalCandyFamily(leftOwner) && IsRoyalCandyFamily(rightOwner);

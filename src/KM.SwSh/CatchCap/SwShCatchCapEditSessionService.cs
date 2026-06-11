@@ -208,7 +208,7 @@ public sealed class SwShCatchCapEditSessionService
                 File.Exists(targetPath),
                 isUninstall
                     ? "Uninstall Catch Cap Editor from exefs/main while preserving Royal Candy ExeFS bytes when present."
-                    : "Apply Catch Cap Editor hook and nine badge cap values to exefs/main."),
+                    : "Apply Catch Cap Editor hook and badge cap values 0-7 to exefs/main; eight badges remains Lv.100."),
         };
 
         diagnostics.Add(CreateDiagnostic(
@@ -415,7 +415,16 @@ public sealed class SwShCatchCapEditSessionService
                 ? requestedCap
                 : definition.LevelCap;
 
-            if (levelCap < definition.MinimumLevelCap || levelCap > definition.MaximumLevelCap)
+            if (definition.BadgeCount == SwShCatchCapMainPatcher.FinalBadgeCount
+                && levelCap != SwShCatchCapMainPatcher.FinalBadgeCap)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Catch cap for {definition.Label} is fixed at level {SwShCatchCapMainPatcher.FinalBadgeCap}; the game treats eight badges as catch any level.",
+                    field: CapsField,
+                    expected: "Level 100 for eight badges"));
+            }
+            else if (levelCap < definition.MinimumLevelCap || levelCap > definition.MaximumLevelCap)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -487,6 +496,17 @@ public sealed class SwShCatchCapEditSessionService
                     $"Catch Cap badge count {index} must be between {SwShCatchCapMainPatcher.MinimumCap} and {SwShCatchCapMainPatcher.MaximumCap}.",
                     field: CapsField,
                     expected: "Level cap between 1 and 100"));
+            }
+
+            if (seen[index]
+                && index == SwShCatchCapMainPatcher.FinalBadgeCount
+                && values[index] != SwShCatchCapMainPatcher.FinalBadgeCap)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Catch Cap badge count {SwShCatchCapMainPatcher.FinalBadgeCount} is fixed at level {SwShCatchCapMainPatcher.FinalBadgeCap}; the game treats eight badges as catch any level.",
+                    field: CapsField,
+                    expected: "Level 100 for eight badges"));
             }
         }
 
@@ -609,7 +629,7 @@ public sealed class SwShCatchCapEditSessionService
             caps.Select((cap, badgeCount) => string.Create(CultureInfo.InvariantCulture, $"{badgeCount}={cap}")));
         return new PendingEdit(
             CatchCapEditDomain,
-            "Stage Catch Cap Editor values for badge counts 0-8.",
+            "Stage Catch Cap Editor values for badge counts 0-7; eight badges remains Lv.100.",
             [new ProjectFileReference(ProjectFileLayer.Base, SwShCatchCapWorkflowService.ExeFsMainPath)],
             RecordId,
             CapsField,

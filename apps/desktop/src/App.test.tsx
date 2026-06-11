@@ -362,13 +362,14 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
     expect(within(navigation).queryByRole('button', { name: 'IV Screen' })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Catch Cap' })).not.toBeInTheDocument();
     expect(
       within(navigation)
         .getAllByRole('button')
         .filter((button) => button.classList.contains('nav-child-button'))
         .map((button) => button.textContent)
-        .slice(-3)
-    ).toEqual(['Catch Cap', 'Royal Candy', 'Starting Items']);
+        .slice(-2)
+    ).toEqual(['Royal Candy', 'Starting Items']);
   });
 
   it('replaces existing editable field contents when typing after click', async () => {
@@ -2746,120 +2747,25 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('stages Catch Cap badge values', async () => {
-    const stageCatchCap = vi.fn(createMockProjectBridge({}, true).stageCatchCap);
+  it('hides Catch Cap editor entry points while the feature is disabled', async () => {
     const user = userEvent.setup();
-    render(
-      <App
-        bridge={{
-          ...createMockProjectBridge({}, true),
-          stageCatchCap
-        }}
-      />
-    );
+    render(<App bridge={createMockProjectBridge({}, true)} />);
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output-root');
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
-    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
-    await user.click(screen.getByRole('button', { name: 'Catch Cap' }));
 
+    expect(screen.queryByRole('button', { name: 'Open Catch Cap' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    expect(screen.queryByRole('button', { name: 'Catch Cap' })).not.toBeInTheDocument();
     expect(
-      await screen.findByRole('heading', {
+      screen.queryByRole('heading', {
         level: 2,
         name: 'Catch Cap Editor'
       })
-    ).toBeInTheDocument();
-
-    const firstCap = screen.getByLabelText('Catch cap for 0 badges');
-    await user.clear(firstCap);
-    await user.type(firstCap, '22');
-    await user.click(screen.getByRole('button', { name: 'Stage Caps' }));
-
-    await waitFor(() => expect(stageCatchCap).toHaveBeenCalled());
-    expect(stageCatchCap).toHaveBeenCalledWith(
-      expect.objectContaining({
-        caps: expect.arrayContaining([{ badgeCount: 0, levelCap: 22 }])
-      })
-    );
-  });
-
-  it('blocks Catch Cap staging when badge caps decrease', async () => {
-    const stageCatchCap = vi.fn(createMockProjectBridge({}, true).stageCatchCap);
-    const user = userEvent.setup();
-    render(
-      <App
-        bridge={{
-          ...createMockProjectBridge({}, true),
-          stageCatchCap
-        }}
-      />
-    );
-
-    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
-    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.type(screen.getByLabelText('Output Root'), 'output-root');
-    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
-    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
-    await user.click(screen.getByRole('button', { name: 'Catch Cap' }));
-
-    const secondCap = await screen.findByLabelText('Catch cap for 1 badges');
-    await user.clear(secondCap);
-    await user.type(secondCap, '19');
-
-    expect((await screen.findAllByText('Must be Lv. 20 or higher.')).length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Stage Caps' })).toBeDisabled();
-    expect(stageCatchCap).not.toHaveBeenCalled();
-  });
-
-  it('stages Catch Cap uninstall for review', async () => {
-    const mockBridge = createMockProjectBridge({}, true);
-    const stageCatchCapUninstall = vi.fn(mockBridge.stageCatchCapUninstall);
-    const user = userEvent.setup();
-    render(
-      <App
-        bridge={{
-          ...mockBridge,
-          loadCatchCapWorkflow: async () => ({
-            workflow: {
-              ...(await mockBridge.loadCatchCapWorkflow({
-                paths: {
-                  baseExeFsPath: 'base-exefs',
-                  baseRomFsPath: 'base-romfs',
-                  outputRootPath: 'output-root',
-                  saveFilePath: null,
-                  selectedGame: 'sword'
-                }
-              })).workflow,
-              installMessage: 'Catch Cap Editor hook is installed.',
-              installStatus: 'installed',
-              provenance: {
-                fileState: 'layeredOverride',
-                sourceFile: 'exefs/main',
-                sourceLayer: 'layered'
-              }
-            }
-          }),
-          stageCatchCapUninstall
-        }}
-      />
-    );
-
-    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
-    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.type(screen.getByLabelText('Output Root'), 'output-root');
-    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
-    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
-    await user.click(screen.getByRole('button', { name: 'Catch Cap' }));
-
-    expect(await screen.findByRole('button', { name: 'Stage Uninstall' })).toBeEnabled();
-    await user.click(screen.getByRole('button', { name: 'Stage Uninstall' }));
-
-    await waitFor(() => expect(stageCatchCapUninstall).toHaveBeenCalled());
-    await user.click(screen.getByRole('button', { name: 'Changes' }));
-
-    expect(await screen.findByText('Stage Catch Cap Editor uninstall.')).toBeInTheDocument();
+    ).not.toBeInTheDocument();
   });
 
   it('locks Starting Items key item quantities to one', async () => {
@@ -6892,7 +6798,7 @@ function createMockProjectBridge(
   };
   const catchCapWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'Installs the catch-cap hook and exposes badge-level catch caps.',
+    description: 'Installs the catch-cap hook and exposes badge-level catch caps 0-7.',
     diagnostics: [],
     id: 'catchCap',
     label: 'Catch Cap Editor'
@@ -6904,12 +6810,12 @@ function createMockProjectBridge(
       label: `${badgeCount} badges`,
       levelCap: badgeCount === 8 ? 100 : 20 + badgeCount * 5,
       maximumLevelCap: 100,
-      minimumLevelCap: 1
+      minimumLevelCap: badgeCount === 8 ? 100 : 1
     })),
     diagnostics: [],
     installMessage: 'Catch Cap Editor can patch exefs/main.',
     installStatus: canEdit ? 'available' : 'readOnly',
-    logicExpression: 'badge count indexes cap table 0-8',
+    logicExpression: 'badge_count < 8 ? cap_table[badge_count] : 100',
     provenance: {
       fileState: 'baseOnly',
       sourceFile: 'exefs/main',
@@ -7430,7 +7336,7 @@ function createMockProjectBridge(
                         : request.session.pendingEdits[0]?.domain === 'workflow.catchCap'
                         ? [
                             {
-                              reason: 'Apply Catch Cap Editor hook and nine badge cap values to exefs/main.',
+                              reason: 'Apply Catch Cap Editor hook and badge cap values 0-7 to exefs/main; eight badges remains Lv.100.',
                               replacesExistingOutput: false,
                               sources: [
                                 {
@@ -7645,7 +7551,7 @@ function createMockProjectBridge(
                   relativePath: 'exefs/main'
                 }
               ],
-              summary: 'Stage Catch Cap Editor values for badge counts 0-8.'
+              summary: 'Stage Catch Cap Editor values for badge counts 0-7; eight badges remains Lv.100.'
             }
           ],
           sessionId: request.session?.sessionId ?? 'session-catch-cap'
