@@ -80,6 +80,7 @@ import {
   type GiftPokemonWorkflow,
   type ItemEditableField,
   type ItemsWorkflow,
+  type IvScreenWorkflow,
   type ItemRecord,
   type MoveEditableField,
   type MoveRecord,
@@ -301,6 +302,11 @@ const sections: Array<{
     id: 'catchCap',
     label: 'Catch Cap',
     icon: ShieldCheck
+  },
+  {
+    id: 'ivScreen',
+    label: 'IV Screen',
+    icon: Dna
   },
   {
     id: 'exefsPatches',
@@ -535,6 +541,13 @@ const workflowDefinitions: Array<{
     description:
       'Independent ExeFS editor for badge catch caps 0-8. It does not require Bag Hook and should be reviewed carefully before apply.',
     icon: ShieldCheck
+  },
+  {
+    id: 'ivScreen',
+    label: 'IV Screen',
+    description:
+      'Independent ExeFS editor for raw IV numbers on the Pokemon Summary stats graph. It uses its own reserved hook and cave slots.',
+    icon: Dna
   },
   {
     id: 'royalCandy',
@@ -1217,8 +1230,10 @@ export function App({
   const setEncounterSearchText = useWorkbenchStore((state) => state.setEncounterSearchText);
   const setEncountersWorkflow = useWorkbenchStore((state) => state.setEncountersWorkflow);
   const catchCapWorkflow = useWorkbenchStore((state) => state.catchCapWorkflow);
+  const ivScreenWorkflow = useWorkbenchStore((state) => state.ivScreenWorkflow);
   const setBagHookWorkflow = useWorkbenchStore((state) => state.setBagHookWorkflow);
   const setCatchCapWorkflow = useWorkbenchStore((state) => state.setCatchCapWorkflow);
+  const setIvScreenWorkflow = useWorkbenchStore((state) => state.setIvScreenWorkflow);
   const setExeFsPatchSearchText = useWorkbenchStore(
     (state) => state.setExeFsPatchSearchText
   );
@@ -1417,6 +1432,8 @@ export function App({
   const [isBagHookStaging, setIsBagHookStaging] = useState(false);
   const [isCatchCapLoading, setIsCatchCapLoading] = useState(false);
   const [isCatchCapStaging, setIsCatchCapStaging] = useState(false);
+  const [isIvScreenLoading, setIsIvScreenLoading] = useState(false);
+  const [isIvScreenStaging, setIsIvScreenStaging] = useState(false);
   const [isExeFsPatchLoading, setIsExeFsPatchLoading] = useState(false);
   const [isExeFsPatchStaging, setIsExeFsPatchStaging] = useState(false);
   const [isRoyalCandyLoading, setIsRoyalCandyLoading] = useState(false);
@@ -1513,6 +1530,7 @@ export function App({
     useWorkbenchStore.setState({
       bagHookWorkflow: null,
       catchCapWorkflow: null,
+      ivScreenWorkflow: null,
       dynamaxAdventuresWorkflow: null,
       encountersWorkflow: null,
       exeFsPatchWorkflow: null,
@@ -2536,6 +2554,70 @@ export function App({
     }
   };
 
+  const handleOpenIvScreenWorkflow = async () => {
+    setIsIvScreenLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadIvScreenWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setIvScreenWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsIvScreenLoading(false);
+    }
+  };
+
+  const handleStageIvScreenInstall = async () => {
+    setIsIvScreenStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageIvScreenInstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setIvScreenWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('ivScreen', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsIvScreenStaging(false);
+    }
+  };
+
+  const handleStageIvScreenUninstall = async () => {
+    setIsIvScreenStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageIvScreenUninstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setIvScreenWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('ivScreen', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsIvScreenStaging(false);
+    }
+  };
+
   const handleOpenExeFsPatchWorkflow = async () => {
     setIsExeFsPatchLoading(true);
     setBridgeDiagnostics([]);
@@ -2832,6 +2914,12 @@ export function App({
           void handleOpenCatchCapWorkflow();
         }
         break;
+      case 'ivScreen':
+        if (!ivScreenWorkflow && !isIvScreenLoading) {
+          markLazyLoadStarted();
+          void handleOpenIvScreenWorkflow();
+        }
+        break;
       case 'exefsPatches':
         if (!exeFsPatchWorkflow && !isExeFsPatchLoading) {
           markLazyLoadStarted();
@@ -2881,6 +2969,7 @@ export function App({
     isBehaviorLoading,
     isBagHookLoading,
     isCatchCapLoading,
+    isIvScreenLoading,
     isMovesLoading,
     isPlacementLoading,
     isPokemonLoading,
@@ -2894,6 +2983,7 @@ export function App({
     isTextLoading,
     isTrainersLoading,
     itemsWorkflow,
+    ivScreenWorkflow,
     lazyLoadedWorkflowSections,
     movesWorkflow,
     behaviorWorkflow,
@@ -4564,6 +4654,14 @@ export function App({
         }
       );
     }
+    if (ivScreenWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadIvScreenWorkflow({ paths });
+          setIvScreenWorkflow(response.workflow);
+        }
+      );
+    }
     if (exeFsPatchWorkflow) {
       reloadTasks.push(
         async () => {
@@ -4861,6 +4959,7 @@ export function App({
               isDynamaxAdventuresLoading={isDynamaxAdventuresLoading}
               isBagHookLoading={isBagHookLoading}
               isCatchCapLoading={isCatchCapLoading}
+              isIvScreenLoading={isIvScreenLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
               isStartingItemsLoading={isStartingItemsLoading}
@@ -4875,6 +4974,7 @@ export function App({
               onOpenDynamaxAdventuresWorkflow={handleOpenDynamaxAdventuresWorkflow}
               onOpenBagHookWorkflow={handleOpenBagHookWorkflow}
               onOpenCatchCapWorkflow={handleOpenCatchCapWorkflow}
+              onOpenIvScreenWorkflow={handleOpenIvScreenWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
               onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
@@ -5285,6 +5385,24 @@ export function App({
               />
             )
           ) : null}
+          {activeSection === 'ivScreen' ? (
+            isIvScreenLoading && !ivScreenWorkflow ? (
+              <WorkflowLoadingPanel label="IV Screen" />
+            ) : (
+              <IvScreenSection
+                changePlan={changePlan}
+                editSession={getEditSessionForSection('ivScreen')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isIvScreenStaging}
+                onApplyChangePlan={handleApplyChangePlan}
+                onCreateChangePlan={handleCreateChangePlan}
+                onStageInstall={handleStageIvScreenInstall}
+                onStageUninstall={handleStageIvScreenUninstall}
+                workflow={ivScreenWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'exefsPatches' ? (
             isExeFsPatchLoading && !exeFsPatchWorkflow ? (
               <WorkflowLoadingPanel label="ExeFS Patch Manager" />
@@ -5383,6 +5501,7 @@ export function App({
                 giftPokemonWorkflow,
                 behaviorWorkflow,
                 itemsWorkflow,
+                ivScreenWorkflow,
                 movesWorkflow,
                 placementWorkflow,
                 pokemonWorkflow,
@@ -5748,6 +5867,7 @@ function WorkflowsSection({
   isDynamaxAdventuresLoading,
   isBagHookLoading,
   isCatchCapLoading,
+  isIvScreenLoading,
   isRoyalCandyLoading,
   isStartingItemsLoading,
   isSpreadsheetImportLoading,
@@ -5761,6 +5881,7 @@ function WorkflowsSection({
   onOpenDynamaxAdventuresWorkflow,
   onOpenBagHookWorkflow,
   onOpenCatchCapWorkflow,
+  onOpenIvScreenWorkflow,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
@@ -5800,6 +5921,7 @@ function WorkflowsSection({
   isDynamaxAdventuresLoading: boolean;
   isBagHookLoading: boolean;
   isCatchCapLoading: boolean;
+  isIvScreenLoading: boolean;
   isRoyalCandyLoading: boolean;
   isStartingItemsLoading: boolean;
   isSpreadsheetImportLoading: boolean;
@@ -5813,6 +5935,7 @@ function WorkflowsSection({
   onOpenDynamaxAdventuresWorkflow: () => void;
   onOpenBagHookWorkflow: () => void;
   onOpenCatchCapWorkflow: () => void;
+  onOpenIvScreenWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
@@ -5876,6 +5999,7 @@ function WorkflowsSection({
           const isFlagworkSaveWorkflow = definition.id === 'flagworkSave';
           const isBagHookWorkflow = definition.id === 'bagHook';
           const isCatchCapWorkflow = definition.id === 'catchCap';
+          const isIvScreenWorkflow = definition.id === 'ivScreen';
           const isExeFsPatchWorkflow = definition.id === 'exefsPatches';
           const isRoyalCandyWorkflow = definition.id === 'royalCandy';
           const isStartingItemsWorkflow = definition.id === 'startingItems';
@@ -5914,6 +6038,8 @@ function WorkflowsSection({
             isBagHookWorkflow && workflowState.availability !== 'disabled';
           const canOpenCatchCap =
             isCatchCapWorkflow && workflowState.availability !== 'disabled';
+          const canOpenIvScreen =
+            isIvScreenWorkflow && workflowState.availability !== 'disabled';
           const canOpenExeFsPatch =
             isExeFsPatchWorkflow && workflowState.availability !== 'disabled';
           const canOpenRoyalCandy =
@@ -6160,6 +6286,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isCatchCapLoading ? 'Loading' : 'Open Catch Cap'}</span>
+                  </button>
+                ) : null}
+                {isIvScreenWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenIvScreen || isIvScreenLoading}
+                    onClick={onOpenIvScreenWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isIvScreenLoading ? 'Loading' : 'Open IV Screen'}</span>
                   </button>
                 ) : null}
                 {isExeFsPatchWorkflow ? (
@@ -10580,6 +10717,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.giftPokemon': 'Gift Pokemon',
     'workflow.behavior': 'Behavior',
     'workflow.items': 'Items',
+    'workflow.ivScreen': 'IV Screen',
     'workflow.moves': 'Moves',
     'workflow.placement': 'Placement',
     'workflow.pokemon': 'Pokemon',
@@ -10807,6 +10945,13 @@ function getPendingEditDisplayDetails(
         fieldLabel: edit.field === 'caps' ? 'Badge caps' : undefined,
         newValueLabel: formatCatchCapPendingValue(edit.newValue),
         recordLabel: 'Catch Cap Editor'
+      });
+    case 'workflow.ivScreen':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'install' ? 'Install' : 'Uninstall',
+        newValueLabel: edit.recordId === 'iv-screen-v1-install' ? 'IV Screen V1' : 'Restore base bytes',
+        recordLabel: 'IV Screen'
       });
     case 'workflow.royalCandy': {
       const workflow = context.royalCandyWorkflow?.workflows.find(
@@ -18426,6 +18571,199 @@ function BagHookSection({
   );
 }
 
+function IvScreenSection({
+  changePlan,
+  editSession,
+  isChangePlanApplying,
+  isChangePlanCreating,
+  isStaging,
+  onApplyChangePlan,
+  onCreateChangePlan,
+  onStageInstall,
+  onStageUninstall,
+  workflow
+}: {
+  changePlan: ChangePlan | null;
+  editSession: EditSession | null;
+  isChangePlanApplying: boolean;
+  isChangePlanCreating: boolean;
+  isStaging: boolean;
+  onApplyChangePlan: () => void;
+  onCreateChangePlan: () => void;
+  onStageInstall: () => void;
+  onStageUninstall: () => void;
+  workflow: IvScreenWorkflow | null;
+}) {
+  const stagedIvScreenEdit = editSession?.pendingEdits.find(
+    (edit) => edit.domain === 'workflow.ivScreen'
+  );
+  const isInstallStaged = stagedIvScreenEdit?.recordId === 'iv-screen-v1-install';
+  const isUninstallStaged = stagedIvScreenEdit?.recordId === 'iv-screen-v1-uninstall';
+  const hasStagedChange = isInstallStaged || isUninstallStaged;
+  const canStageInstall =
+    workflow?.summary.availability === 'available' &&
+    workflow.installStatus !== 'blocked' &&
+    workflow.installStatus !== 'foreign';
+  const canStageUninstall =
+    workflow?.summary.availability === 'available' && workflow.installStatus === 'installed';
+  const canReviewPlan = hasStagedChange && !isChangePlanCreating;
+  const canApplyPlan =
+    hasStagedChange &&
+    changePlan !== null &&
+    changePlan.canApply &&
+    changePlan.writes.length > 0 &&
+    !isChangePlanApplying;
+  const installLabel = workflow?.installStatus === 'installed' ? 'Stage Reinstall' : 'Stage Install';
+
+  return (
+    <>
+      <section aria-labelledby="iv-screen-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Dna aria-hidden="true" size={18} />
+          <h2 id="iv-screen-heading">IV Screen</h2>
+        </div>
+        <p className="workflow-description">
+          IV Screen installs an independent Pokemon Summary hook for the stats graph and
+          uses only its reserved exefs/main bytes.
+        </p>
+
+        <div className="items-toolbar exefs-toolbar">
+          <Metric
+            label="Install"
+            value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
+          />
+          <Metric label="Marker" value={workflow?.marker ?? 'Not loaded'} />
+          <Metric
+            label="Reserved regions"
+            value={workflow ? workflow.stats.reservedMainTextRegionCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="flagwork-layout">
+            <div className="flagwork-stack">
+              <div className="exefs-table" role="table" aria-label="IV Screen reserved ranges">
+                <div className="exefs-row exefs-row-heading" role="row">
+                  <span role="columnheader">Region</span>
+                  <span role="columnheader">Range</span>
+                  <span role="columnheader">Rule</span>
+                </div>
+                {workflow.reservedRegions.map((region) => (
+                  <div className="exefs-row" key={region.regionId} role="row">
+                    <span role="cell">{region.label}</span>
+                    <span role="cell">{region.offsetLabel}</span>
+                    <span role="cell">{region.rule}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <aside aria-label="IV Screen install details" className="encounter-inspector">
+              <div className="panel-heading">
+                <Dna aria-hidden="true" size={18} />
+                <h3>Install Details</h3>
+              </div>
+
+              <dl className="item-provenance-list">
+                <div>
+                  <dt>Install status</dt>
+                  <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
+                </div>
+                <div>
+                  <dt>Hook site</dt>
+                  <dd>{workflow.hookSiteOffsetHex}</dd>
+                </div>
+                <div>
+                  <dt>Raw IV getter</dt>
+                  <dd>{workflow.rawIvGetterOffsetHex}</dd>
+                </div>
+                <div>
+                  <dt>Hyper Training wrapper</dt>
+                  <dd>{workflow.hyperTrainingWrapperOffsetHex}</dd>
+                </div>
+                <div>
+                  <dt>Source file</dt>
+                  <dd>{workflow.provenance.sourceFile}</dd>
+                </div>
+                <div>
+                  <dt>Layer</dt>
+                  <dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd>
+                </div>
+                <div>
+                  <dt>File state</dt>
+                  <dd>{formatFileState(workflow.provenance.fileState)}</dd>
+                </div>
+              </dl>
+
+              <div className="encounter-edit-form">
+                <div className="form-actions">
+                  <button
+                    className="primary-button"
+                    disabled={!canStageInstall || isStaging}
+                    onClick={onStageInstall}
+                    type="button"
+                  >
+                    <Wrench aria-hidden="true" size={16} />
+                    <span>{isStaging ? 'Staging' : installLabel}</span>
+                  </button>
+                  <button
+                    className="danger-button"
+                    disabled={!canStageUninstall || isStaging}
+                    onClick={onStageUninstall}
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" size={16} />
+                    <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={!canReviewPlan}
+                    onClick={onCreateChangePlan}
+                    type="button"
+                  >
+                    <ClipboardCheck aria-hidden="true" size={16} />
+                    <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={!canApplyPlan}
+                    onClick={onApplyChangePlan}
+                    type="button"
+                  >
+                    <Save aria-hidden="true" size={16} />
+                    <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                  </button>
+                </div>
+
+                <dl className="encounter-slot-detail">
+                  <div>
+                    <dt>Install message</dt>
+                    <dd>{workflow.installMessage}</dd>
+                  </div>
+                  <div>
+                    <dt>Staged change</dt>
+                    <dd>
+                      {isInstallStaged
+                        ? 'Install or refresh'
+                        : isUninstallStaged
+                          ? 'Uninstall'
+                          : 'None'}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            </aside>
+          </div>
+        ) : (
+          <p className="empty-copy">Open IV Screen from Advanced Editors to inspect the hook.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
 function CatchCapSection({
   changePlan,
   editSession,
@@ -20284,6 +20622,7 @@ type PendingEditContext = {
   giftPokemonWorkflow: GiftPokemonWorkflow | null;
   behaviorWorkflow: BehaviorWorkflow | null;
   itemsWorkflow: ItemsWorkflow | null;
+  ivScreenWorkflow: IvScreenWorkflow | null;
   movesWorkflow: MovesWorkflow | null;
   placementWorkflow: PlacementWorkflow | null;
   pokemonWorkflow: PokemonWorkflow | null;

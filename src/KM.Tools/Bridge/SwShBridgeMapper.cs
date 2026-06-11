@@ -10,6 +10,7 @@ using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Gifts;
 using KM.Api.Items;
+using KM.Api.IvScreen;
 using KM.Api.Placement;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
@@ -32,6 +33,7 @@ using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Gifts;
+using KM.SwSh.IvScreen;
 using KM.SwSh.Placement;
 using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
@@ -292,6 +294,33 @@ public static class SwShBridgeMapper
 
         return new StageCatchCapUninstallResponse(
             ToCatchCapWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadIvScreenWorkflowResponse ToDto(SwShIvScreenWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadIvScreenWorkflowResponse(ToIvScreenWorkflowDto(workflow));
+    }
+
+    public static StageIvScreenInstallResponse ToDto(SwShIvScreenEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageIvScreenInstallResponse(
+            ToIvScreenWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageIvScreenUninstallResponse ToIvScreenUninstallDto(SwShIvScreenEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageIvScreenUninstallResponse(
+            ToIvScreenWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1152,6 +1181,24 @@ public static class SwShBridgeMapper
             ToDto(workflow.Provenance),
             new CatchCapWorkflowStatsDto(
                 workflow.Stats.TotalCapCount,
+            workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static IvScreenWorkflowDto ToIvScreenWorkflowDto(SwShIvScreenWorkflow workflow)
+    {
+        return new IvScreenWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.Marker,
+            workflow.HookSiteOffsetHex,
+            workflow.RawIvGetterOffsetHex,
+            workflow.HyperTrainingWrapperOffsetHex,
+            workflow.ReservedRegions.Select(ToDto).ToArray(),
+            ToDto(workflow.Provenance),
+            new IvScreenWorkflowStatsDto(
+                workflow.Stats.ReservedMainTextRegionCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -2132,6 +2179,25 @@ public static class SwShBridgeMapper
     private static CatchCapProvenanceDto ToDto(SwShCatchCapProvenance provenance)
     {
         return new CatchCapProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static IvScreenReservedRegionDto ToDto(SwShIvScreenReservedRegion region)
+    {
+        return new IvScreenReservedRegionDto(
+            region.RegionId,
+            region.Label,
+            region.OffsetLabel,
+            region.StartOffset,
+            region.Length,
+            region.Rule);
+    }
+
+    private static IvScreenProvenanceDto ToDto(SwShIvScreenProvenance provenance)
+    {
+        return new IvScreenProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

@@ -11,6 +11,7 @@ using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Gifts;
 using KM.Api.Items;
+using KM.Api.IvScreen;
 using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
@@ -38,6 +39,7 @@ using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Gifts;
 using KM.SwSh.Items;
+using KM.SwSh.IvScreen;
 using KM.SwSh.Moves;
 using KM.SwSh.Placement;
 using KM.SwSh.Pokemon;
@@ -64,6 +66,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShExeFsPatchEditSessionService exeFsPatchEditSessionService;
     private readonly SwShBagHookEditSessionService bagHookEditSessionService;
     private readonly SwShCatchCapEditSessionService catchCapEditSessionService;
+    private readonly SwShIvScreenEditSessionService ivScreenEditSessionService;
     private readonly SwShGiftPokemonEditSessionService giftPokemonEditSessionService;
     private readonly SwShItemsEditSessionService itemsEditSessionService;
     private readonly SwShMovesEditSessionService movesEditSessionService;
@@ -90,6 +93,7 @@ public sealed class ProjectBridgeDispatcher
         SwShExeFsPatchEditSessionService? exeFsPatchEditSessionService = null,
         SwShBagHookEditSessionService? bagHookEditSessionService = null,
         SwShCatchCapEditSessionService? catchCapEditSessionService = null,
+        SwShIvScreenEditSessionService? ivScreenEditSessionService = null,
         SwShGiftPokemonEditSessionService? giftPokemonEditSessionService = null,
         SwShItemsEditSessionService? itemsEditSessionService = null,
         SwShMovesEditSessionService? movesEditSessionService = null,
@@ -115,6 +119,7 @@ public sealed class ProjectBridgeDispatcher
         this.exeFsPatchEditSessionService = exeFsPatchEditSessionService ?? new SwShExeFsPatchEditSessionService(this.projectWorkspaceService);
         this.bagHookEditSessionService = bagHookEditSessionService ?? new SwShBagHookEditSessionService(this.projectWorkspaceService);
         this.catchCapEditSessionService = catchCapEditSessionService ?? new SwShCatchCapEditSessionService(this.projectWorkspaceService);
+        this.ivScreenEditSessionService = ivScreenEditSessionService ?? new SwShIvScreenEditSessionService(this.projectWorkspaceService);
         this.giftPokemonEditSessionService = giftPokemonEditSessionService ?? new SwShGiftPokemonEditSessionService(this.projectWorkspaceService);
         this.itemsEditSessionService = itemsEditSessionService ?? new SwShItemsEditSessionService(this.projectWorkspaceService);
         this.movesEditSessionService = movesEditSessionService ?? new SwShMovesEditSessionService(this.projectWorkspaceService);
@@ -196,6 +201,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadCatchCapWorkflow => DispatchLoadCatchCapWorkflow(requestJson),
                 KmCommandNames.StageCatchCap => DispatchStageCatchCap(requestJson),
                 KmCommandNames.StageCatchCapUninstall => DispatchStageCatchCapUninstall(requestJson),
+                KmCommandNames.LoadIvScreenWorkflow => DispatchLoadIvScreenWorkflow(requestJson),
+                KmCommandNames.StageIvScreenInstall => DispatchStageIvScreenInstall(requestJson),
+                KmCommandNames.StageIvScreenUninstall => DispatchStageIvScreenUninstall(requestJson),
                 KmCommandNames.LoadExeFsPatchWorkflow => DispatchLoadExeFsPatchWorkflow(requestJson),
                 KmCommandNames.StageExeFsPatch => DispatchStageExeFsPatch(requestJson),
                 KmCommandNames.LoadRoyalCandyWorkflow => DispatchLoadRoyalCandyWorkflow(requestJson),
@@ -817,6 +825,43 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadIvScreenWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadIvScreenWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadIvScreen(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageIvScreenInstall(string requestJson)
+    {
+        var request = DeserializeRequest<StageIvScreenInstallRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = ivScreenEditSessionService.StageInstall(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageIvScreenUninstall(string requestJson)
+    {
+        var request = DeserializeRequest<StageIvScreenUninstallRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = ivScreenEditSessionService.StageUninstall(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SwShBridgeMapper.ToIvScreenUninstallDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadExeFsPatchWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadExeFsPatchWorkflowRequest>(requestJson);
@@ -959,6 +1004,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.Validate(paths, session),
             EditSessionDomain.BagHook => bagHookEditSessionService.Validate(paths, session),
             EditSessionDomain.CatchCap => catchCapEditSessionService.Validate(paths, session),
+            EditSessionDomain.IvScreen => ivScreenEditSessionService.Validate(paths, session),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.Validate(paths, session),
@@ -996,6 +1042,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.BagHook => bagHookEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.CatchCap => catchCapEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.IvScreen => ivScreenEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.CreateChangePlan(paths, session),
@@ -1034,6 +1081,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.BagHook => bagHookEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.CatchCap => catchCapEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.IvScreen => ivScreenEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
@@ -1080,6 +1128,7 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.exefsPatches"] => EditSessionDomain.ExeFsPatches,
             ["workflow.bagHook"] => EditSessionDomain.BagHook,
             ["workflow.catchCap"] => EditSessionDomain.CatchCap,
+            ["workflow.ivScreen"] => EditSessionDomain.IvScreen,
             ["workflow.giftPokemon"] => EditSessionDomain.GiftPokemon,
             ["workflow.tradePokemon"] => EditSessionDomain.TradePokemon,
             ["workflow.rentalPokemon"] => EditSessionDomain.RentalPokemon,
@@ -1180,6 +1229,7 @@ public sealed class ProjectBridgeDispatcher
         ExeFsPatches,
         BagHook,
         CatchCap,
+        IvScreen,
         GiftPokemon,
         TradePokemon,
         RentalPokemon,

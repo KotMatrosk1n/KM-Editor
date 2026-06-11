@@ -54,6 +54,9 @@ public static class KmCommandNames
     public const string LoadCatchCapWorkflow = "catchCap.load";
     public const string StageCatchCap = "catchCap.stage";
     public const string StageCatchCapUninstall = "catchCap.uninstall.stage";
+    public const string LoadIvScreenWorkflow = "ivScreen.load";
+    public const string StageIvScreenInstall = "ivScreen.install.stage";
+    public const string StageIvScreenUninstall = "ivScreen.uninstall.stage";
     public const string LoadExeFsPatchWorkflow = "exefsPatches.load";
     public const string StageExeFsPatch = "exefsPatches.patch.stage";
     public const string LoadRoyalCandyWorkflow = "royalCandy.load";

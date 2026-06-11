@@ -50,6 +50,9 @@ export const kmCommandNameValues = [
   'catchCap.load',
   'catchCap.stage',
   'catchCap.uninstall.stage',
+  'ivScreen.load',
+  'ivScreen.install.stage',
+  'ivScreen.uninstall.stage',
   'exefsPatches.load',
   'exefsPatches.patch.stage',
   'royalCandy.load',
@@ -117,6 +120,9 @@ export const kmCommandNames = {
   loadCatchCapWorkflow: 'catchCap.load',
   stageCatchCap: 'catchCap.stage',
   stageCatchCapUninstall: 'catchCap.uninstall.stage',
+  loadIvScreenWorkflow: 'ivScreen.load',
+  stageIvScreenInstall: 'ivScreen.install.stage',
+  stageIvScreenUninstall: 'ivScreen.uninstall.stage',
   loadExeFsPatchWorkflow: 'exefsPatches.load',
   stageExeFsPatch: 'exefsPatches.patch.stage',
   loadRoyalCandyWorkflow: 'royalCandy.load',
@@ -254,6 +260,10 @@ export const loadBagHookWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadCatchCapWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadIvScreenWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -2074,6 +2084,66 @@ export const stageCatchCapUninstallResponseSchema = z.strictObject({
   workflow: catchCapWorkflowSchema
 });
 
+export const ivScreenProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const ivScreenReservedRegionSchema = z.strictObject({
+  label: z.string(),
+  length: z.number().int().nullable(),
+  offsetLabel: z.string(),
+  regionId: z.string(),
+  rule: z.string(),
+  startOffset: z.number().int().nullable()
+});
+
+export const ivScreenWorkflowStatsSchema = z.strictObject({
+  reservedMainTextRegionCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative()
+});
+
+export const ivScreenWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  hookSiteOffsetHex: z.string(),
+  hyperTrainingWrapperOffsetHex: z.string(),
+  installMessage: z.string(),
+  installStatus: z.string(),
+  marker: z.string(),
+  provenance: ivScreenProvenanceSchema,
+  rawIvGetterOffsetHex: z.string(),
+  reservedRegions: z.array(ivScreenReservedRegionSchema),
+  stats: ivScreenWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadIvScreenWorkflowResponseSchema = z.strictObject({
+  workflow: ivScreenWorkflowSchema
+});
+
+export const stageIvScreenInstallRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageIvScreenInstallResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: ivScreenWorkflowSchema
+});
+
+export const stageIvScreenUninstallRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageIvScreenUninstallResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: ivScreenWorkflowSchema
+});
+
 export const royalCandyProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -2726,6 +2796,8 @@ export type BagHookWorkflow = z.infer<typeof bagHookWorkflowSchema>;
 export type CatchCapRecord = z.infer<typeof catchCapRecordSchema>;
 export type CatchCapSelection = z.infer<typeof catchCapSelectionSchema>;
 export type CatchCapWorkflow = z.infer<typeof catchCapWorkflowSchema>;
+export type IvScreenReservedRegion = z.infer<typeof ivScreenReservedRegionSchema>;
+export type IvScreenWorkflow = z.infer<typeof ivScreenWorkflowSchema>;
 export type RoyalCandyOutputRecord = z.infer<typeof royalCandyOutputRecordSchema>;
 export type RoyalCandyWorkflowCheckRecord = z.infer<
   typeof royalCandyWorkflowCheckRecordSchema
@@ -2855,6 +2927,16 @@ export type StageCatchCapRequest = z.infer<typeof stageCatchCapRequestSchema>;
 export type StageCatchCapResponse = z.infer<typeof stageCatchCapResponseSchema>;
 export type StageCatchCapUninstallRequest = z.infer<typeof stageCatchCapUninstallRequestSchema>;
 export type StageCatchCapUninstallResponse = z.infer<typeof stageCatchCapUninstallResponseSchema>;
+export type LoadIvScreenWorkflowRequest = z.infer<typeof loadIvScreenWorkflowRequestSchema>;
+export type LoadIvScreenWorkflowResponse = z.infer<typeof loadIvScreenWorkflowResponseSchema>;
+export type StageIvScreenInstallRequest = z.infer<typeof stageIvScreenInstallRequestSchema>;
+export type StageIvScreenInstallResponse = z.infer<typeof stageIvScreenInstallResponseSchema>;
+export type StageIvScreenUninstallRequest = z.infer<
+  typeof stageIvScreenUninstallRequestSchema
+>;
+export type StageIvScreenUninstallResponse = z.infer<
+  typeof stageIvScreenUninstallResponseSchema
+>;
 export type LoadExeFsPatchWorkflowRequest = z.infer<typeof loadExeFsPatchWorkflowRequestSchema>;
 export type LoadExeFsPatchWorkflowResponse = z.infer<typeof loadExeFsPatchWorkflowResponseSchema>;
 export type StageExeFsPatchRequest = z.infer<typeof stageExeFsPatchRequestSchema>;

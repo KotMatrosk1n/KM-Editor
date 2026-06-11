@@ -13,6 +13,7 @@ import {
   type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
+  type IvScreenWorkflow,
   type ItemRecord,
   type ItemsWorkflow,
   type MovesWorkflow,
@@ -360,6 +361,7 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Bag Hook' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    expect(within(navigation).queryByRole('button', { name: 'IV Screen' })).not.toBeInTheDocument();
     expect(
       within(navigation)
         .getAllByRole('button')
@@ -6919,6 +6921,42 @@ function createMockProjectBridge(
     },
     summary: catchCapWorkflowSummary
   };
+  const ivScreenWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Installs the Pokemon Summary raw-IV screen hook.',
+    diagnostics: [],
+    id: 'ivScreen',
+    label: 'IV Screen'
+  };
+  const ivScreenWorkflow: IvScreenWorkflow = {
+    diagnostics: [],
+    hookSiteOffsetHex: 'main.text+0x0138F268',
+    hyperTrainingWrapperOffsetHex: 'main.text+0x007790D0',
+    installMessage: 'IV Screen can patch exefs/main.',
+    installStatus: canEdit ? 'available' : 'readOnly',
+    marker: 'SWSH_IV_DISPLAY_V1',
+    provenance: {
+      fileState: 'baseOnly',
+      sourceFile: 'exefs/main',
+      sourceLayer: 'base'
+    },
+    rawIvGetterOffsetHex: 'main.text+0x00779070',
+    reservedRegions: [
+      {
+        label: 'IV Screen normal stats graph refresh hook branch site',
+        length: 4,
+        offsetLabel: 'text+0x138F268..0x138F26B',
+        regionId: 'iv-screen-hook-site',
+        rule: 'do-not-overwrite',
+        startOffset: 0x0138f268
+      }
+    ],
+    stats: {
+      reservedMainTextRegionCount: 1,
+      sourceFileCount: 1
+    },
+    summary: ivScreenWorkflowSummary
+  };
   const startingItemsWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Adds selected startup item grants through Bag Hook slots 2-20.',
@@ -7403,6 +7441,20 @@ function createMockProjectBridge(
                               targetRelativePath: 'exefs/main'
                             }
                           ]
+                        : request.session.pendingEdits[0]?.domain === 'workflow.ivScreen'
+                        ? [
+                            {
+                              reason: 'Install or refresh IV Screen raw-IV hook in exefs/main.',
+                              replacesExistingOutput: false,
+                              sources: [
+                                {
+                                  layer: 'base',
+                                  relativePath: 'exefs/main'
+                                }
+                              ],
+                              targetRelativePath: 'exefs/main'
+                            }
+                          ]
                         : request.session.pendingEdits[0]?.domain === 'workflow.royalCandy'
                         ? [
                             {
@@ -7484,6 +7536,7 @@ function createMockProjectBridge(
           flagworkSaveWorkflowSummary,
           bagHookWorkflowSummary,
           catchCapWorkflowSummary,
+          ivScreenWorkflowSummary,
           royalCandyWorkflowSummary,
           startingItemsWorkflowSummary,
           spreadsheetImportWorkflowSummary
@@ -7633,6 +7686,85 @@ function createMockProjectBridge(
         workflow: {
           ...catchCapWorkflow,
           installMessage: 'Catch Cap Editor hook is installed.',
+          installStatus: 'installed',
+          provenance: {
+            fileState: 'layeredOverride',
+            sourceFile: 'exefs/main',
+            sourceLayer: 'layered'
+          }
+        }
+      }),
+    loadIvScreenWorkflow: () =>
+      Promise.resolve({
+        workflow: ivScreenWorkflow
+      }),
+    stageIvScreenInstall: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'IV Screen install is staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.ivScreen',
+              field: 'install',
+              newValue: 'true',
+              recordId: 'iv-screen-v1-install',
+              sources: [
+                {
+                  layer: 'layered',
+                  relativePath: 'exefs/main'
+                },
+                {
+                  layer: 'base',
+                  relativePath: 'exefs/main'
+                }
+              ],
+              summary: 'Stage IV Screen install.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-iv-screen-install'
+        },
+        workflow: ivScreenWorkflow
+      }),
+    stageIvScreenUninstall: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'IV Screen uninstall is staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.ivScreen',
+              field: 'uninstall',
+              newValue: 'true',
+              recordId: 'iv-screen-v1-uninstall',
+              sources: [
+                {
+                  layer: 'layered',
+                  relativePath: 'exefs/main'
+                },
+                {
+                  layer: 'base',
+                  relativePath: 'exefs/main'
+                }
+              ],
+              summary: 'Stage IV Screen uninstall.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-iv-screen-uninstall'
+        },
+        workflow: {
+          ...ivScreenWorkflow,
+          installMessage: 'IV Screen is installed.',
           installStatus: 'installed',
           provenance: {
             fileState: 'layeredOverride',
@@ -9373,6 +9505,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Catch Cap Editor changes to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.ivScreen') {
+    return 'Applied IV Screen changes to the configured LayeredFS output root.';
+  }
+
   if (domain === 'workflow.startingItems') {
     return 'Applied Starting Items grants to Bag Hook slots 2-20 in the configured LayeredFS output root.';
   }
@@ -9434,6 +9570,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending Bag Hook install is valid for change-plan review.';
     case 'workflow.catchCap':
       return 'Pending Catch Cap Editor values are valid for change-plan review.';
+    case 'workflow.ivScreen':
+      return 'Pending IV Screen change is valid for change-plan review.';
     case 'workflow.royalCandy':
       return 'Pending Royal Candy workflow is valid.';
     case 'workflow.startingItems':

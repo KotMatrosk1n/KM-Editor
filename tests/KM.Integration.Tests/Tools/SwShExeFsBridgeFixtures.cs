@@ -14,7 +14,7 @@ internal static class SwShExeFsBridgeFixtures
 
     private static byte[] CreateCompatibleText()
     {
-        var text = new byte[0x007DDA90];
+        var text = new byte[0x0157D000];
         foreach (var check in UiRouteChecks)
         {
             WriteInstruction(text, check.CompareOffset, EncodeCmpImmediate(check.ItemRegister, 50));
@@ -39,7 +39,62 @@ internal static class SwShExeFsBridgeFixtures
         WriteInstruction(text, 0x007BAF3C, 0x1A963316);
         WriteInstruction(text, 0x007B1F20, 0x2A0003E2);
         WriteInstruction(text, 0x007DDA8C, EncodeCmpImmediate(8, 0x32));
+        WriteInstruction(text, 0x0137F634, 0x94001F27);
+        WriteInstruction(text, 0x0138F268, 0x9400023E);
+        WriteInstruction(text, 0x013872D0, 0xD103C3FF);
+        WriteInstruction(text, 0x01385A70, 0xD10143FF);
+        WriteInstruction(text, 0x00779070, 0x7100143F);
+        WriteInstruction(text, 0x007790D0, 0xA9BE4FF4);
+        WriteInstruction(text, 0x0138F990, 0xA9BC5FF8);
+        WriteInstruction(text, 0x0138FB60, 0xD10243FF);
+        WriteInstruction(text, 0x0138A1A0, 0xD10503FF);
+        WriteInstruction(text, 0x0138B1E0, 0xD10183FF);
+        WriteInstruction(text, 0x0138B1FC, 0x39592408);
+        WriteInstruction(text, 0x0138B200, 0x52000108);
+        WriteInstruction(text, 0x0139FB60, 0x340000A8);
+        WriteInstruction(text, 0x013B2F90, 0xD10143FF);
+        WriteInstruction(text, 0x013CA220, 0xF81D0FF5);
+        WriteIvScreenCallSiteAnchors(text);
         return text;
+    }
+
+    private static void WriteIvScreenCallSiteAnchors(byte[] text)
+    {
+        foreach (var (offset, instruction) in new (int Offset, uint Instruction)[]
+        {
+            (0x0138FBE8, 0x97CFA48E),
+            (0x0138FC38, 0x97CFA47A),
+            (0x0138FC74, 0x97CFA46B),
+            (0x0138FC9C, 0x97CFA461),
+            (0x0138FD2C, 0x97CFA43D),
+            (0x0138FD5C, 0x97CFA431),
+            (0x0138FD84, 0x97CFA427),
+            (0x0138FEA0, 0x97CFA3E0),
+            (0x0138AA50, 0x97CFBD40),
+            (0x0138AA60, 0x97CFC074),
+            (0x0138AA90, 0x97CFBD30),
+            (0x0138AAA0, 0x97CFC064),
+            (0x0138AAD0, 0x97CFBD20),
+            (0x0138AAE0, 0x97CFC054),
+            (0x0138AB10, 0x97CFBD10),
+            (0x0138AB20, 0x97CFC044),
+            (0x0138AB50, 0x97CFBD00),
+            (0x0138AB60, 0x97CFC034),
+            (0x0138AB90, 0x97CFBCF0),
+            (0x0138ABA0, 0x97CFC024),
+            (0x0138AC88, 0x0B130008),
+            (0x0138ACAC, 0x0B130008),
+            (0x0138ACD0, 0x0B130008),
+            (0x0138ACF8, 0x0B170008),
+            (0x0138AD1C, 0x0B130008),
+            (0x0138AD40, 0x0B130008),
+            (0x01392EA8, 0x97FFDCBE),
+            (0x01393310, 0x97FFDBA4),
+            (0x0139EF4C, 0x97FFAC95),
+        })
+        {
+            WriteInstruction(text, offset, instruction);
+        }
     }
 
     private static void WriteInstruction(byte[] text, int offset, uint instruction)
