@@ -657,7 +657,7 @@ public sealed class SwShBagHookEditSessionService
             return HasRoyalCandyExeFsSignature(project, entry);
         }
 
-        return IsKnownRoyalCandyOutputPath(entry.RelativePath);
+        return false;
     }
 
     private static bool HasRoyalCandyExeFsSignature(OpenedProject project, ProjectFileGraphEntry entry)
@@ -681,45 +681,6 @@ public sealed class SwShBagHookEditSessionService
         }
 
         return false;
-    }
-
-    private static bool IsKnownRoyalCandyOutputPath(string relativePath)
-    {
-        return string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemHashPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, SwShRoyalCandyWorkflowService.ShopDataPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, SwShRoyalCandyWorkflowService.LegacyShopDataPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, SwShRoyalCandyWorkflowService.NestDataPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, SwShRoyalCandyWorkflowService.PlacementPath, StringComparison.OrdinalIgnoreCase)
-            || IsItemMessageOutputPath(relativePath);
-    }
-
-    private static bool IsItemMessageOutputPath(string relativePath)
-    {
-        return TryParseMessageCommonFile(relativePath, out _, out var fileName)
-            && (string.Equals(fileName, "iteminfo.dat", StringComparison.OrdinalIgnoreCase)
-                || (fileName.StartsWith("itemname", StringComparison.OrdinalIgnoreCase)
-                    && fileName.EndsWith(".dat", StringComparison.OrdinalIgnoreCase)));
-    }
-
-    private static bool TryParseMessageCommonFile(string relativePath, out string language, out string fileName)
-    {
-        language = string.Empty;
-        fileName = string.Empty;
-
-        var parts = relativePath.Split('/');
-        if (parts.Length != 6
-            || !string.Equals(parts[0], "romfs", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(parts[1], "bin", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(parts[2], "message", StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(parts[4], "common", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        language = parts[3];
-        fileName = parts[5];
-        return true;
     }
 
     private static string? ResolveBaseSourcePath(ProjectPaths paths, string targetRelativePath)

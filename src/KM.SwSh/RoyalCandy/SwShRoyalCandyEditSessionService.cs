@@ -23,6 +23,7 @@ public sealed class SwShRoyalCandyEditSessionService
     private const string UnlimitedWorkflowId = "royal-candy-unlimited";
     private const string StoryLimitsWorkflowId = "royal-candy-story-limits";
     private const string UninstallWorkflowId = "royal-candy-uninstall";
+    private const int RoyalCandyItemId = SwShBagHookAmxPatcher.RoyalCandyItemId;
     private const string RoyalCandyName = "Royal Candy";
     private const string UnlimitedDescription = "A candy packed with strange energy. It can be used repeatedly by compatible Pokemon.";
     private const string StoryLimitsDescription = "A candy packed with strange energy. Its full power follows the current story limit.";
@@ -271,9 +272,21 @@ public sealed class SwShRoyalCandyEditSessionService
                             ]);
                         File.WriteAllBytes(targetPath, restored);
                     }
+                    else if (IsItemTextOutput(write.TargetRelativePath))
+                    {
+                        if (!TryRestoreRoyalCandyItemText(paths, targetPath, write.TargetRelativePath, diagnostics))
+                        {
+                            continue;
+                        }
+                    }
                     else
                     {
-                        File.Delete(targetPath);
+                        diagnostics.Add(CreateDiagnostic(
+                            DiagnosticSeverity.Warning,
+                            $"Skipped Royal Candy cleanup target '{write.TargetRelativePath}' because KM cannot safely isolate Royal Candy-owned data in that file.",
+                            file: write.TargetRelativePath,
+                            expected: "A verified Royal Candy-owned text row, Bag Hook slot, or ExeFS signature"));
+                        continue;
                     }
 
                     writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, write.TargetRelativePath));
@@ -321,7 +334,7 @@ public sealed class SwShRoyalCandyEditSessionService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 isCleanup
-                    ? "Removed reviewed Royal Candy LayeredFS output files from the configured output root."
+                    ? "Cleaned reviewed Royal Candy LayeredFS output from the configured output root."
                     : "Applied Royal Candy change plan to the configured LayeredFS output root."));
         }
 
@@ -797,7 +810,7 @@ public sealed class SwShRoyalCandyEditSessionService
         if (IsItemTextOutput(relativePath))
         {
             var textFile = SwShGameTextFile.Parse(File.ReadAllBytes(source.AbsolutePath));
-            if (textFile.Lines.Count <= 1128)
+            if (textFile.Lines.Count <= RoyalCandyItemId)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -811,7 +824,7 @@ public sealed class SwShRoyalCandyEditSessionService
             var replacement = relativePath.EndsWith("/itemname.dat", StringComparison.OrdinalIgnoreCase)
                 ? RoyalCandyName
                 : GetRoyalCandyDescription(selectedWorkflow.WorkflowId);
-            lines[1128] = lines[1128] with { Text = replacement };
+            lines[RoyalCandyItemId] = lines[RoyalCandyItemId] with { Text = replacement };
             return SwShGameTextFile.Write(lines);
         }
 
@@ -822,7 +835,7 @@ public sealed class SwShRoyalCandyEditSessionService
                 [
                     new SwShBagHookSlotPatch(
                         SwShBagHookAmxPatcher.RoyalCandySlot,
-                        1128,
+                        RoyalCandyItemId,
                         1),
                 ]);
         }
@@ -951,6 +964,83 @@ public sealed class SwShRoyalCandyEditSessionService
 
         restoredBytes = baseBytes;
         return true;
+    }
+
+    private static bool TryRestoreRoyalCandyItemText(
+        ProjectPaths paths,
+        string targetPath,
+        string targetRelativePath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var targetBytes = File.ReadAllBytes(targetPath);
+        var targetText = SwShGameTextFile.Parse(targetBytes);
+        if (targetText.Lines.Count <= RoyalCandyItemId)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Skipped Royal Candy text cleanup for '{targetRelativePath}' because item {RoyalCandyItemId} is not present.",
+                file: targetRelativePath,
+                expected: $"Text table containing item {RoyalCandyItemId}"));
+            return false;
+        }
+
+        if (!IsRoyalCandyTextValue(targetRelativePath, targetText.Lines[RoyalCandyItemId].Text))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Skipped Royal Candy text cleanup for '{targetRelativePath}' because item {RoyalCandyItemId} does not contain Royal Candy-owned text.",
+                file: targetRelativePath,
+                expected: "Royal Candy item name or description text"));
+            return false;
+        }
+
+        var basePath = ResolveBaseSourcePath(paths, targetRelativePath);
+        if (basePath is null || !File.Exists(basePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Skipped Royal Candy text cleanup for '{targetRelativePath}' because the base text file could not be resolved for row restoration.",
+                file: targetRelativePath,
+                expected: "Readable base RomFS text file"));
+            return false;
+        }
+
+        var baseBytes = File.ReadAllBytes(basePath);
+        var baseText = SwShGameTextFile.Parse(baseBytes);
+        if (baseText.Lines.Count <= RoyalCandyItemId)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Skipped Royal Candy text cleanup for '{targetRelativePath}' because the base text file does not contain item {RoyalCandyItemId}.",
+                file: targetRelativePath,
+                expected: $"Base text table containing item {RoyalCandyItemId}"));
+            return false;
+        }
+
+        var restoredLines = targetText.Lines.ToArray();
+        restoredLines[RoyalCandyItemId] = baseText.Lines[RoyalCandyItemId];
+        var restoredBytes = SwShGameTextFile.Write(restoredLines);
+        if (restoredBytes.SequenceEqual(baseBytes))
+        {
+            File.Delete(targetPath);
+        }
+        else
+        {
+            File.WriteAllBytes(targetPath, restoredBytes);
+        }
+
+        return true;
+    }
+
+    private static bool IsRoyalCandyTextValue(string relativePath, string value)
+    {
+        if (relativePath.EndsWith("/itemname.dat", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Equals(value, RoyalCandyName, StringComparison.Ordinal);
+        }
+
+        return string.Equals(value, UnlimitedDescription, StringComparison.Ordinal)
+            || string.Equals(value, StoryLimitsDescription, StringComparison.Ordinal);
     }
 
     private static bool ContainsIndependentExeFsHook(byte[] mainBytes)
