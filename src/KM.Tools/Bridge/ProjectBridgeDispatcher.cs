@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Bridge;
+using KM.Api.BagHook;
 using KM.Api.Behavior;
+using KM.Api.CatchCap;
 using KM.Api.DynamaxAdventures;
 using KM.Api.Editing;
 using KM.Api.Encounters;
@@ -18,6 +20,7 @@ using KM.Api.Rentals;
 using KM.Api.RoyalCandy;
 using KM.Api.Shops;
 using KM.Api.SpreadsheetImport;
+using KM.Api.StartingItems;
 using KM.Api.StaticEncounters;
 using KM.Api.Text;
 using KM.Api.Trainers;
@@ -28,6 +31,8 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.Behavior;
+using KM.SwSh.BagHook;
+using KM.SwSh.CatchCap;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
@@ -41,6 +46,7 @@ using KM.SwSh.Rentals;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Shops;
 using KM.SwSh.SpreadsheetImport;
+using KM.SwSh.StartingItems;
 using KM.SwSh.StaticEncounters;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
@@ -56,6 +62,8 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShDynamaxAdventuresEditSessionService dynamaxAdventuresEditSessionService;
     private readonly SwShEncountersEditSessionService encountersEditSessionService;
     private readonly SwShExeFsPatchEditSessionService exeFsPatchEditSessionService;
+    private readonly SwShBagHookEditSessionService bagHookEditSessionService;
+    private readonly SwShCatchCapEditSessionService catchCapEditSessionService;
     private readonly SwShGiftPokemonEditSessionService giftPokemonEditSessionService;
     private readonly SwShItemsEditSessionService itemsEditSessionService;
     private readonly SwShMovesEditSessionService movesEditSessionService;
@@ -66,6 +74,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShRaidRewardsEditSessionService raidRewardsEditSessionService;
     private readonly SwShRentalPokemonEditSessionService rentalPokemonEditSessionService;
     private readonly SwShRoyalCandyEditSessionService royalCandyEditSessionService;
+    private readonly SwShStartingItemsEditSessionService startingItemsEditSessionService;
     private readonly SwShShopsEditSessionService shopsEditSessionService;
     private readonly SwShSpreadsheetImportExecutionService spreadsheetImportExecutionService;
     private readonly SwShStaticEncountersEditSessionService staticEncountersEditSessionService;
@@ -79,6 +88,8 @@ public sealed class ProjectBridgeDispatcher
         SwShDynamaxAdventuresEditSessionService? dynamaxAdventuresEditSessionService = null,
         SwShEncountersEditSessionService? encountersEditSessionService = null,
         SwShExeFsPatchEditSessionService? exeFsPatchEditSessionService = null,
+        SwShBagHookEditSessionService? bagHookEditSessionService = null,
+        SwShCatchCapEditSessionService? catchCapEditSessionService = null,
         SwShGiftPokemonEditSessionService? giftPokemonEditSessionService = null,
         SwShItemsEditSessionService? itemsEditSessionService = null,
         SwShMovesEditSessionService? movesEditSessionService = null,
@@ -89,6 +100,7 @@ public sealed class ProjectBridgeDispatcher
         SwShRaidRewardsEditSessionService? raidRewardsEditSessionService = null,
         SwShRentalPokemonEditSessionService? rentalPokemonEditSessionService = null,
         SwShRoyalCandyEditSessionService? royalCandyEditSessionService = null,
+        SwShStartingItemsEditSessionService? startingItemsEditSessionService = null,
         SwShShopsEditSessionService? shopsEditSessionService = null,
         SwShSpreadsheetImportExecutionService? spreadsheetImportExecutionService = null,
         SwShStaticEncountersEditSessionService? staticEncountersEditSessionService = null,
@@ -101,6 +113,8 @@ public sealed class ProjectBridgeDispatcher
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
         this.encountersEditSessionService = encountersEditSessionService ?? new SwShEncountersEditSessionService(this.projectWorkspaceService);
         this.exeFsPatchEditSessionService = exeFsPatchEditSessionService ?? new SwShExeFsPatchEditSessionService(this.projectWorkspaceService);
+        this.bagHookEditSessionService = bagHookEditSessionService ?? new SwShBagHookEditSessionService(this.projectWorkspaceService);
+        this.catchCapEditSessionService = catchCapEditSessionService ?? new SwShCatchCapEditSessionService(this.projectWorkspaceService);
         this.giftPokemonEditSessionService = giftPokemonEditSessionService ?? new SwShGiftPokemonEditSessionService(this.projectWorkspaceService);
         this.itemsEditSessionService = itemsEditSessionService ?? new SwShItemsEditSessionService(this.projectWorkspaceService);
         this.movesEditSessionService = movesEditSessionService ?? new SwShMovesEditSessionService(this.projectWorkspaceService);
@@ -111,6 +125,7 @@ public sealed class ProjectBridgeDispatcher
         this.raidRewardsEditSessionService = raidRewardsEditSessionService ?? new SwShRaidRewardsEditSessionService(this.projectWorkspaceService);
         this.rentalPokemonEditSessionService = rentalPokemonEditSessionService ?? new SwShRentalPokemonEditSessionService(this.projectWorkspaceService);
         this.royalCandyEditSessionService = royalCandyEditSessionService ?? new SwShRoyalCandyEditSessionService(this.projectWorkspaceService);
+        this.startingItemsEditSessionService = startingItemsEditSessionService ?? new SwShStartingItemsEditSessionService(this.projectWorkspaceService);
         this.shopsEditSessionService = shopsEditSessionService ?? new SwShShopsEditSessionService(this.projectWorkspaceService);
         this.spreadsheetImportExecutionService = spreadsheetImportExecutionService ?? new SwShSpreadsheetImportExecutionService(this.projectWorkspaceService);
         this.staticEncountersEditSessionService = staticEncountersEditSessionService ?? new SwShStaticEncountersEditSessionService(this.projectWorkspaceService);
@@ -175,10 +190,18 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadBehaviorWorkflow => DispatchLoadBehaviorWorkflow(requestJson),
                 KmCommandNames.UpdateBehaviorEntryField => DispatchUpdateBehaviorEntryField(requestJson),
                 KmCommandNames.LoadFlagworkSaveWorkflow => DispatchLoadFlagworkSaveWorkflow(requestJson),
+                KmCommandNames.LoadBagHookWorkflow => DispatchLoadBagHookWorkflow(requestJson),
+                KmCommandNames.StageBagHookInstall => DispatchStageBagHookInstall(requestJson),
+                KmCommandNames.StageBagHookUninstall => DispatchStageBagHookUninstall(requestJson),
+                KmCommandNames.LoadCatchCapWorkflow => DispatchLoadCatchCapWorkflow(requestJson),
+                KmCommandNames.StageCatchCap => DispatchStageCatchCap(requestJson),
+                KmCommandNames.StageCatchCapUninstall => DispatchStageCatchCapUninstall(requestJson),
                 KmCommandNames.LoadExeFsPatchWorkflow => DispatchLoadExeFsPatchWorkflow(requestJson),
                 KmCommandNames.StageExeFsPatch => DispatchStageExeFsPatch(requestJson),
                 KmCommandNames.LoadRoyalCandyWorkflow => DispatchLoadRoyalCandyWorkflow(requestJson),
                 KmCommandNames.StageRoyalCandyWorkflow => DispatchStageRoyalCandyWorkflow(requestJson),
+                KmCommandNames.LoadStartingItemsWorkflow => DispatchLoadStartingItemsWorkflow(requestJson),
+                KmCommandNames.StageStartingItems => DispatchStageStartingItems(requestJson),
                 KmCommandNames.LoadSpreadsheetImportWorkflow => DispatchLoadSpreadsheetImportWorkflow(requestJson),
                 KmCommandNames.PreviewSpreadsheetImport => DispatchPreviewSpreadsheetImport(requestJson),
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
@@ -717,6 +740,83 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadBagHookWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadBagHookWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadBagHook(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageBagHookInstall(string requestJson)
+    {
+        var request = DeserializeRequest<StageBagHookInstallRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = bagHookEditSessionService.StageInstall(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageBagHookUninstall(string requestJson)
+    {
+        var request = DeserializeRequest<StageBagHookUninstallRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = bagHookEditSessionService.StageUninstall(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SwShBridgeMapper.ToBagHookUninstallDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadCatchCapWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadCatchCapWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadCatchCap(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageCatchCap(string requestJson)
+    {
+        var request = DeserializeRequest<StageCatchCapRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = catchCapEditSessionService.StageCaps(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.Caps.Select(selection => new SwShCatchCapSelection(
+                selection.BadgeCount,
+                selection.LevelCap)).ToArray(),
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageCatchCapUninstall(string requestJson)
+    {
+        var request = DeserializeRequest<StageCatchCapUninstallRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = catchCapEditSessionService.StageUninstall(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SwShBridgeMapper.ToCatchCapUninstallDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadExeFsPatchWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadExeFsPatchWorkflowRequest>(requestJson);
@@ -762,6 +862,33 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.LevelCaps?.Select(selection => new SwShRoyalCandyLevelCapSelection(
                 selection.Slot,
                 selection.LevelCap)).ToArray(),
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadStartingItemsWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadStartingItemsWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadStartingItems(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageStartingItems(string requestJson)
+    {
+        var request = DeserializeRequest<StageStartingItemsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = startingItemsEditSessionService.StageGrants(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.Grants.Select(selection => new SwShStartingItemGrantSelection(
+                selection.Slot,
+                selection.ItemId,
+                selection.Quantity)).ToArray(),
             session);
         var response = SwShBridgeMapper.ToDto(result);
 
@@ -830,6 +957,8 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.Validate(paths, session),
             EditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.Validate(paths, session),
+            EditSessionDomain.BagHook => bagHookEditSessionService.Validate(paths, session),
+            EditSessionDomain.CatchCap => catchCapEditSessionService.Validate(paths, session),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.Validate(paths, session),
@@ -846,6 +975,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
             EditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
             EditSessionDomain.RoyalCandy => royalCandyEditSessionService.Validate(paths, session),
+            EditSessionDomain.StartingItems => startingItemsEditSessionService.Validate(paths, session),
             EditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
             _ => itemsEditSessionService.Validate(paths, session),
         };
@@ -864,6 +994,8 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.BagHook => bagHookEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.CatchCap => catchCapEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.CreateChangePlan(paths, session),
@@ -880,6 +1012,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.RoyalCandy => royalCandyEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.StartingItems => startingItemsEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
             _ => itemsEditSessionService.CreateChangePlan(paths, session),
         };
@@ -899,6 +1032,8 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.BagHook => bagHookEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.CatchCap => catchCapEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
@@ -915,6 +1050,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.RoyalCandy => royalCandyEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.StartingItems => startingItemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
             _ => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
         };
@@ -942,6 +1078,8 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.shops"] => EditSessionDomain.Shops,
             ["workflow.encounters"] => EditSessionDomain.Encounters,
             ["workflow.exefsPatches"] => EditSessionDomain.ExeFsPatches,
+            ["workflow.bagHook"] => EditSessionDomain.BagHook,
+            ["workflow.catchCap"] => EditSessionDomain.CatchCap,
             ["workflow.giftPokemon"] => EditSessionDomain.GiftPokemon,
             ["workflow.tradePokemon"] => EditSessionDomain.TradePokemon,
             ["workflow.rentalPokemon"] => EditSessionDomain.RentalPokemon,
@@ -953,6 +1091,7 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.raidRewards"] => EditSessionDomain.RaidRewards,
             ["workflow.raidBonusRewards"] => EditSessionDomain.RaidBonusRewards,
             ["workflow.royalCandy"] => EditSessionDomain.RoyalCandy,
+            ["workflow.startingItems"] => EditSessionDomain.StartingItems,
             _ => EditSessionDomain.Mixed,
         };
     }
@@ -1039,6 +1178,8 @@ public sealed class ProjectBridgeDispatcher
         Shops,
         Encounters,
         ExeFsPatches,
+        BagHook,
+        CatchCap,
         GiftPokemon,
         TradePokemon,
         RentalPokemon,
@@ -1050,6 +1191,7 @@ public sealed class ProjectBridgeDispatcher
         RaidRewards,
         RaidBonusRewards,
         RoyalCandy,
+        StartingItems,
         Mixed,
     }
 }

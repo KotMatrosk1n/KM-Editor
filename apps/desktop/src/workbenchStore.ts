@@ -4,7 +4,9 @@ import { create } from 'zustand';
 import {
   type ApiDiagnostic,
   type ApplyResult,
+  type BagHookWorkflow,
   type BehaviorWorkflow,
+  type CatchCapWorkflow,
   type ChangePlan,
   type DynamaxAdventuresWorkflow,
   type EditSession,
@@ -25,6 +27,7 @@ import {
   type RoyalCandyWorkflow,
   type SpreadsheetImportPreview,
   type SpreadsheetImportWorkflow,
+  type StartingItemsWorkflow,
   type StaticEncountersWorkflow,
   type ShopsWorkflow,
   type TextWorkflow,
@@ -54,8 +57,11 @@ export type WorkbenchSection =
   | 'placement'
   | 'behavior'
   | 'flagworkSave'
+  | 'bagHook'
+  | 'catchCap'
   | 'exefsPatches'
   | 'royalCandy'
+  | 'startingItems'
   | 'spreadsheetImport'
   | 'changes'
   | 'settings';
@@ -88,8 +94,10 @@ type WorkbenchState = {
   draftPaths: ProjectPathDraft;
   editSession: EditSession | null;
   editValidationDiagnostics: ApiDiagnostic[];
+  bagHookWorkflow: BagHookWorkflow | null;
   encounterSearchText: string;
   encountersWorkflow: EncountersWorkflow | null;
+  catchCapWorkflow: CatchCapWorkflow | null;
   exeFsPatchSearchText: string;
   exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
   flagworkSaveSearchText: string;
@@ -124,6 +132,7 @@ type WorkbenchState = {
   raidBonusRewardsWorkflow: RaidRewardsWorkflow | null;
   royalCandySearchText: string;
   royalCandyWorkflow: RoyalCandyWorkflow | null;
+  startingItemsWorkflow: StartingItemsWorkflow | null;
   spreadsheetImportPreview: SpreadsheetImportPreview | null;
   spreadsheetImportSearchText: string;
   spreadsheetImportSourcePath: string;
@@ -134,8 +143,10 @@ type WorkbenchState = {
   selectedPlacementObjectId: string | null;
   selectedFlagId: string | null;
   selectedSaveBlockId: string | null;
+  selectedBagHookSlot: number | null;
   selectedExeFsCheckId: string | null;
   selectedExeFsPatchId: string | null;
+  selectedCatchCapBadgeCount: number | null;
   selectedGiftPokemonIndex: number | null;
   selectedTradePokemonIndex: number | null;
   selectedStaticEncounterIndex: number | null;
@@ -143,6 +154,7 @@ type WorkbenchState = {
   selectedDynamaxAdventureEntryIndex: number | null;
   selectedRoyalCandyCheckId: string | null;
   selectedRoyalCandyWorkflowId: string | null;
+  selectedStartingItemSlot: number | null;
   selectedSpreadsheetImportProfileId: string | null;
   selectedItemId: number | null;
   selectedMoveId: number | null;
@@ -165,8 +177,10 @@ type WorkbenchState = {
   setChangePlan: (changePlan: ChangePlan | null) => void;
   setEditSession: (editSession: EditSession | null) => void;
   setEditValidationDiagnostics: (diagnostics: ApiDiagnostic[]) => void;
+  setBagHookWorkflow: (bagHookWorkflow: BagHookWorkflow) => void;
   setEncounterSearchText: (encounterSearchText: string) => void;
   setEncountersWorkflow: (encountersWorkflow: EncountersWorkflow) => void;
+  setCatchCapWorkflow: (catchCapWorkflow: CatchCapWorkflow) => void;
   setExeFsPatchSearchText: (exeFsPatchSearchText: string) => void;
   setExeFsPatchWorkflow: (exeFsPatchWorkflow: ExeFsPatchWorkflow) => void;
   setFlagworkSaveSearchText: (flagworkSaveSearchText: string) => void;
@@ -204,6 +218,7 @@ type WorkbenchState = {
   setRaidBonusRewardsWorkflow: (raidBonusRewardsWorkflow: RaidRewardsWorkflow) => void;
   setRoyalCandySearchText: (royalCandySearchText: string) => void;
   setRoyalCandyWorkflow: (royalCandyWorkflow: RoyalCandyWorkflow) => void;
+  setStartingItemsWorkflow: (startingItemsWorkflow: StartingItemsWorkflow) => void;
   setSpreadsheetImportPreview: (preview: SpreadsheetImportPreview | null) => void;
   setSpreadsheetImportSearchText: (spreadsheetImportSearchText: string) => void;
   setSpreadsheetImportSourcePath: (sourcePath: string) => void;
@@ -214,8 +229,10 @@ type WorkbenchState = {
   setSelectedPlacementObjectId: (selectedPlacementObjectId: string | null) => void;
   setSelectedFlagId: (selectedFlagId: string | null) => void;
   setSelectedSaveBlockId: (selectedSaveBlockId: string | null) => void;
+  setSelectedBagHookSlot: (selectedBagHookSlot: number | null) => void;
   setSelectedExeFsCheckId: (selectedExeFsCheckId: string | null) => void;
   setSelectedExeFsPatchId: (selectedExeFsPatchId: string | null) => void;
+  setSelectedCatchCapBadgeCount: (selectedCatchCapBadgeCount: number | null) => void;
   setSelectedGiftPokemonIndex: (selectedGiftPokemonIndex: number | null) => void;
   setSelectedTradePokemonIndex: (selectedTradePokemonIndex: number | null) => void;
   setSelectedStaticEncounterIndex: (selectedStaticEncounterIndex: number | null) => void;
@@ -225,6 +242,7 @@ type WorkbenchState = {
   ) => void;
   setSelectedRoyalCandyCheckId: (selectedRoyalCandyCheckId: string | null) => void;
   setSelectedRoyalCandyWorkflowId: (selectedRoyalCandyWorkflowId: string | null) => void;
+  setSelectedStartingItemSlot: (selectedStartingItemSlot: number | null) => void;
   setSelectedSpreadsheetImportProfileId: (
     selectedSpreadsheetImportProfileId: string | null
   ) => void;
@@ -289,8 +307,10 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     changePlan: null,
     editSession: null,
     editValidationDiagnostics: [],
+    bagHookWorkflow: null,
     encounterSearchText: '',
     encountersWorkflow: null,
+    catchCapWorkflow: null,
     exeFsPatchSearchText: '',
     exeFsPatchWorkflow: null,
     flagworkSaveSearchText: '',
@@ -325,13 +345,16 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     raidBonusRewardsWorkflow: null,
     royalCandySearchText: '',
     royalCandyWorkflow: null,
+    startingItemsWorkflow: null,
     spreadsheetImportPreview: null,
     spreadsheetImportSearchText: '',
     spreadsheetImportSourcePath: '',
     spreadsheetImportWorkflow: null,
     selectedEncounterTableId: null,
+    selectedBagHookSlot: null,
     selectedExeFsCheckId: null,
     selectedExeFsPatchId: null,
+    selectedCatchCapBadgeCount: null,
     selectedGiftPokemonIndex: null,
     selectedTradePokemonIndex: null,
     selectedStaticEncounterIndex: null,
@@ -339,6 +362,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     selectedDynamaxAdventureEntryIndex: null,
     selectedRoyalCandyCheckId: null,
     selectedRoyalCandyWorkflowId: null,
+    selectedStartingItemSlot: null,
     selectedSpreadsheetImportProfileId: null,
     selectedFlagId: null,
     selectedItemId: null,
@@ -370,8 +394,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   draftPaths: loadProjectPathDraft(),
   editSession: null,
   editValidationDiagnostics: [],
+  bagHookWorkflow: null,
   encounterSearchText: '',
   encountersWorkflow: null,
+  catchCapWorkflow: null,
   exeFsPatchSearchText: '',
   exeFsPatchWorkflow: null,
   flagworkSaveSearchText: '',
@@ -406,6 +432,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   raidBonusRewardsWorkflow: null,
   royalCandySearchText: '',
   royalCandyWorkflow: null,
+  startingItemsWorkflow: null,
   spreadsheetImportPreview: null,
   spreadsheetImportSearchText: '',
   spreadsheetImportSourcePath: '',
@@ -414,8 +441,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedBehaviorEntryId: null,
   selectedPlacementObjectId: null,
   selectedFlagId: null,
+  selectedBagHookSlot: null,
   selectedExeFsCheckId: null,
   selectedExeFsPatchId: null,
+  selectedCatchCapBadgeCount: null,
   selectedGiftPokemonIndex: null,
   selectedTradePokemonIndex: null,
   selectedStaticEncounterIndex: null,
@@ -423,6 +452,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedDynamaxAdventureEntryIndex: null,
   selectedRoyalCandyCheckId: null,
   selectedRoyalCandyWorkflowId: null,
+  selectedStartingItemSlot: null,
   selectedSpreadsheetImportProfileId: null,
   selectedItemId: null,
   selectedMoveId: null,
@@ -623,8 +653,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       changePlan: null,
       editSession: null,
       editValidationDiagnostics: [],
+      bagHookWorkflow: null,
       encounterSearchText: '',
       encountersWorkflow: null,
+      catchCapWorkflow: null,
       exeFsPatchSearchText: '',
       exeFsPatchWorkflow: null,
       flagworkSaveSearchText: '',
@@ -657,13 +689,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       raidBonusRewardsWorkflow: null,
       royalCandySearchText: '',
       royalCandyWorkflow: null,
+      startingItemsWorkflow: null,
       spreadsheetImportPreview: null,
       spreadsheetImportSearchText: '',
       spreadsheetImportSourcePath: '',
       spreadsheetImportWorkflow: null,
       selectedEncounterTableId: null,
+      selectedBagHookSlot: null,
       selectedExeFsCheckId: null,
       selectedExeFsPatchId: null,
+      selectedCatchCapBadgeCount: null,
       selectedGiftPokemonIndex: null,
       selectedTradePokemonIndex: null,
       selectedStaticEncounterIndex: null,
@@ -671,6 +706,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       selectedDynamaxAdventureEntryIndex: null,
       selectedRoyalCandyCheckId: null,
       selectedRoyalCandyWorkflowId: null,
+      selectedStartingItemSlot: null,
       selectedSpreadsheetImportProfileId: null,
       selectedFlagId: null,
       selectedItemId: null,
@@ -721,8 +757,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set({ selectedPlacementObjectId }),
   setSelectedFlagId: (selectedFlagId) => set({ selectedFlagId }),
   setSelectedSaveBlockId: (selectedSaveBlockId) => set({ selectedSaveBlockId }),
+  setSelectedBagHookSlot: (selectedBagHookSlot) => set({ selectedBagHookSlot }),
   setSelectedExeFsCheckId: (selectedExeFsCheckId) => set({ selectedExeFsCheckId }),
   setSelectedExeFsPatchId: (selectedExeFsPatchId) => set({ selectedExeFsPatchId }),
+  setSelectedCatchCapBadgeCount: (selectedCatchCapBadgeCount) =>
+    set({ selectedCatchCapBadgeCount }),
   setSelectedGiftPokemonIndex: (selectedGiftPokemonIndex) =>
     set({ selectedGiftPokemonIndex }),
   setSelectedTradePokemonIndex: (selectedTradePokemonIndex) =>
@@ -737,6 +776,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set({ selectedRoyalCandyCheckId }),
   setSelectedRoyalCandyWorkflowId: (selectedRoyalCandyWorkflowId) =>
     set({ selectedRoyalCandyWorkflowId }),
+  setSelectedStartingItemSlot: (selectedStartingItemSlot) =>
+    set({ selectedStartingItemSlot }),
   setSelectedSpreadsheetImportProfileId: (selectedSpreadsheetImportProfileId) =>
     set({ selectedSpreadsheetImportProfileId }),
   setSelectedEncounterTableId: (selectedEncounterTableId) => set({ selectedEncounterTableId }),
@@ -903,6 +944,34 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         selectedSaveBlockId
       };
     }),
+  setBagHookWorkflow: (bagHookWorkflow) =>
+    set((state) => {
+      const selectedBagHookSlot = bagHookWorkflow.slots.some(
+        (slot) => slot.slot === state.selectedBagHookSlot
+      )
+        ? state.selectedBagHookSlot
+        : (bagHookWorkflow.slots[0]?.slot ?? null);
+
+      return {
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'bagHook'),
+        bagHookWorkflow,
+        selectedBagHookSlot
+      };
+    }),
+  setCatchCapWorkflow: (catchCapWorkflow) =>
+    set((state) => {
+      const selectedCatchCapBadgeCount = catchCapWorkflow.caps.some(
+        (cap) => cap.badgeCount === state.selectedCatchCapBadgeCount
+      )
+        ? state.selectedCatchCapBadgeCount
+        : (catchCapWorkflow.caps[0]?.badgeCount ?? null);
+
+      return {
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'catchCap'),
+        catchCapWorkflow,
+        selectedCatchCapBadgeCount
+      };
+    }),
   setExeFsPatchWorkflow: (exeFsPatchWorkflow) =>
     set((state) => {
       const selectedExeFsPatchId = exeFsPatchWorkflow.patches.some(
@@ -943,6 +1012,20 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         royalCandyWorkflow,
         selectedRoyalCandyCheckId,
         selectedRoyalCandyWorkflowId
+      };
+    }),
+  setStartingItemsWorkflow: (startingItemsWorkflow) =>
+    set((state) => {
+      const selectedStartingItemSlot = startingItemsWorkflow.grants.some(
+        (grant) => grant.slot === state.selectedStartingItemSlot
+      )
+        ? state.selectedStartingItemSlot
+        : (startingItemsWorkflow.grants[0]?.slot ?? null);
+
+      return {
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'startingItems'),
+        selectedStartingItemSlot,
+        startingItemsWorkflow
       };
     }),
   setSpreadsheetImportWorkflow: (spreadsheetImportWorkflow) =>

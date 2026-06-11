@@ -2,6 +2,8 @@
 
 using KM.Core.Projects;
 using KM.SwSh.Behavior;
+using KM.SwSh.BagHook;
+using KM.SwSh.CatchCap;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
@@ -16,6 +18,7 @@ using KM.SwSh.Rentals;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Shops;
 using KM.SwSh.SpreadsheetImport;
+using KM.SwSh.StartingItems;
 using KM.SwSh.StaticEncounters;
 using KM.SwSh.Text;
 using KM.SwSh.Trainers;
@@ -30,6 +33,8 @@ public sealed class SwShWorkflowService
     private readonly SwShMovesWorkflowService movesWorkflowService;
     private readonly SwShEncountersWorkflowService encountersWorkflowService;
     private readonly SwShExeFsPatchWorkflowService exeFsPatchWorkflowService;
+    private readonly SwShBagHookWorkflowService bagHookWorkflowService;
+    private readonly SwShCatchCapWorkflowService catchCapWorkflowService;
     private readonly SwShFlagworkSaveWorkflowService flagworkSaveWorkflowService;
     private readonly SwShGiftPokemonWorkflowService giftPokemonWorkflowService;
     private readonly SwShTradePokemonWorkflowService tradePokemonWorkflowService;
@@ -41,6 +46,7 @@ public sealed class SwShWorkflowService
     private readonly SwShRaidBattlesWorkflowService raidBattlesWorkflowService;
     private readonly SwShRaidRewardsWorkflowService raidRewardsWorkflowService;
     private readonly SwShRoyalCandyWorkflowService royalCandyWorkflowService;
+    private readonly SwShStartingItemsWorkflowService startingItemsWorkflowService;
     private readonly SwShShopsWorkflowService shopsWorkflowService;
     private readonly SwShSpreadsheetImportWorkflowService spreadsheetImportWorkflowService;
     private readonly SwShTextWorkflowService textWorkflowService;
@@ -67,7 +73,10 @@ public sealed class SwShWorkflowService
         SwShRentalPokemonWorkflowService? rentalPokemonWorkflowService = null,
         SwShDynamaxAdventuresWorkflowService? dynamaxAdventuresWorkflowService = null,
         SwShExeFsPatchWorkflowService? exeFsPatchWorkflowService = null,
+        SwShBagHookWorkflowService? bagHookWorkflowService = null,
+        SwShCatchCapWorkflowService? catchCapWorkflowService = null,
         SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null,
+        SwShStartingItemsWorkflowService? startingItemsWorkflowService = null,
         SwShSpreadsheetImportWorkflowService? spreadsheetImportWorkflowService = null,
         SwShParsedDataCache? parsedDataCache = null)
     {
@@ -78,6 +87,8 @@ public sealed class SwShWorkflowService
         this.movesWorkflowService = movesWorkflowService ?? new SwShMovesWorkflowService();
         this.encountersWorkflowService = encountersWorkflowService ?? new SwShEncountersWorkflowService();
         this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService(sharedParsedDataCache);
+        this.bagHookWorkflowService = bagHookWorkflowService ?? new SwShBagHookWorkflowService(this.itemsWorkflowService);
+        this.catchCapWorkflowService = catchCapWorkflowService ?? new SwShCatchCapWorkflowService();
         this.flagworkSaveWorkflowService = flagworkSaveWorkflowService ?? new SwShFlagworkSaveWorkflowService();
         this.giftPokemonWorkflowService = giftPokemonWorkflowService ?? new SwShGiftPokemonWorkflowService();
         this.tradePokemonWorkflowService = tradePokemonWorkflowService ?? new SwShTradePokemonWorkflowService();
@@ -88,7 +99,8 @@ public sealed class SwShWorkflowService
         this.behaviorWorkflowService = behaviorWorkflowService ?? new SwShBehaviorWorkflowService();
         this.raidBattlesWorkflowService = raidBattlesWorkflowService ?? new SwShRaidBattlesWorkflowService();
         this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
-        this.royalCandyWorkflowService = royalCandyWorkflowService ?? new SwShRoyalCandyWorkflowService(this.exeFsPatchWorkflowService);
+        this.royalCandyWorkflowService = royalCandyWorkflowService ?? new SwShRoyalCandyWorkflowService(this.exeFsPatchWorkflowService, this.bagHookWorkflowService);
+        this.startingItemsWorkflowService = startingItemsWorkflowService ?? new SwShStartingItemsWorkflowService(this.bagHookWorkflowService, this.itemsWorkflowService);
         this.shopsWorkflowService = shopsWorkflowService ?? new SwShShopsWorkflowService();
         this.spreadsheetImportWorkflowService = spreadsheetImportWorkflowService ?? new SwShSpreadsheetImportWorkflowService();
         this.textWorkflowService = textWorkflowService ?? new SwShTextWorkflowService();
@@ -121,8 +133,10 @@ public sealed class SwShWorkflowService
             placementWorkflowService.CreateSummary(project),
             behaviorWorkflowService.CreateSummary(project),
             flagworkSaveWorkflowService.CreateSummary(project),
-            exeFsPatchWorkflowService.CreateSummary(project),
+            bagHookWorkflowService.CreateSummary(project),
+            catchCapWorkflowService.CreateSummary(project),
             royalCandyWorkflowService.CreateSummary(project),
+            startingItemsWorkflowService.CreateSummary(project),
             spreadsheetImportWorkflowService.CreateSummary(project),
         };
 
@@ -303,6 +317,24 @@ public sealed class SwShWorkflowService
         return exeFsPatchWorkflowService.Load(project);
     }
 
+    public SwShBagHookWorkflow LoadBagHook(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return bagHookWorkflowService.Load(project);
+    }
+
+    public SwShCatchCapWorkflow LoadCatchCap(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return catchCapWorkflowService.Load(project);
+    }
+
     public SwShRoyalCandyWorkflow LoadRoyalCandy(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -310,6 +342,15 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return royalCandyWorkflowService.Load(project);
+    }
+
+    public SwShStartingItemsWorkflow LoadStartingItems(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return startingItemsWorkflowService.Load(project);
     }
 
     public SwShSpreadsheetImportWorkflow LoadSpreadsheetImport(ProjectPaths paths)

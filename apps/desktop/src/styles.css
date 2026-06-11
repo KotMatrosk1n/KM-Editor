@@ -2656,6 +2656,39 @@ h2 {
   grid-template-columns: minmax(120px, 0.74fr) minmax(92px, 0.42fr) minmax(88px, 0.42fr) minmax(180px, 1.05fr) minmax(220px, 1.45fr);
 }
 
+.bag-hook-row {
+  grid-template-columns: 72px minmax(92px, 0.45fr) minmax(132px, 0.7fr) minmax(180px, 1.2fr) minmax(160px, 1fr);
+}
+
+.catch-cap-row {
+  grid-template-columns: minmax(132px, 0.9fr) 92px minmax(116px, 0.8fr) minmax(96px, 0.6fr) minmax(96px, 0.6fr);
+}
+
+.starting-items-row {
+  grid-template-columns: 72px minmax(92px, 0.45fr) minmax(220px, 1.4fr) minmax(116px, 0.7fr) minmax(132px, 0.8fr);
+}
+
+.workflow-description {
+  max-width: 980px;
+  margin: 8px 0 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.table-cell-control {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.table-cell-control input,
+.table-cell-control select {
+  width: 100%;
+  min-width: 0;
+}
+
 .royal-candy-workflow-table,
 .royal-candy-target-table {
   overflow-x: hidden;
@@ -2752,7 +2785,10 @@ h2 {
 }
 
 .exefs-table .royal-candy-workflow-row span,
-.exefs-table .royal-candy-target-row span {
+.exefs-table .royal-candy-target-row span,
+.exefs-table .bag-hook-row span,
+.exefs-table .catch-cap-row span,
+.exefs-table .starting-items-row span {
   overflow: visible;
   text-overflow: clip;
   white-space: normal;

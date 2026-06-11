@@ -5,6 +5,8 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.BagHook;
+using KM.SwSh.CatchCap;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
@@ -230,7 +232,49 @@ public sealed class SwShRoyalCandyEditSessionService
                         continue;
                     }
 
-                    File.Delete(targetPath);
+                    if (string.Equals(write.TargetRelativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var basePath = ResolveBaseSourcePath(paths, write.TargetRelativePath);
+                        if (basePath is null || !File.Exists(basePath))
+                        {
+                            diagnostics.Add(CreateDiagnostic(
+                                DiagnosticSeverity.Error,
+                                "Royal Candy cleanup could not resolve base exefs/main for restoration.",
+                                file: write.TargetRelativePath,
+                                expected: "Readable base ExeFS main"));
+                            continue;
+                        }
+
+                        var restored = SwShExeFsRoyalCandyMainPatcher.RestoreFromBase(
+                            File.ReadAllBytes(targetPath),
+                            File.ReadAllBytes(basePath));
+                        var baseBytes = File.ReadAllBytes(basePath);
+                        if (restored.SequenceEqual(baseBytes) || !ContainsIndependentExeFsHook(restored))
+                        {
+                            File.Delete(targetPath);
+                        }
+                        else
+                        {
+                            File.WriteAllBytes(targetPath, restored);
+                        }
+                    }
+                    else if (string.Equals(write.TargetRelativePath, SwShRoyalCandyWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var restored = SwShBagHookAmxPatcher.ApplySlotPatches(
+                            File.ReadAllBytes(targetPath),
+                            [
+                                new SwShBagHookSlotPatch(
+                                    SwShBagHookAmxPatcher.RoyalCandySlot,
+                                    null,
+                                    null),
+                            ]);
+                        File.WriteAllBytes(targetPath, restored);
+                    }
+                    else
+                    {
+                        File.Delete(targetPath);
+                    }
+
                     writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, write.TargetRelativePath));
                     continue;
                 }
@@ -298,18 +342,24 @@ public sealed class SwShRoyalCandyEditSessionService
             return false;
         }
 
-        if (selectedWorkflow.Status != "available" && selectedWorkflow.Status != "warning")
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"Royal Candy workflow '{selectedWorkflow.Name}' is not ready to stage.",
-                expected: "Available or warning workflow status"));
-            return false;
-        }
-
         var isCleanup = string.Equals(selectedWorkflow.WorkflowId, UninstallWorkflowId, StringComparison.Ordinal);
         if (!isCleanup)
         {
+            AddBlockingPreflightDiagnostics(workflow, diagnostics);
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                return false;
+            }
+
+            if (selectedWorkflow.Status != "available" && selectedWorkflow.Status != "warning")
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Royal Candy workflow '{selectedWorkflow.Name}' is not ready to stage.",
+                    expected: "Available or warning workflow status"));
+                return false;
+            }
+
             foreach (var diagnostic in workflow.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 diagnostics.Add(diagnostic);
@@ -317,6 +367,23 @@ public sealed class SwShRoyalCandyEditSessionService
         }
 
         return diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error);
+    }
+
+    private static void AddBlockingPreflightDiagnostics(
+        SwShRoyalCandyWorkflow workflow,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var check in workflow.Checks.Where(check =>
+            check.WorkflowId == "royal-candy-preflight" && check.Status == "Fail"))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                check.Message,
+                file: check.Target,
+                expected: check.Area == "Bag Hook"
+                    ? "Install Bag Hook from Hooks before staging Royal Candy."
+                    : "Resolve the failed Royal Candy preflight check."));
+        }
     }
 
     private static void ValidatePendingEdit(
@@ -741,7 +808,14 @@ public sealed class SwShRoyalCandyEditSessionService
 
         if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase))
         {
-            return SwShRoyalCandyBagEventScriptPatcher.ApplyGrantPatch(File.ReadAllBytes(source.AbsolutePath), 1128);
+            return SwShBagHookAmxPatcher.ApplySlotPatches(
+                File.ReadAllBytes(source.AbsolutePath),
+                [
+                    new SwShBagHookSlotPatch(
+                        SwShBagHookAmxPatcher.RoyalCandySlot,
+                        1128,
+                        1),
+                ]);
         }
 
         if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase))
@@ -803,6 +877,26 @@ public sealed class SwShRoyalCandyEditSessionService
         }
 
         return targetPath;
+    }
+
+    private static string? ResolveBaseSourcePath(ProjectPaths paths, string targetRelativePath)
+    {
+        if (targetRelativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase))
+        {
+            return CombineGraphPath(paths.BaseRomFsPath, targetRelativePath["romfs/".Length..]);
+        }
+
+        if (targetRelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
+        {
+            return CombineGraphPath(paths.BaseExeFsPath, targetRelativePath["exefs/".Length..]);
+        }
+
+        return null;
+    }
+
+    private static bool ContainsIndependentExeFsHook(byte[] mainBytes)
+    {
+        return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1;
     }
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)

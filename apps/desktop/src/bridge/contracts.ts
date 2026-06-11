@@ -44,10 +44,18 @@ export const kmCommandNameValues = [
   'behavior.load',
   'behavior.entry.update',
   'flagworkSave.load',
+  'bagHook.load',
+  'bagHook.install.stage',
+  'bagHook.uninstall.stage',
+  'catchCap.load',
+  'catchCap.stage',
+  'catchCap.uninstall.stage',
   'exefsPatches.load',
   'exefsPatches.patch.stage',
   'royalCandy.load',
   'royalCandy.workflow.stage',
+  'startingItems.load',
+  'startingItems.stage',
   'spreadsheetImport.load',
   'spreadsheetImport.preview',
   'editSession.start',
@@ -103,10 +111,18 @@ export const kmCommandNames = {
   loadBehaviorWorkflow: 'behavior.load',
   updateBehaviorEntryField: 'behavior.entry.update',
   loadFlagworkSaveWorkflow: 'flagworkSave.load',
+  loadBagHookWorkflow: 'bagHook.load',
+  stageBagHookInstall: 'bagHook.install.stage',
+  stageBagHookUninstall: 'bagHook.uninstall.stage',
+  loadCatchCapWorkflow: 'catchCap.load',
+  stageCatchCap: 'catchCap.stage',
+  stageCatchCapUninstall: 'catchCap.uninstall.stage',
   loadExeFsPatchWorkflow: 'exefsPatches.load',
   stageExeFsPatch: 'exefsPatches.patch.stage',
   loadRoyalCandyWorkflow: 'royalCandy.load',
   stageRoyalCandyWorkflow: 'royalCandy.workflow.stage',
+  loadStartingItemsWorkflow: 'startingItems.load',
+  stageStartingItems: 'startingItems.stage',
   loadSpreadsheetImportWorkflow: 'spreadsheetImport.load',
   previewSpreadsheetImport: 'spreadsheetImport.preview',
   openProject: 'project.open',
@@ -233,11 +249,23 @@ export const loadFlagworkSaveWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
+export const loadBagHookWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadCatchCapWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
 export const loadExeFsPatchWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
 export const loadRoyalCandyWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadStartingItemsWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -1921,6 +1949,131 @@ export const stageExeFsPatchResponseSchema = z.strictObject({
   workflow: exeFsPatchWorkflowSchema
 });
 
+export const bagHookProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const bagHookSlotRecordSchema = z.strictObject({
+  isReserved: z.boolean(),
+  itemId: z.number().int().nonnegative().nullable(),
+  itemName: z.string(),
+  notes: z.string(),
+  owner: z.string(),
+  provenance: bagHookProvenanceSchema,
+  quantity: z.number().int().positive().nullable(),
+  reservedFor: z.string(),
+  slot: z.number().int().positive(),
+  status: z.string()
+});
+
+export const bagHookWorkflowStatsSchema = z.strictObject({
+  emptySlotCount: z.number().int().nonnegative(),
+  occupiedSlotCount: z.number().int().nonnegative(),
+  reservedSlotCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative(),
+  totalSlotCount: z.number().int().nonnegative()
+});
+
+export const bagHookWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  installMessage: z.string(),
+  installStatus: z.string(),
+  slots: z.array(bagHookSlotRecordSchema),
+  stats: bagHookWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadBagHookWorkflowResponseSchema = z.strictObject({
+  workflow: bagHookWorkflowSchema
+});
+
+export const stageBagHookInstallRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageBagHookInstallResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: bagHookWorkflowSchema
+});
+
+export const stageBagHookUninstallRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageBagHookUninstallResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: bagHookWorkflowSchema
+});
+
+export const catchCapProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const catchCapRecordSchema = z.strictObject({
+  badgeCount: z.number().int().nonnegative(),
+  label: z.string(),
+  levelCap: z.number().int(),
+  maximumLevelCap: z.number().int(),
+  minimumLevelCap: z.number().int()
+});
+
+export const catchCapSelectionSchema = z.strictObject({
+  badgeCount: z.number().int().nonnegative(),
+  levelCap: z.number().int()
+});
+
+export const catchCapWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalCapCount: z.number().int().nonnegative()
+});
+
+export const catchCapWorkflowSchema = z.strictObject({
+  capLogicSha256: z.string(),
+  caps: z.array(catchCapRecordSchema),
+  diagnostics: z.array(apiDiagnosticSchema),
+  installMessage: z.string(),
+  installStatus: z.string(),
+  logicExpression: z.string(),
+  provenance: catchCapProvenanceSchema,
+  stats: catchCapWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadCatchCapWorkflowResponseSchema = z.strictObject({
+  workflow: catchCapWorkflowSchema
+});
+
+export const stageCatchCapRequestSchema = z.strictObject({
+  caps: z.array(catchCapSelectionSchema),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageCatchCapResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: catchCapWorkflowSchema
+});
+
+export const stageCatchCapUninstallRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageCatchCapUninstallResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: catchCapWorkflowSchema
+});
+
 export const royalCandyProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -2021,6 +2174,69 @@ export const stageRoyalCandyWorkflowResponseSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   session: editSessionSchema,
   workflow: royalCandyWorkflowSchema
+});
+
+export const startingItemsProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const startingItemOptionRecordSchema = z.strictObject({
+  category: z.string(),
+  isKeyItem: z.boolean(),
+  itemId: z.number().int().nonnegative(),
+  name: z.string()
+});
+
+export const startingItemGrantRecordSchema = z.strictObject({
+  isKeyItem: z.boolean(),
+  itemId: z.number().int().nonnegative().nullable(),
+  itemName: z.string(),
+  owner: z.string(),
+  provenance: startingItemsProvenanceSchema,
+  quantity: z.number().int().positive(),
+  slot: z.number().int().positive(),
+  status: z.string()
+});
+
+export const startingItemGrantSelectionSchema = z.strictObject({
+  itemId: z.number().int().nonnegative().nullable(),
+  quantity: z.number().int().positive(),
+  slot: z.number().int().positive()
+});
+
+export const startingItemsWorkflowStatsSchema = z.strictObject({
+  itemOptionCount: z.number().int().nonnegative(),
+  occupiedGrantSlotCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative(),
+  totalGrantSlotCount: z.number().int().nonnegative()
+});
+
+export const startingItemsWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  grants: z.array(startingItemGrantRecordSchema),
+  installMessage: z.string(),
+  installStatus: z.string(),
+  itemOptions: z.array(startingItemOptionRecordSchema),
+  stats: startingItemsWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadStartingItemsWorkflowResponseSchema = z.strictObject({
+  workflow: startingItemsWorkflowSchema
+});
+
+export const stageStartingItemsRequestSchema = z.strictObject({
+  grants: z.array(startingItemGrantSelectionSchema),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageStartingItemsResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: startingItemsWorkflowSchema
 });
 
 export const spreadsheetImportProvenanceSchema = z.strictObject({
@@ -2505,6 +2721,11 @@ export type ExeFsPatchCheckRecord = z.infer<typeof exeFsPatchCheckRecordSchema>;
 export type ExeFsPatchRecord = z.infer<typeof exeFsPatchRecordSchema>;
 export type ExeFsSegmentRecord = z.infer<typeof exeFsSegmentRecordSchema>;
 export type ExeFsPatchWorkflow = z.infer<typeof exeFsPatchWorkflowSchema>;
+export type BagHookSlotRecord = z.infer<typeof bagHookSlotRecordSchema>;
+export type BagHookWorkflow = z.infer<typeof bagHookWorkflowSchema>;
+export type CatchCapRecord = z.infer<typeof catchCapRecordSchema>;
+export type CatchCapSelection = z.infer<typeof catchCapSelectionSchema>;
+export type CatchCapWorkflow = z.infer<typeof catchCapWorkflowSchema>;
 export type RoyalCandyOutputRecord = z.infer<typeof royalCandyOutputRecordSchema>;
 export type RoyalCandyWorkflowCheckRecord = z.infer<
   typeof royalCandyWorkflowCheckRecordSchema
@@ -2513,6 +2734,10 @@ export type RoyalCandyLevelCapRecord = z.infer<typeof royalCandyLevelCapRecordSc
 export type RoyalCandyLevelCapSelection = z.infer<typeof royalCandyLevelCapSelectionSchema>;
 export type RoyalCandyWorkflowRecord = z.infer<typeof royalCandyWorkflowRecordSchema>;
 export type RoyalCandyWorkflow = z.infer<typeof royalCandyWorkflowSchema>;
+export type StartingItemGrantRecord = z.infer<typeof startingItemGrantRecordSchema>;
+export type StartingItemGrantSelection = z.infer<typeof startingItemGrantSelectionSchema>;
+export type StartingItemOptionRecord = z.infer<typeof startingItemOptionRecordSchema>;
+export type StartingItemsWorkflow = z.infer<typeof startingItemsWorkflowSchema>;
 export type SpreadsheetImportProfileRecord = z.infer<
   typeof spreadsheetImportProfileRecordSchema
 >;
@@ -2618,6 +2843,18 @@ export type UpdateBehaviorEntryFieldResponse = z.infer<
 >;
 export type LoadFlagworkSaveWorkflowRequest = z.infer<typeof loadFlagworkSaveWorkflowRequestSchema>;
 export type LoadFlagworkSaveWorkflowResponse = z.infer<typeof loadFlagworkSaveWorkflowResponseSchema>;
+export type LoadBagHookWorkflowRequest = z.infer<typeof loadBagHookWorkflowRequestSchema>;
+export type LoadBagHookWorkflowResponse = z.infer<typeof loadBagHookWorkflowResponseSchema>;
+export type StageBagHookInstallRequest = z.infer<typeof stageBagHookInstallRequestSchema>;
+export type StageBagHookInstallResponse = z.infer<typeof stageBagHookInstallResponseSchema>;
+export type StageBagHookUninstallRequest = z.infer<typeof stageBagHookUninstallRequestSchema>;
+export type StageBagHookUninstallResponse = z.infer<typeof stageBagHookUninstallResponseSchema>;
+export type LoadCatchCapWorkflowRequest = z.infer<typeof loadCatchCapWorkflowRequestSchema>;
+export type LoadCatchCapWorkflowResponse = z.infer<typeof loadCatchCapWorkflowResponseSchema>;
+export type StageCatchCapRequest = z.infer<typeof stageCatchCapRequestSchema>;
+export type StageCatchCapResponse = z.infer<typeof stageCatchCapResponseSchema>;
+export type StageCatchCapUninstallRequest = z.infer<typeof stageCatchCapUninstallRequestSchema>;
+export type StageCatchCapUninstallResponse = z.infer<typeof stageCatchCapUninstallResponseSchema>;
 export type LoadExeFsPatchWorkflowRequest = z.infer<typeof loadExeFsPatchWorkflowRequestSchema>;
 export type LoadExeFsPatchWorkflowResponse = z.infer<typeof loadExeFsPatchWorkflowResponseSchema>;
 export type StageExeFsPatchRequest = z.infer<typeof stageExeFsPatchRequestSchema>;
@@ -2630,6 +2867,14 @@ export type StageRoyalCandyWorkflowRequest = z.infer<
 export type StageRoyalCandyWorkflowResponse = z.infer<
   typeof stageRoyalCandyWorkflowResponseSchema
 >;
+export type LoadStartingItemsWorkflowRequest = z.infer<
+  typeof loadStartingItemsWorkflowRequestSchema
+>;
+export type LoadStartingItemsWorkflowResponse = z.infer<
+  typeof loadStartingItemsWorkflowResponseSchema
+>;
+export type StageStartingItemsRequest = z.infer<typeof stageStartingItemsRequestSchema>;
+export type StageStartingItemsResponse = z.infer<typeof stageStartingItemsResponseSchema>;
 export type LoadSpreadsheetImportWorkflowRequest = z.infer<
   typeof loadSpreadsheetImportWorkflowRequestSchema
 >;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Api.BagHook;
 using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.DynamaxAdventures;
@@ -18,11 +19,13 @@ using KM.Api.RoyalCandy;
 using KM.Api.Shops;
 using KM.Api.SpreadsheetImport;
 using KM.Api.StaticEncounters;
+using KM.Api.StartingItems;
 using KM.Api.Text;
 using KM.Api.Trades;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
+using KM.SwSh.BagHook;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
@@ -145,8 +148,10 @@ public sealed class ProjectBridgeDispatcherTests
                 "placement",
                 "behavior",
                 "flagworkSave",
-                "exefsPatches",
+                "bagHook",
+                "catchCap",
                 "royalCandy",
+                "startingItems",
                 "spreadsheetImport",
             ],
             workflows.Select(workflow => workflow.Id).ToArray());
@@ -158,10 +163,10 @@ public sealed class ProjectBridgeDispatcherTests
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
                 && diagnostic.Domain == "workflow.items.dependencies");
 
-        var exeFs = workflows.Single(workflow => workflow.Id == "exefsPatches");
-        Assert.Equal(WorkflowAvailabilityDto.ReadOnly, exeFs.Availability);
+        var bagHook = workflows.Single(workflow => workflow.Id == "bagHook");
+        Assert.Equal(WorkflowAvailabilityDto.ReadOnly, bagHook.Availability);
         Assert.DoesNotContain(
-            exeFs.Diagnostics,
+            bagHook.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
     }
 
@@ -1738,11 +1743,12 @@ public sealed class ProjectBridgeDispatcherTests
             [0x04]);
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.BagEventScriptPath["romfs/".Length..],
-            [0x05]);
+            CreateRoyalCandyBagEventScript());
         temp.WriteBaseRomFsFile("bin/message/English/common/iteminfo.dat", [0x06]);
         temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", [0x07]);
         temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+        InstallEmptyBagHook(temp);
         var requestJson = SerializeRequest(
             KmCommandNames.LoadRoyalCandyWorkflow,
             new LoadRoyalCandyWorkflowRequest(temp.Paths),
@@ -2014,17 +2020,123 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchRoyalCandyApplyPreservesStartingItemsBagHookSlots()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteRoyalCandyApplyInputs(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var stageStartingItemsJson = SerializeRequest(
+            KmCommandNames.StageStartingItems,
+            new StageStartingItemsRequest(
+                temp.Paths,
+                Session: null,
+                Grants:
+                [
+                    new StartingItemGrantSelectionDto(2, 50, 3),
+                ]),
+            requestId: "request-starting-items-stage");
+        var stageStartingItemsResponse = DeserializeResponse<StageStartingItemsResponse>(dispatcher.Dispatch(stageStartingItemsJson));
+        Assert.Null(stageStartingItemsResponse.Error);
+        Assert.NotNull(stageStartingItemsResponse.Payload);
+        Assert.DoesNotContain(
+            stageStartingItemsResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var planStartingItemsJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageStartingItemsResponse.Payload.Session),
+            requestId: "request-starting-items-plan");
+        var planStartingItemsResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planStartingItemsJson));
+        Assert.Null(planStartingItemsResponse.Error);
+        Assert.NotNull(planStartingItemsResponse.Payload);
+        Assert.True(planStartingItemsResponse.Payload.ChangePlan.CanApply);
+
+        var applyStartingItemsJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageStartingItemsResponse.Payload.Session,
+                planStartingItemsResponse.Payload.ChangePlan),
+            requestId: "request-starting-items-apply");
+        var applyStartingItemsResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyStartingItemsJson));
+        Assert.Null(applyStartingItemsResponse.Error);
+        Assert.NotNull(applyStartingItemsResponse.Payload);
+        Assert.DoesNotContain(
+            applyStartingItemsResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var stageRoyalCandyJson = SerializeRequest(
+            KmCommandNames.StageRoyalCandyWorkflow,
+            new StageRoyalCandyWorkflowRequest(
+                temp.Paths,
+                WorkflowId: "royal-candy-unlimited",
+                Session: null),
+            requestId: "request-royal-candy-preserve-stage");
+        var stageRoyalCandyResponse = DeserializeResponse<StageRoyalCandyWorkflowResponse>(dispatcher.Dispatch(stageRoyalCandyJson));
+        Assert.Null(stageRoyalCandyResponse.Error);
+        Assert.NotNull(stageRoyalCandyResponse.Payload);
+        Assert.DoesNotContain(
+            stageRoyalCandyResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var planRoyalCandyJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageRoyalCandyResponse.Payload.Session),
+            requestId: "request-royal-candy-preserve-plan");
+        var planRoyalCandyResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planRoyalCandyJson));
+        Assert.Null(planRoyalCandyResponse.Error);
+        Assert.NotNull(planRoyalCandyResponse.Payload);
+        Assert.True(planRoyalCandyResponse.Payload.ChangePlan.CanApply);
+
+        var applyRoyalCandyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageRoyalCandyResponse.Payload.Session,
+                planRoyalCandyResponse.Payload.ChangePlan),
+            requestId: "request-royal-candy-preserve-apply");
+        var applyRoyalCandyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyRoyalCandyJson));
+        Assert.Null(applyRoyalCandyResponse.Error);
+        Assert.NotNull(applyRoyalCandyResponse.Payload);
+        Assert.DoesNotContain(
+            applyRoyalCandyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var loadBagHookJson = SerializeRequest(
+            KmCommandNames.LoadBagHookWorkflow,
+            new LoadBagHookWorkflowRequest(temp.Paths),
+            requestId: "request-bag-hook-preserve-load");
+        var loadBagHookResponse = DeserializeResponse<LoadBagHookWorkflowResponse>(dispatcher.Dispatch(loadBagHookJson));
+        Assert.Null(loadBagHookResponse.Error);
+        Assert.NotNull(loadBagHookResponse.Payload);
+
+        var slot1 = loadBagHookResponse.Payload.Workflow.Slots.Single(slot => slot.Slot == 1);
+        var slot2 = loadBagHookResponse.Payload.Workflow.Slots.Single(slot => slot.Slot == 2);
+        var slot3 = loadBagHookResponse.Payload.Workflow.Slots.Single(slot => slot.Slot == 3);
+        Assert.Equal("occupied", slot1.Status);
+        Assert.Equal(1128, slot1.ItemId);
+        Assert.Equal(1, slot1.Quantity);
+        Assert.Equal("Royal Candy", slot1.Owner);
+        Assert.Equal("occupied", slot2.Status);
+        Assert.Equal(50, slot2.ItemId);
+        Assert.Equal(3, slot2.Quantity);
+        Assert.Equal("Starting Items", slot2.Owner);
+        Assert.Equal("empty", slot3.Status);
+        Assert.Null(slot3.ItemId);
+        Assert.Null(slot3.Quantity);
+    }
+
+    [Fact]
     public void DispatchRoyalCandyCleanupStagesAndDeletesReviewedOutputs()
     {
         using var temp = TemporaryBridgeProject.Create();
         WriteRoyalCandyApplyInputs(temp);
-        File.Delete(Path.Combine(temp.BaseRomFsPath, "bin", "pml", "item", "item_hash_to_index.dat"));
-        temp.WriteOutputFile("exefs/main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
-        temp.WriteOutputFile(
-            SwShRoyalCandyWorkflowService.BagEventScriptPath,
-            CreateRoyalCandyBagEventScript());
-
         var dispatcher = new ProjectBridgeDispatcher();
+        ApplyRoyalCandyUnlimited(temp, dispatcher);
+        File.Delete(Path.Combine(temp.BaseRomFsPath, "bin", "pml", "item", "item_hash_to_index.dat"));
+        File.Delete(Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item_hash_to_index.dat"));
+
         var stageJson = SerializeRequest(
             KmCommandNames.StageRoyalCandyWorkflow,
             new StageRoyalCandyWorkflowRequest(
@@ -2082,13 +2194,21 @@ public sealed class ProjectBridgeDispatcherTests
             applyResponse.Payload.ApplyResult.WrittenFiles,
             relativePath => relativePath == SwShRoyalCandyWorkflowService.BagEventScriptPath);
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "exefs", "main")));
-        Assert.False(File.Exists(Path.Combine(
+        Assert.True(File.Exists(Path.Combine(
             temp.OutputRootPath,
             "romfs",
             "bin",
             "script",
             "amx",
             "main_event_0020.amx")));
+        var loadBagHookJson = SerializeRequest(
+            KmCommandNames.LoadBagHookWorkflow,
+            new LoadBagHookWorkflowRequest(temp.Paths),
+            requestId: "request-royal-candy-cleanup-bag-hook-load");
+        var loadBagHookResponse = DeserializeResponse<LoadBagHookWorkflowResponse>(dispatcher.Dispatch(loadBagHookJson));
+        Assert.Null(loadBagHookResponse.Error);
+        Assert.NotNull(loadBagHookResponse.Payload);
+        Assert.Null(loadBagHookResponse.Payload.Workflow.Slots.Single(slot => slot.Slot == 1).ItemId);
         Assert.True(File.Exists(Path.Combine(temp.BaseExeFsPath, "main")));
         Assert.True(File.Exists(Path.Combine(
             temp.BaseRomFsPath,
@@ -2845,6 +2965,73 @@ public sealed class ProjectBridgeDispatcherTests
             CreateRoyalCandyTextTable(itemId => itemId == 50 ? "A candy that raises level." : $"Info {itemId}"));
         temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+        InstallEmptyBagHook(temp);
+    }
+
+    private static void InstallEmptyBagHook(TemporaryBridgeProject temp)
+    {
+        var dispatcher = new ProjectBridgeDispatcher();
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageBagHookInstall,
+            new StageBagHookInstallRequest(temp.Paths, Session: null),
+            requestId: "request-bag-hook-install-stage");
+        var stage = DeserializeResponse<StageBagHookInstallResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stage.Error);
+        Assert.NotNull(stage.Payload);
+        Assert.DoesNotContain(stage.Payload.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stage.Payload.Session),
+            requestId: "request-bag-hook-install-plan");
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(plan.Error);
+        Assert.NotNull(plan.Payload);
+        Assert.True(plan.Payload.ChangePlan.CanApply);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, stage.Payload.Session, plan.Payload.ChangePlan),
+            requestId: "request-bag-hook-install-apply");
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+        Assert.Null(apply.Error);
+        Assert.NotNull(apply.Payload);
+        Assert.DoesNotContain(apply.Payload.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    private static void ApplyRoyalCandyUnlimited(
+        TemporaryBridgeProject temp,
+        ProjectBridgeDispatcher dispatcher)
+    {
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageRoyalCandyWorkflow,
+            new StageRoyalCandyWorkflowRequest(
+                temp.Paths,
+                WorkflowId: "royal-candy-unlimited",
+                Session: null),
+            requestId: "request-royal-candy-helper-stage");
+        var stage = DeserializeResponse<StageRoyalCandyWorkflowResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stage.Error);
+        Assert.NotNull(stage.Payload);
+        Assert.DoesNotContain(stage.Payload.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stage.Payload.Session),
+            requestId: "request-royal-candy-helper-plan");
+        var plan = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(plan.Error);
+        Assert.NotNull(plan.Payload);
+        Assert.True(plan.Payload.ChangePlan.CanApply);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, stage.Payload.Session, plan.Payload.ChangePlan),
+            requestId: "request-royal-candy-helper-apply");
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+        Assert.Null(apply.Error);
+        Assert.NotNull(apply.Payload);
+        Assert.DoesNotContain(apply.Payload.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
     }
 
     private static byte[] CreateRoyalCandyItemTable()

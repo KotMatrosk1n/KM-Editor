@@ -5,7 +5,9 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { App, getPokemonSpriteId, getPokemonSpriteIds } from './App';
 import {
+  type BagHookWorkflow,
   type BehaviorWorkflow,
+  type CatchCapWorkflow,
   type DynamaxAdventuresWorkflow,
   type EncountersWorkflow,
   type ExeFsPatchWorkflow,
@@ -21,8 +23,10 @@ import {
   type RaidBattlesWorkflow,
   type RaidRewardsWorkflow,
   type RentalPokemonWorkflow,
+  type RoyalCandyWorkflow,
   type ShopsWorkflow,
   type SpreadsheetImportWorkflow,
+  type StartingItemsWorkflow,
   type StaticEncountersWorkflow,
   type TextWorkflow,
   type TradePokemonWorkflow,
@@ -112,8 +116,10 @@ describe('App', () => {
       },
       editSession: null,
       editValidationDiagnostics: [],
+      bagHookWorkflow: null,
       encounterSearchText: '',
       encountersWorkflow: null,
+      catchCapWorkflow: null,
       exeFsPatchSearchText: '',
       exeFsPatchWorkflow: null,
       flagworkSaveSearchText: '',
@@ -144,13 +150,16 @@ describe('App', () => {
       raidRewardsWorkflow: null,
       royalCandySearchText: '',
       royalCandyWorkflow: null,
+      startingItemsWorkflow: null,
       spreadsheetImportPreview: null,
       spreadsheetImportSearchText: '',
       spreadsheetImportSourcePath: '',
       spreadsheetImportWorkflow: null,
       selectedEncounterTableId: null,
+      selectedBagHookSlot: null,
       selectedExeFsCheckId: null,
       selectedExeFsPatchId: null,
+      selectedCatchCapBadgeCount: null,
       selectedGiftPokemonIndex: null,
       selectedTradePokemonIndex: null,
       selectedRentalPokemonIndex: null,
@@ -158,6 +167,7 @@ describe('App', () => {
       selectedStaticEncounterIndex: null,
       selectedRoyalCandyCheckId: null,
       selectedRoyalCandyWorkflowId: null,
+      selectedStartingItemSlot: null,
       selectedSpreadsheetImportProfileId: null,
       selectedFlagId: null,
       selectedItemId: null,
@@ -317,6 +327,7 @@ describe('App', () => {
       'Encounters & Pokemon Sources',
       'Economy',
       'Tools',
+      'Hooks',
       'Advanced Editors',
       'Changes',
       'Settings'
@@ -344,6 +355,18 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Tools' }));
     expect(screen.getByRole('button', { name: 'Spreadsheet Import' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Hooks' }));
+    expect(screen.getByRole('button', { name: 'Bag Hook' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    expect(
+      within(navigation)
+        .getAllByRole('button')
+        .filter((button) => button.classList.contains('nav-child-button'))
+        .map((button) => button.textContent)
+        .slice(-3)
+    ).toEqual(['Catch Cap', 'Royal Candy', 'Starting Items']);
   });
 
   it('replaces existing editable field contents when typing after click', async () => {
@@ -2621,34 +2644,28 @@ describe('App', () => {
     expect(screen.getByText('01020304')).toBeInTheDocument();
   });
 
-  it('opens ExeFS Patch Manager, searches compatibility checks, and shows provenance', async () => {
+  it('opens Bag Hook from Hooks and shows slot ownership', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge()} />);
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
-    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
-    await user.click(screen.getByRole('button', { name: 'ExeFS Patches' }));
+    await user.click(screen.getByRole('button', { name: 'Hooks' }));
+    await user.click(screen.getByRole('button', { name: 'Bag Hook' }));
 
     expect(
       await screen.findByRole('heading', {
         level: 2,
-        name: 'ExeFS Patch Manager'
+        name: 'Bag Hook'
       })
     ).toBeInTheDocument();
-    expect(screen.getAllByText('ExeFS main compatibility').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Patch code cave').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('exefs/main').length).toBeGreaterThan(0);
-
-    await user.type(screen.getByLabelText('Search ExeFS compatibility checks'), 'royal');
-
-    expect(screen.getAllByText('Royal Candy immediate scan').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('.text').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('file+0x100').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Royal Candy').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Available for Starting Items').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('romfs/bin/script/amx/main_event_0020.amx').length).toBeGreaterThan(0);
   });
 
-  it('stages an ExeFS patch for review and apply', async () => {
+  it('stages Bag Hook install for review and apply', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -2656,24 +2673,258 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output-root');
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
-    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
-    await user.click(screen.getByRole('button', { name: 'ExeFS Patches' }));
-    await user.click(await screen.findByRole('button', { name: 'Stage Patch' }));
+    await user.click(screen.getByRole('button', { name: 'Hooks' }));
+    await user.click(screen.getByRole('button', { name: 'Bag Hook' }));
+    await user.click(await screen.findByRole('button', { name: 'Stage Install' }));
 
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
-    expect(await screen.findByText('Stage ExeFS patch: ExeFS main compatibility.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Stage Bag Hook install: 20 disabled startup item grant slots.')
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
 
-    expect(await screen.findByText('Pending ExeFS patch is valid.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Pending Bag Hook install is valid for change-plan review.')
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect((await screen.findAllByText('exefs/main')).length).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByText('romfs/bin/script/amx/main_event_0020.amx')).length
+    ).toBeGreaterThan(0);
 
     expect(
-      await screen.findByText('Applied ExeFS patch to the configured LayeredFS output root.')
+      await screen.findByText('Installed Bag Hook V2 to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
+  it('stages Bag Hook uninstall for review', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const stageBagHookUninstall = vi.fn(baseBridge.stageBagHookUninstall);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadBagHookWorkflow: async (request) => {
+            const response = await baseBridge.loadBagHookWorkflow(request);
+            return {
+              workflow: {
+                ...response.workflow,
+                installMessage: 'Bag Hook V2 is installed.',
+                installStatus: 'installed'
+              }
+            };
+          },
+          stageBagHookUninstall
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Hooks' }));
+    await user.click(screen.getByRole('button', { name: 'Bag Hook' }));
+
+    expect(await screen.findByRole('button', { name: 'Stage Uninstall' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Stage Uninstall' }));
+
+    await waitFor(() => expect(stageBagHookUninstall).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(
+      await screen.findByText(
+        'Stage Bag Hook uninstall: remove Bag Hook plus dependent Royal Candy and Starting Items outputs.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('stages Catch Cap badge values', async () => {
+    const stageCatchCap = vi.fn(createMockProjectBridge({}, true).stageCatchCap);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...createMockProjectBridge({}, true),
+          stageCatchCap
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Catch Cap' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Catch Cap Editor'
+      })
+    ).toBeInTheDocument();
+
+    const firstCap = screen.getByLabelText('Catch cap for 0 badges');
+    await user.clear(firstCap);
+    await user.type(firstCap, '22');
+    await user.click(screen.getByRole('button', { name: 'Stage Caps' }));
+
+    await waitFor(() => expect(stageCatchCap).toHaveBeenCalled());
+    expect(stageCatchCap).toHaveBeenCalledWith(
+      expect.objectContaining({
+        caps: expect.arrayContaining([{ badgeCount: 0, levelCap: 22 }])
+      })
+    );
+  });
+
+  it('stages Catch Cap uninstall for review', async () => {
+    const mockBridge = createMockProjectBridge({}, true);
+    const stageCatchCapUninstall = vi.fn(mockBridge.stageCatchCapUninstall);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...mockBridge,
+          loadCatchCapWorkflow: async () => ({
+            workflow: {
+              ...(await mockBridge.loadCatchCapWorkflow({
+                paths: {
+                  baseExeFsPath: 'base-exefs',
+                  baseRomFsPath: 'base-romfs',
+                  outputRootPath: 'output-root',
+                  saveFilePath: null,
+                  selectedGame: 'sword'
+                }
+              })).workflow,
+              installMessage: 'Catch Cap Editor hook is installed.',
+              installStatus: 'installed',
+              provenance: {
+                fileState: 'layeredOverride',
+                sourceFile: 'exefs/main',
+                sourceLayer: 'layered'
+              }
+            }
+          }),
+          stageCatchCapUninstall
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Catch Cap' }));
+
+    expect(await screen.findByRole('button', { name: 'Stage Uninstall' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Stage Uninstall' }));
+
+    await waitFor(() => expect(stageCatchCapUninstall).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(await screen.findByText('Stage Catch Cap Editor uninstall.')).toBeInTheDocument();
+  });
+
+  it('locks Starting Items key item quantities to one', async () => {
+    const stageStartingItems = vi.fn(createMockProjectBridge({}, true).stageStartingItems);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...createMockProjectBridge({}, true),
+          stageStartingItems
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Starting Items' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Starting Items'
+      })
+    ).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Item for Bag Hook slot 3'), '700');
+    expect(screen.getByLabelText('Quantity for Bag Hook slot 3')).toBeDisabled();
+    expect(screen.getByLabelText('Quantity for Bag Hook slot 3')).toHaveValue(1);
+    await user.click(screen.getByRole('button', { name: 'Stage Items' }));
+
+    await waitFor(() => expect(stageStartingItems).toHaveBeenCalled());
+    expect(stageStartingItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        grants: expect.arrayContaining([{ itemId: 700, quantity: 1, slot: 3 }])
+      })
+    );
+  });
+
+  it('warns when Starting Items is staged before Bag Hook is installed', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const stageStartingItems = vi.fn(baseBridge.stageStartingItems);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadStartingItemsWorkflow: async (request) => {
+            const response = await baseBridge.loadStartingItemsWorkflow(request);
+            return {
+              workflow: {
+                ...response.workflow,
+                installMessage: 'Install Bag Hook before adding Starting Items.',
+                installStatus: 'blocked'
+              }
+            };
+          },
+          stageStartingItems
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Starting Items' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Starting Items'
+      })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Stage Items' }));
+
+    expect(
+      await screen.findByRole('dialog', {
+        name: 'Bag Hook Required'
+      })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Starting Items cannot be staged until Bag Hook V2 is installed.')
+    ).toBeInTheDocument();
+    expect(stageStartingItems).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Open Bag Hook' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Bag Hook'
+      })
     ).toBeInTheDocument();
   });
 
@@ -2731,6 +2982,88 @@ describe('App', () => {
 
     expect(
       await screen.findByText('Applied Royal Candy change plan to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+  });
+
+  it('warns when Royal Candy is staged before Bag Hook is installed', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const stageRoyalCandyWorkflow = vi.fn(baseBridge.stageRoyalCandyWorkflow);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadRoyalCandyWorkflow: async (request) => {
+            const response = await baseBridge.loadRoyalCandyWorkflow(request);
+            const workflow: RoyalCandyWorkflow = response.workflow;
+            return {
+              workflow: {
+                ...workflow,
+                checks: [
+                  ...workflow.checks,
+                  {
+                    area: 'Bag Hook',
+                    checkId: 'royal-candy-preflight:bag-hook-installed',
+                    message: 'Bag Hook V2 must be installed before Royal Candy can claim slot 1.',
+                    provenance: {
+                      fileState: 'baseOnly',
+                      sourceFile: 'romfs/bin/script/amx/main_event_0020.amx',
+                      sourceLayer: 'base'
+                    },
+                    status: 'Fail',
+                    target: 'romfs/bin/script/amx/main_event_0020.amx',
+                    workflowId: 'royal-candy-preflight'
+                  }
+                ],
+                stats: {
+                  ...workflow.stats,
+                  failCount: workflow.stats.failCount + 1,
+                  totalCheckCount: workflow.stats.totalCheckCount + 1
+                },
+                workflows: workflow.workflows.map((record) => ({
+                  ...record,
+                  status: 'blocked'
+                }))
+              }
+            };
+          },
+          stageRoyalCandyWorkflow
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Royal Candy' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Royal Candy Workflows'
+      })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Stage' }));
+
+    expect(
+      await screen.findByRole('dialog', {
+        name: 'Bag Hook Required'
+      })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Royal Candy cannot be staged until Bag Hook V2 is installed.')
+    ).toBeInTheDocument();
+    expect(stageRoyalCandyWorkflow).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Open Bag Hook' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Bag Hook'
+      })
     ).toBeInTheDocument();
   });
 
@@ -6468,6 +6801,127 @@ function createMockProjectBridge(
     id: 'exefsPatches',
     label: 'ExeFS Patch Manager'
   };
+  const bagHookWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description:
+      'Installs the shared Bag Hook V2 startup script with 20 disabled grant slots.',
+    diagnostics: [],
+    id: 'bagHook',
+    label: 'Bag Hook'
+  };
+  const bagHookWorkflow: BagHookWorkflow = {
+    diagnostics: [],
+    installMessage: 'Bag Hook V2 can be installed with all grant slots disabled.',
+    installStatus: canEdit ? 'available' : 'readOnly',
+    slots: Array.from({ length: 20 }, (_, index) => {
+      const slot = index + 1;
+      return {
+        isReserved: true,
+        itemId: slot === 1 ? 1128 : null,
+        itemName: slot === 1 ? 'Royal Candy' : 'None',
+        notes: slot === 1 ? 'Royal Candy occupies slot 1.' : 'Disabled empty slot.',
+        owner: slot === 1 ? 'Royal Candy' : 'Available for Starting Items',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/script/amx/main_event_0020.amx',
+          sourceLayer: 'base'
+        },
+        quantity: slot === 1 ? 1 : null,
+        reservedFor: slot === 1 ? 'Royal Candy' : 'Starting Items',
+        slot,
+        status: slot === 1 ? 'occupied' : 'empty'
+      };
+    }),
+    stats: {
+      emptySlotCount: 19,
+      occupiedSlotCount: 1,
+      reservedSlotCount: 20,
+      sourceFileCount: 1,
+      totalSlotCount: 20
+    },
+    summary: bagHookWorkflowSummary
+  };
+  const catchCapWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Installs the catch-cap hook and exposes badge-level catch caps.',
+    diagnostics: [],
+    id: 'catchCap',
+    label: 'Catch Cap Editor'
+  };
+  const catchCapWorkflow: CatchCapWorkflow = {
+    capLogicSha256: 'AABBCC',
+    caps: Array.from({ length: 9 }, (_, badgeCount) => ({
+      badgeCount,
+      label: `${badgeCount} badges`,
+      levelCap: badgeCount === 8 ? 100 : 20 + badgeCount * 5,
+      maximumLevelCap: 100,
+      minimumLevelCap: 1
+    })),
+    diagnostics: [],
+    installMessage: 'Catch Cap Editor can patch exefs/main.',
+    installStatus: canEdit ? 'available' : 'readOnly',
+    logicExpression: 'badge count indexes cap table 0-8',
+    provenance: {
+      fileState: 'baseOnly',
+      sourceFile: 'exefs/main',
+      sourceLayer: 'base'
+    },
+    stats: {
+      sourceFileCount: 1,
+      totalCapCount: 9
+    },
+    summary: catchCapWorkflowSummary
+  };
+  const startingItemsWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Adds selected startup item grants through Bag Hook slots 2-20.',
+    diagnostics: [],
+    id: 'startingItems',
+    label: 'Starting Items'
+  };
+  const startingItemsWorkflow: StartingItemsWorkflow = {
+    diagnostics: [],
+    grants: Array.from({ length: 19 }, (_, index) => {
+      const slot = index + 2;
+      return {
+        isKeyItem: false,
+        itemId: slot === 2 ? 1 : null,
+        itemName: slot === 2 ? 'Master Ball' : 'None',
+        owner: slot === 2 ? 'Starting Items' : 'Available for Starting Items',
+        provenance: {
+          fileState: 'layeredOnly',
+          sourceFile: 'romfs/bin/script/amx/main_event_0020.amx',
+          sourceLayer: 'layered'
+        },
+        quantity: slot === 2 ? 5 : 1,
+        slot,
+        status: slot === 2 ? 'occupied' : 'empty'
+      };
+    }),
+    installMessage: 'Starting Items can claim Bag Hook slots 2-20.',
+    installStatus: canEdit ? 'available' : 'blocked',
+    itemOptions: [
+      {
+        category: 'Items',
+        isKeyItem: false,
+        itemId: 1,
+        name: 'Master Ball'
+      },
+      {
+        category: 'Key Items',
+        isKeyItem: true,
+        itemId: 700,
+        name: 'Bike'
+      }
+    ],
+    stats: {
+      itemOptionCount: 2,
+      occupiedGrantSlotCount: 1,
+      sourceFileCount: 2,
+      totalGrantSlotCount: 19
+    },
+    summary: startingItemsWorkflowSummary
+  };
   const exeFsPatchWorkflow: ExeFsPatchWorkflow = {
     checks: [
       {
@@ -6874,6 +7328,34 @@ function createMockProjectBridge(
                                 'romfs/bin/archive/field/resident/data_table.gfpak'
                             }
                           ]
+                        : request.session.pendingEdits[0]?.domain === 'workflow.bagHook'
+                        ? [
+                            {
+                              reason: 'Install Bag Hook V2 with 20 disabled startup item grant slots.',
+                              replacesExistingOutput: false,
+                              sources: [
+                                {
+                                  layer: 'base',
+                                  relativePath: 'romfs/bin/script/amx/main_event_0020.amx'
+                                }
+                              ],
+                              targetRelativePath: 'romfs/bin/script/amx/main_event_0020.amx'
+                            }
+                          ]
+                        : request.session.pendingEdits[0]?.domain === 'workflow.catchCap'
+                        ? [
+                            {
+                              reason: 'Apply Catch Cap Editor hook and nine badge cap values to exefs/main.',
+                              replacesExistingOutput: false,
+                              sources: [
+                                {
+                                  layer: 'base',
+                                  relativePath: 'exefs/main'
+                                }
+                              ],
+                              targetRelativePath: 'exefs/main'
+                            }
+                          ]
                         : request.session.pendingEdits[0]?.domain === 'workflow.royalCandy'
                         ? [
                             {
@@ -6901,7 +7383,21 @@ function createMockProjectBridge(
                                     relativePath: 'exefs/main'
                                   }
                                 ],
-                                targetRelativePath: 'exefs/main'
+                              targetRelativePath: 'exefs/main'
+                            }
+                          ]
+                        : request.session.pendingEdits[0]?.domain === 'workflow.startingItems'
+                          ? [
+                              {
+                                reason: 'Update Bag Hook slots 2-20 with reviewed Starting Items grants.',
+                                replacesExistingOutput: true,
+                                sources: [
+                                  {
+                                    layer: 'layered',
+                                    relativePath: 'romfs/bin/script/amx/main_event_0020.amx'
+                                  }
+                                ],
+                                targetRelativePath: 'romfs/bin/script/amx/main_event_0020.amx'
                               }
                             ]
                         : [
@@ -6939,8 +7435,10 @@ function createMockProjectBridge(
           raidBonusRewardsWorkflowSummary,
           placementWorkflowSummary,
           flagworkSaveWorkflowSummary,
-          exeFsPatchWorkflowSummary,
+          bagHookWorkflowSummary,
+          catchCapWorkflowSummary,
           royalCandyWorkflowSummary,
+          startingItemsWorkflowSummary,
           spreadsheetImportWorkflowSummary
         ]
       }),
@@ -6951,6 +7449,150 @@ function createMockProjectBridge(
     loadFlagworkSaveWorkflow: () =>
       Promise.resolve({
         workflow: flagworkSaveWorkflow
+      }),
+    loadBagHookWorkflow: () =>
+      Promise.resolve({
+        workflow: bagHookWorkflow
+      }),
+    stageBagHookInstall: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Bag Hook V2 install is staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.bagHook',
+              field: 'install',
+              newValue: 'v2-empty',
+              recordId: 'bag-hook-v2',
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/script/amx/main_event_0020.amx'
+                }
+              ],
+              summary: 'Stage Bag Hook install: 20 disabled startup item grant slots.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-bag-hook'
+        },
+        workflow: bagHookWorkflow
+      }),
+    stageBagHookUninstall: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Bag Hook V2 uninstall is staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.bagHook',
+              field: 'uninstall',
+              newValue: 'remove-bag-hook-and-dependents',
+              recordId: 'bag-hook-v2-uninstall',
+              sources: [
+                {
+                  layer: 'layered',
+                  relativePath: 'romfs/bin/script/amx/main_event_0020.amx'
+                }
+              ],
+              summary:
+                'Stage Bag Hook uninstall: remove Bag Hook plus dependent Royal Candy and Starting Items outputs.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-bag-hook-uninstall'
+        },
+        workflow: {
+          ...bagHookWorkflow,
+          installMessage: 'Bag Hook V2 is installed.',
+          installStatus: 'installed'
+        }
+      }),
+    loadCatchCapWorkflow: () =>
+      Promise.resolve({
+        workflow: catchCapWorkflow
+      }),
+    stageCatchCap: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Catch Cap Editor values are staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.catchCap',
+              field: 'caps',
+              newValue: request.caps
+                .map((cap) => `${cap.badgeCount}=${cap.levelCap}`)
+                .join(';'),
+              recordId: 'catch-cap-v1',
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'exefs/main'
+                }
+              ],
+              summary: 'Stage Catch Cap Editor values for badge counts 0-8.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-catch-cap'
+        },
+        workflow: catchCapWorkflow
+      }),
+    stageCatchCapUninstall: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Catch Cap Editor uninstall is staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.catchCap',
+              field: 'uninstall',
+              newValue: 'true',
+              recordId: 'catch-cap-v1-uninstall',
+              sources: [
+                {
+                  layer: 'layered',
+                  relativePath: 'exefs/main'
+                },
+                {
+                  layer: 'base',
+                  relativePath: 'exefs/main'
+                }
+              ],
+              summary: 'Stage Catch Cap Editor uninstall.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-catch-cap-uninstall'
+        },
+        workflow: {
+          ...catchCapWorkflow,
+          installMessage: 'Catch Cap Editor hook is installed.',
+          installStatus: 'installed',
+          provenance: {
+            fileState: 'layeredOverride',
+            sourceFile: 'exefs/main',
+            sourceLayer: 'layered'
+          }
+        }
       }),
     loadExeFsPatchWorkflow: () =>
       Promise.resolve({
@@ -7260,6 +7902,42 @@ function createMockProjectBridge(
             }
           ]
         }
+      }),
+    loadStartingItemsWorkflow: () =>
+      Promise.resolve({
+        workflow: startingItemsWorkflow
+      }),
+    stageStartingItems: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Starting Items grants are staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.startingItems',
+              field: 'grants',
+              newValue: request.grants
+                .filter((grant) => grant.itemId !== null)
+                .map((grant) => `${grant.slot}:${grant.itemId}:${grant.quantity}`)
+                .join(';'),
+              recordId: 'starting-items',
+              sources: [
+                {
+                  layer: 'layered',
+                  relativePath: 'romfs/bin/script/amx/main_event_0020.amx'
+                }
+              ],
+              summary: 'Stage Starting Items grants in Bag Hook slots 2-20.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-starting-items'
+        },
+        workflow: startingItemsWorkflow
       }),
     loadSpreadsheetImportWorkflow: () =>
       Promise.resolve({
@@ -8640,6 +9318,18 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Royal Candy change plan to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.bagHook') {
+    return 'Installed Bag Hook V2 to the configured LayeredFS output root.';
+  }
+
+  if (domain === 'workflow.catchCap') {
+    return 'Applied Catch Cap Editor changes to the configured LayeredFS output root.';
+  }
+
+  if (domain === 'workflow.startingItems') {
+    return 'Applied Starting Items grants to Bag Hook slots 2-20 in the configured LayeredFS output root.';
+  }
+
   if (domain === 'workflow.exefsPatches') {
     return 'Applied ExeFS patch to the configured LayeredFS output root.';
   }
@@ -8693,8 +9383,14 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending raid reward change is valid.';
     case 'workflow.moves':
       return 'Pending move change is valid.';
+    case 'workflow.bagHook':
+      return 'Pending Bag Hook install is valid for change-plan review.';
+    case 'workflow.catchCap':
+      return 'Pending Catch Cap Editor values are valid for change-plan review.';
     case 'workflow.royalCandy':
       return 'Pending Royal Candy workflow is valid.';
+    case 'workflow.startingItems':
+      return 'Pending Starting Items grants are valid for change-plan review.';
     case 'workflow.exefsPatches':
       return 'Pending ExeFS patch is valid.';
     default:

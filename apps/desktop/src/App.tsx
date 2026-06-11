@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  AlertTriangle,
   ArrowDown,
   ArrowLeftRight,
   ArrowUp,
@@ -50,6 +51,8 @@ import {
 import {
   type ApiDiagnostic,
   type ApplyResult,
+  type BagHookSlotRecord,
+  type BagHookWorkflow,
   type BehaviorEntryRecord,
   type BehaviorField,
   type BehaviorFieldOption,
@@ -69,6 +72,9 @@ import {
   type ExeFsSegmentRecord,
   type FlagRecord,
   type FlagworkSaveWorkflow,
+  type CatchCapRecord,
+  type CatchCapSelection,
+  type CatchCapWorkflow,
   type GiftPokemonEditableField,
   type GiftPokemonRecord,
   type GiftPokemonWorkflow,
@@ -118,6 +124,10 @@ import {
   type SpreadsheetImportPreview,
   type SpreadsheetImportProfileRecord,
   type SpreadsheetImportWorkflow,
+  type StartingItemGrantRecord,
+  type StartingItemGrantSelection,
+  type StartingItemOptionRecord,
+  type StartingItemsWorkflow,
   type StaticEncounterEditableField,
   type StaticEncounterRecord,
   type StaticEncountersWorkflow,
@@ -283,6 +293,16 @@ const sections: Array<{
     icon: Save
   },
   {
+    id: 'bagHook',
+    label: 'Bag Hook',
+    icon: Wrench
+  },
+  {
+    id: 'catchCap',
+    label: 'Catch Cap',
+    icon: ShieldCheck
+  },
+  {
     id: 'exefsPatches',
     label: 'ExeFS Patches',
     icon: Wrench
@@ -291,6 +311,11 @@ const sections: Array<{
     id: 'royalCandy',
     label: 'Royal Candy',
     icon: CheckCircle
+  },
+  {
+    id: 'startingItems',
+    label: 'Starting Items',
+    icon: Package
   },
   {
     id: 'spreadsheetImport',
@@ -316,6 +341,7 @@ type WorkflowNavigationGroup = {
     | 'encountersPokemonSources'
     | 'economy'
     | 'tools'
+    | 'hooks'
     | 'advancedEditors';
   label: string;
   sectionIds: WorkbenchSection[];
@@ -356,9 +382,14 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     sectionIds: ['spreadsheetImport']
   },
   {
+    id: 'hooks',
+    label: 'Hooks',
+    sectionIds: ['bagHook']
+  },
+  {
     id: 'advancedEditors',
     label: 'Advanced Editors',
-    sectionIds: ['exefsPatches', 'royalCandy']
+    sectionIds: ['catchCap', 'royalCandy', 'startingItems']
   }
 ];
 
@@ -492,16 +523,32 @@ const workflowDefinitions: Array<{
     icon: Save
   },
   {
-    id: 'exefsPatches',
-    label: 'ExeFS Patch Manager',
-    description: 'ExeFS main validation, patch anchors, segment hashes, and source provenance.',
+    id: 'bagHook',
+    label: 'Bag Hook',
+    description:
+      'Install this first for Royal Candy or Starting Items. It grants nothing by itself; uninstall removes dependent Royal Candy and Starting Items outputs.',
     icon: Wrench
+  },
+  {
+    id: 'catchCap',
+    label: 'Catch Cap Editor',
+    description:
+      'Independent ExeFS editor for badge catch caps 0-8. It does not require Bag Hook and should be reviewed carefully before apply.',
+    icon: ShieldCheck
   },
   {
     id: 'royalCandy',
     label: 'Royal Candy Workflows',
-    description: 'Royal Candy source readiness, ExeFS compatibility, and LayeredFS output preview.',
+    description:
+      'Requires Bag Hook, uses only Bag Hook slot 1, and patches reserved Royal Candy ExeFS regions. Use Remove Royal Candy to uninstall safely.',
     icon: CheckCircle
+  },
+  {
+    id: 'startingItems',
+    label: 'Starting Items',
+    description:
+      'Requires Bag Hook and uses only slots 2-20. Clear selected slots and apply to remove Starting Items without touching Royal Candy.',
+    icon: Package
   },
   {
     id: 'spreadsheetImport',
@@ -1114,8 +1161,12 @@ export function App({
     (state) => state.selectedPlacementObjectId
   );
   const selectedFlagId = useWorkbenchStore((state) => state.selectedFlagId);
+  const selectedBagHookSlot = useWorkbenchStore((state) => state.selectedBagHookSlot);
   const selectedExeFsCheckId = useWorkbenchStore((state) => state.selectedExeFsCheckId);
   const selectedExeFsPatchId = useWorkbenchStore((state) => state.selectedExeFsPatchId);
+  const selectedCatchCapBadgeCount = useWorkbenchStore(
+    (state) => state.selectedCatchCapBadgeCount
+  );
   const selectedGiftPokemonIndex = useWorkbenchStore(
     (state) => state.selectedGiftPokemonIndex
   );
@@ -1136,6 +1187,9 @@ export function App({
   );
   const selectedRoyalCandyWorkflowId = useWorkbenchStore(
     (state) => state.selectedRoyalCandyWorkflowId
+  );
+  const selectedStartingItemSlot = useWorkbenchStore(
+    (state) => state.selectedStartingItemSlot
   );
   const selectedSpreadsheetImportProfileId = useWorkbenchStore(
     (state) => state.selectedSpreadsheetImportProfileId
@@ -1159,8 +1213,12 @@ export function App({
   const setEditValidationDiagnostics = useWorkbenchStore(
     (state) => state.setEditValidationDiagnostics
   );
+  const bagHookWorkflow = useWorkbenchStore((state) => state.bagHookWorkflow);
   const setEncounterSearchText = useWorkbenchStore((state) => state.setEncounterSearchText);
   const setEncountersWorkflow = useWorkbenchStore((state) => state.setEncountersWorkflow);
+  const catchCapWorkflow = useWorkbenchStore((state) => state.catchCapWorkflow);
+  const setBagHookWorkflow = useWorkbenchStore((state) => state.setBagHookWorkflow);
+  const setCatchCapWorkflow = useWorkbenchStore((state) => state.setCatchCapWorkflow);
   const setExeFsPatchSearchText = useWorkbenchStore(
     (state) => state.setExeFsPatchSearchText
   );
@@ -1220,6 +1278,10 @@ export function App({
   );
   const setRoyalCandySearchText = useWorkbenchStore((state) => state.setRoyalCandySearchText);
   const setRoyalCandyWorkflow = useWorkbenchStore((state) => state.setRoyalCandyWorkflow);
+  const startingItemsWorkflow = useWorkbenchStore((state) => state.startingItemsWorkflow);
+  const setStartingItemsWorkflow = useWorkbenchStore(
+    (state) => state.setStartingItemsWorkflow
+  );
   const setSpreadsheetImportPreview = useWorkbenchStore(
     (state) => state.setSpreadsheetImportPreview
   );
@@ -1281,12 +1343,19 @@ export function App({
     (state) => state.setSelectedSpreadsheetImportProfileId
   );
   const setSelectedFlagId = useWorkbenchStore((state) => state.setSelectedFlagId);
+  const setSelectedBagHookSlot = useWorkbenchStore((state) => state.setSelectedBagHookSlot);
   const setSelectedItemId = useWorkbenchStore((state) => state.setSelectedItemId);
   const setSelectedMoveId = useWorkbenchStore((state) => state.setSelectedMoveId);
   const setSelectedPokemonPersonalId = useWorkbenchStore(
     (state) => state.setSelectedPokemonPersonalId
   );
   const setSelectedSaveBlockId = useWorkbenchStore((state) => state.setSelectedSaveBlockId);
+  const setSelectedCatchCapBadgeCount = useWorkbenchStore(
+    (state) => state.setSelectedCatchCapBadgeCount
+  );
+  const setSelectedStartingItemSlot = useWorkbenchStore(
+    (state) => state.setSelectedStartingItemSlot
+  );
   const setSelectedShopId = useWorkbenchStore((state) => state.setSelectedShopId);
   const setSelectedTextKey = useWorkbenchStore((state) => state.setSelectedTextKey);
   const setSelectedTrainerId = useWorkbenchStore((state) => state.setSelectedTrainerId);
@@ -1344,10 +1413,16 @@ export function App({
   const [isBehaviorLoading, setIsBehaviorLoading] = useState(false);
   const [isBehaviorUpdating, setIsBehaviorUpdating] = useState(false);
   const [isFlagworkSaveLoading, setIsFlagworkSaveLoading] = useState(false);
+  const [isBagHookLoading, setIsBagHookLoading] = useState(false);
+  const [isBagHookStaging, setIsBagHookStaging] = useState(false);
+  const [isCatchCapLoading, setIsCatchCapLoading] = useState(false);
+  const [isCatchCapStaging, setIsCatchCapStaging] = useState(false);
   const [isExeFsPatchLoading, setIsExeFsPatchLoading] = useState(false);
   const [isExeFsPatchStaging, setIsExeFsPatchStaging] = useState(false);
   const [isRoyalCandyLoading, setIsRoyalCandyLoading] = useState(false);
   const [isRoyalCandyStaging, setIsRoyalCandyStaging] = useState(false);
+  const [isStartingItemsLoading, setIsStartingItemsLoading] = useState(false);
+  const [isStartingItemsStaging, setIsStartingItemsStaging] = useState(false);
   const [isSpreadsheetImportLoading, setIsSpreadsheetImportLoading] = useState(false);
   const [isSpreadsheetImportPreviewing, setIsSpreadsheetImportPreviewing] = useState(false);
   const [isOutputRootCreating, setIsOutputRootCreating] = useState(false);
@@ -1366,6 +1441,7 @@ export function App({
   const [appliedChangePlan, setAppliedChangePlan] = useState<ChangePlan | null>(null);
   const [saveProgress, setSaveProgress] = useState<SaveProgressState | null>(null);
   const [exitPrompt, setExitPrompt] = useState<ExitPromptState | null>(null);
+  const [dependencyWarning, setDependencyWarning] = useState<DependencyWarningState | null>(null);
   const [updateCheckStatus, setUpdateCheckStatus] = useState<UpdateCheckStatus>({
     kind: 'idle',
     message: 'Not checked'
@@ -1435,6 +1511,8 @@ export function App({
 
   const clearLoadedWorkflowData = useCallback(() => {
     useWorkbenchStore.setState({
+      bagHookWorkflow: null,
+      catchCapWorkflow: null,
       dynamaxAdventuresWorkflow: null,
       encountersWorkflow: null,
       exeFsPatchWorkflow: null,
@@ -1450,6 +1528,7 @@ export function App({
       raidBonusRewardsWorkflow: null,
       rentalPokemonWorkflow: null,
       royalCandyWorkflow: null,
+      startingItemsWorkflow: null,
       shopsWorkflow: null,
       spreadsheetImportPreview: null,
       spreadsheetImportWorkflow: null,
@@ -2330,6 +2409,133 @@ export function App({
     }
   };
 
+  const handleOpenBagHookWorkflow = async () => {
+    setIsBagHookLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadBagHookWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setBagHookWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsBagHookLoading(false);
+    }
+  };
+
+  const handleStageBagHookInstall = async () => {
+    setIsBagHookStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageBagHookInstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setBagHookWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsBagHookStaging(false);
+    }
+  };
+
+  const handleStageBagHookUninstall = async () => {
+    setIsBagHookStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageBagHookUninstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setBagHookWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsBagHookStaging(false);
+    }
+  };
+
+  const handleOpenCatchCapWorkflow = async () => {
+    setIsCatchCapLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadCatchCapWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setCatchCapWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsCatchCapLoading(false);
+    }
+  };
+
+  const handleStageCatchCap = async (caps: CatchCapSelection[]) => {
+    setIsCatchCapStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageCatchCap({
+        caps,
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setCatchCapWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('catchCap', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsCatchCapStaging(false);
+    }
+  };
+
+  const handleStageCatchCapUninstall = async () => {
+    setIsCatchCapStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageCatchCapUninstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setCatchCapWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('catchCap', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsCatchCapStaging(false);
+    }
+  };
+
   const handleOpenExeFsPatchWorkflow = async () => {
     setIsExeFsPatchLoading(true);
     setBridgeDiagnostics([]);
@@ -2390,6 +2596,12 @@ export function App({
     workflowId: string,
     levelCaps?: RoyalCandyLevelCapSelection[]
   ) => {
+    const warning = getRoyalCandyDependencyWarning(royalCandyWorkflow, workflowId);
+    if (warning) {
+      setDependencyWarning(warning);
+      return;
+    }
+
     setIsRoyalCandyStaging(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
@@ -2412,6 +2624,58 @@ export function App({
     } finally {
       setIsRoyalCandyStaging(false);
     }
+  };
+
+  const handleOpenStartingItemsWorkflow = async () => {
+    setIsStartingItemsLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadStartingItemsWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setStartingItemsWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsStartingItemsLoading(false);
+    }
+  };
+
+  const handleStageStartingItems = async (grants: StartingItemGrantSelection[]) => {
+    const warning = getStartingItemsDependencyWarning(startingItemsWorkflow);
+    if (warning) {
+      setDependencyWarning(warning);
+      return;
+    }
+
+    setIsStartingItemsStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageStartingItems({
+        grants,
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setStartingItemsWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('startingItems', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsStartingItemsStaging(false);
+    }
+  };
+
+  const handleOpenBagHookFromDependencyWarning = () => {
+    setDependencyWarning(null);
+    void handleNavigateSection('bagHook');
   };
 
   const handleOpenSpreadsheetImportWorkflow = async () => {
@@ -2556,6 +2820,18 @@ export function App({
           void handleOpenFlagworkSaveWorkflow();
         }
         break;
+      case 'bagHook':
+        if (!bagHookWorkflow && !isBagHookLoading) {
+          markLazyLoadStarted();
+          void handleOpenBagHookWorkflow();
+        }
+        break;
+      case 'catchCap':
+        if (!catchCapWorkflow && !isCatchCapLoading) {
+          markLazyLoadStarted();
+          void handleOpenCatchCapWorkflow();
+        }
+        break;
       case 'exefsPatches':
         if (!exeFsPatchWorkflow && !isExeFsPatchLoading) {
           markLazyLoadStarted();
@@ -2566,6 +2842,12 @@ export function App({
         if (!royalCandyWorkflow && !isRoyalCandyLoading) {
           markLazyLoadStarted();
           void handleOpenRoyalCandyWorkflow();
+        }
+        break;
+      case 'startingItems':
+        if (!startingItemsWorkflow && !isStartingItemsLoading) {
+          markLazyLoadStarted();
+          void handleOpenStartingItemsWorkflow();
         }
         break;
       case 'spreadsheetImport':
@@ -2579,6 +2861,8 @@ export function App({
     }
   }, [
     activeSection,
+    bagHookWorkflow,
+    catchCapWorkflow,
     dynamaxAdventuresWorkflow,
     encountersWorkflow,
     exeFsPatchWorkflow,
@@ -2595,6 +2879,8 @@ export function App({
     isStaticEncountersLoading,
     isItemsLoading,
     isBehaviorLoading,
+    isBagHookLoading,
+    isCatchCapLoading,
     isMovesLoading,
     isPlacementLoading,
     isPokemonLoading,
@@ -2603,6 +2889,7 @@ export function App({
     isRaidRewardsLoading,
     isRoyalCandyLoading,
     isShopsLoading,
+    isStartingItemsLoading,
     isSpreadsheetImportLoading,
     isTextLoading,
     isTrainersLoading,
@@ -2618,6 +2905,7 @@ export function App({
     rentalPokemonWorkflow,
     royalCandyWorkflow,
     shopsWorkflow,
+    startingItemsWorkflow,
     spreadsheetImportWorkflow,
     staticEncountersWorkflow,
     textWorkflow,
@@ -4260,6 +4548,22 @@ export function App({
         }
       );
     }
+    if (bagHookWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadBagHookWorkflow({ paths });
+          setBagHookWorkflow(response.workflow);
+        }
+      );
+    }
+    if (catchCapWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadCatchCapWorkflow({ paths });
+          setCatchCapWorkflow(response.workflow);
+        }
+      );
+    }
     if (exeFsPatchWorkflow) {
       reloadTasks.push(
         async () => {
@@ -4273,6 +4577,14 @@ export function App({
         async () => {
           const response = await bridge.loadRoyalCandyWorkflow({ paths });
           setRoyalCandyWorkflow(response.workflow);
+        }
+      );
+    }
+    if (startingItemsWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadStartingItemsWorkflow({ paths });
+          setStartingItemsWorkflow(response.workflow);
         }
       );
     }
@@ -4547,8 +4859,11 @@ export function App({
               isStaticEncountersLoading={isStaticEncountersLoading}
               isRentalPokemonLoading={isRentalPokemonLoading}
               isDynamaxAdventuresLoading={isDynamaxAdventuresLoading}
+              isBagHookLoading={isBagHookLoading}
+              isCatchCapLoading={isCatchCapLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
+              isStartingItemsLoading={isStartingItemsLoading}
               isSpreadsheetImportLoading={isSpreadsheetImportLoading}
               onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
               onOpenExeFsPatchWorkflow={handleOpenExeFsPatchWorkflow}
@@ -4558,6 +4873,8 @@ export function App({
               onOpenStaticEncountersWorkflow={handleOpenStaticEncountersWorkflow}
               onOpenRentalPokemonWorkflow={handleOpenRentalPokemonWorkflow}
               onOpenDynamaxAdventuresWorkflow={handleOpenDynamaxAdventuresWorkflow}
+              onOpenBagHookWorkflow={handleOpenBagHookWorkflow}
+              onOpenCatchCapWorkflow={handleOpenCatchCapWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
               onOpenPokemonWorkflow={handleOpenPokemonWorkflow}
@@ -4567,6 +4884,7 @@ export function App({
               onOpenRaidRewardsWorkflow={handleOpenRaidRewardsWorkflow}
               onOpenRaidBonusRewardsWorkflow={handleOpenRaidBonusRewardsWorkflow}
               onOpenRoyalCandyWorkflow={handleOpenRoyalCandyWorkflow}
+              onOpenStartingItemsWorkflow={handleOpenStartingItemsWorkflow}
               onOpenShopsWorkflow={handleOpenShopsWorkflow}
               onOpenSpreadsheetImportWorkflow={handleOpenSpreadsheetImportWorkflow}
               onOpenTextWorkflow={handleOpenTextWorkflow}
@@ -4926,6 +5244,47 @@ export function App({
               />
             )
           ) : null}
+          {activeSection === 'bagHook' ? (
+            isBagHookLoading && !bagHookWorkflow ? (
+              <WorkflowLoadingPanel label="Bag Hook" />
+            ) : (
+              <BagHookSection
+                changePlan={changePlan}
+                editSession={getEditSessionForSection('bagHook')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isBagHookStaging}
+                onApplyChangePlan={handleApplyChangePlan}
+                onCreateChangePlan={handleCreateChangePlan}
+                onSelectSlot={setSelectedBagHookSlot}
+                onStageInstall={handleStageBagHookInstall}
+                onStageUninstall={handleStageBagHookUninstall}
+                selectedSlot={selectedBagHookSlot}
+                workflow={bagHookWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'catchCap' ? (
+            isCatchCapLoading && !catchCapWorkflow ? (
+              <WorkflowLoadingPanel label="Catch Cap Editor" />
+            ) : (
+              <CatchCapSection
+                changePlan={changePlan}
+                editSession={getEditSessionForSection('catchCap')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isCatchCapStaging}
+                onApplyChangePlan={handleApplyChangePlan}
+                onCreateChangePlan={handleCreateChangePlan}
+                onDirtyChange={(isDirty) => registerEditorDraftDirty('catchCap', isDirty)}
+                onSelectCap={setSelectedCatchCapBadgeCount}
+                onStageCaps={handleStageCatchCap}
+                onStageUninstall={handleStageCatchCapUninstall}
+                selectedBadgeCount={selectedCatchCapBadgeCount}
+                workflow={catchCapWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'exefsPatches' ? (
             isExeFsPatchLoading && !exeFsPatchWorkflow ? (
               <WorkflowLoadingPanel label="ExeFS Patch Manager" />
@@ -4966,6 +5325,28 @@ export function App({
               />
             )
           ) : null}
+          {activeSection === 'startingItems' ? (
+            isStartingItemsLoading && !startingItemsWorkflow ? (
+              <WorkflowLoadingPanel label="Starting Items" />
+            ) : (
+              <StartingItemsSection
+                changePlan={changePlan}
+                editSession={getEditSessionForSection('startingItems')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isStartingItemsStaging}
+                onApplyChangePlan={handleApplyChangePlan}
+                onCreateChangePlan={handleCreateChangePlan}
+                onDirtyChange={(isDirty) =>
+                  registerEditorDraftDirty('startingItems', isDirty)
+                }
+                onSelectSlot={setSelectedStartingItemSlot}
+                onStageGrants={handleStageStartingItems}
+                selectedSlot={selectedStartingItemSlot}
+                workflow={startingItemsWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'spreadsheetImport' ? (
             isSpreadsheetImportLoading && !spreadsheetImportWorkflow ? (
               <WorkflowLoadingPanel label="Spreadsheet Import" />
@@ -4993,6 +5374,8 @@ export function App({
               diagnostics={editValidationDiagnostics}
               editSession={editSession}
               pendingEditContext={{
+                bagHookWorkflow,
+                catchCapWorkflow,
                 dynamaxAdventuresWorkflow,
                 encountersWorkflow,
                 exeFsPatchWorkflow,
@@ -5009,6 +5392,7 @@ export function App({
                 rentalPokemonWorkflow,
                 royalCandyWorkflow,
                 shopsWorkflow,
+                startingItemsWorkflow,
                 staticEncountersWorkflow,
                 textWorkflow,
                 tradePokemonWorkflow,
@@ -5058,6 +5442,13 @@ export function App({
           onDismiss={handleDismissAvailableUpdate}
           onDownload={handleDownloadAvailableUpdate}
           update={availableUpdate}
+        />
+      ) : null}
+      {dependencyWarning ? (
+        <DependencyWarningModal
+          warning={dependencyWarning}
+          onClose={() => setDependencyWarning(null)}
+          onOpenBagHook={handleOpenBagHookFromDependencyWarning}
         />
       ) : null}
     </main>
@@ -5355,7 +5746,10 @@ function WorkflowsSection({
   isStaticEncountersLoading,
   isRentalPokemonLoading,
   isDynamaxAdventuresLoading,
+  isBagHookLoading,
+  isCatchCapLoading,
   isRoyalCandyLoading,
+  isStartingItemsLoading,
   isSpreadsheetImportLoading,
   onOpenEncountersWorkflow,
   onOpenExeFsPatchWorkflow,
@@ -5365,6 +5759,8 @@ function WorkflowsSection({
   onOpenStaticEncountersWorkflow,
   onOpenRentalPokemonWorkflow,
   onOpenDynamaxAdventuresWorkflow,
+  onOpenBagHookWorkflow,
+  onOpenCatchCapWorkflow,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
   onOpenPokemonWorkflow,
@@ -5374,6 +5770,7 @@ function WorkflowsSection({
   onOpenRaidRewardsWorkflow,
   onOpenRaidBonusRewardsWorkflow,
   onOpenRoyalCandyWorkflow,
+  onOpenStartingItemsWorkflow,
   onOpenShopsWorkflow,
   onOpenSpreadsheetImportWorkflow,
   onOpenTextWorkflow,
@@ -5401,7 +5798,10 @@ function WorkflowsSection({
   isStaticEncountersLoading: boolean;
   isRentalPokemonLoading: boolean;
   isDynamaxAdventuresLoading: boolean;
+  isBagHookLoading: boolean;
+  isCatchCapLoading: boolean;
   isRoyalCandyLoading: boolean;
+  isStartingItemsLoading: boolean;
   isSpreadsheetImportLoading: boolean;
   onOpenEncountersWorkflow: () => void;
   onOpenExeFsPatchWorkflow: () => void;
@@ -5411,6 +5811,8 @@ function WorkflowsSection({
   onOpenStaticEncountersWorkflow: () => void;
   onOpenRentalPokemonWorkflow: () => void;
   onOpenDynamaxAdventuresWorkflow: () => void;
+  onOpenBagHookWorkflow: () => void;
+  onOpenCatchCapWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
   onOpenPokemonWorkflow: () => void;
@@ -5420,6 +5822,7 @@ function WorkflowsSection({
   onOpenRaidRewardsWorkflow: () => void;
   onOpenRaidBonusRewardsWorkflow: () => void;
   onOpenRoyalCandyWorkflow: () => void;
+  onOpenStartingItemsWorkflow: () => void;
   onOpenShopsWorkflow: () => void;
   onOpenSpreadsheetImportWorkflow: () => void;
   onOpenTextWorkflow: () => void;
@@ -5471,8 +5874,11 @@ function WorkflowsSection({
           const isPlacementWorkflow = definition.id === 'placement';
           const isBehaviorWorkflow = definition.id === 'behavior';
           const isFlagworkSaveWorkflow = definition.id === 'flagworkSave';
+          const isBagHookWorkflow = definition.id === 'bagHook';
+          const isCatchCapWorkflow = definition.id === 'catchCap';
           const isExeFsPatchWorkflow = definition.id === 'exefsPatches';
           const isRoyalCandyWorkflow = definition.id === 'royalCandy';
+          const isStartingItemsWorkflow = definition.id === 'startingItems';
           const isSpreadsheetImportWorkflow = definition.id === 'spreadsheetImport';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenPokemon = isPokemonWorkflow && workflowState.availability !== 'disabled';
@@ -5504,10 +5910,16 @@ function WorkflowsSection({
             isBehaviorWorkflow && workflowState.availability !== 'disabled';
           const canOpenFlagworkSave =
             isFlagworkSaveWorkflow && workflowState.availability !== 'disabled';
+          const canOpenBagHook =
+            isBagHookWorkflow && workflowState.availability !== 'disabled';
+          const canOpenCatchCap =
+            isCatchCapWorkflow && workflowState.availability !== 'disabled';
           const canOpenExeFsPatch =
             isExeFsPatchWorkflow && workflowState.availability !== 'disabled';
           const canOpenRoyalCandy =
             isRoyalCandyWorkflow && workflowState.availability !== 'disabled';
+          const canOpenStartingItems =
+            isStartingItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenSpreadsheetImport =
             isSpreadsheetImportWorkflow && workflowState.availability !== 'disabled';
 
@@ -5728,6 +6140,28 @@ function WorkflowsSection({
                     <span>{isFlagworkSaveLoading ? 'Loading' : 'Open Flagwork'}</span>
                   </button>
                 ) : null}
+                {isBagHookWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenBagHook || isBagHookLoading}
+                    onClick={onOpenBagHookWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isBagHookLoading ? 'Loading' : 'Open Bag Hook'}</span>
+                  </button>
+                ) : null}
+                {isCatchCapWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenCatchCap || isCatchCapLoading}
+                    onClick={onOpenCatchCapWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isCatchCapLoading ? 'Loading' : 'Open Catch Cap'}</span>
+                  </button>
+                ) : null}
                 {isExeFsPatchWorkflow ? (
                   <button
                     className="secondary-button compact-button"
@@ -5748,6 +6182,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isRoyalCandyLoading ? 'Loading' : 'Open Candy'}</span>
+                  </button>
+                ) : null}
+                {isStartingItemsWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenStartingItems || isStartingItemsLoading}
+                    onClick={onOpenStartingItemsWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isStartingItemsLoading ? 'Loading' : 'Open Starting Items'}</span>
                   </button>
                 ) : null}
                 {isSpreadsheetImportWorkflow ? (
@@ -10126,6 +10571,8 @@ function formatDraftSummary(summary: {
 
 function formatPendingEditDomain(domain: string) {
   const labels: Record<string, string> = {
+    'workflow.bagHook': 'Bag Hook',
+    'workflow.catchCap': 'Catch Cap',
     'workflow.dynamaxAdventures': 'Dynamax Adventures',
     'workflow.encounters': 'Wild Encounters',
     'workflow.exefs': 'ExeFS Patches',
@@ -10142,6 +10589,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.rentalPokemon': 'Rental Pokemon',
     'workflow.royalCandy': 'Royal Candy',
     'workflow.shops': 'Shops',
+    'workflow.startingItems': 'Starting Items',
     'workflow.staticEncounters': 'Static Encounters',
     'workflow.text': 'Text',
     'workflow.tradePokemon': 'Trade Pokemon',
@@ -10346,6 +10794,20 @@ function getPendingEditDisplayDetails(
         recordLabel: entry?.label
       });
     }
+    case 'workflow.bagHook':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'install' ? 'Install' : undefined,
+        newValueLabel: edit.newValue === 'v2-empty' ? 'Bag Hook V2 disabled slots' : undefined,
+        recordLabel: 'Bag Hook V2'
+      });
+    case 'workflow.catchCap':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'caps' ? 'Badge caps' : undefined,
+        newValueLabel: formatCatchCapPendingValue(edit.newValue),
+        recordLabel: 'Catch Cap Editor'
+      });
     case 'workflow.royalCandy': {
       const workflow = context.royalCandyWorkflow?.workflows.find(
         (candidate) => candidate.workflowId === edit.recordId
@@ -10357,6 +10819,13 @@ function getPendingEditDisplayDetails(
         recordLabel: workflow?.name
       });
     }
+    case 'workflow.startingItems':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'grants' ? 'Startup grants' : undefined,
+        newValueLabel: formatStartingItemsPendingValue(edit.newValue, context),
+        recordLabel: 'Bag Hook slots 2-20'
+      });
     case 'workflow.exefsPatches':
     case 'workflow.exefs': {
       const patch = context.exeFsPatchWorkflow?.patches.find(
@@ -10390,6 +10859,52 @@ function createPendingEditDisplayDetails(
     recordLabel: overrides.recordLabel ?? recordKey,
     sourceLabel: formatPendingEditSources(edit)
   };
+}
+
+function formatCatchCapPendingValue(value: string | null | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  const parts = value
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [badgeCount, levelCap] = part.split('=');
+      return badgeCount !== undefined && levelCap !== undefined
+        ? `${badgeCount} badges: Lv. ${levelCap}`
+        : part;
+    });
+
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+function formatStartingItemsPendingValue(
+  value: string | null | undefined,
+  context: PendingEditContext
+) {
+  if (!value) {
+    return 'Clear slots 2-20';
+  }
+
+  const itemLookup = new Map(
+    (context.startingItemsWorkflow?.itemOptions ?? []).map((option) => [option.itemId, option.name])
+  );
+  const parts = value
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [slot, itemIdText, quantity] = part.split(':');
+      const itemId = Number.parseInt(itemIdText ?? '', 10);
+      const itemName = Number.isInteger(itemId) ? itemLookup.get(itemId) : null;
+      return slot && itemIdText && quantity
+        ? `slot ${slot}: ${itemName ?? `item ${itemIdText}`} x${quantity}`
+        : part;
+    });
+
+  return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
 function getPokemonPendingEditDisplayDetails(
@@ -17629,6 +18144,562 @@ function SelectedFlagworkSavePanel({
   );
 }
 
+function BagHookSection({
+  changePlan,
+  editSession,
+  isChangePlanApplying,
+  isChangePlanCreating,
+  isStaging,
+  onApplyChangePlan,
+  onCreateChangePlan,
+  onSelectSlot,
+  onStageInstall,
+  onStageUninstall,
+  selectedSlot,
+  workflow
+}: {
+  changePlan: ChangePlan | null;
+  editSession: EditSession | null;
+  isChangePlanApplying: boolean;
+  isChangePlanCreating: boolean;
+  isStaging: boolean;
+  onApplyChangePlan: () => void;
+  onCreateChangePlan: () => void;
+  onSelectSlot: (slot: number | null) => void;
+  onStageInstall: () => void;
+  onStageUninstall: () => void;
+  selectedSlot: number | null;
+  workflow: BagHookWorkflow | null;
+}) {
+  const selectedRecord =
+    workflow?.slots.find((slot) => slot.slot === selectedSlot) ?? workflow?.slots[0] ?? null;
+  const stagedBagHookEdit = editSession?.pendingEdits.find(
+    (edit) => edit.domain === 'workflow.bagHook'
+  );
+  const isInstallStaged = stagedBagHookEdit?.recordId === 'bag-hook-v2';
+  const isUninstallStaged = stagedBagHookEdit?.recordId === 'bag-hook-v2-uninstall';
+  const canStageInstall =
+    workflow?.summary.availability === 'available' && workflow.installStatus === 'available';
+  const canStageUninstall =
+    workflow?.summary.availability === 'available' && workflow.installStatus === 'installed';
+  const canReviewPlan = (isInstallStaged || isUninstallStaged) && !isChangePlanCreating;
+  const canApplyPlan =
+    (isInstallStaged || isUninstallStaged) &&
+    changePlan !== null &&
+    changePlan.canApply &&
+    changePlan.writes.length > 0 &&
+    !isChangePlanApplying;
+
+  useEffect(() => {
+    if (selectedRecord && selectedRecord.slot !== selectedSlot) {
+      onSelectSlot(selectedRecord.slot);
+    }
+  }, [onSelectSlot, selectedRecord?.slot, selectedSlot]);
+
+  return (
+    <>
+      <section aria-labelledby="bag-hook-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Wrench aria-hidden="true" size={18} />
+          <h2 id="bag-hook-heading">Bag Hook</h2>
+        </div>
+        <p className="workflow-description">
+          Bag Hook installs the shared AMX startup hook required by Royal Candy and Starting
+          Items. It grants nothing by itself; slot 1 is reserved for Royal Candy and slots 2-20
+          are reserved for Starting Items.
+        </p>
+        <p className="workflow-description">
+          Uninstalling Bag Hook removes dependent Royal Candy and Starting Items output. If Royal
+          Candy also patched ExeFS, only Royal Candy-owned ExeFS bytes are restored and independent
+          Catch Cap bytes are preserved.
+        </p>
+
+        <div className="items-toolbar exefs-toolbar">
+          <Metric
+            label="Install"
+            value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
+          />
+          <Metric label="Slots" value={workflow ? workflow.stats.totalSlotCount.toString() : '0'} />
+          <Metric
+            label="Occupied"
+            value={workflow ? workflow.stats.occupiedSlotCount.toString() : '0'}
+          />
+          <Metric
+            label="Empty"
+            value={workflow ? workflow.stats.emptySlotCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="flagwork-layout">
+            <div className="flagwork-stack">
+              <div className="exefs-table" role="table" aria-label="Bag Hook slots">
+                <div className="exefs-row bag-hook-row exefs-row-heading" role="row">
+                  <span role="columnheader">Slot</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Reserved for</span>
+                  <span role="columnheader">Item</span>
+                  <span role="columnheader">Owner</span>
+                </div>
+                {workflow.slots.map((slot) => (
+                  <button
+                    className={`exefs-row bag-hook-row ${
+                      selectedRecord?.slot === slot.slot ? 'exefs-row-selected' : ''
+                    }`}
+                    key={slot.slot}
+                    onClick={() => onSelectSlot(slot.slot)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">#{slot.slot}</span>
+                    <span role="cell">
+                      <span className={`status-pill ${getExeFsStatusClassName(slot.status)}`}>
+                        {formatBagHookStatus(slot.status)}
+                      </span>
+                    </span>
+                    <span role="cell">{slot.reservedFor}</span>
+                    <span role="cell">
+                      {slot.itemId === null
+                        ? 'Empty'
+                        : `${slot.itemName} (#${slot.itemId}) x${slot.quantity ?? 1}`}
+                    </span>
+                    <span role="cell">{slot.owner}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <aside aria-label="Selected Bag Hook slot" className="encounter-inspector">
+              <div className="panel-heading">
+                <Wrench aria-hidden="true" size={18} />
+                <h3>Selected Slot</h3>
+              </div>
+
+              {selectedRecord ? (
+                <>
+                  <dl className="item-provenance-list">
+                    <div>
+                      <dt>Install status</dt>
+                      <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
+                    </div>
+                    <div>
+                      <dt>Slot</dt>
+                      <dd>#{selectedRecord.slot}</dd>
+                    </div>
+                    <div>
+                      <dt>Status</dt>
+                      <dd>{formatBagHookStatus(selectedRecord.status)}</dd>
+                    </div>
+                    <div>
+                      <dt>Reserved for</dt>
+                      <dd>{selectedRecord.reservedFor}</dd>
+                    </div>
+                    <div>
+                      <dt>Owner</dt>
+                      <dd>{selectedRecord.owner}</dd>
+                    </div>
+                    <div>
+                      <dt>Source file</dt>
+                      <dd>{selectedRecord.provenance.sourceFile}</dd>
+                    </div>
+                    <div>
+                      <dt>Layer</dt>
+                      <dd>{formatSourceLayer(selectedRecord.provenance.sourceLayer)}</dd>
+                    </div>
+                    <div>
+                      <dt>File state</dt>
+                      <dd>{formatFileState(selectedRecord.provenance.fileState)}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="encounter-edit-form">
+                    <div className="form-actions">
+                      <button
+                        className="primary-button"
+                        disabled={!canStageInstall || isStaging}
+                        onClick={onStageInstall}
+                        type="button"
+                      >
+                        <Wrench aria-hidden="true" size={16} />
+                        <span>{isStaging ? 'Staging' : 'Stage Install'}</span>
+                      </button>
+                      <button
+                        className="danger-button"
+                        disabled={!canStageUninstall || isStaging}
+                        onClick={onStageUninstall}
+                        type="button"
+                      >
+                        <Trash2 aria-hidden="true" size={16} />
+                        <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={!canReviewPlan}
+                        onClick={onCreateChangePlan}
+                        type="button"
+                      >
+                        <ClipboardCheck aria-hidden="true" size={16} />
+                        <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                      </button>
+                      <button
+                        className="primary-button"
+                        disabled={!canApplyPlan}
+                        onClick={onApplyChangePlan}
+                        type="button"
+                      >
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                      </button>
+                    </div>
+
+                    <dl className="encounter-slot-detail">
+                      <div>
+                        <dt>Install message</dt>
+                        <dd>{workflow.installMessage}</dd>
+                      </div>
+                      <div>
+                        <dt>Slot notes</dt>
+                        <dd>{selectedRecord.notes}</dd>
+                      </div>
+                      <div>
+                        <dt>Item</dt>
+                        <dd>
+                          {selectedRecord.itemId === null
+                            ? 'None'
+                            : `${selectedRecord.itemName} (#${selectedRecord.itemId})`}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Uninstall impact</dt>
+                        <dd>
+                          Removes Bag Hook plus dependent Royal Candy and Starting Items output.
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                </>
+              ) : (
+                <p className="empty-copy">No Bag Hook slot selected.</p>
+              )}
+            </aside>
+          </div>
+        ) : (
+          <p className="empty-copy">Open Bag Hook from Hooks to inspect the startup hook slots.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function CatchCapSection({
+  changePlan,
+  editSession,
+  isChangePlanApplying,
+  isChangePlanCreating,
+  isStaging,
+  onApplyChangePlan,
+  onCreateChangePlan,
+  onDirtyChange,
+  onSelectCap,
+  onStageCaps,
+  onStageUninstall,
+  selectedBadgeCount,
+  workflow
+}: {
+  changePlan: ChangePlan | null;
+  editSession: EditSession | null;
+  isChangePlanApplying: boolean;
+  isChangePlanCreating: boolean;
+  isStaging: boolean;
+  onApplyChangePlan: () => void;
+  onCreateChangePlan: () => void;
+  onDirtyChange: (isDirty: boolean) => void;
+  onSelectCap: (badgeCount: number | null) => void;
+  onStageCaps: (caps: CatchCapSelection[]) => void;
+  onStageUninstall: () => void;
+  selectedBadgeCount: number | null;
+  workflow: CatchCapWorkflow | null;
+}) {
+  const [capInputs, setCapInputs] = useState<Record<number, string>>({});
+  const capSignature =
+    workflow?.caps.map((cap) => `${cap.badgeCount}:${cap.levelCap}`).join('|') ?? '';
+  const parsedCaps = (workflow?.caps ?? []).map((cap) => {
+    const rawValue = capInputs[cap.badgeCount] ?? cap.levelCap.toString();
+    const parsedValue = Number.parseInt(rawValue, 10);
+    const isInteger = Number.isInteger(parsedValue) && parsedValue.toString() === rawValue.trim();
+    const error = !isInteger
+      ? 'Enter a whole level.'
+      : parsedValue < cap.minimumLevelCap || parsedValue > cap.maximumLevelCap
+        ? `Use Lv. ${cap.minimumLevelCap}-${cap.maximumLevelCap}.`
+        : null;
+
+    return {
+      ...cap,
+      error,
+      rawValue,
+      selectedLevelCap: isInteger ? parsedValue : Number.NaN
+    };
+  });
+  const selectedCap =
+    parsedCaps.find((cap) => cap.badgeCount === selectedBadgeCount) ?? parsedCaps[0] ?? null;
+  const hasInputError = parsedCaps.some((cap) => cap.error !== null);
+  const hasLocalDrafts = parsedCaps.some(
+    (cap) => cap.rawValue.trim() !== cap.levelCap.toString()
+  );
+  const selectedCaps = parsedCaps.map((cap) => ({
+    badgeCount: cap.badgeCount,
+    levelCap: cap.selectedLevelCap
+  }));
+  const stagedCatchCapEdit = editSession?.pendingEdits.find(
+    (edit) => edit.domain === 'workflow.catchCap'
+  );
+  const isCatchCapStaged = stagedCatchCapEdit?.recordId === 'catch-cap-v1';
+  const isCatchCapUninstallStaged =
+    stagedCatchCapEdit?.recordId === 'catch-cap-v1-uninstall';
+  const hasStagedCatchCapChange = isCatchCapStaged || isCatchCapUninstallStaged;
+  const canStage =
+    workflow?.summary.availability === 'available' &&
+    workflow.installStatus !== 'blocked' &&
+    workflow.installStatus !== 'foreign' &&
+    !hasInputError;
+  const canStageUninstall =
+    workflow?.summary.availability === 'available' && workflow.installStatus === 'installed';
+  const canReviewPlan = hasStagedCatchCapChange && !isChangePlanCreating;
+  const canApplyPlan =
+    hasStagedCatchCapChange &&
+    changePlan !== null &&
+    changePlan.canApply &&
+    changePlan.writes.length > 0 &&
+    !isChangePlanApplying;
+
+  useEffect(() => {
+    setCapInputs(
+      Object.fromEntries((workflow?.caps ?? []).map((cap) => [cap.badgeCount, cap.levelCap.toString()]))
+    );
+  }, [capSignature, workflow?.caps]);
+
+  useEffect(() => {
+    if (selectedCap && selectedCap.badgeCount !== selectedBadgeCount) {
+      onSelectCap(selectedCap.badgeCount);
+    }
+  }, [onSelectCap, selectedBadgeCount, selectedCap?.badgeCount]);
+
+  useEffect(() => {
+    onDirtyChange(hasLocalDrafts || hasInputError);
+  }, [hasInputError, hasLocalDrafts, onDirtyChange]);
+
+  return (
+    <>
+      <section aria-labelledby="catch-cap-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <ShieldCheck aria-hidden="true" size={18} />
+          <h2 id="catch-cap-heading">Catch Cap Editor</h2>
+        </div>
+        <p className="workflow-description">
+          Catch Cap Editor is independent from Bag Hook, Royal Candy, and Starting Items. It edits
+          only its reserved exefs/main hook bytes for badge levels 0-8. Review before apply or
+          uninstall; cleanup preserves Bag Hook, Royal Candy, and Starting Items when present.
+        </p>
+
+        <div className="items-toolbar exefs-toolbar">
+          <Metric
+            label="Install"
+            value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
+          />
+          <Metric label="Caps" value={workflow ? workflow.stats.totalCapCount.toString() : '0'} />
+          <Metric
+            label="Logic"
+            value={workflow ? workflow.logicExpression : 'Not loaded'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="flagwork-layout">
+            <div className="flagwork-stack">
+              <div className="exefs-table catch-cap-table" role="table" aria-label="Catch Cap badge levels">
+                <div className="exefs-row catch-cap-row exefs-row-heading" role="row">
+                  <span role="columnheader">Badge level</span>
+                  <span role="columnheader">Current</span>
+                  <span role="columnheader">Selected</span>
+                  <span role="columnheader">Range</span>
+                  <span role="columnheader">Status</span>
+                </div>
+                {parsedCaps.map((cap) => {
+                  const errorId = `catch-cap-error-${cap.badgeCount}`;
+                  return (
+                    <div
+                      className={`exefs-row catch-cap-row ${
+                        selectedCap?.badgeCount === cap.badgeCount ? 'exefs-row-selected' : ''
+                      }`}
+                      key={cap.badgeCount}
+                      onClick={() => onSelectCap(cap.badgeCount)}
+                      role="row"
+                    >
+                      <span role="cell">{cap.label}</span>
+                      <span role="cell">Lv. {cap.levelCap}</span>
+                      <div className="table-cell-control" role="cell">
+                        <input
+                          aria-describedby={cap.error ? errorId : undefined}
+                          aria-invalid={cap.error ? 'true' : undefined}
+                          aria-label={`Catch cap for ${cap.label}`}
+                          className={cap.error ? 'input-error' : undefined}
+                          max={cap.maximumLevelCap}
+                          min={cap.minimumLevelCap}
+                          onChange={(event) =>
+                            setCapInputs((current) => ({
+                              ...current,
+                              [cap.badgeCount]: event.target.value
+                            }))
+                          }
+                          onFocus={() => onSelectCap(cap.badgeCount)}
+                          step={1}
+                          type="number"
+                          value={cap.rawValue}
+                        />
+                        {cap.error ? (
+                          <small className="editable-field-error" id={errorId}>
+                            {cap.error}
+                          </small>
+                        ) : null}
+                      </div>
+                      <span role="cell">
+                        Lv. {cap.minimumLevelCap}-{cap.maximumLevelCap}
+                      </span>
+                      <span role="cell">
+                        <span
+                          className={`status-pill ${
+                            cap.error ? 'status-blocked' : cap.rawValue.trim() !== cap.levelCap.toString() ? 'status-warning' : 'status-ready'
+                          }`}
+                        >
+                          {cap.error ? 'Invalid' : cap.rawValue.trim() !== cap.levelCap.toString() ? 'Changed' : 'Ready'}
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <aside aria-label="Selected Catch Cap" className="encounter-inspector">
+              <div className="panel-heading">
+                <ShieldCheck aria-hidden="true" size={18} />
+                <h3>Selected Cap</h3>
+              </div>
+
+              {selectedCap ? (
+                <>
+                  <dl className="item-provenance-list">
+                    <div>
+                      <dt>Install status</dt>
+                      <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
+                    </div>
+                    <div>
+                      <dt>Badge level</dt>
+                      <dd>{selectedCap.label}</dd>
+                    </div>
+                    <div>
+                      <dt>Selected cap</dt>
+                      <dd>
+                        {selectedCap.error
+                          ? selectedCap.error
+                          : `Lv. ${selectedCap.selectedLevelCap}`}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Source file</dt>
+                      <dd>{workflow.provenance.sourceFile}</dd>
+                    </div>
+                    <div>
+                      <dt>Layer</dt>
+                      <dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd>
+                    </div>
+                    <div>
+                      <dt>File state</dt>
+                      <dd>{formatFileState(workflow.provenance.fileState)}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="encounter-edit-form">
+                    <div className="form-actions">
+                      <button
+                        className="primary-button"
+                        disabled={!canStage || isStaging}
+                        onClick={() => onStageCaps(selectedCaps)}
+                        type="button"
+                      >
+                        <ClipboardCheck aria-hidden="true" size={16} />
+                        <span>{isStaging ? 'Staging' : 'Stage Caps'}</span>
+                      </button>
+                      <button
+                        className="danger-button"
+                        disabled={!canStageUninstall || isStaging}
+                        onClick={onStageUninstall}
+                        type="button"
+                      >
+                        <Trash2 aria-hidden="true" size={16} />
+                        <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={!canReviewPlan}
+                        onClick={onCreateChangePlan}
+                        type="button"
+                      >
+                        <ClipboardCheck aria-hidden="true" size={16} />
+                        <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                      </button>
+                      <button
+                        className="primary-button"
+                        disabled={!canApplyPlan}
+                        onClick={onApplyChangePlan}
+                        type="button"
+                      >
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                      </button>
+                    </div>
+
+                    <dl className="encounter-slot-detail">
+                      <div>
+                        <dt>Install message</dt>
+                        <dd>{workflow.installMessage}</dd>
+                      </div>
+                      <div>
+                        <dt>Logic</dt>
+                        <dd>{workflow.logicExpression}</dd>
+                      </div>
+                      <div>
+                        <dt>Logic SHA-256</dt>
+                        <dd>{workflow.capLogicSha256}</dd>
+                      </div>
+                      <div>
+                        <dt>Uninstall</dt>
+                        <dd>
+                          Use Stage Uninstall, then Review and Apply. It restores only Catch
+                          Cap-owned ExeFS bytes, preserves Royal Candy when installed, and does
+                          not touch Bag Hook or Starting Items.
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                </>
+              ) : (
+                <p className="empty-copy">No Catch Cap row selected.</p>
+              )}
+            </aside>
+          </div>
+        ) : (
+          <p className="empty-copy">Open Catch Cap from Advanced Editors to load cap values.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
 function ExeFsPatchSection({
   isStaging,
   onSearchChange,
@@ -17998,6 +19069,11 @@ function RoyalCandySection({
           <CheckCircle aria-hidden="true" size={18} />
           <h2 id="royal-candy-heading">Royal Candy Workflows</h2>
         </div>
+        <p className="workflow-description">
+          Royal Candy requires Bag Hook and always uses Bag Hook slot 1. Install workflows also
+          patch reserved Royal Candy regions in exefs/main; use Remove Royal Candy to clear slot 1
+          and restore only Royal Candy-owned ExeFS bytes.
+        </p>
 
         <div className="items-toolbar exefs-toolbar">
           <label className="search-box items-search">
@@ -18065,6 +19141,10 @@ function RoyalCandySection({
             </div>
 
             <SelectedRoyalCandyPanel
+              canShowDependencyWarning={
+                selectedWorkflow !== null &&
+                getRoyalCandyDependencyWarning(workflow, selectedWorkflow.workflowId) !== null
+              }
               check={selectedCheck}
               changePlan={changePlan}
               editSession={editSession}
@@ -18152,6 +19232,7 @@ function RoyalCandySection({
 }
 
 function SelectedRoyalCandyPanel({
+  canShowDependencyWarning,
   check,
   changePlan,
   editSession,
@@ -18164,6 +19245,7 @@ function SelectedRoyalCandyPanel({
   outputs,
   selectedWorkflow
 }: {
+  canShowDependencyWarning: boolean;
   check: RoyalCandyWorkflowCheckRecord | null;
   changePlan: ChangePlan | null;
   editSession: EditSession | null;
@@ -18234,6 +19316,7 @@ function SelectedRoyalCandyPanel({
       selectedWorkflow.workflowId === 'royal-candy-uninstall') &&
     (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning') &&
     !hasLevelCapInputError;
+  const canUseStageButton = canStage || canShowDependencyWarning;
   const canEditLevelCaps =
     isStoryLimitWorkflow &&
     selectedWorkflow !== null &&
@@ -18394,7 +19477,7 @@ function SelectedRoyalCandyPanel({
               <div className="form-actions">
                 <button
                   className="primary-button"
-                  disabled={!canStage || isStaging}
+                  disabled={!canUseStageButton || isStaging}
                   onClick={() => {
                     if (selectedWorkflow) {
                       onStageWorkflow(
@@ -18434,6 +19517,17 @@ function SelectedRoyalCandyPanel({
                   <dd>{selectedWorkflow.description}</dd>
                 </div>
                 <div>
+                  <dt>Dependency</dt>
+                  <dd>Bag Hook must be installed before either Royal Candy install workflow.</dd>
+                </div>
+                <div>
+                  <dt>Uninstall</dt>
+                  <dd>
+                    Select Remove Royal Candy. Bag Hook and Starting Items stay installed; Catch
+                    Cap ExeFS bytes are preserved if present.
+                  </dd>
+                </div>
+                <div>
                   <dt>Check message</dt>
                   <dd>{check?.message ?? 'n/a'}</dd>
                 </div>
@@ -18454,6 +19548,402 @@ function SelectedRoyalCandyPanel({
         <p className="empty-copy">No Royal Candy workflow selected.</p>
       )}
     </aside>
+  );
+}
+
+function StartingItemsSection({
+  changePlan,
+  editSession,
+  isChangePlanApplying,
+  isChangePlanCreating,
+  isStaging,
+  onApplyChangePlan,
+  onCreateChangePlan,
+  onDirtyChange,
+  onSelectSlot,
+  onStageGrants,
+  selectedSlot,
+  workflow
+}: {
+  changePlan: ChangePlan | null;
+  editSession: EditSession | null;
+  isChangePlanApplying: boolean;
+  isChangePlanCreating: boolean;
+  isStaging: boolean;
+  onApplyChangePlan: () => void;
+  onCreateChangePlan: () => void;
+  onDirtyChange: (isDirty: boolean) => void;
+  onSelectSlot: (slot: number | null) => void;
+  onStageGrants: (grants: StartingItemGrantSelection[]) => void;
+  selectedSlot: number | null;
+  workflow: StartingItemsWorkflow | null;
+}) {
+  const [grantInputs, setGrantInputs] = useState<
+    Record<number, { itemId: string; quantity: string }>
+  >({});
+  const grantSignature =
+    workflow?.grants
+      .map((grant) => `${grant.slot}:${grant.itemId ?? ''}:${grant.quantity}`)
+      .join('|') ?? '';
+  const itemOptionLookup = useMemo(
+    () => new Map((workflow?.itemOptions ?? []).map((option) => [option.itemId, option])),
+    [workflow?.itemOptions]
+  );
+  const parsedGrants = (workflow?.grants ?? []).map((grant) => {
+    const input = grantInputs[grant.slot] ?? {
+      itemId: grant.itemId?.toString() ?? '',
+      quantity: grant.quantity.toString()
+    };
+    const selectedItemId =
+      input.itemId.trim().length === 0 ? null : Number.parseInt(input.itemId, 10);
+    const selectedItem =
+      selectedItemId === null || !Number.isInteger(selectedItemId)
+        ? null
+        : itemOptionLookup.get(selectedItemId) ?? null;
+    const normalizedQuantity = selectedItem?.isKeyItem ? '1' : input.quantity;
+    const parsedQuantity = Number.parseInt(normalizedQuantity, 10);
+    const hasItem = selectedItemId !== null && selectedItem !== null;
+    const quantityError =
+      hasItem &&
+      (!Number.isInteger(parsedQuantity) ||
+        parsedQuantity.toString() !== normalizedQuantity.trim() ||
+        parsedQuantity < 1 ||
+        parsedQuantity > 999)
+        ? 'Use 1-999.'
+        : null;
+    const itemError =
+      input.itemId.trim().length > 0 && selectedItem === null ? 'Choose a known item.' : null;
+
+    return {
+      ...grant,
+      inputItemId: input.itemId,
+      inputQuantity: normalizedQuantity,
+      itemError,
+      quantityError,
+      selectedItem,
+      selectedItemId,
+      selectedQuantity: Number.isInteger(parsedQuantity) ? parsedQuantity : Number.NaN
+    };
+  });
+  const selectedGrant =
+    parsedGrants.find((grant) => grant.slot === selectedSlot) ?? parsedGrants[0] ?? null;
+  const hasInputError = parsedGrants.some(
+    (grant) => grant.itemError !== null || grant.quantityError !== null
+  );
+  const hasLocalDrafts = parsedGrants.some((grant) => {
+    const currentItemId = grant.itemId?.toString() ?? '';
+    const currentQuantity = grant.itemId === null ? '1' : grant.quantity.toString();
+    return grant.inputItemId.trim() !== currentItemId || grant.inputQuantity.trim() !== currentQuantity;
+  });
+  const selectedGrants = parsedGrants
+    .filter((grant) => grant.selectedItemId !== null && grant.selectedItem !== null)
+    .map((grant) => ({
+      itemId: grant.selectedItemId,
+      quantity: grant.selectedItem?.isKeyItem ? 1 : grant.selectedQuantity,
+      slot: grant.slot
+    }));
+  const stagedStartingItemsEdit = editSession?.pendingEdits.find(
+    (edit) => edit.domain === 'workflow.startingItems'
+  );
+  const isStartingItemsStaged = stagedStartingItemsEdit?.recordId === 'starting-items';
+  const canStage =
+    workflow?.summary.availability === 'available' &&
+    workflow.installStatus === 'available' &&
+    !hasInputError &&
+    selectedGrants.every((grant) => Number.isFinite(grant.quantity));
+  const canShowDependencyWarning = getStartingItemsDependencyWarning(workflow) !== null;
+  const canReviewPlan = isStartingItemsStaged && !isChangePlanCreating;
+  const canApplyPlan =
+    isStartingItemsStaged &&
+    changePlan !== null &&
+    changePlan.canApply &&
+    changePlan.writes.length > 0 &&
+    !isChangePlanApplying;
+
+  useEffect(() => {
+    setGrantInputs(
+      Object.fromEntries(
+        (workflow?.grants ?? []).map((grant) => [
+          grant.slot,
+          {
+            itemId: grant.itemId?.toString() ?? '',
+            quantity: grant.quantity.toString()
+          }
+        ])
+      )
+    );
+  }, [grantSignature, workflow?.grants]);
+
+  useEffect(() => {
+    if (selectedGrant && selectedGrant.slot !== selectedSlot) {
+      onSelectSlot(selectedGrant.slot);
+    }
+  }, [onSelectSlot, selectedGrant?.slot, selectedSlot]);
+
+  useEffect(() => {
+    onDirtyChange(hasLocalDrafts || hasInputError);
+  }, [hasInputError, hasLocalDrafts, onDirtyChange]);
+
+  return (
+    <>
+      <section aria-labelledby="starting-items-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Package aria-hidden="true" size={18} />
+          <h2 id="starting-items-heading">Starting Items</h2>
+        </div>
+        <p className="workflow-description">
+          Starting Items requires Bag Hook and uses only slots 2-20. Slot 1 is never used here
+          because it is reserved for Royal Candy, and key item quantities are locked to 1.
+        </p>
+        <p className="workflow-description">
+          To remove Starting Items, set the occupied Starting Items slots back to No item, then
+          stage, review, and apply. Bag Hook and Royal Candy are not removed.
+        </p>
+
+        <div className="items-toolbar exefs-toolbar">
+          <Metric
+            label="Bag Hook"
+            value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
+          />
+          <Metric
+            label="Grant slots"
+            value={workflow ? workflow.stats.totalGrantSlotCount.toString() : '0'}
+          />
+          <Metric
+            label="Occupied"
+            value={workflow ? workflow.stats.occupiedGrantSlotCount.toString() : '0'}
+          />
+          <Metric
+            label="Item options"
+            value={workflow ? workflow.stats.itemOptionCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="flagwork-layout">
+            <div className="flagwork-stack">
+              <div className="exefs-table starting-items-table" role="table" aria-label="Starting Items slots">
+                <div className="exefs-row starting-items-row exefs-row-heading" role="row">
+                  <span role="columnheader">Slot</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Item</span>
+                  <span role="columnheader">Quantity</span>
+                  <span role="columnheader">Owner</span>
+                </div>
+                {parsedGrants.map((grant) => {
+                  const quantityErrorId = `starting-item-quantity-error-${grant.slot}`;
+                  const itemErrorId = `starting-item-error-${grant.slot}`;
+                  const rowError = grant.itemError ?? grant.quantityError;
+
+                  return (
+                    <div
+                      className={`exefs-row starting-items-row ${
+                        selectedGrant?.slot === grant.slot ? 'exefs-row-selected' : ''
+                      }`}
+                      key={grant.slot}
+                      onClick={() => onSelectSlot(grant.slot)}
+                      role="row"
+                    >
+                      <span role="cell">#{grant.slot}</span>
+                      <span role="cell">
+                        <span className={`status-pill ${getExeFsStatusClassName(grant.status)}`}>
+                          {formatBagHookStatus(grant.status)}
+                        </span>
+                      </span>
+                      <div className="table-cell-control" role="cell">
+                        <select
+                          aria-describedby={grant.itemError ? itemErrorId : undefined}
+                          aria-invalid={grant.itemError ? 'true' : undefined}
+                          aria-label={`Item for Bag Hook slot ${grant.slot}`}
+                          disabled={workflow.installStatus !== 'available'}
+                          onChange={(event) => {
+                            const nextItem = event.target.value
+                              ? itemOptionLookup.get(Number.parseInt(event.target.value, 10))
+                              : null;
+                            setGrantInputs((current) => ({
+                              ...current,
+                              [grant.slot]: {
+                                itemId: event.target.value,
+                                quantity: nextItem?.isKeyItem ? '1' : (current[grant.slot]?.quantity ?? '1')
+                              }
+                            }));
+                          }}
+                          onFocus={() => onSelectSlot(grant.slot)}
+                          value={grant.inputItemId}
+                        >
+                          <option value="">No item</option>
+                          {workflow.itemOptions.map((option) => (
+                            <option key={option.itemId} value={option.itemId}>
+                              {formatStartingItemOption(option)}
+                            </option>
+                          ))}
+                        </select>
+                        {grant.itemError ? (
+                          <small className="editable-field-error" id={itemErrorId}>
+                            {grant.itemError}
+                          </small>
+                        ) : null}
+                      </div>
+                      <div className="table-cell-control" role="cell">
+                        <input
+                          aria-describedby={grant.quantityError ? quantityErrorId : undefined}
+                          aria-invalid={grant.quantityError ? 'true' : undefined}
+                          aria-label={`Quantity for Bag Hook slot ${grant.slot}`}
+                          className={grant.quantityError ? 'input-error' : undefined}
+                          disabled={
+                            workflow.installStatus !== 'available' ||
+                            grant.inputItemId.trim().length === 0 ||
+                            grant.selectedItem?.isKeyItem === true
+                          }
+                          max={999}
+                          min={1}
+                          onChange={(event) =>
+                            setGrantInputs((current) => ({
+                              ...current,
+                              [grant.slot]: {
+                                itemId: current[grant.slot]?.itemId ?? '',
+                                quantity: event.target.value
+                              }
+                            }))
+                          }
+                          onFocus={() => onSelectSlot(grant.slot)}
+                          step={1}
+                          type="number"
+                          value={grant.inputItemId.trim().length === 0 ? '1' : grant.inputQuantity}
+                        />
+                        {grant.quantityError ? (
+                          <small className="editable-field-error" id={quantityErrorId}>
+                            {grant.quantityError}
+                          </small>
+                        ) : null}
+                      </div>
+                      <span role="cell">
+                        {rowError ? rowError : grant.selectedItem?.isKeyItem ? 'Key item' : grant.owner}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <aside aria-label="Selected Starting Items slot" className="encounter-inspector">
+              <div className="panel-heading">
+                <Package aria-hidden="true" size={18} />
+                <h3>Selected Slot</h3>
+              </div>
+
+              {selectedGrant ? (
+                <>
+                  <dl className="item-provenance-list">
+                    <div>
+                      <dt>Bag Hook status</dt>
+                      <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
+                    </div>
+                    <div>
+                      <dt>Slot</dt>
+                      <dd>#{selectedGrant.slot}</dd>
+                    </div>
+                    <div>
+                      <dt>Selected item</dt>
+                      <dd>
+                        {selectedGrant.selectedItem
+                          ? `${selectedGrant.selectedItem.name} (#${selectedGrant.selectedItem.itemId})`
+                          : 'None'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Quantity</dt>
+                      <dd>
+                        {selectedGrant.selectedItem
+                          ? selectedGrant.selectedItem.isKeyItem
+                            ? '1 (key item)'
+                            : selectedGrant.inputQuantity
+                          : 'n/a'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Source file</dt>
+                      <dd>{selectedGrant.provenance.sourceFile}</dd>
+                    </div>
+                    <div>
+                      <dt>Layer</dt>
+                      <dd>{formatSourceLayer(selectedGrant.provenance.sourceLayer)}</dd>
+                    </div>
+                    <div>
+                      <dt>File state</dt>
+                      <dd>{formatFileState(selectedGrant.provenance.fileState)}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="encounter-edit-form">
+                    <div className="form-actions">
+                      <button
+                        className="primary-button"
+                        disabled={!(canStage || canShowDependencyWarning) || isStaging}
+                        onClick={() => onStageGrants(selectedGrants)}
+                        type="button"
+                      >
+                        <ClipboardCheck aria-hidden="true" size={16} />
+                        <span>{isStaging ? 'Staging' : 'Stage Items'}</span>
+                      </button>
+                      <button
+                        className="secondary-button"
+                        disabled={!canReviewPlan}
+                        onClick={onCreateChangePlan}
+                        type="button"
+                      >
+                        <ClipboardCheck aria-hidden="true" size={16} />
+                        <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                      </button>
+                      <button
+                        className="primary-button"
+                        disabled={!canApplyPlan}
+                        onClick={onApplyChangePlan}
+                        type="button"
+                      >
+                        <Save aria-hidden="true" size={16} />
+                        <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                      </button>
+                    </div>
+
+                    <dl className="encounter-slot-detail">
+                      <div>
+                        <dt>Install message</dt>
+                        <dd>{workflow.installMessage}</dd>
+                      </div>
+                      <div>
+                        <dt>Current slot item</dt>
+                        <dd>
+                          {selectedGrant.itemId === null
+                            ? 'None'
+                            : `${selectedGrant.itemName} (#${selectedGrant.itemId}) x${selectedGrant.quantity}`}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Slot rule</dt>
+                        <dd>Starting Items can use slots 2-20 only.</dd>
+                      </div>
+                      <div>
+                        <dt>Remove grants</dt>
+                        <dd>Choose No item for occupied Starting Items slots, then apply the staged slot update.</dd>
+                      </div>
+                    </dl>
+                  </div>
+                </>
+              ) : (
+                <p className="empty-copy">No Starting Items slot selected.</p>
+              )}
+            </aside>
+          </div>
+        ) : (
+          <p className="empty-copy">
+            Open Starting Items from Advanced Editors after installing Bag Hook.
+          </p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
   );
 }
 
@@ -18722,6 +20212,8 @@ function SelectedSpreadsheetImportPanel({
 type PendingEdit = EditSession['pendingEdits'][number];
 
 type PendingEditContext = {
+  bagHookWorkflow: BagHookWorkflow | null;
+  catchCapWorkflow: CatchCapWorkflow | null;
   dynamaxAdventuresWorkflow: DynamaxAdventuresWorkflow | null;
   encountersWorkflow: EncountersWorkflow | null;
   exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
@@ -18738,6 +20230,7 @@ type PendingEditContext = {
   rentalPokemonWorkflow: RentalPokemonWorkflow | null;
   royalCandyWorkflow: RoyalCandyWorkflow | null;
   shopsWorkflow: ShopsWorkflow | null;
+  startingItemsWorkflow: StartingItemsWorkflow | null;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
   textWorkflow: TextWorkflow | null;
   tradePokemonWorkflow: TradePokemonWorkflow | null;
@@ -19229,6 +20722,44 @@ function UpdatePromptModal({
           >
             <X aria-hidden="true" size={16} />
             <span>Not Now</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DependencyWarningModal({
+  onClose,
+  onOpenBagHook,
+  warning
+}: {
+  onClose: () => void;
+  onOpenBagHook: () => void;
+  warning: DependencyWarningState;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="dependency-warning-heading"
+        aria-modal="true"
+        className="modal-panel"
+        role="dialog"
+      >
+        <div className="panel-heading">
+          <AlertTriangle aria-hidden="true" size={18} />
+          <h2 id="dependency-warning-heading">{warning.title}</h2>
+        </div>
+        <p className="modal-copy">{warning.message}</p>
+        <p className="modal-copy modal-copy-muted">{warning.fix}</p>
+        <div className="modal-actions">
+          <button className="primary-button" onClick={onOpenBagHook} type="button">
+            <Wrench aria-hidden="true" size={16} />
+            <span>Open Bag Hook</span>
+          </button>
+          <button className="secondary-button" onClick={onClose} type="button">
+            <X aria-hidden="true" size={16} />
+            <span>Close</span>
           </button>
         </div>
       </section>
@@ -21722,6 +23253,12 @@ type ExitPromptState = {
   mode: 'confirm' | 'redirect';
 };
 
+type DependencyWarningState = {
+  fix: string;
+  message: string;
+  title: string;
+};
+
 type EvYieldConfirmationState = 'remove' | 'restore' | null;
 
 function SearchableOptionInput({
@@ -23086,7 +24623,9 @@ function getExeFsStatusClassName(status: string) {
     case 'available':
     case 'installed':
     case 'ready':
+    case 'empty':
       return 'status-ready';
+    case 'occupied':
     case 'readonly':
     case 'read-only':
     case 'warning':
@@ -23094,6 +24633,10 @@ function getExeFsStatusClassName(status: string) {
       return 'status-warning';
     case 'fail':
     case 'blocked':
+    case 'conflict':
+    case 'foreign':
+    case 'legacy':
+    case 'unavailable':
       return 'status-blocked';
     default:
       return 'status-warning';
@@ -23126,6 +24669,38 @@ function formatRoyalCandyStatus(status: string) {
     default:
       return status.length > 0 ? `${status[0]!.toLocaleUpperCase()}${status.slice(1)}` : status;
   }
+}
+
+function formatBagHookStatus(status: string) {
+  switch (status.toLocaleLowerCase()) {
+    case 'available':
+      return 'Available';
+    case 'blocked':
+      return 'Blocked';
+    case 'conflict':
+      return 'Conflict';
+    case 'empty':
+      return 'Empty';
+    case 'foreign':
+      return 'Foreign';
+    case 'installed':
+      return 'Installed';
+    case 'legacy':
+      return 'Legacy';
+    case 'occupied':
+      return 'Occupied';
+    case 'readonly':
+    case 'read-only':
+      return 'Read-only';
+    case 'unavailable':
+      return 'Unavailable';
+    default:
+      return status.length > 0 ? `${status[0]!.toLocaleUpperCase()}${status.slice(1)}` : status;
+  }
+}
+
+function formatStartingItemOption(option: StartingItemOptionRecord) {
+  return `${option.name} (#${option.itemId})${option.isKeyItem ? ' [Key]' : ''}`;
 }
 
 function formatRoyalCandyMode(mode: string) {
@@ -24159,6 +25734,61 @@ function getProjectStateLabel(
   }
 
   return health ? healthLabels[health.state] : 'No project open';
+}
+
+function getRoyalCandyDependencyWarning(
+  workflow: RoyalCandyWorkflow | null,
+  workflowId: string
+): DependencyWarningState | null {
+  if (
+    !workflow ||
+    workflow.summary.availability !== 'available' ||
+    workflowId === 'royal-candy-uninstall'
+  ) {
+    return null;
+  }
+
+  const selectedWorkflow = workflow.workflows.find(
+    (candidate) => candidate.workflowId === workflowId
+  );
+  const bagHookCheck = workflow.checks.find(
+    (check) =>
+      check.workflowId === 'royal-candy-preflight' &&
+      check.checkId.endsWith(':bag-hook-installed')
+  );
+  if (selectedWorkflow?.status !== 'blocked' && bagHookCheck?.status !== 'Fail') {
+    return null;
+  }
+
+  if (bagHookCheck?.status !== 'Fail') {
+    return null;
+  }
+
+  return {
+    title: 'Bag Hook Required',
+    message: 'Royal Candy cannot be staged until Bag Hook V2 is installed.',
+    fix:
+      'Open Hooks > Bag Hook, stage and save the Bag Hook install, then return to Royal Candy.'
+  };
+}
+
+function getStartingItemsDependencyWarning(
+  workflow: StartingItemsWorkflow | null
+): DependencyWarningState | null {
+  if (
+    !workflow ||
+    workflow.summary.availability !== 'available' ||
+    workflow.installStatus !== 'blocked'
+  ) {
+    return null;
+  }
+
+  return {
+    title: 'Bag Hook Required',
+    message: 'Starting Items cannot be staged until Bag Hook V2 is installed.',
+    fix:
+      'Open Hooks > Bag Hook, stage and save the Bag Hook install, then return to Starting Items.'
+  };
 }
 
 function toProjectPaths(draftPaths: ProjectPathDraft) {

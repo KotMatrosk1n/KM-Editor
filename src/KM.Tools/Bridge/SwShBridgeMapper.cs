@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Editing;
+using KM.Api.BagHook;
 using KM.Api.Behavior;
+using KM.Api.CatchCap;
 using KM.Api.DynamaxAdventures;
 using KM.Api.Encounters;
 using KM.Api.ExeFs;
@@ -15,6 +17,7 @@ using KM.Api.Rentals;
 using KM.Api.Shops;
 using KM.Api.Raids;
 using KM.Api.RoyalCandy;
+using KM.Api.StartingItems;
 using KM.Api.StaticEncounters;
 using KM.Api.Text;
 using KM.Api.SpreadsheetImport;
@@ -22,6 +25,8 @@ using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.SwSh.Behavior;
+using KM.SwSh.BagHook;
+using KM.SwSh.CatchCap;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
@@ -34,6 +39,7 @@ using KM.SwSh.Rentals;
 using KM.SwSh.Shops;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
+using KM.SwSh.StartingItems;
 using KM.SwSh.StaticEncounters;
 using KM.SwSh.Text;
 using KM.SwSh.SpreadsheetImport;
@@ -236,6 +242,60 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static LoadBagHookWorkflowResponse ToDto(SwShBagHookWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadBagHookWorkflowResponse(ToBagHookWorkflowDto(workflow));
+    }
+
+    public static StageBagHookInstallResponse ToDto(SwShBagHookEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageBagHookInstallResponse(
+            ToBagHookWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageBagHookUninstallResponse ToBagHookUninstallDto(SwShBagHookEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageBagHookUninstallResponse(
+            ToBagHookWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadCatchCapWorkflowResponse ToDto(SwShCatchCapWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadCatchCapWorkflowResponse(ToCatchCapWorkflowDto(workflow));
+    }
+
+    public static StageCatchCapResponse ToDto(SwShCatchCapEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageCatchCapResponse(
+            ToCatchCapWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageCatchCapUninstallResponse ToCatchCapUninstallDto(SwShCatchCapEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageCatchCapUninstallResponse(
+            ToCatchCapWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadRoyalCandyWorkflowResponse ToDto(SwShRoyalCandyWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -249,6 +309,23 @@ public static class SwShBridgeMapper
 
         return new StageRoyalCandyWorkflowResponse(
             ToRoyalCandyWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadStartingItemsWorkflowResponse ToDto(SwShStartingItemsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadStartingItemsWorkflowResponse(ToStartingItemsWorkflowDto(workflow));
+    }
+
+    public static StageStartingItemsResponse ToDto(SwShStartingItemsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageStartingItemsResponse(
+            ToStartingItemsWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1047,6 +1124,38 @@ public static class SwShBridgeMapper
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    private static BagHookWorkflowDto ToBagHookWorkflowDto(SwShBagHookWorkflow workflow)
+    {
+        return new BagHookWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.Slots.Select(ToDto).ToArray(),
+            new BagHookWorkflowStatsDto(
+                workflow.Stats.TotalSlotCount,
+                workflow.Stats.OccupiedSlotCount,
+                workflow.Stats.EmptySlotCount,
+                workflow.Stats.ReservedSlotCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static CatchCapWorkflowDto ToCatchCapWorkflowDto(SwShCatchCapWorkflow workflow)
+    {
+        return new CatchCapWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.LogicExpression,
+            workflow.CapLogicSha256,
+            workflow.Caps.Select(ToDto).ToArray(),
+            ToDto(workflow.Provenance),
+            new CatchCapWorkflowStatsDto(
+                workflow.Stats.TotalCapCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     private static RoyalCandyWorkflowDto ToRoyalCandyWorkflowDto(SwShRoyalCandyWorkflow workflow)
     {
         return new RoyalCandyWorkflowDto(
@@ -1062,6 +1171,22 @@ public static class SwShBridgeMapper
                 workflow.Stats.WarningCount,
                 workflow.Stats.FailCount,
                 workflow.Stats.OutputCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static StartingItemsWorkflowDto ToStartingItemsWorkflowDto(SwShStartingItemsWorkflow workflow)
+    {
+        return new StartingItemsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.Grants.Select(ToDto).ToArray(),
+            workflow.ItemOptions.Select(ToDto).ToArray(),
+            new StartingItemsWorkflowStatsDto(
+                workflow.Stats.TotalGrantSlotCount,
+                workflow.Stats.OccupiedGrantSlotCount,
+                workflow.Stats.ItemOptionCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1971,6 +2096,47 @@ public static class SwShBridgeMapper
             ProjectBridgeMapper.ToDto(provenance.FileState));
     }
 
+    private static BagHookSlotRecordDto ToDto(SwShBagHookSlotRecord slot)
+    {
+        return new BagHookSlotRecordDto(
+            slot.Slot,
+            slot.Status,
+            slot.IsReserved,
+            slot.ReservedFor,
+            slot.ItemId,
+            slot.ItemName,
+            slot.Quantity,
+            slot.Owner,
+            slot.Notes,
+            ToDto(slot.Provenance));
+    }
+
+    private static BagHookProvenanceDto ToDto(SwShBagHookProvenance provenance)
+    {
+        return new BagHookProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static CatchCapRecordDto ToDto(SwShCatchCapRecord cap)
+    {
+        return new CatchCapRecordDto(
+            cap.BadgeCount,
+            cap.Label,
+            cap.LevelCap,
+            cap.MinimumLevelCap,
+            cap.MaximumLevelCap);
+    }
+
+    private static CatchCapProvenanceDto ToDto(SwShCatchCapProvenance provenance)
+    {
+        return new CatchCapProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
     private static RoyalCandyWorkflowRecordDto ToDto(SwShRoyalCandyWorkflowRecord workflow)
     {
         return new RoyalCandyWorkflowRecordDto(
@@ -2038,6 +2204,36 @@ public static class SwShBridgeMapper
     private static RoyalCandyProvenanceDto ToDto(SwShRoyalCandyProvenance provenance)
     {
         return new RoyalCandyProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static StartingItemGrantRecordDto ToDto(SwShStartingItemGrantRecord grant)
+    {
+        return new StartingItemGrantRecordDto(
+            grant.Slot,
+            grant.ItemId,
+            grant.ItemName,
+            grant.Quantity,
+            grant.IsKeyItem,
+            grant.Status,
+            grant.Owner,
+            ToDto(grant.Provenance));
+    }
+
+    private static StartingItemOptionRecordDto ToDto(SwShStartingItemOptionRecord option)
+    {
+        return new StartingItemOptionRecordDto(
+            option.ItemId,
+            option.Name,
+            option.Category,
+            option.IsKeyItem);
+    }
+
+    private static StartingItemsProvenanceDto ToDto(SwShStartingItemsProvenance provenance)
+    {
+        return new StartingItemsProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));
