@@ -29,6 +29,8 @@ internal static class SwShCatchCapMainPatcher
     public const int CapCount = 9;
     public const int MinimumCap = 1;
     public const int MaximumCap = 100;
+    public const int FinalBadgeCount = 8;
+    public const int FinalBadgeCap = 100;
     public const int ExeFsHookSiteOffset = 0x013AE3AC;
     public const int ExeFsTableOffset = 0x013AE3B0;
     public const int ExeFsReturnOffset = 0x013AE3C8;
@@ -56,10 +58,16 @@ internal static class SwShCatchCapMainPatcher
 
             if (HasMarker(text))
             {
-                var caps = text.AsSpan(ExeFsTableOffset, CapCount).ToArray();
+                var rawCaps = text.AsSpan(ExeFsTableOffset, CapCount).ToArray();
+                var caps = NormalizeCaps(rawCaps);
+                var message = rawCaps[FinalBadgeCount] == FinalBadgeCap
+                    ? "Catch Cap Editor hook is installed. Changing values edits badge counts 0-7; eight badges is fixed at Lv.100 by the game."
+                    : string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Catch Cap Editor hook is installed. Badge counts 0-7 are editable; the installed table has stale Lv.{rawCaps[FinalBadgeCount]} metadata for eight badges, so stage and apply to rewrite it to Lv.100.");
                 return new SwShCatchCapAnalysis(
                     SwShCatchCapInstallKind.InstalledV1,
-                    "Catch Cap Editor hook is installed. Changing values edits only the nine cap table bytes.",
+                    message,
                     caps,
                     FormatLogicExpression(caps),
                     ComputeCapLogicSha256(caps));
@@ -111,7 +119,7 @@ internal static class SwShCatchCapMainPatcher
 
         if (caps.Count != CapCount)
         {
-            throw new InvalidDataException("Catch Cap Editor requires exactly nine cap values for badge counts 0-8.");
+            throw new InvalidDataException("Catch Cap Editor requires exactly nine cap values; badge count 8 must be level 100.");
         }
 
         var capBytes = new byte[caps.Count];
@@ -121,6 +129,12 @@ internal static class SwShCatchCapMainPatcher
             if (cap is < MinimumCap or > MaximumCap)
             {
                 throw new InvalidDataException($"Catch cap {cap} must be between {MinimumCap} and {MaximumCap}.");
+            }
+
+            if (index == FinalBadgeCount && cap != FinalBadgeCap)
+            {
+                throw new InvalidDataException(
+                    $"Catch cap for badge count {FinalBadgeCount} is fixed at level {FinalBadgeCap}; the game treats eight badges as catch any level.");
             }
 
             if (index > 0 && cap < caps[index - 1])
@@ -201,10 +215,12 @@ internal static class SwShCatchCapMainPatcher
 
         if (isLinear)
         {
-            return string.Create(CultureInfo.InvariantCulture, $"badge_count < 8 ? {caps[0]} + badge_count * {step} : {caps[8]}");
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"badge_count < 8 ? {caps[0]} + badge_count * {step} : {FinalBadgeCap}");
         }
 
-        return "cap_table[min(badge_count, 8)]";
+        return "badge_count < 8 ? cap_table[badge_count] : 100";
     }
 
     public static string ComputeCapLogicSha256(IReadOnlyList<byte> caps)
@@ -257,6 +273,13 @@ internal static class SwShCatchCapMainPatcher
         text[ExeFsTableOffset + CapCount + Marker.Length] = CapCount;
         text[ExeFsTableOffset + CapCount + Marker.Length + 1] = 1;
         text.AsSpan(0x013AE3C0, 8).Clear();
+    }
+
+    private static byte[] NormalizeCaps(ReadOnlySpan<byte> caps)
+    {
+        var normalized = caps.ToArray();
+        normalized[FinalBadgeCount] = FinalBadgeCap;
+        return normalized;
     }
 
     private static bool HasMarker(ReadOnlySpan<byte> text)

@@ -160,9 +160,11 @@ public sealed class SwShCatchCapWorkflowService
             .Select((cap, index) => new SwShCatchCapRecord(
                 index,
                 CapLabels[index],
-                cap,
-                SwShCatchCapMainPatcher.MinimumCap,
-                SwShCatchCapMainPatcher.MaximumCap))
+                index == SwShCatchCapMainPatcher.FinalBadgeCount
+                    ? SwShCatchCapMainPatcher.FinalBadgeCap
+                    : cap,
+                MinimumLevelCap(index),
+                MaximumLevelCap(index)))
             .ToArray();
 
         return new SwShCatchCapWorkflow(
@@ -185,6 +187,20 @@ public sealed class SwShCatchCapWorkflowService
             [20, 25, 30, 35, 40, 45, 50, 55, 100],
             "badge_count < 8 ? 20 + badge_count * 5 : 100",
             SwShCatchCapMainPatcher.ComputeCapLogicSha256([20, 25, 30, 35, 40, 45, 50, 55, 100]));
+    }
+
+    private static int MinimumLevelCap(int badgeCount)
+    {
+        return badgeCount == SwShCatchCapMainPatcher.FinalBadgeCount
+            ? SwShCatchCapMainPatcher.FinalBadgeCap
+            : SwShCatchCapMainPatcher.MinimumCap;
+    }
+
+    private static int MaximumLevelCap(int badgeCount)
+    {
+        return badgeCount == SwShCatchCapMainPatcher.FinalBadgeCount
+            ? SwShCatchCapMainPatcher.FinalBadgeCap
+            : SwShCatchCapMainPatcher.MaximumCap;
     }
 
     private static ProjectFileGraphEntry? FindEntry(OpenedProject project, string relativePath)
@@ -249,7 +265,7 @@ public sealed class SwShCatchCapWorkflowService
         return new SwShWorkflowSummary(
             SwShWorkflowIds.CatchCap,
             "Catch Cap Editor",
-            "Independent ExeFS editor for badge catch caps 0-8. Stage Uninstall removes only Catch Cap bytes and preserves other hook editors.",
+            "Independent ExeFS editor for badge catch caps 0-7; eight badges remains Lv.100 because the game treats full badges as catch any level. Stage Uninstall removes only Catch Cap bytes and preserves other hook editors.",
             availability,
             diagnostics);
     }

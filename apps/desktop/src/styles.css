@@ -2666,6 +2666,10 @@ h2 {
   grid-template-columns: minmax(132px, 0.9fr) 92px minmax(116px, 0.8fr) minmax(96px, 0.6fr) minmax(96px, 0.6fr);
 }
 
+.catch-cap-row-fixed {
+  color: #aeb8ca;
+}
+
 .starting-items-row {
   grid-template-columns: 72px minmax(92px, 0.45fr) minmax(260px, 1.5fr) minmax(116px, 0.7fr);
 }
@@ -2689,6 +2693,13 @@ h2 {
 .table-cell-control select {
   width: 100%;
   min-width: 0;
+}
+
+.table-cell-control input:disabled {
+  color: #aeb8ca;
+  background: #162035;
+  border-style: dashed;
+  cursor: not-allowed;
 }
 
 .royal-candy-workflow-table,

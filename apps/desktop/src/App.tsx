@@ -395,7 +395,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'advancedEditors',
     label: 'Advanced Editors',
-    sectionIds: ['catchCap', 'royalCandy', 'startingItems']
+    sectionIds: ['royalCandy', 'startingItems']
   }
 ];
 
@@ -539,7 +539,7 @@ const workflowDefinitions: Array<{
     id: 'catchCap',
     label: 'Catch Cap Editor',
     description:
-      'Independent ExeFS editor for badge catch caps 0-8. It does not require Bag Hook and should be reviewed carefully before apply.',
+      'Independent ExeFS editor for badge catch caps 0-7; eight badges remains Lv.100 because the game treats full badges as catch any level.',
     icon: ShieldCheck
   },
   {
@@ -570,6 +570,8 @@ const workflowDefinitions: Array<{
     icon: FileSpreadsheet
   }
 ];
+
+const hiddenWorkflowDefinitionIds = new Set(['catchCap']);
 
 const pathFields: Array<{
   field: ProjectPathFieldName;
@@ -5975,7 +5977,9 @@ function WorkflowsSection({
       </div>
 
       <div className="workflow-list">
-        {workflowDefinitions.map((definition) => {
+        {workflowDefinitions
+          .filter((definition) => !hiddenWorkflowDefinitionIds.has(definition.id))
+          .map((definition) => {
           const workflow = workflows.find((candidate) => candidate.id === definition.id);
           const workflowState = getWorkflowState(health, workflow);
           const Icon = definition.icon;
@@ -18805,10 +18809,14 @@ function CatchCapSection({
       }
     >
   >((caps, cap) => {
-    const rawValue = capInputs[cap.badgeCount] ?? cap.levelCap.toString();
-    const parsedValue = Number.parseInt(rawValue, 10);
-    const isInteger = Number.isInteger(parsedValue) && parsedValue.toString() === rawValue.trim();
-    const rangeError = !isInteger
+    const isFixed = cap.minimumLevelCap === cap.maximumLevelCap;
+    const rawValue = isFixed ? cap.levelCap.toString() : capInputs[cap.badgeCount] ?? cap.levelCap.toString();
+    const parsedValue = isFixed ? cap.levelCap : Number.parseInt(rawValue, 10);
+    const isInteger =
+      isFixed || (Number.isInteger(parsedValue) && parsedValue.toString() === rawValue.trim());
+    const rangeError = isFixed
+      ? null
+      : !isInteger
       ? 'Enter a whole level.'
       : parsedValue < cap.minimumLevelCap || parsedValue > cap.maximumLevelCap
         ? `Use Lv. ${cap.minimumLevelCap}-${cap.maximumLevelCap}.`
@@ -18887,8 +18895,10 @@ function CatchCapSection({
         </div>
         <p className="workflow-description">
           Catch Cap Editor is independent from Bag Hook, Royal Candy, and Starting Items. It edits
-          only its reserved exefs/main hook bytes for badge levels 0-8. Review before apply or
-          uninstall; cleanup preserves Bag Hook, Royal Candy, and Starting Items when present.
+          only its reserved exefs/main hook bytes for badge levels 0-7. Eight badges remains
+          Lv.100 because the game treats full badge completion as catch any level. Review before
+          apply or uninstall; cleanup preserves Bag Hook, Royal Candy, and Starting Items when
+          present.
         </p>
 
         <div className="items-toolbar exefs-toolbar">
@@ -18916,9 +18926,11 @@ function CatchCapSection({
                 </div>
                 {parsedCaps.map((cap) => {
                   const errorId = `catch-cap-error-${cap.badgeCount}`;
+                  const isFixed = cap.minimumLevelCap === cap.maximumLevelCap;
+                  const hasDraft = cap.rawValue.trim() !== cap.levelCap.toString();
                   return (
                     <div
-                      className={`exefs-row catch-cap-row ${
+                      className={`exefs-row catch-cap-row ${isFixed ? 'catch-cap-row-fixed' : ''} ${
                         selectedCap?.badgeCount === cap.badgeCount ? 'exefs-row-selected' : ''
                       }`}
                       key={cap.badgeCount}
@@ -18933,6 +18945,7 @@ function CatchCapSection({
                           aria-invalid={cap.error ? 'true' : undefined}
                           aria-label={`Catch cap for ${cap.label}`}
                           className={cap.error ? 'input-error' : undefined}
+                          disabled={isFixed}
                           max={cap.maximumLevelCap}
                           min={cap.minimumLevelCap}
                           onChange={(event) =>
@@ -18943,6 +18956,7 @@ function CatchCapSection({
                           }
                           onFocus={() => onSelectCap(cap.badgeCount)}
                           step={1}
+                          title={isFixed ? 'Eight badges is fixed at Lv.100.' : undefined}
                           type="number"
                           value={cap.rawValue}
                         />
@@ -18953,15 +18967,15 @@ function CatchCapSection({
                         ) : null}
                       </div>
                       <span role="cell">
-                        Lv. {cap.minimumLevelCap}-{cap.maximumLevelCap}
+                        {isFixed ? `Lv. ${cap.minimumLevelCap}` : `Lv. ${cap.minimumLevelCap}-${cap.maximumLevelCap}`}
                       </span>
                       <span role="cell">
                         <span
                           className={`status-pill ${
-                            cap.error ? 'status-blocked' : cap.rawValue.trim() !== cap.levelCap.toString() ? 'status-warning' : 'status-ready'
+                            cap.error ? 'status-blocked' : !isFixed && hasDraft ? 'status-warning' : 'status-ready'
                           }`}
                         >
-                          {cap.error ? 'Invalid' : cap.rawValue.trim() !== cap.levelCap.toString() ? 'Changed' : 'Ready'}
+                          {cap.error ? 'Invalid' : isFixed ? 'Fixed' : hasDraft ? 'Changed' : 'Ready'}
                         </span>
                       </span>
                     </div>
@@ -18992,7 +19006,9 @@ function CatchCapSection({
                       <dd>
                         {selectedCap.error
                           ? selectedCap.error
-                          : `Lv. ${selectedCap.selectedLevelCap}`}
+                          : selectedCap.minimumLevelCap === selectedCap.maximumLevelCap
+                            ? `Lv. ${selectedCap.selectedLevelCap} (fixed)`
+                            : `Lv. ${selectedCap.selectedLevelCap}`}
                       </dd>
                     </div>
                     <div>
