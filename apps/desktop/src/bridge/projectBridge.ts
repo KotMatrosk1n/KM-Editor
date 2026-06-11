@@ -12,6 +12,10 @@ import {
   type ListWorkflowsResponse,
   type LoadEncountersWorkflowRequest,
   type LoadEncountersWorkflowResponse,
+  type LoadBagHookWorkflowRequest,
+  type LoadBagHookWorkflowResponse,
+  type LoadCatchCapWorkflowRequest,
+  type LoadCatchCapWorkflowResponse,
   type LoadExeFsPatchWorkflowRequest,
   type LoadExeFsPatchWorkflowResponse,
   type LoadFlagworkSaveWorkflowRequest,
@@ -50,10 +54,22 @@ import {
   type LoadRaidBonusRewardsWorkflowResponse,
   type LoadRoyalCandyWorkflowRequest,
   type LoadRoyalCandyWorkflowResponse,
+  type LoadStartingItemsWorkflowRequest,
+  type LoadStartingItemsWorkflowResponse,
+  type StageBagHookInstallRequest,
+  type StageBagHookInstallResponse,
+  type StageBagHookUninstallRequest,
+  type StageBagHookUninstallResponse,
+  type StageCatchCapRequest,
+  type StageCatchCapResponse,
+  type StageCatchCapUninstallRequest,
+  type StageCatchCapUninstallResponse,
   type StageExeFsPatchRequest,
   type StageExeFsPatchResponse,
   type StageRoyalCandyWorkflowRequest,
   type StageRoyalCandyWorkflowResponse,
+  type StageStartingItemsRequest,
+  type StageStartingItemsResponse,
   type LoadSpreadsheetImportWorkflowRequest,
   type LoadSpreadsheetImportWorkflowResponse,
   type PreviewSpreadsheetImportRequest,
@@ -113,6 +129,8 @@ import {
   kmCommandNames,
   listWorkflowsResponseSchema,
   loadEncountersWorkflowResponseSchema,
+  loadBagHookWorkflowResponseSchema,
+  loadCatchCapWorkflowResponseSchema,
   loadExeFsPatchWorkflowResponseSchema,
   loadFlagworkSaveWorkflowResponseSchema,
   loadGiftPokemonWorkflowResponseSchema,
@@ -129,8 +147,14 @@ import {
   loadRaidRewardsWorkflowResponseSchema,
   loadRaidBonusRewardsWorkflowResponseSchema,
   loadRoyalCandyWorkflowResponseSchema,
+  loadStartingItemsWorkflowResponseSchema,
+  stageBagHookInstallResponseSchema,
+  stageBagHookUninstallResponseSchema,
+  stageCatchCapResponseSchema,
+  stageCatchCapUninstallResponseSchema,
   stageExeFsPatchResponseSchema,
   stageRoyalCandyWorkflowResponseSchema,
+  stageStartingItemsResponseSchema,
   loadSpreadsheetImportWorkflowResponseSchema,
   previewSpreadsheetImportResponseSchema,
   loadShopsWorkflowResponseSchema,
@@ -220,12 +244,34 @@ export type ProjectBridge = {
   loadRaidBonusRewardsWorkflow: (
     request: LoadRaidBonusRewardsWorkflowRequest
   ) => Promise<LoadRaidBonusRewardsWorkflowResponse>;
+  loadBagHookWorkflow: (
+    request: LoadBagHookWorkflowRequest
+  ) => Promise<LoadBagHookWorkflowResponse>;
+  stageBagHookInstall: (
+    request: StageBagHookInstallRequest
+  ) => Promise<StageBagHookInstallResponse>;
+  stageBagHookUninstall: (
+    request: StageBagHookUninstallRequest
+  ) => Promise<StageBagHookUninstallResponse>;
+  loadCatchCapWorkflow: (
+    request: LoadCatchCapWorkflowRequest
+  ) => Promise<LoadCatchCapWorkflowResponse>;
+  stageCatchCap: (request: StageCatchCapRequest) => Promise<StageCatchCapResponse>;
+  stageCatchCapUninstall: (
+    request: StageCatchCapUninstallRequest
+  ) => Promise<StageCatchCapUninstallResponse>;
   loadRoyalCandyWorkflow: (
     request: LoadRoyalCandyWorkflowRequest
   ) => Promise<LoadRoyalCandyWorkflowResponse>;
   stageRoyalCandyWorkflow: (
     request: StageRoyalCandyWorkflowRequest
   ) => Promise<StageRoyalCandyWorkflowResponse>;
+  loadStartingItemsWorkflow: (
+    request: LoadStartingItemsWorkflowRequest
+  ) => Promise<LoadStartingItemsWorkflowResponse>;
+  stageStartingItems: (
+    request: StageStartingItemsRequest
+  ) => Promise<StageStartingItemsResponse>;
   loadSpreadsheetImportWorkflow: (
     request: LoadSpreadsheetImportWorkflowRequest
   ) => Promise<LoadSpreadsheetImportWorkflowResponse>;
@@ -339,6 +385,48 @@ export function createProjectBridge(
         kmCommandNames.loadEncountersWorkflow,
         request,
         loadEncountersWorkflowResponseSchema
+      ),
+    loadBagHookWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadBagHookWorkflow,
+        request,
+        loadBagHookWorkflowResponseSchema
+      ),
+    stageBagHookInstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageBagHookInstall,
+        request,
+        stageBagHookInstallResponseSchema
+      ),
+    stageBagHookUninstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageBagHookUninstall,
+        request,
+        stageBagHookUninstallResponseSchema
+      ),
+    loadCatchCapWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadCatchCapWorkflow,
+        request,
+        loadCatchCapWorkflowResponseSchema
+      ),
+    stageCatchCap: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageCatchCap,
+        request,
+        stageCatchCapResponseSchema
+      ),
+    stageCatchCapUninstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageCatchCapUninstall,
+        request,
+        stageCatchCapUninstallResponseSchema
       ),
     loadExeFsPatchWorkflow: (request) =>
       sendProjectBridgeRequest(
@@ -465,6 +553,20 @@ export function createProjectBridge(
         kmCommandNames.stageRoyalCandyWorkflow,
         request,
         stageRoyalCandyWorkflowResponseSchema
+      ),
+    loadStartingItemsWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadStartingItemsWorkflow,
+        request,
+        loadStartingItemsWorkflowResponseSchema
+      ),
+    stageStartingItems: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageStartingItems,
+        request,
+        stageStartingItemsResponseSchema
       ),
     loadSpreadsheetImportWorkflow: (request) =>
       sendProjectBridgeRequest(

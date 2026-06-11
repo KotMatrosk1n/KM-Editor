@@ -24,8 +24,11 @@ public static class SwShWorkflowIds
     public const string Placement = "placement";
     public const string Behavior = "behavior";
     public const string FlagworkSave = "flagworkSave";
+    public const string BagHook = "bagHook";
+    public const string CatchCap = "catchCap";
     public const string ExeFsPatches = "exefsPatches";
     public const string RoyalCandy = "royalCandy";
+    public const string StartingItems = "startingItems";
     public const string SpreadsheetImport = "spreadsheetImport";
 }
 

@@ -18,6 +18,20 @@ internal sealed record SwShRoyalCandyStoryLevelCap(
     SwShRoyalCandyStoryLevelCapProgressKind ProgressKind = SwShRoyalCandyStoryLevelCapProgressKind.Flag,
     int WorkMinimum = 0);
 
+internal enum SwShRoyalCandyExeFsSignatureKind
+{
+    NotInstalled,
+    Unlimited,
+    StoryLimits,
+    ForeignPatch,
+}
+
+internal sealed record SwShRoyalCandyExeFsSignature(
+    SwShRoyalCandyExeFsSignatureKind Kind,
+    string Message,
+    int ReservedAnchorCount,
+    int RecognizedAnchorCount);
+
 internal static class SwShExeFsRoyalCandyMainPatcher
 {
     private const int RareCandyItemId = 50;
@@ -26,6 +40,89 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     private const int StoryDefaultLevelCap = 1;
     private const int StoryUseGateCompareOffset = 0x007BB204;
     private const int StoryQuantityMaxCompareOffset = 0x007BB3C0;
+    private const int QuantityMoveOffset = 0x007B1F20;
+    private const int StoryInventoryClampSelectOffset = 0x007BAF3C;
+    private const uint ExpectedQuantityMove = 0x2A0003E2; // MOV w2, w0
+    private const uint ExpectedQuantityClampSelect = 0x1A963316;
+    private const uint NopInstruction = 0xD503201F;
+
+    private static readonly HashSet<int> ExternalBranchLinkTargets =
+    [
+        0x0077A5F0,
+        0x007C8330,
+        0x01410F00,
+        0x014114C0,
+    ];
+
+    private static readonly IReadOnlyList<SwShExeFsReservedRegion> MainTextReservations =
+        SwShExeFsReservedRegionLedger.MainTextRegionsForOwners(
+            SwShExeFsReservedRegionLedger.OwnerCatchCap,
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandy,
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandyStoryLimits);
+
+    private static readonly IReadOnlyList<SwShExeFsReservedRegion> NonRoyalCandyReservations =
+        SwShExeFsReservedRegionLedger.MainTextReservationsForOtherOwners(
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandy,
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandyStoryLimits);
+
+    public static SwShRoyalCandyExeFsSignature AnalyzeInstallation(byte[] mainBytes)
+    {
+        ArgumentNullException.ThrowIfNull(mainBytes);
+
+        var nso = SwShNsoFile.Parse(mainBytes);
+        var text = nso.Text.DecompressedData;
+        var routeInstalledCount = UiRouteChecks.Count(check => IsUiRouteCheckInstalled(text, check));
+        var equalInstalledCount = EqualBranchChecks.Count(check => IsEqualBranchCheckInstalled(text, check));
+        var expCandyBypassCount = CountInstalledExpCandyBypass(text);
+        var infiniteUseInstalled = TryReadInstruction(text, QuantityMoveOffset, out var quantityMove)
+            && IsUnconditionalBranch(quantityMove);
+        var storyLimitsInstalled = TryReadInstruction(text, StoryInventoryClampSelectOffset, out var storyClampSelect)
+            && IsUnconditionalBranch(storyClampSelect);
+
+        var recognizedAnchorCount = routeInstalledCount
+            + equalInstalledCount
+            + expCandyBypassCount
+            + (infiniteUseInstalled ? 1 : 0)
+            + (storyLimitsInstalled ? 1 : 0);
+        var reservedAnchorCount = UiRouteChecks.Length
+            + EqualBranchChecks.Length
+            + 2
+            + 1
+            + 1;
+        var baseInstalled = routeInstalledCount == UiRouteChecks.Length
+            && equalInstalledCount == EqualBranchChecks.Length
+            && expCandyBypassCount == 2
+            && infiniteUseInstalled;
+
+        if (baseInstalled)
+        {
+            var kind = storyLimitsInstalled
+                ? SwShRoyalCandyExeFsSignatureKind.StoryLimits
+                : SwShRoyalCandyExeFsSignatureKind.Unlimited;
+            return new SwShRoyalCandyExeFsSignature(
+                kind,
+                storyLimitsInstalled
+                    ? "Royal Candy with Story Limits ExeFS signature detected from reserved item-route, decrement, and story-cap anchors."
+                    : "Unlimited Royal Candy ExeFS signature detected from reserved item-route and decrement anchors.",
+                reservedAnchorCount,
+                recognizedAnchorCount);
+        }
+
+        if (recognizedAnchorCount > 0 || HasForeignReservedAnchorChange(text))
+        {
+            return new SwShRoyalCandyExeFsSignature(
+                SwShRoyalCandyExeFsSignatureKind.ForeignPatch,
+                "Royal Candy reserved ExeFS anchors are partially patched or do not match a KM Royal Candy signature.",
+                reservedAnchorCount,
+                recognizedAnchorCount);
+        }
+
+        return new SwShRoyalCandyExeFsSignature(
+            SwShRoyalCandyExeFsSignatureKind.NotInstalled,
+            "Royal Candy reserved ExeFS anchors are vanilla and available.",
+            reservedAnchorCount,
+            recognizedAnchorCount);
+    }
 
     public static byte[] ApplyBasePatch(byte[] mainBytes)
     {
@@ -62,6 +159,32 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         PatchRoyalCandyUiRoute(text, skipStoryLimitHooks: true);
 
         return nso.Write(textDecompressedData: text);
+    }
+
+    public static byte[] RestoreFromBase(byte[] currentMainBytes, byte[] baseMainBytes)
+    {
+        ArgumentNullException.ThrowIfNull(currentMainBytes);
+        ArgumentNullException.ThrowIfNull(baseMainBytes);
+
+        var currentNso = SwShNsoFile.Parse(currentMainBytes);
+        var baseNso = SwShNsoFile.Parse(baseMainBytes);
+        var currentText = currentNso.Text.DecompressedData.ToArray();
+        var baseText = baseNso.Text.DecompressedData;
+        if (currentText.Length != baseText.Length)
+        {
+            throw new InvalidDataException("Royal Candy ExeFS restore requires current and base main NSO files with matching .text sizes.");
+        }
+
+        ClearReachableRoyalCandyCaves(currentText, baseText);
+        foreach (var region in SwShExeFsReservedRegionLedger.MainTextRegionsForOwners(
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandy,
+            SwShExeFsReservedRegionLedger.OwnerRoyalCandyStoryLimits))
+        {
+            baseText.AsSpan(region.StartOffset!.Value, region.Length!.Value)
+                .CopyTo(currentText.AsSpan(region.StartOffset.Value, region.Length.Value));
+        }
+
+        return currentNso.Write(textDecompressedData: currentText);
     }
 
     private static void PatchRoyalCandyUiRoute(byte[] text, bool skipStoryLimitHooks = false)
@@ -150,15 +273,13 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
     private static void PatchInfiniteRoyalCandyUse(byte[] text)
     {
-        const int quantityMoveOffset = 0x007B1F20;
-        const int resumeOffset = quantityMoveOffset + 4;
+        const int resumeOffset = QuantityMoveOffset + 4;
         const int itemRegister = 22;
-        const uint expectedQuantityMove = 0x2A0003E2; // MOV w2, w0
 
-        ExpectInstruction(text, quantityMoveOffset, expectedQuantityMove, "consume quantity move");
+        ExpectInstruction(text, QuantityMoveOffset, ExpectedQuantityMove, "consume quantity move");
 
         var caveOffset = FindCodeCave(text, 0x0C, "Royal Candy infinite-use stub");
-        WriteInstruction(text, quantityMoveOffset, EncodeBranch(quantityMoveOffset, caveOffset));
+        WriteInstruction(text, QuantityMoveOffset, EncodeBranch(QuantityMoveOffset, caveOffset));
         WriteInstruction(text, caveOffset, EncodeCmpImmediate(itemRegister, RoyalCandyItemId));
         WriteInstruction(text, caveOffset + 4, EncodeConditionalSelect32(2, 31, 0, Arm64Condition.EQ));
         WriteInstruction(text, caveOffset + 8, EncodeBranch(caveOffset + 8, resumeOffset));
@@ -360,15 +481,13 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     private static void PatchQuantityInventoryClampBypass(byte[] text)
     {
         const int originalCompareOffset = 0x007BAF38;
-        const int clampSelectOffset = 0x007BAF3C;
         const int resumeOffset = 0x007BAF40;
         const int getItemIdOffset = 0x007C8330;
         const uint expectedCompare = 0x6B36231F;
-        const uint expectedClampSelect = 0x1A963316;
         const uint moveSelectedItemToX0 = 0xAA1703E0;
 
         ExpectInstruction(text, originalCompareOffset, expectedCompare, "quantity clamp compare");
-        ExpectInstruction(text, clampSelectOffset, expectedClampSelect, "quantity clamp CSEL");
+        ExpectInstruction(text, StoryInventoryClampSelectOffset, ExpectedQuantityClampSelect, "quantity clamp CSEL");
 
         var firstCaveOffset = AllocateCodeCave(text, 0x0C, "Royal Candy inventory clamp first stub");
         WriteInstruction(text, firstCaveOffset, moveSelectedItemToX0);
@@ -382,9 +501,9 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         var thirdCaveOffset = AllocateCodeCave(text, 0x0C, "Royal Candy inventory clamp vanilla replay");
         WriteInstruction(text, secondCaveOffset + 8, EncodeBranch(secondCaveOffset + 8, thirdCaveOffset));
         WriteInstruction(text, thirdCaveOffset, expectedCompare);
-        WriteInstruction(text, thirdCaveOffset + 4, expectedClampSelect);
+        WriteInstruction(text, thirdCaveOffset + 4, ExpectedQuantityClampSelect);
         WriteInstruction(text, thirdCaveOffset + 8, EncodeBranch(thirdCaveOffset + 8, resumeOffset));
-        WriteInstruction(text, clampSelectOffset, EncodeBranch(clampSelectOffset, firstCaveOffset));
+        WriteInstruction(text, StoryInventoryClampSelectOffset, EncodeBranch(StoryInventoryClampSelectOffset, firstCaveOffset));
     }
 
     private static int FindCodeCave(byte[] text, int requiredBytes, string label)
@@ -442,7 +561,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
                 }
 
                 var alignedStart = (runStart + 3) & ~3;
-                if (offset - alignedStart + 1 >= requiredBytes)
+                if (offset - alignedStart + 1 >= requiredBytes && IsAvailableCodeCave(alignedStart, requiredBytes))
                 {
                     return alignedStart;
                 }
@@ -490,7 +609,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
                 }
 
                 var alignedStart = (runStart + 3) & ~3;
-                if (offset - alignedStart + 1 >= requiredBytes)
+                if (offset - alignedStart + 1 >= requiredBytes && IsAvailableCodeCave(alignedStart, requiredBytes))
                 {
                     return alignedStart;
                 }
@@ -563,6 +682,312 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         {
             WriteInstruction(text, current, EncodeNop());
         }
+    }
+
+    private static bool IsAvailableCodeCave(int offset, int length)
+    {
+        return !NonRoyalCandyReservations.Any(region => SwShExeFsReservedRegionLedger.Overlaps(region, offset, length));
+    }
+
+    private static bool IsUiRouteCheckInstalled(ReadOnlySpan<byte> text, RareCandyUiCheck check)
+    {
+        var branchOffset = check.CompareOffset + 4;
+        if (!TryReadInstruction(text, check.CompareOffset, out var compareInstruction)
+            || compareInstruction != EncodeCmpImmediate(check.ItemRegister, RareCandyItemId)
+            || !TryReadInstruction(text, branchOffset, out var branchInstruction))
+        {
+            return false;
+        }
+
+        var vanillaBranch = EncodeConditionalBranch(branchOffset, check.FailOffset, Arm64Condition.NE);
+        return branchInstruction != vanillaBranch
+            && IsConditionalBranch(branchInstruction, Arm64Condition.NE);
+    }
+
+    private static bool IsEqualBranchCheckInstalled(ReadOnlySpan<byte> text, RareCandyEqualBranchCheck check)
+    {
+        return TryReadInstruction(text, check.CompareOffset, out var compareInstruction)
+            && TryReadInstruction(text, check.CompareOffset + 4, out var branchInstruction)
+            && IsUnconditionalBranch(compareInstruction)
+            && branchInstruction == NopInstruction;
+    }
+
+    private static int CountInstalledExpCandyBypass(ReadOnlySpan<byte> text)
+    {
+        var count = 0;
+        foreach (var offset in new[] { 0x007BC1BC, 0x007BC1C4 })
+        {
+            if (TryReadInstruction(text, offset, out var instruction)
+                && instruction == EncodeCmpImmediate(register: 9, immediate: 3))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static bool HasForeignReservedAnchorChange(ReadOnlySpan<byte> text)
+    {
+        if (TryReadInstruction(text, QuantityMoveOffset, out var quantityMove)
+            && quantityMove != ExpectedQuantityMove
+            && !IsUnconditionalBranch(quantityMove))
+        {
+            return true;
+        }
+
+        if (TryReadInstruction(text, StoryInventoryClampSelectOffset, out var storyClampSelect)
+            && storyClampSelect != ExpectedQuantityClampSelect
+            && !IsUnconditionalBranch(storyClampSelect))
+        {
+            return true;
+        }
+
+        foreach (var offset in new[] { 0x007BC1BC, 0x007BC1C4 })
+        {
+            if (TryReadInstruction(text, offset, out var instruction)
+                && instruction != EncodeCmpImmediate(register: 9, immediate: 4)
+                && instruction != EncodeCmpImmediate(register: 9, immediate: 3))
+            {
+                return true;
+            }
+        }
+
+        foreach (var check in UiRouteChecks)
+        {
+            var branchOffset = check.CompareOffset + 4;
+            if (!TryReadInstruction(text, check.CompareOffset, out var compareInstruction)
+                || !TryReadInstruction(text, branchOffset, out var branchInstruction))
+            {
+                return true;
+            }
+
+            var expectedCompare = EncodeCmpImmediate(check.ItemRegister, RareCandyItemId);
+            var expectedBranch = EncodeConditionalBranch(branchOffset, check.FailOffset, Arm64Condition.NE);
+            if (compareInstruction != expectedCompare)
+            {
+                return true;
+            }
+
+            if (branchInstruction != expectedBranch
+                && !IsConditionalBranch(branchInstruction, Arm64Condition.NE))
+            {
+                return true;
+            }
+        }
+
+        foreach (var check in EqualBranchChecks)
+        {
+            if (!TryReadInstruction(text, check.CompareOffset, out var compareInstruction)
+                || !TryReadInstruction(text, check.CompareOffset + 4, out var branchInstruction))
+            {
+                return true;
+            }
+
+            var expectedCompare = EncodeCmpImmediate(check.ItemRegister, RareCandyItemId);
+            var expectedBranch = EncodeConditionalBranch(check.CompareOffset + 4, check.TargetOffset, Arm64Condition.EQ);
+            var looksInstalled = IsUnconditionalBranch(compareInstruction) && branchInstruction == NopInstruction;
+            if (!looksInstalled && (compareInstruction != expectedCompare || branchInstruction != expectedBranch))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryReadInstruction(ReadOnlySpan<byte> text, int offset, out uint instruction)
+    {
+        instruction = 0;
+        if (offset < 0 || offset + sizeof(uint) > text.Length)
+        {
+            return false;
+        }
+
+        instruction = BinaryPrimitives.ReadUInt32LittleEndian(text.Slice(offset, sizeof(uint)));
+        return true;
+    }
+
+    private static bool IsConditionalBranch(uint instruction, Arm64Condition condition)
+    {
+        return (instruction & 0xFF000010u) == 0x54000000u
+            && (instruction & 0xFu) == (uint)condition;
+    }
+
+    private static bool IsUnconditionalBranch(uint instruction)
+    {
+        return (instruction & 0xFC000000u) == 0x14000000u;
+    }
+
+    private static void ClearReachableRoyalCandyCaves(byte[] currentText, ReadOnlySpan<byte> baseText)
+    {
+        var seeds = new List<int>();
+        foreach (var check in UiRouteChecks)
+        {
+            var branchOffset = check.CompareOffset + 4;
+            if (TryReadInstruction(currentText, branchOffset, out var instruction)
+                && IsConditionalBranch(instruction, Arm64Condition.NE)
+                && instruction != EncodeConditionalBranch(branchOffset, check.FailOffset, Arm64Condition.NE)
+                && TryDecodeConditionalBranchTarget(instruction, branchOffset, out var target))
+            {
+                seeds.Add(target);
+            }
+        }
+
+        foreach (var check in EqualBranchChecks)
+        {
+            if (TryReadInstruction(currentText, check.CompareOffset, out var instruction)
+                && IsUnconditionalBranch(instruction)
+                && TryDecodeBranchTarget(instruction, check.CompareOffset, out var target))
+            {
+                seeds.Add(target);
+            }
+        }
+
+        if (TryReadInstruction(currentText, QuantityMoveOffset, out var quantityMove)
+            && IsUnconditionalBranch(quantityMove)
+            && TryDecodeBranchTarget(quantityMove, QuantityMoveOffset, out var quantityMoveTarget))
+        {
+            seeds.Add(quantityMoveTarget);
+        }
+
+        if (TryReadInstruction(currentText, StoryInventoryClampSelectOffset, out var storyClampSelect)
+            && IsUnconditionalBranch(storyClampSelect)
+            && TryDecodeBranchTarget(storyClampSelect, StoryInventoryClampSelectOffset, out var storyClampTarget))
+        {
+            seeds.Add(storyClampTarget);
+        }
+
+        ClearReachableCodeCaves(currentText, baseText, seeds);
+    }
+
+    private static void ClearReachableCodeCaves(byte[] currentText, ReadOnlySpan<byte> baseText, IEnumerable<int> seeds)
+    {
+        var pending = new Queue<int>(seeds);
+        var visited = new HashSet<int>();
+        while (pending.Count > 0)
+        {
+            var offset = pending.Dequeue();
+            if (!visited.Add(offset) || !IsRestorableCodeCave(baseText, offset, 0x0C))
+            {
+                continue;
+            }
+
+            foreach (var target in ReadCaveBranchTargets(currentText, offset))
+            {
+                if (IsRestorableCodeCave(baseText, target, 0x0C))
+                {
+                    pending.Enqueue(target);
+                }
+            }
+
+            currentText.AsSpan(offset, 0x0C).Clear();
+        }
+    }
+
+    private static IReadOnlyList<int> ReadCaveBranchTargets(ReadOnlySpan<byte> text, int caveOffset)
+    {
+        var targets = new List<int>();
+        for (var offset = caveOffset; offset < caveOffset + 0x0C; offset += 4)
+        {
+            if (!TryReadInstruction(text, offset, out var instruction))
+            {
+                continue;
+            }
+
+            if (IsUnconditionalBranch(instruction)
+                && TryDecodeBranchTarget(instruction, offset, out var branchTarget))
+            {
+                targets.Add(branchTarget);
+            }
+            else if (IsConditionalBranchInstruction(instruction)
+                && TryDecodeConditionalBranchTarget(instruction, offset, out var conditionalTarget))
+            {
+                targets.Add(conditionalTarget);
+            }
+            else if (IsCompareAndBranchInstruction(instruction)
+                && TryDecodeCompareAndBranchTarget(instruction, offset, out var compareBranchTarget))
+            {
+                targets.Add(compareBranchTarget);
+            }
+            else if (IsBranchLink(instruction)
+                && TryDecodeBranchTarget(instruction, offset, out var branchLinkTarget)
+                && !ExternalBranchLinkTargets.Contains(branchLinkTarget))
+            {
+                targets.Add(branchLinkTarget);
+            }
+        }
+
+        return targets;
+    }
+
+    private static bool IsRestorableCodeCave(ReadOnlySpan<byte> baseText, int offset, int length)
+    {
+        return offset >= RareCandyUiHookCodeCaveSearchStart
+            && offset % 4 == 0
+            && offset + length <= baseText.Length
+            && baseText.Slice(offset, length).IndexOfAnyExcept((byte)0) < 0
+            && !MainTextReservations.Any(region => SwShExeFsReservedRegionLedger.Overlaps(region, offset, length));
+    }
+
+    private static bool IsConditionalBranchInstruction(uint instruction)
+    {
+        return (instruction & 0xFF000010u) == 0x54000000u;
+    }
+
+    private static bool IsCompareAndBranchInstruction(uint instruction)
+    {
+        return (instruction & 0x7E000000u) == 0x34000000u;
+    }
+
+    private static bool IsBranchLink(uint instruction)
+    {
+        return (instruction & 0xFC000000u) == 0x94000000u;
+    }
+
+    private static bool TryDecodeBranchTarget(uint instruction, int sourceOffset, out int targetOffset)
+    {
+        targetOffset = 0;
+        if (!IsUnconditionalBranch(instruction) && !IsBranchLink(instruction))
+        {
+            return false;
+        }
+
+        var immediate = SignExtend((int)(instruction & 0x03FFFFFF), 26) << 2;
+        targetOffset = sourceOffset + immediate;
+        return true;
+    }
+
+    private static bool TryDecodeConditionalBranchTarget(uint instruction, int sourceOffset, out int targetOffset)
+    {
+        targetOffset = 0;
+        if (!IsConditionalBranchInstruction(instruction))
+        {
+            return false;
+        }
+
+        var immediate = SignExtend((int)((instruction >> 5) & 0x7FFFF), 19) << 2;
+        targetOffset = sourceOffset + immediate;
+        return true;
+    }
+
+    private static bool TryDecodeCompareAndBranchTarget(uint instruction, int sourceOffset, out int targetOffset)
+    {
+        targetOffset = 0;
+        if (!IsCompareAndBranchInstruction(instruction))
+        {
+            return false;
+        }
+
+        var immediate = SignExtend((int)((instruction >> 5) & 0x7FFFF), 19) << 2;
+        targetOffset = sourceOffset + immediate;
+        return true;
+    }
+
+    private static int SignExtend(int value, int bitCount)
+    {
+        var shift = 32 - bitCount;
+        return (value << shift) >> shift;
     }
 
     private static uint EncodeCmpImmediate(int register, int immediate)

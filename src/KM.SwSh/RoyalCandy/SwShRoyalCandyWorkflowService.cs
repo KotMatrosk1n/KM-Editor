@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.BagHook;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Workflows;
 using System.Buffers.Binary;
@@ -90,10 +91,14 @@ public sealed class SwShRoyalCandyWorkflowService
     ];
 
     private readonly SwShExeFsPatchWorkflowService exeFsPatchWorkflowService;
+    private readonly SwShBagHookWorkflowService bagHookWorkflowService;
 
-    public SwShRoyalCandyWorkflowService(SwShExeFsPatchWorkflowService? exeFsPatchWorkflowService = null)
+    public SwShRoyalCandyWorkflowService(
+        SwShExeFsPatchWorkflowService? exeFsPatchWorkflowService = null,
+        SwShBagHookWorkflowService? bagHookWorkflowService = null)
     {
         this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService();
+        this.bagHookWorkflowService = bagHookWorkflowService ?? new SwShBagHookWorkflowService();
     }
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -179,6 +184,9 @@ public sealed class SwShRoyalCandyWorkflowService
         var installationState = DetectRoyalCandyInstallation(project);
         var exeFsWorkflow = exeFsPatchWorkflowService.Load(project);
         AddExeFsCompatibilityChecks(checks, exeFsWorkflow, installationState);
+        AddRoyalCandyReservedAnchorChecks(project, checks, sourceMap);
+        var bagHookWorkflow = bagHookWorkflowService.Load(project);
+        AddBagHookRequirementChecks(checks, bagHookWorkflow);
 
         var outputRootReady = project.Health.CanOpenEditableWorkflows
             && !string.IsNullOrWhiteSpace(project.Paths.OutputRootPath);
@@ -518,6 +526,132 @@ public sealed class SwShRoyalCandyWorkflowService
         }
     }
 
+    private static void AddRoyalCandyReservedAnchorChecks(
+        OpenedProject project,
+        ICollection<SwShRoyalCandyWorkflowCheckRecord> checks,
+        IReadOnlyDictionary<string, ProjectFileGraphEntry> sourceMap)
+    {
+        if (!sourceMap.TryGetValue(ExeFsMainPath, out var entry))
+        {
+            return;
+        }
+
+        var sourcePath = ResolveSourcePath(project.Paths, entry);
+        if (sourcePath is null || !File.Exists(sourcePath))
+        {
+            return;
+        }
+
+        try
+        {
+            var signature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(File.ReadAllBytes(sourcePath));
+            var status = signature.Kind == SwShRoyalCandyExeFsSignatureKind.ForeignPatch ? "Fail" : "Pass";
+            AddCheck(
+                checks,
+                $"{PreflightWorkflowId}:royal-candy-reserved-anchors",
+                PreflightWorkflowId,
+                status,
+                "ExeFS",
+                "Royal Candy reserved anchors",
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{signature.Message} Recognized {signature.RecognizedAnchorCount:N0} of {signature.ReservedAnchorCount:N0} reserved identity anchors; payload data lives elsewhere and other hooks must not overwrite these areas."),
+                CreateProvenance(entry));
+        }
+        catch (InvalidDataException exception)
+        {
+            AddCheck(
+                checks,
+                $"{PreflightWorkflowId}:royal-candy-reserved-anchors",
+                PreflightWorkflowId,
+                "Fail",
+                "ExeFS",
+                "Royal Candy reserved anchors",
+                $"Royal Candy reserved-anchor signature scan failed: {exception.Message}",
+                CreateProvenance(entry));
+        }
+        catch (IOException exception)
+        {
+            AddCheck(
+                checks,
+                $"{PreflightWorkflowId}:royal-candy-reserved-anchors",
+                PreflightWorkflowId,
+                "Warning",
+                "ExeFS",
+                "Royal Candy reserved anchors",
+                $"Royal Candy reserved-anchor signature scan could not read ExeFS main: {exception.Message}",
+                CreateProvenance(entry));
+        }
+    }
+
+    private static void AddBagHookRequirementChecks(
+        ICollection<SwShRoyalCandyWorkflowCheckRecord> checks,
+        SwShBagHookWorkflow bagHookWorkflow)
+    {
+        var provenance = bagHookWorkflow.Slots.FirstOrDefault()?.Provenance;
+        var royalCandyProvenance = provenance is null
+            ? CreateMissingProvenance(BagEventScriptPath)
+            : new SwShRoyalCandyProvenance(
+                provenance.SourceFile,
+                provenance.SourceLayer,
+                provenance.FileState);
+
+        if (bagHookWorkflow.InstallStatus != "installed")
+        {
+            AddCheck(
+                checks,
+                $"{PreflightWorkflowId}:bag-hook-installed",
+                PreflightWorkflowId,
+                "Fail",
+                "Bag Hook",
+                BagEventScriptPath,
+                "Bag Hook V2 must be installed before Royal Candy can claim slot 1.",
+                royalCandyProvenance);
+            return;
+        }
+
+        AddCheck(
+            checks,
+            $"{PreflightWorkflowId}:bag-hook-installed",
+            PreflightWorkflowId,
+            "Pass",
+            "Bag Hook",
+            BagEventScriptPath,
+            "Bag Hook V2 is installed and available for Royal Candy slot assignment.",
+            royalCandyProvenance);
+
+        var slot = bagHookWorkflow.Slots.FirstOrDefault(slot => slot.Slot == SwShBagHookAmxPatcher.RoyalCandySlot);
+        if (slot is null)
+        {
+            AddCheck(
+                checks,
+                $"{PreflightWorkflowId}:bag-hook-slot-1",
+                PreflightWorkflowId,
+                "Fail",
+                "Bag Hook",
+                "Slot 1",
+                "Bag Hook slot 1 could not be inspected.",
+                royalCandyProvenance);
+            return;
+        }
+
+        var status = slot.Status == "empty"
+            || (slot.Status == "occupied" && slot.ItemId == RoyalCandyItemId)
+                ? "Pass"
+                : "Fail";
+        AddCheck(
+            checks,
+            $"{PreflightWorkflowId}:bag-hook-slot-1",
+            PreflightWorkflowId,
+            status,
+            "Bag Hook",
+            "Slot 1",
+            status == "Pass"
+                ? "Bag Hook slot 1 is reserved for Royal Candy and can hold item 1128 x1."
+                : $"Bag Hook slot 1 is occupied by {slot.ItemName}; only Royal Candy item 1128 can use slot 1.",
+            royalCandyProvenance);
+    }
+
     private static void AddOutputRootCheck(
         ICollection<SwShRoyalCandyWorkflowCheckRecord> checks,
         bool outputRootReady)
@@ -552,7 +686,7 @@ public sealed class SwShRoyalCandyWorkflowService
                 RoyalCandyItemId,
                 RareCandyItemId,
                 GetInstallWorkflowStatus(UnlimitedWorkflowId, installStatus, installationState),
-                $"Prepares Royal Candy item {RoyalCandyItemId} from Rare Candy item {RareCandyItemId} with unlimited-use behavior for Pokemon {FormatGameFlavor(gameFlavor)} projects.",
+                $"Prepares Royal Candy item {RoyalCandyItemId} from Rare Candy item {RareCandyItemId}, claims Bag Hook slot 1, and installs the reserved ExeFS item-route/decrement signature for unlimited-use behavior in Pokemon {FormatGameFlavor(gameFlavor)} projects.",
                 Array.Empty<SwShRoyalCandyLevelCapRecord>(),
                 CreateInstallSteps(includeStoryLimits: false),
                 provenance),
@@ -565,7 +699,7 @@ public sealed class SwShRoyalCandyWorkflowService
                 RoyalCandyItemId,
                 RareCandyItemId,
                 GetInstallWorkflowStatus(StoryLimitsWorkflowId, installStatus, installationState),
-                $"Prepares Royal Candy item {RoyalCandyItemId} with story-cap checks for Pokemon {FormatGameFlavor(gameFlavor)} projects.",
+                $"Prepares Royal Candy item {RoyalCandyItemId}, claims Bag Hook slot 1, and installs the reserved ExeFS Royal Candy story-limit signature so level gains follow story progress in Pokemon {FormatGameFlavor(gameFlavor)} projects.",
                 CreateLevelCaps(gameFlavor),
                 CreateInstallSteps(includeStoryLimits: true),
                 provenance),
@@ -617,12 +751,12 @@ public sealed class SwShRoyalCandyWorkflowService
             new(2, "Prepare item records", $"Clone item {RareCandyItemId} into item {RoyalCandyItemId} and update item hash lookup data."),
             new(3, "Patch item text", "Patch Royal Candy names and descriptions in every discovered item text language set."),
             new(4, "Plan acquisition edits", "Plan controlled shop, raid reward, placement, and bag event script output targets."),
-            new(5, "Validate ExeFS anchors", "Reuse backend ExeFS compatibility checks for the Rare Candy UI route, Royal Candy support, and code-cave readiness."),
+            new(5, "Validate ExeFS anchors", "Verify the Royal Candy reserved item-route/decrement anchors are vanilla, already KM-owned, or blocked as a foreign signature before writing."),
         };
 
         if (includeStoryLimits)
         {
-            steps.Add(new(6, "Apply story limits", "Use story-cap flag milestones and a default cap before enabling higher Royal Candy levels."));
+            steps.Add(new(6, "Apply story limits", "Use the reserved story-limit gate, quantity, and inventory-clamp anchors with the selected story milestone caps."));
         }
 
         steps.Add(new(steps.Count + 1, "Review LayeredFS output", "Review generated output targets before any future apply operation writes to LayeredFS."));
@@ -648,7 +782,7 @@ public sealed class SwShRoyalCandyWorkflowService
         yield return CreateOutput(workflowId, ResolveShopOutputPath(sourceMap), FindSource(sourceMap, ShopDataPath, LegacyShopDataPath), "RomFS data", outputStatus, "Royal Candy acquisition shop patch.");
         yield return CreateOutput(workflowId, NestDataPath, FindSource(sourceMap, NestDataPath), "RomFS archive", outputStatus, "Royal Candy raid reward patch.");
         yield return CreateOutput(workflowId, PlacementPath, FindSource(sourceMap, PlacementPath), "RomFS archive", outputStatus, "Royal Candy pickup placement patch.");
-        yield return CreateOutput(workflowId, BagEventScriptPath, FindSource(sourceMap, BagEventScriptPath), "RomFS script", outputStatus, "Royal Candy bag event grant patch.");
+        yield return CreateOutput(workflowId, BagEventScriptPath, FindSource(sourceMap, BagEventScriptPath), "Bag Hook slot", outputStatus, "Royal Candy Bag Hook slot 1 grant.");
         yield return CreateOutput(workflowId, ExeFsMainPath, FindSource(sourceMap, ExeFsMainPath), "ExeFS NSO", outputStatus, "Royal Candy ExeFS UI and usage patch.");
 
         foreach (var textSet in SelectSupportedTextOutputSets(textSets))
@@ -709,12 +843,12 @@ public sealed class SwShRoyalCandyWorkflowService
             RoyalCandyItemId,
             RareCandyItemId,
             status,
-            "Inspects known Royal Candy output targets and prepares a conservative cleanup workflow once a matching output is present.",
+            "Safely removes reviewed Royal Candy output, clears Bag Hook slot 1, and restores only Royal Candy-owned ExeFS bytes.",
             Array.Empty<SwShRoyalCandyLevelCapRecord>(),
             [
                 new(1, "Inspect output root", "Find known Royal Candy LayeredFS files without reading or changing base RomFS/ExeFS."),
                 new(2, "Review leftovers", "Review detected Royal Candy output files and ExeFS state before cleanup."),
-                new(3, "Clean LayeredFS output", "Remove only reviewed LayeredFS output files through a future backend-owned cleanup plan."),
+                new(3, "Clean LayeredFS output", "Remove reviewed Royal Candy output while preserving Bag Hook, Starting Items, and Catch Cap when present."),
             ],
             provenance));
 
@@ -741,6 +875,18 @@ public sealed class SwShRoyalCandyWorkflowService
                 entry.RelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase) ? "ExeFS NSO" : "LayeredFS output",
                 "review",
                 "Detected known Royal Candy output target for cleanup review."));
+        }
+
+        var bagHookEntry = FindRoyalCandyBagHookOutput(project);
+        if (bagHookEntry is not null)
+        {
+            outputs.Add(CreateOutput(
+                UninstallWorkflowId,
+                bagHookEntry.RelativePath,
+                bagHookEntry,
+                "Bag Hook slot",
+                "review",
+                "Detected Royal Candy in Bag Hook slot 1; cleanup will clear only that slot."));
         }
     }
 
@@ -836,8 +982,7 @@ public sealed class SwShRoyalCandyWorkflowService
 
     private static RoyalCandyInstallationState DetectRoyalCandyInstallation(OpenedProject project)
     {
-        var layeredEntries = project.FileGraph.Entries
-            .Where(entry => entry.LayeredFile is not null && IsKnownRoyalCandyOutputPath(entry.RelativePath))
+        var layeredEntries = GetKnownRoyalCandyLayeredEntries(project)
             .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
             .ToArray();
 
@@ -940,33 +1085,13 @@ public sealed class SwShRoyalCandyWorkflowService
 
         try
         {
-            var nso = SwShNsoFile.Parse(File.ReadAllBytes(sourcePath));
-            var text = nso.Text.DecompressedData;
-            var royalCandyImmediateHits =
-                CountAlignedInstruction(text, EncodeCmpImmediate(8, RoyalCandyItemId))
-                + CountAlignedInstruction(text, EncodeCmpImmediate(9, RoyalCandyItemId))
-                + CountAlignedInstruction(text, EncodeCmpImmediate(19, RoyalCandyItemId))
-                + CountAlignedInstruction(text, EncodeCmpImmediate(20, RoyalCandyItemId))
-                + CountAlignedInstruction(text, EncodeCmpImmediate(22, RoyalCandyItemId))
-                + CountAlignedInstruction(text, EncodeCmpImmediate(23, RoyalCandyItemId))
-                + CountAlignedInstruction(text, EncodeCmpImmediate(27, RoyalCandyItemId))
-                + CountAlignedInstruction(text, EncodeCmpImmediate(28, RoyalCandyItemId));
-            if (royalCandyImmediateHits == 0)
+            var signature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(File.ReadAllBytes(sourcePath));
+            return signature.Kind switch
             {
-                return null;
-            }
-
-            const int storyInventoryClampSelectOffset = 0x007BAF3C;
-            if (storyInventoryClampSelectOffset + sizeof(uint) <= text.Length)
-            {
-                var instruction = BinaryPrimitives.ReadUInt32LittleEndian(text.AsSpan(storyInventoryClampSelectOffset, sizeof(uint)));
-                if ((instruction & 0x7C000000) == 0x14000000)
-                {
-                    return RoyalCandyInstallKind.StoryLimits;
-                }
-            }
-
-            return RoyalCandyInstallKind.Unlimited;
+                SwShRoyalCandyExeFsSignatureKind.StoryLimits => RoyalCandyInstallKind.StoryLimits,
+                SwShRoyalCandyExeFsSignatureKind.Unlimited => RoyalCandyInstallKind.Unlimited,
+                _ => null,
+            };
         }
         catch (InvalidDataException)
         {
@@ -978,23 +1103,48 @@ public sealed class SwShRoyalCandyWorkflowService
         return null;
     }
 
-    private static int CountAlignedInstruction(ReadOnlySpan<byte> text, uint instruction)
+    private static IEnumerable<ProjectFileGraphEntry> GetKnownRoyalCandyLayeredEntries(OpenedProject project)
     {
-        var count = 0;
-        for (var offset = 0; offset + sizeof(uint) <= text.Length; offset += sizeof(uint))
+        foreach (var entry in project.FileGraph.Entries.Where(entry => entry.LayeredFile is not null))
         {
-            if (BinaryPrimitives.ReadUInt32LittleEndian(text[offset..(offset + sizeof(uint))]) == instruction)
+            if (string.Equals(entry.RelativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase))
             {
-                count++;
+                if (HasRoyalCandyExeFsSignature(project, entry))
+                {
+                    yield return entry;
+                }
+
+                continue;
+            }
+
+            if (IsKnownRoyalCandyOutputPath(entry.RelativePath))
+            {
+                yield return entry;
             }
         }
-
-        return count;
     }
 
-    private static uint EncodeCmpImmediate(int register, int immediate)
+    private static bool HasRoyalCandyExeFsSignature(OpenedProject project, ProjectFileGraphEntry entry)
     {
-        return (uint)(0x7100001F | ((immediate & 0xFFF) << 10) | ((register & 0x1F) << 5));
+        var sourcePath = ResolveSourcePath(project.Paths, entry);
+        if (sourcePath is null || !File.Exists(sourcePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var signature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(File.ReadAllBytes(sourcePath));
+            return signature.Kind != SwShRoyalCandyExeFsSignatureKind.NotInstalled;
+        }
+        catch (InvalidDataException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+
+        return false;
     }
 
     private static IReadOnlyList<MessageTextSet> DiscoverMessageTextSets(
@@ -1100,9 +1250,40 @@ public sealed class SwShRoyalCandyWorkflowService
             || string.Equals(relativePath, LegacyShopDataPath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, NestDataPath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, PlacementPath, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(relativePath, BagEventScriptPath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
             || IsItemMessageOutputPath(relativePath);
+    }
+
+    private static ProjectFileGraphEntry? FindRoyalCandyBagHookOutput(OpenedProject project)
+    {
+        var entry = project.FileGraph.Entries.FirstOrDefault(candidate =>
+            candidate.LayeredFile is not null
+            && string.Equals(candidate.RelativePath, BagEventScriptPath, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            return null;
+        }
+
+        var sourcePath = ResolveSourcePath(project.Paths, entry);
+        if (sourcePath is null || !File.Exists(sourcePath))
+        {
+            return null;
+        }
+
+        try
+        {
+            var analysis = SwShBagHookAmxPatcher.Analyze(File.ReadAllBytes(sourcePath));
+            var slot = analysis.Slots.FirstOrDefault(slot => slot.Slot == SwShBagHookAmxPatcher.RoyalCandySlot);
+            return slot?.ItemId == RoyalCandyItemId ? entry : null;
+        }
+        catch (InvalidDataException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+
+        return null;
     }
 
     private static bool IsItemMessageOutputPath(string relativePath)
@@ -1203,7 +1384,7 @@ public sealed class SwShRoyalCandyWorkflowService
         return new SwShWorkflowSummary(
             SwShWorkflowIds.RoyalCandy,
             "Royal Candy Workflows",
-            "Royal Candy source readiness, ExeFS compatibility, and LayeredFS output preview.",
+            "Requires Bag Hook, uses Bag Hook slot 1, and patches reserved Royal Candy ExeFS regions. Use Remove Royal Candy to uninstall safely.",
             availability,
             diagnostics);
     }
