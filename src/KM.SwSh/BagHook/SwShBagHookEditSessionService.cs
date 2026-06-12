@@ -4,9 +4,6 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
-using KM.SwSh.CatchCap;
-using KM.SwSh.ExeFs;
-using KM.SwSh.IvScreen;
 using KM.SwSh.Items;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Workflows;
@@ -318,8 +315,14 @@ public sealed class SwShBagHookEditSessionService
 
             try
             {
-                var changed = string.Equals(write.TargetRelativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
-                    ? RestoreOrDeleteExeFsMain(paths, targetPath, write.TargetRelativePath, diagnostics)
+                var changed = SwShRoyalCandyCleanup.IsCleanupOutputPath(write.TargetRelativePath)
+                    ? SwShRoyalCandyCleanup.TryApplyCleanupTarget(
+                        paths,
+                        targetPath,
+                        write.TargetRelativePath,
+                        BagHookEditDomain,
+                        diagnostics,
+                        clearBagHookSlot: false)
                     : DeleteOutput(targetPath);
                 if (changed)
                 {
@@ -463,7 +466,7 @@ public sealed class SwShBagHookEditSessionService
         ];
     }
 
-    private static IReadOnlyList<PlannedFileWrite> CreateUninstallWrites(
+    private IReadOnlyList<PlannedFileWrite> CreateUninstallWrites(
         OpenedProject project,
         ProjectPaths paths,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -472,8 +475,10 @@ public sealed class SwShBagHookEditSessionService
 
         foreach (var entry in project.FileGraph.Entries.Where(entry => entry.LayeredFile is not null))
         {
-            if (!string.Equals(entry.RelativePath, SwShBagHookWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase)
-                && !IsRoyalCandyDependentOutput(project, entry))
+            var isBagHookOutput = string.Equals(entry.RelativePath, SwShBagHookWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase);
+            var isRoyalCandyDependentOutput = !isBagHookOutput
+                && SwShRoyalCandyCleanup.IsBagHookDependentCleanupTarget(project, entry);
+            if (!isBagHookOutput && !isRoyalCandyDependentOutput)
             {
                 continue;
             }
@@ -488,9 +493,9 @@ public sealed class SwShBagHookEditSessionService
                 entry.RelativePath,
                 [new ProjectFileReference(ProjectFileLayer.Layered, entry.RelativePath)],
                 ReplacesExistingOutput: true,
-                string.Equals(entry.RelativePath, SwShBagHookWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase)
+                isBagHookOutput
                     ? "Uninstall Bag Hook V2 and remove all dependent startup item grants."
-                    : "Remove Royal Candy output because Royal Candy depends on Bag Hook slot 1.");
+                    : "Remove dependent Royal Candy output because Royal Candy depends on Bag Hook slot 1.");
         }
 
         if (writes.Count == 0)
@@ -498,7 +503,7 @@ public sealed class SwShBagHookEditSessionService
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Bag Hook uninstall did not find any reviewed LayeredFS output targets.",
-                expected: "Bag Hook or dependent Royal Candy LayeredFS output"));
+                expected: "Bag Hook output or dependent Royal Candy text, shop, or ExeFS output"));
         }
 
         return writes.Values.ToArray();
@@ -603,109 +608,6 @@ public sealed class SwShBagHookEditSessionService
     {
         File.Delete(targetPath);
         return true;
-    }
-
-    private static bool RestoreOrDeleteExeFsMain(
-        ProjectPaths paths,
-        string targetPath,
-        string targetRelativePath,
-        ICollection<ValidationDiagnostic> diagnostics)
-    {
-        var basePath = ResolveBaseSourcePath(paths, targetRelativePath);
-        if (basePath is null || !File.Exists(basePath))
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "Bag Hook uninstall could not resolve base exefs/main for Royal Candy restoration.",
-                file: targetRelativePath,
-                expected: "Readable base ExeFS main"));
-            return false;
-        }
-
-        var baseBytes = File.ReadAllBytes(basePath);
-        var restored = SwShExeFsRoyalCandyMainPatcher.RestoreFromBase(
-            File.ReadAllBytes(targetPath),
-            baseBytes);
-        if (restored.SequenceEqual(baseBytes) || !ContainsIndependentExeFsHook(restored))
-        {
-            File.Delete(targetPath);
-        }
-        else
-        {
-            File.WriteAllBytes(targetPath, restored);
-        }
-
-        return true;
-    }
-
-    private static bool ContainsIndependentExeFsHook(byte[] mainBytes)
-    {
-        var ivScreenKind = SwShIvScreenMainPatcher.Analyze(mainBytes).Kind;
-        return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1
-            || ivScreenKind is SwShIvScreenInstallKind.InstalledV1 or SwShIvScreenInstallKind.InstalledLegacyV1;
-    }
-
-    private static bool IsRoyalCandyDependentOutput(OpenedProject project, ProjectFileGraphEntry entry)
-    {
-        if (entry.LayeredFile is null)
-        {
-            return false;
-        }
-
-        if (string.Equals(entry.RelativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase))
-        {
-            return HasRoyalCandyExeFsSignature(project, entry);
-        }
-
-        return false;
-    }
-
-    private static bool HasRoyalCandyExeFsSignature(OpenedProject project, ProjectFileGraphEntry entry)
-    {
-        var sourcePath = CombineGraphPath(project.Paths.OutputRootPath, entry.RelativePath);
-        if (sourcePath is null || !File.Exists(sourcePath))
-        {
-            return false;
-        }
-
-        try
-        {
-            return SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(File.ReadAllBytes(sourcePath)).Kind
-                != SwShRoyalCandyExeFsSignatureKind.NotInstalled;
-        }
-        catch (InvalidDataException)
-        {
-        }
-        catch (IOException)
-        {
-        }
-
-        return false;
-    }
-
-    private static string? ResolveBaseSourcePath(ProjectPaths paths, string targetRelativePath)
-    {
-        if (targetRelativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase))
-        {
-            return CombineGraphPath(paths.BaseRomFsPath, targetRelativePath["romfs/".Length..]);
-        }
-
-        if (targetRelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
-        {
-            return CombineGraphPath(paths.BaseExeFsPath, targetRelativePath["exefs/".Length..]);
-        }
-
-        return null;
-    }
-
-    private static string? CombineGraphPath(string? rootPath, string relativePath)
-    {
-        if (string.IsNullOrWhiteSpace(rootPath))
-        {
-            return null;
-        }
-
-        return Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
