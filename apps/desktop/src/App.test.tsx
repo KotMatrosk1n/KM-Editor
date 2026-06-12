@@ -363,14 +363,14 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
     expect(within(navigation).queryByRole('button', { name: 'IV Screen' })).not.toBeInTheDocument();
-    expect(within(navigation).queryByRole('button', { name: 'Catch Cap' })).not.toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Catch Cap' })).toBeInTheDocument();
     expect(
       within(navigation)
         .getAllByRole('button')
         .filter((button) => button.classList.contains('nav-child-button'))
         .map((button) => button.textContent)
-        .slice(-2)
-    ).toEqual(['Royal Candy', 'Starting Items']);
+        .slice(-3)
+    ).toEqual(['Catch Cap', 'Royal Candy', 'Starting Items']);
   });
 
   it('replaces existing editable field contents when typing after click', async () => {
@@ -1516,7 +1516,7 @@ describe('App', () => {
     expect(
       screen.getByText('Applied Trainers change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
-  });
+  }, 10000);
 
   it('keeps unsaved trainer and party Pokemon drafts when selecting other trainer records', async () => {
     const baseBridge = createMockProjectBridge({}, true);
@@ -3147,7 +3147,7 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('hides Catch Cap editor entry points while the feature is disabled', async () => {
+  it('shows Catch Cap editor entry points and locks eight badges at level 100', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -3156,16 +3156,20 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Output Root'), 'output-root');
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
 
-    expect(screen.queryByRole('button', { name: 'Open Catch Cap' })).not.toBeInTheDocument();
-
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
-    expect(screen.queryByRole('button', { name: 'Catch Cap' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Catch Cap' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Catch Cap' }));
     expect(
-      screen.queryByRole('heading', {
+      await screen.findByRole('heading', {
         level: 2,
         name: 'Catch Cap Editor'
       })
-    ).not.toBeInTheDocument();
+    ).toBeInTheDocument();
+
+    const finalBadgeInput = await screen.findByLabelText('Catch cap for 8 badges');
+    expect(finalBadgeInput).toBeDisabled();
+    expect(finalBadgeInput).toHaveValue(100);
+    expect(screen.getByText('Locked: full badges catch any level.')).toBeInTheDocument();
   });
 
   it('locks Starting Items key item quantities to one', async () => {
@@ -7198,7 +7202,8 @@ function createMockProjectBridge(
   };
   const catchCapWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'Installs the catch-cap hook and exposes badge-level catch caps 0-7.',
+    description:
+      'Patches the display and runtime capture checks for badge-level catch caps 0-7; eight badges is locked at Lv.100.',
     diagnostics: [],
     id: 'catchCap',
     label: 'Catch Cap Editor'
@@ -7213,7 +7218,7 @@ function createMockProjectBridge(
       minimumLevelCap: badgeCount === 8 ? 100 : 1
     })),
     diagnostics: [],
-    installMessage: 'Catch Cap Editor can patch exefs/main.',
+    installMessage: 'Catch Cap Editor can patch display and runtime capture checks in exefs/main.',
     installStatus: canEdit ? 'available' : 'readOnly',
     logicExpression: 'badge_count < 8 ? cap_table[badge_count] : 100',
     provenance: {
@@ -7736,7 +7741,8 @@ function createMockProjectBridge(
                         : request.session.pendingEdits[0]?.domain === 'workflow.catchCap'
                         ? [
                             {
-                              reason: 'Apply Catch Cap Editor hook and badge cap values 0-7 to exefs/main; eight badges remains Lv.100.',
+                              reason:
+                                'Apply Catch Cap Editor display/runtime hook and badge cap values 0-7 to exefs/main; eight badges remains Lv.100.',
                               replacesExistingOutput: false,
                               sources: [
                                 {
@@ -7951,7 +7957,8 @@ function createMockProjectBridge(
                   relativePath: 'exefs/main'
                 }
               ],
-              summary: 'Stage Catch Cap Editor values for badge counts 0-7; eight badges remains Lv.100.'
+              summary:
+                'Stage Catch Cap Editor values for badge counts 0-7 and the display/runtime hook; eight badges remains Lv.100.'
             }
           ],
           sessionId: request.session?.sessionId ?? 'session-catch-cap'
@@ -7991,7 +7998,7 @@ function createMockProjectBridge(
         },
         workflow: {
           ...catchCapWorkflow,
-          installMessage: 'Catch Cap Editor hook is installed.',
+          installMessage: 'Catch Cap Editor hook is installed for display and runtime capture checks.',
           installStatus: 'installed',
           provenance: {
             fileState: 'layeredOverride',

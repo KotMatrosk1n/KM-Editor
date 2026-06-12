@@ -265,7 +265,7 @@ public sealed class SwShCatchCapWorkflowService
         return new SwShWorkflowSummary(
             SwShWorkflowIds.CatchCap,
             "Catch Cap Editor",
-            "Independent ExeFS editor for badge catch caps 0-7; eight badges remains Lv.100 because the game treats full badges as catch any level. Stage Uninstall removes only Catch Cap bytes and preserves other hook editors.",
+            "Independent ExeFS editor for badge catch caps 0-7. It patches the display and runtime capture checks; eight badges remains Lv.100 because the game treats full badges as catch any level. Stage Uninstall removes only Catch Cap bytes and preserves other hook editors.",
             availability,
             diagnostics);
     }

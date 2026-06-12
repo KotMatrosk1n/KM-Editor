@@ -395,7 +395,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'advancedEditors',
     label: 'Advanced Editors',
-    sectionIds: ['royalCandy', 'startingItems']
+    sectionIds: ['catchCap', 'royalCandy', 'startingItems']
   }
 ];
 
@@ -539,7 +539,7 @@ const workflowDefinitions: Array<{
     id: 'catchCap',
     label: 'Catch Cap Editor',
     description:
-      'Independent ExeFS editor for badge catch caps 0-7; eight badges remains Lv.100 because the game treats full badges as catch any level.',
+      'Independent ExeFS editor for badge catch caps 0-7. It patches the display and runtime capture checks; eight badges is locked at Lv.100 because full badges can catch any level.',
     icon: ShieldCheck
   },
   {
@@ -570,8 +570,6 @@ const workflowDefinitions: Array<{
     icon: FileSpreadsheet
   }
 ];
-
-const hiddenWorkflowDefinitionIds = new Set(['catchCap']);
 
 const pathFields: Array<{
   field: ProjectPathFieldName;
@@ -6025,9 +6023,7 @@ function WorkflowsSection({
       </div>
 
       <div className="workflow-list">
-        {workflowDefinitions
-          .filter((definition) => !hiddenWorkflowDefinitionIds.has(definition.id))
-          .map((definition) => {
+        {workflowDefinitions.map((definition) => {
           const workflow = workflows.find((candidate) => candidate.id === definition.id);
           const workflowState = getWorkflowState(health, workflow);
           const Icon = definition.icon;
@@ -19169,10 +19165,10 @@ function CatchCapSection({
         </div>
         <p className="workflow-description">
           Catch Cap Editor is independent from Bag Hook, Royal Candy, and Starting Items. It edits
-          only its reserved exefs/main hook bytes for badge levels 0-7. Eight badges remains
-          Lv.100 because the game treats full badge completion as catch any level. Review before
-          apply or uninstall; cleanup preserves Bag Hook, Royal Candy, and Starting Items when
-          present.
+          only its reserved exefs/main hook bytes for badge levels 0-7 and patches both the
+          trainer-card display path and the runtime capture gate. Eight badges is locked at Lv.100
+          because the game treats full badge completion as catch any level. Review before apply or
+          uninstall; cleanup preserves Bag Hook, Royal Candy, and Starting Items when present.
         </p>
 
         <div className="items-toolbar exefs-toolbar">
@@ -19200,6 +19196,8 @@ function CatchCapSection({
                 </div>
                 {parsedCaps.map((cap) => {
                   const errorId = `catch-cap-error-${cap.badgeCount}`;
+                  const fixedNoteId = `catch-cap-fixed-note-${cap.badgeCount}`;
+                  const isFinalBadge = cap.badgeCount === 8;
                   const isFixed = cap.minimumLevelCap === cap.maximumLevelCap;
                   const hasDraft = cap.rawValue.trim() !== cap.levelCap.toString();
                   return (
@@ -19215,7 +19213,7 @@ function CatchCapSection({
                       <span role="cell">Lv. {cap.levelCap}</span>
                       <div className="table-cell-control" role="cell">
                         <input
-                          aria-describedby={cap.error ? errorId : undefined}
+                          aria-describedby={cap.error ? errorId : isFinalBadge ? fixedNoteId : undefined}
                           aria-invalid={cap.error ? 'true' : undefined}
                           aria-label={`Catch cap for ${cap.label}`}
                           className={cap.error ? 'input-error' : undefined}
@@ -19230,7 +19228,11 @@ function CatchCapSection({
                           }
                           onFocus={() => onSelectCap(cap.badgeCount)}
                           step={1}
-                          title={isFixed ? 'Eight badges is fixed at Lv.100.' : undefined}
+                          title={
+                            isFinalBadge
+                              ? 'Eight badges is locked at Lv.100 because full badges can catch any level.'
+                              : undefined
+                          }
                           type="number"
                           value={cap.rawValue}
                         />
@@ -19239,17 +19241,22 @@ function CatchCapSection({
                             {cap.error}
                           </small>
                         ) : null}
+                        {isFinalBadge ? (
+                          <small className="catch-cap-fixed-note" id={fixedNoteId}>
+                            Locked: full badges catch any level.
+                          </small>
+                        ) : null}
                       </div>
                       <span role="cell">
                         {isFixed ? `Lv. ${cap.minimumLevelCap}` : `Lv. ${cap.minimumLevelCap}-${cap.maximumLevelCap}`}
                       </span>
-                      <span role="cell">
+                      <span className="catch-cap-status-cell" role="cell">
                         <span
                           className={`status-pill ${
                             cap.error ? 'status-blocked' : !isFixed && hasDraft ? 'status-warning' : 'status-ready'
                           }`}
                         >
-                          {cap.error ? 'Invalid' : isFixed ? 'Fixed' : hasDraft ? 'Changed' : 'Ready'}
+                          {cap.error ? 'Invalid' : isFinalBadge ? 'Locked' : hasDraft ? 'Changed' : 'Ready'}
                         </span>
                       </span>
                     </div>
@@ -19281,7 +19288,7 @@ function CatchCapSection({
                         {selectedCap.error
                           ? selectedCap.error
                           : selectedCap.minimumLevelCap === selectedCap.maximumLevelCap
-                            ? `Lv. ${selectedCap.selectedLevelCap} (fixed)`
+                            ? `Lv. ${selectedCap.selectedLevelCap} (locked: full badges catch any level)`
                             : `Lv. ${selectedCap.selectedLevelCap}`}
                       </dd>
                     </div>

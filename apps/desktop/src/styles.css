@@ -2689,11 +2689,25 @@ h2 {
 }
 
 .catch-cap-row {
-  grid-template-columns: minmax(132px, 0.9fr) 92px minmax(116px, 0.8fr) minmax(96px, 0.6fr) minmax(96px, 0.6fr);
+  grid-template-columns: minmax(132px, 0.85fr) 92px minmax(150px, 0.95fr) minmax(96px, 0.55fr) minmax(116px, 0.65fr);
 }
 
 .catch-cap-row-fixed {
   color: #aeb8ca;
+}
+
+.catch-cap-fixed-note {
+  color: #aeb8ca;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.catch-cap-status-cell {
+  display: grid;
+  gap: 4px;
+  align-content: center;
+  min-width: 0;
 }
 
 .starting-items-row {
