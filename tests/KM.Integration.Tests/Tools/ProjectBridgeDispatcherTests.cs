@@ -40,6 +40,9 @@ namespace KM.Integration.Tests.Tools;
 
 public sealed class ProjectBridgeDispatcherTests
 {
+    private const ulong RoyalCandyDyniteOreTraderShopHash = 0xF49C86F8683842BF;
+    private const int RoyalCandyItemId = 1128;
+
     [Fact]
     public void DispatchOpenProjectReturnsProjectHealthAndFileGraph()
     {
@@ -1838,7 +1841,7 @@ public sealed class ProjectBridgeDispatcherTests
             [0x01]);
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
-            [0x02]);
+            CreateRoyalCandyShopData());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.NestDataPath["romfs/".Length..],
             [0x03]);
@@ -1952,6 +1955,9 @@ public sealed class ProjectBridgeDispatcherTests
             write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ItemHashPath);
         Assert.Contains(
             planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ShopDataPath);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
             write => write.TargetRelativePath == "romfs/bin/message/English/common/itemname.dat");
         Assert.Contains(
             planResponse.Payload.ChangePlan.Writes,
@@ -1986,6 +1992,9 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(
             applyResponse.Payload.ApplyResult.WrittenFiles,
             relativePath => relativePath == SwShRoyalCandyWorkflowService.BagEventScriptPath);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShRoyalCandyWorkflowService.ShopDataPath);
         Assert.Equal(baseItemBytes, File.ReadAllBytes(baseItemPath));
 
         var outputItemPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
@@ -2036,6 +2045,10 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(baseHashBytes, outputHashBytes);
         var outputHashTable = SwShItemHashTable.Parse(outputHashBytes);
         Assert.Contains(outputHashTable.Entries, entry => entry.ItemId == 1128);
+
+        var outputShopData = ReadRoyalCandyOutputShopData(temp);
+        var dyniteShop = outputShopData.SingleShops.Single(shop => shop.Hash == RoyalCandyDyniteOreTraderShopHash);
+        Assert.Equal([1127, 1129, 1606], dyniteShop.Inventory.Items);
 
         var outputBagScript = File.ReadAllBytes(Path.Combine(
             temp.OutputRootPath,
@@ -2106,6 +2119,9 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(
             planResponse.Payload.ChangePlan.Writes,
             write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ShopDataPath);
 
         var applyJson = SerializeRequest(
             KmCommandNames.ApplyChangePlan,
@@ -2124,6 +2140,9 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(
             applyResponse.Payload.ApplyResult.WrittenFiles,
             relativePath => relativePath == SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShRoyalCandyWorkflowService.ShopDataPath);
         Assert.Equal(baseMainBytes, File.ReadAllBytes(baseMainPath));
 
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
@@ -2141,6 +2160,10 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(EncodeCmpImmediate(register: 19, immediate: 1128), ReadAlignedInstructions(outputText));
         Assert.Contains(EncodeMovzImmediate32(register: 0, immediate: 12), ReadAlignedInstructions(outputText));
         Assert.Equal(SwShNsoFile.ComputeHash(outputText), outputNso.Text.Hash);
+
+        var outputShopData = ReadRoyalCandyOutputShopData(temp);
+        var dyniteShop = outputShopData.SingleShops.Single(shop => shop.Hash == RoyalCandyDyniteOreTraderShopHash);
+        Assert.Equal([1127, 1129, 1606], dyniteShop.Inventory.Items);
     }
 
     [Fact]
@@ -2317,7 +2340,18 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(
             applyResponse.Payload.ApplyResult.WrittenFiles,
             relativePath => relativePath == SwShRoyalCandyWorkflowService.BagEventScriptPath);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShRoyalCandyWorkflowService.ShopDataPath);
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "exefs", "main")));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "appli",
+            "shop",
+            "bin",
+            "shop_data.bin")));
         Assert.True(File.Exists(Path.Combine(
             temp.OutputRootPath,
             "romfs",
@@ -2340,6 +2374,142 @@ public sealed class ProjectBridgeDispatcherTests
             "script",
             "amx",
             "main_event_0020.amx")));
+    }
+
+    [Fact]
+    public void DispatchRoyalCandyCleanupRestoresOnlyRoyalCandyShopEntries()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteRoyalCandyApplyInputs(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+        ApplyRoyalCandyUnlimited(temp, dispatcher);
+        var shopPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "appli",
+            "shop",
+            "bin",
+            "shop_data.bin");
+        var userEditedShopData = ReadRoyalCandyOutputShopData(temp).WriteEdits(
+        [
+            new SwShShopInventoryEdit(
+                SwShShopKind.Single,
+                SwShShopBridgeFixtures.SingleShopHash,
+                InventoryIndex: 0,
+                Slot: 0,
+                ItemId: 999),
+            new SwShShopInventoryEdit(
+                SwShShopKind.Single,
+                RoyalCandyDyniteOreTraderShopHash,
+                InventoryIndex: 0,
+                Slot: 0,
+                ItemId: 0,
+                SwShShopInventoryEditAction.Set,
+                [1127, 1129, 1606, RoyalCandyItemId]),
+        ]);
+        File.WriteAllBytes(shopPath, userEditedShopData);
+
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageRoyalCandyWorkflow,
+            new StageRoyalCandyWorkflowRequest(
+                temp.Paths,
+                WorkflowId: "royal-candy-uninstall",
+                Session: null),
+            requestId: "request-royal-candy-shop-cleanup-stage");
+        var stageResponse = DeserializeResponse<StageRoyalCandyWorkflowResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+        Assert.DoesNotContain(
+            stageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(
+            stageResponse.Payload.Workflow.Outputs,
+            output => output.RelativePath == SwShRoyalCandyWorkflowService.ShopDataPath);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-royal-candy-shop-cleanup-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.True(planResponse.Payload.ChangePlan.CanApply);
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == SwShRoyalCandyWorkflowService.ShopDataPath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageResponse.Payload.Session,
+                planResponse.Payload.ChangePlan),
+            requestId: "request-royal-candy-shop-cleanup-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.DoesNotContain(
+            applyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == SwShRoyalCandyWorkflowService.ShopDataPath);
+
+        var restoredShopData = ReadRoyalCandyOutputShopData(temp);
+        var dyniteShop = restoredShopData.SingleShops.Single(shop => shop.Hash == RoyalCandyDyniteOreTraderShopHash);
+        Assert.Equal([1127, RoyalCandyItemId, 1129, 1606, RoyalCandyItemId], dyniteShop.Inventory.Items);
+        var userEditedShop = restoredShopData.SingleShops.Single(shop => shop.Hash == SwShShopBridgeFixtures.SingleShopHash);
+        Assert.Equal([999, 18, 19], userEditedShop.Inventory.Items);
+    }
+
+    [Fact]
+    public void DispatchRoyalCandyCleanupIgnoresShopOnlyExpCandyRemoval()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        WriteRoyalCandyApplyInputs(temp);
+        temp.WriteOutputFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath,
+            new SwShShopDataFile(
+            [
+                new SwShSingleShopRecord(
+                    SwShShopBridgeFixtures.SingleShopHash,
+                    new SwShShopInventory([17, 18, 19])),
+                new SwShSingleShopRecord(
+                    RoyalCandyDyniteOreTraderShopHash,
+                    new SwShShopInventory([1127, 1129, 1606])),
+            ],
+            Array.Empty<SwShMultiShopRecord>())
+            .Write());
+
+        var dispatcher = new ProjectBridgeDispatcher();
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageRoyalCandyWorkflow,
+            new StageRoyalCandyWorkflowRequest(
+                temp.Paths,
+                WorkflowId: "royal-candy-uninstall",
+                Session: null),
+            requestId: "request-royal-candy-shop-only-stage");
+        var stageResponse = DeserializeResponse<StageRoyalCandyWorkflowResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+
+        var cleanupWorkflow = stageResponse.Payload.Workflow.Workflows.Single(workflow => workflow.WorkflowId == "royal-candy-uninstall");
+        Assert.Equal("blocked", cleanupWorkflow.Status);
+        Assert.DoesNotContain(
+            stageResponse.Payload.Workflow.Outputs,
+            output => output.WorkflowId == "royal-candy-uninstall"
+                && output.RelativePath == SwShRoyalCandyWorkflowService.ShopDataPath);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-royal-candy-shop-only-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.False(planResponse.Payload.ChangePlan.CanApply);
+        Assert.Empty(planResponse.Payload.ChangePlan.Writes);
     }
 
     [Fact]
@@ -3067,7 +3237,7 @@ public sealed class ProjectBridgeDispatcherTests
             CreateRoyalCandyHashTable());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
-            [0x02]);
+            CreateRoyalCandyShopData());
         temp.WriteBaseRomFsFile(
             SwShRoyalCandyWorkflowService.NestDataPath["romfs/".Length..],
             [0x03]);
@@ -3205,6 +3375,33 @@ public sealed class ProjectBridgeDispatcherTests
         BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(sizeof(int) + 0x20), 0xAABBCCDD00112800);
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(sizeof(int) + 0x20 + sizeof(ulong)), 1128);
         return data;
+    }
+
+    private static byte[] CreateRoyalCandyShopData()
+    {
+        return new SwShShopDataFile(
+            [
+                new SwShSingleShopRecord(
+                    SwShShopBridgeFixtures.SingleShopHash,
+                    new SwShShopInventory([17, 18, 19])),
+                new SwShSingleShopRecord(
+                    RoyalCandyDyniteOreTraderShopHash,
+                    new SwShShopInventory([1127, RoyalCandyItemId, 1129, 1606])),
+            ],
+            Array.Empty<SwShMultiShopRecord>())
+            .Write();
+    }
+
+    private static SwShShopDataFile ReadRoyalCandyOutputShopData(TemporaryBridgeProject temp)
+    {
+        return SwShShopDataFile.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "appli",
+            "shop",
+            "bin",
+            "shop_data.bin")));
     }
 
     private static byte[] CreateRoyalCandyTextTable(Func<int, string> getLine)

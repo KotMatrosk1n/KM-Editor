@@ -54,7 +54,7 @@ public sealed class SwShRoyalCandyWorkflowService
     [
         new("item-data", "RomFS", "Item data", [ItemPath], "RomFS data", "Appends the Rare Candy template as a unique Royal Candy key-item row and points item 1128 at it."),
         new("item-hash", "RomFS", "Item hash table", [ItemHashPath], "RomFS data", "Preserves the existing item hash lookup while verifying item 1128 is present."),
-        new("shop-data", "RomFS", "Shop data", [ShopDataPath, LegacyShopDataPath], "RomFS data", "Adds controlled acquisition entries to shop data where the workflow supports it."),
+        new("shop-data", "RomFS", "Shop data", [ShopDataPath, LegacyShopDataPath], "RomFS data", "Removes the vanilla Exp. Candy XL shop listing that would become purchasable Royal Candy."),
         new("nest-data", "RomFS", "Raid reward data", [NestDataPath], "RomFS archive", "Adds controlled acquisition entries to raid reward data."),
         new("placement-data", "RomFS", "Placement data", [PlacementPath], "RomFS archive", "Adds controlled pickup placement entries."),
         new("bag-event-script", "RomFS", "Bag event script", [BagEventScriptPath], "RomFS script", "Validates the bag event script source used by the grant workflow."),
@@ -786,7 +786,7 @@ public sealed class SwShRoyalCandyWorkflowService
 
         yield return CreateOutput(workflowId, ItemPath, FindSource(sourceMap, ItemPath), "RomFS data", outputStatus, "Royal Candy item row patch.");
         yield return CreateOutput(workflowId, ItemHashPath, FindSource(sourceMap, ItemHashPath), "RomFS data", outputStatus, "Royal Candy item hash lookup patch.");
-        yield return CreateOutput(workflowId, ResolveShopOutputPath(sourceMap), FindSource(sourceMap, ShopDataPath, LegacyShopDataPath), "RomFS data", outputStatus, "Royal Candy acquisition shop patch.");
+        yield return CreateOutput(workflowId, ResolveShopOutputPath(sourceMap), FindSource(sourceMap, ShopDataPath, LegacyShopDataPath), "RomFS data", outputStatus, "Royal Candy shop inventory cleanup.");
         yield return CreateOutput(workflowId, NestDataPath, FindSource(sourceMap, NestDataPath), "RomFS archive", outputStatus, "Royal Candy raid reward patch.");
         yield return CreateOutput(workflowId, PlacementPath, FindSource(sourceMap, PlacementPath), "RomFS archive", outputStatus, "Royal Candy pickup placement patch.");
         yield return CreateOutput(workflowId, BagEventScriptPath, FindSource(sourceMap, BagEventScriptPath), "Bag Hook slot", outputStatus, "Royal Candy Bag Hook slot 1 grant.");
@@ -831,14 +831,31 @@ public sealed class SwShRoyalCandyWorkflowService
         ICollection<SwShRoyalCandyWorkflowCheckRecord> checks,
         ICollection<SwShRoyalCandyOutputRecord> outputs)
     {
+        var bagHookEntry = FindRoyalCandyBagHookOutput(project);
+        var hasIdentifyingOutput = installationState.LayeredEntries.Count > 0 || bagHookEntry is not null;
+        var shopEntry = hasIdentifyingOutput ? FindRoyalCandyShopOutput(project) : null;
+        var cleanupOutputCount = installationState.LayeredEntries.Count
+            + (shopEntry is null ? 0 : 1)
+            + (bagHookEntry is null ? 0 : 1);
         var hasOutputRoot = project.Health.CanOpenEditableWorkflows;
         var status = !hasOutputRoot
             ? "readOnly"
-            : installationState.LayeredEntries.Count > 0
+            : cleanupOutputCount > 0
                 ? "warning"
                 : "blocked";
+        var cleanupMessage = !hasOutputRoot
+            ? "LayeredFS output root is not configured; uninstall can only be inspected read-only."
+            : cleanupOutputCount > 0
+                ? installationState.LayeredEntries.Count > 0
+                    ? installationState.Message
+                    : string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Detected {cleanupOutputCount:N0} Royal Candy cleanup target(s) in the configured output.")
+                : "No known Royal Candy output target was found in LayeredFS output.";
         var provenance = installationState.LayeredEntries.Count > 0
             ? CreateProvenance(installationState.LayeredEntries[0])
+            : shopEntry is not null
+                ? CreateProvenance(shopEntry)
             : GeneratedProvenance;
 
         workflows.Add(new SwShRoyalCandyWorkflowRecord(
@@ -850,7 +867,7 @@ public sealed class SwShRoyalCandyWorkflowService
             RoyalCandyItemId,
             RareCandyItemId,
             status,
-            "Safely removes reviewed Royal Candy output, clears Bag Hook slot 1, and restores only Royal Candy-owned ExeFS bytes.",
+            "Safely removes reviewed Royal Candy output, clears Bag Hook slot 1, restores Royal Candy-owned shop entries, and restores only Royal Candy-owned ExeFS bytes.",
             Array.Empty<SwShRoyalCandyLevelCapRecord>(),
             [
                 new(1, "Inspect output root", "Find known Royal Candy LayeredFS files without reading or changing base RomFS/ExeFS."),
@@ -866,11 +883,7 @@ public sealed class SwShRoyalCandyWorkflowService
             "Warning",
             "Output",
             "LayeredFS output root",
-            !hasOutputRoot
-                ? "LayeredFS output root is not configured; uninstall can only be inspected read-only."
-                : installationState.LayeredEntries.Count > 0
-                    ? installationState.Message
-                    : "No known Royal Candy output target was found in LayeredFS output.",
+            cleanupMessage,
             provenance);
 
         foreach (var entry in installationState.LayeredEntries)
@@ -884,7 +897,17 @@ public sealed class SwShRoyalCandyWorkflowService
                 "Detected known Royal Candy output target for cleanup review."));
         }
 
-        var bagHookEntry = FindRoyalCandyBagHookOutput(project);
+        if (shopEntry is not null)
+        {
+            outputs.Add(CreateOutput(
+                UninstallWorkflowId,
+                shopEntry.RelativePath,
+                shopEntry,
+                "Shop data",
+                "review",
+                "Detected Royal Candy shop inventory patch; cleanup will restore only base Exp. Candy XL item 1128 shop entries."));
+        }
+
         if (bagHookEntry is not null)
         {
             outputs.Add(CreateOutput(
@@ -1327,6 +1350,94 @@ public sealed class SwShRoyalCandyWorkflowService
         return null;
     }
 
+    private static ProjectFileGraphEntry? FindRoyalCandyShopOutput(OpenedProject project)
+    {
+        foreach (var entry in project.FileGraph.Entries.Where(entry =>
+            entry.LayeredFile is not null
+            && (string.Equals(entry.RelativePath, ShopDataPath, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(entry.RelativePath, LegacyShopDataPath, StringComparison.OrdinalIgnoreCase))))
+        {
+            if (HasRoyalCandyShopPatch(project, entry))
+            {
+                return entry;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool HasRoyalCandyShopPatch(OpenedProject project, ProjectFileGraphEntry entry)
+    {
+        var sourcePath = ResolveSourcePath(project.Paths, entry);
+        var basePath = ResolveBaseSourcePath(project.Paths, entry.RelativePath);
+        if (sourcePath is null || basePath is null || !File.Exists(sourcePath) || !File.Exists(basePath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var targetData = SwShShopDataFile.Parse(File.ReadAllBytes(sourcePath));
+            var baseData = SwShShopDataFile.Parse(File.ReadAllBytes(basePath));
+            return HasMissingBaseRoyalCandyShopEntry(targetData, baseData);
+        }
+        catch (InvalidDataException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+
+        return false;
+    }
+
+    private static bool HasMissingBaseRoyalCandyShopEntry(SwShShopDataFile targetData, SwShShopDataFile baseData)
+    {
+        foreach (var baseShop in baseData.SingleShops)
+        {
+            if (!baseShop.Inventory.Items.Contains(RoyalCandyItemId))
+            {
+                continue;
+            }
+
+            var targetShop = targetData.SingleShops.FirstOrDefault(shop => shop.Hash == baseShop.Hash);
+            if (targetShop is not null && HasMissingBaseRoyalCandySlot(targetShop.Inventory.Items, baseShop.Inventory.Items))
+            {
+                return true;
+            }
+        }
+
+        foreach (var baseShop in baseData.MultiShops)
+        {
+            var targetShop = targetData.MultiShops.FirstOrDefault(shop => shop.Hash == baseShop.Hash);
+            if (targetShop is null)
+            {
+                continue;
+            }
+
+            var inventoryCount = Math.Min(baseShop.Inventories.Count, targetShop.Inventories.Count);
+            for (var inventoryIndex = 0; inventoryIndex < inventoryCount; inventoryIndex++)
+            {
+                if (HasMissingBaseRoyalCandySlot(
+                    targetShop.Inventories[inventoryIndex].Items,
+                    baseShop.Inventories[inventoryIndex].Items))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasMissingBaseRoyalCandySlot(IReadOnlyList<int> targetItems, IReadOnlyList<int> baseItems)
+    {
+        return baseItems
+            .Select((itemId, slot) => (itemId, slot))
+            .Any(entry => entry.itemId == RoyalCandyItemId
+                && ((uint)entry.slot >= (uint)targetItems.Count || targetItems[entry.slot] != RoyalCandyItemId));
+    }
+
     private static bool IsItemMessageOutputPath(string relativePath)
     {
         return TryParseMessageCommonFile(relativePath, out _, out var fileName)
@@ -1359,6 +1470,21 @@ public sealed class SwShRoyalCandyWorkflowService
         if (entry.BaseFile is not null && entry.RelativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
         {
             return CombineGraphPath(paths.BaseExeFsPath, entry.RelativePath["exefs/".Length..]);
+        }
+
+        return null;
+    }
+
+    private static string? ResolveBaseSourcePath(ProjectPaths paths, string relativePath)
+    {
+        if (relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase))
+        {
+            return CombineGraphPath(paths.BaseRomFsPath, relativePath["romfs/".Length..]);
+        }
+
+        if (relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase))
+        {
+            return CombineGraphPath(paths.BaseExeFsPath, relativePath["exefs/".Length..]);
         }
 
         return null;
