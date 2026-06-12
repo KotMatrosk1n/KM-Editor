@@ -3568,6 +3568,47 @@ export function App({
     }
   };
 
+  const handleRemoveGiftPokemonShinyLocks = async (giftIndexes: number[]) => {
+    if (giftIndexes.length === 0) {
+      return false;
+    }
+
+    setIsGiftPokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = giftPokemonWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const giftIndex of giftIndexes) {
+        const response = await bridge.updateGiftPokemonField({
+          field: giftShinyLockFieldName,
+          giftIndex,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          value: '0'
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setGiftPokemonWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+      return true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsGiftPokemonUpdating(false);
+    }
+  };
+
   const handleUpdateTradePokemonField = async (
     tradeIndex: number,
     field: string,
@@ -3639,6 +3680,47 @@ export function App({
     }
   };
 
+  const handleRemoveTradePokemonShinyLocks = async (tradeIndexes: number[]) => {
+    if (tradeIndexes.length === 0) {
+      return false;
+    }
+
+    setIsTradePokemonUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = tradePokemonWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const tradeIndex of tradeIndexes) {
+        const response = await bridge.updateTradePokemonField({
+          field: giftShinyLockFieldName,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          tradeIndex,
+          value: '0'
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setTradePokemonWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+      return true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsTradePokemonUpdating(false);
+    }
+  };
+
   const handleUpdateStaticEncounterField = async (
     encounterIndex: number,
     field: string,
@@ -3690,6 +3772,47 @@ export function App({
           paths: toProjectPaths(draftPaths),
           session: nextSession,
           value: change.value
+        });
+        nextSession = response.session;
+        nextWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      if (nextWorkflow) {
+        setStaticEncountersWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+      return true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsStaticEncounterUpdating(false);
+    }
+  };
+
+  const handleRemoveStaticEncounterShinyLocks = async (encounterIndexes: number[]) => {
+    if (encounterIndexes.length === 0) {
+      return false;
+    }
+
+    setIsStaticEncounterUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = staticEncountersWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const encounterIndex of encounterIndexes) {
+        const response = await bridge.updateStaticEncounterField({
+          encounterIndex,
+          field: giftShinyLockFieldName,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          value: '0'
         });
         nextSession = response.session;
         nextWorkflow = response.workflow;
@@ -5147,6 +5270,7 @@ export function App({
                 onSearchChange={setGiftPokemonSearchText}
                 onSelectGift={setSelectedGiftPokemonIndex}
                 onStartEditSession={handleStartEditSession}
+                onRemoveGiftPokemonShinyLocks={handleRemoveGiftPokemonShinyLocks}
                 onUpdateGiftPokemonField={handleUpdateGiftPokemonField}
                 onUpdateGiftPokemonFields={handleUpdateGiftPokemonFields}
                 searchText={giftPokemonSearchText}
@@ -5166,6 +5290,7 @@ export function App({
                 onSearchChange={setTradePokemonSearchText}
                 onSelectTrade={setSelectedTradePokemonIndex}
                 onStartEditSession={handleStartEditSession}
+                onRemoveTradePokemonShinyLocks={handleRemoveTradePokemonShinyLocks}
                 onUpdateTradePokemonField={handleUpdateTradePokemonField}
                 onUpdateTradePokemonFields={handleUpdateTradePokemonFields}
                 searchText={tradePokemonSearchText}
@@ -5185,6 +5310,7 @@ export function App({
                 onSearchChange={setStaticEncounterSearchText}
                 onSelectEncounter={setSelectedStaticEncounterIndex}
                 onStartEditSession={handleStartEditSession}
+                onRemoveStaticEncounterShinyLocks={handleRemoveStaticEncounterShinyLocks}
                 onUpdateStaticEncounterField={handleUpdateStaticEncounterField}
                 onUpdateStaticEncounterFields={handleUpdateStaticEncounterFields}
                 searchText={staticEncounterSearchText}
@@ -6964,7 +7090,7 @@ function PokemonSection({
               onStartEditSession={onStartEditSession}
               pokemonTable={
                 <div
-                  aria-colcount={8}
+                  aria-colcount={3}
                   aria-label="Pokemon"
                   aria-rowcount={filteredPokemon.length + 1}
                   className="items-table pokemon-table"
@@ -6973,12 +7099,7 @@ function PokemonSection({
                   <div className="items-row items-row-heading" role="row">
                     <span role="columnheader">ID</span>
                     <span role="columnheader">Name</span>
-                    <span role="columnheader">Form</span>
                     <span role="columnheader">Types</span>
-                    <span role="columnheader">HP</span>
-                    <span role="columnheader">BST</span>
-                    <span role="columnheader">Evo</span>
-                    <span role="columnheader">Learn</span>
                   </div>
                   <VirtualTableBody
                     getKey={(record) => record.personalId}
@@ -6996,12 +7117,7 @@ function PokemonSection({
                       >
                         <span role="cell">{record.personalId}</span>
                         <span role="cell">{record.name}</span>
-                        <span role="cell">{record.formLabel}</span>
                         <span role="cell">{formatPokemonTypes(record)}</span>
-                        <span role="cell">{record.baseStats.hp}</span>
-                        <span role="cell">{record.baseStats.total}</span>
-                        <span role="cell">{record.evolutions.length}</span>
-                        <span role="cell">{record.learnset.length}</span>
                       </button>
                     )}
                   />
@@ -7021,8 +7137,8 @@ function PokemonSection({
 
       {workflow && selectedPokemon ? (
         <div className="pokemon-diagnostics-row">
-          <SelectedPokemonSummaryCard pokemon={selectedPokemon} />
           <DiagnosticsSection diagnostics={workflow.diagnostics} />
+          <SelectedPokemonSummaryCard pokemon={selectedPokemon} variant="context" />
         </div>
       ) : (
         <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
@@ -7047,9 +7163,21 @@ function PokemonSection({
   );
 }
 
-function SelectedPokemonSummaryCard({ pokemon }: { pokemon: PokemonRecord }) {
+function SelectedPokemonSummaryCard({
+  pokemon,
+  variant = 'detailed'
+}: {
+  pokemon: PokemonRecord;
+  variant?: 'context' | 'detailed';
+}) {
+  const isContext = variant === 'context';
+
   return (
-    <div className="pokemon-summary-card pokemon-summary-card-detailed">
+    <div
+      className={`pokemon-summary-card ${
+        isContext ? 'pokemon-summary-card-context' : 'pokemon-summary-card-detailed'
+      }`}
+    >
       <PokemonSprite className="pokemon-summary-sprite" name={pokemon.name} />
       <div className="pokemon-summary-main">
         <strong>{pokemon.name}</strong>
@@ -7070,18 +7198,22 @@ function SelectedPokemonSummaryCard({ pokemon }: { pokemon: PokemonRecord }) {
           <dt>Dex</dt>
           <dd>{formatPokemonDexPresence(pokemon)}</dd>
         </div>
-        <div>
-          <dt>Source file</dt>
-          <dd>{pokemon.provenance.sourceFile}</dd>
-        </div>
-        <div>
-          <dt>Layer</dt>
-          <dd>{formatSourceLayer(pokemon.provenance.sourceLayer)}</dd>
-        </div>
-        <div>
-          <dt>File state</dt>
-          <dd>{formatFileState(pokemon.provenance.fileState)}</dd>
-        </div>
+        {!isContext ? (
+          <>
+            <div>
+              <dt>Source file</dt>
+              <dd>{pokemon.provenance.sourceFile}</dd>
+            </div>
+            <div>
+              <dt>Layer</dt>
+              <dd>{formatSourceLayer(pokemon.provenance.sourceLayer)}</dd>
+            </div>
+            <div>
+              <dt>File state</dt>
+              <dd>{formatFileState(pokemon.provenance.fileState)}</dd>
+            </div>
+          </>
+        ) : null}
       </dl>
     </div>
   );
@@ -11976,6 +12108,60 @@ function GiftPokemonDraftField({
   );
 }
 
+function ShinyLockRemovalConfirmationModal({
+  affectedCount,
+  isApplying,
+  label,
+  onCancel,
+  onConfirm,
+  recordLabel,
+  recordLabelPlural
+}: {
+  affectedCount: number;
+  isApplying: boolean;
+  label: string;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+  recordLabel: string;
+  recordLabelPlural: string;
+}) {
+  const affectedLabel = affectedCount === 1 ? recordLabel : recordLabelPlural;
+
+  return (
+    <div
+      aria-labelledby="shiny-lock-removal-heading"
+      aria-modal="true"
+      className="modal-backdrop"
+      role="dialog"
+    >
+      <section className="modal-panel">
+        <div className="panel-heading">
+          <ShieldCheck aria-hidden="true" size={18} />
+          <h2 id="shiny-lock-removal-heading">Remove {label} Shiny Lock?</h2>
+        </div>
+        <p className="modal-copy">
+          This will stage shiny lock edits for {affectedCount} {affectedLabel}. Their shiny lock
+          value will be set to Random, which lets the game roll shininess normally.
+        </p>
+        <p className="modal-copy modal-copy-muted">
+          Records that are already Random are skipped. This still uses the normal review and apply
+          flow, so files are not written until you approve the change plan.
+        </p>
+        <div className="modal-actions">
+          <button className="secondary-button" disabled={isApplying} onClick={onCancel} type="button">
+            <X aria-hidden="true" size={16} />
+            <span>Cancel</span>
+          </button>
+          <button className="primary-button" disabled={isApplying} onClick={onConfirm} type="button">
+            <ShieldCheck aria-hidden="true" size={16} />
+            <span>{isApplying ? 'Removing' : `Remove ${label} Shiny Lock`}</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function GiftPokemonSection({
   editSession,
   isEditStarting,
@@ -11983,6 +12169,7 @@ function GiftPokemonSection({
   onSearchChange,
   onSelectGift,
   onStartEditSession,
+  onRemoveGiftPokemonShinyLocks,
   onUpdateGiftPokemonField,
   onUpdateGiftPokemonFields,
   searchText,
@@ -11995,6 +12182,7 @@ function GiftPokemonSection({
   onSearchChange: (searchText: string) => void;
   onSelectGift: (giftIndex: number | null) => void;
   onStartEditSession: () => void;
+  onRemoveGiftPokemonShinyLocks: (giftIndexes: number[]) => Promise<boolean>;
   onUpdateGiftPokemonField: (giftIndex: number, field: string, value: string) => void;
   onUpdateGiftPokemonFields: (
     giftIndex: number,
@@ -12004,6 +12192,7 @@ function GiftPokemonSection({
   selectedGiftIndex: number | null;
   workflow: GiftPokemonWorkflow | null;
 }) {
+  const [isShinyLockConfirmationOpen, setIsShinyLockConfirmationOpen] = useState(false);
   const gifts = workflow?.gifts ?? [];
   const filteredGifts = useMemo(
     () => filterGiftPokemon(gifts, searchText),
@@ -12016,6 +12205,21 @@ function GiftPokemonSection({
   );
   const canEditGifts = workflow?.summary.availability === 'available';
   const pendingGiftIndexes = useMemo(() => getPendingGiftPokemonIndexes(editSession), [editSession]);
+  const lockedGiftIndexes = useMemo(
+    () => gifts.filter((gift) => gift.shinyLock !== 0).map((gift) => gift.giftIndex),
+    [gifts]
+  );
+  const canRemoveGiftShinyLocks =
+    canEditGifts &&
+    editSession !== null &&
+    !isGiftPokemonUpdating &&
+    lockedGiftIndexes.length > 0;
+  const removeGiftShinyLockTitle =
+    editSession === null
+      ? 'Start editing before removing gift shiny locks.'
+      : lockedGiftIndexes.length === 0
+      ? 'No gift shiny locks are currently set.'
+      : 'Set every locked gift Pokemon shiny lock to Random.';
 
   return (
     <>
@@ -12025,7 +12229,7 @@ function GiftPokemonSection({
           <h2 id="gift-pokemon-heading">Gift Pokemon</h2>
         </div>
 
-        <div className="items-toolbar trainers-toolbar">
+        <div className="items-toolbar trainers-toolbar shiny-lock-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
@@ -12049,6 +12253,16 @@ function GiftPokemonSection({
             label="Fixed IV rows"
             value={workflow ? workflow.stats.fixedIvGiftCount.toString() : '0'}
           />
+          <button
+            className="primary-button compact-button"
+            disabled={!canRemoveGiftShinyLocks}
+            onClick={() => setIsShinyLockConfirmationOpen(true)}
+            title={removeGiftShinyLockTitle}
+            type="button"
+          >
+            <ShieldCheck aria-hidden="true" size={14} />
+            <span>Remove Gift Shiny Lock</span>
+          </button>
         </div>
 
         {workflow ? (
@@ -12109,6 +12323,22 @@ function GiftPokemonSection({
       </section>
 
       <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      {isShinyLockConfirmationOpen ? (
+        <ShinyLockRemovalConfirmationModal
+          affectedCount={lockedGiftIndexes.length}
+          isApplying={isGiftPokemonUpdating}
+          label="Gift"
+          recordLabel="gift Pokemon"
+          recordLabelPlural="gift Pokemon"
+          onCancel={() => setIsShinyLockConfirmationOpen(false)}
+          onConfirm={async () => {
+            const didSave = await onRemoveGiftPokemonShinyLocks(lockedGiftIndexes);
+            if (didSave) {
+              setIsShinyLockConfirmationOpen(false);
+            }
+          }}
+        />
+      ) : null}
     </>
   );
 }
@@ -12419,6 +12649,7 @@ function TradePokemonSection({
   onSearchChange,
   onSelectTrade,
   onStartEditSession,
+  onRemoveTradePokemonShinyLocks,
   onUpdateTradePokemonField,
   onUpdateTradePokemonFields,
   searchText,
@@ -12431,6 +12662,7 @@ function TradePokemonSection({
   onSearchChange: (searchText: string) => void;
   onSelectTrade: (tradeIndex: number | null) => void;
   onStartEditSession: () => void;
+  onRemoveTradePokemonShinyLocks: (tradeIndexes: number[]) => Promise<boolean>;
   onUpdateTradePokemonField: (tradeIndex: number, field: string, value: string) => void;
   onUpdateTradePokemonFields: (
     tradeIndex: number,
@@ -12440,6 +12672,7 @@ function TradePokemonSection({
   selectedTradeIndex: number | null;
   workflow: TradePokemonWorkflow | null;
 }) {
+  const [isShinyLockConfirmationOpen, setIsShinyLockConfirmationOpen] = useState(false);
   const trades = workflow?.trades ?? [];
   const filteredTrades = useMemo(
     () => filterTradePokemon(trades, searchText),
@@ -12457,6 +12690,21 @@ function TradePokemonSection({
     () => getPendingTradePokemonIndexes(editSession),
     [editSession]
   );
+  const lockedTradeIndexes = useMemo(
+    () => trades.filter((trade) => trade.shinyLock !== 0).map((trade) => trade.tradeIndex),
+    [trades]
+  );
+  const canRemoveTradeShinyLocks =
+    canEditTrades &&
+    editSession !== null &&
+    !isTradePokemonUpdating &&
+    lockedTradeIndexes.length > 0;
+  const removeTradeShinyLockTitle =
+    editSession === null
+      ? 'Start editing before removing trade shiny locks.'
+      : lockedTradeIndexes.length === 0
+      ? 'No trade shiny locks are currently set.'
+      : 'Set every locked trade Pokemon shiny lock to Random.';
 
   return (
     <>
@@ -12466,7 +12714,7 @@ function TradePokemonSection({
           <h2 id="trade-pokemon-heading">Trade Pokemon</h2>
         </div>
 
-        <div className="items-toolbar trainers-toolbar">
+        <div className="items-toolbar trainers-toolbar shiny-lock-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
@@ -12490,6 +12738,16 @@ function TradePokemonSection({
             label="Sources"
             value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
           />
+          <button
+            className="primary-button compact-button"
+            disabled={!canRemoveTradeShinyLocks}
+            onClick={() => setIsShinyLockConfirmationOpen(true)}
+            title={removeTradeShinyLockTitle}
+            type="button"
+          >
+            <ShieldCheck aria-hidden="true" size={14} />
+            <span>Remove Trade Shiny Lock</span>
+          </button>
         </div>
 
         {workflow ? (
@@ -12564,6 +12822,22 @@ function TradePokemonSection({
       </section>
 
       <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      {isShinyLockConfirmationOpen ? (
+        <ShinyLockRemovalConfirmationModal
+          affectedCount={lockedTradeIndexes.length}
+          isApplying={isTradePokemonUpdating}
+          label="Trade"
+          recordLabel="trade Pokemon"
+          recordLabelPlural="trade Pokemon"
+          onCancel={() => setIsShinyLockConfirmationOpen(false)}
+          onConfirm={async () => {
+            const didSave = await onRemoveTradePokemonShinyLocks(lockedTradeIndexes);
+            if (didSave) {
+              setIsShinyLockConfirmationOpen(false);
+            }
+          }}
+        />
+      ) : null}
     </>
   );
 }
@@ -13917,6 +14191,7 @@ function StaticEncountersSection({
   onSearchChange,
   onSelectEncounter,
   onStartEditSession,
+  onRemoveStaticEncounterShinyLocks,
   onUpdateStaticEncounterField,
   onUpdateStaticEncounterFields,
   searchText,
@@ -13929,6 +14204,7 @@ function StaticEncountersSection({
   onSearchChange: (searchText: string) => void;
   onSelectEncounter: (encounterIndex: number | null) => void;
   onStartEditSession: () => void;
+  onRemoveStaticEncounterShinyLocks: (encounterIndexes: number[]) => Promise<boolean>;
   onUpdateStaticEncounterField: (encounterIndex: number, field: string, value: string) => void;
   onUpdateStaticEncounterFields: (
     encounterIndex: number,
@@ -13938,6 +14214,7 @@ function StaticEncountersSection({
   selectedEncounterIndex: number | null;
   workflow: StaticEncountersWorkflow | null;
 }) {
+  const [isShinyLockConfirmationOpen, setIsShinyLockConfirmationOpen] = useState(false);
   const encounters = workflow?.encounters ?? [];
   const filteredEncounters = useMemo(
     () => filterStaticEncounters(encounters, searchText),
@@ -13955,6 +14232,24 @@ function StaticEncountersSection({
     () => getPendingStaticEncounterIndexes(editSession),
     [editSession]
   );
+  const lockedEncounterIndexes = useMemo(
+    () =>
+      encounters
+        .filter((encounter) => encounter.shinyLock !== 0)
+        .map((encounter) => encounter.encounterIndex),
+    [encounters]
+  );
+  const canRemoveStaticShinyLocks =
+    canEditStaticEncounters &&
+    editSession !== null &&
+    !isStaticEncounterUpdating &&
+    lockedEncounterIndexes.length > 0;
+  const removeStaticShinyLockTitle =
+    editSession === null
+      ? 'Start editing before removing static shiny locks.'
+      : lockedEncounterIndexes.length === 0
+      ? 'No static shiny locks are currently set.'
+      : 'Set every locked static encounter shiny lock to Random.';
 
   return (
     <>
@@ -13964,7 +14259,7 @@ function StaticEncountersSection({
           <h2 id="static-encounters-heading">Static Encounters</h2>
         </div>
 
-        <div className="items-toolbar trainers-toolbar">
+        <div className="items-toolbar trainers-toolbar shiny-lock-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
@@ -13988,6 +14283,16 @@ function StaticEncountersSection({
             label="Fixed IV rows"
             value={workflow ? workflow.stats.fixedIvEncounterCount.toString() : '0'}
           />
+          <button
+            className="primary-button compact-button"
+            disabled={!canRemoveStaticShinyLocks}
+            onClick={() => setIsShinyLockConfirmationOpen(true)}
+            title={removeStaticShinyLockTitle}
+            type="button"
+          >
+            <ShieldCheck aria-hidden="true" size={14} />
+            <span>Remove Static Shiny Lock</span>
+          </button>
         </div>
 
         {workflow ? (
@@ -14056,6 +14361,22 @@ function StaticEncountersSection({
       </section>
 
       <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      {isShinyLockConfirmationOpen ? (
+        <ShinyLockRemovalConfirmationModal
+          affectedCount={lockedEncounterIndexes.length}
+          isApplying={isStaticEncounterUpdating}
+          label="Static"
+          recordLabel="static encounter"
+          recordLabelPlural="static encounters"
+          onCancel={() => setIsShinyLockConfirmationOpen(false)}
+          onConfirm={async () => {
+            const didSave = await onRemoveStaticEncounterShinyLocks(lockedEncounterIndexes);
+            if (didSave) {
+              setIsShinyLockConfirmationOpen(false);
+            }
+          }}
+        />
+      ) : null}
     </>
   );
 }
@@ -19197,6 +19518,7 @@ function CatchCapSection({
                 {parsedCaps.map((cap) => {
                   const errorId = `catch-cap-error-${cap.badgeCount}`;
                   const fixedNoteId = `catch-cap-fixed-note-${cap.badgeCount}`;
+                  // The backend enforces this too; the UI lock keeps badge 8 from looking editable.
                   const isFinalBadge = cap.badgeCount === 8;
                   const isFixed = cap.minimumLevelCap === cap.maximumLevelCap;
                   const hasDraft = cap.rawValue.trim() !== cap.levelCap.toString();
@@ -21698,63 +22020,7 @@ function filterPokemon(pokemon: PokemonRecord[], searchText: string) {
     return pokemon;
   }
 
-  return pokemon.filter((record) =>
-    [
-      record.personalId.toString(),
-      record.speciesId.toString(),
-      record.form.toString(),
-      record.name,
-      record.formLabel,
-      record.type1,
-      record.type2,
-      record.baseStats.hp.toString(),
-      record.baseStats.attack.toString(),
-      record.baseStats.defense.toString(),
-      record.baseStats.specialAttack.toString(),
-      record.baseStats.specialDefense.toString(),
-      record.baseStats.speed.toString(),
-      record.baseStats.total.toString(),
-      record.abilities.ability1.toString(),
-      record.abilities.ability1Label,
-      record.abilities.ability2.toString(),
-      record.abilities.ability2Label,
-      record.abilities.hiddenAbility.toString(),
-      record.abilities.hiddenAbilityLabel,
-      record.genderRatio.toString(),
-      record.genderRatioLabel,
-      record.provenance.sourceFile,
-      ...record.compatibility.flatMap((group) => [
-        group.groupId,
-        group.label,
-        group.enabledCount.toString(),
-        ...group.entries.flatMap((entry) => [
-          entry.slot.toString(),
-          entry.moveId.toString(),
-          entry.moveName,
-          entry.label,
-          entry.canLearn ? 'enabled' : 'disabled'
-        ])
-      ]),
-      ...record.evolutions.flatMap((evolution) => [
-        evolution.slot.toString(),
-        evolution.method.toString(),
-        evolution.methodName,
-        evolution.argument.toString(),
-        evolution.argumentKind,
-        evolution.argumentLabel,
-        evolution.argumentValue,
-        evolution.species.toString(),
-        evolution.form.toString(),
-        evolution.level.toString()
-      ]),
-      ...record.learnset.flatMap((move) => [
-        move.slot.toString(),
-        move.moveId.toString(),
-        move.moveName,
-        move.level.toString()
-      ])
-    ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
-  );
+  return pokemon.filter((record) => record.name.toLocaleLowerCase().includes(normalizedSearch));
 }
 
 function filterPokemonCompatibilityEntries(
@@ -22777,10 +23043,7 @@ function getEncounterTableGroupKey(table: EncounterTableRecord) {
 }
 
 function getEncounterTableZoneKey(table: EncounterTableRecord) {
-  const parts = table.tableId.split(':');
-  return parts.length >= 5
-    ? [parts[0], parts[2], parts[3]].join(':')
-    : [table.gameVersion, table.location].join(':');
+  return [table.gameVersion, table.location].join(':');
 }
 
 function filterEncounterTables(tables: EncounterTableRecord[], searchText: string) {

@@ -526,6 +526,15 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon' })).toBeInTheDocument();
     expect(screen.getAllByText('Bulbasaur').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Tackle/ })).toBeInTheDocument();
+    const pokemonTable = screen.getByRole('table', { name: 'Pokemon' });
+    expect(within(pokemonTable).getByRole('columnheader', { name: 'ID' })).toBeInTheDocument();
+    expect(within(pokemonTable).getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
+    expect(within(pokemonTable).getByRole('columnheader', { name: 'Types' })).toBeInTheDocument();
+    expect(within(pokemonTable).queryByRole('columnheader', { name: 'Form' })).not.toBeInTheDocument();
+    expect(within(pokemonTable).queryByRole('columnheader', { name: 'HP' })).not.toBeInTheDocument();
+    expect(within(pokemonTable).queryByRole('columnheader', { name: 'BST' })).not.toBeInTheDocument();
+    expect(within(pokemonTable).queryByRole('columnheader', { name: 'Evo' })).not.toBeInTheDocument();
+    expect(within(pokemonTable).queryByRole('columnheader', { name: 'Learn' })).not.toBeInTheDocument();
     act(() => {
       useWorkbenchStore.setState({ selectedPokemonPersonalId: 0 });
     });
@@ -533,13 +542,17 @@ describe('App', () => {
     expect(screen.queryByText('No level-up moves.')).not.toBeInTheDocument();
 
     await user.clear(screen.getByLabelText('Search Pokemon'));
-    await user.type(screen.getByLabelText('Search Pokemon'), 'fire');
+    await user.type(screen.getByLabelText('Search Pokemon'), 'char');
 
     expect(screen.queryByText('Bulbasaur')).not.toBeInTheDocument();
     expect(screen.getAllByText('Charmander').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Fire').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('romfs/bin/pml/personal/personal_total.bin').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Base only').length).toBeGreaterThan(0);
+    expect(within(pokemonTable).getByText('Fire')).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Search Pokemon'));
+    await user.type(screen.getByLabelText('Search Pokemon'), 'fire');
+
+    expect(within(pokemonTable).queryByText('Charmander')).not.toBeInTheDocument();
+    expect(within(pokemonTable).queryByText('Fire')).not.toBeInTheDocument();
   });
 
   it('starts a Pokemon edit session and saves a personal stat change', async () => {
@@ -1859,6 +1872,61 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it.each([
+    {
+      buttonName: 'Remove Gift Shiny Lock',
+      expectedSummary: 'Set Gift 001 shinyLock to 0.',
+      heading: 'Gift Pokemon',
+      navName: 'Gift Pokemon'
+    },
+    {
+      buttonName: 'Remove Trade Shiny Lock',
+      expectedSummary: 'Set Trade 001 shinyLock to 0.',
+      heading: 'Trade Pokemon',
+      navName: 'Trade Pokemon'
+    },
+    {
+      buttonName: 'Remove Static Shiny Lock',
+      expectedSummary: 'Set Static 001 shinyLock to 0.',
+      heading: 'Static Encounters',
+      navName: 'Static Encounters'
+    }
+  ])('stages shiny-lock removal from $heading after confirmation', async ({
+    buttonName,
+    expectedSummary,
+    heading,
+    navName
+  }) => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: navName }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: heading })).toBeInTheDocument();
+    const removeButton = screen.getByRole('button', { name: buttonName });
+    expect(removeButton).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await waitFor(() => expect(removeButton).toBeEnabled());
+    await user.click(removeButton);
+
+    const dialog = await screen.findByRole('dialog', { name: `${buttonName}?` });
+    expect(within(dialog).getByText(/will be set to Random/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: buttonName }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(removeButton).toBeDisabled());
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText(expectedSummary)).toBeInTheDocument();
+  });
+
   it('opens Rental Pokemon, edits IVs, reviews a rental plan, and applies it', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
@@ -2385,13 +2453,14 @@ describe('App', () => {
       encounterType: string,
       tableId: string,
       archiveMember: string,
-      species: string
+      species: string,
+      location = "Axew's Eye"
     ): EncounterTableRecord => ({
       archiveMember,
       area,
       encounterType,
       gameVersion: 'Sword',
-      location: "Axew's Eye",
+      location,
       provenance: {
         fileState: 'baseOnly',
         sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
@@ -2417,8 +2486,8 @@ describe('App', () => {
       editableFields: [],
       stats: {
         sourceFileCount: 1,
-        totalSlotCount: 4,
-        totalTableCount: 4
+        totalSlotCount: 5,
+        totalTableCount: 5
       },
       summary: {
         availability: 'available',
@@ -2445,16 +2514,24 @@ describe('App', () => {
         makeTable(
           'Hidden',
           'Normal',
-          'sword:hidden:0:1122334455667788:0',
+          'sword:hidden:2:8877665544332211:0',
           'encount_k.bin',
           'Eevee'
         ),
         makeTable(
           'Hidden',
           'Overcast',
-          'sword:hidden:0:1122334455667788:1',
+          'sword:hidden:2:8877665544332211:1',
           'encount_k.bin',
           'Umbreon'
+        ),
+        makeTable(
+          'Symbol',
+          'Normal',
+          'sword:symbol:7:ABCDEF0011223344:0',
+          'encount_symbol_k.bin',
+          'Lapras',
+          "Axew's Eye (Surfing)"
         )
       ]
     };
@@ -2478,7 +2555,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
 
     const encounterTable = await screen.findByRole('table', { name: 'Encounter tables' });
-    expect(within(encounterTable).getAllByRole('row')).toHaveLength(2);
+    expect(within(encounterTable).getAllByRole('row')).toHaveLength(3);
     expect(
       within(encounterTable)
         .getAllByRole('columnheader')
@@ -2494,6 +2571,7 @@ describe('App', () => {
       within(encounterTable).queryByRole('columnheader', { name: 'Member' })
     ).not.toBeInTheDocument();
     expect(within(encounterTable).getByText("Axew's Eye")).toBeInTheDocument();
+    expect(within(encounterTable).getByText("Axew's Eye (Surfing)")).toBeInTheDocument();
     expect(within(encounterTable).getByText('Symbol / Hidden')).toBeInTheDocument();
     expect(within(encounterTable).queryByText('Normal')).not.toBeInTheDocument();
     expect(within(encounterTable).queryByText('Overcast')).not.toBeInTheDocument();
@@ -2513,12 +2591,12 @@ describe('App', () => {
       'aria-selected',
       'true'
     );
-    expect(screen.getByText('sword:hidden:0:1122334455667788:0')).toBeInTheDocument();
+    expect(screen.getByText('sword:hidden:2:8877665544332211:0')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Overcast' })).toBeEnabled();
 
     await user.click(screen.getByRole('tab', { name: 'Overcast' }));
 
-    expect(screen.getByText('sword:hidden:0:1122334455667788:1')).toBeInTheDocument();
+    expect(screen.getByText('sword:hidden:2:8877665544332211:1')).toBeInTheDocument();
   });
 
   it('copies the selected symbol encounter table into hidden encounters after confirmation', async () => {
@@ -9149,7 +9227,9 @@ function createMockProjectBridge(
                       ivKey === 'specialDefense' ? value : gift.ivs.specialDefense
                     } / Spe ${ivKey === 'speed' ? value : gift.ivs.speed}`
                   : gift.ivSummary,
-                level: request.field === 'level' ? value : gift.level
+                level: request.field === 'level' ? value : gift.level,
+                shinyLock: request.field === 'shinyLock' ? value : gift.shinyLock,
+                shinyLockLabel: request.field === 'shinyLock' ? 'Random' : gift.shinyLockLabel
               }
             : gift
         )
@@ -9203,7 +9283,9 @@ function createMockProjectBridge(
                       ivKey === 'specialDefense' ? value : trade.ivs.specialDefense
                     } / Spe ${ivKey === 'speed' ? value : trade.ivs.speed}`
                   : trade.ivSummary,
-                level: request.field === 'level' ? value : trade.level
+                level: request.field === 'level' ? value : trade.level,
+                shinyLock: request.field === 'shinyLock' ? value : trade.shinyLock,
+                shinyLockLabel: request.field === 'shinyLock' ? 'Random' : trade.shinyLockLabel
               }
             : trade
         )
@@ -9260,7 +9342,10 @@ function createMockProjectBridge(
                     request.field === 'ivHp'
                       ? `HP ${value} / Atk 30 / Def 29 / SpA 27 / SpD 26 / Spe 28`
                       : encounter.ivSummary,
-                  level: request.field === 'level' ? value : encounter.level
+                  level: request.field === 'level' ? value : encounter.level,
+                  shinyLock: request.field === 'shinyLock' ? value : encounter.shinyLock,
+                  shinyLockLabel:
+                    request.field === 'shinyLock' ? 'Random' : encounter.shinyLockLabel
                 }
               : encounter
           )

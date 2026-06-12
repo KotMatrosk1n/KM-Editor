@@ -893,6 +893,10 @@ h2 {
   grid-template-columns: minmax(420px, 0.72fr) minmax(480px, 1fr);
 }
 
+.pokemon-table .items-row {
+  grid-template-columns: 64px minmax(180px, 1fr) minmax(120px, 0.8fr);
+}
+
 .items-table {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -1078,20 +1082,44 @@ h2 {
 
 .pokemon-diagnostics-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 480px) minmax(320px, 560px);
   gap: 16px;
-  align-items: stretch;
-  margin-top: 16px;
+  align-items: start;
+  justify-content: center;
+  max-width: 1080px;
+  margin: 16px auto 0;
 }
 
 .pokemon-diagnostics-row > .pokemon-summary-card,
 .pokemon-diagnostics-row > .panel {
+  align-self: start;
   min-width: 0;
   margin: 0;
 }
 
-.pokemon-diagnostics-row > .pokemon-summary-card {
-  align-content: start;
+.pokemon-diagnostics-row > .panel {
+  padding: 12px 14px;
+}
+
+.pokemon-summary-card-context {
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+}
+
+.pokemon-summary-card-context .pokemon-summary-metadata {
+  grid-column: 2;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.pokemon-summary-card-context .pokemon-summary-metadata dt {
+  font-size: 11px;
+}
+
+.pokemon-summary-card-context .pokemon-summary-metadata dd {
+  font-size: 14px;
 }
 
 .pokemon-summary-card div {
@@ -1838,6 +1866,10 @@ h2 {
 
 .trainers-toolbar {
   grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
+}
+
+.shiny-lock-toolbar {
+  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px)) auto;
 }
 
 .trainers-layout {
