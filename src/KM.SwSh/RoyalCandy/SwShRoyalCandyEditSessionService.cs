@@ -279,6 +279,13 @@ public sealed class SwShRoyalCandyEditSessionService
                             continue;
                         }
                     }
+                    else if (IsShopDataOutput(write.TargetRelativePath))
+                    {
+                        if (!TryRestoreRoyalCandyShopEntries(paths, targetPath, write.TargetRelativePath, diagnostics))
+                        {
+                            continue;
+                        }
+                    }
                     else
                     {
                         diagnostics.Add(CreateDiagnostic(
@@ -750,7 +757,7 @@ public sealed class SwShRoyalCandyEditSessionService
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Warning,
-            "Royal Candy plan currently generates item data, item text, the Bag-event grant, and ExeFS item-use patches. Shop, raid reward, and placement targets remain reserved for their dedicated apply workflows.",
+            "Royal Candy plan currently generates item data, item text, shop inventory cleanup, the Bag-event grant, and ExeFS item-use patches. Raid reward and placement targets remain reserved for their dedicated apply workflows.",
             expected: "Review remaining Royal Candy output targets before full install"));
     }
 
@@ -805,6 +812,36 @@ public sealed class SwShRoyalCandyEditSessionService
             }
 
             return sourceBytes;
+        }
+
+        if (IsShopDataOutput(relativePath))
+        {
+            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+            var shopData = SwShShopDataFile.Parse(sourceBytes);
+            var basePath = ResolveBaseSourcePath(project.Paths, relativePath);
+            if (basePath is null || !File.Exists(basePath))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Royal Candy shop output requires base shop data so only vanilla Exp. Candy XL shop entries are removed.",
+                    file: relativePath,
+                    expected: "Readable base shop_data.bin"));
+                return null;
+            }
+
+            var baseShopData = SwShShopDataFile.Parse(File.ReadAllBytes(basePath));
+            var edits = CreateRoyalCandyShopRemovalEdits(shopData, baseShopData);
+            if (edits.Count == 0)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    "Royal Candy shop output did not find any Exp. Candy XL shop entries to remove.",
+                    file: relativePath,
+                    expected: "A vanilla shop inventory entry for item 1128"));
+                return sourceBytes;
+            }
+
+            return shopData.WriteEdits(edits);
         }
 
         if (IsItemTextOutput(relativePath))
@@ -1032,6 +1069,50 @@ public sealed class SwShRoyalCandyEditSessionService
         return true;
     }
 
+    private static bool TryRestoreRoyalCandyShopEntries(
+        ProjectPaths paths,
+        string targetPath,
+        string targetRelativePath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var basePath = ResolveBaseSourcePath(paths, targetRelativePath);
+        if (basePath is null || !File.Exists(basePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Skipped Royal Candy shop cleanup for '{targetRelativePath}' because the base shop data could not be resolved.",
+                file: targetRelativePath,
+                expected: "Readable base shop_data.bin"));
+            return false;
+        }
+
+        var targetData = SwShShopDataFile.Parse(File.ReadAllBytes(targetPath));
+        var baseData = SwShShopDataFile.Parse(File.ReadAllBytes(basePath));
+        var edits = CreateRoyalCandyShopRestoreEdits(targetData, baseData);
+        if (edits.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Skipped Royal Candy shop cleanup for '{targetRelativePath}' because no Royal Candy-owned shop edit was detected.",
+                file: targetRelativePath,
+                expected: "Shop data missing base item 1128 entries"));
+            return false;
+        }
+
+        var restoredBytes = targetData.WriteEdits(edits);
+        var restoredData = SwShShopDataFile.Parse(restoredBytes);
+        if (ShopDataSemanticallyEquals(restoredData, baseData))
+        {
+            File.Delete(targetPath);
+        }
+        else
+        {
+            File.WriteAllBytes(targetPath, restoredBytes);
+        }
+
+        return true;
+    }
+
     private static bool IsRoyalCandyTextValue(string relativePath, string value)
     {
         if (relativePath.EndsWith("/itemname.dat", StringComparison.OrdinalIgnoreCase))
@@ -1137,9 +1218,16 @@ public sealed class SwShRoyalCandyEditSessionService
     {
         return string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemPath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, SwShRoyalCandyWorkflowService.ItemHashPath, StringComparison.OrdinalIgnoreCase)
+            || IsShopDataOutput(relativePath)
             || string.Equals(relativePath, SwShRoyalCandyWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase)
             || string.Equals(relativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
             || IsItemTextOutput(relativePath);
+    }
+
+    private static bool IsShopDataOutput(string relativePath)
+    {
+        return string.Equals(relativePath, SwShRoyalCandyWorkflowService.ShopDataPath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, SwShRoyalCandyWorkflowService.LegacyShopDataPath, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsItemTextOutput(string relativePath)
@@ -1147,6 +1235,192 @@ public sealed class SwShRoyalCandyEditSessionService
         return relativePath.StartsWith("romfs/bin/message/", StringComparison.OrdinalIgnoreCase)
             && (relativePath.EndsWith("/itemname.dat", StringComparison.OrdinalIgnoreCase)
                 || relativePath.EndsWith("/iteminfo.dat", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IReadOnlyList<SwShShopInventoryEdit> CreateRoyalCandyShopRemovalEdits(
+        SwShShopDataFile targetData,
+        SwShShopDataFile baseData)
+    {
+        var edits = new List<SwShShopInventoryEdit>();
+
+        foreach (var baseShop in baseData.SingleShops)
+        {
+            var targetShop = targetData.SingleShops.FirstOrDefault(shop => shop.Hash == baseShop.Hash);
+            if (targetShop is null)
+            {
+                continue;
+            }
+
+            AddRoyalCandyRemovalEdit(
+                edits,
+                SwShShopKind.Single,
+                baseShop.Hash,
+                inventoryIndex: 0,
+                targetShop.Inventory.Items,
+                baseShop.Inventory.Items);
+        }
+
+        foreach (var baseShop in baseData.MultiShops)
+        {
+            var targetShop = targetData.MultiShops.FirstOrDefault(shop => shop.Hash == baseShop.Hash);
+            if (targetShop is null)
+            {
+                continue;
+            }
+
+            var inventoryCount = Math.Min(baseShop.Inventories.Count, targetShop.Inventories.Count);
+            for (var inventoryIndex = 0; inventoryIndex < inventoryCount; inventoryIndex++)
+            {
+                AddRoyalCandyRemovalEdit(
+                    edits,
+                    SwShShopKind.Multi,
+                    baseShop.Hash,
+                    inventoryIndex,
+                    targetShop.Inventories[inventoryIndex].Items,
+                    baseShop.Inventories[inventoryIndex].Items);
+            }
+        }
+
+        return edits;
+    }
+
+    private static void AddRoyalCandyRemovalEdit(
+        ICollection<SwShShopInventoryEdit> edits,
+        SwShShopKind kind,
+        ulong hash,
+        int inventoryIndex,
+        IReadOnlyList<int> targetItems,
+        IReadOnlyList<int> baseItems)
+    {
+        var royalCandyBaseSlots = baseItems
+            .Select((itemId, slot) => (itemId, slot))
+            .Where(entry => entry.itemId == RoyalCandyItemId)
+            .Select(entry => entry.slot)
+            .OrderDescending()
+            .ToArray();
+        if (royalCandyBaseSlots.Length == 0)
+        {
+            return;
+        }
+
+        var updatedItems = targetItems.ToList();
+        foreach (var slot in royalCandyBaseSlots)
+        {
+            if ((uint)slot < (uint)updatedItems.Count && updatedItems[slot] == RoyalCandyItemId)
+            {
+                updatedItems.RemoveAt(slot);
+            }
+        }
+
+        if (updatedItems.Count == targetItems.Count)
+        {
+            return;
+        }
+
+        edits.Add(new SwShShopInventoryEdit(
+            kind,
+            hash,
+            inventoryIndex,
+            Slot: 0,
+            ItemId: 0,
+            SwShShopInventoryEditAction.Set,
+            updatedItems));
+    }
+
+    private static IReadOnlyList<SwShShopInventoryEdit> CreateRoyalCandyShopRestoreEdits(
+        SwShShopDataFile targetData,
+        SwShShopDataFile baseData)
+    {
+        var edits = new List<SwShShopInventoryEdit>();
+
+        foreach (var baseShop in baseData.SingleShops)
+        {
+            var targetShop = targetData.SingleShops.FirstOrDefault(shop => shop.Hash == baseShop.Hash);
+            if (targetShop is null)
+            {
+                continue;
+            }
+
+            AddRoyalCandyRestoreEdit(
+                edits,
+                SwShShopKind.Single,
+                baseShop.Hash,
+                inventoryIndex: 0,
+                targetShop.Inventory.Items,
+                baseShop.Inventory.Items);
+        }
+
+        foreach (var baseShop in baseData.MultiShops)
+        {
+            var targetShop = targetData.MultiShops.FirstOrDefault(shop => shop.Hash == baseShop.Hash);
+            if (targetShop is null)
+            {
+                continue;
+            }
+
+            var inventoryCount = Math.Min(baseShop.Inventories.Count, targetShop.Inventories.Count);
+            for (var inventoryIndex = 0; inventoryIndex < inventoryCount; inventoryIndex++)
+            {
+                AddRoyalCandyRestoreEdit(
+                    edits,
+                    SwShShopKind.Multi,
+                    baseShop.Hash,
+                    inventoryIndex,
+                    targetShop.Inventories[inventoryIndex].Items,
+                    baseShop.Inventories[inventoryIndex].Items);
+            }
+        }
+
+        return edits;
+    }
+
+    private static void AddRoyalCandyRestoreEdit(
+        ICollection<SwShShopInventoryEdit> edits,
+        SwShShopKind kind,
+        ulong hash,
+        int inventoryIndex,
+        IReadOnlyList<int> targetItems,
+        IReadOnlyList<int> baseItems)
+    {
+        var insertSlots = baseItems
+            .Select((itemId, slot) => (itemId, slot))
+            .Where(entry => entry.itemId == RoyalCandyItemId)
+            .Select(entry => entry.slot)
+            .Where(slot => (uint)slot >= (uint)targetItems.Count || targetItems[slot] != RoyalCandyItemId)
+            .ToArray();
+        if (insertSlots.Length == 0)
+        {
+            return;
+        }
+
+        var restoredItems = targetItems.ToList();
+        foreach (var slot in insertSlots)
+        {
+            restoredItems.Insert(Math.Min(slot, restoredItems.Count), RoyalCandyItemId);
+        }
+
+        edits.Add(new SwShShopInventoryEdit(
+            kind,
+            hash,
+            inventoryIndex,
+            Slot: 0,
+            ItemId: 0,
+            SwShShopInventoryEditAction.Set,
+            restoredItems));
+    }
+
+    private static bool ShopDataSemanticallyEquals(SwShShopDataFile left, SwShShopDataFile right)
+    {
+        return left.SingleShops.Count == right.SingleShops.Count
+            && left.MultiShops.Count == right.MultiShops.Count
+            && left.SingleShops.Zip(right.SingleShops).All(pair =>
+                pair.First.Hash == pair.Second.Hash
+                && pair.First.Inventory.Items.SequenceEqual(pair.Second.Inventory.Items))
+            && left.MultiShops.Zip(right.MultiShops).All(pair =>
+                pair.First.Hash == pair.Second.Hash
+                && pair.First.Inventories.Count == pair.Second.Inventories.Count
+                && pair.First.Inventories.Zip(pair.Second.Inventories).All(inventoryPair =>
+                    inventoryPair.First.Items.SequenceEqual(inventoryPair.Second.Items)));
     }
 
     private static string GetRoyalCandyDescription(string workflowId)
