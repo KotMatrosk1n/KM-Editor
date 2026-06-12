@@ -234,65 +234,14 @@ public sealed class SwShRoyalCandyEditSessionService
                         continue;
                     }
 
-                    if (string.Equals(write.TargetRelativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase))
+                    if (!SwShRoyalCandyCleanup.TryApplyCleanupTarget(
+                        paths,
+                        targetPath,
+                        write.TargetRelativePath,
+                        RoyalCandyEditDomain,
+                        diagnostics,
+                        clearBagHookSlot: true))
                     {
-                        var basePath = ResolveBaseSourcePath(paths, write.TargetRelativePath);
-                        if (basePath is null || !File.Exists(basePath))
-                        {
-                            diagnostics.Add(CreateDiagnostic(
-                                DiagnosticSeverity.Error,
-                                "Royal Candy cleanup could not resolve base exefs/main for restoration.",
-                                file: write.TargetRelativePath,
-                                expected: "Readable base ExeFS main"));
-                            continue;
-                        }
-
-                        var restored = SwShExeFsRoyalCandyMainPatcher.RestoreFromBase(
-                            File.ReadAllBytes(targetPath),
-                            File.ReadAllBytes(basePath));
-                        var baseBytes = File.ReadAllBytes(basePath);
-                        if (restored.SequenceEqual(baseBytes) || !ContainsIndependentExeFsHook(restored))
-                        {
-                            File.Delete(targetPath);
-                        }
-                        else
-                        {
-                            File.WriteAllBytes(targetPath, restored);
-                        }
-                    }
-                    else if (string.Equals(write.TargetRelativePath, SwShRoyalCandyWorkflowService.BagEventScriptPath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        var restored = SwShBagHookAmxPatcher.ApplySlotPatches(
-                            File.ReadAllBytes(targetPath),
-                            [
-                                new SwShBagHookSlotPatch(
-                                    SwShBagHookAmxPatcher.RoyalCandySlot,
-                                    null,
-                                    null),
-                            ]);
-                        File.WriteAllBytes(targetPath, restored);
-                    }
-                    else if (IsItemTextOutput(write.TargetRelativePath))
-                    {
-                        if (!TryRestoreRoyalCandyItemText(paths, targetPath, write.TargetRelativePath, diagnostics))
-                        {
-                            continue;
-                        }
-                    }
-                    else if (IsShopDataOutput(write.TargetRelativePath))
-                    {
-                        if (!TryRestoreRoyalCandyShopEntries(paths, targetPath, write.TargetRelativePath, diagnostics))
-                        {
-                            continue;
-                        }
-                    }
-                    else
-                    {
-                        diagnostics.Add(CreateDiagnostic(
-                            DiagnosticSeverity.Warning,
-                            $"Skipped Royal Candy cleanup target '{write.TargetRelativePath}' because KM cannot safely isolate Royal Candy-owned data in that file.",
-                            file: write.TargetRelativePath,
-                            expected: "A verified Royal Candy-owned text row, Bag Hook slot, or ExeFS signature"));
                         continue;
                     }
 

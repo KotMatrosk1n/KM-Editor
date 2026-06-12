@@ -227,6 +227,9 @@ public sealed class SwShHookReservationTests
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
         Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath)));
+        Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname.dat")));
+        Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/iteminfo.dat")));
 
         var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
         Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
@@ -247,6 +250,9 @@ public sealed class SwShHookReservationTests
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
         Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath)));
+        Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname.dat")));
+        Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/iteminfo.dat")));
 
         var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
         Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
@@ -345,6 +351,9 @@ public sealed class SwShHookReservationTests
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
         Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath)));
+        Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname.dat")));
+        Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/iteminfo.dat")));
     }
 
     [Theory]
@@ -395,6 +404,24 @@ public sealed class SwShHookReservationTests
     }
 
     [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void BagHookCleanupRestoresOwnedRoyalCandyTextRowsAndPreservesOtherLayeredTextEdits(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, workflowId);
+        WriteLayeredTextEdit(paths, "romfs/bin/message/English/common/itemname.dat", 10, "User-edited item name");
+        WriteLayeredTextEdit(paths, "romfs/bin/message/English/common/iteminfo.dat", 10, "User-edited item info");
+
+        ApplyBagHookCleanup(paths);
+
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
+        AssertRestoredRoyalCandyTextRow(paths, "romfs/bin/message/English/common/itemname.dat", 10, "User-edited item name");
+        AssertRestoredRoyalCandyTextRow(paths, "romfs/bin/message/English/common/iteminfo.dat", 10, "User-edited item info");
+    }
+
+    [Theory]
     [InlineData(ProjectGame.Sword)]
     [InlineData(ProjectGame.Shield)]
     public void BagHookCleanupWithStartingItemsOnlyRemovesBagEventOutput(ProjectGame game)
@@ -408,6 +435,34 @@ public sealed class SwShHookReservationTests
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void BagHookCleanupPreservesRoyalCandyShopPatchWhenRoyalCandyIsNotInstalled(ProjectGame game)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        var shopOutputPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath);
+        var shopOutput = new SwShShopDataFile(
+            [new SwShSingleShopRecord(0x1F3FF031A3A24490UL, new SwShShopInventory([50, 51]))],
+            [new SwShMultiShopRecord(
+                0x66CA73B2966BB871UL,
+                [
+                    new SwShShopInventory([1, 2]),
+                    new SwShShopInventory([3, 4]),
+                ])])
+            .Write();
+        Directory.CreateDirectory(Path.GetDirectoryName(shopOutputPath)!);
+        File.WriteAllBytes(shopOutputPath, shopOutput);
+
+        ApplyBagHookCleanup(paths);
+
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
+        Assert.True(File.Exists(shopOutputPath));
+        Assert.Equal(shopOutput, File.ReadAllBytes(shopOutputPath));
     }
 
     [Fact]
@@ -711,6 +766,17 @@ public sealed class SwShHookReservationTests
     {
         var temp = SwShPerformanceFixtureProject.Create();
         temp.WriteBaseRomFsFile("bin/script/amx/main_event_0020.amx", CreateVanillaBagEventScript());
+        temp.WriteBaseRomFsFile(
+            SwShRoyalCandyWorkflowService.ShopDataPath["romfs/".Length..],
+            new SwShShopDataFile(
+                [new SwShSingleShopRecord(0x1F3FF031A3A24490UL, new SwShShopInventory([50, 1128, 51]))],
+                [new SwShMultiShopRecord(
+                    0x66CA73B2966BB871UL,
+                    [
+                        new SwShShopInventory([1, 1128, 2]),
+                        new SwShShopInventory([3, 4]),
+                    ])])
+                .Write());
         temp.WriteBaseExeFsFile("main", CreateSharedHookNso());
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(game == ProjectGame.Sword ? SwordTitleId : ShieldTitleId));
         return temp;
