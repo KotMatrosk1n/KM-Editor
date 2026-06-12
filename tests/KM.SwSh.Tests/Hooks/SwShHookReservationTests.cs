@@ -639,6 +639,37 @@ public sealed class SwShHookReservationTests
     }
 
     [Fact]
+    public void CatchCapApplyPatchesRuntimeCaptureGate()
+    {
+        int[] caps = [18, 22, 27, 33, 38, 44, 49, 60, 100];
+
+        var patched = SwShCatchCapMainPatcher.Apply(CreateSharedHookNso(), caps);
+
+        var text = SwShNsoFile.Parse(patched).Text.DecompressedData;
+        AssertRuntimeCatchCapHook(text);
+        Assert.Equal((byte)33, text[SwShCatchCapMainPatcher.ExeFsTableOffset + 3]);
+    }
+
+    [Fact]
+    public void CatchCapApplyUpgradesLegacyDisplayOnlyHook()
+    {
+        int[] caps = [18, 22, 27, 33, 38, 44, 49, 60, 100];
+        var patched = SwShCatchCapMainPatcher.Apply(CreateSharedHookNso(), caps);
+        var nso = SwShNsoFile.Parse(patched);
+        var text = nso.Text.DecompressedData.ToArray();
+        WriteCatchCapRuntimeVanillaFormula(text);
+        var legacy = nso.Write(textDecompressedData: text);
+
+        var legacyAnalysis = SwShCatchCapMainPatcher.Analyze(legacy);
+        Assert.Equal(SwShCatchCapInstallKind.InstalledV1, legacyAnalysis.Kind);
+        Assert.Contains("legacy display-only hook", legacyAnalysis.Message, StringComparison.Ordinal);
+
+        var upgraded = SwShCatchCapMainPatcher.Apply(legacy, caps);
+
+        AssertRuntimeCatchCapHook(SwShNsoFile.Parse(upgraded).Text.DecompressedData);
+    }
+
+    [Fact]
     public void CatchCapStagesCustomCapsBeforeFinalBadge()
     {
         using var temp = CreateHookProject(ProjectGame.Sword);
@@ -933,9 +964,49 @@ public sealed class SwShHookReservationTests
 
     private static void WriteCatchCapVanillaAnchors(byte[] text)
     {
+        WriteInstruction(text, 0x013AE3AC, 0x0B000809);
         WriteInstruction(text, 0x013AE3B0, 0xA9417BFD);
+        WriteInstruction(text, 0x013AE3B4, 0x12001C08);
+        WriteInstruction(text, 0x013AE3B8, 0x71001D1F);
+        WriteInstruction(text, 0x013AE3BC, 0x52800C88);
+        WriteInstruction(text, 0x013AE3C0, 0x11005129);
+        WriteInstruction(text, 0x013AE3C4, 0x1A898100);
         WriteInstruction(text, 0x013AE3C8, 0xA8C24FF4);
         WriteInstruction(text, 0x013AE3CC, 0xD65F03C0);
+        WriteCatchCapRuntimeVanillaFormula(text);
+    }
+
+    private static void WriteCatchCapRuntimeVanillaFormula(byte[] text)
+    {
+        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset, 0x0B000809);
+        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 4, 0x12001C08);
+        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 8, 0x71001D1F);
+        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 0x0C, 0x52800C88);
+        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 0x10, 0x11005129);
+        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 0x14, 0x1A898100);
+        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeReturnOffset, 0xA8C17BFD);
+        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeReturnOffset + 4, 0xD65F03C0);
+    }
+
+    private static void AssertRuntimeCatchCapHook(byte[] text)
+    {
+        Assert.Equal(EncodeCmpImmediate(0, 8), ReadInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset));
+        Assert.Equal(
+            EncodeConditionalBranch(
+                SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 4,
+                SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 0x0C,
+                Arm64Condition.LS),
+            ReadInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 4));
+        Assert.Equal(EncodeMovzImmediate32(0, 8), ReadInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 8));
+        Assert.Equal(
+            EncodeAdr(8, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 0x0C, SwShCatchCapMainPatcher.ExeFsTableOffset),
+            ReadInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 0x0C));
+        Assert.Equal(
+            EncodeLdrbRegisterOffsetUxtw(0, 8, 0),
+            ReadInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 0x10));
+        Assert.Equal(EncodeNop(), ReadInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 0x14));
+        Assert.Equal(0xA8C17BFD, ReadInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeReturnOffset));
+        Assert.Equal(0xD65F03C0, ReadInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeReturnOffset + 4));
     }
 
     private static void WriteIvScreenVanillaAnchors(byte[] text)
@@ -1002,6 +1073,11 @@ public sealed class SwShHookReservationTests
         BinaryPrimitives.WriteUInt32LittleEndian(text.AsSpan(offset, sizeof(uint)), instruction);
     }
 
+    private static uint ReadInstruction(byte[] text, int offset)
+    {
+        return BinaryPrimitives.ReadUInt32LittleEndian(text.AsSpan(offset, sizeof(uint)));
+    }
+
     private static uint EncodeCmpImmediate(int register, int immediate)
     {
         return (uint)(0x7100001F | ((immediate & 0xFFF) << 10) | ((register & 0x1F) << 5));
@@ -1012,6 +1088,36 @@ public sealed class SwShHookReservationTests
         var delta = targetOffset - sourceOffset;
         var imm19 = delta >> 2;
         return (uint)(0x54000000 | ((imm19 & 0x7FFFF) << 5) | ((int)condition & 0xF));
+    }
+
+    private static uint EncodeAdr(int register, int sourceOffset, int targetOffset)
+    {
+        var delta = targetOffset - sourceOffset;
+        var immediate = delta & 0x1FFFFF;
+        var immediateLow = immediate & 0x3;
+        var immediateHigh = (immediate >> 2) & 0x7FFFF;
+        return 0x10000000u
+            | (uint)(immediateLow << 29)
+            | (uint)(immediateHigh << 5)
+            | (uint)(register & 0x1F);
+    }
+
+    private static uint EncodeMovzImmediate32(int register, int immediate)
+    {
+        return (uint)(0x52800000 | ((immediate & 0xFFFF) << 5) | (register & 0x1F));
+    }
+
+    private static uint EncodeLdrbRegisterOffsetUxtw(int targetRegister, int baseRegister, int offsetRegister)
+    {
+        return 0x38604800u
+            | (uint)((offsetRegister & 0x1F) << 16)
+            | (uint)((baseRegister & 0x1F) << 5)
+            | (uint)(targetRegister & 0x1F);
+    }
+
+    private static uint EncodeNop()
+    {
+        return 0xD503201F;
     }
 
     private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data)
@@ -1315,6 +1421,7 @@ public sealed class SwShHookReservationTests
     {
         EQ = 0,
         NE = 1,
+        LS = 9,
     }
 
     private sealed record TestAmx(TestAmxHeader Header, byte[] Expanded);

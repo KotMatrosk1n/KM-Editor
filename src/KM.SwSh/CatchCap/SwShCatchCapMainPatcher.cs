@@ -34,12 +34,21 @@ internal static class SwShCatchCapMainPatcher
     public const int ExeFsHookSiteOffset = 0x013AE3AC;
     public const int ExeFsTableOffset = 0x013AE3B0;
     public const int ExeFsReturnOffset = 0x013AE3C8;
+    public const int ExeFsRuntimeHookSiteOffset = 0x013AE3DC;
+    public const int ExeFsRuntimeReturnOffset = 0x013AE3F4;
 
     private const int CaveClampOffset = 0x013AE0B4;
     private const int CaveLoadAddressOffset = 0x013AEBE4;
     private const int CaveLoadValueOffset = 0x013AD734;
     private const int CaveOverflowOffset = 0x013AF464;
+    private const uint VanillaFormulaStartInstruction = 0x0B000809; // add w9,w0,w0,lsl #2
+    private const uint VanillaMaskInstruction = 0x12001C08; // and w8,w0,#0xff
+    private const uint VanillaCompareSevenInstruction = 0x71001D1F; // cmp w8,#0x7
+    private const uint VanillaLoadHundredInstruction = 0x52800C88; // mov w8,#0x64
+    private const uint VanillaAddTwentyInstruction = 0x11005129; // add w9,w9,#0x14
+    private const uint VanillaSelectInstruction = 0x1A898100; // csel w0,w8,w9,hi
     private const uint VanillaTailRestoreInstruction = 0xA9417BFD; // ldp x29,x30,[sp,#0x10]
+    private const uint VanillaRuntimeRestoreInstruction = 0xA8C17BFD; // ldp x29,x30,[sp],#0x10
     private const uint VanillaFinalRestoreInstruction = 0xA8C24FF4; // ldp x20,x19,[sp],#0x20
     private const uint VanillaRetInstruction = 0xD65F03C0;
 
@@ -60,11 +69,27 @@ internal static class SwShCatchCapMainPatcher
             {
                 var rawCaps = text.AsSpan(ExeFsTableOffset, CapCount).ToArray();
                 var caps = NormalizeCaps(rawCaps);
-                var message = rawCaps[FinalBadgeCount] == FinalBadgeCap
-                    ? "Catch Cap Editor hook is installed. Changing values edits badge counts 0-7; eight badges is fixed at Lv.100 by the game."
-                    : string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"Catch Cap Editor hook is installed. Badge counts 0-7 are editable; the installed table has stale Lv.{rawCaps[FinalBadgeCount]} metadata for eight badges, so stage and apply to rewrite it to Lv.100.");
+                if (!IsUnconditionalBranch(ReadInstruction(text, ExeFsHookSiteOffset)))
+                {
+                    return new SwShCatchCapAnalysis(
+                        SwShCatchCapInstallKind.Conflict,
+                        "Catch Cap Editor marker is present, but the display cap formula is not branched to the KM hook.",
+                        caps,
+                        FormatLogicExpression(caps),
+                        ComputeCapLogicSha256(caps));
+                }
+
+                if (!HasRuntimeHook(text) && !HasVanillaRuntimeFormula(text))
+                {
+                    return new SwShCatchCapAnalysis(
+                        SwShCatchCapInstallKind.Conflict,
+                        "Catch Cap Editor marker is present, but the runtime catch gate is neither vanilla nor patched by KM.",
+                        caps,
+                        FormatLogicExpression(caps),
+                        ComputeCapLogicSha256(caps));
+                }
+
+                var message = CreateInstalledMessage(rawCaps, HasRuntimeHook(text));
                 return new SwShCatchCapAnalysis(
                     SwShCatchCapInstallKind.InstalledV1,
                     message,
@@ -89,6 +114,16 @@ internal static class SwShCatchCapMainPatcher
                 return new SwShCatchCapAnalysis(
                     SwShCatchCapInstallKind.Conflict,
                     "Catch-cap formula tail does not look vanilla and does not contain a KM Catch Cap Hook marker.",
+                    DefaultCaps,
+                    FormatLogicExpression(DefaultCaps),
+                    ComputeCapLogicSha256(DefaultCaps));
+            }
+
+            if (!HasVanillaRuntimeFormula(text))
+            {
+                return new SwShCatchCapAnalysis(
+                    SwShCatchCapInstallKind.Conflict,
+                    "Runtime catch gate does not look vanilla and does not contain a KM Catch Cap Hook marker.",
                     DefaultCaps,
                     FormatLogicExpression(DefaultCaps),
                     ComputeCapLogicSha256(DefaultCaps));
@@ -161,7 +196,12 @@ internal static class SwShCatchCapMainPatcher
 
         if (analysis.Kind == SwShCatchCapInstallKind.NotInstalled)
         {
-            InstallHook(text);
+            InstallDisplayHook(text);
+        }
+
+        if (!HasRuntimeHook(text))
+        {
+            InstallRuntimeHook(text);
         }
 
         WriteTableAndMarker(text, capBytes);
@@ -230,7 +270,24 @@ internal static class SwShCatchCapMainPatcher
         return Convert.ToHexString(SHA256.HashData(Encoding.ASCII.GetBytes(canonical))).ToLowerInvariant();
     }
 
-    private static void InstallHook(byte[] text)
+    private static string CreateInstalledMessage(IReadOnlyList<byte> rawCaps, bool hasRuntimeHook)
+    {
+        var staleFinalBadgeMessage = rawCaps[FinalBadgeCount] == FinalBadgeCap
+            ? null
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $" The installed table has stale Lv.{rawCaps[FinalBadgeCount]} metadata for eight badges; stage and apply to rewrite it to Lv.100.");
+
+        var runtimeMessage = hasRuntimeHook
+            ? "Catch Cap Editor hook is installed for display and runtime capture checks."
+            : "Catch Cap Editor has a legacy display-only hook installed; stage and apply to add the runtime capture gate hook.";
+
+        return runtimeMessage
+            + " Changing values edits badge counts 0-7; eight badges is fixed at Lv.100 by the game."
+            + staleFinalBadgeMessage;
+    }
+
+    private static void InstallDisplayHook(byte[] text)
     {
         if (ReadInstruction(text, ExeFsTableOffset) != VanillaTailRestoreInstruction)
         {
@@ -262,6 +319,24 @@ internal static class SwShCatchCapMainPatcher
         WriteInstruction(text, CaveLoadValueOffset + 8, EncodeBranch(CaveLoadValueOffset + 8, ExeFsReturnOffset));
     }
 
+    private static void InstallRuntimeHook(byte[] text)
+    {
+        if (!HasVanillaRuntimeFormula(text))
+        {
+            throw new InvalidDataException("Catch Cap Hook install requires the vanilla runtime catch gate at main.text+0x013AE3DC.");
+        }
+
+        WriteInstruction(text, ExeFsRuntimeHookSiteOffset, EncodeCmpImmediate(0, 8));
+        WriteInstruction(
+            text,
+            ExeFsRuntimeHookSiteOffset + 4,
+            EncodeConditionalBranch(ExeFsRuntimeHookSiteOffset + 4, ExeFsRuntimeHookSiteOffset + 0x0C, Arm64Condition.LS));
+        WriteInstruction(text, ExeFsRuntimeHookSiteOffset + 8, EncodeMovzImmediate32(0, 8));
+        WriteInstruction(text, ExeFsRuntimeHookSiteOffset + 0x0C, EncodeAdr(8, ExeFsRuntimeHookSiteOffset + 0x0C, ExeFsTableOffset));
+        WriteInstruction(text, ExeFsRuntimeHookSiteOffset + 0x10, EncodeLdrbRegisterOffsetUxtw(0, 8, 0));
+        WriteInstruction(text, ExeFsRuntimeHookSiteOffset + 0x14, EncodeNop());
+    }
+
     private static void WriteTableAndMarker(byte[] text, IReadOnlyList<byte> caps)
     {
         for (var index = 0; index < CapCount; index++)
@@ -288,6 +363,30 @@ internal static class SwShCatchCapMainPatcher
             && text.Slice(ExeFsTableOffset + CapCount, Marker.Length).SequenceEqual(Marker)
             && text[ExeFsTableOffset + CapCount + Marker.Length] == CapCount
             && text[ExeFsTableOffset + CapCount + Marker.Length + 1] == 1;
+    }
+
+    private static bool HasVanillaRuntimeFormula(ReadOnlySpan<byte> text)
+    {
+        return ReadInstruction(text, ExeFsRuntimeHookSiteOffset) == VanillaFormulaStartInstruction
+            && ReadInstruction(text, ExeFsRuntimeHookSiteOffset + 4) == VanillaMaskInstruction
+            && ReadInstruction(text, ExeFsRuntimeHookSiteOffset + 8) == VanillaCompareSevenInstruction
+            && ReadInstruction(text, ExeFsRuntimeHookSiteOffset + 0x0C) == VanillaLoadHundredInstruction
+            && ReadInstruction(text, ExeFsRuntimeHookSiteOffset + 0x10) == VanillaAddTwentyInstruction
+            && ReadInstruction(text, ExeFsRuntimeHookSiteOffset + 0x14) == VanillaSelectInstruction
+            && ReadInstruction(text, ExeFsRuntimeReturnOffset) == VanillaRuntimeRestoreInstruction
+            && ReadInstruction(text, ExeFsRuntimeReturnOffset + 4) == VanillaRetInstruction;
+    }
+
+    private static bool HasRuntimeHook(ReadOnlySpan<byte> text)
+    {
+        return ReadInstruction(text, ExeFsRuntimeHookSiteOffset) == EncodeCmpImmediate(0, 8)
+            && ReadInstruction(text, ExeFsRuntimeHookSiteOffset + 4) == EncodeConditionalBranch(ExeFsRuntimeHookSiteOffset + 4, ExeFsRuntimeHookSiteOffset + 0x0C, Arm64Condition.LS)
+            && ReadInstruction(text, ExeFsRuntimeHookSiteOffset + 8) == EncodeMovzImmediate32(0, 8)
+            && ReadInstruction(text, ExeFsRuntimeHookSiteOffset + 0x0C) == EncodeAdr(8, ExeFsRuntimeHookSiteOffset + 0x0C, ExeFsTableOffset)
+            && ReadInstruction(text, ExeFsRuntimeHookSiteOffset + 0x10) == EncodeLdrbRegisterOffsetUxtw(0, 8, 0)
+            && ReadInstruction(text, ExeFsRuntimeHookSiteOffset + 0x14) == EncodeNop()
+            && ReadInstruction(text, ExeFsRuntimeReturnOffset) == VanillaRuntimeRestoreInstruction
+            && ReadInstruction(text, ExeFsRuntimeReturnOffset + 4) == VanillaRetInstruction;
     }
 
     private static void EnsureCavesAvailableOrOwned(byte[] text)

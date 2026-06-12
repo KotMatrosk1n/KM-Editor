@@ -693,6 +693,7 @@ const itemFieldFlagsFieldName = 'fieldFlags';
 const itemUseFlags1FieldName = 'useFlags1';
 const itemUseFlags2FieldName = 'useFlags2';
 const pokemonGlobalEvYieldFieldName = 'evYieldAll';
+const pokemonGlobalExpYieldFieldName = 'expYieldAll';
 const pokemonRemoveEvYieldValue = 'remove';
 const pokemonRestoreEvYieldValue = 'restore';
 const trainerClassIdFieldName = 'trainerClassId';
@@ -956,6 +957,7 @@ const encounterConditionLabels = [
   'Fishing',
   'Shaking Trees'
 ] as const;
+const encounterAreaLabels = ['Symbol', 'Hidden'] as const;
 const raidBattleSpeciesFieldName = 'species';
 const raidBattleFormFieldName = 'form';
 const raidBattleAbilityFieldName = 'ability';
@@ -4004,6 +4006,51 @@ export function App({
     }
   };
 
+  const handleUpdateEncounterSlotUpdates = async (updates: EncounterSlotFieldUpdate[]) => {
+    const nonEmptyUpdates = updates.filter((update) => update.changes.length > 0);
+    if (nonEmptyUpdates.length === 0) {
+      return false;
+    }
+
+    setIsEncounterUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      let nextSession = editSession;
+      let nextWorkflow = encountersWorkflow;
+      let nextDiagnostics: ApiDiagnostic[] = [];
+
+      for (const update of nonEmptyUpdates) {
+        for (const change of update.changes) {
+          const response = await bridge.updateEncounterSlotField({
+            field: change.field,
+            paths: toProjectPaths(draftPaths),
+            session: nextSession,
+            slot: update.slot,
+            tableId: update.tableId,
+            value: change.value
+          });
+          nextWorkflow = response.workflow;
+          nextSession = response.session;
+          nextDiagnostics = response.diagnostics;
+        }
+      }
+
+      if (nextWorkflow) {
+        setEncountersWorkflow(nextWorkflow);
+      }
+      setEditSession(nextSession);
+      setEditValidationDiagnostics(nextDiagnostics);
+      return true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsEncounterUpdating(false);
+    }
+  };
+
   const handleUpdateRaidRewardField = async (
     tableId: string,
     slot: number,
@@ -5219,6 +5266,7 @@ export function App({
                 onStartEditSession={handleStartEditSession}
                 onUpdateEncounterSlotField={handleUpdateEncounterSlotField}
                 onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
+                onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
                 searchText={encounterSearchText}
                 selectedTableId={selectedEncounterTableId}
                 workflow={encountersWorkflow}
@@ -6807,9 +6855,20 @@ function PokemonSection({
   );
   const canEditPokemon = workflow?.summary.availability === 'available';
   const pendingPokemonIds = useMemo(() => getPendingPokemonIds(editSession), [editSession]);
-  const canBulkUpdateEvYield = workflow !== null && canEditPokemon && !isPokemonUpdating;
+  const canBulkUpdatePokemonYield = workflow !== null && canEditPokemon && !isPokemonUpdating;
+  const [expYieldConfirmation, setExpYieldConfirmation] =
+    useState<PokemonYieldConfirmationState>(null);
   const [evYieldConfirmation, setEvYieldConfirmation] =
-    useState<EvYieldConfirmationState>(null);
+    useState<PokemonYieldConfirmationState>(null);
+  const handleConfirmExpYieldAction = useCallback(() => {
+    if (expYieldConfirmation === 'remove') {
+      onUpdatePokemonField(0, pokemonGlobalExpYieldFieldName, pokemonRemoveEvYieldValue);
+    } else if (expYieldConfirmation === 'restore') {
+      onUpdatePokemonField(0, pokemonGlobalExpYieldFieldName, pokemonRestoreEvYieldValue);
+    }
+
+    setExpYieldConfirmation(null);
+  }, [expYieldConfirmation, onUpdatePokemonField]);
   const handleConfirmEvYieldAction = useCallback(() => {
     if (evYieldConfirmation === 'remove') {
       onUpdatePokemonField(0, pokemonGlobalEvYieldFieldName, pokemonRemoveEvYieldValue);
@@ -6858,7 +6917,25 @@ function PokemonSection({
             <div className="pokemon-toolbar-actions">
               <button
                 className="primary-button compact-button"
-                disabled={!canBulkUpdateEvYield}
+                disabled={!canBulkUpdatePokemonYield}
+                onClick={() => setExpYieldConfirmation('remove')}
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={14} />
+                <span>Remove EXP Yield</span>
+              </button>
+              <button
+                className="primary-button compact-button"
+                disabled={!canBulkUpdatePokemonYield}
+                onClick={() => setExpYieldConfirmation('restore')}
+                type="button"
+              >
+                <RefreshCw aria-hidden="true" size={14} />
+                <span>Restore EXP Yield</span>
+              </button>
+              <button
+                className="primary-button compact-button"
+                disabled={!canBulkUpdatePokemonYield}
                 onClick={() => setEvYieldConfirmation('remove')}
                 type="button"
               >
@@ -6867,7 +6944,7 @@ function PokemonSection({
               </button>
               <button
                 className="primary-button compact-button"
-                disabled={!canBulkUpdateEvYield}
+                disabled={!canBulkUpdatePokemonYield}
                 onClick={() => setEvYieldConfirmation('restore')}
                 type="button"
               >
@@ -6946,15 +7023,71 @@ function PokemonSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      {workflow && selectedPokemon ? (
+        <div className="pokemon-diagnostics-row">
+          <SelectedPokemonSummaryCard pokemon={selectedPokemon} />
+          <DiagnosticsSection diagnostics={workflow.diagnostics} />
+        </div>
+      ) : (
+        <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      )}
+      {expYieldConfirmation ? (
+        <PokemonYieldConfirmationModal
+          action={expYieldConfirmation}
+          kind="exp"
+          onCancel={() => setExpYieldConfirmation(null)}
+          onConfirm={handleConfirmExpYieldAction}
+        />
+      ) : null}
       {evYieldConfirmation ? (
-        <EvYieldConfirmationModal
+        <PokemonYieldConfirmationModal
           action={evYieldConfirmation}
+          kind="ev"
           onCancel={() => setEvYieldConfirmation(null)}
           onConfirm={handleConfirmEvYieldAction}
         />
       ) : null}
     </>
+  );
+}
+
+function SelectedPokemonSummaryCard({ pokemon }: { pokemon: PokemonRecord }) {
+  return (
+    <div className="pokemon-summary-card pokemon-summary-card-detailed">
+      <PokemonSprite className="pokemon-summary-sprite" name={pokemon.name} />
+      <div className="pokemon-summary-main">
+        <strong>{pokemon.name}</strong>
+        <span>
+          {pokemon.speciesId} / {pokemon.formLabel}
+        </span>
+      </div>
+      <dl className="item-provenance-list pokemon-summary-metadata">
+        <div>
+          <dt>Personal ID</dt>
+          <dd>{pokemon.personalId}</dd>
+        </div>
+        <div>
+          <dt>Types</dt>
+          <dd>{formatPokemonTypes(pokemon)}</dd>
+        </div>
+        <div>
+          <dt>Dex</dt>
+          <dd>{formatPokemonDexPresence(pokemon)}</dd>
+        </div>
+        <div>
+          <dt>Source file</dt>
+          <dd>{pokemon.provenance.sourceFile}</dd>
+        </div>
+        <div>
+          <dt>Layer</dt>
+          <dd>{formatSourceLayer(pokemon.provenance.sourceLayer)}</dd>
+        </div>
+        <div>
+          <dt>File state</dt>
+          <dd>{formatFileState(pokemon.provenance.fileState)}</dd>
+        </div>
+      </dl>
+    </div>
   );
 }
 
@@ -7532,41 +7665,7 @@ function SelectedPokemonPanel({
 
         {pokemon ? (
           <>
-          <div className="pokemon-summary-card pokemon-summary-card-detailed">
-            <PokemonSprite className="pokemon-summary-sprite" name={pokemon.name} />
-            <div className="pokemon-summary-main">
-              <strong>{pokemon.name}</strong>
-              <span>
-                {pokemon.speciesId} / {pokemon.formLabel}
-              </span>
-            </div>
-            <dl className="item-provenance-list pokemon-summary-metadata">
-              <div>
-                <dt>Personal ID</dt>
-                <dd>{pokemon.personalId}</dd>
-              </div>
-              <div>
-                <dt>Types</dt>
-                <dd>{formatPokemonTypes(pokemon)}</dd>
-              </div>
-              <div>
-                <dt>Dex</dt>
-                <dd>{formatPokemonDexPresence(pokemon)}</dd>
-              </div>
-              <div>
-                <dt>Source file</dt>
-                <dd>{pokemon.provenance.sourceFile}</dd>
-              </div>
-              <div>
-                <dt>Layer</dt>
-                <dd>{formatSourceLayer(pokemon.provenance.sourceLayer)}</dd>
-              </div>
-              <div>
-                <dt>File state</dt>
-                <dd>{formatFileState(pokemon.provenance.fileState)}</dd>
-              </div>
-            </dl>
-          </div>
+          <SelectedPokemonSummaryCard pokemon={pokemon} />
 
           <div className="inspector-block pokemon-stats-block">
             <h4>Base Stats</h4>
@@ -9751,16 +9850,23 @@ function SelectedTrainerPanel({
                       const draftState = getTrainerFieldDraftState(draftValue, currentValue, field);
                       const isFieldBlocked =
                         field.field === classBallIdFieldName && !trainer.canEditClassBall;
+                      const disabledReason =
+                        field.field === giftFieldName
+                          ? 'Gift ID is locked until this trainer field is fully mapped.'
+                          : isFieldBlocked
+                          ? 'Class ball is locked for this trainer class.'
+                          : undefined;
 
                       return (
                         <TrainerDraftField
                           currentValue={currentValue}
                           disabled={
-                            isFieldBlocked ||
+                            disabledReason !== undefined ||
                             !canEditTrainers ||
                             editSession === null ||
                             isTrainerUpdating
                           }
+                          disabledReason={disabledReason}
                           draftState={draftState}
                           draftValue={draftValue}
                           field={field}
@@ -15453,6 +15559,7 @@ function EncountersSection({
   onStartEditSession,
   onUpdateEncounterSlotField,
   onUpdateEncounterSlotFields,
+  onUpdateEncounterSlotUpdates,
   searchText,
   selectedTableId,
   workflow
@@ -15474,20 +15581,37 @@ function EncountersSection({
     slot: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  onUpdateEncounterSlotUpdates: (updates: EncounterSlotFieldUpdate[]) => Promise<boolean>;
   searchText: string;
   selectedTableId: string | null;
   workflow: EncountersWorkflow | null;
 }) {
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
-  const filteredTables = filterEncounterTables(workflow?.tables ?? [], searchText);
+  const allTables = workflow?.tables ?? [];
+  const filteredTables = useMemo(
+    () => filterEncounterTables(allTables, searchText),
+    [allTables, searchText]
+  );
   const selectedTable =
     workflow?.tables.find((table) => table.tableId === selectedTableId) ??
     filteredTables[0] ??
     null;
+  const tableRows = useMemo(
+    () => buildEncounterTableRows(filteredTables, selectedTable),
+    [filteredTables, selectedTable]
+  );
+  const selectedZoneKey = selectedTable ? getEncounterTableZoneKey(selectedTable) : null;
   const selectedEncounterSlot =
     selectedTable?.slots.find((slot) => slot.slot === selectedSlot) ??
     selectedTable?.slots[0] ??
     null;
+  const areaTabs = useMemo(
+    () =>
+      selectedTable && workflow
+        ? buildEncounterAreaTabs(selectedTable, workflow.tables)
+        : [],
+    [selectedTable, workflow]
+  );
   const conditionTabs = useMemo(
     () =>
       selectedTable && workflow
@@ -15550,34 +15674,31 @@ function EncountersSection({
               <div className="encounters-row encounters-row-heading" role="row">
                 <span role="columnheader">Location</span>
                 <span role="columnheader">Game</span>
-                <span role="columnheader">Area</span>
-                <span role="columnheader">Weather</span>
-                <span role="columnheader">Slots</span>
-                <span role="columnheader">Member</span>
+                <span role="columnheader">Areas</span>
               </div>
-              {filteredTables.map((table) => (
+              {tableRows.map((tableRow) => (
                 <button
                   className={`encounters-row ${
-                    selectedTable?.tableId === table.tableId ? 'encounters-row-selected' : ''
+                    selectedZoneKey === tableRow.zoneKey ? 'encounters-row-selected' : ''
                   } ${
-                    pendingEncounterTableIds.has(table.tableId) ? 'encounters-row-pending' : ''
+                    tableRow.tableIds.some((tableId) => pendingEncounterTableIds.has(tableId))
+                      ? 'encounters-row-pending'
+                      : ''
                   }`}
-                  key={table.tableId}
-                  onClick={() => onSelectTable(table.tableId)}
+                  key={tableRow.zoneKey}
+                  onClick={() => onSelectTable(tableRow.table.tableId)}
                   role="row"
                   type="button"
                 >
-                  <span role="cell">{table.location}</span>
-                  <span role="cell">{table.gameVersion}</span>
-                  <span role="cell">{table.area}</span>
-                  <span role="cell">{table.encounterType}</span>
-                  <span role="cell">{table.slots.length}</span>
-                  <span role="cell">{table.archiveMember}</span>
+                  <span role="cell">{tableRow.table.location}</span>
+                  <span role="cell">{tableRow.table.gameVersion}</span>
+                  <span role="cell">{tableRow.areaLabel}</span>
                 </button>
               ))}
             </div>
 
             <SelectedEncounterPanel
+              areaTabs={areaTabs}
               canEditEncounters={canEditEncounters}
               editSession={editSession}
               editableFields={workflow.editableFields}
@@ -15590,8 +15711,10 @@ function EncountersSection({
               onStartEditSession={onStartEditSession}
               onUpdateEncounterSlotField={onUpdateEncounterSlotField}
               onUpdateEncounterSlotFields={onUpdateEncounterSlotFields}
+              onUpdateEncounterSlotUpdates={onUpdateEncounterSlotUpdates}
               selectedSlot={selectedSlot}
               table={selectedTable}
+              tables={workflow.tables}
             />
           </div>
         ) : (
@@ -15605,6 +15728,7 @@ function EncountersSection({
 }
 
 function SelectedEncounterPanel({
+  areaTabs,
   canEditEncounters,
   conditionTabs,
   editSession,
@@ -15617,9 +15741,12 @@ function SelectedEncounterPanel({
   onStartEditSession,
   onUpdateEncounterSlotField,
   onUpdateEncounterSlotFields,
+  onUpdateEncounterSlotUpdates,
   selectedSlot,
-  table
+  table,
+  tables
 }: {
+  areaTabs: EncounterAreaTab[];
   canEditEncounters: boolean;
   conditionTabs: EncounterConditionTab[];
   editSession: EditSession | null;
@@ -15641,12 +15768,15 @@ function SelectedEncounterPanel({
     slot: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  onUpdateEncounterSlotUpdates: (updates: EncounterSlotFieldUpdate[]) => Promise<boolean>;
   selectedSlot: number | null;
   table: EncounterTableRecord | null;
+  tables: EncounterTableRecord[];
 }) {
   const [draftsBySlotKey, setDraftsBySlotKey] = useState<
     Record<string, Record<string, string>>
   >({});
+  const [areaCopyRequest, setAreaCopyRequest] = useState<EncounterAreaCopyRequest | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
   const encounterFields = useMemo(
     () =>
@@ -15725,6 +15855,30 @@ function SelectedEncounterPanel({
     !isEncounterUpdating &&
     encounterLevelZoneChanges.length > 0 &&
     !hasInvalidEncounterLevelDraft;
+  const areaCopyTargetArea =
+    table?.area === 'Symbol' ? 'Hidden' : table?.area === 'Hidden' ? 'Symbol' : null;
+  const areaCopyTargetTable =
+    areaCopyTargetArea === null
+      ? null
+      : areaTabs.find((areaTab) => areaTab.label === areaCopyTargetArea)?.table ?? null;
+  const preparedAreaCopyRequest =
+    table && areaCopyTargetArea
+      ? createEncounterAreaCopyRequest(table, tables, areaCopyTargetArea)
+      : null;
+  const canPrepareEncounterAreaCopy =
+    table !== null &&
+    preparedAreaCopyRequest !== null &&
+    editSession !== null &&
+    canEditEncounters &&
+    !isEncounterUpdating;
+  const encounterAreaCopyDisabledTitle =
+    editSession === null
+      ? 'Start editing before copying encounters.'
+      : areaCopyTargetTable === null
+      ? `${areaCopyTargetArea ?? 'Target'} encounters are not available for this location.`
+      : preparedAreaCopyRequest === null
+      ? 'No matching destination conditions or slots are available to copy.'
+      : undefined;
 
   useEffect(() => {
     if (!encounterDraftKey) {
@@ -15773,6 +15927,39 @@ function SelectedEncounterPanel({
           </dl>
 
           <div className="encounter-edit-form">
+            {areaTabs.length > 0 ? (
+              <div
+                className="encounter-area-tabs"
+                role="tablist"
+                aria-label="Encounter area"
+              >
+                {areaTabs.map((areaTab) => (
+                  <button
+                    aria-selected={areaTab.label === table.area}
+                    className={`condition-tab-button ${
+                      areaTab.isAvailable ? '' : 'condition-tab-button-unavailable'
+                    }`}
+                    disabled={!areaTab.isAvailable}
+                    key={areaTab.label}
+                    onClick={() => {
+                      if (areaTab.tableId) {
+                        onSelectTable(areaTab.tableId);
+                      }
+                    }}
+                    role="tab"
+                    title={
+                      areaTab.isAvailable
+                        ? areaTab.title
+                        : `${areaTab.label} encounters are not available for this location.`
+                    }
+                    type="button"
+                  >
+                    {areaTab.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
             {conditionTabs.length > 0 ? (
               <div
                 className="encounter-condition-tabs"
@@ -15803,6 +15990,30 @@ function SelectedEncounterPanel({
                     {conditionTab.label}
                   </button>
                 ))}
+              </div>
+            ) : null}
+
+            {areaCopyTargetArea ? (
+              <div className="encounter-area-copy-actions">
+                <button
+                  className="secondary-button"
+                  disabled={!canPrepareEncounterAreaCopy}
+                  onClick={() => {
+                    if (!preparedAreaCopyRequest || !canPrepareEncounterAreaCopy) {
+                      return;
+                    }
+
+                    setAreaCopyRequest(preparedAreaCopyRequest);
+                  }}
+                  title={
+                    encounterAreaCopyDisabledTitle ??
+                    `Copy this ${table.area} table to ${areaCopyTargetArea}.`
+                  }
+                  type="button"
+                >
+                  <ArrowLeftRight aria-hidden="true" size={16} />
+                  <span>Apply to {areaCopyTargetArea}</span>
+                </button>
               </div>
             ) : null}
 
@@ -16021,11 +16232,74 @@ function SelectedEncounterPanel({
               </button>
             ) : null}
           </div>
+          {areaCopyRequest ? (
+            <EncounterAreaCopyConfirmationModal
+              isApplying={isEncounterUpdating}
+              onCancel={() => setAreaCopyRequest(null)}
+              onConfirm={async () => {
+                const didSave = await onUpdateEncounterSlotUpdates(areaCopyRequest.updates);
+                if (didSave) {
+                  setDraftsBySlotKey({});
+                  setAreaCopyRequest(null);
+                  onSelectTable(areaCopyRequest.targetTableId);
+                }
+              }}
+              request={areaCopyRequest}
+            />
+          ) : null}
         </>
       ) : (
         <p className="empty-copy">No encounter table selected.</p>
       )}
     </aside>
+  );
+}
+
+function EncounterAreaCopyConfirmationModal({
+  isApplying,
+  onCancel,
+  onConfirm,
+  request
+}: {
+  isApplying: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  request: EncounterAreaCopyRequest;
+}) {
+  const conditionLabel = request.conditionLabels.join(', ');
+  const slotLabel = request.updates.length === 1 ? 'slot' : 'slots';
+  const skippedLabel = request.skippedConditionLabels.join(', ');
+
+  return (
+    <div aria-labelledby="encounter-area-copy-heading" aria-modal="true" className="modal-backdrop" role="dialog">
+      <section className="modal-panel">
+        <div className="panel-heading">
+          <ArrowLeftRight aria-hidden="true" size={18} />
+          <h2 id="encounter-area-copy-heading">Apply to {request.targetArea}?</h2>
+        </div>
+        <p className="modal-copy">
+          Copy Pokemon, forms, percentages, and min/max levels from {request.sourceArea} to{' '}
+          {request.targetArea} for {request.sourceLocation}.
+        </p>
+        <p className="modal-copy modal-copy-muted">
+          This will update {request.updates.length} matching {slotLabel} across {conditionLabel}.
+          Missing destination conditions or slot numbers are ignored.
+        </p>
+        {request.skippedConditionLabels.length > 0 ? (
+          <p className="modal-copy modal-copy-muted">Skipped: {skippedLabel}.</p>
+        ) : null}
+        <div className="modal-actions">
+          <button className="secondary-button" disabled={isApplying} onClick={onCancel} type="button">
+            <X aria-hidden="true" size={16} />
+            <span>Cancel</span>
+          </button>
+          <button className="primary-button" disabled={isApplying} onClick={onConfirm} type="button">
+            <ArrowLeftRight aria-hidden="true" size={16} />
+            <span>{isApplying ? 'Applying' : `Apply to ${request.targetArea}`}</span>
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -20986,33 +21260,44 @@ function SaveProgressModal({ progress }: { progress: SaveProgressState }) {
   );
 }
 
-function EvYieldConfirmationModal({
+function PokemonYieldConfirmationModal({
   action,
+  kind,
   onCancel,
   onConfirm
 }: {
-  action: Exclude<EvYieldConfirmationState, null>;
+  action: Exclude<PokemonYieldConfirmationState, null>;
+  kind: PokemonYieldConfirmationKind;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const isRestore = action === 'restore';
-  const title = isRestore ? 'Restore EV Yield?' : 'Remove EV Yield?';
-  const description = isRestore
-    ? 'Restore EV Yield will copy every Pokemon EV yield back from vanilla personal data. Any custom EV yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after this is saved.'
-    : 'Remove EV Yield will set every EV yield stat on every Pokemon to 0. This stages one pending Pokemon change and does not write files until you review and save it from Changes.';
+  const label = kind === 'exp' ? 'EXP Yield' : 'EV Yield';
+  const fieldDescription = kind === 'exp' ? 'Base EXP yield' : 'EV yield';
+  const removeDescription =
+    kind === 'exp'
+      ? 'Remove EXP Yield will set every Pokemon Base EXP yield to 0. This stages one pending Pokemon change and does not write files until you review and save it from Changes.'
+      : 'Remove EV Yield will set every EV yield stat on every Pokemon to 0. This stages one pending Pokemon change and does not write files until you review and save it from Changes.';
+  const restoreDescription =
+    kind === 'exp'
+      ? `Restore ${label} will copy every Pokemon ${fieldDescription} back from vanilla personal data. Any custom EXP yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after this is saved.`
+      : 'Restore EV Yield will copy every Pokemon EV yield back from vanilla personal data. Any custom EV yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after this is saved.';
+  const title = isRestore ? `Restore ${label}?` : `Remove ${label}?`;
+  const description = isRestore ? restoreDescription : removeDescription;
   const Icon = isRestore ? RefreshCw : Trash2;
+  const headingId = `${kind}-yield-confirmation-heading`;
 
   return (
     <div className="modal-backdrop" role="presentation">
       <section
-        aria-labelledby="ev-yield-confirmation-heading"
+        aria-labelledby={headingId}
         aria-modal="true"
         className="modal-panel"
         role="dialog"
       >
         <div className="panel-heading">
           <Icon aria-hidden="true" size={18} />
-          <h2 id="ev-yield-confirmation-heading">{title}</h2>
+          <h2 id={headingId}>{title}</h2>
         </div>
         <p className="modal-copy">{description}</p>
         <div className="modal-actions">
@@ -21022,7 +21307,7 @@ function EvYieldConfirmationModal({
             type="button"
           >
             <Icon aria-hidden="true" size={16} />
-            <span>{isRestore ? 'Confirm Restore EV Yield' : 'Confirm Remove EV Yield'}</span>
+            <span>{isRestore ? `Confirm Restore ${label}` : `Confirm Remove ${label}`}</span>
           </button>
           <button className="secondary-button" onClick={onCancel} type="button">
             <X aria-hidden="true" size={16} />
@@ -22253,9 +22538,242 @@ function buildEncounterConditionTabs(
   return [...knownTabs, ...extraTabs];
 }
 
+function buildEncounterAreaTabs(
+  selectedTable: EncounterTableRecord,
+  tables: EncounterTableRecord[]
+): EncounterAreaTab[] {
+  const selectedZoneKey = getEncounterTableZoneKey(selectedTable);
+  const zoneTables = tables.filter(
+    (table) => getEncounterTableZoneKey(table) === selectedZoneKey
+  );
+  const knownLabels = new Set<string>(encounterAreaLabels);
+  const knownTabs = encounterAreaLabels.map((label) => {
+    const table = getPreferredEncounterTable(
+      zoneTables.filter((zoneTable) => zoneTable.area === label),
+      null,
+      selectedTable.encounterType
+    );
+
+    return {
+      isAvailable: table !== null,
+      label,
+      table,
+      tableId: table?.tableId ?? null,
+      title: table
+        ? `${label} ${table.encounterType} encounters`
+        : `${label} encounters are not available for this location.`
+    };
+  });
+  const extraTabs = sortEncounterAreaLabels(
+    Array.from(new Set(zoneTables.map((table) => table.area))).filter(
+      (label) => !knownLabels.has(label)
+    )
+  ).map((label) => {
+    const table = getPreferredEncounterTable(
+      zoneTables.filter((zoneTable) => zoneTable.area === label),
+      null,
+      selectedTable.encounterType
+    );
+
+    return {
+      isAvailable: table !== null,
+      label,
+      table,
+      tableId: table?.tableId ?? null,
+      title: table
+        ? `${label} ${table.encounterType} encounters`
+        : `${label} encounters are not available for this location.`
+    };
+  });
+
+  return [...knownTabs, ...extraTabs];
+}
+
+function buildEncounterTableRows(
+  tables: EncounterTableRecord[],
+  selectedTable: EncounterTableRecord | null
+): EncounterTableListRow[] {
+  const tablesByZoneKey = new Map<string, EncounterTableRecord[]>();
+
+  for (const table of tables) {
+    const zoneKey = getEncounterTableZoneKey(table);
+    tablesByZoneKey.set(zoneKey, [...(tablesByZoneKey.get(zoneKey) ?? []), table]);
+  }
+
+  return Array.from(tablesByZoneKey.entries()).map(([zoneKey, groupTables]) => {
+    const table =
+      selectedTable &&
+      getEncounterTableZoneKey(selectedTable) === zoneKey &&
+      groupTables.some((groupTable) => groupTable.tableId === selectedTable.tableId)
+        ? selectedTable
+        : getPreferredEncounterTable(groupTables) ?? groupTables[0]!;
+    const areaLabel = sortEncounterAreaLabels(
+      Array.from(new Set(groupTables.map((groupTable) => groupTable.area)))
+    ).join(' / ');
+
+    return {
+      areaLabel,
+      table,
+      tableIds: groupTables.map((groupTable) => groupTable.tableId),
+      zoneKey
+    };
+  });
+}
+
+function createEncounterAreaCopyRequest(
+  selectedSourceTable: EncounterTableRecord,
+  tables: EncounterTableRecord[],
+  targetArea: string
+): EncounterAreaCopyRequest | null {
+  const selectedZoneKey = getEncounterTableZoneKey(selectedSourceTable);
+  const zoneTables = tables.filter(
+    (table) => getEncounterTableZoneKey(table) === selectedZoneKey
+  );
+  const sourceTables = zoneTables
+    .filter((table) => table.area === selectedSourceTable.area)
+    .sort(compareEncounterTablesForCopy);
+  const targetTables = zoneTables.filter((table) => table.area === targetArea);
+  const targetTablesByCondition = new Map<string, EncounterTableRecord>();
+
+  for (const table of targetTables.sort(compareEncounterTablesForCopy)) {
+    if (!targetTablesByCondition.has(table.encounterType)) {
+      targetTablesByCondition.set(table.encounterType, table);
+    }
+  }
+
+  const updates: EncounterSlotFieldUpdate[] = [];
+  const conditionLabels: string[] = [];
+  const skippedConditionLabels: string[] = [];
+  let selectedTargetTableId: string | null = null;
+
+  for (const sourceTable of sourceTables) {
+    const targetTable = targetTablesByCondition.get(sourceTable.encounterType) ?? null;
+    if (!targetTable) {
+      skippedConditionLabels.push(sourceTable.encounterType);
+      continue;
+    }
+
+    const slotUpdates = createEncounterTableCopyUpdates(sourceTable, targetTable);
+    if (slotUpdates.length === 0) {
+      skippedConditionLabels.push(sourceTable.encounterType);
+      continue;
+    }
+
+    updates.push(...slotUpdates);
+    conditionLabels.push(sourceTable.encounterType);
+
+    if (sourceTable.encounterType === selectedSourceTable.encounterType) {
+      selectedTargetTableId = targetTable.tableId;
+    }
+  }
+
+  if (updates.length === 0) {
+    return null;
+  }
+
+  return {
+    conditionLabels,
+    skippedConditionLabels,
+    sourceArea: selectedSourceTable.area,
+    sourceLocation: selectedSourceTable.location,
+    targetArea,
+    targetTableId: selectedTargetTableId ?? updates[0]!.tableId,
+    updates
+  };
+}
+
+function createEncounterTableCopyUpdates(
+  sourceTable: EncounterTableRecord,
+  targetTable: EncounterTableRecord
+): EncounterSlotFieldUpdate[] {
+  const targetSlotNumbers = new Set(targetTable.slots.map((slot) => slot.slot));
+
+  return sourceTable.slots
+    .filter((slot) => targetSlotNumbers.has(slot.slot))
+    .map((slot) => ({
+      changes: [
+        { field: encounterSpeciesFieldName, value: slot.speciesId.toString() },
+        { field: encounterFormFieldName, value: slot.form.toString() },
+        { field: encounterProbabilityFieldName, value: slot.weight.toString() },
+        { field: encounterLevelMinFieldName, value: slot.levelMin.toString() },
+        { field: encounterLevelMaxFieldName, value: slot.levelMax.toString() }
+      ],
+      slot: slot.slot,
+      tableId: targetTable.tableId
+    }));
+}
+
+function compareEncounterTablesForCopy(
+  left: EncounterTableRecord,
+  right: EncounterTableRecord
+) {
+  const conditionRank =
+    getEncounterConditionRank(left.encounterType, null) -
+    getEncounterConditionRank(right.encounterType, null);
+  return conditionRank !== 0 ? conditionRank : left.tableId.localeCompare(right.tableId);
+}
+
+function getPreferredEncounterTable(
+  tables: EncounterTableRecord[],
+  selectedTable: EncounterTableRecord | null = null,
+  preferredCondition: string | null = null
+) {
+  if (selectedTable && tables.some((table) => table.tableId === selectedTable.tableId)) {
+    return selectedTable;
+  }
+
+  return [...tables].sort((left, right) => {
+    const areaRank = getEncounterAreaRank(left.area) - getEncounterAreaRank(right.area);
+    if (areaRank !== 0) {
+      return areaRank;
+    }
+
+    const conditionRank =
+      getEncounterConditionRank(left.encounterType, preferredCondition) -
+      getEncounterConditionRank(right.encounterType, preferredCondition);
+    if (conditionRank !== 0) {
+      return conditionRank;
+    }
+
+    return left.tableId.localeCompare(right.tableId);
+  })[0] ?? null;
+}
+
+function getEncounterAreaRank(area: string) {
+  const knownIndex = encounterAreaLabels.findIndex((label) => label === area);
+  return knownIndex >= 0 ? knownIndex : encounterAreaLabels.length;
+}
+
+function getEncounterConditionRank(encounterType: string, preferredCondition: string | null) {
+  if (preferredCondition && encounterType === preferredCondition) {
+    return 0;
+  }
+
+  if (encounterType === 'Normal') {
+    return 1;
+  }
+
+  const knownIndex = encounterConditionLabels.findIndex((label) => label === encounterType);
+  return knownIndex >= 0 ? knownIndex + 2 : encounterConditionLabels.length + 2;
+}
+
+function sortEncounterAreaLabels(labels: string[]) {
+  return [...labels].sort((left, right) => {
+    const rank = getEncounterAreaRank(left) - getEncounterAreaRank(right);
+    return rank !== 0 ? rank : left.localeCompare(right);
+  });
+}
+
 function getEncounterTableGroupKey(table: EncounterTableRecord) {
   const parts = table.tableId.split(':');
   return parts.length >= 5 ? parts.slice(0, 4).join(':') : null;
+}
+
+function getEncounterTableZoneKey(table: EncounterTableRecord) {
+  const parts = table.tableId.split(':');
+  return parts.length >= 5
+    ? [parts[0], parts[2], parts[3]].join(':')
+    : [table.gameVersion, table.location].join(':');
 }
 
 function filterEncounterTables(tables: EncounterTableRecord[], searchText: string) {
@@ -23611,11 +24129,42 @@ type SpeciesFormOptionContext = {
   speciesId?: number;
 };
 
+type EncounterAreaTab = {
+  isAvailable: boolean;
+  label: string;
+  table: EncounterTableRecord | null;
+  tableId: string | null;
+  title: string;
+};
+
 type EncounterConditionTab = {
   isAvailable: boolean;
   label: string;
   table: EncounterTableRecord | null;
   tableId: string | null;
+};
+
+type EncounterTableListRow = {
+  areaLabel: string;
+  table: EncounterTableRecord;
+  tableIds: string[];
+  zoneKey: string;
+};
+
+type EncounterSlotFieldUpdate = {
+  changes: Array<{ field: string; value: string }>;
+  slot: number;
+  tableId: string;
+};
+
+type EncounterAreaCopyRequest = {
+  conditionLabels: string[];
+  skippedConditionLabels: string[];
+  sourceArea: string;
+  sourceLocation: string;
+  targetArea: string;
+  targetTableId: string;
+  updates: EncounterSlotFieldUpdate[];
 };
 
 type SaveProgressState = {
@@ -23677,7 +24226,8 @@ type DependencyWarningState = {
   title: string;
 };
 
-type EvYieldConfirmationState = 'remove' | 'restore' | null;
+type PokemonYieldConfirmationKind = 'ev' | 'exp';
+type PokemonYieldConfirmationState = 'remove' | 'restore' | null;
 
 function SearchableOptionInput({
   ariaLabel,

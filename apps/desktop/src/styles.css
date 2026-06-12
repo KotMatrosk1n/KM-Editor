@@ -1076,6 +1076,24 @@ h2 {
   gap: 10px;
 }
 
+.pokemon-diagnostics-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  margin-top: 16px;
+}
+
+.pokemon-diagnostics-row > .pokemon-summary-card,
+.pokemon-diagnostics-row > .panel {
+  min-width: 0;
+  margin: 0;
+}
+
+.pokemon-diagnostics-row > .pokemon-summary-card {
+  align-content: start;
+}
+
 .pokemon-summary-card div {
   display: grid;
   gap: 4px;
@@ -2415,7 +2433,7 @@ h2 {
 
 .encounters-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1.3fr) minmax(70px, 0.5fr) minmax(84px, 0.6fr) minmax(110px, 0.8fr) 60px minmax(132px, 1fr);
+  grid-template-columns: minmax(150px, 1.25fr) minmax(70px, 0.5fr) minmax(130px, 1fr);
   gap: 10px;
   align-items: center;
   min-width: 0;
@@ -2463,6 +2481,14 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.encounter-area-copy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
 }
 
 .raid-rewards-table {
@@ -3064,6 +3090,7 @@ h2 {
   grid-template-columns: 1fr;
 }
 
+.encounter-area-tabs,
 .encounter-condition-tabs,
 .encounter-slot-tabs,
 .raid-reward-slot-grid {
@@ -3782,6 +3809,10 @@ input {
     grid-template-columns: 1fr;
   }
 
+  .pokemon-diagnostics-row {
+    grid-template-columns: 1fr;
+  }
+
   .pokemon-left-stack,
   .pokemon-selected-stack,
   .pokemon-table,
@@ -3964,12 +3995,6 @@ input {
 
   .encounters-row {
     grid-template-columns: minmax(120px, 1fr) minmax(70px, 0.6fr) minmax(84px, 0.7fr);
-  }
-
-  .encounters-row span:nth-child(3),
-  .encounters-row span:nth-child(5),
-  .encounters-row span:nth-child(6) {
-    display: none;
   }
 
   .flagwork-row {
