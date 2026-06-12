@@ -10,6 +10,7 @@ import {
   type CatchCapWorkflow,
   type DynamaxAdventuresWorkflow,
   type EncountersWorkflow,
+  type EncounterTableRecord,
   type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
@@ -485,7 +486,7 @@ describe('App', () => {
 
     expect(screen.queryByText('Potion')).not.toBeInTheDocument();
     expect(screen.getByText('romfs/bin/pml/item/item.dat')).toBeInTheDocument();
-    expect(screen.getByText('Base only')).toBeInTheDocument();
+    expect(screen.getAllByText('Base only').length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { level: 4, name: 'Field Use' })).toBeInTheDocument();
     expect(screen.getByText('Restore HP')).toBeInTheDocument();
     expect(screen.getByText('20 HP')).toBeInTheDocument();
@@ -537,8 +538,8 @@ describe('App', () => {
     expect(screen.queryByText('Bulbasaur')).not.toBeInTheDocument();
     expect(screen.getAllByText('Charmander').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Fire').length).toBeGreaterThan(0);
-    expect(screen.getByText('romfs/bin/pml/personal/personal_total.bin')).toBeInTheDocument();
-    expect(screen.getByText('Base only')).toBeInTheDocument();
+    expect(screen.getAllByText('romfs/bin/pml/personal/personal_total.bin').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Base only').length).toBeGreaterThan(0);
   });
 
   it('starts a Pokemon edit session and saves a personal stat change', async () => {
@@ -972,7 +973,7 @@ describe('App', () => {
     );
   });
 
-  it('confirms Pokemon EV Yield bulk actions before staging them', async () => {
+  it('confirms Pokemon EXP and EV Yield bulk actions before staging them', async () => {
     const baseBridge = createMockProjectBridge({}, true);
     const updatePokemonField = vi.fn(baseBridge.updatePokemonField);
     const user = userEvent.setup();
@@ -992,6 +993,52 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(screen.getByRole('button', { name: 'Pokemon' }));
 
+    await user.click(await screen.findByRole('button', { name: 'Remove EXP Yield' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Remove EXP Yield?' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Remove EXP Yield will set every Pokemon Base EXP yield to 0. This stages one pending Pokemon change and does not write files until you review and save it from Changes.'
+      )
+    ).toBeInTheDocument();
+    expect(updatePokemonField).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Remove EXP Yield?' })).not.toBeInTheDocument();
+    expect(updatePokemonField).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Remove EXP Yield' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirm Remove EXP Yield' }));
+
+    await waitFor(() => expect(updatePokemonField).toHaveBeenCalledTimes(1));
+    expect(updatePokemonField).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        field: 'expYieldAll',
+        personalId: 0,
+        value: 'remove'
+      })
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Restore EXP Yield' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Restore EXP Yield?' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Restore EXP Yield will copy every Pokemon Base EXP yield back from vanilla personal data. Any custom EXP yields currently staged or already in the output will be overwritten and are not restorable from KM Editor after this is saved.'
+      )
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Confirm Restore EXP Yield' }));
+
+    await waitFor(() => expect(updatePokemonField).toHaveBeenCalledTimes(2));
+    expect(updatePokemonField).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        field: 'expYieldAll',
+        personalId: 0,
+        value: 'restore'
+      })
+    );
+
     await user.click(await screen.findByRole('button', { name: 'Remove EV Yield' }));
 
     expect(await screen.findByRole('dialog', { name: 'Remove EV Yield?' })).toBeInTheDocument();
@@ -1000,16 +1047,16 @@ describe('App', () => {
         'Remove EV Yield will set every EV yield stat on every Pokemon to 0. This stages one pending Pokemon change and does not write files until you review and save it from Changes.'
       )
     ).toBeInTheDocument();
-    expect(updatePokemonField).not.toHaveBeenCalled();
+    expect(updatePokemonField).toHaveBeenCalledTimes(2);
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog', { name: 'Remove EV Yield?' })).not.toBeInTheDocument();
-    expect(updatePokemonField).not.toHaveBeenCalled();
+    expect(updatePokemonField).toHaveBeenCalledTimes(2);
 
     await user.click(screen.getByRole('button', { name: 'Remove EV Yield' }));
     await user.click(await screen.findByRole('button', { name: 'Confirm Remove EV Yield' }));
 
-    await waitFor(() => expect(updatePokemonField).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(updatePokemonField).toHaveBeenCalledTimes(3));
     expect(updatePokemonField).toHaveBeenLastCalledWith(
       expect.objectContaining({
         field: 'evYieldAll',
@@ -1029,7 +1076,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Confirm Restore EV Yield' }));
 
-    await waitFor(() => expect(updatePokemonField).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(updatePokemonField).toHaveBeenCalledTimes(4));
     expect(updatePokemonField).toHaveBeenLastCalledWith(
       expect.objectContaining({
         field: 'evYieldAll',
@@ -1402,6 +1449,7 @@ describe('App', () => {
     expect(screen.getByLabelText('Heal flag')).toHaveDisplayValue('Yes');
     expect(screen.getByLabelText('Prize money')).toHaveDisplayValue('$1,152 (rate 24)');
     expect(screen.getByLabelText('Gift ID')).toHaveDisplayValue('007 Rare Candy');
+    expect(screen.getByLabelText('Gift ID')).toBeDisabled();
     expect(screen.getByLabelText('Species ID')).toHaveDisplayValue('810 Grookey');
     expect(screen.getByLabelText('Held item ID')).toHaveDisplayValue('001 Potion');
     expect(screen.getByLabelText('Move 1 ID')).toHaveDisplayValue('001 Scratch');
@@ -1532,9 +1580,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Trainers' }));
     await user.click(screen.getByRole('button', { name: 'Edit' }));
 
-    const giftInput = screen.getByLabelText('Gift ID');
-    await user.clear(giftInput);
-    await user.type(giftInput, '1');
+    await user.selectOptions(screen.getByLabelText('Heal flag'), '0');
     const levelInput = screen.getByLabelText('Level');
     await user.clear(levelInput);
     await user.type(levelInput, '25');
@@ -1545,11 +1591,11 @@ describe('App', () => {
     await user.type(secondLevelInput, '30');
 
     await user.click(screen.getByRole('row', { name: /11Hop/ }));
-    expect(screen.getByLabelText('Gift ID')).toHaveDisplayValue('007 Rare Candy');
+    expect(screen.getByLabelText('Heal flag')).toHaveDisplayValue('Yes');
     expect(screen.getByLabelText('Level')).toHaveDisplayValue('5');
 
     await user.click(screen.getByRole('row', { name: /10Avery/ }));
-    expect(screen.getByLabelText('Gift ID')).toHaveDisplayValue('001 Potion');
+    expect(screen.getByLabelText('Heal flag')).toHaveDisplayValue('No');
     expect(screen.getByLabelText('Level')).toHaveDisplayValue('25');
 
     await user.click(screen.getByRole('button', { name: /Sobble/ }));
@@ -2330,6 +2376,360 @@ describe('App', () => {
     expect(updates.map((update) => update.slot)).toEqual([1, 1]);
     expect(updates.map((update) => update.field)).toEqual(['levelMin', 'levelMax']);
     expect(updates.map((update) => update.value)).toEqual(['9', '15']);
+  });
+
+  it('groups wild encounter rows by route and toggles symbol, hidden, and weather tables', async () => {
+    const user = userEvent.setup();
+    const makeTable = (
+      area: string,
+      encounterType: string,
+      tableId: string,
+      archiveMember: string,
+      species: string
+    ): EncounterTableRecord => ({
+      archiveMember,
+      area,
+      encounterType,
+      gameVersion: 'Sword',
+      location: "Axew's Eye",
+      provenance: {
+        fileState: 'baseOnly',
+        sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+        sourceLayer: 'base'
+      },
+      slots: [
+        {
+          form: 0,
+          levelMax: 12,
+          levelMin: 8,
+          slot: 1,
+          species,
+          speciesId: 25,
+          timeOfDay: null,
+          weather: encounterType,
+          weight: 100
+        }
+      ],
+      tableId
+    });
+    const workflow: EncountersWorkflow = {
+      diagnostics: [],
+      editableFields: [],
+      stats: {
+        sourceFileCount: 1,
+        totalSlotCount: 4,
+        totalTableCount: 4
+      },
+      summary: {
+        availability: 'available',
+        description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
+        diagnostics: [],
+        id: 'encounters',
+        label: 'Wild Encounters'
+      },
+      tables: [
+        makeTable(
+          'Symbol',
+          'Normal',
+          'sword:symbol:0:1122334455667788:0',
+          'encount_symbol_k.bin',
+          'Pikachu'
+        ),
+        makeTable(
+          'Symbol',
+          'Raining',
+          'sword:symbol:0:1122334455667788:1',
+          'encount_symbol_k.bin',
+          'Raichu'
+        ),
+        makeTable(
+          'Hidden',
+          'Normal',
+          'sword:hidden:0:1122334455667788:0',
+          'encount_k.bin',
+          'Eevee'
+        ),
+        makeTable(
+          'Hidden',
+          'Overcast',
+          'sword:hidden:0:1122334455667788:1',
+          'encount_k.bin',
+          'Umbreon'
+        )
+      ]
+    };
+
+    render(
+      <App
+        bridge={createMockProjectBridge(
+          {
+            loadEncountersWorkflow: () => Promise.resolve({ workflow })
+          },
+          true
+        )}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
+
+    const encounterTable = await screen.findByRole('table', { name: 'Encounter tables' });
+    expect(within(encounterTable).getAllByRole('row')).toHaveLength(2);
+    expect(
+      within(encounterTable)
+        .getAllByRole('columnheader')
+        .map((header) => header.textContent)
+    ).toEqual(['Location', 'Game', 'Areas']);
+    expect(
+      within(encounterTable).queryByRole('columnheader', { name: 'Weather' })
+    ).not.toBeInTheDocument();
+    expect(
+      within(encounterTable).queryByRole('columnheader', { name: 'Slots' })
+    ).not.toBeInTheDocument();
+    expect(
+      within(encounterTable).queryByRole('columnheader', { name: 'Member' })
+    ).not.toBeInTheDocument();
+    expect(within(encounterTable).getByText("Axew's Eye")).toBeInTheDocument();
+    expect(within(encounterTable).getByText('Symbol / Hidden')).toBeInTheDocument();
+    expect(within(encounterTable).queryByText('Normal')).not.toBeInTheDocument();
+    expect(within(encounterTable).queryByText('Overcast')).not.toBeInTheDocument();
+    expect(within(encounterTable).queryByText('Raining')).not.toBeInTheDocument();
+
+    expect(screen.getByRole('tab', { name: 'Symbol' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    expect(screen.getByRole('tab', { name: 'Hidden' })).toBeEnabled();
+    expect(screen.getByRole('tab', { name: 'Raining' })).toBeEnabled();
+    expect(screen.getByText('sword:symbol:0:1122334455667788:0')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Hidden' }));
+
+    expect(screen.getByRole('tab', { name: 'Hidden' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    expect(screen.getByText('sword:hidden:0:1122334455667788:0')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Overcast' })).toBeEnabled();
+
+    await user.click(screen.getByRole('tab', { name: 'Overcast' }));
+
+    expect(screen.getByText('sword:hidden:0:1122334455667788:1')).toBeInTheDocument();
+  });
+
+  it('copies the selected symbol encounter table into hidden encounters after confirmation', async () => {
+    const user = userEvent.setup();
+    const speciesNames = new Map([
+      [25, 'Pikachu'],
+      [26, 'Raichu'],
+      [133, 'Eevee'],
+      [197, 'Umbreon']
+    ]);
+    const makeSlot = (
+      slot: number,
+      speciesId: number,
+      form: number,
+      levelMin: number,
+      levelMax: number,
+      weight: number
+    ) => ({
+      form,
+      levelMax,
+      levelMin,
+      slot,
+      species: speciesNames.get(speciesId) ?? `Species ${speciesId}`,
+      speciesId,
+      timeOfDay: null,
+      weather: 'Normal',
+      weight
+    });
+    const makeTable = (
+      area: string,
+      tableId: string,
+      archiveMember: string,
+      slots: ReturnType<typeof makeSlot>[]
+    ): EncounterTableRecord => ({
+      archiveMember,
+      area,
+      encounterType: 'Normal',
+      gameVersion: 'Sword',
+      location: "Axew's Eye",
+      provenance: {
+        fileState: 'baseOnly',
+        sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+        sourceLayer: 'base'
+      },
+      slots,
+      tableId
+    });
+    let workflow: EncountersWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        { field: 'speciesId', label: 'Species ID', maximumValue: 65535, minimumValue: 0, valueKind: 'integer' },
+        { field: 'form', label: 'Form', maximumValue: 255, minimumValue: 0, valueKind: 'integer' },
+        { field: 'probability', label: 'Probability', maximumValue: 100, minimumValue: 0, valueKind: 'integer' },
+        { field: 'levelMin', label: 'Min Level', maximumValue: 100, minimumValue: 0, valueKind: 'integer' },
+        { field: 'levelMax', label: 'Max Level', maximumValue: 100, minimumValue: 0, valueKind: 'integer' }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalSlotCount: 4,
+        totalTableCount: 3
+      },
+      summary: {
+        availability: 'available',
+        description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
+        diagnostics: [],
+        id: 'encounters',
+        label: 'Wild Encounters'
+      },
+      tables: [
+        makeTable('Symbol', 'sword:symbol:0:1122334455667788:0', 'encount_symbol_k.bin', [
+          makeSlot(1, 25, 2, 10, 15, 60),
+          makeSlot(2, 26, 1, 12, 18, 40)
+        ]),
+        {
+          ...makeTable('Symbol', 'sword:symbol:0:1122334455667788:1', 'encount_symbol_k.bin', [
+            makeSlot(1, 26, 0, 20, 25, 100)
+          ]),
+          encounterType: 'Raining',
+          slots: [makeSlot(1, 26, 0, 20, 25, 100)].map((slot) => ({
+            ...slot,
+            weather: 'Raining'
+          }))
+        },
+        makeTable('Hidden', 'sword:hidden:0:1122334455667788:0', 'encount_k.bin', [
+          makeSlot(1, 133, 0, 5, 8, 70)
+        ])
+      ]
+    };
+    const updates: Array<Parameters<ProjectBridge['updateEncounterSlotField']>[0]> = [];
+    const updateEncounterSlotField: ProjectBridge['updateEncounterSlotField'] = async (request) => {
+      updates.push(request);
+      workflow = {
+        ...workflow,
+        tables: workflow.tables.map((table) =>
+          table.tableId === request.tableId
+            ? {
+                ...table,
+                slots: table.slots.map((slot) => {
+                  if (slot.slot !== request.slot) {
+                    return slot;
+                  }
+
+                  const nextValue = Number.parseInt(request.value, 10);
+                  switch (request.field) {
+                    case 'speciesId':
+                      return {
+                        ...slot,
+                        species: speciesNames.get(nextValue) ?? slot.species,
+                        speciesId: nextValue
+                      };
+                    case 'form':
+                      return { ...slot, form: nextValue };
+                    case 'probability':
+                      return { ...slot, weight: nextValue };
+                    case 'levelMin':
+                      return { ...slot, levelMin: nextValue };
+                    case 'levelMax':
+                      return { ...slot, levelMax: nextValue };
+                    default:
+                      return slot;
+                  }
+                })
+              }
+            : table
+        )
+      };
+
+      return {
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            ...(request.session?.pendingEdits ?? []),
+            {
+              domain: 'workflow.encounters',
+              field: request.field,
+              newValue: request.value,
+              recordId: `${request.tableId}#${request.slot}`,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/archive/field/resident/data_table.gfpak'
+                }
+              ],
+              summary: `Set ${request.tableId} slot ${request.slot} ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-1'
+        },
+        workflow
+      };
+    };
+
+    render(
+      <App
+        bridge={createMockProjectBridge(
+          {
+            loadEncountersWorkflow: () => Promise.resolve({ workflow }),
+            updateEncounterSlotField
+          },
+          true
+        )}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
+
+    expect(await screen.findByText('sword:symbol:0:1122334455667788:0')).toBeInTheDocument();
+    const applyToHiddenButton = screen.getByRole('button', { name: 'Apply to Hidden' });
+    expect(applyToHiddenButton).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(applyToHiddenButton).toBeEnabled();
+    await user.click(applyToHiddenButton);
+
+    const dialog = await screen.findByRole('dialog', { name: /Apply to Hidden/ });
+    expect(within(dialog).getByText(/from Symbol to Hidden/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Skipped: Raining/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Apply to Hidden' }));
+
+    await waitFor(() => expect(updates).toHaveLength(5));
+    expect(updates.every((update) => update.tableId === 'sword:hidden:0:1122334455667788:0')).toBe(
+      true
+    );
+    expect(updates.map((update) => update.field)).toEqual([
+      'speciesId',
+      'form',
+      'probability',
+      'levelMin',
+      'levelMax'
+    ]);
+    expect(updates.map((update) => update.value)).toEqual([
+      '25',
+      '2',
+      '60',
+      '10',
+      '15'
+    ]);
+    expect(screen.getByText('sword:hidden:0:1122334455667788:0')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Hidden' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: /#1.*Pikachu/ })).toBeInTheDocument();
+    expect(screen.getByText('10-15 / 60%')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Apply to Symbol' })).toBeInTheDocument();
   });
 
   it('opens Raid Rewards, edits a star value, reviews a reward plan, and applies it', async () => {

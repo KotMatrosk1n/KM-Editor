@@ -29,6 +29,8 @@ public sealed class SwShPokemonEditSessionService
     private const string EvolutionMoveDownAction = "moveDown";
     private const string GlobalEvYieldRecordId = "all";
     private const string GlobalEvYieldField = "evYieldAll";
+    private const string GlobalExpYieldRecordId = GlobalEvYieldRecordId;
+    private const string GlobalExpYieldField = "expYieldAll";
     private const string GlobalEvYieldRemoveValue = "remove";
     private const string GlobalEvYieldRestoreValue = "restore";
 
@@ -73,6 +75,22 @@ public sealed class SwShPokemonEditSessionService
         if (IsGlobalEvYieldField(field))
         {
             var globalPendingEdit = CreateGlobalEvYieldPendingEdit(project, field, value, diagnostics);
+            if (globalPendingEdit is null)
+            {
+                return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            }
+
+            var globalUpdatedSession = ReplacePendingPokemonEdit(currentSession, globalPendingEdit);
+
+            return new SwShPokemonEditResult(
+                OverlayPendingEdits(loadedWorkflow, globalUpdatedSession.PendingEdits),
+                globalUpdatedSession,
+                diagnostics);
+        }
+
+        if (IsGlobalExpYieldField(field))
+        {
+            var globalPendingEdit = CreateGlobalExpYieldPendingEdit(project, field, value, diagnostics);
             if (globalPendingEdit is null)
             {
                 return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
@@ -274,6 +292,16 @@ public sealed class SwShPokemonEditSessionService
                 DiagnosticSeverity.Error,
                 "Restore EV Yield requires the base personal data file so vanilla EV yields can be copied back.",
                 field: GlobalEvYieldField,
+                expected: "Readable base personal_total.bin"));
+        }
+
+        if (session.PendingEdits.Any(IsGlobalExpYieldRestoreEdit)
+            && SwShPokemonWorkflowService.ResolveBasePersonalDataSource(project) is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Restore EXP Yield requires the base personal data file so vanilla EXP yields can be copied back.",
+                field: GlobalExpYieldField,
                 expected: "Readable base personal_total.bin"));
         }
 
@@ -533,6 +561,12 @@ public sealed class SwShPokemonEditSessionService
             return;
         }
 
+        if (IsGlobalExpYieldEdit(edit))
+        {
+            ValidateGlobalExpYieldPendingEdit(edit, diagnostics);
+            return;
+        }
+
         if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -658,6 +692,76 @@ public sealed class SwShPokemonEditSessionService
             sources,
             RecordId: GlobalEvYieldRecordId,
             Field: GlobalEvYieldField,
+            NewValue: normalizedValue);
+    }
+
+    private static PendingEdit? CreateGlobalExpYieldPendingEdit(
+        OpenedProject project,
+        string field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var normalizedField = field.Trim();
+        if (!IsGlobalExpYieldField(normalizedField))
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(normalizedField));
+            return null;
+        }
+
+        var normalizedValue = value.Trim();
+        if (!string.Equals(normalizedValue, GlobalEvYieldRemoveValue, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalizedValue, GlobalEvYieldRestoreValue, StringComparison.OrdinalIgnoreCase))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "EXP Yield bulk action must be remove or restore.",
+                field: GlobalExpYieldField,
+                expected: "remove or restore"));
+            return null;
+        }
+
+        normalizedValue = string.Equals(normalizedValue, GlobalEvYieldRemoveValue, StringComparison.OrdinalIgnoreCase)
+            ? GlobalEvYieldRemoveValue
+            : GlobalEvYieldRestoreValue;
+
+        var source = SwShPokemonWorkflowService.ResolvePersonalDataSource(project);
+        if (source is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokemon personal data source could not be resolved for EXP Yield bulk editing.",
+                file: SwShPokemonWorkflowService.PersonalDataPath,
+                expected: "Loaded Sword/Shield personal_total.bin"));
+            return null;
+        }
+
+        var sources = new List<ProjectFileReference> { CreateSourceReference(source) };
+        if (normalizedValue == GlobalEvYieldRestoreValue)
+        {
+            var baseSource = SwShPokemonWorkflowService.ResolveBasePersonalDataSource(project);
+            if (baseSource is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Restore EXP Yield requires the base personal data file so vanilla EXP yields can be copied back.",
+                    field: GlobalExpYieldField,
+                    expected: "Readable base personal_total.bin"));
+                return null;
+            }
+
+            sources.Add(CreateSourceReference(baseSource));
+        }
+
+        var summary = normalizedValue == GlobalEvYieldRemoveValue
+            ? "Remove EXP yields from all Pokemon."
+            : "Restore all Pokemon EXP yields from vanilla personal data.";
+
+        return new PendingEdit(
+            PokemonEditDomain,
+            summary,
+            sources,
+            RecordId: GlobalExpYieldRecordId,
+            Field: GlobalExpYieldField,
             NewValue: normalizedValue);
     }
 
@@ -1356,6 +1460,20 @@ public sealed class SwShPokemonEditSessionService
             };
         }
 
+        if (IsGlobalExpYieldEdit(pendingEdit))
+        {
+            return session with
+            {
+                PendingEdits = session.PendingEdits
+                    .Where(edit => !(
+                        string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal)
+                        && (IsGlobalExpYieldEdit(edit)
+                            || string.Equals(edit.Field, SwShPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal))))
+                    .Append(pendingEdit)
+                    .ToArray(),
+            };
+        }
+
         return session with
         {
             PendingEdits = session.PendingEdits
@@ -1383,6 +1501,12 @@ public sealed class SwShPokemonEditSessionService
             if (IsGlobalEvYieldEdit(edit))
             {
                 OverlayGlobalEvYieldEdit(overlaid, edit);
+                continue;
+            }
+
+            if (IsGlobalExpYieldEdit(edit))
+            {
+                OverlayGlobalExpYieldEdit(overlaid, edit);
                 continue;
             }
 
@@ -1469,6 +1593,30 @@ public sealed class SwShPokemonEditSessionService
             EVYieldSpecialAttack = 0,
             EVYieldSpecialDefense = 0,
             EVYieldSpeed = 0,
+        };
+    }
+
+    private static void OverlayGlobalExpYieldEdit(
+        IDictionary<int, SwShPokemonRecord> overlaid,
+        PendingEdit edit)
+    {
+        if (!string.Equals(edit.NewValue, GlobalEvYieldRemoveValue, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        foreach (var personalId in overlaid.Keys.ToArray())
+        {
+            overlaid[personalId] = ClearPokemonViewExpYield(overlaid[personalId]);
+        }
+    }
+
+    private static SwShPokemonRecord ClearPokemonViewExpYield(SwShPokemonRecord pokemon)
+    {
+        return pokemon with
+        {
+            BaseExperience = 0,
+            Personal = pokemon.Personal with { BaseExperience = 0 },
         };
     }
 
@@ -1989,6 +2137,12 @@ public sealed class SwShPokemonEditSessionService
                     continue;
                 }
 
+                if (IsGlobalExpYieldEdit(edit))
+                {
+                    ApplyGlobalExpYieldPersonalDataEdit(project, records, edit, diagnostics);
+                    continue;
+                }
+
                 if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId)
                     || (uint)personalId >= (uint)records.Length)
                 {
@@ -2115,6 +2269,51 @@ public sealed class SwShPokemonEditSessionService
             EVYieldSpecialDefense = source.EVYieldSpecialDefense,
             EVYieldSpeed = source.EVYieldSpeed,
         };
+    }
+
+    private static void ApplyGlobalExpYieldPersonalDataEdit(
+        OpenedProject project,
+        SwShPersonalRecord[] records,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (string.Equals(edit.NewValue, GlobalEvYieldRemoveValue, StringComparison.Ordinal))
+        {
+            for (var index = 0; index < records.Length; index++)
+            {
+                records[index] = records[index] with { BaseExperience = 0 };
+            }
+
+            return;
+        }
+
+        if (!string.Equals(edit.NewValue, GlobalEvYieldRestoreValue, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "EXP Yield bulk action must be remove or restore.",
+                field: GlobalExpYieldField,
+                expected: "remove or restore"));
+            return;
+        }
+
+        var baseSource = SwShPokemonWorkflowService.ResolveBasePersonalDataSource(project);
+        if (baseSource is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Restore EXP Yield requires the base personal data file so vanilla EXP yields can be copied back.",
+                field: GlobalExpYieldField,
+                expected: "Readable base personal_total.bin"));
+            return;
+        }
+
+        var baseRecords = SwShPersonalTable.Parse(File.ReadAllBytes(baseSource.AbsolutePath)).Records;
+        var count = Math.Min(records.Length, baseRecords.Count);
+        for (var index = 0; index < count; index++)
+        {
+            records[index] = records[index] with { BaseExperience = baseRecords[index].BaseExperience };
+        }
     }
 
     private static void ApplyLearnsetEdits(
@@ -2487,6 +2686,24 @@ public sealed class SwShPokemonEditSessionService
         return string.Equals(field, GlobalEvYieldField, StringComparison.Ordinal);
     }
 
+    private static bool IsGlobalExpYieldEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, PokemonEditDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, GlobalExpYieldRecordId, StringComparison.Ordinal)
+            && IsGlobalExpYieldField(edit.Field);
+    }
+
+    private static bool IsGlobalExpYieldRestoreEdit(PendingEdit edit)
+    {
+        return IsGlobalExpYieldEdit(edit)
+            && string.Equals(edit.NewValue, GlobalEvYieldRestoreValue, StringComparison.Ordinal);
+    }
+
+    private static bool IsGlobalExpYieldField(string? field)
+    {
+        return string.Equals(field, GlobalExpYieldField, StringComparison.Ordinal);
+    }
+
     private static bool IsEvYieldField(string? field)
     {
         return field is
@@ -2509,6 +2726,21 @@ public sealed class SwShPokemonEditSessionService
                 DiagnosticSeverity.Error,
                 "EV Yield bulk action must be remove or restore.",
                 field: GlobalEvYieldField,
+                expected: "remove or restore"));
+        }
+    }
+
+    private static void ValidateGlobalExpYieldPendingEdit(
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!string.Equals(edit.NewValue, GlobalEvYieldRemoveValue, StringComparison.Ordinal)
+            && !string.Equals(edit.NewValue, GlobalEvYieldRestoreValue, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "EXP Yield bulk action must be remove or restore.",
+                field: GlobalExpYieldField,
                 expected: "remove or restore"));
         }
     }

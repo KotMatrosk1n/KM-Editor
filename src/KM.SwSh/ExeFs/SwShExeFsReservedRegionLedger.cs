@@ -46,6 +46,7 @@ internal static class SwShExeFsReservedRegionLedger
         new(OwnerCatchCap, "catch-cap-marker", ExeFsMainPath, "main.text", 0x013AE3B9, 0x07, "Catch Cap marker/version", "do-not-overwrite"),
         new(OwnerCatchCap, "catch-cap-reserved-metadata", ExeFsMainPath, "main.text", 0x013AE3C0, 0x08, "Catch Cap reserved metadata", "do-not-overwrite"),
         new(OwnerCatchCap, "catch-cap-return", ExeFsMainPath, "main.text", 0x013AE3C8, 0x05, "Catch Cap vanilla return target", "do-not-overwrite"),
+        new(OwnerCatchCap, "catch-cap-runtime-gate", ExeFsMainPath, "main.text", 0x013AE3DC, 0x18, "Catch Cap runtime capture gate", "do-not-overwrite"),
         new(OwnerCatchCap, "catch-cap-cave-1", ExeFsMainPath, "main.text", 0x013AE0B4, 0x0C, "Catch Cap standard cave slot 1", "do-not-allocate"),
         new(OwnerCatchCap, "catch-cap-cave-2", ExeFsMainPath, "main.text", 0x013AEBE4, 0x0C, "Catch Cap standard cave slot 2", "do-not-allocate"),
         new(OwnerCatchCap, "catch-cap-cave-3", ExeFsMainPath, "main.text", 0x013AD734, 0x0C, "Catch Cap standard cave slot 3", "do-not-allocate"),

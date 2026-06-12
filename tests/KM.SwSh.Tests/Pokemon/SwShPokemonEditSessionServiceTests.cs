@@ -424,6 +424,50 @@ public sealed class SwShPokemonEditSessionServiceTests
     }
 
     [Fact]
+    public void ApplyChangePlanCanRemoveAndRestoreAllExpYields()
+    {
+        using var temp = CreateEditableProject();
+        temp.WriteOutputFile(
+            SwShPokemonWorkflowService.PersonalDataPath,
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(
+                SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+                CreateBulbasaurPersonalRecordWithBaseExperience(123)));
+        var service = new SwShPokemonEditSessionService();
+
+        var remove = service.UpdateField(
+            temp.Paths,
+            session: null,
+            personalId: 0,
+            field: "expYieldAll",
+            value: "remove");
+
+        var removedPokemon = remove.Workflow.Pokemon.Single(record => record.PersonalId == 1);
+        Assert.Equal(0, removedPokemon.BaseExperience);
+        Assert.Equal(0, removedPokemon.Personal.BaseExperience);
+        var removeEdit = Assert.Single(remove.Session.PendingEdits);
+        Assert.Equal("all", removeEdit.RecordId);
+        Assert.Equal("expYieldAll", removeEdit.Field);
+
+        var restore = service.UpdateField(
+            temp.Paths,
+            remove.Session,
+            personalId: 0,
+            field: "expYieldAll",
+            value: "restore");
+        var plan = service.CreateChangePlan(temp.Paths, restore.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, restore.Session, plan);
+
+        Assert.True(plan.CanApply);
+        Assert.Contains(apply.WrittenFiles, file => file.RelativePath == SwShPokemonWorkflowService.PersonalDataPath);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputBytes = File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            SwShPokemonWorkflowService.PersonalDataPath.Replace('/', Path.DirectorySeparatorChar)));
+        var outputRecord = SwShPersonalTable.Parse(outputBytes).Records[1];
+        Assert.Equal(64, outputRecord.BaseExperience);
+    }
+
+    [Fact]
     public void ApplyChangePlanWritesOutputLearnsetTableAndLeavesBaseUntouched()
     {
         using var temp = CreateEditableProject();
@@ -605,6 +649,13 @@ public sealed class SwShPokemonEditSessionServiceTests
             | ((specialAttack & 0x3) << 8)
             | ((specialDefense & 0x3) << 10);
         BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x0A), checked((ushort)evYield));
+        return record;
+    }
+
+    private static byte[] CreateBulbasaurPersonalRecordWithBaseExperience(int baseExperience)
+    {
+        var record = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord();
+        BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(0x22), checked((ushort)baseExperience));
         return record;
     }
 }
