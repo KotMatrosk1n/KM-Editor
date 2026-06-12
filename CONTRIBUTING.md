@@ -34,13 +34,13 @@ If it matters, include whether this was a new save or an existing save, and whet
 
 Start with the user goal. What are you trying to change in game, where does the player see it, and why should KM Editor support it?
 
-Known files, offsets, references, screenshots, or examples from other tools can help. Keep the request focused on behavior and workflow, not drama from other communities.
+Known files, offsets, references, screenshots, or examples from other tools can help. Keep the request focused on behavior and workflow, not unrelated community disputes.
 
 Good feature requests explain how KM Editor can make the task safer or easier than manual editing.
 
 ## Pull requests
 
-Keep changes scoped. A small clear pull request is easier to review than one giant mystery box.
+Keep changes scoped. A small clear pull request is easier to review than a large change that mixes unrelated work.
 
 For fixes, explain the root cause and the user impact. For features, explain the workflow being improved.
 
@@ -74,4 +74,4 @@ Cleanup and uninstall code must remove only data KM Editor wrote or can prove it
 
 If a workflow edits shared files, explain how it preserves unrelated user edits and other KM Editor workflows.
 
-Please help future us not suffer. Future us has enough to do.
+Clear notes and tests make future maintenance easier.

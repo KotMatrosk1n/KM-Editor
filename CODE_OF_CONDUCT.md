@@ -4,7 +4,7 @@
 
 KM Editor is for people making, testing, documenting, and improving Sword and Shield modding tools. The repo should stay useful for bug reports, feature work, releases, docs, wiki updates, and troubleshooting real modding problems.
 
-People are allowed to be direct, funny, skeptical, sarcastic, excited, annoyed, or blunt when the moment calls for it. Modding is weird work and sometimes the game fights back. That is fine.
+Direct feedback, dry humor, sarcasm, excitement, frustration, and blunt comments can all be fine when they stay focused on the work. Modding can be frustrating, and the game will not always make sense. That is part of the work.
 
 The line is cruelty, harassment, personal attacks, repeated bad faith behavior, or making contributors dread opening GitHub.
 
@@ -12,15 +12,15 @@ The line is cruelty, harassment, personal attacks, repeated bad faith behavior, 
 
 Ask clear questions. Give useful bug reports. Share screenshots, diagnostics, and file names when they help explain the problem.
 
-Be patient with people who are learning. Some users are new to modding. Some contributors are deep in binary patch weirdness. Both groups belong here.
+Be patient with people who are learning. Some users are new to modding. Some contributors are deep in binary patch details. Both groups belong here.
 
 Criticize ideas, code, docs, and behavior without attacking the person. If something is broken, say what is broken and why it matters.
 
 ## Tone
 
-Jokes, sarcasm, blunt feedback, and frustration are allowed when they fit the conversation or keep things human.
+Jokes, sarcasm, blunt feedback, and frustration are allowed when they fit the conversation and stay focused on the work.
 
-They are not a free pass to be cruel, derail work, or make an issue thread harder to use. If the joke only works because someone else is the target, rethink it.
+They should not be used to be cruel, derail work, or make an issue thread harder to use. If the joke only works because someone else is the target, rethink it.
 
 ## Unacceptable behavior
 
@@ -34,11 +34,11 @@ Do not pressure people to share private files. Do not ask for ROMs, NSPs, game d
 
 This repo is for KM Editor itself. Issues and pull requests should stay focused on KM Editor bugs, workflows, docs, releases, and supported Sword and Shield modding behavior.
 
-This is not the place for console piracy, illegal file sharing, personal drama, or fights about unrelated modding communities.
+This is not the place for console piracy, illegal file sharing, personal disputes, or fights about unrelated modding communities.
 
 ## Moderation
 
-Maintainers may ask someone to cool down, edit or hide comments, lock threads, close issues, remove wiki edits, or block users when needed.
+Maintainers may ask someone to step back, edit or hide comments, lock threads, close issues, remove wiki edits, or block users when needed.
 
 The goal is not to police every joke. The goal is to keep the repo usable and safe for people doing the work.
 
