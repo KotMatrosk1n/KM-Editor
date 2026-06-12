@@ -199,6 +199,8 @@ internal static class SwShCatchCapMainPatcher
             InstallDisplayHook(text);
         }
 
+        // Older KM output only patched the display formula. Keep installed hooks upgradeable by
+        // adding the runtime gate when the marker is present but the second formula is still vanilla.
         if (!HasRuntimeHook(text))
         {
             InstallRuntimeHook(text);
@@ -222,6 +224,8 @@ internal static class SwShCatchCapMainPatcher
             throw new InvalidDataException("Catch Cap restore requires current and base main NSO files with matching .text sizes.");
         }
 
+        // Uninstall restores only bytes owned by Catch Cap. Other ExeFS editors can share the same
+        // generated main file, so replacing the whole file would remove their hooks too.
         foreach (var region in SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(
             SwShExeFsReservedRegionLedger.OwnerCatchCap))
         {
@@ -300,6 +304,8 @@ internal static class SwShCatchCapMainPatcher
             throw new InvalidDataException("Catch Cap Hook install requires the vanilla final epilogue at main.text+0x013AE3C8.");
         }
 
+        // The display formula tail does not have enough contiguous space for the table lookup, so
+        // it jumps through reserved cavelets and then rejoins the original epilogue.
         WriteInstruction(text, ExeFsHookSiteOffset, EncodeBranch(ExeFsHookSiteOffset, CaveClampOffset));
 
         WriteInstruction(text, CaveClampOffset, EncodeCmpImmediate(0, 8));
@@ -326,6 +332,8 @@ internal static class SwShCatchCapMainPatcher
             throw new InvalidDataException("Catch Cap Hook install requires the vanilla runtime catch gate at main.text+0x013AE3DC.");
         }
 
+        // The runtime capture formula has a compact 0x18 byte window before its epilogue. That is
+        // just enough room to clamp badge count 8, load the shared table byte, and fall through.
         WriteInstruction(text, ExeFsRuntimeHookSiteOffset, EncodeCmpImmediate(0, 8));
         WriteInstruction(
             text,
@@ -353,6 +361,8 @@ internal static class SwShCatchCapMainPatcher
     private static byte[] NormalizeCaps(ReadOnlySpan<byte> caps)
     {
         var normalized = caps.ToArray();
+        // Badge count 8 is always "catch anything" in game logic; stale legacy table metadata should
+        // not make the UI or diagnostics imply that the final badge cap is editable.
         normalized[FinalBadgeCount] = FinalBadgeCap;
         return normalized;
     }

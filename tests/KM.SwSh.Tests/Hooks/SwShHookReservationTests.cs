@@ -964,6 +964,8 @@ public sealed class SwShHookReservationTests
 
     private static void WriteCatchCapVanillaAnchors(byte[] text)
     {
+        // Sword/Shield has two adjacent catch cap formulas: the first feeds display text, and the
+        // second is the runtime capture gate that blocks or allows the throw.
         WriteInstruction(text, 0x013AE3AC, 0x0B000809);
         WriteInstruction(text, 0x013AE3B0, 0xA9417BFD);
         WriteInstruction(text, 0x013AE3B4, 0x12001C08);
@@ -1025,6 +1027,7 @@ public sealed class SwShHookReservationTests
         WriteInstruction(text, 0x013B2F90, 0xD10143FF);
         WriteInstruction(text, 0x013CA220, 0xF81D0FF5);
         WriteInstruction(text, 0x00779070, 0x7100143F);
+        WriteInstruction(text, 0x00778E20, 0xA9BF7BFD);
         WriteInstruction(text, 0x007790D0, 0xA9BE4FF4);
         WriteIvScreenCallSiteAnchors(text);
     }
@@ -1041,6 +1044,13 @@ public sealed class SwShHookReservationTests
             (0x0138FD5C, 0x97CFA431),
             (0x0138FD84, 0x97CFA427),
             (0x0138FEA0, 0x97CFA3E0),
+            (0x0138A2B4, 0x97CFC347),
+            (0x0138A3CC, 0x97CFC229),
+            (0x0138A47C, 0x97CFC1ED),
+            (0x0138A518, 0x97CFC1C6),
+            (0x0138A5B4, 0x97CFC19F),
+            (0x0138A650, 0x97CFC178),
+            (0x0138A6F0, 0x97CFC150),
             (0x0138AA50, 0x97CFBD40),
             (0x0138AA60, 0x97CFC074),
             (0x0138AA90, 0x97CFBD30),
@@ -1059,6 +1069,58 @@ public sealed class SwShHookReservationTests
             (0x0138ACF8, 0x0B170008),
             (0x0138AD1C, 0x0B130008),
             (0x0138AD40, 0x0B130008),
+            (0x0138AE28, 0x97CFBE2E),
+            (0x0138AE3C, 0x97CFBE29),
+            (0x0138AE50, 0x97CFBE24),
+            (0x0138AE64, 0x97CFBE1F),
+            (0x0138AE78, 0x97CFBE1A),
+            (0x0138AE8C, 0x97CFBE15),
+            (0x0138AEAC, 0x2A1F03E8),
+            (0x0138AEB0, 0x7103F27F),
+            (0x0138AEB4, 0x54000063),
+            (0x0138AEB8, 0x39592688),
+            (0x0138AEBC, 0x52000108),
+            (0x0138AEE0, 0x7103EF1F),
+            (0x0138AEE4, 0x54000089),
+            (0x0138AEE8, 0x39592688),
+            (0x0138AEEC, 0x52000108),
+            (0x0138AEF0, 0x14000002),
+            (0x0138AEF4, 0x2A1F03E8),
+            (0x0138AF18, 0x7103F2FF),
+            (0x0138AF1C, 0x54000083),
+            (0x0138AF20, 0x39592688),
+            (0x0138AF24, 0x52000108),
+            (0x0138AF28, 0x14000002),
+            (0x0138AF2C, 0x2A1F03E8),
+            (0x0138AF54, 0x7103F39F),
+            (0x0138AF58, 0x54000083),
+            (0x0138AF5C, 0x39592688),
+            (0x0138AF60, 0x52000108),
+            (0x0138AF64, 0x14000002),
+            (0x0138AF68, 0x2A1F03E8),
+            (0x0138AF8C, 0x7103F37F),
+            (0x0138AF90, 0x54000083),
+            (0x0138AF94, 0x39592688),
+            (0x0138AF98, 0x52000108),
+            (0x0138AF9C, 0x14000002),
+            (0x0138AFA0, 0x2A1F03E8),
+            (0x0138AFC4, 0x7103F33F),
+            (0x0138AFC8, 0x54000083),
+            (0x0138AFCC, 0x39592688),
+            (0x0138AFD0, 0x52000108),
+            (0x0138AFD4, 0x14000002),
+            (0x0138AFD8, 0x2A1F03E8),
+            (0x0138B230, 0x39592668),
+            (0x0138B264, 0x39592668),
+            (0x0138B298, 0x39592668),
+            (0x0138B2CC, 0x39592668),
+            (0x0138B300, 0x39592668),
+            (0x0138B334, 0x39592668),
+            (0x0138B368, 0x39592668),
+            (0x0138B39C, 0x39592668),
+            (0x0138B3AC, 0xF942EE60),
+            (0x0138B3B0, 0x97FFE9B0),
+            (0x0138B3B4, 0x2A1F03E1),
             (0x01392EA8, 0x97FFDCBE),
             (0x01393310, 0x97FFDBA4),
             (0x0139EF4C, 0x97FFAC95),

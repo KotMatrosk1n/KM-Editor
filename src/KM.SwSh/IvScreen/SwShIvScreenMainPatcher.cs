@@ -25,7 +25,7 @@ internal static class SwShIvScreenMainPatcher
 {
     public const int LegacySecondaryStatsHookSiteOffset = 0x0137F634;
     public const int LegacyNormalStatsGraphHookSiteOffset = 0x0138F268;
-    public const int ExeFsHookSiteOffset = 0x01392EA8;
+    public const int ExeFsHookSiteOffset = 0x0138FBE8;
     public const int VanillaSecondaryStatsSetupOffset = 0x013872D0;
     public const int SelectedPokemonResolverOffset = 0x01385A70;
     public const int RawIvGetterOffset = 0x00779070;
@@ -33,46 +33,75 @@ internal static class SwShIvScreenMainPatcher
 
     private const int CalculatedStatGetterOffset = 0x00778E20;
     private const int NormalStatsGraphRendererOffset = 0x0138FB60;
-    private const int MultiChartRendererOffset = 0x0138A1A0;
-    private const int ForceValuePaneVisibilityOffset = 0x0138B1E0;
     private const int ValueWrapperSlotOffset = 0x0138F324;
+    private const int LegacyHpIvWrapperSlotOffset = 0x01390204;
     private const int RenderWrapperSlotOffset = 0x01390204;
-    private const int RenderWrapperContinueSlotOffset = 0x01390BE4;
-    private const int RenderWrapperReturnSlotOffset = 0x01391114;
     private const int XYellowStateRequestBranchOffset = 0x0139FB60;
+    private const int SummaryMultiChartRefreshOffset = 0x0138A1A0;
+    private const int SummaryTextHpCurrentGetterOffset = 0x0077AFD0;
+    private const int SummaryTextHpMaxGetterOffset = 0x0077AC70;
+    private const int SummaryTextStatGetterOffset = 0x0077AC30;
+    private const int SummaryGraphAlternateStatGetterOffset = 0x00779F50;
+    private const int HpCurrentTextWrapperSlotOffset = 0x013912F4;
+    private const int HpCurrentTextRawSlotOffset = 0x01391304;
+    private const int HpMaxTextWrapperSlotOffset = 0x013916F4;
+    private const int HpMaxTextRawSlotOffset = 0x01391704;
+    private const int SummaryStatWrapperSlotOffset = 0x01391734;
+    private const int SummaryStatRawSlotOffset = 0x01391744;
+    private const int SummaryGraphAlternateWrapperSlotOffset = 0x01392854;
+    private const int SummaryGraphAlternateRawSlotOffset = 0x01392864;
 
     private const uint VanillaLegacySecondaryStatsHookInstruction = 0x94001F27; // bl 0x013872D0
     private const uint VanillaLegacyNormalStatsGraphHookInstruction = 0x9400023E; // bl 0x0138FB60
-    private const uint VanillaSecondaryStatsSetupEntry = 0xD103C3FF;
-    private const uint SelectedPokemonResolverEntry = 0xD10143FF;
     private const uint RawIvGetterEntry = 0x7100143F;
-    private const uint HyperTrainingIvWrapperEntry = 0xA9BE4FF4;
+    private const uint CalculatedStatGetterEntry = 0xA9BF7BFD;
     private const uint NormalStatsGraphRendererEntry = 0xD10243FF;
-    private const uint MultiChartRendererEntry = 0xD10503FF;
-    private const uint ForceValuePaneVisibilityEntry = 0xD10183FF;
+    private const uint VanillaValuePaneVisibilityLoadInstruction = 0x39592408;
+    private const uint VanillaValuePaneVisibilityInvertInstruction = 0x52000108;
     private const uint VanillaXYellowStateRequestInstruction = 0x340000A8;
     private const uint XYellowStateBypassInstruction = 0x14000005;
     private const uint MovW8W0Instruction = 0x2A0003E8;
-    private const uint ForceVisibleMovInstruction = 0x52800028;
+    private const uint MovW8WzrInstruction = 0x2A1F03E8;
+    private const uint MovW0WzrInstruction = 0x2A1F03E0;
+    private const uint MovW1WzrInstruction = 0x2A1F03E1;
+    private const uint MovW8OneInstruction = 0x52800028;
+    private const uint ForceVisibleMovInstruction = MovW8OneInstruction;
+    private const uint XModePaneVisibilityInstruction = 0x39592688; // ldrb w8, [x20,#0x649]
+    private const uint XTogglePaneVisibilityInstruction = 0x39592668; // ldrb w8, [x19,#0x649]
     private const uint NopInstruction = 0xD503201F;
     private const int SlotLength = 0x0C;
 
     private static readonly byte[] Marker = Encoding.ASCII.GetBytes("SWSH_IV_DISPLAY_V1");
 
-    private static readonly (int Offset, uint VanillaInstruction)[] MultiChartStatSourceCallSites =
+    private static readonly (int Offset, uint VanillaInstruction, int WrapperOffset)[] MultiChartStatSourceCallSites =
     [
-        (0x0138AA50, 0x97CFBD40),
-        (0x0138AA60, 0x97CFC074),
-        (0x0138AA90, 0x97CFBD30),
-        (0x0138AAA0, 0x97CFC064),
-        (0x0138AAD0, 0x97CFBD20),
-        (0x0138AAE0, 0x97CFC054),
-        (0x0138AB10, 0x97CFBD10),
-        (0x0138AB20, 0x97CFC044),
-        (0x0138AB50, 0x97CFBD00),
-        (0x0138AB60, 0x97CFC034),
-        (0x0138AB90, 0x97CFBCF0),
-        (0x0138ABA0, 0x97CFC024),
+        (0x0138AA50, 0x97CFBD40, SummaryGraphAlternateWrapperSlotOffset),
+        (0x0138AA60, 0x97CFC074, SummaryStatWrapperSlotOffset),
+        (0x0138AA90, 0x97CFBD30, SummaryGraphAlternateWrapperSlotOffset),
+        (0x0138AAA0, 0x97CFC064, SummaryStatWrapperSlotOffset),
+        (0x0138AAD0, 0x97CFBD20, SummaryGraphAlternateWrapperSlotOffset),
+        (0x0138AAE0, 0x97CFC054, SummaryStatWrapperSlotOffset),
+        (0x0138AB10, 0x97CFBD10, SummaryGraphAlternateWrapperSlotOffset),
+        (0x0138AB20, 0x97CFC044, SummaryStatWrapperSlotOffset),
+        (0x0138AB50, 0x97CFBD00, SummaryGraphAlternateWrapperSlotOffset),
+        (0x0138AB60, 0x97CFC034, SummaryStatWrapperSlotOffset),
+        (0x0138AB90, 0x97CFBCF0, SummaryGraphAlternateWrapperSlotOffset),
+        (0x0138ABA0, 0x97CFC024, SummaryStatWrapperSlotOffset),
+    ];
+
+    private static readonly (int Offset, uint VanillaInstruction, int WrapperOffset)[] MultiChartTextHpValueCallSites =
+    [
+        (0x0138A2B4, 0x97CFC347, HpCurrentTextWrapperSlotOffset),
+        (0x0138A3CC, 0x97CFC229, HpMaxTextWrapperSlotOffset),
+    ];
+
+    private static readonly (int Offset, uint VanillaInstruction, int WrapperOffset)[] MultiChartTextStatValueCallSites =
+    [
+        (0x0138A47C, 0x97CFC1ED, SummaryStatWrapperSlotOffset),
+        (0x0138A518, 0x97CFC1C6, SummaryStatWrapperSlotOffset),
+        (0x0138A5B4, 0x97CFC19F, SummaryStatWrapperSlotOffset),
+        (0x0138A650, 0x97CFC178, SummaryStatWrapperSlotOffset),
+        (0x0138A6F0, 0x97CFC150, SummaryStatWrapperSlotOffset),
     ];
 
     private static readonly (int Offset, uint VanillaInstruction)[] YellowRawValueAddSites =
@@ -84,6 +113,59 @@ internal static class SwShIvScreenMainPatcher
         (0x0138AD1C, 0x0B130008),
         (0x0138AD40, 0x0B130008),
     ];
+
+    private static readonly (int Offset, uint VanillaInstruction)[] YellowGraphValueCallSites =
+    [
+        (0x0138AE28, 0x97CFBE2E),
+        (0x0138AE3C, 0x97CFBE29),
+        (0x0138AE50, 0x97CFBE24),
+        (0x0138AE64, 0x97CFBE1F),
+        (0x0138AE78, 0x97CFBE1A),
+        (0x0138AE8C, 0x97CFBE15),
+    ];
+
+    private static readonly (int Offset, uint[] VanillaInstructions, uint[] PatchedInstructions, uint[] LegacyPatchedInstructions)[] YellowValuePaneVisibilitySlots =
+    [
+        (0x0138AEAC,
+            [0x2A1F03E8, 0x7103F27F, 0x54000063, 0x39592688, 0x52000108],
+            [MovW8WzrInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction],
+            [XModePaneVisibilityInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction]),
+        (0x0138AEE0,
+            [0x7103EF1F, 0x54000089, 0x39592688, 0x52000108, 0x14000002, 0x2A1F03E8],
+            [MovW8WzrInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction],
+            [XModePaneVisibilityInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction]),
+        (0x0138AF18,
+            [0x7103F2FF, 0x54000083, 0x39592688, 0x52000108, 0x14000002, 0x2A1F03E8],
+            [MovW8WzrInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction],
+            [XModePaneVisibilityInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction]),
+        (0x0138AF54,
+            [0x7103F39F, 0x54000083, 0x39592688, 0x52000108, 0x14000002, 0x2A1F03E8],
+            [MovW8WzrInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction],
+            [XModePaneVisibilityInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction]),
+        (0x0138AF8C,
+            [0x7103F37F, 0x54000083, 0x39592688, 0x52000108, 0x14000002, 0x2A1F03E8],
+            [MovW8WzrInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction],
+            [XModePaneVisibilityInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction]),
+        (0x0138AFC4,
+            [0x7103F33F, 0x54000083, 0x39592688, 0x52000108, 0x14000002, 0x2A1F03E8],
+            [MovW8WzrInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction],
+            [XModePaneVisibilityInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction, NopInstruction]),
+    ];
+
+    private static readonly (int Offset, uint VanillaInstruction)[] NumericTextPaneRefreshSites =
+    [
+        (0x0138B230, XTogglePaneVisibilityInstruction),
+        (0x0138B264, XTogglePaneVisibilityInstruction),
+        (0x0138B298, XTogglePaneVisibilityInstruction),
+        (0x0138B2CC, XTogglePaneVisibilityInstruction),
+        (0x0138B300, XTogglePaneVisibilityInstruction),
+        (0x0138B334, XTogglePaneVisibilityInstruction),
+        (0x0138B368, XTogglePaneVisibilityInstruction),
+        (0x0138B39C, XTogglePaneVisibilityInstruction),
+    ];
+
+    private static readonly (int Offset, uint[] VanillaInstructions) XToggleRefreshSlot =
+        (0x0138B3AC, [0xF942EE60, 0x97FFE9B0, 0x2A1F03E1]);
 
     private static readonly (int Offset, uint VanillaInstruction)[] RendererWrapperCallSites =
     [
@@ -135,6 +217,14 @@ internal static class SwShIvScreenMainPatcher
         0x01390204,
         0x01390BE4,
         0x01391114,
+        0x013912F4,
+        0x01391304,
+        0x013916F4,
+        0x01391704,
+        0x01391734,
+        0x01391744,
+        0x01392854,
+        0x01392864,
     ];
 
     private static readonly int[] MarkerFragmentOffsets =
@@ -189,7 +279,7 @@ internal static class SwShIvScreenMainPatcher
 
                 return new SwShIvScreenAnalysis(
                     SwShIvScreenInstallKind.NotInstalled,
-                    "IV Screen is not installed. Installing adds independent Pokemon Summary raw-IV value hooks and bypasses the yellow X-training overlay.");
+                    "IV Screen is not installed. Installing adds independent Pokemon Summary stats and X-mode raw-IV value hooks.");
             }
 
             return new SwShIvScreenAnalysis(
@@ -221,37 +311,46 @@ internal static class SwShIvScreenMainPatcher
         EnsureSlotsAvailableOrOwned(text);
 
         ClearOwnedSlots(text);
-        WriteValueWrapper(text);
-        WriteRenderWrapper(text);
+        WriteXModeValueWrappers(text);
         WriteMarker(text);
 
         WriteInstruction(text, LegacySecondaryStatsHookSiteOffset, VanillaLegacySecondaryStatsHookInstruction);
         WriteInstruction(text, LegacyNormalStatsGraphHookSiteOffset, VanillaLegacyNormalStatsGraphHookInstruction);
+        RestoreUnsafeSummaryWrapperHooks(text);
 
         foreach (var callSite in NormalGraphValueCallSites)
         {
-            WriteInstruction(text, callSite.Offset, EncodeBranchLink(callSite.Offset, ValueWrapperSlotOffset));
+            WriteInstruction(text, callSite.Offset, callSite.VanillaInstruction);
         }
 
         foreach (var callSite in MultiChartStatSourceCallSites)
         {
-            WriteInstruction(text, callSite.Offset, EncodeBranchLink(callSite.Offset, RawIvGetterOffset));
+            WriteInstruction(text, callSite.Offset, EncodeBranchLink(callSite.Offset, callSite.WrapperOffset));
+        }
+
+        foreach (var callSite in MultiChartTextHpValueCallSites)
+        {
+            WriteInstruction(text, callSite.Offset, EncodeBranchLink(callSite.Offset, callSite.WrapperOffset));
+        }
+
+        foreach (var callSite in MultiChartTextStatValueCallSites)
+        {
+            WriteInstruction(text, callSite.Offset, EncodeBranchLink(callSite.Offset, callSite.WrapperOffset));
         }
 
         foreach (var site in YellowRawValueAddSites)
         {
-            WriteInstruction(text, site.Offset, MovW8W0Instruction);
+            WriteInstruction(text, site.Offset, MovW8WzrInstruction);
         }
 
-        WriteInstruction(text, 0x0138B1FC, ForceVisibleMovInstruction);
-        WriteInstruction(text, 0x0138B200, NopInstruction);
-
-        foreach (var callSite in RendererWrapperCallSites)
+        foreach (var callSite in YellowGraphValueCallSites)
         {
-            WriteInstruction(text, callSite.Offset, EncodeBranchLink(callSite.Offset, RenderWrapperSlotOffset));
+            WriteInstruction(text, callSite.Offset, MovW0WzrInstruction);
         }
 
-        WriteInstruction(text, XYellowStateRequestBranchOffset, XYellowStateBypassInstruction);
+        WriteYellowValuePaneVisibility(text);
+        WriteNumericTextPaneRefresh(text);
+        WriteXToggleRefresh(text);
 
         return nso.Write(textDecompressedData: text);
     }
@@ -292,15 +391,17 @@ internal static class SwShIvScreenMainPatcher
     {
         return ReadInstruction(text, LegacySecondaryStatsHookSiteOffset) == VanillaLegacySecondaryStatsHookInstruction
             && ReadInstruction(text, LegacyNormalStatsGraphHookSiteOffset) == VanillaLegacyNormalStatsGraphHookInstruction
-            && AllBranchLinksTo(text, NormalGraphValueCallSites, ValueWrapperSlotOffset)
-            && AllBranchLinksTo(text, MultiChartStatSourceCallSites, RawIvGetterOffset)
-            && AllInstructionsEqual(text, YellowRawValueAddSites, MovW8W0Instruction)
-            && ReadInstruction(text, 0x0138B1FC) == ForceVisibleMovInstruction
-            && ReadInstruction(text, 0x0138B200) == NopInstruction
-            && AllBranchLinksTo(text, RendererWrapperCallSites, RenderWrapperSlotOffset)
-            && ReadInstruction(text, XYellowStateRequestBranchOffset) == XYellowStateBypassInstruction
-            && IsValueWrapperWritten(text)
-            && IsRenderWrapperWritten(text);
+            && AllInstructionsVanilla(text, NormalGraphValueCallSites)
+            && AllBranchLinksToTargets(text, MultiChartStatSourceCallSites)
+            && AllBranchLinksToTargets(text, MultiChartTextHpValueCallSites)
+            && AllBranchLinksToTargets(text, MultiChartTextStatValueCallSites)
+            && AllInstructionsEqual(text, YellowRawValueAddSites, MovW8WzrInstruction)
+            && AllInstructionsEqual(text, YellowGraphValueCallSites, MovW0WzrInstruction)
+            && IsYellowValuePaneVisibilityWritten(text)
+            && AreNumericTextPaneRefreshesWritten(text)
+            && IsXToggleRefreshWritten(text)
+            && UnsafeSummaryWrapperHooksAreVanilla(text)
+            && AreXModeValueWrappersWritten(text);
     }
 
     private static bool IsLegacyInstall(ReadOnlySpan<byte> text)
@@ -308,7 +409,23 @@ internal static class SwShIvScreenMainPatcher
         return IsBranchLinkTo(ReadInstruction(text, LegacySecondaryStatsHookSiteOffset), LegacySecondaryStatsHookSiteOffset, ValueWrapperSlotOffset)
             || IsBranchLinkTo(ReadInstruction(text, LegacyNormalStatsGraphHookSiteOffset), LegacyNormalStatsGraphHookSiteOffset, ValueWrapperSlotOffset)
             || AnyBranchLinkTo(text, NormalGraphValueCallSites, ValueWrapperSlotOffset)
-            || AnyBranchLinkTo(text, RendererWrapperCallSites, RenderWrapperSlotOffset);
+            || AnyBranchLinkTo(text, MultiChartStatSourceCallSites, RawIvGetterOffset)
+            || AnyBranchLinkToTargets(text, MultiChartStatSourceCallSites)
+            || AnyBranchLinkTo(text, MultiChartTextHpValueCallSites, LegacyHpIvWrapperSlotOffset)
+            || AnyBranchLinkToTargets(text, MultiChartTextHpValueCallSites)
+            || AnyBranchLinkTo(text, MultiChartTextStatValueCallSites, RawIvGetterOffset)
+            || AnyBranchLinkToTargets(text, MultiChartTextStatValueCallSites)
+            || AnyInstructionEqual(text, YellowRawValueAddSites, MovW8W0Instruction)
+            || AnyInstructionEqual(text, YellowRawValueAddSites, MovW8WzrInstruction)
+            || AnyInstructionEqual(text, YellowGraphValueCallSites, MovW0WzrInstruction)
+            || AnyBranchLinkTo(text, YellowGraphValueCallSites, RawIvGetterOffset)
+            || AnyYellowValuePaneVisibilityWritten(text)
+            || AnyNumericTextPaneRefreshWritten(text)
+            || IsXToggleRefreshWritten(text)
+            || AnyBranchLinkTo(text, RendererWrapperCallSites, RenderWrapperSlotOffset)
+            || ReadInstruction(text, 0x0138B1FC) == ForceVisibleMovInstruction
+            || ReadInstruction(text, 0x0138B200) == NopInstruction
+            || ReadInstruction(text, XYellowStateRequestBranchOffset) == XYellowStateBypassInstruction;
     }
 
     private static bool AllVanilla(ReadOnlySpan<byte> text)
@@ -317,11 +434,14 @@ internal static class SwShIvScreenMainPatcher
             && ReadInstruction(text, LegacyNormalStatsGraphHookSiteOffset) == VanillaLegacyNormalStatsGraphHookInstruction
             && AllInstructionsVanilla(text, NormalGraphValueCallSites)
             && AllInstructionsVanilla(text, MultiChartStatSourceCallSites)
+            && AllInstructionsVanilla(text, MultiChartTextHpValueCallSites)
+            && AllInstructionsVanilla(text, MultiChartTextStatValueCallSites)
             && AllInstructionsVanilla(text, YellowRawValueAddSites)
-            && AllInstructionsVanilla(text, RendererWrapperCallSites)
-            && ReadInstruction(text, 0x0138B1FC) == 0x39592408
-            && ReadInstruction(text, 0x0138B200) == 0x52000108
-            && ReadInstruction(text, XYellowStateRequestBranchOffset) == VanillaXYellowStateRequestInstruction;
+            && AllInstructionsVanilla(text, YellowGraphValueCallSites)
+            && YellowValuePaneVisibilityIsVanilla(text)
+            && NumericTextPaneRefreshesAreVanilla(text)
+            && XToggleRefreshIsVanilla(text)
+            && UnsafeSummaryWrapperHooksAreVanilla(text);
     }
 
     private static bool AnyBranchLikeAtOwnedHookSite(ReadOnlySpan<byte> text)
@@ -329,6 +449,9 @@ internal static class SwShIvScreenMainPatcher
         return AnyBranchLike(text, RendererWrapperCallSites)
             || AnyBranchLike(text, NormalGraphValueCallSites)
             || AnyBranchLike(text, MultiChartStatSourceCallSites)
+            || AnyBranchLike(text, MultiChartTextHpValueCallSites)
+            || AnyBranchLike(text, MultiChartTextStatValueCallSites)
+            || AnyBranchLike(text, YellowGraphValueCallSites)
             || IsBranchOrBranchLink(ReadInstruction(text, LegacySecondaryStatsHookSiteOffset))
             || IsBranchOrBranchLink(ReadInstruction(text, LegacyNormalStatsGraphHookSiteOffset));
     }
@@ -349,6 +472,21 @@ internal static class SwShIvScreenMainPatcher
         return true;
     }
 
+    private static bool AllBranchLinksToTargets(
+        ReadOnlySpan<byte> text,
+        (int Offset, uint VanillaInstruction, int WrapperOffset)[] sites)
+    {
+        foreach (var site in sites)
+        {
+            if (!IsBranchLinkTo(ReadInstruction(text, site.Offset), site.Offset, site.WrapperOffset))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static bool AnyBranchLinkTo(
         ReadOnlySpan<byte> text,
         (int Offset, uint VanillaInstruction)[] sites,
@@ -357,6 +495,53 @@ internal static class SwShIvScreenMainPatcher
         foreach (var site in sites)
         {
             if (IsBranchLinkTo(ReadInstruction(text, site.Offset), site.Offset, targetOffset))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool AnyInstructionEqual(
+        ReadOnlySpan<byte> text,
+        (int Offset, uint VanillaInstruction)[] sites,
+        uint instruction)
+    {
+        foreach (var site in sites)
+        {
+            if (ReadInstruction(text, site.Offset) == instruction)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool AnyBranchLinkTo(
+        ReadOnlySpan<byte> text,
+        (int Offset, uint VanillaInstruction, int WrapperOffset)[] sites,
+        int targetOffset)
+    {
+        foreach (var site in sites)
+        {
+            if (IsBranchLinkTo(ReadInstruction(text, site.Offset), site.Offset, targetOffset))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool AnyBranchLinkToTargets(
+        ReadOnlySpan<byte> text,
+        (int Offset, uint VanillaInstruction, int WrapperOffset)[] sites)
+    {
+        foreach (var site in sites)
+        {
+            if (IsBranchLinkTo(ReadInstruction(text, site.Offset), site.Offset, site.WrapperOffset))
             {
                 return true;
             }
@@ -396,6 +581,21 @@ internal static class SwShIvScreenMainPatcher
         return true;
     }
 
+    private static bool AllInstructionsVanilla(
+        ReadOnlySpan<byte> text,
+        (int Offset, uint VanillaInstruction, int WrapperOffset)[] sites)
+    {
+        foreach (var site in sites)
+        {
+            if (ReadInstruction(text, site.Offset) != site.VanillaInstruction)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static bool AnyBranchLike(
         ReadOnlySpan<byte> text,
         (int Offset, uint VanillaInstruction)[] sites)
@@ -411,57 +611,301 @@ internal static class SwShIvScreenMainPatcher
         return false;
     }
 
-    private static void WriteValueWrapper(byte[] text)
+    private static void RestoreUnsafeSummaryWrapperHooks(byte[] text)
     {
-        foreach (var slot in ValueWrapperSlots)
+        foreach (var callSite in RendererWrapperCallSites)
         {
-            for (var index = 0; index < slot.Instructions.Length; index++)
-            {
-                WriteInstruction(text, slot.Offset + (index * sizeof(uint)), slot.Instructions[index]);
-            }
+            WriteInstruction(text, callSite.Offset, callSite.VanillaInstruction);
+        }
+
+        WriteInstruction(text, 0x0138B1FC, VanillaValuePaneVisibilityLoadInstruction);
+        WriteInstruction(text, 0x0138B200, VanillaValuePaneVisibilityInvertInstruction);
+        WriteInstruction(text, XYellowStateRequestBranchOffset, VanillaXYellowStateRequestInstruction);
+    }
+
+    private static bool UnsafeSummaryWrapperHooksAreVanilla(ReadOnlySpan<byte> text)
+    {
+        return ReadInstruction(text, 0x0138B1FC) == VanillaValuePaneVisibilityLoadInstruction
+            && ReadInstruction(text, 0x0138B200) == VanillaValuePaneVisibilityInvertInstruction
+            && AllInstructionsVanilla(text, RendererWrapperCallSites)
+            && ReadInstruction(text, XYellowStateRequestBranchOffset) == VanillaXYellowStateRequestInstruction;
+    }
+
+    private static void WriteYellowValuePaneVisibility(byte[] text)
+    {
+        foreach (var slot in YellowValuePaneVisibilitySlots)
+        {
+            WriteInstructions(text, slot.Offset, slot.PatchedInstructions);
         }
     }
 
-    private static bool IsValueWrapperWritten(ReadOnlySpan<byte> text)
+    private static bool IsYellowValuePaneVisibilityWritten(ReadOnlySpan<byte> text)
     {
-        foreach (var slot in ValueWrapperSlots)
+        foreach (var slot in YellowValuePaneVisibilitySlots)
         {
-            for (var index = 0; index < slot.Instructions.Length; index++)
+            if (!InstructionsEqual(text, slot.Offset, slot.PatchedInstructions))
             {
-                if (ReadInstruction(text, slot.Offset + (index * sizeof(uint))) != slot.Instructions[index])
-                {
-                    return false;
-                }
+                return false;
             }
         }
 
         return true;
     }
 
-    private static void WriteRenderWrapper(byte[] text)
+    private static bool AnyYellowValuePaneVisibilityWritten(ReadOnlySpan<byte> text)
     {
-        WriteInstruction(text, RenderWrapperSlotOffset + 0x00, 0xA9BF7BF3); // stp x19, x30, [sp,#-0x10]!
-        WriteInstruction(text, RenderWrapperSlotOffset + 0x04, 0xAA0003F3); // mov x19, x0
-        WriteInstruction(text, RenderWrapperSlotOffset + 0x08, EncodeBranchLink(RenderWrapperSlotOffset + 0x08, MultiChartRendererOffset));
-        WriteInstruction(text, RenderWrapperContinueSlotOffset + 0x00, 0xAA1303E0); // mov x0, x19
-        WriteInstruction(text, RenderWrapperContinueSlotOffset + 0x04, EncodeBranchLink(RenderWrapperContinueSlotOffset + 0x04, ForceValuePaneVisibilityOffset));
-        WriteInstruction(text, RenderWrapperContinueSlotOffset + 0x08, EncodeBranch(RenderWrapperContinueSlotOffset + 0x08, RenderWrapperReturnSlotOffset));
-        WriteInstruction(text, RenderWrapperReturnSlotOffset + 0x00, 0xA8C17BF3); // ldp x19, x30, [sp],#0x10
-        WriteInstruction(text, RenderWrapperReturnSlotOffset + 0x04, 0xD65F03C0); // ret
-        WriteInstruction(text, RenderWrapperReturnSlotOffset + 0x08, NopInstruction);
+        foreach (var slot in YellowValuePaneVisibilitySlots)
+        {
+            if (InstructionsEqual(text, slot.Offset, slot.PatchedInstructions)
+                || InstructionsEqual(text, slot.Offset, slot.LegacyPatchedInstructions)
+                || InstructionsEqual(text, slot.Offset, PreviousXorYellowValuePaneVisibilityInstructions(slot.LegacyPatchedInstructions.Length))
+                || InstructionsEqual(text, slot.Offset, PreviousForcedVisibleYellowValuePaneVisibilityInstructions(slot.LegacyPatchedInstructions.Length)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
-    private static bool IsRenderWrapperWritten(ReadOnlySpan<byte> text)
+    private static bool AnyBranchLike(
+        ReadOnlySpan<byte> text,
+        (int Offset, uint VanillaInstruction, int WrapperOffset)[] sites)
     {
-        return ReadInstruction(text, RenderWrapperSlotOffset + 0x00) == 0xA9BF7BF3
-            && ReadInstruction(text, RenderWrapperSlotOffset + 0x04) == 0xAA0003F3
-            && IsBranchLinkTo(ReadInstruction(text, RenderWrapperSlotOffset + 0x08), RenderWrapperSlotOffset + 0x08, MultiChartRendererOffset)
-            && ReadInstruction(text, RenderWrapperContinueSlotOffset + 0x00) == 0xAA1303E0
-            && IsBranchLinkTo(ReadInstruction(text, RenderWrapperContinueSlotOffset + 0x04), RenderWrapperContinueSlotOffset + 0x04, ForceValuePaneVisibilityOffset)
-            && IsBranchTo(ReadInstruction(text, RenderWrapperContinueSlotOffset + 0x08), RenderWrapperContinueSlotOffset + 0x08, RenderWrapperReturnSlotOffset)
-            && ReadInstruction(text, RenderWrapperReturnSlotOffset + 0x00) == 0xA8C17BF3
-            && ReadInstruction(text, RenderWrapperReturnSlotOffset + 0x04) == 0xD65F03C0
-            && ReadInstruction(text, RenderWrapperReturnSlotOffset + 0x08) == NopInstruction;
+        foreach (var site in sites)
+        {
+            if (IsBranchOrBranchLink(ReadInstruction(text, site.Offset)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool YellowValuePaneVisibilityIsVanilla(ReadOnlySpan<byte> text)
+    {
+        foreach (var slot in YellowValuePaneVisibilitySlots)
+        {
+            if (!InstructionsEqual(text, slot.Offset, slot.VanillaInstructions))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static uint[] PreviousXorYellowValuePaneVisibilityInstructions(int length)
+    {
+        var instructions = new uint[length];
+        if (instructions.Length > 0)
+        {
+            instructions[0] = XModePaneVisibilityInstruction;
+        }
+
+        if (instructions.Length > 1)
+        {
+            instructions[1] = VanillaValuePaneVisibilityInvertInstruction;
+        }
+
+        for (var index = 2; index < instructions.Length; index++)
+        {
+            instructions[index] = NopInstruction;
+        }
+
+        return instructions;
+    }
+
+    private static uint[] PreviousForcedVisibleYellowValuePaneVisibilityInstructions(int length)
+    {
+        var instructions = new uint[length];
+        if (instructions.Length > 0)
+        {
+            instructions[0] = MovW8OneInstruction;
+        }
+
+        for (var index = 1; index < instructions.Length; index++)
+        {
+            instructions[index] = NopInstruction;
+        }
+
+        return instructions;
+    }
+
+    private static void WriteNumericTextPaneRefresh(byte[] text)
+    {
+        foreach (var site in NumericTextPaneRefreshSites)
+        {
+            WriteInstruction(text, site.Offset, MovW8OneInstruction);
+        }
+    }
+
+    private static bool AreNumericTextPaneRefreshesWritten(ReadOnlySpan<byte> text)
+    {
+        return AllInstructionsEqual(text, NumericTextPaneRefreshSites, MovW8OneInstruction);
+    }
+
+    private static bool AnyNumericTextPaneRefreshWritten(ReadOnlySpan<byte> text)
+    {
+        return AnyInstructionEqual(text, NumericTextPaneRefreshSites, MovW8OneInstruction)
+            || AnyInstructionEqual(text, NumericTextPaneRefreshSites, MovW8WzrInstruction);
+    }
+
+    private static bool NumericTextPaneRefreshesAreVanilla(ReadOnlySpan<byte> text)
+    {
+        return AllInstructionsVanilla(text, NumericTextPaneRefreshSites);
+    }
+
+    private static void WriteXToggleRefresh(byte[] text)
+    {
+        WriteInstructions(text, XToggleRefreshSlot.Offset, XToggleRefreshPatchedInstructions());
+    }
+
+    private static bool IsXToggleRefreshWritten(ReadOnlySpan<byte> text)
+    {
+        return InstructionsEqual(text, XToggleRefreshSlot.Offset, XToggleRefreshPatchedInstructions());
+    }
+
+    private static bool XToggleRefreshIsVanilla(ReadOnlySpan<byte> text)
+    {
+        return InstructionsEqual(text, XToggleRefreshSlot.Offset, XToggleRefreshSlot.VanillaInstructions);
+    }
+
+    private static uint[] XToggleRefreshPatchedInstructions()
+    {
+        return
+        [
+            0xAA1303E0, // mov x0, x19
+            EncodeBranchLink(XToggleRefreshSlot.Offset + sizeof(uint), SummaryMultiChartRefreshOffset),
+            EncodeBranch(XToggleRefreshSlot.Offset + (2 * sizeof(uint)), 0x0138B550),
+        ];
+    }
+
+    private static void WriteXModeValueWrappers(byte[] text)
+    {
+        WriteXModeValueWrapper(
+            text,
+            HpCurrentTextWrapperSlotOffset,
+            HpCurrentTextRawSlotOffset,
+            SummaryTextHpCurrentGetterOffset,
+            setHpStatIndex: true);
+        WriteXModeValueWrapper(
+            text,
+            HpMaxTextWrapperSlotOffset,
+            HpMaxTextRawSlotOffset,
+            SummaryTextHpMaxGetterOffset,
+            setHpStatIndex: true);
+        WriteXModeValueWrapper(
+            text,
+            SummaryStatWrapperSlotOffset,
+            SummaryStatRawSlotOffset,
+            SummaryTextStatGetterOffset,
+            setHpStatIndex: false);
+        WriteXModeValueWrapper(
+            text,
+            SummaryGraphAlternateWrapperSlotOffset,
+            SummaryGraphAlternateRawSlotOffset,
+            SummaryGraphAlternateStatGetterOffset,
+            setHpStatIndex: false);
+    }
+
+    private static bool AreXModeValueWrappersWritten(ReadOnlySpan<byte> text)
+    {
+        return IsXModeValueWrapperWritten(
+                text,
+                HpCurrentTextWrapperSlotOffset,
+                HpCurrentTextRawSlotOffset,
+                SummaryTextHpCurrentGetterOffset,
+                setHpStatIndex: true)
+            && IsXModeValueWrapperWritten(
+                text,
+                HpMaxTextWrapperSlotOffset,
+                HpMaxTextRawSlotOffset,
+                SummaryTextHpMaxGetterOffset,
+                setHpStatIndex: true)
+            && IsXModeValueWrapperWritten(
+                text,
+                SummaryStatWrapperSlotOffset,
+                SummaryStatRawSlotOffset,
+                SummaryTextStatGetterOffset,
+                setHpStatIndex: false)
+            && IsXModeValueWrapperWritten(
+                text,
+                SummaryGraphAlternateWrapperSlotOffset,
+                SummaryGraphAlternateRawSlotOffset,
+                SummaryGraphAlternateStatGetterOffset,
+                setHpStatIndex: false);
+    }
+
+    private static void WriteXModeValueWrapper(
+        byte[] text,
+        int wrapperOffset,
+        int rawSlotOffset,
+        int vanillaTargetOffset,
+        bool setHpStatIndex)
+    {
+        WriteInstructions(
+            text,
+            wrapperOffset,
+            [
+                XModePaneVisibilityInstruction,
+                EncodeCompareBranchZero32(wrapperOffset + sizeof(uint), rawSlotOffset, 8),
+                EncodeBranch(wrapperOffset + (2 * sizeof(uint)), vanillaTargetOffset),
+            ]);
+
+        var rawBranchOffset = setHpStatIndex
+            ? rawSlotOffset + sizeof(uint)
+            : rawSlotOffset;
+        WriteInstructions(
+            text,
+            rawSlotOffset,
+            setHpStatIndex
+                ? [MovW1WzrInstruction, EncodeBranch(rawBranchOffset, RawIvGetterOffset), NopInstruction]
+                : [EncodeBranch(rawBranchOffset, RawIvGetterOffset), NopInstruction, NopInstruction]);
+    }
+
+    private static bool IsXModeValueWrapperWritten(
+        ReadOnlySpan<byte> text,
+        int wrapperOffset,
+        int rawSlotOffset,
+        int vanillaTargetOffset,
+        bool setHpStatIndex)
+    {
+        if (!InstructionsEqual(
+                text,
+                wrapperOffset,
+                [
+                    XModePaneVisibilityInstruction,
+                    EncodeCompareBranchZero32(wrapperOffset + sizeof(uint), rawSlotOffset, 8),
+                    EncodeBranch(wrapperOffset + (2 * sizeof(uint)), vanillaTargetOffset),
+                ]))
+        {
+            return false;
+        }
+
+        var rawBranchOffset = setHpStatIndex
+            ? rawSlotOffset + sizeof(uint)
+            : rawSlotOffset;
+        return InstructionsEqual(
+            text,
+            rawSlotOffset,
+            setHpStatIndex
+                ? [MovW1WzrInstruction, EncodeBranch(rawBranchOffset, RawIvGetterOffset), NopInstruction]
+                : [EncodeBranch(rawBranchOffset, RawIvGetterOffset), NopInstruction, NopInstruction]);
+    }
+
+    private static bool InstructionsEqual(ReadOnlySpan<byte> text, int offset, IReadOnlyList<uint> instructions)
+    {
+        for (var index = 0; index < instructions.Count; index++)
+        {
+            if (ReadInstruction(text, offset + (index * sizeof(uint))) != instructions[index])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void WriteMarker(byte[] text)
@@ -551,18 +995,21 @@ internal static class SwShIvScreenMainPatcher
                      .Concat(MarkerFragmentOffsets)
                      .Concat(NormalGraphValueCallSites.Select(site => site.Offset))
                      .Concat(MultiChartStatSourceCallSites.Select(site => site.Offset))
+                     .Concat(MultiChartTextHpValueCallSites.Select(site => site.Offset))
+                     .Concat(MultiChartTextStatValueCallSites.Select(site => site.Offset))
                      .Concat(YellowRawValueAddSites.Select(site => site.Offset))
+                     .Concat(YellowGraphValueCallSites.Select(site => site.Offset))
+                     .Concat(YellowValuePaneVisibilitySlots.Select(slot => slot.Offset))
+                     .Concat(NumericTextPaneRefreshSites.Select(site => site.Offset))
                      .Concat(RendererWrapperCallSites.Select(site => site.Offset))
                      .Append(LegacySecondaryStatsHookSiteOffset)
                      .Append(LegacyNormalStatsGraphHookSiteOffset)
+                     .Append(XToggleRefreshSlot.Offset)
                      .Append(XYellowStateRequestBranchOffset)
-                     .Append(VanillaSecondaryStatsSetupOffset)
-                     .Append(SelectedPokemonResolverOffset)
                      .Append(RawIvGetterOffset)
-                     .Append(HyperTrainingIvWrapperOffset)
+                     .Append(CalculatedStatGetterOffset)
                      .Append(NormalStatsGraphRendererOffset)
-                     .Append(MultiChartRendererOffset)
-                     .Append(ForceValuePaneVisibilityOffset)
+                     .Append(SummaryMultiChartRefreshOffset)
                      .Append(0x0138B1FC)
                      .Append(0x0138B200))
         {
@@ -572,13 +1019,9 @@ internal static class SwShIvScreenMainPatcher
 
     private static void EnsureAnchors(ReadOnlySpan<byte> text)
     {
-        EnsureAnchor(text, VanillaSecondaryStatsSetupOffset, VanillaSecondaryStatsSetupEntry, "secondary-stats setup");
-        EnsureAnchor(text, SelectedPokemonResolverOffset, SelectedPokemonResolverEntry, "selected Pokemon resolver");
         EnsureAnchor(text, RawIvGetterOffset, RawIvGetterEntry, "raw IV getter");
-        EnsureAnchor(text, HyperTrainingIvWrapperOffset, HyperTrainingIvWrapperEntry, "Hyper Training-adjusted IV wrapper guard");
+        EnsureAnchor(text, CalculatedStatGetterOffset, CalculatedStatGetterEntry, "calculated stat getter");
         EnsureAnchor(text, NormalStatsGraphRendererOffset, NormalStatsGraphRendererEntry, "normal stats graph renderer");
-        EnsureAnchor(text, MultiChartRendererOffset, MultiChartRendererEntry, "summary multi-chart renderer");
-        EnsureAnchor(text, ForceValuePaneVisibilityOffset, ForceValuePaneVisibilityEntry, "summary value-pane visibility helper");
 
         if (ReadInstruction(text, LegacySecondaryStatsHookSiteOffset) != VanillaLegacySecondaryStatsHookInstruction
             && !IsBranchLinkTo(ReadInstruction(text, LegacySecondaryStatsHookSiteOffset), LegacySecondaryStatsHookSiteOffset, ValueWrapperSlotOffset))
@@ -594,29 +1037,110 @@ internal static class SwShIvScreenMainPatcher
 
         foreach (var site in NormalGraphValueCallSites)
         {
-            EnsureVanillaOrOwnedCall(text, site.Offset, site.VanillaInstruction, ValueWrapperSlotOffset, "normal graph value source");
+            EnsureVanillaOrOwnedCall(text, site.Offset, site.VanillaInstruction, "normal graph value source", ValueWrapperSlotOffset);
         }
 
         foreach (var site in MultiChartStatSourceCallSites)
         {
-            EnsureVanillaOrOwnedCall(text, site.Offset, site.VanillaInstruction, RawIvGetterOffset, "summary multi-chart stat source");
+            EnsureVanillaOrOwnedCall(
+                text,
+                site.Offset,
+                site.VanillaInstruction,
+                "summary multi-chart stat source",
+                site.WrapperOffset,
+                RawIvGetterOffset);
+        }
+
+        foreach (var site in MultiChartTextHpValueCallSites)
+        {
+            EnsureVanillaOrOwnedCall(
+                text,
+                site.Offset,
+                site.VanillaInstruction,
+                "summary multi-chart HP text value source",
+                site.WrapperOffset,
+                LegacyHpIvWrapperSlotOffset);
+        }
+
+        foreach (var site in MultiChartTextStatValueCallSites)
+        {
+            EnsureVanillaOrOwnedCall(
+                text,
+                site.Offset,
+                site.VanillaInstruction,
+                "summary multi-chart text value source",
+                site.WrapperOffset,
+                RawIvGetterOffset);
+        }
+
+        foreach (var site in YellowGraphValueCallSites)
+        {
+            var actual = ReadInstruction(text, site.Offset);
+            if (actual != site.VanillaInstruction
+                && actual != MovW0WzrInstruction
+                && !IsBranchLinkTo(actual, site.Offset, RawIvGetterOffset))
+            {
+                throw new InvalidDataException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"IV Screen expected vanilla or owned summary X-mode graph value source at main.text+0x{site.Offset:X}, but found 0x{actual:X8}."));
+            }
         }
 
         foreach (var site in RendererWrapperCallSites)
         {
-            EnsureVanillaOrOwnedCall(text, site.Offset, site.VanillaInstruction, RenderWrapperSlotOffset, "summary multi-chart wrapper");
+            EnsureVanillaOrOwnedCall(text, site.Offset, site.VanillaInstruction, "summary multi-chart wrapper", RenderWrapperSlotOffset);
         }
 
         foreach (var site in YellowRawValueAddSites)
         {
             var actual = ReadInstruction(text, site.Offset);
-            if (actual != site.VanillaInstruction && actual != MovW8W0Instruction)
+            if (actual != site.VanillaInstruction
+                && actual != MovW8W0Instruction
+                && actual != MovW8WzrInstruction)
+            {
+                throw new InvalidDataException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"IV Screen expected vanilla or owned yellow raw-value instruction at main.text+0x{site.Offset:X}, but found 0x{actual:X8}."));
+            }
+        }
+
+        foreach (var slot in YellowValuePaneVisibilitySlots)
+        {
+            if (!InstructionsEqual(text, slot.Offset, slot.VanillaInstructions)
+                && !InstructionsEqual(text, slot.Offset, slot.PatchedInstructions)
+                && !InstructionsEqual(text, slot.Offset, slot.LegacyPatchedInstructions)
+                && !InstructionsEqual(text, slot.Offset, PreviousXorYellowValuePaneVisibilityInstructions(slot.LegacyPatchedInstructions.Length))
+                && !InstructionsEqual(text, slot.Offset, PreviousForcedVisibleYellowValuePaneVisibilityInstructions(slot.LegacyPatchedInstructions.Length)))
             {
                 throw new InvalidDataException(
                     string.Create(
                         CultureInfo.InvariantCulture,
-                        $"IV Screen expected vanilla or owned yellow raw-value instruction at main.text+0x{site.Offset:X}, but found 0x{actual:X8}."));
+                        $"IV Screen expected vanilla or owned X-mode value-pane visibility instructions at main.text+0x{slot.Offset:X}."));
             }
+        }
+
+        foreach (var site in NumericTextPaneRefreshSites)
+        {
+            var actual = ReadInstruction(text, site.Offset);
+            if (actual != site.VanillaInstruction
+                && actual != MovW8OneInstruction
+                && actual != MovW8WzrInstruction)
+            {
+                throw new InvalidDataException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"IV Screen expected vanilla or owned numeric text-pane refresh instruction at main.text+0x{site.Offset:X}, but found 0x{actual:X8}."));
+            }
+        }
+
+        if (!XToggleRefreshIsVanilla(text) && !IsXToggleRefreshWritten(text))
+        {
+            throw new InvalidDataException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"IV Screen expected vanilla or owned X-toggle refresh instructions at main.text+0x{XToggleRefreshSlot.Offset:X}."));
         }
     }
 
@@ -624,17 +1148,27 @@ internal static class SwShIvScreenMainPatcher
         ReadOnlySpan<byte> text,
         int offset,
         uint vanillaInstruction,
-        int ownedTargetOffset,
-        string label)
+        string label,
+        params int[] ownedTargetOffsets)
     {
         var actual = ReadInstruction(text, offset);
-        if (actual != vanillaInstruction && !IsBranchLinkTo(actual, offset, ownedTargetOffset))
+        if (actual == vanillaInstruction)
         {
-            throw new InvalidDataException(
-                string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"IV Screen expected vanilla or owned {label} at main.text+0x{offset:X}, but found 0x{actual:X8}."));
+            return;
         }
+
+        foreach (var ownedTargetOffset in ownedTargetOffsets)
+        {
+            if (IsBranchLinkTo(actual, offset, ownedTargetOffset))
+            {
+                return;
+            }
+        }
+
+        throw new InvalidDataException(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"IV Screen expected vanilla or owned {label} at main.text+0x{offset:X}, but found 0x{actual:X8}."));
     }
 
     private static void EnsureAnchor(ReadOnlySpan<byte> text, int offset, uint expectedInstruction, string label)
@@ -669,6 +1203,14 @@ internal static class SwShIvScreenMainPatcher
         BinaryPrimitives.WriteUInt32LittleEndian(text.AsSpan(offset, sizeof(uint)), instruction);
     }
 
+    private static void WriteInstructions(byte[] text, int offset, IReadOnlyList<uint> instructions)
+    {
+        for (var index = 0; index < instructions.Count; index++)
+        {
+            WriteInstruction(text, offset + (index * sizeof(uint)), instructions[index]);
+        }
+    }
+
     private static bool IsZero(ReadOnlySpan<byte> bytes)
     {
         foreach (var value in bytes)
@@ -685,16 +1227,6 @@ internal static class SwShIvScreenMainPatcher
     private static bool IsBranchOrBranchLink(uint instruction)
     {
         return (instruction & 0x7C000000) == 0x14000000;
-    }
-
-    private static bool IsBranchTo(uint instruction, int sourceOffset, int targetOffset)
-    {
-        if ((instruction & 0xFC000000) != 0x14000000)
-        {
-            return false;
-        }
-
-        return DecodeBranchTarget(instruction, sourceOffset) == targetOffset;
     }
 
     private static bool IsBranchLinkTo(uint instruction, int sourceOffset, int targetOffset)
@@ -718,14 +1250,43 @@ internal static class SwShIvScreenMainPatcher
         return sourceOffset + (imm26 << 2);
     }
 
+    private static uint EncodeBranchLink(int sourceOffset, int targetOffset)
+    {
+        return EncodeBranchLike(0x94000000, sourceOffset, targetOffset);
+    }
+
     private static uint EncodeBranch(int sourceOffset, int targetOffset)
     {
         return EncodeBranchLike(0x14000000, sourceOffset, targetOffset);
     }
 
-    private static uint EncodeBranchLink(int sourceOffset, int targetOffset)
+    private static uint EncodeCompareBranchNonZero32(int sourceOffset, int targetOffset, int register)
     {
-        return EncodeBranchLike(0x94000000, sourceOffset, targetOffset);
+        return EncodeCompareBranch32(0x35000000, sourceOffset, targetOffset, register);
+    }
+
+    private static uint EncodeCompareBranchZero32(int sourceOffset, int targetOffset, int register)
+    {
+        return EncodeCompareBranch32(0x34000000, sourceOffset, targetOffset, register);
+    }
+
+    private static uint EncodeCompareBranch32(uint opcode, int sourceOffset, int targetOffset, int register)
+    {
+        var delta = targetOffset - sourceOffset;
+        if ((delta & 3) != 0)
+        {
+            throw new InvalidDataException("Compare-branch target must be 4-byte aligned.");
+        }
+
+        var imm19 = delta >> 2;
+        if (imm19 < -(1 << 18) || imm19 >= (1 << 18))
+        {
+            throw new InvalidDataException("Compare-branch target is outside ARM64 range.");
+        }
+
+        return opcode
+            | (uint)((imm19 & 0x7FFFF) << 5)
+            | (uint)(register & 0x1F);
     }
 
     private static uint EncodeBranchLike(uint opcode, int sourceOffset, int targetOffset)
