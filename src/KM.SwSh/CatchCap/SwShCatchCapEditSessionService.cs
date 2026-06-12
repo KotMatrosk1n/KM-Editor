@@ -208,7 +208,7 @@ public sealed class SwShCatchCapEditSessionService
                 File.Exists(targetPath),
                 isUninstall
                     ? "Uninstall Catch Cap Editor from exefs/main while preserving Royal Candy ExeFS bytes when present."
-                    : "Apply Catch Cap Editor hook and badge cap values 0-7 to exefs/main; eight badges remains Lv.100."),
+                    : "Apply Catch Cap Editor display/runtime hook and badge cap values 0-7 to exefs/main; eight badges remains Lv.100."),
         };
 
         diagnostics.Add(CreateDiagnostic(
@@ -629,7 +629,7 @@ public sealed class SwShCatchCapEditSessionService
             caps.Select((cap, badgeCount) => string.Create(CultureInfo.InvariantCulture, $"{badgeCount}={cap}")));
         return new PendingEdit(
             CatchCapEditDomain,
-            "Stage Catch Cap Editor values for badge counts 0-7; eight badges remains Lv.100.",
+            "Stage Catch Cap Editor values for badge counts 0-7 and the display/runtime hook; eight badges remains Lv.100.",
             [new ProjectFileReference(ProjectFileLayer.Base, SwShCatchCapWorkflowService.ExeFsMainPath)],
             RecordId,
             CapsField,
