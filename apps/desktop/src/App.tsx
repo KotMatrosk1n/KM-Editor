@@ -41,7 +41,9 @@ import {
 import { listen } from '@tauri-apps/api/event';
 import {
   type ReactNode,
+  Component,
   createContext,
+  type ErrorInfo,
   useCallback,
   useContext,
   useEffect,
@@ -160,6 +162,12 @@ import {
   type DesktopServices,
   type NativeUpdate
 } from './desktopServices';
+import { formatDiagnosticMessage } from './diagnostics';
+import {
+  createReportableError,
+  formatReportableErrorMessage,
+  type ReportableError
+} from './errorReporting';
 import {
   type ProjectPathFieldName,
   type ProjectPathDraft,
@@ -170,6 +178,64 @@ import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
 
 const appVersion = tauriConfig.version;
+
+export class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  { report: ReportableError | null }
+> {
+  public state: { report: ReportableError | null } = { report: null };
+
+  public static getDerivedStateFromError(error: unknown) {
+    return {
+      report: createReportableError(error, {
+        fallbackMessage: 'The KM Editor interface crashed while rendering.',
+        kind: 'render',
+        title: 'KM Editor hit a critical display error.'
+      })
+    };
+  }
+
+  public componentDidCatch(error: unknown, errorInfo: ErrorInfo) {
+    this.setState({
+      report: createReportableError(error, {
+        fallbackMessage: 'The KM Editor interface crashed while rendering.',
+        kind: 'render',
+        seed: errorInfo.componentStack ?? undefined,
+        title: 'KM Editor hit a critical display error.'
+      })
+    });
+  }
+
+  public render() {
+    if (this.state.report) {
+      return <CriticalErrorScreen report={this.state.report} />;
+    }
+
+    return this.props.children;
+  }
+}
+
+function CriticalErrorScreen({ report }: { report: ReportableError }) {
+  return (
+    <main className="fatal-error-screen">
+      <section className="panel fatal-error-panel" role="alert">
+        <div className="panel-heading">
+          <AlertTriangle aria-hidden="true" size={20} />
+          <h1>{report.title}</h1>
+        </div>
+        <div className="fatal-error-code">
+          <span>Error code</span>
+          <code>{report.code}</code>
+        </div>
+        <p>
+          Take a screenshot of this message and report it in GitHub Issues. Restart KM Editor
+          before trying the same action again.
+        </p>
+        <p>{report.message}</p>
+      </section>
+    </main>
+  );
+}
 
 const gameDefinitions = {
   sword: {
@@ -22814,10 +22880,13 @@ function DiagnosticsSection({ diagnostics }: { diagnostics: ApiDiagnostic[] }) {
 
       {diagnostics.length > 0 ? (
         <ul className="diagnostic-list">
-          {diagnostics.map((diagnostic) => (
-            <li className={`diagnostic diagnostic-${diagnostic.severity}`} key={diagnostic.message}>
+          {diagnostics.map((diagnostic, index) => (
+            <li
+              className={`diagnostic diagnostic-${diagnostic.severity}`}
+              key={`${diagnostic.severity}-${diagnostic.message}-${index}`}
+            >
               <strong>{formatDiagnosticSeverity(diagnostic.severity)}</strong>
-              <span>{diagnostic.message}</span>
+              <span>{formatDiagnosticMessage(diagnostic)}</span>
             </li>
           ))}
         </ul>
@@ -28276,36 +28345,54 @@ function delay(milliseconds: number) {
 
 function toBridgeDiagnostics(error: unknown): ApiDiagnostic[] {
   if (error instanceof ProjectBridgeError) {
-    return error.apiError.diagnostics.length > 0
-      ? error.apiError.diagnostics
-      : [
-          {
-            domain: 'bridge',
-            message: error.apiError.message,
-            severity: 'error'
-          }
-        ];
+    if (error.apiError.diagnostics.length > 0) {
+      return error.apiError.diagnostics;
+    }
+
+    return [
+      {
+        domain: 'bridge',
+        message: formatReportableErrorMessage(
+          createReportableError(error, {
+            fallbackMessage: error.apiError.message,
+            kind: 'bridge',
+            seed: error.apiError.code,
+            title: 'KM Editor hit an unexpected bridge error.'
+          })
+        ),
+        severity: 'error'
+      }
+    ];
   }
 
   return [
     {
       domain: 'bridge',
-      message: error instanceof Error ? error.message : 'Project bridge request failed.',
+      message: formatReportableErrorMessage(
+        createReportableError(error, {
+          fallbackMessage: 'Project bridge request failed.',
+          kind: 'bridge',
+          title: 'KM Editor hit an unexpected bridge error.'
+        })
+      ),
       severity: 'error'
     }
   ];
 }
 
 function toDesktopDiagnostics(error: unknown, fallbackMessage: string): ApiDiagnostic[] {
+  const detail =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : fallbackMessage;
+  const message = detail === fallbackMessage ? fallbackMessage : `${fallbackMessage} ${detail}`;
+
   return [
     {
       domain: 'desktop',
-      message:
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-            ? error
-            : fallbackMessage,
+      message,
       severity: 'error'
     }
   ];
