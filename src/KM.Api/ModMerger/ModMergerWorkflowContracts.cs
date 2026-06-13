@@ -21,7 +21,8 @@ public sealed record StageModMergeRequest(
     string? ModDirectory2,
     IReadOnlyList<string> SelectedDirectory1Files,
     IReadOnlyList<string> SelectedDirectory2Files,
-    IReadOnlyList<ModMergerConflictResolutionDto> Resolutions);
+    IReadOnlyList<ModMergerConflictResolutionDto> Resolutions,
+    string? MergeMode = null);
 
 public sealed record ApplyModMergeRequest(
     ProjectPathsDto Paths,
@@ -29,7 +30,8 @@ public sealed record ApplyModMergeRequest(
     string? ModDirectory2,
     IReadOnlyList<string> SelectedDirectory1Files,
     IReadOnlyList<string> SelectedDirectory2Files,
-    IReadOnlyList<ModMergerConflictResolutionDto> Resolutions);
+    IReadOnlyList<ModMergerConflictResolutionDto> Resolutions,
+    string? MergeMode = null);
 
 public sealed record ModMergerFileRecordDto(
     string RelativePath,
@@ -67,6 +69,7 @@ public sealed record ModMergerFilePreviewRecordDto(
     string OutputRelativePath,
     string SupportKind,
     string Status,
+    string MergeKind,
     string Summary,
     int Directory1ChangeCount,
     int Directory2ChangeCount,
@@ -75,6 +78,7 @@ public sealed record ModMergerFilePreviewRecordDto(
 public sealed record ModMergerPreviewDto(
     bool CanApply,
     string Status,
+    string MergeMode,
     int SelectedFileCount,
     int ReadyFileCount,
     int ConflictFileCount,

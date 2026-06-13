@@ -80,7 +80,8 @@ public sealed class SwShModMergerWorkflowService
         string? modDirectory2,
         IReadOnlyList<string> selectedDirectory1Files,
         IReadOnlyList<string> selectedDirectory2Files,
-        IReadOnlyList<SwShModMergerConflictResolution> resolutions)
+        IReadOnlyList<SwShModMergerConflictResolution> resolutions,
+        string? mergeMode = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(selectedDirectory1Files);
@@ -89,15 +90,18 @@ public sealed class SwShModMergerWorkflowService
 
         var workflow = Load(paths, modDirectory1, modDirectory2);
         var diagnostics = workflow.Diagnostics.ToList();
+        var normalizedMergeMode = NormalizeMergeMode(mergeMode);
         var plan = BuildPlan(
             paths,
             modDirectory1,
             modDirectory2,
             selectedDirectory1Files,
             selectedDirectory2Files,
+            normalizedMergeMode,
+            includeOutputs: false,
             resolutions,
             diagnostics);
-        var preview = CreatePreview(plan.Files, plan.Conflicts, diagnostics);
+        var preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
 
         return new SwShModMergerStageResult(workflow, preview, diagnostics);
     }
@@ -108,7 +112,8 @@ public sealed class SwShModMergerWorkflowService
         string? modDirectory2,
         IReadOnlyList<string> selectedDirectory1Files,
         IReadOnlyList<string> selectedDirectory2Files,
-        IReadOnlyList<SwShModMergerConflictResolution> resolutions)
+        IReadOnlyList<SwShModMergerConflictResolution> resolutions,
+        string? mergeMode = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(selectedDirectory1Files);
@@ -117,15 +122,18 @@ public sealed class SwShModMergerWorkflowService
 
         var workflow = Load(paths, modDirectory1, modDirectory2);
         var diagnostics = workflow.Diagnostics.ToList();
+        var normalizedMergeMode = NormalizeMergeMode(mergeMode);
         var plan = BuildPlan(
             paths,
             modDirectory1,
             modDirectory2,
             selectedDirectory1Files,
             selectedDirectory2Files,
+            normalizedMergeMode,
+            includeOutputs: true,
             resolutions,
             diagnostics);
-        var preview = CreatePreview(plan.Files, plan.Conflicts, diagnostics);
+        var preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
         var writtenFiles = new List<string>();
 
         if (!preview.CanApply)
@@ -134,7 +142,7 @@ public sealed class SwShModMergerWorkflowService
                 DiagnosticSeverity.Error,
                 "Resolve every Mod Merger conflict before applying the merge.",
                 expected: "Conflict-free merge preview"));
-            preview = CreatePreview(plan.Files, plan.Conflicts, diagnostics);
+            preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
             return new SwShModMergerApplyResult(workflow, preview, writtenFiles, diagnostics);
         }
 
@@ -146,7 +154,13 @@ public sealed class SwShModMergerWorkflowService
                 "Mod Merger apply requires an Output Root.",
                 field: "outputRootPath",
                 expected: "Writable LayeredFS output directory"));
-            preview = CreatePreview(plan.Files, plan.Conflicts, diagnostics);
+            preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
+            return new SwShModMergerApplyResult(workflow, preview, writtenFiles, diagnostics);
+        }
+
+        if (!ValidatePlanIntegrity(plan.Outputs, diagnostics))
+        {
+            preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
             return new SwShModMergerApplyResult(workflow, preview, writtenFiles, diagnostics);
         }
 
@@ -155,13 +169,13 @@ public sealed class SwShModMergerWorkflowService
             var targetPath = ResolveOutputPath(outputRoot, output.RelativePath, diagnostics);
             if (targetPath is null)
             {
+                ClearOutputContents(output);
                 continue;
             }
 
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
-                File.WriteAllBytes(targetPath, output.Contents);
+                WriteVerifiedOutput(targetPath, output);
                 writtenFiles.Add(output.RelativePath);
             }
             catch (IOException exception)
@@ -180,6 +194,18 @@ public sealed class SwShModMergerWorkflowService
                     file: output.RelativePath,
                     expected: "Writable Output Root file"));
             }
+            catch (InvalidDataException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Merged file failed integrity verification: {exception.Message}",
+                    file: output.RelativePath,
+                    expected: "Verified output bytes matching the merge plan"));
+            }
+            finally
+            {
+                ClearOutputContents(output);
+            }
         }
 
         if (writtenFiles.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -189,7 +215,7 @@ public sealed class SwShModMergerWorkflowService
                 $"Applied {writtenFiles.Count} merged RomFS file{(writtenFiles.Count == 1 ? string.Empty : "s")} to Output Root."));
         }
 
-        preview = CreatePreview(plan.Files, plan.Conflicts, diagnostics);
+        preview = CreatePreview(normalizedMergeMode, plan.Files, plan.Conflicts, diagnostics);
         return new SwShModMergerApplyResult(workflow, preview, writtenFiles, diagnostics);
     }
 
@@ -199,6 +225,8 @@ public sealed class SwShModMergerWorkflowService
         string? modDirectory2,
         IReadOnlyList<string> selectedDirectory1Files,
         IReadOnlyList<string> selectedDirectory2Files,
+        string mergeMode,
+        bool includeOutputs,
         IReadOnlyList<SwShModMergerConflictResolution> resolutions,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -267,6 +295,8 @@ public sealed class SwShModMergerWorkflowService
                 root1,
                 root2,
                 relativePath,
+                mergeMode,
+                includeOutputs,
                 resolutionMap,
                 files,
                 conflicts,
@@ -282,6 +312,8 @@ public sealed class SwShModMergerWorkflowService
         string root1,
         string root2,
         string relativePath,
+        string mergeMode,
+        bool includeOutputs,
         IReadOnlyDictionary<string, string> resolutionMap,
         ICollection<SwShModMergerFilePreviewRecord> files,
         ICollection<SwShModMergerConflictRecord> conflicts,
@@ -313,7 +345,7 @@ public sealed class SwShModMergerWorkflowService
                 $"Vanilla base file '{relativePath}' could not be found. Mod Merger needs vanilla bytes to identify safe changes.",
                 file: relativePath,
                 expected: "Matching file under Base RomFS"));
-            files.Add(CreateFilePreview(relativePath, supportKind, "error", "Vanilla base file is missing.", 0, 0, 0));
+            files.Add(CreateFilePreview(relativePath, supportKind, "error", "error", CreateMissingBaseSummary(), 0, 0, 0));
             return;
         }
 
@@ -325,14 +357,36 @@ public sealed class SwShModMergerWorkflowService
             var directory1ChangeCount = CountChangedRanges(baseBytes, mod1Bytes);
             var directory2ChangeCount = CountChangedRanges(baseBytes, mod2Bytes);
 
+            if (IsReplacementMode(mergeMode))
+            {
+                MergeFileByReplacementMode(
+                    relativePath,
+                    supportKind,
+                    mergeMode,
+                    baseBytes,
+                    mod1Bytes,
+                    mod2Bytes,
+                    directory1ChangeCount,
+                    directory2ChangeCount,
+                    includeOutputs,
+                    files,
+                    outputs);
+                return;
+            }
+
             if (mod1Bytes.SequenceEqual(mod2Bytes))
             {
-                outputs.Add(new MergeOutput(relativePath, mod1Bytes));
+                if (includeOutputs)
+                {
+                    outputs.Add(CreateMergeOutput(relativePath, mod1Bytes));
+                }
+
                 files.Add(CreateFilePreview(
                     relativePath,
                     supportKind,
                     "ready",
-                    "Both mod directories contain identical bytes for this file.",
+                    "unchanged",
+                    CreateIdenticalFileSummary(),
                     directory1ChangeCount,
                     directory2ChangeCount,
                     0));
@@ -341,12 +395,17 @@ public sealed class SwShModMergerWorkflowService
 
             if (mod1Bytes.SequenceEqual(baseBytes))
             {
-                outputs.Add(new MergeOutput(relativePath, mod2Bytes));
+                if (includeOutputs)
+                {
+                    outputs.Add(CreateMergeOutput(relativePath, mod2Bytes));
+                }
+
                 files.Add(CreateFilePreview(
                     relativePath,
                     supportKind,
                     "ready",
-                    "Only Mod Directory 2 changes this file.",
+                    "singleSource",
+                    CreateSingleSourceSummary("mod2"),
                     directory1ChangeCount,
                     directory2ChangeCount,
                     0));
@@ -355,12 +414,17 @@ public sealed class SwShModMergerWorkflowService
 
             if (mod2Bytes.SequenceEqual(baseBytes))
             {
-                outputs.Add(new MergeOutput(relativePath, mod1Bytes));
+                if (includeOutputs)
+                {
+                    outputs.Add(CreateMergeOutput(relativePath, mod1Bytes));
+                }
+
                 files.Add(CreateFilePreview(
                     relativePath,
                     supportKind,
                     "ready",
-                    "Only Mod Directory 1 changes this file.",
+                    "singleSource",
+                    CreateSingleSourceSummary("mod1"),
                     directory1ChangeCount,
                     directory2ChangeCount,
                     0));
@@ -372,25 +436,26 @@ public sealed class SwShModMergerWorkflowService
                 var conflict = CreateWholeFileConflict(relativePath, mod1Bytes, mod2Bytes, resolutionMap);
                 conflicts.Add(conflict);
                 var resolvedBytes = ResolveConflictBytes(conflict.Resolution, mod1Bytes, mod2Bytes);
-                if (resolvedBytes is not null)
+                if (includeOutputs && resolvedBytes is not null)
                 {
-                    outputs.Add(new MergeOutput(relativePath, resolvedBytes));
+                    outputs.Add(CreateMergeOutput(relativePath, resolvedBytes));
                 }
 
                 files.Add(CreateFilePreview(
                     relativePath,
                     supportKind,
                     conflict.Resolution is null ? "needsResolution" : "ready",
+                    conflict.Resolution is null ? "needsChoice" : "manualChoice",
                     conflict.Resolution is null
-                        ? "Both mods changed this file and at least one copy changed file length."
-                        : $"Whole-file conflict resolved with {FormatResolutionSource(conflict.Resolution)}.",
+                        ? CreateLengthConflictSummary()
+                        : CreateResolvedWholeFileSummary(conflict.Resolution),
                     directory1ChangeCount,
                     directory2ChangeCount,
                     conflict.Resolution is null ? 1 : 0));
                 return;
             }
 
-            var merged = baseBytes.ToArray();
+            var merged = includeOutputs ? baseBytes.ToArray() : null;
             var fileConflicts = new List<SwShModMergerConflictRecord>();
             var index = 0;
             while (index < baseBytes.Length)
@@ -414,7 +479,7 @@ public sealed class SwShModMergerWorkflowService
                     var conflict = CreateByteRangeConflict(relativePath, start, end, mod1Bytes, mod2Bytes, resolutionMap);
                     fileConflicts.Add(conflict);
                     var resolvedBytes = ResolveConflictBytes(conflict.Resolution, mod1Bytes, mod2Bytes);
-                    if (resolvedBytes is not null)
+                    if (merged is not null && resolvedBytes is not null)
                     {
                         Array.Copy(resolvedBytes, start, merged, start, end - start + 1);
                     }
@@ -422,11 +487,11 @@ public sealed class SwShModMergerWorkflowService
                     continue;
                 }
 
-                if (changed1)
+                if (merged is not null && changed1)
                 {
                     merged[index] = mod1Bytes[index];
                 }
-                else if (changed2)
+                else if (merged is not null && changed2)
                 {
                     merged[index] = mod2Bytes[index];
                 }
@@ -439,19 +504,27 @@ public sealed class SwShModMergerWorkflowService
                 conflicts.Add(conflict);
             }
 
-            if (fileConflicts.All(conflict => conflict.Resolution is not null))
+            if (includeOutputs && merged is not null && fileConflicts.All(conflict => conflict.Resolution is not null))
             {
-                outputs.Add(new MergeOutput(relativePath, merged));
+                outputs.Add(CreateMergeOutput(relativePath, merged));
             }
 
             var unresolvedCount = fileConflicts.Count(conflict => conflict.Resolution is null);
+            var resolvedChoiceCount = fileConflicts.Count - unresolvedCount;
             files.Add(CreateFilePreview(
                 relativePath,
                 supportKind,
                 unresolvedCount == 0 ? "ready" : "needsResolution",
-                unresolvedCount == 0
-                    ? "Non-overlapping byte changes can be merged safely."
-                    : $"{unresolvedCount} overlap{(unresolvedCount == 1 ? string.Empty : "s")} need a Mod Directory choice.",
+                unresolvedCount > 0
+                    ? "needsChoice"
+                    : resolvedChoiceCount > 0
+                        ? "manualChoice"
+                        : GetReadyMergeKind(relativePath),
+                unresolvedCount > 0
+                    ? CreateNeedsChoiceSummary(relativePath, unresolvedCount)
+                    : resolvedChoiceCount > 0
+                        ? CreateResolvedOverlapSummary(relativePath, resolvedChoiceCount)
+                        : CreateSmartMergeSummary(relativePath, baseBytes, mod1Bytes, mod2Bytes),
                 directory1ChangeCount,
                 directory2ChangeCount,
                 unresolvedCount));
@@ -463,7 +536,7 @@ public sealed class SwShModMergerWorkflowService
                 $"Selected file could not be read: {exception.Message}",
                 file: relativePath,
                 expected: "Readable RomFS file"));
-            files.Add(CreateFilePreview(relativePath, supportKind, "error", "Selected file could not be read.", 0, 0, 0));
+            files.Add(CreateFilePreview(relativePath, supportKind, "error", "error", CreateReadErrorSummary(), 0, 0, 0));
         }
         catch (UnauthorizedAccessException exception)
         {
@@ -472,8 +545,96 @@ public sealed class SwShModMergerWorkflowService
                 $"Selected file could not be read: {exception.Message}",
                 file: relativePath,
                 expected: "Readable RomFS file"));
-            files.Add(CreateFilePreview(relativePath, supportKind, "error", "Selected file could not be read.", 0, 0, 0));
+            files.Add(CreateFilePreview(relativePath, supportKind, "error", "error", CreateReadErrorSummary(), 0, 0, 0));
         }
+    }
+
+    private static void MergeFileByReplacementMode(
+        string relativePath,
+        string supportKind,
+        string mergeMode,
+        byte[] baseBytes,
+        byte[] mod1Bytes,
+        byte[] mod2Bytes,
+        int directory1ChangeCount,
+        int directory2ChangeCount,
+        bool includeOutputs,
+        ICollection<SwShModMergerFilePreviewRecord> files,
+        ICollection<MergeOutput> outputs)
+    {
+        if (mod1Bytes.SequenceEqual(mod2Bytes))
+        {
+            if (includeOutputs)
+            {
+                outputs.Add(CreateMergeOutput(relativePath, mod1Bytes));
+            }
+
+            files.Add(CreateFilePreview(
+                relativePath,
+                supportKind,
+                "ready",
+                "unchanged",
+                CreateIdenticalFileSummary(),
+                directory1ChangeCount,
+                directory2ChangeCount,
+                0));
+            return;
+        }
+
+        if (mod1Bytes.SequenceEqual(baseBytes) && !mod2Bytes.SequenceEqual(baseBytes))
+        {
+            if (includeOutputs)
+            {
+                outputs.Add(CreateMergeOutput(relativePath, mod2Bytes));
+            }
+
+            files.Add(CreateFilePreview(
+                relativePath,
+                supportKind,
+                "ready",
+                "singleSource",
+                CreateSingleSourceSummary("mod2"),
+                directory1ChangeCount,
+                directory2ChangeCount,
+                0));
+            return;
+        }
+
+        if (mod2Bytes.SequenceEqual(baseBytes) && !mod1Bytes.SequenceEqual(baseBytes))
+        {
+            if (includeOutputs)
+            {
+                outputs.Add(CreateMergeOutput(relativePath, mod1Bytes));
+            }
+
+            files.Add(CreateFilePreview(
+                relativePath,
+                supportKind,
+                "ready",
+                "singleSource",
+                CreateSingleSourceSummary("mod1"),
+                directory1ChangeCount,
+                directory2ChangeCount,
+                0));
+            return;
+        }
+
+        var selectedSource = mergeMode == SwShModMergerMergeModes.PreferMod1 ? "mod1" : "mod2";
+        if (includeOutputs)
+        {
+            var selectedBytes = selectedSource == "mod1" ? mod1Bytes : mod2Bytes;
+            outputs.Add(CreateMergeOutput(relativePath, selectedBytes));
+        }
+
+        files.Add(CreateFilePreview(
+            relativePath,
+            supportKind,
+            "ready",
+            "replacement",
+            CreateReplacementSummary(selectedSource),
+            directory1ChangeCount,
+            directory2ChangeCount,
+            0));
     }
 
     private static IReadOnlyList<SwShModMergerFileRecord> ScanModDirectory(
@@ -594,6 +755,7 @@ public sealed class SwShModMergerWorkflowService
     }
 
     private static SwShModMergerPreview CreatePreview(
+        string mergeMode,
         IReadOnlyList<SwShModMergerFilePreviewRecord> files,
         IReadOnlyList<SwShModMergerConflictRecord> conflicts,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
@@ -614,6 +776,7 @@ public sealed class SwShModMergerWorkflowService
         return new SwShModMergerPreview(
             canApply,
             status,
+            mergeMode,
             files.Count,
             readyFileCount,
             conflictFileCount,
@@ -657,6 +820,7 @@ public sealed class SwShModMergerWorkflowService
         string relativePath,
         string supportKind,
         string status,
+        string mergeKind,
         string summary,
         int directory1ChangeCount,
         int directory2ChangeCount,
@@ -667,6 +831,7 @@ public sealed class SwShModMergerWorkflowService
             relativePath,
             supportKind,
             status,
+            mergeKind,
             summary,
             directory1ChangeCount,
             directory2ChangeCount,
@@ -686,7 +851,7 @@ public sealed class SwShModMergerWorkflowService
             conflictId,
             relativePath,
             "Whole file",
-            "Both mods changed this file and at least one copy changed file length. Choose which whole file should win.",
+            CreateLengthConflictSummary(),
             $"{mod1Bytes.Length.ToString(CultureInfo.InvariantCulture)} bytes",
             $"{mod2Bytes.Length.ToString(CultureInfo.InvariantCulture)} bytes",
             NormalizeResolution(resolution));
@@ -702,13 +867,15 @@ public sealed class SwShModMergerWorkflowService
     {
         var conflictId = CreateConflictId(relativePath, $"{start}-{end}");
         resolutionMap.TryGetValue(conflictId, out var resolution);
-        var label = DescribeRange(relativePath, start, end);
+        var label = DescribeRangePlain(relativePath, start, end);
 
         return new SwShModMergerConflictRecord(
             conflictId,
             relativePath,
             label,
-            "Both mods changed this byte range differently from vanilla.",
+            IsDataAwarePath(relativePath)
+                ? $"Both mods changed {label} differently. Choose which mod should win for that value."
+                : "KM cannot inspect this file type yet, and both mods changed the same byte range. Choose which mod should win for this overlap.",
             FormatByteRange(mod1Bytes, start, end),
             FormatByteRange(mod2Bytes, start, end),
             NormalizeResolution(resolution));
@@ -831,6 +998,179 @@ public sealed class SwShModMergerWorkflowService
         };
     }
 
+    private static string CreateMissingBaseSummary()
+    {
+        return "KM cannot merge this file because the matching vanilla RomFS file is missing. Add the base file, then stage the merge again.";
+    }
+
+    private static string CreateIdenticalFileSummary()
+    {
+        return "Both mods contain the same file contents, so KM will write that shared file to the output.";
+    }
+
+    private static string CreateSingleSourceSummary(string source)
+    {
+        return $"Only {FormatResolutionSource(source)} changed this file from vanilla, so KM will use that changed file.";
+    }
+
+    private static string CreateLengthConflictSummary()
+    {
+        return "Smart Merge cannot combine this file because one or both mods changed the file length. Choose which whole file should win.";
+    }
+
+    private static string CreateResolvedWholeFileSummary(string resolution)
+    {
+        return $"You chose {FormatResolutionSource(resolution)} for this whole-file conflict, so KM will write that mod's file to the output.";
+    }
+
+    private static string CreateNeedsChoiceSummary(string relativePath, int unresolvedCount)
+    {
+        var plural = unresolvedCount == 1 ? string.Empty : "s";
+        if (IsDataAwarePath(relativePath))
+        {
+            return $"Smart Merge found {unresolvedCount} value overlap{plural} where both mods changed the same thing differently. Open Overlaps and choose which mod wins for each one.";
+        }
+
+        return $"KM cannot inspect this file type yet, and Smart Merge found {unresolvedCount} byte overlap{plural}. Open Overlaps and choose which mod wins for each one.";
+    }
+
+    private static string CreateResolvedOverlapSummary(string relativePath, int resolvedChoiceCount)
+    {
+        var plural = resolvedChoiceCount == 1 ? string.Empty : "s";
+        if (IsDataAwarePath(relativePath))
+        {
+            return $"Choice applied for {resolvedChoiceCount} value overlap{plural}. KM will use your choice there and still combine the other compatible data-field changes.";
+        }
+
+        return $"Choice applied for {resolvedChoiceCount} byte overlap{plural}. KM will use your choice there and still combine other non-overlapping byte changes.";
+    }
+
+    private static string CreateReadErrorSummary()
+    {
+        return "KM could not read this selected file. Check that the file still exists and is not locked, then stage the merge again.";
+    }
+
+    private static string CreateReplacementSummary(string selectedSource)
+    {
+        return $"Replacement mode is active. Both mods changed this file, so KM will write the whole file from {FormatResolutionSource(selectedSource)}.";
+    }
+
+    private static string CreateSmartMergeSummary(
+        string relativePath,
+        byte[] baseBytes,
+        byte[] mod1Bytes,
+        byte[] mod2Bytes)
+    {
+        if (!IsDataAwarePath(relativePath))
+        {
+            return "Safe merge will combine the non-overlapping byte changes. KM cannot inspect this file type yet, so it cannot name the data fields inside it.";
+        }
+
+        var directory1Changes = FindChangedRangeDescriptions(relativePath, baseBytes, mod1Bytes);
+        var directory2Changes = FindChangedRangeDescriptions(relativePath, baseBytes, mod2Bytes);
+
+        return $"Smart Merge will combine Mod Directory 1 changes ({FormatChangeList(directory1Changes)}) with Mod Directory 2 changes ({FormatChangeList(directory2Changes)}).";
+    }
+
+    private static IReadOnlyList<string> FindChangedRangeDescriptions(
+        string relativePath,
+        byte[] baseBytes,
+        byte[] modBytes)
+    {
+        var descriptions = new List<string>();
+        var maxLength = Math.Max(baseBytes.Length, modBytes.Length);
+        var index = 0;
+
+        while (index < maxLength)
+        {
+            var changed = index >= baseBytes.Length
+                || index >= modBytes.Length
+                || baseBytes[index] != modBytes[index];
+            if (!changed)
+            {
+                index++;
+                continue;
+            }
+
+            var start = index;
+            do
+            {
+                index++;
+            }
+            while (index < maxLength
+                && (index >= baseBytes.Length
+                    || index >= modBytes.Length
+                    || baseBytes[index] != modBytes[index]));
+
+            var end = index - 1;
+            var description = DescribeRangePlain(relativePath, start, end);
+            if (!descriptions.Contains(description, StringComparer.OrdinalIgnoreCase))
+            {
+                descriptions.Add(description);
+            }
+        }
+
+        return descriptions;
+    }
+
+    private static string FormatChangeList(IReadOnlyList<string> changes)
+    {
+        return changes.Count switch
+        {
+            0 => "no data-field changes",
+            1 => changes[0],
+            2 => $"{changes[0]}, {changes[1]}",
+            _ => $"{changes[0]}, {changes[1]}, and {changes.Count - 2} more",
+        };
+    }
+
+    private static string GetReadyMergeKind(string relativePath)
+    {
+        return IsDataAwarePath(relativePath) ? "smartMerge" : "safeMerge";
+    }
+
+    private static string DescribeRangePlain(string relativePath, int start, int end)
+    {
+        if (relativePath.StartsWith(SwShTrainerDataFile.TrainerDataRootRelativePath + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            return DescribeTrainerDataField(start);
+        }
+
+        if (relativePath.StartsWith(SwShTrainerTeamFile.TrainerPokeRootRelativePath + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            var slot = (start / SwShTrainerTeamFile.RowSize) + 1;
+            var rowOffset = start % SwShTrainerTeamFile.RowSize;
+            return $"Trainer party slot {slot} {DescribeTrainerPokemonField(rowOffset)}";
+        }
+
+        if (string.Equals(relativePath, SwShPersonalTable.PersonalDataRelativePath, StringComparison.OrdinalIgnoreCase))
+        {
+            var personalId = start / SwShPersonalTable.RecordSize;
+            return $"Pokemon personal record {personalId}";
+        }
+
+        if (string.Equals(relativePath, SwShItemTable.ItemDataRelativePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return "item data";
+        }
+
+        if (string.Equals(relativePath, "romfs/bin/shop_data.bin", StringComparison.OrdinalIgnoreCase))
+        {
+            return "shop data";
+        }
+
+        return start == end ? "one byte" : "a byte range";
+    }
+
+    private static bool IsDataAwarePath(string relativePath)
+    {
+        return string.Equals(relativePath, "romfs/bin/shop_data.bin", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, SwShItemTable.ItemDataRelativePath, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(relativePath, SwShPersonalTable.PersonalDataRelativePath, StringComparison.OrdinalIgnoreCase)
+            || relativePath.StartsWith(SwShTrainerDataFile.TrainerDataRootRelativePath + "/", StringComparison.OrdinalIgnoreCase)
+            || relativePath.StartsWith(SwShTrainerTeamFile.TrainerPokeRootRelativePath + "/", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static int CountChangedRanges(byte[] baseBytes, byte[] modBytes)
     {
         var maxLength = Math.Max(baseBytes.Length, modBytes.Length);
@@ -886,6 +1226,21 @@ public sealed class SwShModMergerWorkflowService
         return "RomFS binary diff";
     }
 
+    private static string NormalizeMergeMode(string? mergeMode)
+    {
+        return mergeMode switch
+        {
+            SwShModMergerMergeModes.PreferMod1 => SwShModMergerMergeModes.PreferMod1,
+            SwShModMergerMergeModes.PreferMod2 => SwShModMergerMergeModes.PreferMod2,
+            _ => SwShModMergerMergeModes.Smart,
+        };
+    }
+
+    private static bool IsReplacementMode(string mergeMode)
+    {
+        return mergeMode is SwShModMergerMergeModes.PreferMod1 or SwShModMergerMergeModes.PreferMod2;
+    }
+
     private static string FormatPathList(IReadOnlyList<string> paths)
     {
         if (paths.Count == 0)
@@ -899,6 +1254,149 @@ public sealed class SwShModMergerWorkflowService
     private static string FormatResolutionSource(string resolution)
     {
         return resolution == "mod1" ? "Mod Directory 1" : "Mod Directory 2";
+    }
+
+    private static MergeOutput CreateMergeOutput(string relativePath, byte[] contents)
+    {
+        var plannedContents = contents.ToArray();
+        return new MergeOutput(
+            relativePath,
+            plannedContents,
+            plannedContents.LongLength,
+            ComputeSha256(plannedContents));
+    }
+
+    private static bool ValidatePlanIntegrity(
+        IReadOnlyList<MergeOutput> outputs,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var isValid = true;
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var output in outputs)
+        {
+            if (!seenPaths.Add(output.RelativePath))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Merge plan contains the same output file more than once.",
+                    file: output.RelativePath,
+                    expected: "One planned write per RomFS output file"));
+                isValid = false;
+            }
+
+            if (output.Contents.LongLength != output.ExpectedLength)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Merge plan output length changed before writing.",
+                    file: output.RelativePath,
+                    expected: $"{output.ExpectedLength.ToString(CultureInfo.InvariantCulture)} bytes"));
+                isValid = false;
+            }
+
+            var actualSha256 = ComputeSha256(output.Contents);
+            if (!string.Equals(actualSha256, output.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Merge plan output bytes changed before writing.",
+                    file: output.RelativePath,
+                    expected: "Planned bytes matching the original merge hash"));
+                isValid = false;
+            }
+        }
+
+        return isValid;
+    }
+
+    private static void WriteVerifiedOutput(string targetPath, MergeOutput output)
+    {
+        ValidateOutputContents(output);
+        var directory = Path.GetDirectoryName(targetPath)
+            ?? throw new IOException("Output target directory could not be resolved.");
+        Directory.CreateDirectory(directory);
+
+        var tempPath = Path.Combine(
+            directory,
+            $".{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            File.WriteAllBytes(tempPath, output.Contents);
+            VerifyFileContents(tempPath, output);
+            File.Move(tempPath, targetPath, overwrite: true);
+            VerifyFileContents(targetPath, output);
+        }
+        catch
+        {
+            TryDeleteFile(tempPath);
+            throw;
+        }
+    }
+
+    private static void ValidateOutputContents(MergeOutput output)
+    {
+        if (output.Contents.LongLength != output.ExpectedLength)
+        {
+            throw new InvalidDataException(
+                $"Planned output length changed before write for '{output.RelativePath}'.");
+        }
+
+        var actualSha256 = ComputeSha256(output.Contents);
+        if (!string.Equals(actualSha256, output.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                $"Planned output hash changed before write for '{output.RelativePath}'.");
+        }
+    }
+
+    private static void ClearOutputContents(MergeOutput output)
+    {
+        Array.Clear(output.Contents);
+    }
+
+    private static void VerifyFileContents(string path, MergeOutput output)
+    {
+        var fileInfo = new FileInfo(path);
+        if (fileInfo.Length != output.ExpectedLength)
+        {
+            throw new InvalidDataException(
+                $"Expected {output.ExpectedLength.ToString(CultureInfo.InvariantCulture)} bytes but wrote {fileInfo.Length.ToString(CultureInfo.InvariantCulture)} bytes.");
+        }
+
+        var actualSha256 = ComputeFileSha256(path);
+        if (!string.Equals(actualSha256, output.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("Written file hash does not match the planned merge bytes.");
+        }
+    }
+
+    private static string ComputeSha256(byte[] contents)
+    {
+        return Convert.ToHexString(SHA256.HashData(contents));
+    }
+
+    private static string ComputeFileSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        using var sha256 = SHA256.Create();
+        return Convert.ToHexString(sha256.ComputeHash(stream));
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     private static string? ResolveOutputPath(
@@ -955,5 +1453,7 @@ public sealed class SwShModMergerWorkflowService
 
     private sealed record MergeOutput(
         string RelativePath,
-        byte[] Contents);
+        byte[] Contents,
+        long ExpectedLength,
+        string Sha256);
 }

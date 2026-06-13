@@ -85,6 +85,7 @@ import {
   type ItemRecord,
   type MoveEditableField,
   type ModMergerConflictResolution,
+  type ModMergerMergeMode,
   type ModMergerPreview,
   type ModMergerWorkflow,
   type ApplyModMergeResponse,
@@ -570,6 +571,35 @@ const workflowDefinitions: Array<{
     description:
       'Merge matching RomFS files from two mod folders, resolve overlapping byte edits, and write merged files to Output Root.',
     icon: Layers
+  }
+];
+
+const modMergerModeOptions: Array<{
+  description: string;
+  icon: LucideIcon;
+  id: ModMergerMergeMode;
+  label: string;
+}> = [
+  {
+    description:
+      'Combines compatible data-field changes and asks when both mods changed the same value.',
+    icon: Dna,
+    id: 'smart',
+    label: 'Smart Merge'
+  },
+  {
+    description:
+      'When both mods changed the same selected file, keeps Mod Directory 1 as the winner.',
+    icon: ArrowUp,
+    id: 'preferMod1',
+    label: 'Mod 1 Priority'
+  },
+  {
+    description:
+      'When both mods changed the same selected file, keeps Mod Directory 2 as the winner.',
+    icon: ArrowDown,
+    id: 'preferMod2',
+    label: 'Mod 2 Priority'
   }
 ];
 
@@ -1442,6 +1472,8 @@ export function App({
   const [isSpreadsheetImportPreviewing, setIsSpreadsheetImportPreviewing] = useState(false);
   const [modMergerDirectory1, setModMergerDirectory1] = useState('');
   const [modMergerDirectory2, setModMergerDirectory2] = useState('');
+  const [modMergerMergeMode, setModMergerMergeMode] =
+    useState<ModMergerMergeMode>('smart');
   const [modMergerWorkflow, setModMergerWorkflow] = useState<ModMergerWorkflow | null>(null);
   const [modMergerPreview, setModMergerPreview] = useState<ModMergerPreview | null>(null);
   const [modMergerApplyResult, setModMergerApplyResult] = useState<ApplyModMergeResponse | null>(
@@ -3130,6 +3162,11 @@ export function App({
     resetModMergerPlan();
   };
 
+  const handleModMergerMergeModeChange = (mergeMode: ModMergerMergeMode) => {
+    setModMergerMergeMode(mergeMode);
+    resetModMergerPlan();
+  };
+
   const getModMergerResolutionList = () =>
     Object.entries(modMergerResolutions).map(([conflictId, source]) => ({
       conflictId,
@@ -3143,6 +3180,7 @@ export function App({
 
     try {
       const response = await bridge.stageModMerge({
+        mergeMode: modMergerMergeMode,
         modDirectory1: modMergerDirectory1.trim() || null,
         modDirectory2: modMergerDirectory2.trim() || null,
         paths: toProjectPaths(draftPaths),
@@ -3177,6 +3215,7 @@ export function App({
     try {
       const paths = toProjectPaths(draftPaths);
       const response = await bridge.applyModMerge({
+        mergeMode: modMergerMergeMode,
         modDirectory1: modMergerDirectory1.trim() || null,
         modDirectory2: modMergerDirectory2.trim() || null,
         paths,
@@ -5856,7 +5895,9 @@ export function App({
                 isDesktopAvailable={desktopServices.isAvailable}
                 isLoading={isModMergerLoading}
                 isStaging={isModMergerStaging}
+                mergeMode={modMergerMergeMode}
                 onApplyMerge={handleApplyModMerge}
+                onMergeModeChange={handleModMergerMergeModeChange}
                 onPickDirectory={handlePickModMergerDirectory}
                 onResolveConflict={handleResolveModMergerConflict}
                 onReviewMerge={handleStageModMerge}
@@ -21304,7 +21345,9 @@ function ModMergerSection({
   isDesktopAvailable,
   isLoading,
   isStaging,
+  mergeMode,
   onApplyMerge,
+  onMergeModeChange,
   onPickDirectory,
   onResolveConflict,
   onReviewMerge,
@@ -21325,7 +21368,9 @@ function ModMergerSection({
   isDesktopAvailable: boolean;
   isLoading: boolean;
   isStaging: boolean;
+  mergeMode: ModMergerMergeMode;
   onApplyMerge: () => void;
+  onMergeModeChange: (mergeMode: ModMergerMergeMode) => void;
   onPickDirectory: (slot: 1 | 2) => void;
   onResolveConflict: (
     conflictId: string,
@@ -21444,6 +21489,31 @@ function ModMergerSection({
             Apply writes merged files directly under the Output Root, preserves their
             romfs folder structure, and leaves unrelated output files unchanged.
           </p>
+        </div>
+
+        <div className="mod-merger-mode-group" role="radiogroup" aria-label="Merge mode">
+          {modMergerModeOptions.map((option) => {
+            const Icon = option.icon;
+            const isSelected = mergeMode === option.id;
+
+            return (
+              <button
+                aria-checked={isSelected}
+                className={`mod-merger-mode-option ${
+                  isSelected ? 'mod-merger-mode-selected' : ''
+                }`}
+                key={option.id}
+                onClick={() => onMergeModeChange(option.id)}
+                role="radio"
+                title={option.description}
+                type="button"
+              >
+                <Icon aria-hidden="true" size={16} />
+                <span>{option.label}</span>
+                <small>{option.description}</small>
+              </button>
+            );
+          })}
         </div>
 
         <div className="mod-merger-metrics">
@@ -21584,9 +21654,9 @@ function ModMergerSection({
           <div className="mod-merger-preview-table" role="table" aria-label="Mod merge preview">
             <div className="mod-merger-preview-row mod-merger-preview-heading" role="row">
               <span role="columnheader">File</span>
-              <span role="columnheader">Status</span>
-              <span role="columnheader">Changes</span>
-              <span role="columnheader">Summary</span>
+              <span role="columnheader">Outcome</span>
+              <span role="columnheader">What KM Will Do</span>
+              <span role="columnheader">Details</span>
             </div>
             {sortedPreviewFiles.map((file) => (
               <div className="mod-merger-preview-row" key={file.relativePath} role="row">
@@ -21594,14 +21664,40 @@ function ModMergerSection({
                   {file.relativePath}
                 </span>
                 <span role="cell">
-                  <span className={`status-pill ${getModMergerStatusClassName(file.status)}`}>
-                    {formatModMergerStatus(file.status)}
+                  <span
+                    className={`status-pill ${getModMergerStatusClassName(file.status)}`}
+                    title={formatModMergerStatus(file.status)}
+                  >
+                    {formatModMergerMergeKind(file.mergeKind)}
                   </span>
                 </span>
-                <span role="cell">
-                  {file.directory1ChangeCount} / {file.directory2ChangeCount}
-                </span>
                 <span role="cell">{file.summary}</span>
+                <span role="cell">
+                  <details className="mod-merger-technical-details">
+                    <summary>Technical details</summary>
+                    <dl>
+                      <div>
+                        <dt>Format</dt>
+                        <dd>{file.supportKind}</dd>
+                      </div>
+                      <div>
+                        <dt>Status</dt>
+                        <dd>{formatModMergerStatus(file.status)}</dd>
+                      </div>
+                      <div>
+                        <dt>Changed ranges</dt>
+                        <dd>
+                          Mod 1: {file.directory1ChangeCount}; Mod 2:{' '}
+                          {file.directory2ChangeCount}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Choices needed</dt>
+                        <dd>{file.conflictCount}</dd>
+                      </div>
+                    </dl>
+                  </details>
+                </span>
               </div>
             ))}
           </div>
@@ -21618,8 +21714,8 @@ function ModMergerSection({
             <h2 id="mod-merger-conflicts-heading">Overlaps</h2>
           </div>
           <p className="empty-copy">
-            Pick the source for every overlap, then Review. Apply stays locked until
-            the preview has no unresolved overlaps.
+            Smart Merge found changes that touch the same value. Pick the source for
+            each row, then Review; Apply stays locked until every row has a choice.
           </p>
 
           <div className="mod-merger-conflict-list">
@@ -21633,16 +21729,17 @@ function ModMergerSection({
                     <span title={conflict.relativePath}>{conflict.relativePath}</span>
                   </div>
                   <p>{conflict.description}</p>
-                  <div className="mod-merger-conflict-values">
+                  <details className="mod-merger-conflict-values">
+                    <summary>Technical details</summary>
                     <div>
-                      <span>Mod Directory 1</span>
+                      <span>Mod Directory 1 value</span>
                       <code>{conflict.directory1Value}</code>
                     </div>
                     <div>
-                      <span>Mod Directory 2</span>
+                      <span>Mod Directory 2 value</span>
                       <code>{conflict.directory2Value}</code>
                     </div>
-                  </div>
+                  </details>
                   <div className="mod-merger-resolution-row">
                     <button
                       className={`secondary-button ${
@@ -22786,6 +22883,29 @@ function formatModMergerStatus(status: string) {
       return 'Error';
     default:
       return status.replace(/([a-z])([A-Z])/g, '$1 $2');
+  }
+}
+
+function formatModMergerMergeKind(mergeKind: string) {
+  switch (mergeKind) {
+    case 'smartMerge':
+      return 'Smart merge';
+    case 'safeMerge':
+      return 'Safe merge';
+    case 'replacement':
+      return 'Replacement';
+    case 'singleSource':
+      return 'One mod changed it';
+    case 'unchanged':
+      return 'Same file';
+    case 'manualChoice':
+      return 'Choice applied';
+    case 'needsChoice':
+      return 'Needs choice';
+    case 'error':
+      return 'Error';
+    default:
+      return mergeKind.replace(/([a-z])([A-Z])/g, '$1 $2');
   }
 }
 
