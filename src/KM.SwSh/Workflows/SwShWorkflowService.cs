@@ -11,6 +11,7 @@ using KM.SwSh.Flagwork;
 using KM.SwSh.Gifts;
 using KM.SwSh.Items;
 using KM.SwSh.IvScreen;
+using KM.SwSh.ModMerger;
 using KM.SwSh.Moves;
 using KM.SwSh.Placement;
 using KM.SwSh.Pokemon;
@@ -51,6 +52,7 @@ public sealed class SwShWorkflowService
     private readonly SwShStartingItemsWorkflowService startingItemsWorkflowService;
     private readonly SwShShopsWorkflowService shopsWorkflowService;
     private readonly SwShSpreadsheetImportWorkflowService spreadsheetImportWorkflowService;
+    private readonly SwShModMergerWorkflowService modMergerWorkflowService;
     private readonly SwShTextWorkflowService textWorkflowService;
     private readonly SwShTrainersWorkflowService trainersWorkflowService;
     private readonly ProjectWorkspaceService projectWorkspaceService;
@@ -81,6 +83,7 @@ public sealed class SwShWorkflowService
         SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null,
         SwShStartingItemsWorkflowService? startingItemsWorkflowService = null,
         SwShSpreadsheetImportWorkflowService? spreadsheetImportWorkflowService = null,
+        SwShModMergerWorkflowService? modMergerWorkflowService = null,
         SwShParsedDataCache? parsedDataCache = null)
     {
         var sharedParsedDataCache = parsedDataCache ?? new SwShParsedDataCache();
@@ -107,6 +110,7 @@ public sealed class SwShWorkflowService
         this.startingItemsWorkflowService = startingItemsWorkflowService ?? new SwShStartingItemsWorkflowService(this.bagHookWorkflowService, this.itemsWorkflowService);
         this.shopsWorkflowService = shopsWorkflowService ?? new SwShShopsWorkflowService();
         this.spreadsheetImportWorkflowService = spreadsheetImportWorkflowService ?? new SwShSpreadsheetImportWorkflowService();
+        this.modMergerWorkflowService = modMergerWorkflowService ?? new SwShModMergerWorkflowService(this.projectWorkspaceService);
         this.textWorkflowService = textWorkflowService ?? new SwShTextWorkflowService();
         this.trainersWorkflowService = trainersWorkflowService ?? new SwShTrainersWorkflowService();
     }
@@ -143,6 +147,7 @@ public sealed class SwShWorkflowService
             royalCandyWorkflowService.CreateSummary(project),
             startingItemsWorkflowService.CreateSummary(project),
             spreadsheetImportWorkflowService.CreateSummary(project),
+            modMergerWorkflowService.CreateSummary(project),
         };
 
         return new SwShWorkflowList(
@@ -374,5 +379,15 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return spreadsheetImportWorkflowService.Load(project);
+    }
+
+    public SwShModMergerWorkflow LoadModMerger(
+        ProjectPaths paths,
+        string? modDirectory1,
+        string? modDirectory2)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        return modMergerWorkflowService.Load(paths, modDirectory1, modDirectory2);
     }
 }

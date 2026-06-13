@@ -84,6 +84,10 @@ import {
   type IvScreenWorkflow,
   type ItemRecord,
   type MoveEditableField,
+  type ModMergerConflictResolution,
+  type ModMergerPreview,
+  type ModMergerWorkflow,
+  type ApplyModMergeResponse,
   type MoveRecord,
   type MovesWorkflow,
   type PokemonCompatibilityGroup,
@@ -330,6 +334,11 @@ const sections: Array<{
     icon: FileSpreadsheet
   },
   {
+    id: 'modMerger',
+    label: 'Mod Merger',
+    icon: Layers
+  },
+  {
     id: 'changes',
     label: 'Changes',
     icon: ClipboardCheck
@@ -384,7 +393,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'tools',
     label: 'Tools',
-    sectionIds: ['spreadsheetImport']
+    sectionIds: ['spreadsheetImport', 'modMerger']
   },
   {
     id: 'hooks',
@@ -554,6 +563,13 @@ const workflowDefinitions: Array<{
     label: 'Spreadsheet Import',
     description: 'CSV and TSV import profiles that execute through backend edit sessions.',
     icon: FileSpreadsheet
+  },
+  {
+    id: 'modMerger',
+    label: 'Mod Merger',
+    description:
+      'Merge matching RomFS files from two mod folders, resolve overlapping byte edits, and write merged files to Output Root.',
+    icon: Layers
   }
 ];
 
@@ -1424,6 +1440,25 @@ export function App({
   const [isStartingItemsStaging, setIsStartingItemsStaging] = useState(false);
   const [isSpreadsheetImportLoading, setIsSpreadsheetImportLoading] = useState(false);
   const [isSpreadsheetImportPreviewing, setIsSpreadsheetImportPreviewing] = useState(false);
+  const [modMergerDirectory1, setModMergerDirectory1] = useState('');
+  const [modMergerDirectory2, setModMergerDirectory2] = useState('');
+  const [modMergerWorkflow, setModMergerWorkflow] = useState<ModMergerWorkflow | null>(null);
+  const [modMergerPreview, setModMergerPreview] = useState<ModMergerPreview | null>(null);
+  const [modMergerApplyResult, setModMergerApplyResult] = useState<ApplyModMergeResponse | null>(
+    null
+  );
+  const [modMergerSelectedDirectory1Files, setModMergerSelectedDirectory1Files] = useState<
+    Set<string>
+  >(() => new Set());
+  const [modMergerSelectedDirectory2Files, setModMergerSelectedDirectory2Files] = useState<
+    Set<string>
+  >(() => new Set());
+  const [modMergerResolutions, setModMergerResolutions] = useState<
+    Record<string, ModMergerConflictResolution['source']>
+  >({});
+  const [isModMergerLoading, setIsModMergerLoading] = useState(false);
+  const [isModMergerStaging, setIsModMergerStaging] = useState(false);
+  const [isModMergerApplying, setIsModMergerApplying] = useState(false);
   const [isOutputRootCreating, setIsOutputRootCreating] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
@@ -3007,6 +3042,162 @@ export function App({
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsSpreadsheetImportPreviewing(false);
+    }
+  };
+
+  const resetModMergerPlan = () => {
+    setModMergerPreview(null);
+    setModMergerApplyResult(null);
+    setModMergerResolutions({});
+  };
+
+  const loadModMergerWorkflow = async (directory1: string, directory2: string) => {
+    setIsModMergerLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadModMergerWorkflow({
+        modDirectory1: directory1.trim() || null,
+        modDirectory2: directory2.trim() || null,
+        paths: toProjectPaths(draftPaths)
+      });
+      setModMergerWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsModMergerLoading(false);
+    }
+  };
+
+  const handleOpenModMergerWorkflow = async () => {
+    await loadModMergerWorkflow(modMergerDirectory1, modMergerDirectory2);
+  };
+
+  const handlePickModMergerDirectory = async (slot: 1 | 2) => {
+    const currentPath = slot === 1 ? modMergerDirectory1 : modMergerDirectory2;
+
+    try {
+      const selection = await desktopServices.pickFolder({
+        defaultPath: currentPath || draftPaths.outputRootPath || undefined,
+        title: slot === 1 ? 'Set Mod Directory 1' : 'Set Mod Directory 2'
+      });
+
+      if (!selection) {
+        return;
+      }
+
+      const nextDirectory1 = slot === 1 ? selection : modMergerDirectory1;
+      const nextDirectory2 = slot === 2 ? selection : modMergerDirectory2;
+      setModMergerDirectory1(nextDirectory1);
+      setModMergerDirectory2(nextDirectory2);
+      setModMergerSelectedDirectory1Files(new Set());
+      setModMergerSelectedDirectory2Files(new Set());
+      resetModMergerPlan();
+      await loadModMergerWorkflow(nextDirectory1, nextDirectory2);
+    } catch (error) {
+      setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not choose a mod directory.'));
+    }
+  };
+
+  const handleToggleModMergerFile = (directory: 1 | 2, relativePath: string) => {
+    const updateSelection = (selection: Set<string>) => {
+      const nextSelection = new Set(selection);
+      if (nextSelection.has(relativePath)) {
+        nextSelection.delete(relativePath);
+      } else {
+        nextSelection.add(relativePath);
+      }
+
+      return nextSelection;
+    };
+
+    if (directory === 1) {
+      setModMergerSelectedDirectory1Files(updateSelection);
+    } else {
+      setModMergerSelectedDirectory2Files(updateSelection);
+    }
+
+    resetModMergerPlan();
+  };
+
+  const handleSelectAllModMergerFiles = () => {
+    setModMergerSelectedDirectory1Files(
+      new Set(modMergerWorkflow?.directory1Files.map((file) => file.relativePath) ?? [])
+    );
+    setModMergerSelectedDirectory2Files(
+      new Set(modMergerWorkflow?.directory2Files.map((file) => file.relativePath) ?? [])
+    );
+    resetModMergerPlan();
+  };
+
+  const getModMergerResolutionList = () =>
+    Object.entries(modMergerResolutions).map(([conflictId, source]) => ({
+      conflictId,
+      source
+    }));
+
+  const handleStageModMerge = async () => {
+    setIsModMergerStaging(true);
+    setBridgeDiagnostics([]);
+    setModMergerApplyResult(null);
+
+    try {
+      const response = await bridge.stageModMerge({
+        modDirectory1: modMergerDirectory1.trim() || null,
+        modDirectory2: modMergerDirectory2.trim() || null,
+        paths: toProjectPaths(draftPaths),
+        resolutions: getModMergerResolutionList(),
+        selectedDirectory1Files: Array.from(modMergerSelectedDirectory1Files),
+        selectedDirectory2Files: Array.from(modMergerSelectedDirectory2Files)
+      });
+      setModMergerWorkflow(response.workflow);
+      setModMergerPreview(response.preview);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsModMergerStaging(false);
+    }
+  };
+
+  const handleResolveModMergerConflict = (
+    conflictId: string,
+    source: ModMergerConflictResolution['source']
+  ) => {
+    setModMergerResolutions((current) => ({
+      ...current,
+      [conflictId]: source
+    }));
+  };
+
+  const handleApplyModMerge = async () => {
+    setIsModMergerApplying(true);
+    setBridgeDiagnostics([]);
+    setModMergerApplyResult(null);
+
+    try {
+      const paths = toProjectPaths(draftPaths);
+      const response = await bridge.applyModMerge({
+        modDirectory1: modMergerDirectory1.trim() || null,
+        modDirectory2: modMergerDirectory2.trim() || null,
+        paths,
+        resolutions: getModMergerResolutionList(),
+        selectedDirectory1Files: Array.from(modMergerSelectedDirectory1Files),
+        selectedDirectory2Files: Array.from(modMergerSelectedDirectory2Files)
+      });
+      setModMergerWorkflow(response.workflow);
+      setModMergerPreview(response.preview);
+      setModMergerApplyResult(response);
+
+      const hasApplyErrors = response.diagnostics.some(
+        (diagnostic) => diagnostic.severity === 'error'
+      );
+      if (!hasApplyErrors && response.writtenFiles.length > 0) {
+        await refreshLoadedWorkflowsAfterApply(paths);
+      }
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsModMergerApplying(false);
     }
   };
 
@@ -5122,6 +5313,7 @@ export function App({
               isRoyalCandyLoading={isRoyalCandyLoading}
               isStartingItemsLoading={isStartingItemsLoading}
               isSpreadsheetImportLoading={isSpreadsheetImportLoading}
+              isModMergerLoading={isModMergerLoading}
               onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
               onOpenExeFsPatchWorkflow={handleOpenExeFsPatchWorkflow}
               onOpenFlagworkSaveWorkflow={handleOpenFlagworkSaveWorkflow}
@@ -5145,6 +5337,7 @@ export function App({
               onOpenStartingItemsWorkflow={handleOpenStartingItemsWorkflow}
               onOpenShopsWorkflow={handleOpenShopsWorkflow}
               onOpenSpreadsheetImportWorkflow={handleOpenSpreadsheetImportWorkflow}
+              onOpenModMergerWorkflow={handleOpenModMergerWorkflow}
               onOpenTextWorkflow={handleOpenTextWorkflow}
               onOpenTrainersWorkflow={handleOpenTrainersWorkflow}
               pendingEditCount={pendingEditCount}
@@ -5651,6 +5844,34 @@ export function App({
               />
             )
           ) : null}
+          {activeSection === 'modMerger' ? (
+            isModMergerLoading && !modMergerWorkflow ? (
+              <WorkflowLoadingPanel label="Mod Merger" />
+            ) : (
+              <ModMergerSection
+                applyResult={modMergerApplyResult}
+                directory1={modMergerDirectory1}
+                directory2={modMergerDirectory2}
+                isApplying={isModMergerApplying}
+                isDesktopAvailable={desktopServices.isAvailable}
+                isLoading={isModMergerLoading}
+                isStaging={isModMergerStaging}
+                onApplyMerge={handleApplyModMerge}
+                onPickDirectory={handlePickModMergerDirectory}
+                onResolveConflict={handleResolveModMergerConflict}
+                onReviewMerge={handleStageModMerge}
+                onSelectAll={handleSelectAllModMergerFiles}
+                onStageMerge={handleStageModMerge}
+                onToggleFile={handleToggleModMergerFile}
+                outputRootPath={draftPaths.outputRootPath}
+                preview={modMergerPreview}
+                resolutions={modMergerResolutions}
+                selectedDirectory1Files={modMergerSelectedDirectory1Files}
+                selectedDirectory2Files={modMergerSelectedDirectory2Files}
+                workflow={modMergerWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'changes' ? (
             <ChangesSection
               applyResult={applyResult}
@@ -6038,6 +6259,7 @@ function WorkflowsSection({
   isRoyalCandyLoading,
   isStartingItemsLoading,
   isSpreadsheetImportLoading,
+  isModMergerLoading,
   onOpenEncountersWorkflow,
   onOpenExeFsPatchWorkflow,
   onOpenFlagworkSaveWorkflow,
@@ -6061,6 +6283,7 @@ function WorkflowsSection({
   onOpenStartingItemsWorkflow,
   onOpenShopsWorkflow,
   onOpenSpreadsheetImportWorkflow,
+  onOpenModMergerWorkflow,
   onOpenTextWorkflow,
   onOpenTrainersWorkflow,
   pendingEditCount,
@@ -6092,6 +6315,7 @@ function WorkflowsSection({
   isRoyalCandyLoading: boolean;
   isStartingItemsLoading: boolean;
   isSpreadsheetImportLoading: boolean;
+  isModMergerLoading: boolean;
   onOpenEncountersWorkflow: () => void;
   onOpenExeFsPatchWorkflow: () => void;
   onOpenFlagworkSaveWorkflow: () => void;
@@ -6115,6 +6339,7 @@ function WorkflowsSection({
   onOpenStartingItemsWorkflow: () => void;
   onOpenShopsWorkflow: () => void;
   onOpenSpreadsheetImportWorkflow: () => void;
+  onOpenModMergerWorkflow: () => void;
   onOpenTextWorkflow: () => void;
   onOpenTrainersWorkflow: () => void;
   pendingEditCount: number;
@@ -6171,6 +6396,7 @@ function WorkflowsSection({
           const isRoyalCandyWorkflow = definition.id === 'royalCandy';
           const isStartingItemsWorkflow = definition.id === 'startingItems';
           const isSpreadsheetImportWorkflow = definition.id === 'spreadsheetImport';
+          const isModMergerWorkflow = definition.id === 'modMerger';
           const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenPokemon = isPokemonWorkflow && workflowState.availability !== 'disabled';
           const canOpenMoves = isMovesWorkflow && workflowState.availability !== 'disabled';
@@ -6215,6 +6441,8 @@ function WorkflowsSection({
             isStartingItemsWorkflow && workflowState.availability !== 'disabled';
           const canOpenSpreadsheetImport =
             isSpreadsheetImportWorkflow && workflowState.availability !== 'disabled';
+          const canOpenModMerger =
+            isModMergerWorkflow && workflowState.availability !== 'disabled';
 
           return (
             <article className="workflow-row" key={definition.id}>
@@ -6508,6 +6736,17 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isSpreadsheetImportLoading ? 'Loading' : 'Open Import'}</span>
+                  </button>
+                ) : null}
+                {isModMergerWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenModMerger || isModMergerLoading}
+                    onClick={onOpenModMergerWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isModMergerLoading ? 'Loading' : 'Open Merger'}</span>
                   </button>
                 ) : null}
               </div>
@@ -19592,10 +19831,6 @@ function CatchCapSection({
             value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
           />
           <Metric label="Caps" value={workflow ? workflow.stats.totalCapCount.toString() : '0'} />
-          <Metric
-            label="Logic"
-            value={workflow ? workflow.logicExpression : 'Not loaded'}
-          />
         </div>
 
         {workflow ? (
@@ -21061,6 +21296,477 @@ function StartingItemsSection({
   );
 }
 
+function ModMergerSection({
+  applyResult,
+  directory1,
+  directory2,
+  isApplying,
+  isDesktopAvailable,
+  isLoading,
+  isStaging,
+  onApplyMerge,
+  onPickDirectory,
+  onResolveConflict,
+  onReviewMerge,
+  onSelectAll,
+  onStageMerge,
+  onToggleFile,
+  outputRootPath,
+  preview,
+  resolutions,
+  selectedDirectory1Files,
+  selectedDirectory2Files,
+  workflow
+}: {
+  applyResult: ApplyModMergeResponse | null;
+  directory1: string;
+  directory2: string;
+  isApplying: boolean;
+  isDesktopAvailable: boolean;
+  isLoading: boolean;
+  isStaging: boolean;
+  onApplyMerge: () => void;
+  onPickDirectory: (slot: 1 | 2) => void;
+  onResolveConflict: (
+    conflictId: string,
+    source: ModMergerConflictResolution['source']
+  ) => void;
+  onReviewMerge: () => void;
+  onSelectAll: () => void;
+  onStageMerge: () => void;
+  onToggleFile: (directory: 1 | 2, relativePath: string) => void;
+  outputRootPath: string;
+  preview: ModMergerPreview | null;
+  resolutions: Record<string, ModMergerConflictResolution['source']>;
+  selectedDirectory1Files: Set<string>;
+  selectedDirectory2Files: Set<string>;
+  workflow: ModMergerWorkflow | null;
+}) {
+  const directory1Files = workflow?.directory1Files ?? [];
+  const directory2Files = workflow?.directory2Files ?? [];
+  const effectiveOutputRootPath = (workflow?.outputRootPath ?? outputRootPath.trim()) || null;
+  const selectedDirectory1Only = Array.from(selectedDirectory1Files).filter(
+    (path) => !selectedDirectory2Files.has(path)
+  ).length;
+  const selectedDirectory2Only = Array.from(selectedDirectory2Files).filter(
+    (path) => !selectedDirectory1Files.has(path)
+  ).length;
+  const selectionMismatchCount = selectedDirectory1Only + selectedDirectory2Only;
+  const selectedPairCount =
+    selectionMismatchCount === 0
+      ? selectedDirectory1Files.size
+      : Math.min(selectedDirectory1Files.size, selectedDirectory2Files.size);
+  const hasSelectedFiles =
+    selectedDirectory1Files.size > 0 || selectedDirectory2Files.size > 0;
+  const canSelectAll = directory1Files.length > 0 || directory2Files.length > 0;
+  const canStage = Boolean(workflow) && hasSelectedFiles && !isStaging && !isApplying;
+  const canReview = Boolean(preview) && hasSelectedFiles && !isStaging && !isApplying;
+  const canApply = Boolean(preview?.canApply) && !isApplying && !isStaging;
+  const diagnostics = [
+    ...(workflow?.diagnostics ?? []),
+    ...(preview?.diagnostics ?? []),
+    ...(applyResult?.diagnostics ?? [])
+  ];
+  const sortedPreviewFiles = preview
+    ? [...preview.files].sort((left, right) => {
+        const leftPriority = getModMergerPreviewPriority(left.status);
+        const rightPriority = getModMergerPreviewPriority(right.status);
+
+        if (leftPriority !== rightPriority) {
+          return leftPriority - rightPriority;
+        }
+
+        return left.relativePath.localeCompare(right.relativePath);
+      })
+    : [];
+
+  return (
+    <>
+      <section aria-labelledby="mod-merger-heading" className="panel wide-panel mod-merger-panel">
+        <div className="panel-heading">
+          <Layers aria-hidden="true" size={18} />
+          <h2 id="mod-merger-heading">Mod Merger</h2>
+        </div>
+
+        <div className="mod-merger-directory-grid">
+          <div className="mod-merger-directory-control">
+            <strong>Mod Directory 1</strong>
+            <p>
+              Choose the first mod folder. The merger scans its RomFS files and ignores
+              ExeFS content.
+            </p>
+            <button
+              className="secondary-button"
+              disabled={!isDesktopAvailable || isLoading}
+              onClick={() => onPickDirectory(1)}
+              title="Set Mod Directory 1 by choosing a mod folder that contains RomFS files."
+              type="button"
+            >
+              <FolderOpen aria-hidden="true" size={16} />
+              <span>{isLoading ? 'Loading' : 'Set Mod Directory 1'}</span>
+            </button>
+            <code title={directory1 || 'Mod Directory 1 is not set.'}>
+              {directory1 || 'Not set'}
+            </code>
+          </div>
+
+          <div className="mod-merger-directory-control">
+            <strong>Mod Directory 2</strong>
+            <p>
+              Choose the second mod folder. Select the same relative file paths on both
+              sides before staging.
+            </p>
+            <button
+              className="secondary-button"
+              disabled={!isDesktopAvailable || isLoading}
+              onClick={() => onPickDirectory(2)}
+              title="Set Mod Directory 2 by choosing the second mod folder to compare."
+              type="button"
+            >
+              <FolderOpen aria-hidden="true" size={16} />
+              <span>{isLoading ? 'Loading' : 'Set Mod Directory 2'}</span>
+            </button>
+            <code title={directory2 || 'Mod Directory 2 is not set.'}>
+              {directory2 || 'Not set'}
+            </code>
+          </div>
+        </div>
+
+        <div className="mod-merger-output-note">
+          <Save aria-hidden="true" size={18} />
+          <div>
+            <strong>Output Root</strong>
+            <span title={effectiveOutputRootPath ?? 'Output Root is not set.'}>
+              {effectiveOutputRootPath ?? 'Not set'}
+            </span>
+          </div>
+          <p>
+            Apply writes merged files directly under the Output Root, preserves their
+            romfs folder structure, and leaves unrelated output files unchanged.
+          </p>
+        </div>
+
+        <div className="mod-merger-metrics">
+          <Metric
+            label="Directory 1 files"
+            value={(workflow?.stats.directory1FileCount ?? 0).toString()}
+          />
+          <Metric
+            label="Directory 2 files"
+            value={(workflow?.stats.directory2FileCount ?? 0).toString()}
+          />
+          <Metric
+            label="Matching files"
+            value={(workflow?.stats.matchingFileCount ?? 0).toString()}
+          />
+          <Metric
+            label="Selected pairs"
+            value={
+              selectionMismatchCount === 0
+                ? selectedPairCount.toString()
+                : `${selectedPairCount} with mismatch`
+            }
+          />
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="mod-merger-files-heading"
+        className="panel wide-panel mod-merger-file-panel"
+      >
+        <div className="panel-heading">
+          <ListChecks aria-hidden="true" size={18} />
+          <h2 id="mod-merger-files-heading">RomFS Files</h2>
+        </div>
+
+        <div className="mod-merger-action-row">
+          <button
+            className="secondary-button"
+            disabled={!canSelectAll || isStaging || isApplying}
+            onClick={onSelectAll}
+            title="Select every RomFS file in both mod directories."
+            type="button"
+          >
+            <CheckCircle aria-hidden="true" size={16} />
+            <span>Select All</span>
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!canStage}
+            onClick={onStageMerge}
+            title="Build a merge preview for the selected matching RomFS files."
+            type="button"
+          >
+            <Layers aria-hidden="true" size={16} />
+            <span>{isStaging ? 'Staging' : 'Stage Merge'}</span>
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!canReview}
+            onClick={onReviewMerge}
+            title="Review the staged merge again after changing conflict choices."
+            type="button"
+          >
+            <Search aria-hidden="true" size={16} />
+            <span>{isStaging ? 'Reviewing' : 'Review'}</span>
+          </button>
+          <button
+            className="primary-button"
+            disabled={!canApply}
+            onClick={onApplyMerge}
+            title={
+              preview?.canApply
+                ? 'Apply the merge directly to Output Root.'
+                : 'Resolve overlap issues before applying the merge.'
+            }
+            type="button"
+          >
+            <Save aria-hidden="true" size={16} />
+            <span>{isApplying ? 'Applying' : 'Apply'}</span>
+          </button>
+          <span
+            className={`mod-merger-selection-status ${
+              selectionMismatchCount > 0 ? 'mod-merger-selection-mismatch' : ''
+            }`}
+          >
+            {selectionMismatchCount > 0
+              ? `${selectionMismatchCount} one-sided selection${
+                  selectionMismatchCount === 1 ? '' : 's'
+                } ignored`
+              : 'Selections match'}
+          </span>
+        </div>
+
+        {workflow ? (
+          <div className="mod-merger-file-lists">
+            <ModMergerFileList
+              directory={1}
+              files={directory1Files}
+              onToggleFile={onToggleFile}
+              selectedFiles={selectedDirectory1Files}
+              title="Mod Directory 1 files"
+            />
+            <ModMergerFileList
+              directory={2}
+              files={directory2Files}
+              onToggleFile={onToggleFile}
+              selectedFiles={selectedDirectory2Files}
+              title="Mod Directory 2 files"
+            />
+          </div>
+        ) : (
+          <p className="empty-copy">
+            Set both mod directories to scan RomFS files for merging.
+          </p>
+        )}
+      </section>
+
+      {preview ? (
+        <section
+          aria-labelledby="mod-merger-preview-heading"
+          className="panel wide-panel mod-merger-preview-panel"
+        >
+          <div className="panel-heading">
+            <ClipboardCheck aria-hidden="true" size={18} />
+            <h2 id="mod-merger-preview-heading">Merge Preview</h2>
+          </div>
+
+          <div className="mod-merger-metrics">
+            <Metric label="Plan status" value={formatModMergerStatus(preview.status)} />
+            <Metric label="Ready files" value={preview.readyFileCount.toString()} />
+            <Metric label="Conflict files" value={preview.conflictFileCount.toString()} />
+            <Metric
+              label="Unresolved"
+              value={preview.unresolvedConflictCount.toString()}
+            />
+          </div>
+
+          <div className="mod-merger-preview-table" role="table" aria-label="Mod merge preview">
+            <div className="mod-merger-preview-row mod-merger-preview-heading" role="row">
+              <span role="columnheader">File</span>
+              <span role="columnheader">Status</span>
+              <span role="columnheader">Changes</span>
+              <span role="columnheader">Summary</span>
+            </div>
+            {sortedPreviewFiles.map((file) => (
+              <div className="mod-merger-preview-row" key={file.relativePath} role="row">
+                <span title={file.outputRelativePath} role="cell">
+                  {file.relativePath}
+                </span>
+                <span role="cell">
+                  <span className={`status-pill ${getModMergerStatusClassName(file.status)}`}>
+                    {formatModMergerStatus(file.status)}
+                  </span>
+                </span>
+                <span role="cell">
+                  {file.directory1ChangeCount} / {file.directory2ChangeCount}
+                </span>
+                <span role="cell">{file.summary}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {preview?.conflicts.length ? (
+        <section
+          aria-labelledby="mod-merger-conflicts-heading"
+          className="panel wide-panel mod-merger-conflict-panel"
+        >
+          <div className="panel-heading">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <h2 id="mod-merger-conflicts-heading">Overlaps</h2>
+          </div>
+          <p className="empty-copy">
+            Pick the source for every overlap, then Review. Apply stays locked until
+            the preview has no unresolved overlaps.
+          </p>
+
+          <div className="mod-merger-conflict-list">
+            {preview.conflicts.map((conflict) => {
+              const selectedSource = resolutions[conflict.conflictId] ?? conflict.resolution;
+
+              return (
+                <article className="mod-merger-conflict-row" key={conflict.conflictId}>
+                  <div className="mod-merger-conflict-title">
+                    <strong>{conflict.label}</strong>
+                    <span title={conflict.relativePath}>{conflict.relativePath}</span>
+                  </div>
+                  <p>{conflict.description}</p>
+                  <div className="mod-merger-conflict-values">
+                    <div>
+                      <span>Mod Directory 1</span>
+                      <code>{conflict.directory1Value}</code>
+                    </div>
+                    <div>
+                      <span>Mod Directory 2</span>
+                      <code>{conflict.directory2Value}</code>
+                    </div>
+                  </div>
+                  <div className="mod-merger-resolution-row">
+                    <button
+                      className={`secondary-button ${
+                        selectedSource === 'mod1' ? 'mod-merger-resolution-selected' : ''
+                      }`}
+                      onClick={() => onResolveConflict(conflict.conflictId, 'mod1')}
+                      title="Use Mod Directory 1 for this overlap."
+                      type="button"
+                    >
+                      <CheckCircle aria-hidden="true" size={16} />
+                      <span>Use Mod Directory 1</span>
+                    </button>
+                    <button
+                      className={`secondary-button ${
+                        selectedSource === 'mod2' ? 'mod-merger-resolution-selected' : ''
+                      }`}
+                      onClick={() => onResolveConflict(conflict.conflictId, 'mod2')}
+                      title="Use Mod Directory 2 for this overlap."
+                      type="button"
+                    >
+                      <CheckCircle aria-hidden="true" size={16} />
+                      <span>Use Mod Directory 2</span>
+                    </button>
+                    <span>
+                      {selectedSource
+                        ? `${formatResolutionSource(selectedSource)} selected`
+                        : 'Needs choice'}
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      {applyResult ? (
+        <section
+          aria-labelledby="mod-merger-apply-heading"
+          className="panel wide-panel mod-merger-apply-panel"
+        >
+          <div className="panel-heading">
+            <Save aria-hidden="true" size={18} />
+            <h2 id="mod-merger-apply-heading">Applied Merge</h2>
+          </div>
+          <div className="mod-merger-metrics">
+            <Metric label="Written files" value={applyResult.writtenFiles.length.toString()} />
+            <Metric
+              label="Plan status"
+              value={formatModMergerStatus(applyResult.preview.status)}
+            />
+          </div>
+          {applyResult.writtenFiles.length > 0 ? (
+            <ul className="written-file-list mod-merger-written-file-list">
+              {applyResult.writtenFiles.map((path) => (
+                <li key={path}>{path}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="empty-copy">No files were written.</p>
+          )}
+        </section>
+      ) : null}
+
+      <DiagnosticsSection diagnostics={diagnostics} />
+    </>
+  );
+}
+
+function ModMergerFileList({
+  directory,
+  files,
+  onToggleFile,
+  selectedFiles,
+  title
+}: {
+  directory: 1 | 2;
+  files: ModMergerWorkflow['directory1Files'];
+  onToggleFile: (directory: 1 | 2, relativePath: string) => void;
+  selectedFiles: Set<string>;
+  title: string;
+}) {
+  return (
+    <div className="mod-merger-file-list-block">
+      <div className="mod-merger-file-list-heading">
+        <strong>{title}</strong>
+        <span>{files.length} RomFS files</span>
+      </div>
+      <div className="mod-merger-file-list" role="list" aria-label={title}>
+        {files.length > 0 ? (
+          files.map((file) => {
+            const isSelected = selectedFiles.has(file.relativePath);
+
+            return (
+              <label
+                className={`mod-merger-file-row ${
+                  isSelected ? 'mod-merger-file-row-selected' : ''
+                }`}
+                key={file.relativePath}
+                title={file.relativePath}
+              >
+                <input
+                  checked={isSelected}
+                  onChange={() => onToggleFile(directory, file.relativePath)}
+                  type="checkbox"
+                />
+                <span className="mod-merger-file-path">{file.relativePath}</span>
+                <small>
+                  {file.supportKind} · {formatByteCount(file.size)}
+                </small>
+                <span className={`status-pill ${getModMergerStatusClassName(file.status)}`}>
+                  {formatModMergerStatus(file.status)}
+                </span>
+              </label>
+            );
+          })
+        ) : (
+          <p className="empty-copy">No RomFS files found.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SpreadsheetImportSection({
   editSession,
   isPreviewing,
@@ -22034,6 +22740,57 @@ function formatDiagnosticSeverity(severity: ApiDiagnostic['severity']) {
     case 'info':
       return 'Info';
   }
+}
+
+function getModMergerStatusClassName(status: string) {
+  switch (status) {
+    case 'ready':
+      return 'status-ready';
+    case 'needsResolution':
+    case 'empty':
+      return 'status-warning';
+    case 'blocked':
+    case 'error':
+      return 'status-blocked';
+    default:
+      return 'status-warning';
+  }
+}
+
+function getModMergerPreviewPriority(status: string) {
+  switch (status) {
+    case 'needsResolution':
+      return 0;
+    case 'blocked':
+    case 'error':
+    case 'empty':
+      return 1;
+    case 'ready':
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+function formatModMergerStatus(status: string) {
+  switch (status) {
+    case 'ready':
+      return 'Ready';
+    case 'needsResolution':
+      return 'Needs resolution';
+    case 'blocked':
+      return 'Blocked';
+    case 'empty':
+      return 'Empty';
+    case 'error':
+      return 'Error';
+    default:
+      return status.replace(/([a-z])([A-Z])/g, '$1 $2');
+  }
+}
+
+function formatResolutionSource(source: ModMergerConflictResolution['source']) {
+  return source === 'mod1' ? 'Mod Directory 1' : 'Mod Directory 2';
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -25170,6 +25927,16 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['nidoran-male', 'nidoranm'],
   ['nidoran-(female)', 'nidoranf'],
   ['nidoran-(male)', 'nidoranm'],
+  ['frillish-female', 'frillish-f'],
+  ['frillish-male', 'frillish'],
+  ['indeedee-female', 'indeedee-f'],
+  ['indeedee-male', 'indeedee'],
+  ['jellicent-female', 'jellicent-f'],
+  ['jellicent-male', 'jellicent'],
+  ['meowstic-female', 'meowstic-f'],
+  ['meowstic-male', 'meowstic'],
+  ['unfezant-female', 'unfezant-f'],
+  ['unfezant-male', 'unfezant'],
   ['ho-oh', 'hooh'],
   ['jangmo-o', 'jangmoo'],
   ['hakamo-o', 'hakamoo'],
@@ -25232,6 +25999,7 @@ function normalizePokemonSpriteName(name: string) {
   return trimmedName
     .replace(/\s*\((Alolan)\)$/i, '-Alola')
     .replace(/\s*\((Galarian)\)$/i, '-Galar')
+    .replace(/\s*\((Female|Male)\)$/i, '-$1')
     .replace(/\s*\((Low Key)\)/i, '-Low-Key')
     .replace(/\s*\((Gigantamax|G-Max)\)$/i, '-Gmax')
     .replace(/\s*\((Regional Form \d+|Regional Form|Form \d+)\)$/i, '')
@@ -26516,7 +27284,7 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
   createFormLabelDefinition(77, ['ponyta'], [[1, 'Galarian']], 'Kanto'),
   createFormLabelDefinition(78, ['rapidash'], [[1, 'Galarian']], 'Kanto'),
   createFormLabelDefinition(79, ['slowpoke'], [[1, 'Galarian']], 'Kanto'),
-  createFormLabelDefinition(80, ['slowbro'], [[1, 'Galarian']], 'Kanto'),
+  createFormLabelDefinition(80, ['slowbro'], [[2, 'Galarian']], 'Kanto'),
   createFormLabelDefinition(83, ['farfetchd'], [[1, 'Galarian']], 'Kanto'),
   createFormLabelDefinition(88, ['grimer'], [[1, 'Alolan']], 'Kanto'),
   createFormLabelDefinition(89, ['muk'], [[1, 'Alolan']], 'Kanto'),
@@ -26529,9 +27297,13 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
   createFormLabelDefinition(146, ['moltres'], [[1, 'Galarian']], 'Kanto'),
   createFormLabelDefinition(199, ['slowking'], [[1, 'Galarian']], 'Kanto'),
   createFormLabelDefinition(201, ['unown'], createLetterFormLabels()),
-  createFormLabelDefinition(222, ['corsola'], [[1, 'Galarian']], 'Kanto'),
-  createFormLabelDefinition(263, ['zigzagoon'], [[1, 'Galarian']], 'Kanto'),
-  createFormLabelDefinition(264, ['linoone'], [[1, 'Galarian']], 'Kanto'),
+  createFormLabelDefinition(222, ['corsola'], [[1, 'Galarian']], 'Johto'),
+  createFormLabelDefinition(263, ['zigzagoon'], [[1, 'Galarian']], 'Hoenn'),
+  createFormLabelDefinition(264, ['linoone'], [[1, 'Galarian']], 'Hoenn'),
+  createFormLabelDefinition(421, ['cherrim'], [
+    [0, 'Overcast Form'],
+    [1, 'Sunshine Form']
+  ]),
   createFormLabelDefinition(422, ['shellos'], [
     [0, 'West Sea'],
     [1, 'East Sea']
@@ -26539,6 +27311,10 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
   createFormLabelDefinition(423, ['gastrodon'], [
     [0, 'West Sea'],
     [1, 'East Sea']
+  ]),
+  createFormLabelDefinition(487, ['giratina'], [
+    [0, 'Altered Forme'],
+    [1, 'Origin Forme']
   ]),
   createFormLabelDefinition(479, ['rotom'], [
     [0, 'Normal'],
@@ -26556,9 +27332,14 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [0, 'Red-Striped'],
     [1, 'Blue-Striped']
   ]),
-  createFormLabelDefinition(554, ['darumaka'], [[1, 'Galarian']], 'Kanto'),
-  createFormLabelDefinition(555, ['darmanitan'], [[1, 'Galarian']], 'Kanto'),
-  createFormLabelDefinition(562, ['yamask'], [[1, 'Galarian']], 'Kanto'),
+  createFormLabelDefinition(554, ['darumaka'], [[1, 'Galarian']], 'Unovan'),
+  createFormLabelDefinition(555, ['darmanitan'], [
+    [0, 'Unovan Standard Mode'],
+    [1, 'Unovan Zen Mode'],
+    [2, 'Galarian Standard Mode'],
+    [3, 'Galarian Zen Mode']
+  ]),
+  createFormLabelDefinition(562, ['yamask'], [[1, 'Galarian']], 'Unovan'),
   createFormLabelDefinition(592, ['frillish'], [
     [0, 'Male'],
     [1, 'Female']
@@ -26567,7 +27348,14 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [0, 'Male'],
     [1, 'Female']
   ]),
-  createFormLabelDefinition(618, ['stunfisk'], [[1, 'Galarian']], 'Kanto'),
+  createFormLabelDefinition(618, ['stunfisk'], [[1, 'Galarian']], 'Unovan'),
+  createFormLabelDefinition(649, ['genesect'], [
+    [0, 'Normal'],
+    [1, 'Douse Drive'],
+    [2, 'Shock Drive'],
+    [3, 'Burn Drive'],
+    [4, 'Chill Drive']
+  ]),
   createFormLabelDefinition(641, ['tornadus'], [
     [0, 'Incarnate Forme'],
     [1, 'Therian Forme']
@@ -26618,6 +27406,10 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [1, '10% Forme'],
     [2, 'Complete Forme']
   ]),
+  createFormLabelDefinition(744, ['rockruff'], [
+    [0, 'Standard'],
+    [1, 'Own Tempo']
+  ]),
   createFormLabelDefinition(745, ['lycanroc'], [
     [0, 'Midday Form'],
     [1, 'Midnight Form'],
@@ -26631,6 +27423,7 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [0, 'Disguised Form'],
     [1, 'Busted Form']
   ]),
+  createFormLabelDefinition(773, ['silvally'], createSilvallyFormLabels()),
   createFormLabelDefinition(800, ['necrozma'], [
     [0, 'Necrozma'],
     [1, 'Dusk Mane'],
@@ -26773,6 +27566,29 @@ function createLetterFormLabels(): Array<readonly [number, string]> {
   });
 }
 
+function createSilvallyFormLabels(): Array<readonly [number, string]> {
+  return [
+    'Normal Type',
+    'Fighting Type',
+    'Flying Type',
+    'Poison Type',
+    'Ground Type',
+    'Rock Type',
+    'Bug Type',
+    'Ghost Type',
+    'Steel Type',
+    'Fire Type',
+    'Water Type',
+    'Grass Type',
+    'Electric Type',
+    'Psychic Type',
+    'Ice Type',
+    'Dragon Type',
+    'Dark Type',
+    'Fairy Type'
+  ].map((label, form) => [form, label] as const);
+}
+
 function formatSpeciesFormLabel(species: string, form: number, speciesId?: number) {
   const formLabel = resolveSpeciesFormLabel(species, form, speciesId);
   if (form === 0) {
@@ -26805,46 +27621,10 @@ function resolveBaseSpeciesFormLabel(context: SpeciesFormOptionContext) {
 function resolveSpeciesFormLabel(species: string, form: number, speciesId?: number) {
   return (
     (speciesId !== undefined
-      ? speciesFormLabelsBySpeciesId.get(`${speciesId}:${form}`) ??
-        (form === 1 ? resolveOnlyRegionalFormLabelBySpeciesId(speciesId) : undefined)
+      ? speciesFormLabelsBySpeciesId.get(`${speciesId}:${form}`)
       : undefined) ??
-    speciesFormLabelsBySpeciesName.get(`${normalizeSpeciesName(species)}:${form}`) ??
-    (form === 1 ? resolveOnlyRegionalFormLabelBySpeciesName(species) : undefined)
+    speciesFormLabelsBySpeciesName.get(`${normalizeSpeciesName(species)}:${form}`)
   );
-}
-
-function resolveOnlyRegionalFormLabelBySpeciesId(speciesId: number) {
-  const labels = new Set<string>();
-
-  for (const definition of knownSpeciesFormLabelDefinitions) {
-    if (definition.speciesId !== speciesId || definition.baseFormLabel === undefined) {
-      continue;
-    }
-
-    definition.forms.forEach(([, label]) => labels.add(label));
-  }
-
-  return labels.size === 1 ? [...labels][0] : undefined;
-}
-
-function resolveOnlyRegionalFormLabelBySpeciesName(species: string) {
-  const normalizedSpecies = normalizeSpeciesName(species);
-  const labels = new Set<string>();
-
-  for (const definition of knownSpeciesFormLabelDefinitions) {
-    if (
-      definition.baseFormLabel === undefined ||
-      !definition.speciesNames.some(
-        (speciesName) => normalizeSpeciesName(speciesName) === normalizedSpecies
-      )
-    ) {
-      continue;
-    }
-
-    definition.forms.forEach(([, label]) => labels.add(label));
-  }
-
-  return labels.size === 1 ? [...labels][0] : undefined;
 }
 
 function normalizeSpeciesName(species: string) {

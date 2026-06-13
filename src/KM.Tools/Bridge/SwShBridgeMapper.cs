@@ -11,6 +11,7 @@ using KM.Api.Flagwork;
 using KM.Api.Gifts;
 using KM.Api.Items;
 using KM.Api.IvScreen;
+using KM.Api.ModMerger;
 using KM.Api.Placement;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
@@ -34,6 +35,7 @@ using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Gifts;
 using KM.SwSh.IvScreen;
+using KM.SwSh.ModMerger;
 using KM.SwSh.Placement;
 using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
@@ -374,6 +376,34 @@ public static class SwShBridgeMapper
             ToSpreadsheetImportWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             ToDto(result.Preview),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadModMergerWorkflowResponse ToDto(SwShModMergerWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadModMergerWorkflowResponse(ToModMergerWorkflowDto(workflow));
+    }
+
+    public static StageModMergeResponse ToDto(SwShModMergerStageResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageModMergeResponse(
+            ToModMergerWorkflowDto(result.Workflow),
+            ToDto(result.Preview),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static ApplyModMergeResponse ToDto(SwShModMergerApplyResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new ApplyModMergeResponse(
+            ToModMergerWorkflowDto(result.Workflow),
+            ToDto(result.Preview),
+            result.WrittenFiles,
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -1268,8 +1298,73 @@ public static class SwShBridgeMapper
             new SpreadsheetImportWorkflowStatsDto(
                 workflow.Stats.TotalProfileCount,
                 workflow.Stats.TotalColumnCount,
-                workflow.Stats.SourceFileCount),
+            workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ModMergerWorkflowDto ToModMergerWorkflowDto(SwShModMergerWorkflow workflow)
+    {
+        return new ModMergerWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.ModDirectory1,
+            workflow.ModDirectory2,
+            workflow.OutputRootPath,
+            workflow.Directory1Files.Select(ToDto).ToArray(),
+            workflow.Directory2Files.Select(ToDto).ToArray(),
+            new ModMergerWorkflowStatsDto(
+                workflow.Stats.Directory1FileCount,
+                workflow.Stats.Directory2FileCount,
+                workflow.Stats.MatchingFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ModMergerFileRecordDto ToDto(SwShModMergerFileRecord file)
+    {
+        return new ModMergerFileRecordDto(
+            file.RelativePath,
+            file.Name,
+            file.Size,
+            file.SupportKind,
+            file.Status);
+    }
+
+    private static ModMergerPreviewDto ToDto(SwShModMergerPreview preview)
+    {
+        return new ModMergerPreviewDto(
+            preview.CanApply,
+            preview.Status,
+            preview.SelectedFileCount,
+            preview.ReadyFileCount,
+            preview.ConflictFileCount,
+            preview.UnresolvedConflictCount,
+            preview.Files.Select(ToDto).ToArray(),
+            preview.Conflicts.Select(ToDto).ToArray(),
+            preview.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ModMergerFilePreviewRecordDto ToDto(SwShModMergerFilePreviewRecord file)
+    {
+        return new ModMergerFilePreviewRecordDto(
+            file.RelativePath,
+            file.OutputRelativePath,
+            file.SupportKind,
+            file.Status,
+            file.Summary,
+            file.Directory1ChangeCount,
+            file.Directory2ChangeCount,
+            file.ConflictCount);
+    }
+
+    private static ModMergerConflictRecordDto ToDto(SwShModMergerConflictRecord conflict)
+    {
+        return new ModMergerConflictRecordDto(
+            conflict.ConflictId,
+            conflict.RelativePath,
+            conflict.Label,
+            conflict.Description,
+            conflict.Directory1Value,
+            conflict.Directory2Value,
+            conflict.Resolution);
     }
 
     private static WorkflowSummaryDto ToDto(SwShWorkflowSummary summary)

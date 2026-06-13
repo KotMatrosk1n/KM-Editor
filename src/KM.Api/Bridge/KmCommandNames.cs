@@ -65,6 +65,9 @@ public static class KmCommandNames
     public const string StageStartingItems = "startingItems.stage";
     public const string LoadSpreadsheetImportWorkflow = "spreadsheetImport.load";
     public const string PreviewSpreadsheetImport = "spreadsheetImport.preview";
+    public const string LoadModMergerWorkflow = "modMerger.load";
+    public const string StageModMerge = "modMerger.stage";
+    public const string ApplyModMerge = "modMerger.apply";
     public const string StartEditSession = "editSession.start";
     public const string GetEditSession = "editSession.get";
     public const string DiscardEditSession = "editSession.discard";

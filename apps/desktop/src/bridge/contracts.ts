@@ -61,6 +61,9 @@ export const kmCommandNameValues = [
   'startingItems.stage',
   'spreadsheetImport.load',
   'spreadsheetImport.preview',
+  'modMerger.load',
+  'modMerger.stage',
+  'modMerger.apply',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -131,6 +134,9 @@ export const kmCommandNames = {
   stageStartingItems: 'startingItems.stage',
   loadSpreadsheetImportWorkflow: 'spreadsheetImport.load',
   previewSpreadsheetImport: 'spreadsheetImport.preview',
+  loadModMergerWorkflow: 'modMerger.load',
+  stageModMerge: 'modMerger.stage',
+  applyModMerge: 'modMerger.apply',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -362,6 +368,35 @@ export const previewSpreadsheetImportRequestSchema = z.strictObject({
   profileId: z.string(),
   session: editSessionSchema.nullable(),
   sourcePath: z.string()
+});
+
+export const modMergerConflictResolutionSchema = z.strictObject({
+  conflictId: z.string(),
+  source: z.enum(['mod1', 'mod2'])
+});
+
+export const loadModMergerWorkflowRequestSchema = z.strictObject({
+  modDirectory1: z.string().nullable(),
+  modDirectory2: z.string().nullable(),
+  paths: projectPathsSchema
+});
+
+export const stageModMergeRequestSchema = z.strictObject({
+  modDirectory1: z.string().nullable(),
+  modDirectory2: z.string().nullable(),
+  paths: projectPathsSchema,
+  resolutions: z.array(modMergerConflictResolutionSchema),
+  selectedDirectory1Files: z.array(z.string()),
+  selectedDirectory2Files: z.array(z.string())
+});
+
+export const applyModMergeRequestSchema = z.strictObject({
+  modDirectory1: z.string().nullable(),
+  modDirectory2: z.string().nullable(),
+  paths: projectPathsSchema,
+  resolutions: z.array(modMergerConflictResolutionSchema),
+  selectedDirectory1Files: z.array(z.string()),
+  selectedDirectory2Files: z.array(z.string())
 });
 
 export const projectFileGraphEntrySchema = z.strictObject({
@@ -2401,6 +2436,81 @@ export const previewSpreadsheetImportResponseSchema = z.strictObject({
   workflow: spreadsheetImportWorkflowSchema
 });
 
+export const modMergerFileRecordSchema = z.strictObject({
+  name: z.string(),
+  relativePath: z.string(),
+  size: z.number().int().nonnegative(),
+  status: z.string(),
+  supportKind: z.string()
+});
+
+export const modMergerWorkflowStatsSchema = z.strictObject({
+  directory1FileCount: z.number().int().nonnegative(),
+  directory2FileCount: z.number().int().nonnegative(),
+  matchingFileCount: z.number().int().nonnegative()
+});
+
+export const modMergerWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  directory1Files: z.array(modMergerFileRecordSchema),
+  directory2Files: z.array(modMergerFileRecordSchema),
+  modDirectory1: z.string().nullable(),
+  modDirectory2: z.string().nullable(),
+  outputRootPath: z.string().nullable(),
+  stats: modMergerWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const modMergerConflictRecordSchema = z.strictObject({
+  conflictId: z.string(),
+  description: z.string(),
+  directory1Value: z.string(),
+  directory2Value: z.string(),
+  label: z.string(),
+  relativePath: z.string(),
+  resolution: z.enum(['mod1', 'mod2']).nullable()
+});
+
+export const modMergerFilePreviewRecordSchema = z.strictObject({
+  conflictCount: z.number().int().nonnegative(),
+  directory1ChangeCount: z.number().int().nonnegative(),
+  directory2ChangeCount: z.number().int().nonnegative(),
+  outputRelativePath: z.string(),
+  relativePath: z.string(),
+  status: z.string(),
+  summary: z.string(),
+  supportKind: z.string()
+});
+
+export const modMergerPreviewSchema = z.strictObject({
+  canApply: z.boolean(),
+  conflictFileCount: z.number().int().nonnegative(),
+  conflicts: z.array(modMergerConflictRecordSchema),
+  diagnostics: z.array(apiDiagnosticSchema),
+  files: z.array(modMergerFilePreviewRecordSchema),
+  readyFileCount: z.number().int().nonnegative(),
+  selectedFileCount: z.number().int().nonnegative(),
+  status: z.string(),
+  unresolvedConflictCount: z.number().int().nonnegative()
+});
+
+export const loadModMergerWorkflowResponseSchema = z.strictObject({
+  workflow: modMergerWorkflowSchema
+});
+
+export const stageModMergeResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  preview: modMergerPreviewSchema,
+  workflow: modMergerWorkflowSchema
+});
+
+export const applyModMergeResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  preview: modMergerPreviewSchema,
+  workflow: modMergerWorkflowSchema,
+  writtenFiles: z.array(z.string())
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -2834,6 +2944,14 @@ export type SpreadsheetImportProfileRecord = z.infer<
 >;
 export type SpreadsheetImportPreview = z.infer<typeof spreadsheetImportPreviewSchema>;
 export type SpreadsheetImportWorkflow = z.infer<typeof spreadsheetImportWorkflowSchema>;
+export type ModMergerConflictRecord = z.infer<typeof modMergerConflictRecordSchema>;
+export type ModMergerConflictResolution = z.infer<
+  typeof modMergerConflictResolutionSchema
+>;
+export type ModMergerFilePreviewRecord = z.infer<typeof modMergerFilePreviewRecordSchema>;
+export type ModMergerFileRecord = z.infer<typeof modMergerFileRecordSchema>;
+export type ModMergerPreview = z.infer<typeof modMergerPreviewSchema>;
+export type ModMergerWorkflow = z.infer<typeof modMergerWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
@@ -2988,6 +3106,16 @@ export type PreviewSpreadsheetImportRequest = z.infer<
 export type PreviewSpreadsheetImportResponse = z.infer<
   typeof previewSpreadsheetImportResponseSchema
 >;
+export type LoadModMergerWorkflowRequest = z.infer<
+  typeof loadModMergerWorkflowRequestSchema
+>;
+export type LoadModMergerWorkflowResponse = z.infer<
+  typeof loadModMergerWorkflowResponseSchema
+>;
+export type StageModMergeRequest = z.infer<typeof stageModMergeRequestSchema>;
+export type StageModMergeResponse = z.infer<typeof stageModMergeResponseSchema>;
+export type ApplyModMergeRequest = z.infer<typeof applyModMergeRequestSchema>;
+export type ApplyModMergeResponse = z.infer<typeof applyModMergeResponseSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;

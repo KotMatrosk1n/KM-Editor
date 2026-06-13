@@ -1031,6 +1031,11 @@ public sealed class SwShPokemonWorkflowService
                     continue;
                 }
 
+                if (IsEmptyPersonalRecord(records[personalId]))
+                {
+                    continue;
+                }
+
                 owners.TryAdd(personalId, new PokemonFormOwner(record.PersonalId, localFormIndex));
             }
         }
@@ -1043,6 +1048,14 @@ public sealed class SwShPokemonWorkflowService
         IReadOnlyList<string> speciesNames,
         IReadOnlyDictionary<int, PokemonFormOwner> formOwners)
     {
+        if (personal.PersonalId >= speciesNames.Count && IsEmptyPersonalRecord(personal))
+        {
+            return new PokemonDisplayIdentity(
+                personal.PersonalId,
+                string.Create(CultureInfo.InvariantCulture, $"Unused {personal.PersonalId}"),
+                "Unused");
+        }
+
         if (formOwners.TryGetValue(personal.PersonalId, out var owner))
         {
             var formLabel = ResolveFormLabel(personal, owner);
@@ -1052,14 +1065,6 @@ public sealed class SwShPokemonWorkflowService
                 owner.SpeciesId,
                 FormatPokemonDisplayName(speciesName, formLabel),
                 formLabel);
-        }
-
-        if (personal.PersonalId >= speciesNames.Count && IsEmptyPersonalRecord(personal))
-        {
-            return new PokemonDisplayIdentity(
-                personal.PersonalId,
-                string.Create(CultureInfo.InvariantCulture, $"Unused {personal.PersonalId}"),
-                "Unused");
         }
 
         var baseFormLabel = ResolveFormLabel(personal, owner: null);
@@ -1073,31 +1078,26 @@ public sealed class SwShPokemonWorkflowService
 
     private static string ResolveFormLabel(SwShPersonalRecord personal, PokemonFormOwner? owner)
     {
-        var localFormIndex = personal.LocalFormIndex != 0
-            ? personal.LocalFormIndex
-            : personal.Form != 0
-                ? personal.Form
-                : owner?.LocalFormIndex ?? 0;
+        var speciesId = owner?.SpeciesId ?? personal.PersonalId;
+        var localFormIndex = owner?.LocalFormIndex ?? 0;
 
-        if (personal.IsRegionalForm)
-        {
-            return SwShSpeciesFormLabels.ResolveRegionalFormLabel(owner?.SpeciesId ?? personal.PersonalId, localFormIndex);
-        }
-
-        var knownFormLabel = SwShSpeciesFormLabels.ResolveKnownFormLabel(
-            owner?.SpeciesId ?? personal.PersonalId,
-            localFormIndex);
+        var knownFormLabel = SwShSpeciesFormLabels.ResolveKnownFormLabel(speciesId, localFormIndex);
         if (knownFormLabel is not null)
         {
             return knownFormLabel;
         }
 
-        if (localFormIndex != 0)
+        if (localFormIndex == 0)
         {
-            return string.Create(CultureInfo.InvariantCulture, $"Form {localFormIndex}");
+            return SwShSpeciesFormLabels.ResolveBaseRegionalFormLabel(speciesId) ?? "Base";
         }
 
-        return owner is null ? "Base" : string.Create(CultureInfo.InvariantCulture, $"Form {owner.LocalFormIndex}");
+        if (personal.IsRegionalForm)
+        {
+            return SwShSpeciesFormLabels.ResolveRegionalFormLabel(speciesId, localFormIndex);
+        }
+
+        return string.Create(CultureInfo.InvariantCulture, $"Form {localFormIndex}");
     }
 
     private static string FormatPokemonDisplayName(string speciesName, string formLabel)

@@ -19,6 +19,8 @@ import {
   type IvScreenWorkflow,
   type ItemRecord,
   type ItemsWorkflow,
+  type ModMergerPreview,
+  type ModMergerWorkflow,
   type MovesWorkflow,
   type PlacementWorkflow,
   type PokemonWorkflow,
@@ -95,7 +97,20 @@ describe('App', () => {
   });
 
   it('falls back from form-specific Pokemon sprite ids to the base species id', () => {
-    expect(getPokemonSpriteIds('Unfezant (Male)')).toEqual(['unfezant-male', 'unfezant']);
+    expect(getPokemonSpriteIds('Tornadus (Therian Forme)')).toEqual([
+      'tornadus-therian-forme',
+      'tornadus-therian',
+      'tornadus'
+    ]);
+  });
+
+  it('maps gender-form Pokemon names to the bundled gender sprite ids', () => {
+    expect(getPokemonSpriteId('Frillish (Male)')).toBe('frillish');
+    expect(getPokemonSpriteId('Frillish (Female)')).toBe('frillish-f');
+    expect(getPokemonSpriteId('Jellicent (Female)')).toBe('jellicent-f');
+    expect(getPokemonSpriteId('Indeedee (Female)')).toBe('indeedee-f');
+    expect(getPokemonSpriteId('Meowstic (Female)')).toBe('meowstic-f');
+    expect(getPokemonSpriteId('Unfezant (Female)')).toBe('unfezant-f');
   });
 
   it('defaults Pokemon selection to the first real Pokemon instead of Egg', () => {
@@ -7724,6 +7739,90 @@ function createMockProjectBridge(
     },
     summary: spreadsheetImportWorkflowSummary
   };
+  const modMergerWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Merge matching RomFS files from two mod folders.',
+    diagnostics: [],
+    id: 'modMerger',
+    label: 'Mod Merger'
+  };
+  const modMergerWorkflow: ModMergerWorkflow = {
+    diagnostics: [],
+    directory1Files: [
+      {
+        name: 'shop_data.bin',
+        relativePath: 'romfs/bin/shop_data.bin',
+        size: 24,
+        status: 'available',
+        supportKind: 'Shop data'
+      }
+    ],
+    directory2Files: [
+      {
+        name: 'shop_data.bin',
+        relativePath: 'romfs/bin/shop_data.bin',
+        size: 24,
+        status: 'available',
+        supportKind: 'Shop data'
+      }
+    ],
+    modDirectory1: 'mod-directory-1',
+    modDirectory2: 'mod-directory-2',
+    outputRootPath: 'output',
+    stats: {
+      directory1FileCount: 1,
+      directory2FileCount: 1,
+      matchingFileCount: 1
+    },
+    summary: modMergerWorkflowSummary
+  };
+  const createModMergerPreview = (
+    selectedDirectory1Files: string[],
+    selectedDirectory2Files: string[]
+  ): ModMergerPreview => {
+    const selectedDirectory2Set = new Set(selectedDirectory2Files);
+    const selectedDirectory1Only = selectedDirectory1Files.filter(
+      (relativePath) => !selectedDirectory2Set.has(relativePath)
+    );
+    const selectedDirectory1Set = new Set(selectedDirectory1Files);
+    const selectedDirectory2Only = selectedDirectory2Files.filter(
+      (relativePath) => !selectedDirectory1Set.has(relativePath)
+    );
+    const matchedFiles = selectedDirectory1Files.filter((relativePath) =>
+      selectedDirectory2Set.has(relativePath)
+    );
+    const selectedFiles = matchedFiles.map((relativePath) => ({
+      conflictCount: 0,
+      directory1ChangeCount: 1,
+      directory2ChangeCount: 1,
+      outputRelativePath: relativePath,
+      relativePath,
+      status: 'ready',
+      summary: 'Non-overlapping byte changes can be merged safely.',
+      supportKind: 'Shop data'
+    }));
+    const diagnostics =
+      selectedDirectory1Only.length === 0 && selectedDirectory2Only.length === 0
+        ? []
+      : [
+          {
+            message: 'Files missing from one side were ignored for the merge.',
+            severity: 'warning' as const
+          }
+        ];
+
+    return {
+      canApply: selectedFiles.length > 0,
+      conflictFileCount: 0,
+      conflicts: [],
+      diagnostics,
+      files: selectedFiles,
+      readyFileCount: selectedFiles.length,
+      selectedFileCount: selectedFiles.length,
+      status: selectedFiles.length > 0 ? 'ready' : 'empty',
+      unresolvedConflictCount: 0
+    };
+  };
 
   let currentGiftPokemonWorkflow = giftPokemonWorkflow;
   let currentTradePokemonWorkflow = tradePokemonWorkflow;
@@ -8111,7 +8210,8 @@ function createMockProjectBridge(
           ivScreenWorkflowSummary,
           royalCandyWorkflowSummary,
           startingItemsWorkflowSummary,
-          spreadsheetImportWorkflowSummary
+          spreadsheetImportWorkflowSummary,
+          modMergerWorkflowSummary
         ]
       }),
     loadEncountersWorkflow: () =>
@@ -8695,6 +8795,47 @@ function createMockProjectBridge(
       Promise.resolve({
         workflow: spreadsheetImportWorkflow
       }),
+    loadModMergerWorkflow: (request) =>
+      Promise.resolve({
+        workflow: {
+          ...modMergerWorkflow,
+          modDirectory1: request.modDirectory1,
+          modDirectory2: request.modDirectory2
+        }
+      }),
+    stageModMerge: (request) => {
+      const preview = createModMergerPreview(
+        request.selectedDirectory1Files,
+        request.selectedDirectory2Files
+      );
+
+      return Promise.resolve({
+        diagnostics: preview.diagnostics,
+        preview,
+        workflow: {
+          ...modMergerWorkflow,
+          modDirectory1: request.modDirectory1,
+          modDirectory2: request.modDirectory2
+        }
+      });
+    },
+    applyModMerge: (request) => {
+      const preview = createModMergerPreview(
+        request.selectedDirectory1Files,
+        request.selectedDirectory2Files
+      );
+
+      return Promise.resolve({
+        diagnostics: preview.diagnostics,
+        preview,
+        workflow: {
+          ...modMergerWorkflow,
+          modDirectory1: request.modDirectory1,
+          modDirectory2: request.modDirectory2
+        },
+        writtenFiles: preview.canApply ? preview.files.map((file) => file.relativePath) : []
+      });
+    },
     previewSpreadsheetImport: (request) =>
       Promise.resolve({
         diagnostics: [

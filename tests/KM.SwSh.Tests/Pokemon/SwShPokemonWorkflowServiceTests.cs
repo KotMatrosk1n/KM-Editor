@@ -195,30 +195,78 @@ public sealed class SwShPokemonWorkflowServiceTests
         var formRow = workflow.Pokemon[53];
         Assert.Equal(53, formRow.PersonalId);
         Assert.Equal(52, formRow.SpeciesId);
-        Assert.Equal("Meowth (Galarian)", formRow.Name);
-        Assert.Equal("Galarian", formRow.FormLabel);
+        Assert.Equal("Meowth (Alolan)", formRow.Name);
+        Assert.Equal("Alolan", formRow.FormLabel);
         Assert.Equal(50, formRow.BaseStats.HP);
     }
 
     [Fact]
-    public void LoadInfersKnownRegionalLabelsWhenRegionalRowsHaveMissingOrMismatchedFormIndexes()
+    public void LoadLabelsBaseAndAlternateRegionalRowsFromOwnerFormIndex()
     {
         using var temp = TemporaryPokemonProject.Create();
         WriteBasePokemonData(temp);
-        var records = Enumerable.Range(0, 54)
+        var records = Enumerable.Range(0, 920)
             .Select(_ => CreateEmptyPersonalRecord())
             .ToArray();
-        records[50] = CreateBulbasaurPersonalRecord(
+        records[37] = CreateBulbasaurPersonalRecord(
             hp: 40,
-            hatchedSpecies: 50,
+            hatchedSpecies: 37,
+            formStatsIndex: 913,
+            formCount: 2,
             isRegionalForm: true);
-        records[51] = CreateBulbasaurPersonalRecord(
+        records[913] = CreateBulbasaurPersonalRecord(
             hp: 50,
-            hatchedSpecies: 51,
+            hatchedSpecies: 37,
+            formStatsIndex: 913,
+            formCount: 2,
+            form: 1,
             isRegionalForm: true);
-        records[53] = CreateBulbasaurPersonalRecord(
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(records));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateNamedPokemonNames(38, (37, "Vulpix")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShPokemonWorkflowService().Load(project);
+
+        Assert.Equal("Vulpix (Kanto)", workflow.Pokemon[37].Name);
+        Assert.Equal("Kanto", workflow.Pokemon[37].FormLabel);
+        Assert.Equal(37, workflow.Pokemon[913].SpeciesId);
+        Assert.Equal("Vulpix (Alolan)", workflow.Pokemon[913].Name);
+        Assert.Equal("Alolan", workflow.Pokemon[913].FormLabel);
+    }
+
+    [Fact]
+    public void LoadUsesOwnerFormIndexWhenPersonalFormFieldsAreMisleading()
+    {
+        using var temp = TemporaryPokemonProject.Create();
+        WriteBasePokemonData(temp);
+        var records = Enumerable.Range(0, 920)
+            .Select(_ => CreateEmptyPersonalRecord())
+            .ToArray();
+        records[52] = CreateBulbasaurPersonalRecord(
+            hp: 40,
+            hatchedSpecies: 52,
+            formStatsIndex: 917,
+            formCount: 3,
+            localFormIndex: 2,
+            isRegionalForm: true);
+        records[917] = CreateBulbasaurPersonalRecord(
+            hp: 50,
+            hatchedSpecies: 52,
+            formStatsIndex: 917,
+            formCount: 3,
+            localFormIndex: 2,
+            form: 1,
+            isRegionalForm: true);
+        records[918] = CreateBulbasaurPersonalRecord(
             hp: 60,
-            hatchedSpecies: 53,
+            hatchedSpecies: 52,
+            formStatsIndex: 917,
+            formCount: 3,
             localFormIndex: 2,
             form: 2,
             isRegionalForm: true);
@@ -227,18 +275,93 @@ public sealed class SwShPokemonWorkflowServiceTests
             CreatePersonalTable(records));
         temp.WriteBaseRomFsFile(
             "bin/message/English/common/monsname.dat",
-            CreateNamedPokemonNames(54, (50, "Diglett"), (51, "Dugtrio"), (53, "Persian")));
+            CreateNamedPokemonNames(53, (52, "Meowth")));
         temp.WriteBaseExeFsFile("main", "base-main");
         var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
 
         var workflow = new SwShPokemonWorkflowService().Load(project);
 
-        Assert.Equal("Diglett (Alolan)", workflow.Pokemon[50].Name);
-        Assert.Equal("Alolan", workflow.Pokemon[50].FormLabel);
-        Assert.Equal("Dugtrio (Alolan)", workflow.Pokemon[51].Name);
-        Assert.Equal("Alolan", workflow.Pokemon[51].FormLabel);
-        Assert.Equal("Persian (Alolan)", workflow.Pokemon[53].Name);
-        Assert.Equal("Alolan", workflow.Pokemon[53].FormLabel);
+        Assert.Equal("Meowth (Kanto)", workflow.Pokemon[52].Name);
+        Assert.Equal("Kanto", workflow.Pokemon[52].FormLabel);
+        Assert.Equal("Meowth (Alolan)", workflow.Pokemon[917].Name);
+        Assert.Equal("Alolan", workflow.Pokemon[917].FormLabel);
+        Assert.Equal("Meowth (Galarian)", workflow.Pokemon[918].Name);
+        Assert.Equal("Galarian", workflow.Pokemon[918].FormLabel);
+    }
+
+    [Fact]
+    public void LoadLabelsGenderFormRowsFromOwnerFormIndex()
+    {
+        using var temp = TemporaryPokemonProject.Create();
+        WriteBasePokemonData(temp);
+        var records = Enumerable.Range(0, 1115)
+            .Select(_ => CreateEmptyPersonalRecord())
+            .ToArray();
+        records[678] = CreateBulbasaurPersonalRecord(
+            hp: 70,
+            hatchedSpecies: 677,
+            formStatsIndex: 1114,
+            formCount: 2);
+        records[1114] = CreateBulbasaurPersonalRecord(
+            hp: 80,
+            hatchedSpecies: 677,
+            formStatsIndex: 1114,
+            formCount: 2);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(records));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateNamedPokemonNames(679, (678, "Meowstic")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShPokemonWorkflowService().Load(project);
+
+        Assert.Equal("Meowstic (Male)", workflow.Pokemon[678].Name);
+        Assert.Equal("Male", workflow.Pokemon[678].FormLabel);
+        Assert.Equal(678, workflow.Pokemon[1114].SpeciesId);
+        Assert.Equal("Meowstic (Female)", workflow.Pokemon[1114].Name);
+        Assert.Equal("Female", workflow.Pokemon[1114].FormLabel);
+    }
+
+    [Fact]
+    public void LoadKeepsEmptyReservedFormRowsUnused()
+    {
+        using var temp = TemporaryPokemonProject.Create();
+        WriteBasePokemonData(temp);
+        var records = Enumerable.Range(0, 928)
+            .Select(_ => CreateEmptyPersonalRecord())
+            .ToArray();
+        records[80] = CreateBulbasaurPersonalRecord(
+            hp: 90,
+            hatchedSpecies: 79,
+            formStatsIndex: 926,
+            formCount: 3,
+            isRegionalForm: true);
+        records[927] = CreateBulbasaurPersonalRecord(
+            hp: 100,
+            hatchedSpecies: 79,
+            formStatsIndex: 926,
+            formCount: 3,
+            localFormIndex: 1,
+            form: 1,
+            isRegionalForm: true);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(records));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateNamedPokemonNames(81, (80, "Slowbro")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShPokemonWorkflowService().Load(project);
+
+        Assert.Equal("Slowbro (Kanto)", workflow.Pokemon[80].Name);
+        Assert.Equal("Unused 926", workflow.Pokemon[926].Name);
+        Assert.Equal("Slowbro (Galarian)", workflow.Pokemon[927].Name);
+        Assert.Equal("Galarian", workflow.Pokemon[927].FormLabel);
     }
 
     [Fact]

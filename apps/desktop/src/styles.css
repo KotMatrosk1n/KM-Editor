@@ -2840,6 +2840,342 @@ h2 {
   cursor: default;
 }
 
+.mod-merger-panel,
+.mod-merger-file-panel,
+.mod-merger-preview-panel,
+.mod-merger-conflict-panel,
+.mod-merger-apply-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.mod-merger-directory-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
+  gap: clamp(96px, 10vw, 180px);
+}
+
+.mod-merger-directory-control {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+  padding: 12px;
+  background: #0d1424;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.mod-merger-directory-control strong {
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.mod-merger-directory-control p,
+.mod-merger-output-note p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mod-merger-directory-control code,
+.mod-merger-output-note span,
+.mod-merger-conflict-values code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mod-merger-directory-control code {
+  display: block;
+  padding: 8px 10px;
+  color: var(--color-gold);
+  background: #080d16;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mod-merger-output-note {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) minmax(260px, 1.4fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  background: #0d1424;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.mod-merger-output-note > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mod-merger-output-note strong {
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.mod-merger-output-note span {
+  color: var(--color-text-soft);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.mod-merger-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.mod-merger-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.mod-merger-selection-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--color-success);
+  background: rgb(17 41 28 / 72%);
+  border: 1px solid rgb(88 209 124 / 28%);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.mod-merger-selection-mismatch {
+  color: var(--color-warning);
+  background: rgb(43 33 19 / 80%);
+  border-color: rgb(214 168 66 / 38%);
+}
+
+.mod-merger-file-lists {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.mod-merger-file-list-block {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mod-merger-file-list-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.mod-merger-file-list-heading strong {
+  color: var(--color-text);
+}
+
+.mod-merger-file-list-heading span {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.mod-merger-file-list {
+  --mod-merger-file-row-height: 40px;
+  display: grid;
+  align-content: start;
+  min-height: calc(var(--mod-merger-file-row-height) * 15);
+  max-height: calc(var(--mod-merger-file-row-height) * 15);
+  overflow: auto;
+  background: #080d16;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.mod-merger-file-row {
+  display: grid;
+  grid-template-columns: auto minmax(160px, 1fr) minmax(120px, 0.6fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: var(--mod-merger-file-row-height);
+  padding: 7px 10px;
+  color: var(--color-text-soft);
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+}
+
+.mod-merger-file-row:last-child {
+  border-bottom: 0;
+}
+
+.mod-merger-file-row:hover,
+.mod-merger-file-row-selected {
+  color: var(--color-text);
+  background: #101828;
+}
+
+.mod-merger-file-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-gold);
+}
+
+.mod-merger-file-path,
+.mod-merger-file-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mod-merger-file-path {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.mod-merger-file-row small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mod-merger-preview-table {
+  display: grid;
+  align-content: start;
+  max-height: min(560px, 58vh);
+  overflow: auto;
+  background: #080d16;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.mod-merger-conflict-list {
+  display: grid;
+  overflow: hidden;
+  background: #080d16;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.mod-merger-preview-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(130px, 0.45fr) minmax(84px, 0.35fr) minmax(220px, 1.3fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mod-merger-preview-row:last-child,
+.mod-merger-conflict-row:last-child {
+  border-bottom: 0;
+}
+
+.mod-merger-preview-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mod-merger-preview-heading {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  color: var(--color-gold);
+  background: #0d1424;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.mod-merger-conflict-row {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.mod-merger-conflict-row p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mod-merger-conflict-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mod-merger-conflict-title strong {
+  color: var(--color-text);
+}
+
+.mod-merger-conflict-title span {
+  min-width: 0;
+  color: var(--color-gold);
+  font-size: 12px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.mod-merger-conflict-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mod-merger-conflict-values div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mod-merger-conflict-values span {
+  color: var(--color-text-soft);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.mod-merger-conflict-values code {
+  display: block;
+  max-height: 100px;
+  padding: 8px;
+  overflow: auto;
+  color: var(--color-text);
+  background: #0d1424;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.mod-merger-resolution-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.mod-merger-resolution-row > span {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.mod-merger-resolution-selected {
+  color: var(--color-success);
+  background: rgb(17 41 28 / 92%);
+  border-color: rgb(88 209 124 / 42%);
+}
+
 .spreadsheet-import-toolbar {
   grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
 }
@@ -3652,6 +3988,12 @@ h2 {
   font-weight: 700;
 }
 
+.mod-merger-written-file-list {
+  max-height: min(560px, 58vh);
+  padding-right: 4px;
+  overflow: auto;
+}
+
 input::placeholder,
 textarea::placeholder {
   color: #748199;
@@ -3874,7 +4216,10 @@ input {
   .shops-layout,
   .encounters-layout,
   .flagwork-layout,
-  .royal-candy-layout {
+  .royal-candy-layout,
+  .mod-merger-directory-grid,
+  .mod-merger-file-lists,
+  .mod-merger-conflict-values {
     grid-template-columns: 1fr;
   }
 
@@ -3947,6 +4292,9 @@ input {
   .moves-toolbar,
   .spreadsheet-import-toolbar,
   .spreadsheet-source-row,
+  .mod-merger-output-note,
+  .mod-merger-metrics,
+  .mod-merger-preview-row,
   .items-layout,
   .moves-layout,
   .text-layout,
@@ -3958,6 +4306,15 @@ input {
   .change-plan-list li,
   .change-plan-status {
     grid-template-columns: 1fr;
+  }
+
+  .mod-merger-file-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .mod-merger-file-row small,
+  .mod-merger-file-row .status-pill {
+    grid-column: 2;
   }
 
   .workflow-actions {

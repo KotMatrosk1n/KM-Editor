@@ -80,6 +80,12 @@ import {
   type LoadSpreadsheetImportWorkflowResponse,
   type PreviewSpreadsheetImportRequest,
   type PreviewSpreadsheetImportResponse,
+  type LoadModMergerWorkflowRequest,
+  type LoadModMergerWorkflowResponse,
+  type StageModMergeRequest,
+  type StageModMergeResponse,
+  type ApplyModMergeRequest,
+  type ApplyModMergeResponse,
   type LoadShopsWorkflowRequest,
   type LoadShopsWorkflowResponse,
   type LoadTextWorkflowRequest,
@@ -166,6 +172,9 @@ import {
   stageStartingItemsResponseSchema,
   loadSpreadsheetImportWorkflowResponseSchema,
   previewSpreadsheetImportResponseSchema,
+  loadModMergerWorkflowResponseSchema,
+  stageModMergeResponseSchema,
+  applyModMergeResponseSchema,
   loadShopsWorkflowResponseSchema,
   loadTextWorkflowResponseSchema,
   loadTrainersWorkflowResponseSchema,
@@ -296,6 +305,11 @@ export type ProjectBridge = {
   previewSpreadsheetImport: (
     request: PreviewSpreadsheetImportRequest
   ) => Promise<PreviewSpreadsheetImportResponse>;
+  loadModMergerWorkflow: (
+    request: LoadModMergerWorkflowRequest
+  ) => Promise<LoadModMergerWorkflowResponse>;
+  stageModMerge: (request: StageModMergeRequest) => Promise<StageModMergeResponse>;
+  applyModMerge: (request: ApplyModMergeRequest) => Promise<ApplyModMergeResponse>;
   loadShopsWorkflow: (request: LoadShopsWorkflowRequest) => Promise<LoadShopsWorkflowResponse>;
   loadTextWorkflow: (request: LoadTextWorkflowRequest) => Promise<LoadTextWorkflowResponse>;
   loadTrainersWorkflow: (
@@ -620,6 +634,27 @@ export function createProjectBridge(
         kmCommandNames.previewSpreadsheetImport,
         request,
         previewSpreadsheetImportResponseSchema
+      ),
+    loadModMergerWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadModMergerWorkflow,
+        request,
+        loadModMergerWorkflowResponseSchema
+      ),
+    stageModMerge: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageModMerge,
+        request,
+        stageModMergeResponseSchema
+      ),
+    applyModMerge: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.applyModMerge,
+        request,
+        applyModMergeResponseSchema
       ),
     loadShopsWorkflow: (request) =>
       sendProjectBridgeRequest(
