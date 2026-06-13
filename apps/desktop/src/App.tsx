@@ -22,6 +22,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
   Settings as SettingsIcon,
@@ -372,9 +373,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'staticEncounters',
       'giftPokemon',
       'tradePokemon',
-      'rentalPokemon',
-      'raidBattles',
-      'dynamaxAdventures'
+      'raidBattles'
     ]
   },
   {
@@ -395,7 +394,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'advancedEditors',
     label: 'Advanced Editors',
-    sectionIds: ['catchCap', 'royalCandy', 'startingItems']
+    sectionIds: ['catchCap', 'ivScreen', 'royalCandy', 'startingItems']
   }
 ];
 
@@ -466,19 +465,6 @@ const workflowDefinitions: Array<{
     label: 'Static Encounters',
     description: 'Scripted overworld and story encounter records, IV modes, moves, rules, and source provenance.',
     icon: MapPin
-  },
-  {
-    id: 'rentalPokemon',
-    label: 'Rental Pokemon',
-    description: 'Rental Pokemon records, fixed IVs, EVs, items, moves, and source provenance.',
-    icon: Dna
-  },
-  {
-    id: 'dynamaxAdventures',
-    label: 'Dynamax Adventures',
-    description:
-      'Adventure encounter Pokemon, ability rolls, moves, IV overrides, capture rules, and source provenance.',
-    icon: ShieldCheck
   },
   {
     id: 'shops',
@@ -913,17 +899,11 @@ const dynamaxAdventureFieldNames = [
   giftSpeciesFieldName,
   formFieldName,
   levelFieldName,
-  dynamaxAdventureBallItemIdFieldName,
   abilityFieldName,
   dynamaxAdventureGigantamaxStateFieldName,
-  dynamaxAdventureVersionFieldName,
-  dynamaxAdventureShinyRollFieldName,
   ...staticEncounterMoveFieldNames,
   dynamaxAdventureGuaranteedPerfectIvsFieldName,
-  ...dynamaxAdventureIvFieldNames,
-  dynamaxAdventureIsSingleCaptureFieldName,
-  dynamaxAdventureIsStoryProgressGatedFieldName,
-  dynamaxAdventureOtGenderFieldName
+  ...dynamaxAdventureIvFieldNames
 ] as const;
 const shopItemIdFieldName = 'itemId';
 const shopSetInventoryFieldName = 'setInventory';
@@ -3924,6 +3904,10 @@ export function App({
       setDynamaxAdventuresWorkflow(response.workflow);
       setEditSession(response.session);
       setEditValidationDiagnostics(response.diagnostics);
+      setChangePlan(null);
+      setChangePlanSessionSignature(null);
+      setAppliedChangePlan(null);
+      setValidatedEditSessionSignature(null);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -3966,6 +3950,10 @@ export function App({
       }
       setEditSession(nextSession);
       setEditValidationDiagnostics(nextDiagnostics);
+      setChangePlan(null);
+      setChangePlanSessionSignature(null);
+      setAppliedChangePlan(null);
+      setValidatedEditSessionSignature(null);
       return true;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -5343,9 +5331,14 @@ export function App({
               <WorkflowLoadingPanel label="Dynamax Adventures" />
             ) : (
               <DynamaxAdventuresSection
+                changePlan={isChangePlanCurrent ? changePlan : null}
                 editSession={getEditSessionForSection('dynamaxAdventures')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
                 isDynamaxAdventureUpdating={isDynamaxAdventureUpdating}
                 isEditStarting={isEditStarting}
+                onApplyChangePlan={handleApplyChangePlan}
+                onCreateChangePlan={handleCreateChangePlan}
                 onSearchChange={setDynamaxAdventureSearchText}
                 onSelectAdventure={setSelectedDynamaxAdventureEntryIndex}
                 onStartEditSession={handleStartEditSession}
@@ -13680,9 +13673,14 @@ function RentalPokemonFieldInput({
 }
 
 function DynamaxAdventuresSection({
+  changePlan,
   editSession,
+  isChangePlanApplying,
+  isChangePlanCreating,
   isDynamaxAdventureUpdating,
   isEditStarting,
+  onApplyChangePlan,
+  onCreateChangePlan,
   onSearchChange,
   onSelectAdventure,
   onStartEditSession,
@@ -13692,9 +13690,14 @@ function DynamaxAdventuresSection({
   selectedEntryIndex,
   workflow
 }: {
+  changePlan: ChangePlan | null;
   editSession: EditSession | null;
+  isChangePlanApplying: boolean;
+  isChangePlanCreating: boolean;
   isDynamaxAdventureUpdating: boolean;
   isEditStarting: boolean;
+  onApplyChangePlan: () => void;
+  onCreateChangePlan: () => void;
   onSearchChange: (searchText: string) => void;
   onSelectAdventure: (entryIndex: number | null) => void;
   onStartEditSession: () => void;
@@ -13750,8 +13753,8 @@ function DynamaxAdventuresSection({
             value={workflow ? workflow.stats.totalEncounterCount.toString() : '0'}
           />
           <Metric
-            label="Single capture"
-            value={workflow ? workflow.stats.singleCaptureCount.toString() : '0'}
+            label="Source files"
+            value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
           />
           <Metric
             label="Guaranteed IV rows"
@@ -13764,7 +13767,7 @@ function DynamaxAdventuresSection({
         {workflow ? (
           <div className="trainers-layout">
             <div
-              aria-colcount={7}
+              aria-colcount={6}
               aria-label="Dynamax Adventure encounters"
               aria-rowcount={filteredEncounters.length + 1}
               className="trainers-table"
@@ -13774,7 +13777,6 @@ function DynamaxAdventuresSection({
                 <span role="columnheader">Index</span>
                 <span role="columnheader">Adventure</span>
                 <span role="columnheader">Pokemon</span>
-                <span role="columnheader">Version</span>
                 <span role="columnheader">IVs</span>
                 <span role="columnheader">Moves</span>
                 <span role="columnheader">Source</span>
@@ -13806,7 +13808,6 @@ function DynamaxAdventuresSection({
                         encounter.speciesId
                       )}
                     </span>
-                    <span role="cell">{encounter.versionLabel}</span>
                     <span role="cell">{encounter.ivSummary}</span>
                     <span role="cell">{formatDynamaxAdventureMoves(encounter)}</span>
                     <span role="cell">
@@ -13819,18 +13820,25 @@ function DynamaxAdventuresSection({
 
             <SelectedDynamaxAdventurePanel
               canEditDynamaxAdventures={canEditDynamaxAdventures}
+              changePlan={changePlan}
               editSession={editSession}
               editableFields={workflow.editableFields}
               encounter={selectedEncounter}
+              isChangePlanApplying={isChangePlanApplying}
+              isChangePlanCreating={isChangePlanCreating}
               isDynamaxAdventureUpdating={isDynamaxAdventureUpdating}
               isEditStarting={isEditStarting}
+              onApplyChangePlan={onApplyChangePlan}
+              onCreateChangePlan={onCreateChangePlan}
               onStartEditSession={onStartEditSession}
               onUpdateDynamaxAdventureField={onUpdateDynamaxAdventureField}
               onUpdateDynamaxAdventureFields={onUpdateDynamaxAdventureFields}
             />
           </div>
         ) : (
-          <p className="empty-copy">Open Dynamax Adventures from Workflows to load backend encounter data.</p>
+          <p className="empty-copy">
+            Open Dynamax Adventures from Advanced Editors to load backend encounter data.
+          </p>
         )}
       </section>
 
@@ -13841,21 +13849,31 @@ function DynamaxAdventuresSection({
 
 function SelectedDynamaxAdventurePanel({
   canEditDynamaxAdventures,
+  changePlan,
   editSession,
   editableFields,
   encounter,
+  isChangePlanApplying,
+  isChangePlanCreating,
   isDynamaxAdventureUpdating,
   isEditStarting,
+  onApplyChangePlan,
+  onCreateChangePlan,
   onStartEditSession,
   onUpdateDynamaxAdventureField,
   onUpdateDynamaxAdventureFields
 }: {
   canEditDynamaxAdventures: boolean;
+  changePlan: ChangePlan | null;
   editSession: EditSession | null;
   editableFields: DynamaxAdventureEditableField[];
   encounter: DynamaxAdventureRecord | null;
+  isChangePlanApplying: boolean;
+  isChangePlanCreating: boolean;
   isDynamaxAdventureUpdating: boolean;
   isEditStarting: boolean;
+  onApplyChangePlan: () => void;
+  onCreateChangePlan: () => void;
   onStartEditSession: () => void;
   onUpdateDynamaxAdventureField: (entryIndex: number, field: string, value: string) => void;
   onUpdateDynamaxAdventureFields: (
@@ -13915,6 +13933,32 @@ function SelectedDynamaxAdventurePanel({
     !isDynamaxAdventureUpdating &&
     adventureDraftSummary.changedFields.length > 0 &&
     adventureDraftSummary.invalidFields.length === 0;
+  const hasPendingDynamaxAdventureChange =
+    editSession?.pendingEdits.some((edit) => edit.domain === 'workflow.dynamaxAdventures') ??
+    false;
+  const canReviewPlan =
+    hasPendingDynamaxAdventureChange &&
+    !isDynamaxAdventureUpdating &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying;
+  const canApplyPlan =
+    hasPendingDynamaxAdventureChange &&
+    changePlan !== null &&
+    changePlan.canApply &&
+    changePlan.writes.length > 0 &&
+    !isDynamaxAdventureUpdating &&
+    !isChangePlanApplying;
+  const vanillaRestoreChanges = useMemo(
+    () => (encounter ? getDynamaxAdventureVanillaRestoreChanges(encounter) : []),
+    [encounter]
+  );
+  const canRestoreVanilla =
+    encounter !== null &&
+    canEditDynamaxAdventures &&
+    !isDynamaxAdventureUpdating &&
+    !isChangePlanCreating &&
+    !isChangePlanApplying &&
+    vanillaRestoreChanges.length > 0;
 
   useEffect(() => {
     if (!encounter) {
@@ -13963,36 +14007,12 @@ function SelectedDynamaxAdventurePanel({
               <dd>{`${formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)} Lv. ${encounter.level}`}</dd>
             </div>
             <div>
-              <dt>Ball</dt>
-              <dd>{encounter.ballItem}</dd>
-            </div>
-            <div>
               <dt>Ability</dt>
               <dd>{encounter.abilityLabel}</dd>
             </div>
             <div>
-              <dt>G-Max / Version</dt>
-              <dd>{`${encounter.gigantamaxLabel} / ${encounter.versionLabel}`}</dd>
-            </div>
-            <div>
-              <dt>Shiny roll</dt>
-              <dd>{encounter.shinyRollLabel}</dd>
-            </div>
-            <div>
-              <dt>Rules</dt>
-              <dd>
-                {`${encounter.isSingleCapture ? 'Single capture' : 'Repeat capture'} / ${
-                  encounter.isStoryProgressGated ? 'Story gated' : 'Ungated'
-                }`}
-              </dd>
-            </div>
-            <div>
-              <dt>Hashes</dt>
-              <dd>{`${encounter.singleCaptureFlagBlock} / ${encounter.uiMessageId}`}</dd>
-            </div>
-            <div>
-              <dt>OT gender</dt>
-              <dd>{encounter.otGenderLabel}</dd>
+              <dt>Gigantamax</dt>
+              <dd>{encounter.gigantamaxLabel}</dd>
             </div>
             <div>
               <dt>Moves</dt>
@@ -14112,6 +14132,47 @@ function SelectedDynamaxAdventurePanel({
                   <X aria-hidden="true" size={16} />
                   <span>Cancel</span>
                 </button>
+                <button
+                  className="secondary-button"
+                  disabled={!canReviewPlan}
+                  onClick={onCreateChangePlan}
+                  type="button"
+                >
+                  <ClipboardCheck aria-hidden="true" size={16} />
+                  <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={!canApplyPlan}
+                  onClick={onApplyChangePlan}
+                  type="button"
+                >
+                  <Save aria-hidden="true" size={16} />
+                  <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                </button>
+                <button
+                  className="purple-button"
+                  disabled={!canRestoreVanilla}
+                  onClick={async () => {
+                    if (!encounter) {
+                      return;
+                    }
+
+                    const didSave = await onUpdateDynamaxAdventureFields(
+                      encounter.entryIndex,
+                      vanillaRestoreChanges
+                    );
+                    if (didSave) {
+                      setDraftsByEntryIndex((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, encounter.entryIndex)
+                      );
+                    }
+                  }}
+                  type="button"
+                >
+                  <RotateCcw aria-hidden="true" size={16} />
+                  <span>Restore Vanilla Pokemon</span>
+                </button>
                 <span className="draft-action-summary">
                   {formatDraftSummary(adventureDraftSummary)}
                 </span>
@@ -14119,15 +14180,40 @@ function SelectedDynamaxAdventurePanel({
             ) : null}
 
             {!editSession ? (
-              <button
-                className="secondary-button"
-                disabled={!canEditDynamaxAdventures || isEditStarting}
-                onClick={onStartEditSession}
-                type="button"
-              >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
-              </button>
+              <div className="draft-action-row">
+                <button
+                  className="secondary-button"
+                  disabled={!canEditDynamaxAdventures || isEditStarting}
+                  onClick={onStartEditSession}
+                  type="button"
+                >
+                  <Pencil aria-hidden="true" size={16} />
+                  <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                </button>
+                <button
+                  className="purple-button"
+                  disabled={!canRestoreVanilla}
+                  onClick={async () => {
+                    if (!encounter) {
+                      return;
+                    }
+
+                    const didSave = await onUpdateDynamaxAdventureFields(
+                      encounter.entryIndex,
+                      vanillaRestoreChanges
+                    );
+                    if (didSave) {
+                      setDraftsByEntryIndex((currentDrafts) =>
+                        deleteFieldDraftRecord(currentDrafts, encounter.entryIndex)
+                      );
+                    }
+                  }}
+                  type="button"
+                >
+                  <RotateCcw aria-hidden="true" size={16} />
+                  <span>Restore Vanilla Pokemon</span>
+                </button>
+              </div>
             ) : null}
           </div>
         </>
@@ -19221,6 +19307,11 @@ function IvScreenSection({
           IV Screen installs an independent Pokemon Summary hook for the stats graph and
           uses only its reserved exefs/main bytes.
         </p>
+        <p className="workflow-description">
+          In game, open a Pokemon Summary, move to the stats graph page, then press X to
+          toggle from normal stats to raw IV numbers. Press X again on that same page to
+          return to the normal stats view.
+        </p>
 
         <div className="items-toolbar exefs-toolbar">
           <Metric
@@ -19237,17 +19328,15 @@ function IvScreenSection({
         {workflow ? (
           <div className="flagwork-layout">
             <div className="flagwork-stack">
-              <div className="exefs-table" role="table" aria-label="IV Screen reserved ranges">
-                <div className="exefs-row exefs-row-heading" role="row">
+              <div className="exefs-table iv-screen-range-table" role="table" aria-label="IV Screen reserved ranges">
+                <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
                   <span role="columnheader">Region</span>
                   <span role="columnheader">Range</span>
-                  <span role="columnheader">Rule</span>
                 </div>
                 {workflow.reservedRegions.map((region) => (
-                  <div className="exefs-row" key={region.regionId} role="row">
+                  <div className="exefs-row iv-screen-range-row" key={region.regionId} role="row">
                     <span role="cell">{region.label}</span>
                     <span role="cell">{region.offsetLabel}</span>
-                    <span role="cell">{region.rule}</span>
                   </div>
                 ))}
               </div>
@@ -22676,21 +22765,10 @@ function filterDynamaxAdventures(
       encounter.speciesId.toString(),
       encounter.form.toString(),
       encounter.level.toString(),
-      encounter.ballItem,
-      encounter.ballItemId.toString(),
       encounter.abilityLabel,
       encounter.ability.toString(),
       encounter.gigantamaxLabel,
       encounter.gigantamaxState.toString(),
-      encounter.versionLabel,
-      encounter.version.toString(),
-      encounter.shinyRollLabel,
-      encounter.shinyRoll.toString(),
-      encounter.isSingleCapture ? 'single capture' : 'repeat capture',
-      encounter.isStoryProgressGated ? 'story gated' : 'ungated',
-      encounter.singleCaptureFlagBlock,
-      encounter.uiMessageId,
-      encounter.otGender.toString(),
       encounter.ivSummary,
       formatDynamaxAdventureIvs(encounter),
       formatDynamaxAdventureMoves(encounter),
@@ -24039,6 +24117,56 @@ function getEditableDynamaxAdventureFieldValue(
   }
 }
 
+function getDynamaxAdventureVanillaRestoreChanges(encounter: DynamaxAdventureRecord) {
+  const vanilla = encounter.vanillaPokemon;
+  if (!vanilla) {
+    return [];
+  }
+
+  const restoreValues: Array<{ field: string; value: number | null }> = [
+    { field: giftSpeciesFieldName, value: vanilla.speciesId },
+    { field: formFieldName, value: vanilla.form },
+    { field: levelFieldName, value: vanilla.level },
+    { field: abilityFieldName, value: vanilla.ability },
+    {
+      field: dynamaxAdventureGigantamaxStateFieldName,
+      value: vanilla.gigantamaxState
+    },
+    {
+      field: staticEncounterMoveFieldNames[0],
+      value: vanilla.moves[0]?.moveId ?? 0
+    },
+    {
+      field: staticEncounterMoveFieldNames[1],
+      value: vanilla.moves[1]?.moveId ?? 0
+    },
+    {
+      field: staticEncounterMoveFieldNames[2],
+      value: vanilla.moves[2]?.moveId ?? 0
+    },
+    {
+      field: staticEncounterMoveFieldNames[3],
+      value: vanilla.moves[3]?.moveId ?? 0
+    },
+    {
+      field: dynamaxAdventureGuaranteedPerfectIvsFieldName,
+      value: vanilla.guaranteedPerfectIvs
+    },
+    { field: dynamaxAdventureIvFieldNames[0], value: vanilla.ivs.attack },
+    { field: dynamaxAdventureIvFieldNames[1], value: vanilla.ivs.defense },
+    { field: dynamaxAdventureIvFieldNames[2], value: vanilla.ivs.specialAttack },
+    { field: dynamaxAdventureIvFieldNames[3], value: vanilla.ivs.specialDefense },
+    { field: dynamaxAdventureIvFieldNames[4], value: vanilla.ivs.speed }
+  ];
+
+  return restoreValues
+    .filter(
+      ({ field, value }) =>
+        value !== null && getEditableDynamaxAdventureFieldValue(encounter, field) !== value
+    )
+    .map(({ field, value }) => ({ field, value: value!.toString() }));
+}
+
 function getItemFieldSaveLabel(field: ItemEditableField) {
   return `Save ${field.label.replace(/\s+price$/i, '')}`;
 }
@@ -24869,7 +24997,7 @@ function getIntegerDraftError(value: string) {
 function getSmartOptionMatches(value: string, options: EditableFieldOption[]) {
   const query = value.trim();
   if (query.length === 0) {
-    return options.slice(0, 100);
+    return options;
   }
 
   const normalizedQuery = query.toLocaleLowerCase();

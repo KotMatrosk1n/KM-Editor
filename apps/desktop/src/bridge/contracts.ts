@@ -1371,6 +1371,21 @@ export const dynamaxAdventureEditableFieldSchema = z.strictObject({
   valueKind: z.string()
 });
 
+export const dynamaxAdventurePokemonSnapshotSchema = z.strictObject({
+  ability: z.number().int().nonnegative(),
+  abilityLabel: z.string(),
+  form: z.number().int().nonnegative(),
+  gigantamaxLabel: z.string(),
+  gigantamaxState: z.number().int().nonnegative(),
+  guaranteedPerfectIvs: z.number().int().nonnegative(),
+  ivs: dynamaxAdventureIvsSchema,
+  ivSummary: z.string(),
+  level: z.number().int().nonnegative(),
+  moves: z.array(dynamaxAdventureMoveSchema),
+  species: z.string(),
+  speciesId: z.number().int().nonnegative()
+});
+
 export const dynamaxAdventureRecordSchema = z.strictObject({
   ability: z.number().int().nonnegative(),
   abilityLabel: z.string(),
@@ -1399,6 +1414,7 @@ export const dynamaxAdventureRecordSchema = z.strictObject({
   species: z.string(),
   speciesId: z.number().int().nonnegative(),
   uiMessageId: z.string(),
+  vanillaPokemon: dynamaxAdventurePokemonSnapshotSchema.nullable().default(null),
   version: z.number().int().nonnegative(),
   versionLabel: z.string()
 });
@@ -2754,6 +2770,9 @@ export type DynamaxAdventureEditableFieldOption = z.infer<
   typeof dynamaxAdventureEditableFieldOptionSchema
 >;
 export type DynamaxAdventureMoveRecord = z.infer<typeof dynamaxAdventureMoveSchema>;
+export type DynamaxAdventurePokemonSnapshot = z.infer<
+  typeof dynamaxAdventurePokemonSnapshotSchema
+>;
 export type DynamaxAdventureRecord = z.infer<typeof dynamaxAdventureRecordSchema>;
 export type DynamaxAdventuresWorkflow = z.infer<typeof dynamaxAdventuresWorkflowSchema>;
 export type ShopEditableField = z.infer<typeof shopEditableFieldSchema>;

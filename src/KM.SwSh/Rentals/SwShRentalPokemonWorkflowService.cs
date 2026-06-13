@@ -5,6 +5,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
+using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -269,14 +270,21 @@ public sealed class SwShRentalPokemonWorkflowService
 
     private static RentalLookupTables CreateEmptyLookupTables()
     {
-        return new RentalLookupTables([], [], [], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
+        return new RentalLookupTables([], new HashSet<int>(), [], [], new HashSet<int>(), SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShRentalPokemonEditableField> CreateEditableFields(RentalLookupTables lookupTables)
     {
-        var speciesOptions = CreateIndexedOptions(lookupTables.SpeciesNames, "Species");
+        var speciesOptions = SwShSpeciesAvailability.CreateSpeciesOptions(
+            lookupTables.SpeciesNames,
+            lookupTables.PresentSpeciesIds,
+            (value, label) => new SwShRentalPokemonEditableFieldOption(value, label));
         var itemOptions = CreateIndexedOptions(lookupTables.ItemNames, "Item");
-        var moveOptions = CreateIndexedOptions(lookupTables.MoveNames, "Move");
+        var moveOptions = SwShMoveAvailability.CreateMoveOptions(
+            lookupTables.MoveNames,
+            lookupTables.UsableMoveIds,
+            (value, label) => new SwShRentalPokemonEditableFieldOption(value, label),
+            includeNone: true);
 
         return BaseEditableFields
             .Select(field => field.Field switch
@@ -414,14 +422,22 @@ public sealed class SwShRentalPokemonWorkflowService
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
         var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
+        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
+        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new RentalLookupTables(
             speciesNames,
+            presentSpeciesIds,
             itemDisplayNames,
             moveNames,
+            usableMoveIds,
             abilityResolver,
-            CountSource(speciesNames) + CountSource(itemNames) + CountSource(moveNames));
+            CountSource(speciesNames)
+                + CountSource(itemNames)
+                + CountSource(moveNames)
+                + (presentSpeciesIds.Count > 0 ? 1 : 0)
+                + (usableMoveIds.Count > 0 ? 1 : 0));
     }
 
     private static IReadOnlyList<SwShRentalPokemonEditableFieldOption> CreateAbilityOptions(
@@ -665,8 +681,10 @@ public sealed class SwShRentalPokemonWorkflowService
 
     private sealed record RentalLookupTables(
         IReadOnlyList<string> SpeciesNames,
+        IReadOnlySet<int> PresentSpeciesIds,
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,
+        IReadOnlySet<int> UsableMoveIds,
         SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);
 }

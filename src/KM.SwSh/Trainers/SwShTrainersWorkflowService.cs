@@ -5,6 +5,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
+using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -696,9 +697,16 @@ public sealed class SwShTrainersWorkflowService
         }
 
         var trainerClassOptions = CreateIndexedOptions(names.TrainerClasses, "Class");
-        var speciesOptions = CreateIndexedOptions(names.SpeciesNames, "Species");
+        var speciesOptions = SwShSpeciesAvailability.CreateSpeciesOptions(
+            names.SpeciesNames,
+            names.PresentSpeciesIds,
+            (value, label) => new SwShTrainerEditableFieldOption(value, label));
         var itemOptions = CreateIndexedOptions(names.ItemNames, "Item");
-        var moveOptions = CreateIndexedOptions(names.MoveNames, "Move");
+        var moveOptions = SwShMoveAvailability.CreateMoveOptions(
+            names.MoveNames,
+            names.UsableMoveIds,
+            (value, label) => new SwShTrainerEditableFieldOption(value, label),
+            includeNone: true);
 
         return EditableFields
             .Select(field =>
@@ -895,13 +903,17 @@ public sealed class SwShTrainersWorkflowService
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
         var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
+        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
+        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
 
         return new TrainerLookupTables(
             LoadMessageTable(project, messageRoot, "trname.dat", diagnostics),
             LoadMessageTable(project, messageRoot, "trtype.dat", diagnostics),
             LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics),
+            presentSpeciesIds,
             itemDisplayNames,
             moveNames,
+            usableMoveIds,
             abilityResolver);
     }
 
@@ -1278,8 +1290,10 @@ public sealed class SwShTrainersWorkflowService
         IReadOnlyList<string> TrainerNames,
         IReadOnlyList<string> TrainerClasses,
         IReadOnlyList<string> SpeciesNames,
+        IReadOnlySet<int> PresentSpeciesIds,
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,
+        IReadOnlySet<int> UsableMoveIds,
         SwShPokemonAbilityOptionResolver AbilityResolver);
 
     private sealed record TrainerClassOwnership(

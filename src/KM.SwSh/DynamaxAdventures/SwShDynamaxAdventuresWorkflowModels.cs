@@ -36,6 +36,20 @@ public sealed record SwShDynamaxAdventureIvsRecord(
     int SpecialAttack,
     int SpecialDefense);
 
+public sealed record SwShDynamaxAdventurePokemonSnapshot(
+    int SpeciesId,
+    string Species,
+    int Form,
+    int Level,
+    int Ability,
+    string AbilityLabel,
+    int GigantamaxState,
+    string GigantamaxLabel,
+    IReadOnlyList<SwShDynamaxAdventureMoveRecord> Moves,
+    SwShDynamaxAdventureIvsRecord Ivs,
+    int GuaranteedPerfectIvs,
+    string IvSummary);
+
 public sealed record SwShDynamaxAdventureEntry(
     int EntryIndex,
     string Label,
@@ -68,6 +82,8 @@ public sealed record SwShDynamaxAdventureEntry(
 {
     public IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<SwShDynamaxAdventureEditableFieldOption>();
+
+    public SwShDynamaxAdventurePokemonSnapshot? VanillaPokemon { get; init; }
 }
 
 public sealed record SwShDynamaxAdventuresWorkflowStats(

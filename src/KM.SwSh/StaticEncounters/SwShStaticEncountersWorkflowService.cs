@@ -5,6 +5,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
+using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
@@ -322,14 +323,21 @@ public sealed class SwShStaticEncountersWorkflowService
 
     private static StaticEncounterLookupTables CreateEmptyLookupTables()
     {
-        return new StaticEncounterLookupTables([], [], [], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
+        return new StaticEncounterLookupTables([], new HashSet<int>(), [], [], new HashSet<int>(), SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShStaticEncounterEditableField> CreateEditableFields(StaticEncounterLookupTables lookupTables)
     {
-        var speciesOptions = CreateIndexedOptions(lookupTables.SpeciesNames, "Species");
+        var speciesOptions = SwShSpeciesAvailability.CreateSpeciesOptions(
+            lookupTables.SpeciesNames,
+            lookupTables.PresentSpeciesIds,
+            (value, label) => new SwShStaticEncounterEditableFieldOption(value, label));
         var itemOptions = CreateIndexedOptions(lookupTables.ItemNames, "Item");
-        var moveOptions = CreateIndexedOptions(lookupTables.MoveNames, "Move");
+        var moveOptions = SwShMoveAvailability.CreateMoveOptions(
+            lookupTables.MoveNames,
+            lookupTables.UsableMoveIds,
+            (value, label) => new SwShStaticEncounterEditableFieldOption(value, label),
+            includeNone: true);
 
         return BaseEditableFields
             .Select(field => field.Field switch
@@ -480,14 +488,22 @@ public sealed class SwShStaticEncountersWorkflowService
         var itemNames = LoadMessageTable(project, messageRoot, "itemname.dat", diagnostics);
         var moveNames = LoadMessageTable(project, messageRoot, "wazaname.dat", diagnostics);
         var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
+        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
+        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new StaticEncounterLookupTables(
             speciesNames,
+            presentSpeciesIds,
             itemDisplayNames,
             moveNames,
+            usableMoveIds,
             abilityResolver,
-            CountSource(speciesNames) + CountSource(itemNames) + CountSource(moveNames));
+            CountSource(speciesNames)
+                + CountSource(itemNames)
+                + CountSource(moveNames)
+                + (presentSpeciesIds.Count > 0 ? 1 : 0)
+                + (usableMoveIds.Count > 0 ? 1 : 0));
     }
 
     private static IReadOnlyList<SwShStaticEncounterEditableFieldOption> CreateAbilityOptions(
@@ -726,8 +742,10 @@ public sealed class SwShStaticEncountersWorkflowService
 
     private sealed record StaticEncounterLookupTables(
         IReadOnlyList<string> SpeciesNames,
+        IReadOnlySet<int> PresentSpeciesIds,
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,
+        IReadOnlySet<int> UsableMoveIds,
         SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);
 }

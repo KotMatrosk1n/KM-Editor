@@ -991,7 +991,28 @@ public static class SwShBridgeMapper
                 ProjectBridgeMapper.ToDto(encounter.Provenance.FileState)))
         {
             AbilityOptions = encounter.AbilityOptions.Select(ToDto).ToArray(),
+            VanillaPokemon = encounter.VanillaPokemon is null
+                ? null
+                : ToDto(encounter.VanillaPokemon),
         };
+    }
+
+    private static DynamaxAdventurePokemonSnapshotDto ToDto(
+        SwShDynamaxAdventurePokemonSnapshot snapshot)
+    {
+        return new DynamaxAdventurePokemonSnapshotDto(
+            snapshot.SpeciesId,
+            snapshot.Species,
+            snapshot.Form,
+            snapshot.Level,
+            snapshot.Ability,
+            snapshot.AbilityLabel,
+            snapshot.GigantamaxState,
+            snapshot.GigantamaxLabel,
+            snapshot.Moves.Select(ToDto).ToArray(),
+            ToDto(snapshot.Ivs),
+            snapshot.GuaranteedPerfectIvs,
+            snapshot.IvSummary);
     }
 
     private static DynamaxAdventureMoveRecordDto ToDto(SwShDynamaxAdventureMoveRecord move)

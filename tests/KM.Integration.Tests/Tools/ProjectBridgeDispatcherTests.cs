@@ -291,7 +291,7 @@ public sealed class ProjectBridgeDispatcherTests
             option => option.Value == 65 && option.Label == "065 Overgrow");
         Assert.Contains(
             response.Payload.Workflow.EditableFields.Single(field => field.Field == "hatchedSpecies").Options,
-            option => option.Value == 2 && option.Label == "002 Ivysaur");
+            option => option.Value == 1 && option.Label == "001 Bulbasaur");
         Assert.Contains(
             response.Payload.Workflow.EvolutionMethodOptions,
             option => option.Value == 4

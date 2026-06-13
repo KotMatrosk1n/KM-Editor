@@ -5,6 +5,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Items;
+using KM.SwSh.Moves;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -387,20 +388,27 @@ public sealed class SwShPokemonWorkflowService
         var itemDisplayNames = CreateItemDisplayNames(itemNames, moveNames, itemRecords);
         var itemOptions = CreateIndexedOptions(itemDisplayNames, "Item");
         var evolutionItemOptions = CreateEvolutionItemOptions(itemRecords, itemDisplayNames);
+        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
         var learnsets = LoadLearnsets(project, diagnostics);
         var evolutions = LoadEvolutions(project, diagnostics);
         var displaySpeciesNames = speciesNames.Count > 0 ? speciesNames : Array.Empty<string>();
-        var evolutionMethodOptions = CreateEvolutionMethodOptions(
-            itemOptions,
-            evolutionItemOptions,
-            itemRecords.Count > 0,
+        var learnsetMoveOptions = SwShMoveAvailability.CreateMoveOptions(
             moveNames,
-            displaySpeciesNames);
-        var learnsetMoveOptions = CreateIndexedOptions(moveNames, "Move");
+            usableMoveIds,
+            CreateOption);
 
         try
         {
             var personalTable = SwShPersonalTable.Parse(File.ReadAllBytes(personalSource.AbsolutePath));
+            var presentSpeciesIds = SwShSpeciesAvailability.CreatePresentSpeciesIds(personalTable.Records);
+            var evolutionMethodOptions = CreateEvolutionMethodOptions(
+                itemOptions,
+                evolutionItemOptions,
+                itemRecords.Count > 0,
+                moveNames,
+                usableMoveIds,
+                displaySpeciesNames,
+                presentSpeciesIds);
             var provenance = CreateProvenance(personalSource.GraphEntry);
             var formOwners = CreateFormOwnerLookup(personalTable.Records);
             var pokemon = personalTable.Records
@@ -423,6 +431,7 @@ public sealed class SwShPokemonWorkflowService
                 + (itemRecords.Count > 0 ? 1 : 0)
                 + (abilityNames.Count > 0 ? 1 : 0)
                 + (moveNames.Count > 0 ? 1 : 0)
+                + (usableMoveIds.Count > 0 ? 1 : 0)
                 + (learnsets.Count > 0 ? 1 : 0)
                 + (evolutions.Count > 0 ? evolutions.Count : 0);
 
@@ -432,7 +441,7 @@ public sealed class SwShPokemonWorkflowService
                 sourceFileCount,
                 evolutionMethodOptions,
                 learnsetMoveOptions,
-                CreateEditableFields(itemDisplayNames, abilityNames, displaySpeciesNames),
+                CreateEditableFields(itemDisplayNames, abilityNames, displaySpeciesNames, presentSpeciesIds),
                 diagnostics);
         }
         catch (InvalidDataException exception)
@@ -645,7 +654,7 @@ public sealed class SwShPokemonWorkflowService
             summary,
             pokemon,
             sourceFileCount,
-            CreateEvolutionMethodOptions([], [], false, [], []),
+            CreateEvolutionMethodOptions([], [], false, [], new HashSet<int>(), [], new HashSet<int>()),
             [],
             EditableFields,
             diagnostics);
@@ -806,7 +815,9 @@ public sealed class SwShPokemonWorkflowService
         IReadOnlyList<SwShPokemonEditableFieldOption> evolutionItemOptions,
         bool hasEvolutionItemMetadata,
         IReadOnlyList<string> moveNames,
-        IReadOnlyList<string> speciesNames)
+        IReadOnlySet<int> usableMoveIds,
+        IReadOnlyList<string> speciesNames,
+        IReadOnlySet<int> presentSpeciesIds)
     {
         return EvolutionMethods
             .Select(method => new SwShPokemonEvolutionMethodOption(
@@ -820,7 +831,9 @@ public sealed class SwShPokemonWorkflowService
                     evolutionItemOptions,
                     hasEvolutionItemMetadata,
                     moveNames,
-                    speciesNames)))
+                    usableMoveIds,
+                    speciesNames,
+                    presentSpeciesIds)))
             .ToArray();
     }
 
@@ -830,15 +843,23 @@ public sealed class SwShPokemonWorkflowService
         IReadOnlyList<SwShPokemonEditableFieldOption> evolutionItemOptions,
         bool hasEvolutionItemMetadata,
         IReadOnlyList<string> moveNames,
-        IReadOnlyList<string> speciesNames)
+        IReadOnlySet<int> usableMoveIds,
+        IReadOnlyList<string> speciesNames,
+        IReadOnlySet<int> presentSpeciesIds)
     {
         return method.ArgumentKind switch
         {
             EvolutionArgumentKindItem => IsUseItemEvolutionMethod(method.Value) && hasEvolutionItemMetadata
                 ? evolutionItemOptions
                 : itemOptions,
-            EvolutionArgumentKindMove => CreateIndexedOptions(moveNames, "Move"),
-            EvolutionArgumentKindSpecies => CreateIndexedOptions(speciesNames, "Species"),
+            EvolutionArgumentKindMove => SwShMoveAvailability.CreateMoveOptions(
+                moveNames,
+                usableMoveIds,
+                CreateOption),
+            EvolutionArgumentKindSpecies => SwShSpeciesAvailability.CreateSpeciesOptions(
+                speciesNames,
+                presentSpeciesIds,
+                CreateOption),
             EvolutionArgumentKindType => TypeOptions,
             EvolutionArgumentKindValue or EvolutionArgumentKindVersion => ByteArgumentOptions,
             _ => [],
@@ -1104,11 +1125,15 @@ public sealed class SwShPokemonWorkflowService
     private static IReadOnlyList<SwShPokemonEditableField> CreateEditableFields(
         IReadOnlyList<string> itemNames,
         IReadOnlyList<string> abilityNames,
-        IReadOnlyList<string> speciesNames)
+        IReadOnlyList<string> speciesNames,
+        IReadOnlySet<int> presentSpeciesIds)
     {
         var itemOptions = CreateIndexedOptions(itemNames, "Item");
         var abilityOptions = CreateIndexedOptions(abilityNames, "Ability");
-        var speciesOptions = CreateIndexedOptions(speciesNames, "Species");
+        var speciesOptions = SwShSpeciesAvailability.CreateSpeciesOptions(
+            speciesNames,
+            presentSpeciesIds,
+            CreateOption);
 
         return EditableFields
             .Select(field =>

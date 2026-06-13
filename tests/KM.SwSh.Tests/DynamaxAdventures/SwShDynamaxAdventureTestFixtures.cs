@@ -3,6 +3,7 @@
 using KM.Formats.SwSh;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Tests.Items;
+using System.Buffers.Binary;
 
 namespace KM.SwSh.Tests.DynamaxAdventures;
 
@@ -69,6 +70,33 @@ internal static class SwShDynamaxAdventureTestFixtures
         ]);
     }
 
+    public static byte[] CreateCompatibleMain()
+    {
+        var archive = CreateArchive();
+        var text = new byte[SwShDynamaxAdventuresMainPatcher.DaiGigantamaxMismatchBranchOffset + sizeof(uint)];
+        var ro = new byte[SwShDynamaxAdventuresMainPatcher.SummaryOffset
+            + (archive.Entries.Count * SwShDynamaxAdventuresMainPatcher.SummaryEntrySize)];
+
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalSpeciesPresentMismatchBranchOffset, 0x1400001C);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalSpeciesMissingMismatchBranchOffset, 0x540002E1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalFormPresentMismatchBranchOffset, 0x1400000A);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalFormMissingMismatchBranchOffset, 0x540000A1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalGigantamaxMismatchBranchOffset, 0x35000068);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestSpeciesPresentMismatchBranchOffset, 0x1400001C);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestSpeciesMissingMismatchBranchOffset, 0x540002E1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestFormPresentMismatchBranchOffset, 0x1400000A);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestFormMissingMismatchBranchOffset, 0x540000A1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestGigantamaxMismatchBranchOffset, 0x35000068);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiSpeciesPresentMismatchBranchOffset, 0x1400001C);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiSpeciesMissingMismatchBranchOffset, 0x540002E1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiFormPresentMismatchBranchOffset, 0x1400000A);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiFormMissingMismatchBranchOffset, 0x540000A1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiGigantamaxMismatchBranchOffset, 0x35000068);
+        SwShDynamaxAdventuresMainPatcher.WriteSummary(ro, archive.Entries);
+
+        return CreateNso(text, ro, []);
+    }
+
     private static byte[] CreateTextTable(int highestIndex, params (int index, string value)[] entries)
     {
         var lines = Enumerable.Range(0, highestIndex + 1)
@@ -81,5 +109,48 @@ internal static class SwShDynamaxAdventureTestFixtures
         }
 
         return SwShGameTextFile.Write(lines);
+    }
+
+    private static void WriteInstruction(byte[] text, int offset, uint instruction)
+    {
+        BinaryPrimitives.WriteUInt32LittleEndian(text.AsSpan(offset, sizeof(uint)), instruction);
+    }
+
+    private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data)
+    {
+        var textOffset = SwShNsoFile.HeaderSize;
+        var roOffset = Align(textOffset + text.Length, 0x10);
+        var dataOffset = Align(roOffset + ro.Length, 0x10);
+        var output = new byte[Align(dataOffset + data.Length, 0x10)];
+
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), SwShNsoFile.Magic);
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x04), 1);
+        WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
+        WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
+        WriteSegmentHeader(output, 0x30, dataOffset, text.Length + ro.Length, data.Length);
+        output.AsSpan(0x40, 0x20).Fill(0xAB);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x68), data.Length);
+        SwShNsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
+        SwShNsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
+        SwShNsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
+        text.CopyTo(output.AsSpan(textOffset));
+        ro.CopyTo(output.AsSpan(roOffset));
+        data.CopyTo(output.AsSpan(dataOffset));
+
+        return output;
+    }
+
+    private static void WriteSegmentHeader(byte[] output, int offset, int fileOffset, int memoryOffset, int decompressedSize)
+    {
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset), fileOffset);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset + 0x04), memoryOffset);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset + 0x08), decompressedSize);
+    }
+
+    private static int Align(int value, int alignment)
+    {
+        return (value + alignment - 1) / alignment * alignment;
     }
 }
