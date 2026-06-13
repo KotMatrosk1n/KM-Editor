@@ -5,6 +5,13 @@ using KM.SwSh.Workflows;
 
 namespace KM.SwSh.ModMerger;
 
+public static class SwShModMergerMergeModes
+{
+    public const string Smart = "smart";
+    public const string PreferMod1 = "preferMod1";
+    public const string PreferMod2 = "preferMod2";
+}
+
 public sealed record SwShModMergerFileRecord(
     string RelativePath,
     string Name,
@@ -45,6 +52,7 @@ public sealed record SwShModMergerFilePreviewRecord(
     string OutputRelativePath,
     string SupportKind,
     string Status,
+    string MergeKind,
     string Summary,
     int Directory1ChangeCount,
     int Directory2ChangeCount,
@@ -53,6 +61,7 @@ public sealed record SwShModMergerFilePreviewRecord(
 public sealed record SwShModMergerPreview(
     bool CanApply,
     string Status,
+    string MergeMode,
     int SelectedFileCount,
     int ReadyFileCount,
     int ConflictFileCount,

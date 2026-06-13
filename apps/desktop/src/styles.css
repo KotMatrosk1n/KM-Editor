@@ -2925,6 +2925,49 @@ h2 {
   font-weight: 800;
 }
 
+.mod-merger-mode-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.mod-merger-mode-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 12px;
+  color: var(--color-text-soft);
+  text-align: left;
+  background: #0d1424;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.mod-merger-mode-option:hover,
+.mod-merger-mode-selected {
+  color: var(--color-text);
+  background: #101828;
+  border-color: rgb(214 168 66 / 38%);
+}
+
+.mod-merger-mode-option span {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.mod-merger-mode-option small {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .mod-merger-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(120px, 1fr));
@@ -3066,7 +3109,7 @@ h2 {
 
 .mod-merger-preview-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1.2fr) minmax(130px, 0.45fr) minmax(84px, 0.35fr) minmax(220px, 1.3fr);
+  grid-template-columns: minmax(220px, 1.2fr) minmax(130px, 0.45fr) minmax(280px, 1.5fr) minmax(170px, 0.7fr);
   gap: 12px;
   align-items: center;
   min-height: 40px;
@@ -3082,6 +3125,43 @@ h2 {
 .mod-merger-preview-row span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.mod-merger-technical-details {
+  min-width: 0;
+}
+
+.mod-merger-technical-details summary,
+.mod-merger-conflict-values summary {
+  color: var(--color-gold);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.mod-merger-technical-details dl {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+}
+
+.mod-merger-technical-details div {
+  display: grid;
+  gap: 2px;
+}
+
+.mod-merger-technical-details dt {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.mod-merger-technical-details dd {
+  margin: 0;
+  color: var(--color-text-soft);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .mod-merger-preview-heading {
@@ -3131,6 +3211,14 @@ h2 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+  padding: 10px;
+  background: #0b1120;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.mod-merger-conflict-values summary {
+  grid-column: 1 / -1;
 }
 
 .mod-merger-conflict-values div {
@@ -4218,6 +4306,7 @@ input {
   .flagwork-layout,
   .royal-candy-layout,
   .mod-merger-directory-grid,
+  .mod-merger-mode-group,
   .mod-merger-file-lists,
   .mod-merger-conflict-values {
     grid-template-columns: 1fr;

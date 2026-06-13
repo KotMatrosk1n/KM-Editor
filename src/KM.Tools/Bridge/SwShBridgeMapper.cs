@@ -1333,6 +1333,7 @@ public static class SwShBridgeMapper
         return new ModMergerPreviewDto(
             preview.CanApply,
             preview.Status,
+            preview.MergeMode,
             preview.SelectedFileCount,
             preview.ReadyFileCount,
             preview.ConflictFileCount,
@@ -1349,6 +1350,7 @@ public static class SwShBridgeMapper
             file.OutputRelativePath,
             file.SupportKind,
             file.Status,
+            file.MergeKind,
             file.Summary,
             file.Directory1ChangeCount,
             file.Directory2ChangeCount,

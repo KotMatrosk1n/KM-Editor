@@ -998,7 +998,8 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.SelectedDirectory2Files,
             request.Payload.Resolutions.Select(resolution => new SwShModMergerConflictResolution(
                 resolution.ConflictId,
-                resolution.Source)).ToArray());
+                resolution.Source)).ToArray(),
+            request.Payload.MergeMode);
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -1015,7 +1016,8 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.SelectedDirectory2Files,
             request.Payload.Resolutions.Select(resolution => new SwShModMergerConflictResolution(
                 resolution.ConflictId,
-                resolution.Source)).ToArray());
+                resolution.Source)).ToArray(),
+            request.Payload.MergeMode);
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
