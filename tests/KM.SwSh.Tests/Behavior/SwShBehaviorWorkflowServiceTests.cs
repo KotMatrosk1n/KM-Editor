@@ -62,4 +62,36 @@ public sealed class SwShBehaviorWorkflowServiceTests
                 && diagnostic.Domain == "workflow.behavior"
                 && diagnostic.Expected == SwShBehaviorWorkflowService.BehaviorDataPath);
     }
+
+    [Fact]
+    public void LoadLabelsRawBehaviorFieldsWithMappingStatus()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShBehaviorTestFixtures.WriteBaseBehavior(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShBehaviorWorkflowService().Load(project);
+
+        Assert.DoesNotContain(
+            workflow.Fields,
+            field => field.Label.StartsWith("Behavior Parameter", StringComparison.Ordinal));
+
+        var waterOffset = workflow.Fields.Single(field => field.Field == SwShSymbolBehaviorArchive.Field21);
+        Assert.Equal("Likely Water Height Offset", waterOffset.Label);
+        Assert.Equal("Model / Offset", waterOffset.Group);
+        Assert.True(waterOffset.IsReadOnly);
+        Assert.Contains("GetOffsetWaterParam", waterOffset.Description);
+
+        var watchDistance = workflow.Fields.Single(field => field.Field == SwShSymbolBehaviorArchive.Field44);
+        Assert.Equal("Likely Watch Distance", watchDistance.Label);
+        Assert.Equal("Watch / Reaction", watchDistance.Group);
+        Assert.True(watchDistance.IsReadOnly);
+        Assert.Contains("watch-out distance", watchDistance.Description);
+
+        var unusedDefault = workflow.Fields.Single(field => field.Field == SwShSymbolBehaviorArchive.Field08);
+        Assert.Equal("Unused Default 08", unusedDefault.Label);
+        Assert.Equal("Unused Defaults", unusedDefault.Group);
+        Assert.True(unusedDefault.IsReadOnly);
+    }
 }
