@@ -48,4 +48,4 @@ Installer and updater release builds also need Tauri updater signing secrets. Se
 - [Desktop app notes](apps/desktop/README.md)
 - [Backend test notes](tests/README.md)
 
-Catch Cap Editor is documented as work in progress and is hidden in the release UI until its gameplay behavior is verified. See the [Catch Cap Editor wiki page](https://github.com/KotMatrosk1n/KM-Editor/wiki/Catch-Cap-Editor).
+Catch Cap Editor and IV Screen are available as Advanced Editors with documented ExeFS ownership rules. Rental Pokemon and Dynamax Adventures remain hidden as work in progress until their runtime safety work is finished. See the [Hook Architecture wiki page](https://github.com/KotMatrosk1n/KM-Editor/wiki/Hook-Architecture), [Rental Pokemon Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Rental-Pokemon-Editor), and [Dynamax Adventures Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Dynamax-Adventures-Editor).
