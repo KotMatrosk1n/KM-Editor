@@ -70,6 +70,30 @@ describe('App', () => {
     expect(getPokemonSpriteId('Toxtricity (Low Key) (Gigantamax)')).toBe('toxtricity-gmax');
   });
 
+  it('normalizes gendered Nidoran sprite ids to bundled static sprites', () => {
+    expect(getPokemonSpriteId('Nidoran♀')).toBe('nidoranf');
+    expect(getPokemonSpriteId('Nidoran♂')).toBe('nidoranm');
+    expect(getPokemonSpriteId('Nidoran-F')).toBe('nidoranf');
+    expect(getPokemonSpriteId('Nidoran-M')).toBe('nidoranm');
+    expect(getPokemonSpriteId('Nidoran (Female)')).toBe('nidoranf');
+    expect(getPokemonSpriteId('Nidoran (Male)')).toBe('nidoranm');
+    expect(getPokemonSpriteId('Nidorina')).toBe('nidorina');
+  });
+
+  it('normalizes punctuation and accent Pokemon names to bundled sprite ids', () => {
+    expect(getPokemonSpriteId('Flabébé')).toBe('flabebe');
+    expect(getPokemonSpriteId('Ho-Oh')).toBe('hooh');
+    expect(getPokemonSpriteId('Mime Jr.')).toBe('mimejr');
+    expect(getPokemonSpriteId('Mr. Mime')).toBe('mrmime');
+    expect(getPokemonSpriteId('Mr. Mime (Galarian)')).toBe('mrmime-galar');
+    expect(getPokemonSpriteId('Mr. Rime')).toBe('mrrime');
+    expect(getPokemonSpriteId('Tapu Bulu')).toBe('tapubulu');
+    expect(getPokemonSpriteId('Tapu Fini')).toBe('tapufini');
+    expect(getPokemonSpriteId('Tapu Koko')).toBe('tapukoko');
+    expect(getPokemonSpriteId('Tapu Lele')).toBe('tapulele');
+    expect(getPokemonSpriteId('Type: Null')).toBe('typenull');
+  });
+
   it('falls back from form-specific Pokemon sprite ids to the base species id', () => {
     expect(getPokemonSpriteIds('Unfezant (Male)')).toEqual(['unfezant-male', 'unfezant']);
   });
@@ -902,6 +926,79 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Changes' }));
 
     expect(screen.getByText('Set Bulbasaur evolution slot 0 to species 2 at level 32.')).toBeInTheDocument();
+  });
+
+  it('shows evolution species names when the target is outside filtered species options', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const pokemonResponse = await baseBridge.loadPokemonWorkflow({
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        saveFilePath: null,
+        selectedGame: 'sword'
+      }
+    });
+    const bulbasaur = pokemonResponse.workflow.pokemon.find((pokemon) => pokemon.personalId === 1)!;
+    const venusaur = {
+      ...bulbasaur,
+      evolutions: [],
+      name: 'Venusaur',
+      personalId: 3,
+      speciesId: 3
+    };
+    const user = userEvent.setup();
+
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadPokemonWorkflow: async () => ({
+            workflow: {
+              ...pokemonResponse.workflow,
+              editableFields: pokemonResponse.workflow.editableFields.map((field) =>
+                field.field === 'hatchedSpecies'
+                  ? {
+                      ...field,
+                      options: field.options.filter((option) => option.value !== 3)
+                    }
+                  : field
+              ),
+              pokemon: [
+                {
+                  ...bulbasaur,
+                  evolutions: [
+                    {
+                      ...bulbasaur.evolutions[0]!,
+                      species: 3
+                    }
+                  ]
+                },
+                ...pokemonResponse.workflow.pokemon.filter(
+                  (pokemon) => pokemon.personalId !== bulbasaur.personalId
+                ),
+                venusaur
+              ]
+            }
+          })
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+
+    const evolutionsBlock = await screen
+      .findByRole('heading', { level: 4, name: 'Evolutions' })
+      .then((heading) => heading.closest('.inspector-block') as HTMLElement | null);
+    expect(evolutionsBlock).not.toBeNull();
+    expect(within(evolutionsBlock!).getByRole('button', { name: /003 Venusaur/ })).toBeInTheDocument();
+    expect(within(evolutionsBlock!).queryByText('Species 3')).not.toBeInTheDocument();
+    expect(within(evolutionsBlock!).getByLabelText('Species')).toHaveDisplayValue('003 Venusaur');
   });
 
   it('keeps Pokemon evolution row drafts when switching rows until Save Changes', async () => {
@@ -5038,12 +5135,11 @@ function createMockProjectBridge(
       {
         field: 'battleType',
         label: 'Battle type',
-        maximumValue: 2,
+        maximumValue: 1,
         minimumValue: 0,
         options: [
           { label: '0 Singles', value: 0 },
-          { label: '1 Doubles', value: 1 },
-          { label: '2 Multi', value: 2 }
+          { label: '1 Doubles', value: 1 }
         ],
         valueKind: 'integer'
       },

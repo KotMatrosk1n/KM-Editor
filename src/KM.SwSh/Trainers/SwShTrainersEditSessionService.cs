@@ -761,7 +761,6 @@ public sealed class SwShTrainersEditSessionService
                 {
                     0 => "Singles",
                     1 => "Doubles",
-                    2 => "Multi",
                     _ => $"Mode {value}",
                 },
             },

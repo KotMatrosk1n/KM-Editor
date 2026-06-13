@@ -61,6 +61,7 @@ public sealed class SwShTrainersWorkflowService
     public const string PreferredLanguage = "English";
 
     private const string MessageRootPath = "romfs/bin/message";
+    private const int MaximumEditableBattleMode = 1;
 
     private static readonly Regex DigitsRegex = new("(\\d+)(?!.*\\d)", RegexOptions.Compiled);
 
@@ -68,7 +69,6 @@ public sealed class SwShTrainersWorkflowService
     [
         new SwShTrainerEditableFieldOption(0, "0 Singles"),
         new SwShTrainerEditableFieldOption(1, "1 Doubles"),
-        new SwShTrainerEditableFieldOption(2, "2 Multi"),
     ];
 
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BooleanOptions =
@@ -174,7 +174,7 @@ public sealed class SwShTrainersWorkflowService
             "Battle type",
             "integer",
             0,
-            SwShTrainerDataFile.MaximumBattleMode,
+            MaximumEditableBattleMode,
             BattleTypeOptions),
         new SwShTrainerEditableField(
             TrainerItem1IdField,
@@ -1127,7 +1127,6 @@ public sealed class SwShTrainersWorkflowService
         {
             0 => "Singles",
             1 => "Doubles",
-            2 => "Multi",
             _ => $"Mode {mode}",
         };
     }

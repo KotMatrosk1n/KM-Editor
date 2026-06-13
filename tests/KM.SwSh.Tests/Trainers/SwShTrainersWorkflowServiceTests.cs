@@ -85,6 +85,11 @@ public sealed class SwShTrainersWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.TrainerClassIdField).Options,
             option => option.Value == 5 && option.Label == "005 Pokemon Trainer");
+        var battleTypeField = workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.BattleTypeField);
+        Assert.Equal(1, battleTypeField.MaximumValue);
+        Assert.Equal(
+            [(0, "0 Singles"), (1, "1 Doubles")],
+            battleTypeField.Options.Select(option => (option.Value, option.Label)));
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShTrainersWorkflowService.ClassBallIdField).Options,
             option => option.Value == 4 && option.Label == "4 Poke Ball");
