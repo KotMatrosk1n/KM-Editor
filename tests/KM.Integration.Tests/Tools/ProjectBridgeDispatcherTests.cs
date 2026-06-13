@@ -10,6 +10,7 @@ using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Items;
 using KM.Api.IvScreen;
+using KM.Api.ModMerger;
 using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
@@ -2583,6 +2584,63 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchModMergerStagesAndAppliesMatchingRomFsFiles()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        const string relativePath = "romfs/bin/test.bin";
+        var modDirectory1 = Directory.CreateDirectory(Path.Combine(temp.RootPath, "mod-1")).FullName;
+        var modDirectory2 = Directory.CreateDirectory(Path.Combine(temp.RootPath, "mod-2")).FullName;
+        temp.WriteBaseRomFsFile("bin/test.bin", [0, 0, 0]);
+        WriteBinaryFile(modDirectory1, relativePath, [1, 0, 0]);
+        WriteBinaryFile(modDirectory2, relativePath, [0, 2, 0]);
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loadResponse = DeserializeResponse<LoadModMergerWorkflowResponse>(
+            dispatcher.Dispatch(SerializeRequest(
+                KmCommandNames.LoadModMergerWorkflow,
+                new LoadModMergerWorkflowRequest(temp.Paths, modDirectory1, modDirectory2),
+                requestId: "request-mod-merger-load")));
+        Assert.Null(loadResponse.Error);
+        Assert.NotNull(loadResponse.Payload);
+        Assert.Equal(1, loadResponse.Payload.Workflow.Stats.MatchingFileCount);
+
+        var stageResponse = DeserializeResponse<StageModMergeResponse>(
+            dispatcher.Dispatch(SerializeRequest(
+                KmCommandNames.StageModMerge,
+                new StageModMergeRequest(
+                    temp.Paths,
+                    modDirectory1,
+                    modDirectory2,
+                    [relativePath],
+                    [relativePath],
+                    []),
+                requestId: "request-mod-merger-stage")));
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+        Assert.True(stageResponse.Payload.Preview.CanApply);
+        Assert.Empty(stageResponse.Payload.Preview.Conflicts);
+
+        var applyResponse = DeserializeResponse<ApplyModMergeResponse>(
+            dispatcher.Dispatch(SerializeRequest(
+                KmCommandNames.ApplyModMerge,
+                new ApplyModMergeRequest(
+                    temp.Paths,
+                    modDirectory1,
+                    modDirectory2,
+                    [relativePath],
+                    [relativePath],
+                    []),
+                requestId: "request-mod-merger-apply")));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.Equal([relativePath], applyResponse.Payload.WrittenFiles);
+        Assert.Equal(
+            [1, 2, 0],
+            File.ReadAllBytes(Path.Combine(temp.OutputRootPath, "romfs", "bin", "test.bin")));
+    }
+
+    [Fact]
     public void DispatchUpdateItemFieldReturnsPendingEditSession()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -3116,6 +3174,13 @@ public sealed class ProjectBridgeDispatcherTests
         return JsonSerializer.Serialize(
             new BridgeRequest<TPayload>(command, payload, RequestId: requestId),
             BridgeJson.SerializerOptions);
+    }
+
+    private static void WriteBinaryFile(string rootPath, string relativePath, byte[] contents)
+    {
+        var path = Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, contents);
     }
 
     private static byte[] CreateNpdm(ulong titleId)

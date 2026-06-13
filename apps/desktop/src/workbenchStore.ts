@@ -65,6 +65,7 @@ export type WorkbenchSection =
   | 'royalCandy'
   | 'startingItems'
   | 'spreadsheetImport'
+  | 'modMerger'
   | 'changes'
   | 'settings';
 

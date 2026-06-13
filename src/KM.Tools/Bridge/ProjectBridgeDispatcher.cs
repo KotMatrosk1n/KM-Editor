@@ -12,6 +12,7 @@ using KM.Api.Flagwork;
 using KM.Api.Gifts;
 using KM.Api.Items;
 using KM.Api.IvScreen;
+using KM.Api.ModMerger;
 using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
@@ -40,6 +41,7 @@ using KM.SwSh.ExeFs;
 using KM.SwSh.Gifts;
 using KM.SwSh.Items;
 using KM.SwSh.IvScreen;
+using KM.SwSh.ModMerger;
 using KM.SwSh.Moves;
 using KM.SwSh.Placement;
 using KM.SwSh.Pokemon;
@@ -80,6 +82,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShStartingItemsEditSessionService startingItemsEditSessionService;
     private readonly SwShShopsEditSessionService shopsEditSessionService;
     private readonly SwShSpreadsheetImportExecutionService spreadsheetImportExecutionService;
+    private readonly SwShModMergerWorkflowService modMergerWorkflowService;
     private readonly SwShStaticEncountersEditSessionService staticEncountersEditSessionService;
     private readonly SwShTextEditSessionService textEditSessionService;
     private readonly SwShTrainersEditSessionService trainersEditSessionService;
@@ -107,6 +110,7 @@ public sealed class ProjectBridgeDispatcher
         SwShStartingItemsEditSessionService? startingItemsEditSessionService = null,
         SwShShopsEditSessionService? shopsEditSessionService = null,
         SwShSpreadsheetImportExecutionService? spreadsheetImportExecutionService = null,
+        SwShModMergerWorkflowService? modMergerWorkflowService = null,
         SwShStaticEncountersEditSessionService? staticEncountersEditSessionService = null,
         SwShTextEditSessionService? textEditSessionService = null,
         SwShTrainersEditSessionService? trainersEditSessionService = null,
@@ -133,11 +137,14 @@ public sealed class ProjectBridgeDispatcher
         this.startingItemsEditSessionService = startingItemsEditSessionService ?? new SwShStartingItemsEditSessionService(this.projectWorkspaceService);
         this.shopsEditSessionService = shopsEditSessionService ?? new SwShShopsEditSessionService(this.projectWorkspaceService);
         this.spreadsheetImportExecutionService = spreadsheetImportExecutionService ?? new SwShSpreadsheetImportExecutionService(this.projectWorkspaceService);
+        this.modMergerWorkflowService = modMergerWorkflowService ?? new SwShModMergerWorkflowService(this.projectWorkspaceService);
         this.staticEncountersEditSessionService = staticEncountersEditSessionService ?? new SwShStaticEncountersEditSessionService(this.projectWorkspaceService);
         this.textEditSessionService = textEditSessionService ?? new SwShTextEditSessionService(this.projectWorkspaceService);
         this.trainersEditSessionService = trainersEditSessionService ?? new SwShTrainersEditSessionService(this.projectWorkspaceService);
         this.tradePokemonEditSessionService = tradePokemonEditSessionService ?? new SwShTradePokemonEditSessionService(this.projectWorkspaceService);
-        this.swShWorkflowService = swShWorkflowService ?? new SwShWorkflowService(this.projectWorkspaceService);
+        this.swShWorkflowService = swShWorkflowService ?? new SwShWorkflowService(
+            this.projectWorkspaceService,
+            modMergerWorkflowService: this.modMergerWorkflowService);
     }
 
     public string Dispatch(string requestJson)
@@ -212,6 +219,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.StageStartingItems => DispatchStageStartingItems(requestJson),
                 KmCommandNames.LoadSpreadsheetImportWorkflow => DispatchLoadSpreadsheetImportWorkflow(requestJson),
                 KmCommandNames.PreviewSpreadsheetImport => DispatchPreviewSpreadsheetImport(requestJson),
+                KmCommandNames.LoadModMergerWorkflow => DispatchLoadModMergerWorkflow(requestJson),
+                KmCommandNames.StageModMerge => DispatchStageModMerge(requestJson),
+                KmCommandNames.ApplyModMerge => DispatchApplyModMerge(requestJson),
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
@@ -960,6 +970,52 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.ProfileId,
             request.Payload.SourcePath,
             session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadModMergerWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadModMergerWorkflowRequest>(requestJson);
+        var workflow = modMergerWorkflowService.Load(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ModDirectory1,
+            request.Payload.ModDirectory2);
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageModMerge(string requestJson)
+    {
+        var request = DeserializeRequest<StageModMergeRequest>(requestJson);
+        var result = modMergerWorkflowService.Stage(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ModDirectory1,
+            request.Payload.ModDirectory2,
+            request.Payload.SelectedDirectory1Files,
+            request.Payload.SelectedDirectory2Files,
+            request.Payload.Resolutions.Select(resolution => new SwShModMergerConflictResolution(
+                resolution.ConflictId,
+                resolution.Source)).ToArray());
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchApplyModMerge(string requestJson)
+    {
+        var request = DeserializeRequest<ApplyModMergeRequest>(requestJson);
+        var result = modMergerWorkflowService.Apply(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ModDirectory1,
+            request.Payload.ModDirectory2,
+            request.Payload.SelectedDirectory1Files,
+            request.Payload.SelectedDirectory2Files,
+            request.Payload.Resolutions.Select(resolution => new SwShModMergerConflictResolution(
+                resolution.ConflictId,
+                resolution.Source)).ToArray());
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);

@@ -27,7 +27,7 @@ internal static class SwShSpeciesFormLabels
             [(77, 1)] = "Galarian",
             [(78, 1)] = "Galarian",
             [(79, 1)] = "Galarian",
-            [(80, 1)] = "Galarian",
+            [(80, 2)] = "Galarian",
             [(83, 1)] = "Galarian",
             [(88, 1)] = "Alolan",
             [(89, 1)] = "Alolan",
@@ -43,9 +43,50 @@ internal static class SwShSpeciesFormLabels
             [(263, 1)] = "Galarian",
             [(264, 1)] = "Galarian",
             [(554, 1)] = "Galarian",
-            [(555, 1)] = "Galarian",
+            [(555, 2)] = "Galarian",
+            [(555, 3)] = "Galarian",
             [(562, 1)] = "Galarian",
             [(618, 1)] = "Galarian",
+        };
+
+    private static readonly IReadOnlyDictionary<int, string> BaseRegionalFormLabels =
+        new Dictionary<int, string>
+        {
+            [19] = "Kanto",
+            [20] = "Kanto",
+            [26] = "Kanto",
+            [27] = "Kanto",
+            [28] = "Kanto",
+            [37] = "Kanto",
+            [38] = "Kanto",
+            [50] = "Kanto",
+            [51] = "Kanto",
+            [52] = "Kanto",
+            [53] = "Kanto",
+            [74] = "Kanto",
+            [75] = "Kanto",
+            [76] = "Kanto",
+            [77] = "Kanto",
+            [78] = "Kanto",
+            [79] = "Kanto",
+            [80] = "Kanto",
+            [83] = "Kanto",
+            [88] = "Kanto",
+            [89] = "Kanto",
+            [103] = "Kanto",
+            [105] = "Kanto",
+            [110] = "Kanto",
+            [122] = "Kanto",
+            [144] = "Kanto",
+            [145] = "Kanto",
+            [146] = "Kanto",
+            [199] = "Kanto",
+            [222] = "Johto",
+            [263] = "Hoenn",
+            [264] = "Hoenn",
+            [554] = "Unovan",
+            [562] = "Unovan",
+            [618] = "Unovan",
         };
 
     private static readonly IReadOnlyDictionary<(int SpeciesId, int LocalFormIndex), string> KnownFormLabels =
@@ -56,15 +97,16 @@ internal static class SwShSpeciesFormLabels
         var knownFormLabel = ResolveKnownFormLabel(speciesId, localFormIndex);
         if (localFormIndex == 0)
         {
-            return knownFormLabel is null
+            var baseRegionalFormLabel = ResolveBaseRegionalFormLabel(speciesId);
+            var baseFormLabel = knownFormLabel ?? baseRegionalFormLabel;
+            return baseFormLabel is null
                 ? speciesName
                 : string.Create(
                     CultureInfo.InvariantCulture,
-                    $"{speciesName} ({knownFormLabel})");
+                    $"{speciesName} ({baseFormLabel})");
         }
 
         var formLabel = knownFormLabel
-            ?? (localFormIndex == 1 ? ResolveOnlyRegionalFormLabel(speciesId) : null)
             ?? string.Create(CultureInfo.InvariantCulture, $"Form {localFormIndex}");
 
         return string.Create(
@@ -89,11 +131,13 @@ internal static class SwShSpeciesFormLabels
 
     internal static string ResolveRegionalFormLabel(int speciesId, int localFormIndex)
     {
+        if (localFormIndex == 0)
+        {
+            return ResolveBaseRegionalFormLabel(speciesId) ?? "Original";
+        }
+
         return ResolveKnownFormLabel(speciesId, localFormIndex)
-            ?? ResolveOnlyRegionalFormLabel(speciesId)
-            ?? (localFormIndex == 0
-                ? "Regional Form"
-                : string.Create(CultureInfo.InvariantCulture, $"Regional Form {localFormIndex}"));
+            ?? string.Create(CultureInfo.InvariantCulture, $"Regional Form {localFormIndex}");
     }
 
     private static Dictionary<(int SpeciesId, int LocalFormIndex), string> CreateKnownFormLabels()
@@ -110,10 +154,14 @@ internal static class SwShSpeciesFormLabels
             [(25, 8)] = "World Cap",
             [(201, 26)] = "Question Mark",
             [(201, 27)] = "Exclamation Mark",
+            [(421, 0)] = "Overcast Form",
+            [(421, 1)] = "Sunshine Form",
             [(422, 0)] = "West Sea",
             [(422, 1)] = "East Sea",
             [(423, 0)] = "West Sea",
             [(423, 1)] = "East Sea",
+            [(487, 0)] = "Altered Forme",
+            [(487, 1)] = "Origin Forme",
             [(479, 0)] = "Normal",
             [(479, 1)] = "Heat",
             [(479, 2)] = "Wash",
@@ -124,10 +172,19 @@ internal static class SwShSpeciesFormLabels
             [(521, 1)] = "Female",
             [(550, 0)] = "Red-Striped",
             [(550, 1)] = "Blue-Striped",
+            [(555, 0)] = "Unovan Standard Mode",
+            [(555, 1)] = "Unovan Zen Mode",
+            [(555, 2)] = "Galarian Standard Mode",
+            [(555, 3)] = "Galarian Zen Mode",
             [(592, 0)] = "Male",
             [(592, 1)] = "Female",
             [(593, 0)] = "Male",
             [(593, 1)] = "Female",
+            [(649, 0)] = "Normal",
+            [(649, 1)] = "Douse Drive",
+            [(649, 2)] = "Shock Drive",
+            [(649, 3)] = "Burn Drive",
+            [(649, 4)] = "Chill Drive",
             [(641, 0)] = "Incarnate Forme",
             [(641, 1)] = "Therian Forme",
             [(642, 0)] = "Incarnate Forme",
@@ -156,6 +213,8 @@ internal static class SwShSpeciesFormLabels
             [(718, 0)] = "50% Forme",
             [(718, 1)] = "10% Forme",
             [(718, 2)] = "Complete Forme",
+            [(744, 0)] = "Standard",
+            [(744, 1)] = "Own Tempo",
             [(745, 0)] = "Midday Form",
             [(745, 1)] = "Midnight Form",
             [(745, 2)] = "Dusk Form",
@@ -198,6 +257,8 @@ internal static class SwShSpeciesFormLabels
             [(898, 1)] = "Ice Rider",
             [(898, 2)] = "Shadow Rider",
         };
+
+        AddSilvallyFormLabels(labels);
 
         for (var form = 0; form < 26; form++)
         {
@@ -246,34 +307,39 @@ internal static class SwShSpeciesFormLabels
         }
     }
 
-    private static string? ResolveBaseRegionalFormLabel(int speciesId)
+    private static void AddSilvallyFormLabels(Dictionary<(int SpeciesId, int LocalFormIndex), string> labels)
     {
-        return ResolveOnlyRegionalFormLabel(speciesId) is null ? null : "Kanto";
-    }
-
-    private static string? ResolveOnlyRegionalFormLabel(int speciesId)
-    {
-        string? label = null;
-
-        foreach (var entry in RegionalFormLabels)
+        var types = new[]
         {
-            if (entry.Key.SpeciesId != speciesId)
-            {
-                continue;
-            }
+            "Normal Type",
+            "Fighting Type",
+            "Flying Type",
+            "Poison Type",
+            "Ground Type",
+            "Rock Type",
+            "Bug Type",
+            "Ghost Type",
+            "Steel Type",
+            "Fire Type",
+            "Water Type",
+            "Grass Type",
+            "Electric Type",
+            "Psychic Type",
+            "Ice Type",
+            "Dragon Type",
+            "Dark Type",
+            "Fairy Type",
+        };
 
-            if (label is null)
-            {
-                label = entry.Value;
-                continue;
-            }
-
-            if (!string.Equals(label, entry.Value, StringComparison.Ordinal))
-            {
-                return null;
-            }
+        for (var form = 0; form < types.Length; form++)
+        {
+            labels[(773, form)] = types[form];
         }
-
-        return label;
     }
+
+    internal static string? ResolveBaseRegionalFormLabel(int speciesId)
+    {
+        return BaseRegionalFormLabels.TryGetValue(speciesId, out var label) ? label : null;
+    }
+
 }
