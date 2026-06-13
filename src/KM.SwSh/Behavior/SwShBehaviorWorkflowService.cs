@@ -33,6 +33,123 @@ public sealed class SwShBehaviorWorkflowService
         SwShSymbolBehaviorArchive.GrassShakeRadiusField,
     };
 
+    private static readonly IReadOnlyDictionary<string, BehaviorFieldMapping> FieldMappings =
+        new Dictionary<string, BehaviorFieldMapping>(StringComparer.Ordinal)
+        {
+            [SwShSymbolBehaviorArchive.Field00] = new(
+                "Likely Scale X Multiplier",
+                "Model / Offset",
+                "Most vanilla entries use 1.0, matching a model scale multiplier slot. Likely, but read-only until the loader mapping is confirmed."),
+            [SwShSymbolBehaviorArchive.Field01] = new(
+                "Likely Scale Y Multiplier",
+                "Model / Offset",
+                "Most vanilla entries use 1.0, matching a second model scale multiplier slot. Likely, but read-only until the loader mapping is confirmed."),
+            [SwShSymbolBehaviorArchive.Field03] = new(
+                "Likely Model Scale",
+                "Model / Offset",
+                "Varies with species visual size across the vanilla table. Likely model scale tuning, but read-only until the loader mapping is confirmed."),
+            [SwShSymbolBehaviorArchive.Field07] = new(
+                "Rare Position Offset",
+                "Model / Offset",
+                "Only a handful of vanilla entries use this signed offset-like value. Exact target is not confirmed, so it stays read-only."),
+            [SwShSymbolBehaviorArchive.Field08] = CreateUnusedMapping("08"),
+            [SwShSymbolBehaviorArchive.Field09] = new(
+                "Likely Height Offset",
+                "Model / Offset",
+                "Common signed offset-like value used by many entries. Likely vertical placement or collision offset tuning, but read-only until confirmed."),
+            [SwShSymbolBehaviorArchive.Field11] = new(
+                "Likely Watch/Hearing Flag",
+                "Watch / Reaction",
+                "Sparse byte flag. Native AI exposes watch and hearing boolean getters, but this exact FlatBuffer slot is not proven, so it stays read-only."),
+            [SwShSymbolBehaviorArchive.Field12] = CreateUnusedMapping("12"),
+            [SwShSymbolBehaviorArchive.Field14] = CreateUnusedMapping("14"),
+            [SwShSymbolBehaviorArchive.Field15] = CreateUnusedMapping("15"),
+            [SwShSymbolBehaviorArchive.Field16] = new(
+                "Likely Scale Tuning A",
+                "Model / Offset",
+                "Multiplier-shaped value that is 1.0 for almost every vanilla entry. Likely scale or offset tuning, but read-only until confirmed."),
+            [SwShSymbolBehaviorArchive.Field17] = new(
+                "Likely Scale Tuning B",
+                "Model / Offset",
+                "Multiplier-shaped value that is 1.0 for almost every vanilla entry. Likely paired scale or offset tuning, but read-only until confirmed."),
+            [SwShSymbolBehaviorArchive.Field18] = new(
+                "Likely Movement Frame Count",
+                "Movement Timing",
+                "Frame-count-shaped integer range in vanilla data. Likely movement or animation timing, but read-only until the runtime loader mapping is proven."),
+            [SwShSymbolBehaviorArchive.Field19] = new(
+                "Likely Offset Tuning A",
+                "Model / Offset",
+                "Sparse signed offset-like value. It appears to tune placement or collision for special body shapes, but the exact target is not confirmed."),
+            [SwShSymbolBehaviorArchive.Field20] = new(
+                "Likely Offset Tuning B",
+                "Model / Offset",
+                "Sparse signed offset-like value with large overrides on a few entries. It stays read-only until the exact runtime use is confirmed."),
+            [SwShSymbolBehaviorArchive.Field21] = new(
+                "Likely Water Height Offset",
+                "Model / Offset",
+                "Water and floating entries carry signed height offsets here, and Lua uses GetOffsetWaterParam for water collision and event offsets. Likely, but read-only until the loader mapping is confirmed."),
+            [SwShSymbolBehaviorArchive.Field23] = new(
+                "Likely Movement Tuning A",
+                "Movement Timing",
+                "Default 8.0 on most entries. Likely movement or wait timing tuning, but read-only until the exact native getter mapping is confirmed."),
+            [SwShSymbolBehaviorArchive.Field24] = new(
+                "Likely Movement Tuning B",
+                "Movement Timing",
+                "Default 5.0 on most entries. Likely paired movement or wait timing tuning, but read-only until confirmed."),
+            [SwShSymbolBehaviorArchive.Field25] = new(
+                "Likely Motion Mode",
+                "Movement Timing",
+                "Small enum-like value from 0 to 5 in vanilla data. Likely selects a motion or wait behavior variant, but the exact mode table is not confirmed."),
+            [SwShSymbolBehaviorArchive.Field26] = new(
+                "Likely Event Collision Radius",
+                "Watch / Collision",
+                "Sparse radius-like value separate from the main hitbox radius. Likely event or encounter collision tuning, but read-only until confirmed."),
+            [SwShSymbolBehaviorArchive.Field28] = CreateUnusedMapping("28"),
+            [SwShSymbolBehaviorArchive.Field29] = new(
+                "Likely Motion Variant",
+                "Movement Timing",
+                "Small enum-like value from 0 to 3 in vanilla data. Likely selects a motion variant, but the exact native use is not confirmed."),
+            [SwShSymbolBehaviorArchive.Field30] = CreateUnusedMapping("30"),
+            [SwShSymbolBehaviorArchive.Field32] = new(
+                "Likely Animation Frame Baseline",
+                "Movement Timing",
+                "Two common frame-like values, 48 and 52, dominate the vanilla table. Likely animation timing baseline, but read-only until confirmed."),
+            [SwShSymbolBehaviorArchive.Field33] = CreateUnusedMapping("33"),
+            [SwShSymbolBehaviorArchive.Field34] = CreateUnusedMapping("34"),
+            [SwShSymbolBehaviorArchive.Field35] = CreateUnusedMapping("35"),
+            [SwShSymbolBehaviorArchive.Field36] = CreateUnusedMapping("36"),
+            [SwShSymbolBehaviorArchive.Field37] = new(
+                "Likely Turn Speed",
+                "Movement Timing",
+                "Small speed-like values match the native AI's turn-speed getter pattern. Likely turn speed, but read-only until the FlatBuffer-to-runtime copy is proven."),
+            [SwShSymbolBehaviorArchive.Field38] = new(
+                "Likely Move Frame Minimum",
+                "Movement Timing",
+                "Constant 25.0 in vanilla data. Likely a movement frame minimum or wait default, but the exact getter slot is not confirmed."),
+            [SwShSymbolBehaviorArchive.Field39] = new(
+                "Likely Watch Angle",
+                "Watch / Reaction",
+                "Angle-shaped values such as 60, 270, and 300 appear here. Likely watch-out angle tuning, but read-only until confirmed."),
+            [SwShSymbolBehaviorArchive.Field40] = new(
+                "Likely Wait Frequency",
+                "Movement Timing",
+                "Mostly 45.0 with high overrides on a few entries. Likely wait or movement timing tuning, but the exact use is not confirmed."),
+            [SwShSymbolBehaviorArchive.Field41] = new(
+                "Likely Wait Frame",
+                "Movement Timing",
+                "Constant 45.0 in vanilla data. Likely a wait-frame default, but read-only until confirmed."),
+            [SwShSymbolBehaviorArchive.Field42] = CreateUnusedMapping("42"),
+            [SwShSymbolBehaviorArchive.Field43] = CreateUnusedMapping("43"),
+            [SwShSymbolBehaviorArchive.Field44] = new(
+                "Likely Watch Distance",
+                "Watch / Reaction",
+                "Almost every vanilla entry uses 800.0, with a 2000.0 long-range outlier. Native Lua reads watch-out distance, making this a strong candidate but still read-only."),
+            [SwShSymbolBehaviorArchive.Field45] = new(
+                "Likely Watch Radius",
+                "Watch / Reaction",
+                "Almost every vanilla entry uses 7.5, with a small species-specific override. Likely watch-out radius, but read-only until the loader mapping is confirmed."),
+        };
+
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -227,6 +344,11 @@ public sealed class SwShBehaviorWorkflowService
 
     internal static string GetFieldLabel(string field)
     {
+        if (FieldMappings.TryGetValue(field, out var mapping))
+        {
+            return mapping.Label;
+        }
+
         return field switch
         {
             SwShSymbolBehaviorArchive.SpeciesIdField => "Species",
@@ -238,7 +360,6 @@ public sealed class SwShBehaviorWorkflowService
             SwShSymbolBehaviorArchive.Hash1Field => "Internal Hash 1",
             SwShSymbolBehaviorArchive.Hash2Field => "Internal Hash 2",
             SwShSymbolBehaviorArchive.InternalSpeciesNameField => "Internal Species Name",
-            _ when field.StartsWith("field", StringComparison.Ordinal) && field.Length == 7 => $"Behavior Parameter {field[5..]}",
             _ => field,
         };
     }
@@ -298,9 +419,9 @@ public sealed class SwShBehaviorWorkflowService
 
     private static string GetFieldGroup(SwShSymbolBehaviorFieldSpec spec)
     {
-        if (spec.IsUnusedDefault)
+        if (FieldMappings.TryGetValue(spec.Field, out var mapping))
         {
-            return "Unused Defaults";
+            return mapping.Group;
         }
 
         return spec.Field switch
@@ -321,9 +442,9 @@ public sealed class SwShBehaviorWorkflowService
 
     private static string GetFieldDescription(string field, SwShSymbolBehaviorFieldSpec spec)
     {
-        if (spec.IsUnusedDefault)
+        if (FieldMappings.TryGetValue(field, out var mapping))
         {
-            return "Reserved value from the base table. Disabled until its role is confirmed.";
+            return mapping.Description;
         }
 
         return field switch
@@ -336,7 +457,8 @@ public sealed class SwShBehaviorWorkflowService
             SwShSymbolBehaviorArchive.GrassShakeRadiusField => "Radius used by grass-shake behavior. Zero disables that radius for entries that do not use it.",
             SwShSymbolBehaviorArchive.Hash1Field
                 or SwShSymbolBehaviorArchive.Hash2Field => "Unresolved internal reference. Disabled until its role is confirmed.",
-            _ when field.StartsWith("field", StringComparison.Ordinal) => "Unmapped symbol AI tuning value. Disabled until its role is confirmed.",
+            _ when spec.IsUnusedDefault => CreateUnusedMapping(field[5..]).Description,
+            _ when field.StartsWith("field", StringComparison.Ordinal) => "Raw symbol AI tuning value. Disabled until its role is confirmed.",
             _ => string.Empty,
         };
     }
@@ -379,6 +501,19 @@ public sealed class SwShBehaviorWorkflowService
             _ => MaximumStringLength,
         };
     }
+
+    private static BehaviorFieldMapping CreateUnusedMapping(string fieldNumber)
+    {
+        return new BehaviorFieldMapping(
+            $"Unused Default {fieldNumber}",
+            "Unused Defaults",
+            "Base schema and vanilla data mark this as an unused default value. It stays read-only.");
+    }
+
+    private sealed record BehaviorFieldMapping(
+        string Label,
+        string Group,
+        string Description);
 
     private static IReadOnlyList<SwShBehaviorFieldOption> CreateBehaviorOptions(IReadOnlyList<SwShSymbolBehaviorEntry> entries)
     {
