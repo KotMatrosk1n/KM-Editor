@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Buffers.Binary;
 using KM.Formats.SwSh;
 using Xunit;
 
@@ -73,6 +74,43 @@ public sealed class SwShDynamaxAdventureArchiveTests
 
         Assert.Equal(0x1122334455667788UL, entry.SingleCaptureFlagBlock);
         Assert.Equal(0x8877665544332211UL, entry.UiMessageId);
+    }
+
+    [Fact]
+    public void ParsedWriteEditsPreservesExistingFlatBufferLayout()
+    {
+        var original = CreateArchive().Write();
+        ClearTableField(original, entryIndex: 1, fieldIndex: 3);
+        ClearTableField(original, entryIndex: 1, fieldIndex: 11);
+
+        var edited = SwShDynamaxAdventureArchive.Parse(original).WriteEdits(
+        [
+            new(1, SwShDynamaxAdventureField.Species, 467),
+        ]);
+
+        Assert.Equal(original.Length, edited.Length);
+        Assert.Equal(0, ReadEntryFieldOffset(edited, entryIndex: 1, fieldIndex: 3));
+        Assert.Equal(0, ReadEntryFieldOffset(edited, entryIndex: 1, fieldIndex: 11));
+
+        var reparsed = SwShDynamaxAdventureArchive.Parse(edited);
+        Assert.Equal(467, reparsed.Entries[1].Species);
+        Assert.Equal(0, reparsed.Entries[1].Form);
+        Assert.Equal(0, reparsed.Entries[1].Version);
+    }
+
+    [Fact]
+    public void ParsedWriteEditsRejectsNonDefaultChangesToOmittedFields()
+    {
+        var original = CreateArchive().Write();
+        ClearTableField(original, entryIndex: 1, fieldIndex: 3);
+
+        var parsed = SwShDynamaxAdventureArchive.Parse(original);
+
+        var exception = Assert.Throws<InvalidDataException>(() => parsed.WriteEdits(
+        [
+            new(1, SwShDynamaxAdventureField.Form, 2),
+        ]));
+        Assert.Contains("omitted FlatBuffer default", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -151,6 +189,46 @@ public sealed class SwShDynamaxAdventureArchiveTests
                 IsStoryProgressGated: false,
                 Moves: [3, 4, 5, 6]),
         ]);
+    }
+
+    private static void ClearTableField(byte[] data, int entryIndex, int fieldIndex)
+    {
+        var tableOffset = ReadEntryTableOffset(data, entryIndex);
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(tableOffset, sizeof(int)));
+        var fieldEntryOffset = sizeof(ushort) * 2 + (fieldIndex * sizeof(ushort));
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(vtableOffset + fieldEntryOffset, sizeof(ushort)), 0);
+    }
+
+    private static int ReadEntryFieldOffset(ReadOnlySpan<byte> data, int entryIndex, int fieldIndex)
+    {
+        var tableOffset = ReadEntryTableOffset(data, entryIndex);
+        return ReadTableFieldOffset(data, tableOffset, fieldIndex);
+    }
+
+    private static int ReadEntryTableOffset(ReadOnlySpan<byte> data, int entryIndex)
+    {
+        var rootTableOffset = ReadUOffset(data, offset: 0);
+        var vectorFieldOffset = ReadTableFieldOffset(data, rootTableOffset, fieldIndex: 0);
+        var vectorOffset = ReadUOffset(data, rootTableOffset + vectorFieldOffset);
+        var elementOffset = vectorOffset + sizeof(uint) + (entryIndex * sizeof(uint));
+
+        return ReadUOffset(data, elementOffset);
+    }
+
+    private static int ReadTableFieldOffset(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex)
+    {
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.Slice(tableOffset, sizeof(int)));
+        var fieldEntryOffset = sizeof(ushort) * 2 + (fieldIndex * sizeof(ushort));
+        var vtableLength = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableOffset, sizeof(ushort)));
+
+        return fieldEntryOffset + sizeof(ushort) <= vtableLength
+            ? BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableOffset + fieldEntryOffset, sizeof(ushort)))
+            : 0;
+    }
+
+    private static int ReadUOffset(ReadOnlySpan<byte> data, int offset)
+    {
+        return checked(offset + (int)BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, sizeof(uint))));
     }
 }
 

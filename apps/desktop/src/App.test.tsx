@@ -8,7 +8,9 @@ import {
   type BagHookWorkflow,
   type BehaviorWorkflow,
   type CatchCapWorkflow,
+  type ChangePlan,
   type DynamaxAdventuresWorkflow,
+  type EditSession,
   type EncountersWorkflow,
   type EncounterTableRecord,
   type ExeFsPatchWorkflow,
@@ -350,6 +352,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     expect(screen.getByRole('button', { name: 'Wild Encounters' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Raid Battles' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rental Pokemon' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Economy' }));
     expect(screen.getByRole('button', { name: 'Shops' })).toBeInTheDocument();
@@ -362,15 +365,16 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Bag Hook' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
-    expect(within(navigation).queryByRole('button', { name: 'IV Screen' })).not.toBeInTheDocument();
     expect(within(navigation).getByRole('button', { name: 'Catch Cap' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'IV Screen' })).toBeInTheDocument();
     expect(
       within(navigation)
         .getAllByRole('button')
         .filter((button) => button.classList.contains('nav-child-button'))
         .map((button) => button.textContent)
-        .slice(-3)
-    ).toEqual(['Catch Cap', 'Royal Candy', 'Starting Items']);
+        .slice(-4)
+    ).toEqual(['Catch Cap', 'IV Screen', 'Royal Candy', 'Starting Items']);
+    expect(screen.queryByRole('button', { name: 'Dynamax Adventures' })).not.toBeInTheDocument();
   });
 
   it('replaces existing editable field contents when typing after click', async () => {
@@ -1927,7 +1931,7 @@ describe('App', () => {
     expect(screen.getByText(expectedSummary)).toBeInTheDocument();
   });
 
-  it('opens Rental Pokemon, edits IVs, reviews a rental plan, and applies it', async () => {
+  it('hides shelved Rental Pokemon and Dynamax Adventures entry points', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -1936,128 +1940,10 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
-    await user.click(screen.getByRole('button', { name: 'Rental Pokemon' }));
+    expect(screen.queryByRole('button', { name: 'Rental Pokemon' })).not.toBeInTheDocument();
 
-    expect(
-      await screen.findByRole('heading', { level: 2, name: 'Rental Pokemon' })
-    ).toBeInTheDocument();
-    expect(screen.getAllByText('Grookey').length).toBeGreaterThan(0);
-    expect(
-      screen.getAllByText('HP 31 / Atk 31 / Def 31 / SpA 31 / SpD 31 / Spe 31').length
-    ).toBeGreaterThan(0);
-
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
-    const rentalIvPresetInput = screen.getByLabelText('IV preset');
-    await user.clear(rentalIvPresetInput);
-    await user.type(rentalIvPresetInput, 'Custom');
-    await waitFor(() => expect(screen.getByLabelText('HP IV')).not.toBeDisabled());
-    const hpIvInput = screen.getByLabelText('HP IV');
-    expect(hpIvInput).toHaveDisplayValue('31');
-    await user.clear(hpIvInput);
-    await user.type(hpIvInput, '-50');
-    await user.click(screen.getByRole('button', { name: 'Save Rental' }));
-
-    await waitFor(() => expect(screen.getByLabelText('HP IV')).toHaveDisplayValue('0'));
-
-    await user.click(screen.getByRole('button', { name: 'Changes' }));
-
-    expect(screen.getByText('Set Rental 001 ivHp to 0.')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
-
-    expect(await screen.findByText('Pending rental Pokemon change is valid.')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
-    expect(screen.getAllByText('romfs/bin/script_event_data/rental.bin').length).toBeGreaterThan(0);
-
-    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
-    expect(
-      screen.getByText('Applied Rental Pokemon change plan to the configured LayeredFS output root.')
-    ).toBeInTheDocument();
-  });
-
-  it('clamps Rental Pokemon EV drafts to the remaining legal total', async () => {
-    const user = userEvent.setup();
-    render(<App bridge={createMockProjectBridge({}, true)} />);
-
-    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
-    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
-    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
-    await user.click(screen.getByRole('button', { name: 'Rental Pokemon' }));
-    await screen.findByRole('heading', { level: 2, name: 'Rental Pokemon' });
-
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
-    const hpEvInput = screen.getByLabelText('HP EV');
-    expect(hpEvInput).toHaveDisplayValue('4');
-    await user.clear(hpEvInput);
-    await user.type(hpEvInput, '999');
-    await user.click(screen.getByRole('button', { name: 'Save Rental' }));
-
-    await waitFor(() => expect(screen.getByLabelText('HP EV')).toHaveDisplayValue('6'));
-
-    await user.click(screen.getByRole('button', { name: 'Changes' }));
-
-    expect(screen.getByText('Set Rental 001 evHp to 6.')).toBeInTheDocument();
-  });
-
-  it('opens Dynamax Adventures, edits IV rules, reviews a plan, and applies it', async () => {
-    const user = userEvent.setup();
-    render(<App bridge={createMockProjectBridge({}, true)} />);
-
-    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
-    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
-    await user.type(screen.getByLabelText('Output Root'), 'output');
-    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
-    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
-    await user.click(screen.getByRole('button', { name: 'Dynamax Adventures' }));
-
-    expect(
-      await screen.findByRole('heading', { level: 2, name: 'Dynamax Adventures' })
-    ).toBeInTheDocument();
-    expect(screen.getAllByText('Grookey').length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/5 guaranteed perfect/).length).toBeGreaterThan(0);
-    expect(screen.getByText('0x0000000000000010 / 0x0000000000000020')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
-    const guaranteedIvsSelect = screen.getByLabelText('Guaranteed perfect IVs');
-    expect(guaranteedIvsSelect).toHaveDisplayValue('5 Guaranteed Perfect IVs');
-    await user.clear(guaranteedIvsSelect);
-    await user.type(guaranteedIvsSelect, '6');
-    await user.click(screen.getByRole('button', { name: 'Save Adventure' }));
-
-    await waitFor(() =>
-      expect(screen.getByLabelText('Guaranteed perfect IVs')).toHaveDisplayValue(
-        '6 Guaranteed Perfect IVs'
-      )
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Changes' }));
-
-    expect(screen.getByText('Set Adventure 001 guaranteedPerfectIvs to 6.')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
-
-    expect(await screen.findByText('Pending Dynamax Adventure change is valid.')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
-    expect(
-      screen.getAllByText(
-        'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
-      ).length
-    ).toBeGreaterThan(0);
-
-    expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Applied Dynamax Adventures change plan to the configured LayeredFS output root.'
-      )
-    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    expect(screen.queryByRole('button', { name: 'Dynamax Adventures' })).not.toBeInTheDocument();
   });
 
   it('opens Shops, edits an inventory item, reviews a shop plan, and applies it', async () => {
@@ -3225,9 +3111,22 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows Catch Cap editor entry points and locks eight badges at level 100', async () => {
+  it('shows Catch Cap editor entry points and applies from Advanced Editors', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const stageCatchCap = vi.fn(baseBridge.stageCatchCap);
+    const createChangePlan = vi.fn(baseBridge.createChangePlan);
+    const applyChangePlan = vi.fn(baseBridge.applyChangePlan);
     const user = userEvent.setup();
-    render(<App bridge={createMockProjectBridge({}, true)} />);
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          applyChangePlan,
+          createChangePlan,
+          stageCatchCap
+        }}
+      />
+    );
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
@@ -3248,6 +3147,110 @@ describe('App', () => {
     expect(finalBadgeInput).toBeDisabled();
     expect(finalBadgeInput).toHaveValue(100);
     expect(screen.getByText('Locked: full badges catch any level.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Stage Caps' }));
+
+    await waitFor(() => expect(stageCatchCap).toHaveBeenCalled());
+    expect(stageCatchCap).toHaveBeenCalledWith(
+      expect.objectContaining({
+        caps: expect.arrayContaining([{ badgeCount: 8, levelCap: 100 }])
+      })
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Review' }));
+
+    await waitFor(() => expect(createChangePlan).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => expect(applyChangePlan).toHaveBeenCalled());
+    expect(applyChangePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changePlan: expect.objectContaining({
+          writes: expect.arrayContaining([
+            expect.objectContaining({ targetRelativePath: 'exefs/main' })
+          ])
+        }),
+        session: expect.objectContaining({
+          pendingEdits: expect.arrayContaining([
+            expect.objectContaining({ domain: 'workflow.catchCap' })
+          ])
+        })
+      })
+    );
+  });
+
+  it('opens IV Screen from Advanced Editors and applies the install workflow', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const stageIvScreenInstall = vi.fn(baseBridge.stageIvScreenInstall);
+    const createChangePlan = vi.fn(baseBridge.createChangePlan);
+    const applyChangePlan = vi.fn(baseBridge.applyChangePlan);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          applyChangePlan,
+          createChangePlan,
+          stageIvScreenInstall
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'IV Screen' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'IV Screen'
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByText('IV Screen can patch exefs/main.')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /press X to toggle from normal stats to raw IV numbers/i
+      )
+    ).toBeInTheDocument();
+    const reservedRangesTable = screen.getByRole('table', {
+      name: 'IV Screen reserved ranges'
+    });
+    expect(
+      within(reservedRangesTable).getByRole('columnheader', { name: 'Region' })
+    ).toBeInTheDocument();
+    expect(
+      within(reservedRangesTable).getByRole('columnheader', { name: 'Range' })
+    ).toBeInTheDocument();
+    expect(
+      within(reservedRangesTable).queryByRole('columnheader', { name: 'Rule' })
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Stage Install' }));
+
+    await waitFor(() => expect(stageIvScreenInstall).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Review' }));
+
+    await waitFor(() => expect(createChangePlan).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => expect(applyChangePlan).toHaveBeenCalled());
+    expect(applyChangePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changePlan: expect.objectContaining({
+          writes: expect.arrayContaining([
+            expect.objectContaining({ targetRelativePath: 'exefs/main' })
+          ])
+        }),
+        session: expect.objectContaining({
+          pendingEdits: expect.arrayContaining([
+            expect.objectContaining({ domain: 'workflow.ivScreen' })
+          ])
+        })
+      })
+    );
   });
 
   it('locks Starting Items key item quantities to one', async () => {
@@ -3305,6 +3308,22 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Apply' }));
 
     await waitFor(() => expect(applyChangePlan).toHaveBeenCalled());
+    expect(applyChangePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changePlan: expect.objectContaining({
+          writes: expect.arrayContaining([
+            expect.objectContaining({
+              targetRelativePath: 'romfs/bin/script/amx/main_event_0020.amx'
+            })
+          ])
+        }),
+        session: expect.objectContaining({
+          pendingEdits: expect.arrayContaining([
+            expect.objectContaining({ domain: 'workflow.startingItems' })
+          ])
+        })
+      })
+    );
   });
 
   it('warns when Starting Items is staged before Bag Hook is installed', async () => {
@@ -3392,8 +3411,21 @@ describe('App', () => {
   });
 
   it('stages a Royal Candy workflow for review and apply', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const stageRoyalCandyWorkflow = vi.fn(baseBridge.stageRoyalCandyWorkflow);
+    const createChangePlan = vi.fn(baseBridge.createChangePlan);
+    const applyChangePlan = vi.fn(baseBridge.applyChangePlan);
     const user = userEvent.setup();
-    render(<App bridge={createMockProjectBridge({}, true)} />);
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          applyChangePlan,
+          createChangePlan,
+          stageRoyalCandyWorkflow
+        }}
+      />
+    );
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
@@ -3403,23 +3435,27 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Royal Candy' }));
     await user.click(await screen.findByRole('button', { name: 'Stage' }));
 
-    await user.click(screen.getByRole('button', { name: 'Changes' }));
+    await waitFor(() => expect(stageRoyalCandyWorkflow).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Review' }));
 
-    expect(
-      await screen.findByText('Stage Royal Candy workflow: Unlimited Royal Candy.')
-    ).toBeInTheDocument();
+    await waitFor(() => expect(createChangePlan).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
-
-    expect(await screen.findByText('Pending Royal Candy workflow is valid.')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect((await screen.findAllByText('romfs/bin/pml/item/item.dat')).length).toBeGreaterThan(0);
-
-    expect(
-      await screen.findByText('Applied Royal Candy change plan to the configured LayeredFS output root.')
-    ).toBeInTheDocument();
+    await waitFor(() => expect(applyChangePlan).toHaveBeenCalled());
+    expect(applyChangePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changePlan: expect.objectContaining({
+          writes: expect.arrayContaining([
+            expect.objectContaining({ targetRelativePath: 'romfs/bin/pml/item/item.dat' })
+          ])
+        }),
+        session: expect.objectContaining({
+          pendingEdits: expect.arrayContaining([
+            expect.objectContaining({ domain: 'workflow.royalCandy' })
+          ])
+        })
+      })
+    );
   });
 
   it('warns when Royal Candy is staged before Bag Hook is installed', async () => {
@@ -6412,7 +6448,7 @@ function createMockProjectBridge(
   const dynamaxAdventuresWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description:
-      'Adventure encounter Pokemon, ability rolls, moves, IV overrides, capture rules, and source provenance.',
+      'Advanced Adventure Pokemon editor that updates the loose table and matching ExeFS mirrors for safe Pokemon fields.',
     diagnostics: [],
     id: 'dynamaxAdventures',
     label: 'Dynamax Adventures'
@@ -6597,6 +6633,33 @@ function createMockProjectBridge(
         species: 'Grookey',
         speciesId: 810,
         uiMessageId: '0x0000000000000020',
+        vanillaPokemon: {
+          ability: 0,
+          abilityLabel: 'Ability 1',
+          form: 0,
+          gigantamaxLabel: 'Normal',
+          gigantamaxState: 1,
+          guaranteedPerfectIvs: 6,
+          ivs: {
+            attack: 31,
+            defense: -1,
+            hp: -5,
+            specialAttack: -1,
+            specialDefense: -1,
+            speed: -1
+          },
+          ivSummary:
+            '6 guaranteed perfect / Atk 31 / Def Random / SpA Random / SpD Random / Spe Random',
+          level: 60,
+          moves: [
+            { move: 'Growl', moveId: 2, slot: 0 },
+            { move: 'None', moveId: 0, slot: 1 },
+            { move: 'None', moveId: 0, slot: 2 },
+            { move: 'None', moveId: 0, slot: 3 }
+          ],
+          species: 'Bulbasaur',
+          speciesId: 1
+        },
         version: 0,
         versionLabel: 'Both'
       }
@@ -7568,6 +7631,44 @@ function createMockProjectBridge(
 
   let currentGiftPokemonWorkflow = giftPokemonWorkflow;
   let currentTradePokemonWorkflow = tradePokemonWorkflow;
+  const createDynamaxAdventurePlanWrites = (session: EditSession): ChangePlan['writes'] => {
+    const requiresMainPatch = session.pendingEdits.some((edit) =>
+      ['species', 'form', 'gigantamaxState'].includes(edit.field ?? '')
+    );
+    const writes: ChangePlan['writes'] = [
+      {
+        reason:
+          'Apply pending Dynamax Adventures edit: Set Adventure 001 safe Pokemon fields.',
+        replacesExistingOutput: false,
+        sources: [
+          {
+            layer: 'base',
+            relativePath:
+              'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+          }
+        ],
+        targetRelativePath:
+          'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+      }
+    ];
+
+    return requiresMainPatch
+      ? [
+          ...writes,
+          {
+            reason: 'Patch Dynamax Adventures ExeFS mirrors for edited Adventure identity data.',
+            replacesExistingOutput: false,
+            sources: [
+              {
+                layer: 'base',
+                relativePath: 'exefs/main'
+              }
+            ],
+            targetRelativePath: 'exefs/main'
+          }
+        ]
+      : writes;
+  };
   const ivFieldToKey = {
     ivAttack: 'attack',
     ivDefense: 'defense',
@@ -7721,22 +7822,7 @@ function createMockProjectBridge(
                       }
                     ]
                 : request.session.pendingEdits[0]?.domain === 'workflow.dynamaxAdventures'
-                  ? [
-                      {
-                        reason:
-                          'Apply pending Dynamax Adventures edit: Set Adventure 001 guaranteed perfect IVs to 6.',
-                        replacesExistingOutput: false,
-                        sources: [
-                          {
-                            layer: 'base',
-                            relativePath:
-                              'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
-                          }
-                        ],
-                        targetRelativePath:
-                          'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
-                      }
-                    ]
+                  ? createDynamaxAdventurePlanWrites(request.session)
                 : request.session.pendingEdits[0]?.domain === 'workflow.shops'
                   ? [
                       {
@@ -9409,27 +9495,41 @@ function createMockProjectBridge(
     },
     updateDynamaxAdventureField: (request) => {
       const value = Number.parseInt(request.value, 10);
+      const recordId = `dynamaxAdventure:${request.entryIndex}`;
+      const pendingEdit = {
+        domain: 'workflow.dynamaxAdventures',
+        field: request.field,
+        newValue: request.value,
+        recordId,
+        sources: [
+          {
+            layer: 'base' as const,
+            relativePath:
+              'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+          }
+        ],
+        summary: `Set Adventure 001 ${request.field} to ${request.value}.`
+      };
+      const pendingEdits = [
+        ...(request.session?.pendingEdits.filter(
+          (edit) =>
+            !(
+              edit.domain === pendingEdit.domain &&
+              edit.recordId === pendingEdit.recordId &&
+              edit.field === pendingEdit.field
+            )
+        ) ?? []),
+        pendingEdit
+      ];
+      const speciesName =
+        value === 1 ? 'Bulbasaur' : value === 810 ? 'Grookey' : `Species ${value}`;
+      const moveName = value === 1 ? 'Scratch' : value === 2 ? 'Growl' : 'None';
 
       return Promise.resolve({
         diagnostics: [],
         session: {
           hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.dynamaxAdventures',
-              field: request.field,
-              newValue: request.value,
-              recordId: `dynamaxAdventure:${request.entryIndex}`,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath:
-                    'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
-                }
-              ],
-              summary: `Set Adventure 001 ${request.field} to ${request.value}.`
-            }
-          ],
+          pendingEdits,
           sessionId: 'session-1'
         },
         workflow: {
@@ -9438,21 +9538,82 @@ function createMockProjectBridge(
             encounter.entryIndex === request.entryIndex
               ? {
                   ...encounter,
+                  ability: request.field === 'ability' ? value : encounter.ability,
+                  abilityLabel:
+                    request.field === 'ability'
+                      ? value === 2
+                        ? 'Hidden Ability'
+                        : value === 4
+                          ? 'Any Ability'
+                          : 'Ability 1'
+                      : encounter.abilityLabel,
+                  form: request.field === 'form' ? value : encounter.form,
+                  gigantamaxLabel:
+                    request.field === 'gigantamaxState'
+                      ? value === 2
+                        ? 'Gigantamax'
+                        : 'Normal'
+                      : encounter.gigantamaxLabel,
+                  gigantamaxState:
+                    request.field === 'gigantamaxState' ? value : encounter.gigantamaxState,
                   guaranteedPerfectIvs:
                     request.field === 'guaranteedPerfectIvs'
                       ? value
                       : encounter.guaranteedPerfectIvs,
                   ivs:
-                    request.field === 'ivAttack'
+                    request.field === 'guaranteedPerfectIvs'
+                      ? {
+                          ...encounter.ivs,
+                          hp: value === 0 ? -1 : -value
+                        }
+                      : request.field === 'ivAttack'
                       ? {
                           ...encounter.ivs,
                           attack: value
                         }
+                      : request.field === 'ivDefense'
+                        ? {
+                            ...encounter.ivs,
+                            defense: value
+                          }
+                      : request.field === 'ivSpecialAttack'
+                        ? {
+                            ...encounter.ivs,
+                            specialAttack: value
+                          }
+                      : request.field === 'ivSpecialDefense'
+                        ? {
+                            ...encounter.ivs,
+                            specialDefense: value
+                          }
+                      : request.field === 'ivSpeed'
+                        ? {
+                            ...encounter.ivs,
+                            speed: value
+                          }
                       : encounter.ivs,
                   ivSummary:
                     request.field === 'guaranteedPerfectIvs'
                       ? `${value} guaranteed perfect / Atk Random / Def Random / SpA Random / SpD Random / Spe Random`
-                      : encounter.ivSummary
+                      : encounter.ivSummary,
+                  label:
+                    request.field === 'species'
+                      ? `Adventure 001: ${speciesName} Lv. ${encounter.level}`
+                      : encounter.label,
+                  level: request.field === 'level' ? value : encounter.level,
+                  moves: request.field.startsWith('move')
+                    ? encounter.moves.map((move) =>
+                        request.field === `move${move.slot}Id`
+                          ? {
+                              ...move,
+                              move: moveName,
+                              moveId: value
+                            }
+                          : move
+                      )
+                    : encounter.moves,
+                  species: request.field === 'species' ? speciesName : encounter.species,
+                  speciesId: request.field === 'species' ? value : encounter.speciesId
                 }
               : encounter
           )

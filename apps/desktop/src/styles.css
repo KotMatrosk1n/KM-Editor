@@ -607,6 +607,27 @@ h2 {
   background: #431c20;
 }
 
+.purple-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  color: #f7f0ff;
+  background: linear-gradient(135deg, #6d28d9, #9333ea);
+  border: 1px solid rgb(196 181 253 / 62%);
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow:
+    0 10px 26px rgb(109 40 217 / 24%),
+    var(--shadow-inset);
+}
+
+.purple-button:hover {
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+}
+
 .icon-button {
   width: 40px;
   min-width: 40px;
@@ -615,7 +636,8 @@ h2 {
 
 .primary-button:disabled,
 .secondary-button:disabled,
-.danger-button:disabled {
+.danger-button:disabled,
+.purple-button:disabled {
   cursor: not-allowed;
   opacity: 0.64;
 }
@@ -2720,6 +2742,10 @@ h2 {
   grid-template-columns: 72px minmax(92px, 0.45fr) minmax(132px, 0.7fr) minmax(180px, 1.2fr) minmax(160px, 1fr);
 }
 
+.iv-screen-range-row {
+  grid-template-columns: minmax(220px, 1.35fr) minmax(220px, 1fr);
+}
+
 .catch-cap-row {
   grid-template-columns: minmax(132px, 0.85fr) 92px minmax(150px, 0.95fr) minmax(96px, 0.55fr) minmax(116px, 0.65fr);
 }
@@ -2872,6 +2898,7 @@ h2 {
 .exefs-table .royal-candy-workflow-row > span,
 .exefs-table .royal-candy-target-row > span,
 .exefs-table .bag-hook-row > span,
+.exefs-table .iv-screen-range-row > span,
 .exefs-table .catch-cap-row > span,
 .exefs-table .starting-items-row > span {
   overflow: visible;
@@ -4057,6 +4084,10 @@ input {
   .spreadsheet-profile-row,
   .spreadsheet-preview-row {
     grid-template-columns: minmax(120px, 1fr) minmax(92px, 0.6fr) minmax(120px, 1fr);
+  }
+
+  .iv-screen-range-row {
+    grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr);
   }
 
   .exefs-row span:nth-child(3),

@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -74,13 +75,14 @@ public sealed class SwShBehaviorWorkflowService
         }
 
         var speciesNames = LoadSpeciesNames(project, diagnostics, out var speciesSourceCount);
+        var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
 
         try
         {
             var archive = SwShSymbolBehaviorArchive.Parse(File.ReadAllBytes(behaviorSource.AbsolutePath));
             var provenance = CreateProvenance(behaviorSource.GraphEntry);
             var behaviorOptions = CreateBehaviorOptions(archive.Entries);
-            var speciesOptions = CreateSpeciesOptions(speciesNames);
+            var speciesOptions = CreateSpeciesOptions(speciesNames, presentSpeciesIds);
             var fields = CreateFields(speciesOptions, behaviorOptions);
             var entries = archive.Entries
                 .Select(entry => CreateEntryRecord(entry, speciesNames, provenance))
@@ -93,7 +95,7 @@ public sealed class SwShBehaviorWorkflowService
                 summary,
                 entries,
                 fields,
-                sourceFileCount: 1 + speciesSourceCount,
+                sourceFileCount: 1 + speciesSourceCount + (presentSpeciesIds.Count > 0 ? 1 : 0),
                 diagnostics);
         }
         catch (InvalidDataException exception)
@@ -103,7 +105,12 @@ public sealed class SwShBehaviorWorkflowService
                 $"Behavior data source is not supported: {exception.Message}",
                 file: behaviorSource.GraphEntry.RelativePath,
                 expected: "Sword/Shield symbol encounter behavior data"));
-            return CreateWorkflow(summary, Array.Empty<SwShBehaviorEntryRecord>(), [], sourceFileCount: 1 + speciesSourceCount, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShBehaviorEntryRecord>(),
+                [],
+                sourceFileCount: 1 + speciesSourceCount + (presentSpeciesIds.Count > 0 ? 1 : 0),
+                diagnostics);
         }
         catch (IOException exception)
         {
@@ -112,7 +119,12 @@ public sealed class SwShBehaviorWorkflowService
                 $"Behavior data source could not be read: {exception.Message}",
                 file: behaviorSource.GraphEntry.RelativePath,
                 expected: "Readable Sword/Shield symbol encounter behavior data"));
-            return CreateWorkflow(summary, Array.Empty<SwShBehaviorEntryRecord>(), [], sourceFileCount: 1 + speciesSourceCount, diagnostics);
+            return CreateWorkflow(
+                summary,
+                Array.Empty<SwShBehaviorEntryRecord>(),
+                [],
+                sourceFileCount: 1 + speciesSourceCount + (presentSpeciesIds.Count > 0 ? 1 : 0),
+                diagnostics);
         }
     }
 
@@ -379,15 +391,16 @@ public sealed class SwShBehaviorWorkflowService
             .ToArray();
     }
 
-    private static IReadOnlyList<SwShBehaviorFieldOption> CreateSpeciesOptions(IReadOnlyList<string> speciesNames)
+    private static IReadOnlyList<SwShBehaviorFieldOption> CreateSpeciesOptions(
+        IReadOnlyList<string> speciesNames,
+        IReadOnlySet<int> presentSpeciesIds)
     {
-        return speciesNames
-            .Select((name, index) => new SwShBehaviorFieldOption(
-                index.ToString(CultureInfo.InvariantCulture),
-                string.IsNullOrWhiteSpace(name)
-                    ? string.Create(CultureInfo.InvariantCulture, $"{index:000} Species {index}")
-                    : string.Create(CultureInfo.InvariantCulture, $"{index:000} {name}")))
-            .ToArray();
+        return SwShSpeciesAvailability.CreateSpeciesOptions(
+            speciesNames,
+            presentSpeciesIds,
+            (value, label) => new SwShBehaviorFieldOption(
+                value.ToString(CultureInfo.InvariantCulture),
+                label));
     }
 
     private static string[] LoadSpeciesNames(

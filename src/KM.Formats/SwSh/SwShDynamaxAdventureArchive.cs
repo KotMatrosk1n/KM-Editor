@@ -71,10 +71,23 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
     public const int MaximumGuaranteedPerfectIvs = 6;
     public const int MaximumByteValue = byte.MaxValue;
     public const int MaximumIdValue = int.MaxValue;
-    public const int MaximumAbilityRoll = 4;
+    public const int MaximumAbilityRoll = 2;
     public const int MaximumGigantamaxState = 2;
     public const int MaximumVersion = 2;
     public const int MaximumShinyRoll = 2;
+
+    private readonly byte[]? sourceData;
+    private readonly int[]? sourceEntryTableOffsets;
+
+    private SwShDynamaxAdventureArchive(
+        IReadOnlyList<SwShDynamaxAdventureRecord> entries,
+        byte[] sourceData,
+        int[] sourceEntryTableOffsets)
+        : this(entries)
+    {
+        this.sourceData = sourceData;
+        this.sourceEntryTableOffsets = sourceEntryTableOffsets;
+    }
 
     public static SwShDynamaxAdventureArchive Parse(ReadOnlySpan<byte> data)
     {
@@ -85,9 +98,9 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
 
         var rootTableOffset = ReadUOffset(data, offset: 0);
         var tableVectorOffset = ReadTableUOffset(data, rootTableOffset, fieldIndex: 0, required: true);
-        var entries = ReadTableVector(data, tableVectorOffset, ReadEntry);
+        var entries = ReadEntryTableVector(data, tableVectorOffset, out var entryTableOffsets);
 
-        return new SwShDynamaxAdventureArchive(entries);
+        return new SwShDynamaxAdventureArchive(entries, data.ToArray(), entryTableOffsets);
     }
 
     public byte[] Write()
@@ -102,6 +115,12 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
     {
         ArgumentNullException.ThrowIfNull(edits);
 
+        var editArray = edits.ToArray();
+        if (sourceData is not null && sourceEntryTableOffsets is not null)
+        {
+            return WriteEditsInPlace(editArray);
+        }
+
         var entries = Entries
             .Select(entry => entry with
             {
@@ -110,7 +129,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
             })
             .ToArray();
 
-        foreach (var edit in edits)
+        foreach (var edit in editArray)
         {
             ApplyEdit(entries, edit);
         }
@@ -123,6 +142,95 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
         return ivs.Hp < RandomIvValue
             ? Math.Clamp(-ivs.Hp, 0, MaximumGuaranteedPerfectIvs)
             : 0;
+    }
+
+    private byte[] WriteEditsInPlace(IReadOnlyList<SwShDynamaxAdventureEdit> edits)
+    {
+        var output = sourceData!.ToArray();
+        foreach (var edit in edits)
+        {
+            ApplyEditInPlace(output, edit);
+        }
+
+        return output;
+    }
+
+    private void ApplyEditInPlace(byte[] data, SwShDynamaxAdventureEdit edit)
+    {
+        if ((uint)edit.EntryIndex >= (uint)sourceEntryTableOffsets!.Length)
+        {
+            throw new InvalidDataException($"Dynamax Adventure entry index {edit.EntryIndex} is not present.");
+        }
+
+        var tableOffset = sourceEntryTableOffsets[edit.EntryIndex];
+        switch (edit.Field)
+        {
+            case SwShDynamaxAdventureField.Species:
+                WriteTableInt32(data, tableOffset, fieldIndex: 8, ValidateRange(edit.Value, 0, MaximumIdValue), nameof(SwShDynamaxAdventureField.Species));
+                break;
+            case SwShDynamaxAdventureField.Form:
+                WriteTableByte(data, tableOffset, fieldIndex: 3, checked((byte)ValidateRange(edit.Value, 0, MaximumByteValue)), nameof(SwShDynamaxAdventureField.Form));
+                break;
+            case SwShDynamaxAdventureField.Level:
+                WriteTableUInt32(data, tableOffset, fieldIndex: 7, checked((uint)ValidateRange(edit.Value, 0, MaximumByteValue)), nameof(SwShDynamaxAdventureField.Level));
+                break;
+            case SwShDynamaxAdventureField.BallItemId:
+                WriteTableUInt32(data, tableOffset, fieldIndex: 5, checked((uint)ValidateRange(edit.Value, 0, MaximumIdValue)), nameof(SwShDynamaxAdventureField.BallItemId));
+                break;
+            case SwShDynamaxAdventureField.Ability:
+                WriteTableUInt32(data, tableOffset, fieldIndex: 19, checked((uint)ValidateRange(edit.Value, 0, MaximumAbilityRoll)), nameof(SwShDynamaxAdventureField.Ability));
+                break;
+            case SwShDynamaxAdventureField.GigantamaxState:
+                WriteTableUInt32(data, tableOffset, fieldIndex: 4, checked((uint)ValidateRange(edit.Value, 0, MaximumGigantamaxState)), nameof(SwShDynamaxAdventureField.GigantamaxState));
+                break;
+            case SwShDynamaxAdventureField.Version:
+                WriteTableByte(data, tableOffset, fieldIndex: 11, checked((byte)ValidateRange(edit.Value, 0, MaximumVersion)), nameof(SwShDynamaxAdventureField.Version));
+                break;
+            case SwShDynamaxAdventureField.ShinyRoll:
+                WriteTableUInt32(data, tableOffset, fieldIndex: 12, checked((uint)ValidateRange(edit.Value, 0, MaximumShinyRoll)), nameof(SwShDynamaxAdventureField.ShinyRoll));
+                break;
+            case SwShDynamaxAdventureField.Move0:
+                WriteTableUInt32(data, tableOffset, fieldIndex: 21, checked((uint)ValidateRange(edit.Value, 0, MaximumIdValue)), nameof(SwShDynamaxAdventureField.Move0));
+                break;
+            case SwShDynamaxAdventureField.Move1:
+                WriteTableUInt32(data, tableOffset, fieldIndex: 22, checked((uint)ValidateRange(edit.Value, 0, MaximumIdValue)), nameof(SwShDynamaxAdventureField.Move1));
+                break;
+            case SwShDynamaxAdventureField.Move2:
+                WriteTableUInt32(data, tableOffset, fieldIndex: 23, checked((uint)ValidateRange(edit.Value, 0, MaximumIdValue)), nameof(SwShDynamaxAdventureField.Move2));
+                break;
+            case SwShDynamaxAdventureField.Move3:
+                WriteTableUInt32(data, tableOffset, fieldIndex: 24, checked((uint)ValidateRange(edit.Value, 0, MaximumIdValue)), nameof(SwShDynamaxAdventureField.Move3));
+                break;
+            case SwShDynamaxAdventureField.GuaranteedPerfectIvs:
+                WriteTableSByte(data, tableOffset, fieldIndex: 16, checked((sbyte)SetGuaranteedPerfectIvs(Entries[edit.EntryIndex].Ivs, edit.Value).Hp), nameof(SwShDynamaxAdventureField.GuaranteedPerfectIvs));
+                break;
+            case SwShDynamaxAdventureField.IvAttack:
+                WriteTableSByte(data, tableOffset, fieldIndex: 14, checked((sbyte)ValidateIvOverride(edit.Value)), nameof(SwShDynamaxAdventureField.IvAttack));
+                break;
+            case SwShDynamaxAdventureField.IvDefense:
+                WriteTableSByte(data, tableOffset, fieldIndex: 15, checked((sbyte)ValidateIvOverride(edit.Value)), nameof(SwShDynamaxAdventureField.IvDefense));
+                break;
+            case SwShDynamaxAdventureField.IvSpeed:
+                WriteTableSByte(data, tableOffset, fieldIndex: 13, checked((sbyte)ValidateIvOverride(edit.Value)), nameof(SwShDynamaxAdventureField.IvSpeed));
+                break;
+            case SwShDynamaxAdventureField.IvSpecialAttack:
+                WriteTableSByte(data, tableOffset, fieldIndex: 17, checked((sbyte)ValidateIvOverride(edit.Value)), nameof(SwShDynamaxAdventureField.IvSpecialAttack));
+                break;
+            case SwShDynamaxAdventureField.IvSpecialDefense:
+                WriteTableSByte(data, tableOffset, fieldIndex: 18, checked((sbyte)ValidateIvOverride(edit.Value)), nameof(SwShDynamaxAdventureField.IvSpecialDefense));
+                break;
+            case SwShDynamaxAdventureField.IsSingleCapture:
+                WriteTableBool(data, tableOffset, fieldIndex: 0, ValidateBoolean(edit.Value), nameof(SwShDynamaxAdventureField.IsSingleCapture));
+                break;
+            case SwShDynamaxAdventureField.IsStoryProgressGated:
+                WriteTableBool(data, tableOffset, fieldIndex: 20, ValidateBoolean(edit.Value), nameof(SwShDynamaxAdventureField.IsStoryProgressGated));
+                break;
+            case SwShDynamaxAdventureField.OtGender:
+                WriteTableUInt32(data, tableOffset, fieldIndex: 10, checked((uint)ValidateRange(edit.Value, 0, MaximumIdValue)), nameof(SwShDynamaxAdventureField.OtGender));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(edit), $"Dynamax Adventure field '{edit.Field}' is not supported.");
+        }
     }
 
     private static void ApplyEdit(IReadOnlyList<SwShDynamaxAdventureRecord> entries, SwShDynamaxAdventureEdit edit)
@@ -420,6 +528,112 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
         }
 
         return (int)count;
+    }
+
+    private static SwShDynamaxAdventureRecord[] ReadEntryTableVector(
+        ReadOnlySpan<byte> data,
+        int vectorOffset,
+        out int[] tableOffsets)
+    {
+        var count = ReadVectorLength(data, vectorOffset);
+        var values = new SwShDynamaxAdventureRecord[count];
+        tableOffsets = new int[count];
+
+        for (var index = 0; index < count; index++)
+        {
+            var elementOffset = vectorOffset + sizeof(uint) + (index * sizeof(uint));
+            var tableOffset = ReadUOffset(data, elementOffset);
+            tableOffsets[index] = tableOffset;
+            values[index] = ReadEntry(data, tableOffset, index);
+        }
+
+        return values;
+    }
+
+    private static void WriteTableBool(
+        Span<byte> data,
+        int tableOffset,
+        int fieldIndex,
+        bool value,
+        string fieldName)
+    {
+        WriteTableByte(data, tableOffset, fieldIndex, value ? (byte)1 : (byte)0, fieldName);
+    }
+
+    private static void WriteTableByte(
+        Span<byte> data,
+        int tableOffset,
+        int fieldIndex,
+        byte value,
+        string fieldName)
+    {
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        if (fieldOffset == 0)
+        {
+            EnsureMissingFieldCanStayDefault(value, fieldName);
+            return;
+        }
+
+        EnsureRange(data, tableOffset + fieldOffset, sizeof(byte));
+        data[tableOffset + fieldOffset] = value;
+    }
+
+    private static void WriteTableSByte(
+        Span<byte> data,
+        int tableOffset,
+        int fieldIndex,
+        sbyte value,
+        string fieldName)
+    {
+        WriteTableByte(data, tableOffset, fieldIndex, unchecked((byte)value), fieldName);
+    }
+
+    private static void WriteTableInt32(
+        Span<byte> data,
+        int tableOffset,
+        int fieldIndex,
+        int value,
+        string fieldName)
+    {
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        if (fieldOffset == 0)
+        {
+            EnsureMissingFieldCanStayDefault(value, fieldName);
+            return;
+        }
+
+        EnsureRange(data, tableOffset + fieldOffset, sizeof(int));
+        BinaryPrimitives.WriteInt32LittleEndian(data.Slice(tableOffset + fieldOffset, sizeof(int)), value);
+    }
+
+    private static void WriteTableUInt32(
+        Span<byte> data,
+        int tableOffset,
+        int fieldIndex,
+        uint value,
+        string fieldName)
+    {
+        var fieldOffset = ReadTableFieldOffset(data, tableOffset, fieldIndex);
+        if (fieldOffset == 0)
+        {
+            EnsureMissingFieldCanStayDefault(value, fieldName);
+            return;
+        }
+
+        EnsureRange(data, tableOffset + fieldOffset, sizeof(uint));
+        BinaryPrimitives.WriteUInt32LittleEndian(data.Slice(tableOffset + fieldOffset, sizeof(uint)), value);
+    }
+
+    private static void EnsureMissingFieldCanStayDefault<T>(T value, string fieldName)
+        where T : struct, IEquatable<T>
+    {
+        if (value.Equals(default(T)))
+        {
+            return;
+        }
+
+        throw new InvalidDataException(
+            $"Dynamax Adventure field '{fieldName}' is stored as an omitted FlatBuffer default in this record and cannot be changed without rebuilding the table layout.");
     }
 
     private static void EnsureRange(ReadOnlySpan<byte> data, int offset, int count)

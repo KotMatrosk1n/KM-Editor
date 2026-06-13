@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Moves;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -413,7 +414,7 @@ public sealed class SwShItemsWorkflowService
             return CreateWorkflow(
                 summary,
                 Array.Empty<SwShItemRecord>(),
-                CreateEditableFields(Array.Empty<string>()),
+                CreateEditableFields(Array.Empty<string>(), new HashSet<int>()),
                 sourceFileCount: 0,
                 diagnostics);
         }
@@ -428,7 +429,7 @@ public sealed class SwShItemsWorkflowService
             return CreateWorkflow(
                 summary,
                 Array.Empty<SwShItemRecord>(),
-                CreateEditableFields(Array.Empty<string>()),
+                CreateEditableFields(Array.Empty<string>(), new HashSet<int>()),
                 sourceFileCount: 0,
                 diagnostics);
         }
@@ -441,7 +442,8 @@ public sealed class SwShItemsWorkflowService
         var moveNames = moveNamesSource is null
             ? Array.Empty<string>()
             : LoadMoveNames(moveNamesSource, diagnostics);
-        var editableFields = CreateEditableFields(moveNames);
+        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
+        var editableFields = CreateEditableFields(moveNames, usableMoveIds);
 
         try
         {
@@ -453,7 +455,8 @@ public sealed class SwShItemsWorkflowService
                 .ToArray();
             var sourceFileCount = 1
                 + (itemNamesSource is null ? 0 : 1)
-                + (moveNamesSource is null ? 0 : 1);
+                + (moveNamesSource is null ? 0 : 1)
+                + (usableMoveIds.Count > 0 ? 1 : 0);
 
             return CreateWorkflow(summary, items, editableFields, sourceFileCount, diagnostics);
         }
@@ -718,7 +721,9 @@ public sealed class SwShItemsWorkflowService
         }
     }
 
-    private static IReadOnlyList<SwShItemEditableField> CreateEditableFields(IReadOnlyList<string> moveNames)
+    private static IReadOnlyList<SwShItemEditableField> CreateEditableFields(
+        IReadOnlyList<string> moveNames,
+        IReadOnlySet<int> usableMoveIds)
     {
         return BaseEditableFields
             .Append(new SwShItemEditableField(
@@ -727,24 +732,19 @@ public sealed class SwShItemsWorkflowService
                 "integer",
                 MinimumValue: 0,
                 MaximumValue: MaximumMoveId,
-                Options: CreateMoveOptions(moveNames)))
+                Options: CreateMoveOptions(moveNames, usableMoveIds)))
             .ToArray();
     }
 
-    private static IReadOnlyList<SwShItemEditableFieldOption> CreateMoveOptions(IReadOnlyList<string> moveNames)
+    private static IReadOnlyList<SwShItemEditableFieldOption> CreateMoveOptions(
+        IReadOnlyList<string> moveNames,
+        IReadOnlySet<int> usableMoveIds)
     {
-        if (moveNames.Count == 0)
-        {
-            return [];
-        }
-
-        return moveNames
-            .Select((name, moveId) => new { name, moveId })
-            .Where(move => move.moveId == 0 || !string.IsNullOrWhiteSpace(move.name))
-            .Select(move => new SwShItemEditableFieldOption(
-                move.moveId,
-                FormatMoveOptionLabel(move.moveId, GetMoveName(move.moveId, moveNames))))
-            .ToArray();
+        return SwShMoveAvailability.CreateMoveOptions(
+            moveNames,
+            usableMoveIds,
+            (value, label) => new SwShItemEditableFieldOption(value, label),
+            includeNone: true);
     }
 
     private static WorkflowFileSource? ResolveWorkflowFile(OpenedProject project, string relativePath)

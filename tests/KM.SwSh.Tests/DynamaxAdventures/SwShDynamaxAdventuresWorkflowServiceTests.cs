@@ -5,6 +5,7 @@ using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Tests.Items;
+using KM.SwSh.Tests.Pokemon;
 using Xunit;
 
 namespace KM.SwSh.Tests.DynamaxAdventures;
@@ -47,6 +48,11 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         Assert.Contains("4 guaranteed perfect", first.IvSummary, StringComparison.Ordinal);
         Assert.Equal(ProjectFileLayer.Base, first.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.BaseOnly, first.Provenance.FileState);
+        var vanilla = first.VanillaPokemon;
+        Assert.NotNull(vanilla);
+        Assert.Equal(133, vanilla!.SpeciesId);
+        Assert.Equal(65, vanilla.Level);
+        Assert.Equal(20, vanilla.Moves[3].MoveId);
 
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShDynamaxAdventuresWorkflowService.SpeciesField).Options,
@@ -54,6 +60,12 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShDynamaxAdventuresWorkflowService.Move3Field).Options,
             option => option.Value == 85 && option.Label == "085 Thunderbolt");
+        Assert.DoesNotContain(workflow.EditableFields, field => field.Field == SwShDynamaxAdventuresWorkflowService.BallItemIdField);
+        Assert.DoesNotContain(workflow.EditableFields, field => field.Field == SwShDynamaxAdventuresWorkflowService.VersionField);
+        Assert.DoesNotContain(workflow.EditableFields, field => field.Field == SwShDynamaxAdventuresWorkflowService.ShinyRollField);
+        Assert.DoesNotContain(workflow.EditableFields, field => field.Field == SwShDynamaxAdventuresWorkflowService.IsSingleCaptureField);
+        Assert.DoesNotContain(workflow.EditableFields, field => field.Field == SwShDynamaxAdventuresWorkflowService.IsStoryProgressGatedField);
+        Assert.DoesNotContain(workflow.EditableFields, field => field.Field == SwShDynamaxAdventuresWorkflowService.OtGenderField);
     }
 
     [Fact]
@@ -75,6 +87,36 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         Assert.Equal(ProjectFileLayer.Layered, first.Provenance.SourceLayer);
         Assert.Equal(ProjectFileGraphEntryState.LayeredOverride, first.Provenance.FileState);
         Assert.Equal(31, first.Ivs.Attack);
+        var vanilla = first.VanillaPokemon;
+        Assert.NotNull(vanilla);
+        Assert.Equal(-1, vanilla!.Ivs.Attack);
+    }
+
+    [Fact]
+    public void LoadFiltersDynamaxAdventureSpeciesOptionsToPokemonPresentInSwordShield()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateSpeciesNameTable(133, (16, "Pidgey"), (25, "Pikachu"), (133, "Eevee")));
+        var personalRecords = Enumerable.Range(0, 134)
+            .Select(_ => SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord())
+            .ToArray();
+        personalRecords[25] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 25);
+        personalRecords[133] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 133);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(personalRecords));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+
+        var speciesOptions = workflow.EditableFields.Single(field =>
+            field.Field == SwShDynamaxAdventuresWorkflowService.SpeciesField).Options;
+        Assert.Contains(speciesOptions, option => option.Value == 25 && option.Label == "025 Pikachu");
+        Assert.Contains(speciesOptions, option => option.Value == 133 && option.Label == "133 Eevee");
+        Assert.DoesNotContain(speciesOptions, option => option.Value == 16);
     }
 
     [Fact]
@@ -89,5 +131,19 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
 
         Assert.Empty(workflow.Encounters);
         Assert.Contains(workflow.Diagnostics, diagnostic => diagnostic.Domain == "workflow.dynamaxAdventures");
+    }
+
+    private static byte[] CreateSpeciesNameTable(int highestIndex, params (int Index, string Value)[] entries)
+    {
+        var lines = Enumerable.Range(0, highestIndex + 1)
+            .Select(_ => new SwShGameTextLine(string.Empty, Flags: 0))
+            .ToArray();
+
+        foreach (var (index, value) in entries)
+        {
+            lines[index] = new SwShGameTextLine(value, Flags: 0);
+        }
+
+        return SwShGameTextFile.Write(lines);
     }
 }

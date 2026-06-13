@@ -34,6 +34,20 @@ public sealed record DynamaxAdventureIvsDto(
     int SpecialAttack,
     int SpecialDefense);
 
+public sealed record DynamaxAdventurePokemonSnapshotDto(
+    int SpeciesId,
+    string Species,
+    int Form,
+    int Level,
+    int Ability,
+    string AbilityLabel,
+    int GigantamaxState,
+    string GigantamaxLabel,
+    IReadOnlyList<DynamaxAdventureMoveRecordDto> Moves,
+    DynamaxAdventureIvsDto Ivs,
+    int GuaranteedPerfectIvs,
+    string IvSummary);
+
 public sealed record DynamaxAdventureRecordDto(
     int EntryIndex,
     string Label,
@@ -66,6 +80,8 @@ public sealed record DynamaxAdventureRecordDto(
 {
     public IReadOnlyList<DynamaxAdventureEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<DynamaxAdventureEditableFieldOptionDto>();
+
+    public DynamaxAdventurePokemonSnapshotDto? VanillaPokemon { get; init; }
 }
 
 public sealed record DynamaxAdventureEditableFieldDto(

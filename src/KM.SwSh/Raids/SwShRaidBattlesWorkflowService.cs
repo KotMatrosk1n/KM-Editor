@@ -263,12 +263,15 @@ public sealed class SwShRaidBattlesWorkflowService
 
     private static RaidBattleLookupTables CreateEmptyLookupTables()
     {
-        return new RaidBattleLookupTables([], [], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
+        return new RaidBattleLookupTables([], new HashSet<int>(), [], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShRaidBattleEditableField> CreateEditableFields(RaidBattleLookupTables lookupTables)
     {
-        var speciesOptions = CreateIndexedOptions(lookupTables.SpeciesNames, "Species");
+        var speciesOptions = SwShSpeciesAvailability.CreateSpeciesOptions(
+            lookupTables.SpeciesNames,
+            lookupTables.PresentSpeciesIds,
+            (value, label) => new SwShRaidBattleEditableFieldOption(value, label));
 
         return BaseEditableFields
             .Select(field => field.Field == SpeciesField
@@ -459,10 +462,12 @@ public sealed class SwShRaidBattlesWorkflowService
         var messageRoot = ResolveLanguageMessageRoot(project, diagnostics);
         var speciesNames = LoadMessageTable(project, messageRoot, "monsname.dat", diagnostics);
         var personalRecords = LoadPersonalRecords(project);
+        var presentSpeciesIds = SwShSpeciesAvailability.CreatePresentSpeciesIds(personalRecords);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new RaidBattleLookupTables(
             speciesNames,
+            presentSpeciesIds,
             personalRecords,
             abilityResolver,
             SourceFileCount: (speciesNames.Length > 0 ? 1 : 0) + (personalRecords.Count > 0 ? 1 : 0));
@@ -747,6 +752,7 @@ public sealed class SwShRaidBattlesWorkflowService
 
     private sealed record RaidBattleLookupTables(
         IReadOnlyList<string> SpeciesNames,
+        IReadOnlySet<int> PresentSpeciesIds,
         IReadOnlyList<SwShPersonalRecord> PersonalRecords,
         SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);

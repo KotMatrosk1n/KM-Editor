@@ -57,7 +57,10 @@ public sealed class SwShPokemonWorkflowServiceTests
             option => option.Value == 65 && option.Label == "065 Overgrow");
         Assert.Contains(
             workflow.EditableFields.Single(field => field.Field == SwShPokemonWorkflowService.HatchedSpeciesField).Options,
-            option => option.Value == 2 && option.Label == "002 Ivysaur");
+            option => option.Value == 1 && option.Label == "001 Bulbasaur");
+        Assert.DoesNotContain(
+            workflow.EditableFields.Single(field => field.Field == SwShPokemonWorkflowService.HatchedSpeciesField).Options,
+            option => option.Value == 16);
         var pokemon = workflow.Pokemon[1];
         Assert.Equal(1, pokemon.PersonalId);
         Assert.Equal(1, pokemon.SpeciesId);
@@ -251,6 +254,14 @@ public sealed class SwShPokemonWorkflowServiceTests
                 CreateBulbasaurPersonalRecord(hp: 60, hatchedSpecies: 2),
                 CreateBulbasaurPersonalRecord(hp: 80, hatchedSpecies: 3),
                 CreateEmptyPersonalRecord(formCount: 1)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateNamedPokemonNames(
+                4,
+                (0, "None"),
+                (1, "Bulbasaur"),
+                (2, "Ivysaur"),
+                (3, "Venusaur")));
         temp.WriteBaseExeFsFile("main", "base-main");
         var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
 
@@ -459,11 +470,14 @@ public sealed class SwShPokemonWorkflowServiceTests
     private static byte[] CreateIndexedPokemonNames()
     {
         return CreateNamedPokemonNames(
-            4,
+            18,
             (0, "None"),
             (1, "Bulbasaur"),
             (2, "Ivysaur"),
-            (3, "Venusaur"));
+            (3, "Venusaur"),
+            (4, string.Empty),
+            (16, "Pidgey"),
+            (17, "Pidgeotto"));
     }
 
     private static byte[] CreateNamedPokemonNames(int count, params (int Index, string Name)[] replacements)
