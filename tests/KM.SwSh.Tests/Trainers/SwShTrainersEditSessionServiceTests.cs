@@ -36,6 +36,27 @@ public sealed class SwShTrainersEditSessionServiceTests
     }
 
     [Fact]
+    public void UpdateFieldRejectsUnverifiedMultiBattleType()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShTrainersEditSessionService();
+
+        var result = service.UpdateField(
+            temp.Paths,
+            session: null,
+            trainerId: 10,
+            slot: null,
+            field: SwShTrainersWorkflowService.BattleTypeField,
+            value: "2");
+
+        Assert.False(result.Session.HasPendingChanges);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("between 0 and 1", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void UpdateFieldCreatesPendingTrainerMetadataEditAndOverlaysWorkflow()
     {
         using var temp = CreateEditableProject();

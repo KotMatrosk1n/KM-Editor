@@ -7121,6 +7121,7 @@ function PokemonSection({
               onUpdatePokemonEvolution={onUpdatePokemonEvolution}
               onUpdatePokemonLearnset={onUpdatePokemonLearnset}
               pokemon={selectedPokemon}
+              pokemonRecords={pokemon}
             />
           </div>
         ) : (
@@ -7226,7 +7227,8 @@ function SelectedPokemonPanel({
   onUpdatePokemonFields,
   onUpdatePokemonEvolution,
   onUpdatePokemonLearnset,
-  pokemon
+  pokemon,
+  pokemonRecords
 }: {
   canEditPokemon: boolean;
   editSession: EditSession | null;
@@ -7262,6 +7264,7 @@ function SelectedPokemonPanel({
     level: number | null
   ) => void;
   pokemon: PokemonRecord | null;
+  pokemonRecords: PokemonRecord[];
 }) {
   const personalDraftDefaults = useMemo(
     () => createPokemonPersonalDrafts(pokemon, editableFields),
@@ -7302,8 +7305,8 @@ function SelectedPokemonPanel({
     [editableFields]
   );
   const pokemonSpeciesLabels = useMemo(
-    () => new Map(pokemonSpeciesOptions.map((option) => [option.value, option.label])),
-    [pokemonSpeciesOptions]
+    () => createPokemonSpeciesLabelMap(pokemonSpeciesOptions, pokemonRecords),
+    [pokemonSpeciesOptions, pokemonRecords]
   );
   const [evolutionMethodDraft, setEvolutionMethodDraft] = useState(
     selectedEvolution?.method.toString() ?? ''
@@ -8447,7 +8450,8 @@ function SelectedPokemonPanel({
                         options={addCurrentPokemonFieldOption(
                           pokemonSpeciesOptions,
                           evolutionSpeciesDraft,
-                          'Species'
+                          'Species',
+                          pokemonSpeciesLabels
                         )}
                         value={evolutionSpeciesDraft}
                       />
@@ -8615,7 +8619,8 @@ function SelectedPokemonPanel({
                       options={addCurrentPokemonFieldOption(
                         pokemonSpeciesOptions,
                         newEvolutionSpeciesDraft,
-                        'Species'
+                        'Species',
+                        pokemonSpeciesLabels
                       )}
                       value={newEvolutionSpeciesDraft}
                     />
@@ -22342,6 +22347,30 @@ function reviewPokemonEvolutionDrafts(
   return { changes, invalidCount };
 }
 
+function createPokemonSpeciesLabelMap(
+  options: PokemonEditableFieldOption[],
+  pokemonRecords: PokemonRecord[]
+) {
+  const labels = new Map(options.map((option) => [option.value, option.label]));
+
+  for (const record of pokemonRecords) {
+    if (
+      record.speciesId <= 0 ||
+      labels.has(record.speciesId) ||
+      /^Unused \d+$/i.test(record.name)
+    ) {
+      continue;
+    }
+
+    labels.set(
+      record.speciesId,
+      `${record.speciesId.toString().padStart(3, '0')} ${record.name}`
+    );
+  }
+
+  return labels;
+}
+
 function createEvolutionFormOptionContext(
   speciesId: number | null,
   speciesLabels: ReadonlyMap<number, string>
@@ -22405,7 +22434,8 @@ function addCurrentEvolutionMethodOption(
 function addCurrentPokemonFieldOption(
   options: PokemonEditableFieldOption[],
   draftValue: string,
-  fallbackLabel: string
+  fallbackLabel: string,
+  valueLabels?: ReadonlyMap<number, string>
 ) {
   const parsedValue = parseEditableIntegerDraft(draftValue, options);
   if (
@@ -22419,7 +22449,7 @@ function addCurrentPokemonFieldOption(
   return [
     ...options,
     {
-      label: `${parsedValue} ${fallbackLabel}`,
+      label: valueLabels?.get(parsedValue) ?? `${parsedValue} ${fallbackLabel}`,
       value: parsedValue
     }
   ];
@@ -25132,9 +25162,27 @@ function getPokemonSpriteUrls(name: string, preferStatic: boolean) {
 }
 
 const pokemonSpriteIdOverrides = new Map<string, string>([
+  ['nidoran♀', 'nidoranf'],
+  ['nidoran♂', 'nidoranm'],
+  ['nidoran-f', 'nidoranf'],
+  ['nidoran-m', 'nidoranm'],
+  ['nidoran-female', 'nidoranf'],
+  ['nidoran-male', 'nidoranm'],
+  ['nidoran-(female)', 'nidoranf'],
+  ['nidoran-(male)', 'nidoranm'],
+  ['ho-oh', 'hooh'],
   ['jangmo-o', 'jangmoo'],
   ['hakamo-o', 'hakamoo'],
   ['kommo-o', 'kommoo'],
+  ['mime-jr.', 'mimejr'],
+  ['mr.-mime', 'mrmime'],
+  ['mr.-mime-galar', 'mrmime-galar'],
+  ['mr.-rime', 'mrrime'],
+  ['tapu-bulu', 'tapubulu'],
+  ['tapu-fini', 'tapufini'],
+  ['tapu-koko', 'tapukoko'],
+  ['tapu-lele', 'tapulele'],
+  ['type:-null', 'typenull'],
   ['toxtricity-low-key-gmax', 'toxtricity-gmax']
 ]);
 
@@ -25195,7 +25243,11 @@ function getReferenceSpriteName(label: string) {
 }
 
 function toPokemonSpriteIdPart(value: string) {
-  return value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, '');
+  return value
+    .toLocaleLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '');
 }
 
 function getEditableFieldHelp(field: EditableFieldWithOptions) {
