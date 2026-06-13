@@ -761,6 +761,10 @@ h2 {
   text-transform: capitalize;
 }
 
+.diagnostic span {
+  white-space: pre-line;
+}
+
 .diagnostic-error strong {
   color: #ff6b6b;
 }
@@ -771,6 +775,46 @@ h2 {
 
 .diagnostic-info strong {
   color: #d6a842;
+}
+
+.fatal-error-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: #080d19;
+}
+
+.fatal-error-panel {
+  width: min(720px, 100%);
+}
+
+.fatal-error-panel h1 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.fatal-error-code {
+  display: grid;
+  gap: 6px;
+  margin: 18px 0;
+  padding: 12px;
+  background: #0b1120;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.fatal-error-code span {
+  color: #9aa7bd;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.fatal-error-code code {
+  color: #f4c34f;
+  font-size: 1.1rem;
+  font-weight: 800;
 }
 
 .empty-copy {

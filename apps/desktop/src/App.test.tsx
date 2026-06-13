@@ -3,7 +3,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-import { App, getPokemonSpriteId, getPokemonSpriteIds } from './App';
+import { App, AppErrorBoundary, getPokemonSpriteId, getPokemonSpriteIds } from './App';
 import {
   type BagHookWorkflow,
   type BehaviorWorkflow,
@@ -67,6 +67,27 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 
 describe('App', () => {
+  it('shows a reportable error code when rendering crashes', () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const BrokenSection = () => {
+      throw new Error('render exploded');
+    };
+
+    try {
+      render(
+        <AppErrorBoundary>
+          <BrokenSection />
+        </AppErrorBoundary>
+      );
+
+      expect(screen.getByRole('alert')).toHaveTextContent('KM Editor hit a critical display error.');
+      expect(screen.getByText(/^KM-UI-RENDER-/)).toBeInTheDocument();
+      expect(screen.getByText(/Take a screenshot/)).toBeInTheDocument();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
   it('normalizes known hyphenated Pokemon sprite ids', () => {
     expect(getPokemonSpriteId('Kommo-o')).toBe('kommoo');
     expect(getPokemonSpriteId('Toxtricity (Low Key) (Gigantamax)')).toBe('toxtricity-gmax');
@@ -3738,7 +3759,22 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
 
-    expect(await screen.findByText('Project bridge unavailable.')).toBeInTheDocument();
+    expect(
+      await screen.findByText((content) =>
+        content.includes('KM Editor hit an unexpected bridge error.')
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((content) => content.includes('Error code: KM-BRIDGE-'))
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((content) =>
+        content.includes('Take a screenshot of this message and report it in GitHub Issues.')
+      )
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText((content) => content.includes('Project bridge unavailable.'))
+    ).toBeInTheDocument();
   });
 
   it('checks native updates and installs them in the desktop app', async () => {
@@ -4018,7 +4054,9 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Output Root'), 'missing-output-root');
     await user.click(screen.getByRole('button', { name: 'Open Output Root' }));
 
-    expect(await screen.findByText('The folder does not exist.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Could not open output root. The folder does not exist.')
+    ).toBeInTheDocument();
   });
 
   it('prompts on desktop window close during an edit session and exits after discard', async () => {
