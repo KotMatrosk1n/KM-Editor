@@ -26,6 +26,7 @@ import {
   Save,
   Search,
   Settings as SettingsIcon,
+  Shirt,
   ShieldCheck,
   Swords,
   Trash2,
@@ -81,6 +82,7 @@ import {
   type GiftPokemonEditableField,
   type GiftPokemonRecord,
   type GiftPokemonWorkflow,
+  type GymUniformRemovalWorkflow,
   type ItemEditableField,
   type ItemsWorkflow,
   type IvScreenWorkflow,
@@ -376,6 +378,11 @@ const sections: Array<{
     icon: ShieldCheck
   },
   {
+    id: 'gymUniformRemoval',
+    label: 'Gym Uniform Removal',
+    icon: Shirt
+  },
+  {
     id: 'ivScreen',
     label: 'IV Screen',
     icon: Dna
@@ -470,7 +477,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'advancedEditors',
     label: 'Advanced Editors',
-    sectionIds: ['catchCap', 'ivScreen', 'royalCandy', 'startingItems']
+    sectionIds: ['catchCap', 'gymUniformRemoval', 'ivScreen', 'royalCandy', 'startingItems']
   }
 ];
 
@@ -603,6 +610,13 @@ const workflowDefinitions: Array<{
     description:
       'Independent ExeFS editor for badge catch caps 0-7. It patches the display and runtime capture checks; eight badges is locked at Lv.100 because full badges can catch any level.',
     icon: ShieldCheck
+  },
+  {
+    id: 'gymUniformRemoval',
+    label: 'Gym Uniform Removal',
+    description:
+      'Independent ExeFS editor that keeps gym challenge and gym leader battle scripts from changing the player into the gym uniform.',
+    icon: Shirt
   },
   {
     id: 'ivScreen',
@@ -1324,9 +1338,15 @@ export function App({
   const setEncounterSearchText = useWorkbenchStore((state) => state.setEncounterSearchText);
   const setEncountersWorkflow = useWorkbenchStore((state) => state.setEncountersWorkflow);
   const catchCapWorkflow = useWorkbenchStore((state) => state.catchCapWorkflow);
+  const gymUniformRemovalWorkflow = useWorkbenchStore(
+    (state) => state.gymUniformRemovalWorkflow
+  );
   const ivScreenWorkflow = useWorkbenchStore((state) => state.ivScreenWorkflow);
   const setBagHookWorkflow = useWorkbenchStore((state) => state.setBagHookWorkflow);
   const setCatchCapWorkflow = useWorkbenchStore((state) => state.setCatchCapWorkflow);
+  const setGymUniformRemovalWorkflow = useWorkbenchStore(
+    (state) => state.setGymUniformRemovalWorkflow
+  );
   const setIvScreenWorkflow = useWorkbenchStore((state) => state.setIvScreenWorkflow);
   const setExeFsPatchSearchText = useWorkbenchStore(
     (state) => state.setExeFsPatchSearchText
@@ -1526,6 +1546,8 @@ export function App({
   const [isBagHookStaging, setIsBagHookStaging] = useState(false);
   const [isCatchCapLoading, setIsCatchCapLoading] = useState(false);
   const [isCatchCapStaging, setIsCatchCapStaging] = useState(false);
+  const [isGymUniformRemovalLoading, setIsGymUniformRemovalLoading] = useState(false);
+  const [isGymUniformRemovalStaging, setIsGymUniformRemovalStaging] = useState(false);
   const [isIvScreenLoading, setIsIvScreenLoading] = useState(false);
   const [isIvScreenStaging, setIsIvScreenStaging] = useState(false);
   const [isExeFsPatchLoading, setIsExeFsPatchLoading] = useState(false);
@@ -1645,6 +1667,7 @@ export function App({
     useWorkbenchStore.setState({
       bagHookWorkflow: null,
       catchCapWorkflow: null,
+      gymUniformRemovalWorkflow: null,
       ivScreenWorkflow: null,
       dynamaxAdventuresWorkflow: null,
       encountersWorkflow: null,
@@ -2669,6 +2692,70 @@ export function App({
     }
   };
 
+  const handleOpenGymUniformRemovalWorkflow = async () => {
+    setIsGymUniformRemovalLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadGymUniformRemovalWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setGymUniformRemovalWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsGymUniformRemovalLoading(false);
+    }
+  };
+
+  const handleStageGymUniformRemovalInstall = async () => {
+    setIsGymUniformRemovalStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageGymUniformRemovalInstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setGymUniformRemovalWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('gymUniformRemoval', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsGymUniformRemovalStaging(false);
+    }
+  };
+
+  const handleStageGymUniformRemovalUninstall = async () => {
+    setIsGymUniformRemovalStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageGymUniformRemovalUninstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setGymUniformRemovalWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('gymUniformRemoval', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsGymUniformRemovalStaging(false);
+    }
+  };
+
   const handleOpenIvScreenWorkflow = async () => {
     setIsIvScreenLoading(true);
     setBridgeDiagnostics([]);
@@ -3029,6 +3116,12 @@ export function App({
           void handleOpenCatchCapWorkflow();
         }
         break;
+      case 'gymUniformRemoval':
+        if (!gymUniformRemovalWorkflow && !isGymUniformRemovalLoading) {
+          markLazyLoadStarted();
+          void handleOpenGymUniformRemovalWorkflow();
+        }
+        break;
       case 'ivScreen':
         if (!ivScreenWorkflow && !isIvScreenLoading) {
           markLazyLoadStarted();
@@ -3071,6 +3164,7 @@ export function App({
     exeFsPatchWorkflow,
     flagworkSaveWorkflow,
     giftPokemonWorkflow,
+    gymUniformRemovalWorkflow,
     health?.canOpenEditableWorkflows,
     isEncountersLoading,
     isExeFsPatchLoading,
@@ -3084,6 +3178,7 @@ export function App({
     isBehaviorLoading,
     isBagHookLoading,
     isCatchCapLoading,
+    isGymUniformRemovalLoading,
     isIvScreenLoading,
     isMovesLoading,
     isPlacementLoading,
@@ -5108,6 +5203,14 @@ export function App({
         }
       );
     }
+    if (gymUniformRemovalWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadGymUniformRemovalWorkflow({ paths });
+          setGymUniformRemovalWorkflow(response.workflow);
+        }
+      );
+    }
     if (ivScreenWorkflow) {
       reloadTasks.push(
         async () => {
@@ -5413,6 +5516,7 @@ export function App({
               isDynamaxAdventuresLoading={isDynamaxAdventuresLoading}
               isBagHookLoading={isBagHookLoading}
               isCatchCapLoading={isCatchCapLoading}
+              isGymUniformRemovalLoading={isGymUniformRemovalLoading}
               isIvScreenLoading={isIvScreenLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
@@ -5429,6 +5533,7 @@ export function App({
               onOpenDynamaxAdventuresWorkflow={handleOpenDynamaxAdventuresWorkflow}
               onOpenBagHookWorkflow={handleOpenBagHookWorkflow}
               onOpenCatchCapWorkflow={handleOpenCatchCapWorkflow}
+              onOpenGymUniformRemovalWorkflow={handleOpenGymUniformRemovalWorkflow}
               onOpenIvScreenWorkflow={handleOpenIvScreenWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
@@ -5847,6 +5952,24 @@ export function App({
                 onStageUninstall={handleStageCatchCapUninstall}
                 selectedBadgeCount={selectedCatchCapBadgeCount}
                 workflow={catchCapWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'gymUniformRemoval' ? (
+            isGymUniformRemovalLoading && !gymUniformRemovalWorkflow ? (
+              <WorkflowLoadingPanel label="Gym Uniform Removal" />
+            ) : (
+              <GymUniformRemovalSection
+                changePlan={changePlan}
+                editSession={getEditSessionForSection('gymUniformRemoval')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isGymUniformRemovalStaging}
+                onApplyChangePlan={handleApplyChangePlan}
+                onCreateChangePlan={handleCreateChangePlan}
+                onStageInstall={handleStageGymUniformRemovalInstall}
+                onStageUninstall={handleStageGymUniformRemovalUninstall}
+                workflow={gymUniformRemovalWorkflow}
               />
             )
           ) : null}
@@ -6362,6 +6485,7 @@ function WorkflowsSection({
   isDynamaxAdventuresLoading,
   isBagHookLoading,
   isCatchCapLoading,
+  isGymUniformRemovalLoading,
   isIvScreenLoading,
   isRoyalCandyLoading,
   isStartingItemsLoading,
@@ -6377,6 +6501,7 @@ function WorkflowsSection({
   onOpenDynamaxAdventuresWorkflow,
   onOpenBagHookWorkflow,
   onOpenCatchCapWorkflow,
+  onOpenGymUniformRemovalWorkflow,
   onOpenIvScreenWorkflow,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
@@ -6418,6 +6543,7 @@ function WorkflowsSection({
   isDynamaxAdventuresLoading: boolean;
   isBagHookLoading: boolean;
   isCatchCapLoading: boolean;
+  isGymUniformRemovalLoading: boolean;
   isIvScreenLoading: boolean;
   isRoyalCandyLoading: boolean;
   isStartingItemsLoading: boolean;
@@ -6433,6 +6559,7 @@ function WorkflowsSection({
   onOpenDynamaxAdventuresWorkflow: () => void;
   onOpenBagHookWorkflow: () => void;
   onOpenCatchCapWorkflow: () => void;
+  onOpenGymUniformRemovalWorkflow: () => void;
   onOpenIvScreenWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
@@ -6498,6 +6625,7 @@ function WorkflowsSection({
           const isFlagworkSaveWorkflow = definition.id === 'flagworkSave';
           const isBagHookWorkflow = definition.id === 'bagHook';
           const isCatchCapWorkflow = definition.id === 'catchCap';
+          const isGymUniformRemovalWorkflow = definition.id === 'gymUniformRemoval';
           const isIvScreenWorkflow = definition.id === 'ivScreen';
           const isExeFsPatchWorkflow = definition.id === 'exefsPatches';
           const isRoyalCandyWorkflow = definition.id === 'royalCandy';
@@ -6538,6 +6666,8 @@ function WorkflowsSection({
             isBagHookWorkflow && workflowState.availability !== 'disabled';
           const canOpenCatchCap =
             isCatchCapWorkflow && workflowState.availability !== 'disabled';
+          const canOpenGymUniformRemoval =
+            isGymUniformRemovalWorkflow && workflowState.availability !== 'disabled';
           const canOpenIvScreen =
             isIvScreenWorkflow && workflowState.availability !== 'disabled';
           const canOpenExeFsPatch =
@@ -6788,6 +6918,19 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isCatchCapLoading ? 'Loading' : 'Open Catch Cap'}</span>
+                  </button>
+                ) : null}
+                {isGymUniformRemovalWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenGymUniformRemoval || isGymUniformRemovalLoading}
+                    onClick={onOpenGymUniformRemovalWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>
+                      {isGymUniformRemovalLoading ? 'Loading' : 'Open Gym Uniform'}
+                    </span>
                   </button>
                 ) : null}
                 {isIvScreenWorkflow ? (
@@ -11297,6 +11440,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.exefs': 'ExeFS Patches',
     'workflow.exefsPatches': 'ExeFS Patches',
     'workflow.giftPokemon': 'Gift Pokemon',
+    'workflow.gymUniformRemoval': 'Gym Uniform Removal',
     'workflow.behavior': 'Behavior',
     'workflow.items': 'Items',
     'workflow.ivScreen': 'IV Screen',
@@ -11527,6 +11671,16 @@ function getPendingEditDisplayDetails(
         fieldLabel: edit.field === 'caps' ? 'Badge caps' : undefined,
         newValueLabel: formatCatchCapPendingValue(edit.newValue),
         recordLabel: 'Catch Cap Editor'
+      });
+    case 'workflow.gymUniformRemoval':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'install' ? 'Install' : 'Uninstall',
+        newValueLabel:
+          edit.recordId === 'gym-uniform-removal-v1-install'
+            ? 'Skip gym uniform changes'
+            : 'Restore base bytes',
+        recordLabel: 'Gym Uniform Removal'
       });
     case 'workflow.ivScreen':
       return createPendingEditDisplayDetails(edit, {
@@ -19791,6 +19945,235 @@ function IvScreenSection({
           </div>
         ) : (
           <p className="empty-copy">Open IV Screen from Advanced Editors to inspect the hook.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function GymUniformRemovalSection({
+  changePlan,
+  editSession,
+  isChangePlanApplying,
+  isChangePlanCreating,
+  isStaging,
+  onApplyChangePlan,
+  onCreateChangePlan,
+  onStageInstall,
+  onStageUninstall,
+  workflow
+}: {
+  changePlan: ChangePlan | null;
+  editSession: EditSession | null;
+  isChangePlanApplying: boolean;
+  isChangePlanCreating: boolean;
+  isStaging: boolean;
+  onApplyChangePlan: () => void;
+  onCreateChangePlan: () => void;
+  onStageInstall: () => void;
+  onStageUninstall: () => void;
+  workflow: GymUniformRemovalWorkflow | null;
+}) {
+  const stagedGymUniformRemovalEdit = editSession?.pendingEdits.find(
+    (edit) => edit.domain === 'workflow.gymUniformRemoval'
+  );
+  const isInstallStaged =
+    stagedGymUniformRemovalEdit?.recordId === 'gym-uniform-removal-v1-install';
+  const isUninstallStaged =
+    stagedGymUniformRemovalEdit?.recordId === 'gym-uniform-removal-v1-uninstall';
+  const hasStagedChange = isInstallStaged || isUninstallStaged;
+  const canStageInstall =
+    workflow?.summary.availability === 'available' &&
+    workflow.installStatus !== 'blocked' &&
+    workflow.installStatus !== 'foreign';
+  const canStageUninstall =
+    workflow?.summary.availability === 'available' && workflow.installStatus === 'installed';
+  const canReviewPlan = hasStagedChange && !isChangePlanCreating;
+  const canApplyPlan =
+    hasStagedChange &&
+    changePlan !== null &&
+    changePlan.canApply &&
+    changePlan.writes.length > 0 &&
+    !isChangePlanApplying;
+  const installLabel =
+    workflow?.installStatus === 'installed' ? 'Stage Reinstall' : 'Stage Install';
+
+  return (
+    <>
+      <section aria-labelledby="gym-uniform-removal-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Shirt aria-hidden="true" size={18} />
+          <h2 id="gym-uniform-removal-heading">Gym Uniform Removal</h2>
+        </div>
+        <p className="workflow-description">
+          Gym Uniform Removal keeps gym challenge and gym leader battle scripts from
+          switching the player into the gym uniform.
+        </p>
+        <p className="workflow-description">
+          KM writes a build-ID IPS patch in exefs, so Eden/Yuzu applies the handler
+          override at load time while the current outfit stays on.
+        </p>
+
+        <div className="items-toolbar exefs-toolbar">
+          <Metric
+            label="Install"
+            value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
+          />
+          <Metric label="Patch site" value={workflow?.patchOffsetHex ?? 'Not loaded'} />
+          <Metric
+            label="Reserved regions"
+            value={workflow ? workflow.stats.reservedMainTextRegionCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="flagwork-layout">
+            <div className="flagwork-stack">
+              <div
+                className="exefs-table iv-screen-range-table"
+                role="table"
+                aria-label="Gym Uniform Removal behavior summary"
+              >
+                <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
+                  <span role="columnheader">Mode</span>
+                  <span role="columnheader">What happens</span>
+                </div>
+                <div className="exefs-row iv-screen-range-row" role="row">
+                  <span role="cell">Not installed</span>
+                  <span role="cell">Gym scripts call the normal uniform-change handler.</span>
+                </div>
+                <div className="exefs-row iv-screen-range-row" role="row">
+                  <span role="cell">Installed</span>
+                  <span role="cell">
+                    The IPS patch makes the handler return success, and the outfit does not change.
+                  </span>
+                </div>
+              </div>
+
+              <div
+                className="exefs-table iv-screen-range-table"
+                role="table"
+                aria-label="Gym Uniform Removal reserved ranges"
+              >
+                <div className="exefs-row iv-screen-range-row exefs-row-heading" role="row">
+                  <span role="columnheader">Region</span>
+                  <span role="columnheader">Range</span>
+                </div>
+                {workflow.reservedRegions.map((region) => (
+                  <div className="exefs-row iv-screen-range-row" key={region.regionId} role="row">
+                    <span role="cell">{region.label}</span>
+                    <span role="cell">{region.offsetLabel}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <aside aria-label="Gym Uniform Removal install details" className="encounter-inspector">
+              <div className="panel-heading">
+                <Shirt aria-hidden="true" size={18} />
+                <h3>Install Details</h3>
+              </div>
+
+              <dl className="item-provenance-list">
+                <div>
+                  <dt>Install status</dt>
+                  <dd>{formatBagHookStatus(workflow.installStatus)}</dd>
+                </div>
+                <div>
+                  <dt>Build ID</dt>
+                  <dd>{workflow.buildId}</dd>
+                </div>
+                <div>
+                  <dt>Patch site</dt>
+                  <dd>{workflow.patchOffsetHex}</dd>
+                </div>
+                <div>
+                  <dt>Stub</dt>
+                  <dd>{workflow.stubKind}</dd>
+                </div>
+                <div>
+                  <dt>Source file</dt>
+                  <dd>{workflow.provenance.sourceFile}</dd>
+                </div>
+                <div>
+                  <dt>Layer</dt>
+                  <dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd>
+                </div>
+                <div>
+                  <dt>File state</dt>
+                  <dd>{formatFileState(workflow.provenance.fileState)}</dd>
+                </div>
+              </dl>
+
+              <div className="encounter-edit-form">
+                <div className="form-actions">
+                  <button
+                    className="primary-button"
+                    disabled={!canStageInstall || isStaging}
+                    onClick={onStageInstall}
+                    type="button"
+                  >
+                    <Wrench aria-hidden="true" size={16} />
+                    <span>{isStaging ? 'Staging' : installLabel}</span>
+                  </button>
+                  <button
+                    className="danger-button"
+                    disabled={!canStageUninstall || isStaging}
+                    onClick={onStageUninstall}
+                    type="button"
+                  >
+                    <Trash2 aria-hidden="true" size={16} />
+                    <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={!canReviewPlan}
+                    onClick={onCreateChangePlan}
+                    type="button"
+                  >
+                    <ClipboardCheck aria-hidden="true" size={16} />
+                    <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={!canApplyPlan}
+                    onClick={onApplyChangePlan}
+                    type="button"
+                  >
+                    <Save aria-hidden="true" size={16} />
+                    <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                  </button>
+                </div>
+
+                <dl className="encounter-slot-detail">
+                  <div>
+                    <dt>Install message</dt>
+                    <dd>{workflow.installMessage}</dd>
+                  </div>
+                  <div>
+                    <dt>Staged change</dt>
+                    <dd>
+                      {isInstallStaged
+                        ? 'Install or refresh'
+                        : isUninstallStaged
+                          ? 'Uninstall'
+                          : 'None'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Uninstall</dt>
+                    <dd>Removes the generated build-ID IPS file.</dd>
+                  </div>
+                </dl>
+              </div>
+            </aside>
+          </div>
+        ) : (
+          <p className="empty-copy">
+            Open Gym Uniform Removal from Advanced Editors to inspect the patch site.
+          </p>
         )}
       </section>
 

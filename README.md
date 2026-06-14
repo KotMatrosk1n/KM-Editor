@@ -14,7 +14,7 @@ It works through a safer LayeredFS flow: choose Sword or Shield, validate clean 
 - Includes viewers for game text, flagwork metadata, and save-related inspection.
 - Stages changes into an edit session so you can remove mistakes before applying.
 - Uses reviewed change plans for higher-risk output, including hook-backed workflows.
-- Supports Bag Hook, Royal Candy, and Starting Items through documented ownership rules.
+- Supports Bag Hook, Royal Candy, Starting Items, Catch Cap, IV Screen, and Gym Uniform Removal through documented ownership rules.
 - Checks for native app updates from Settings on updater-enabled builds.
 
 ## Build Requirements
@@ -48,4 +48,4 @@ Installer and updater release builds also need Tauri updater signing secrets. Se
 - [Desktop app notes](apps/desktop/README.md)
 - [Backend test notes](tests/README.md)
 
-Catch Cap Editor and IV Screen are available as Advanced Editors with documented ExeFS ownership rules. Rental Pokemon and Dynamax Adventures remain hidden as work in progress until their runtime safety work is finished. See the [Hook Architecture wiki page](https://github.com/KotMatrosk1n/KM-Editor/wiki/Hook-Architecture), [Rental Pokemon Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Rental-Pokemon-Editor), and [Dynamax Adventures Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Dynamax-Adventures-Editor).
+Catch Cap Editor, IV Screen, and Gym Uniform Removal are available as Advanced Editors with documented Sword/Shield ExeFS ownership rules. Rental Pokemon and Dynamax Adventures remain hidden as work in progress until their runtime safety work is finished. See the [Hook Architecture wiki page](https://github.com/KotMatrosk1n/KM-Editor/wiki/Hook-Architecture), [Gym Uniform Removal](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gym-Uniform-Removal), [Rental Pokemon Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Rental-Pokemon-Editor), and [Dynamax Adventures Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Dynamax-Adventures-Editor).

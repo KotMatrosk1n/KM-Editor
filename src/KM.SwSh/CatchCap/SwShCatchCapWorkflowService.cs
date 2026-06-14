@@ -103,7 +103,9 @@ public sealed class SwShCatchCapWorkflowService
 
         try
         {
-            var analysis = SwShCatchCapMainPatcher.Analyze(File.ReadAllBytes(sourcePath));
+            var analysis = SwShCatchCapMainPatcher.Analyze(
+                File.ReadAllBytes(sourcePath),
+                project.Paths.SelectedGame);
             var installStatus = analysis.Kind switch
             {
                 SwShCatchCapInstallKind.InstalledV1 => "installed",
@@ -111,13 +113,16 @@ public sealed class SwShCatchCapWorkflowService
                 SwShCatchCapInstallKind.ForeignPatch => "foreign",
                 _ => "blocked",
             };
-            if (analysis.Kind is SwShCatchCapInstallKind.ForeignPatch or SwShCatchCapInstallKind.Conflict)
+            if (analysis.Kind is SwShCatchCapInstallKind.UnsupportedBuild
+                or SwShCatchCapInstallKind.GameMismatch
+                or SwShCatchCapInstallKind.ForeignPatch
+                or SwShCatchCapInstallKind.Conflict)
             {
                 diagnostics.Add(CreateDiagnostic(
                     analysis.Kind == SwShCatchCapInstallKind.ForeignPatch ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
                     analysis.Message,
                     file: entry.RelativePath,
-                    expected: "Vanilla catch-cap formula tail or KM Catch Cap Hook marker"));
+                    expected: "Selected-game Sword/Shield 1.3.2 exefs/main with a vanilla catch-cap formula tail or KM Catch Cap Hook marker"));
             }
 
             return CreateWorkflow(
@@ -186,7 +191,10 @@ public sealed class SwShCatchCapWorkflowService
             "Catch Cap Editor hook is not installed.",
             [20, 25, 30, 35, 40, 45, 50, 55, 100],
             "badge_count < 8 ? 20 + badge_count * 5 : 100",
-            SwShCatchCapMainPatcher.ComputeCapLogicSha256([20, 25, 30, 35, 40, 45, 50, 55, 100]));
+            SwShCatchCapMainPatcher.ComputeCapLogicSha256([20, 25, 30, 35, 40, 45, 50, 55, 100]),
+            "unknown",
+            "unknown",
+            DetectedGame: null);
     }
 
     private static int MinimumLevelCap(int badgeCount)

@@ -16,6 +16,8 @@ import {
   type LoadBagHookWorkflowResponse,
   type LoadCatchCapWorkflowRequest,
   type LoadCatchCapWorkflowResponse,
+  type LoadGymUniformRemovalWorkflowRequest,
+  type LoadGymUniformRemovalWorkflowResponse,
   type LoadIvScreenWorkflowRequest,
   type LoadIvScreenWorkflowResponse,
   type LoadExeFsPatchWorkflowRequest,
@@ -66,6 +68,10 @@ import {
   type StageCatchCapResponse,
   type StageCatchCapUninstallRequest,
   type StageCatchCapUninstallResponse,
+  type StageGymUniformRemovalInstallRequest,
+  type StageGymUniformRemovalInstallResponse,
+  type StageGymUniformRemovalUninstallRequest,
+  type StageGymUniformRemovalUninstallResponse,
   type StageIvScreenInstallRequest,
   type StageIvScreenInstallResponse,
   type StageIvScreenUninstallRequest,
@@ -143,6 +149,7 @@ import {
   loadEncountersWorkflowResponseSchema,
   loadBagHookWorkflowResponseSchema,
   loadCatchCapWorkflowResponseSchema,
+  loadGymUniformRemovalWorkflowResponseSchema,
   loadIvScreenWorkflowResponseSchema,
   loadExeFsPatchWorkflowResponseSchema,
   loadFlagworkSaveWorkflowResponseSchema,
@@ -165,6 +172,8 @@ import {
   stageBagHookUninstallResponseSchema,
   stageCatchCapResponseSchema,
   stageCatchCapUninstallResponseSchema,
+  stageGymUniformRemovalInstallResponseSchema,
+  stageGymUniformRemovalUninstallResponseSchema,
   stageIvScreenInstallResponseSchema,
   stageIvScreenUninstallResponseSchema,
   stageExeFsPatchResponseSchema,
@@ -278,6 +287,15 @@ export type ProjectBridge = {
   stageCatchCapUninstall: (
     request: StageCatchCapUninstallRequest
   ) => Promise<StageCatchCapUninstallResponse>;
+  loadGymUniformRemovalWorkflow: (
+    request: LoadGymUniformRemovalWorkflowRequest
+  ) => Promise<LoadGymUniformRemovalWorkflowResponse>;
+  stageGymUniformRemovalInstall: (
+    request: StageGymUniformRemovalInstallRequest
+  ) => Promise<StageGymUniformRemovalInstallResponse>;
+  stageGymUniformRemovalUninstall: (
+    request: StageGymUniformRemovalUninstallRequest
+  ) => Promise<StageGymUniformRemovalUninstallResponse>;
   loadIvScreenWorkflow: (
     request: LoadIvScreenWorkflowRequest
   ) => Promise<LoadIvScreenWorkflowResponse>;
@@ -459,6 +477,27 @@ export function createProjectBridge(
         kmCommandNames.stageCatchCapUninstall,
         request,
         stageCatchCapUninstallResponseSchema
+      ),
+    loadGymUniformRemovalWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadGymUniformRemovalWorkflow,
+        request,
+        loadGymUniformRemovalWorkflowResponseSchema
+      ),
+    stageGymUniformRemovalInstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageGymUniformRemovalInstall,
+        request,
+        stageGymUniformRemovalInstallResponseSchema
+      ),
+    stageGymUniformRemovalUninstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageGymUniformRemovalUninstall,
+        request,
+        stageGymUniformRemovalUninstallResponseSchema
       ),
     loadIvScreenWorkflow: (request) =>
       sendProjectBridgeRequest(

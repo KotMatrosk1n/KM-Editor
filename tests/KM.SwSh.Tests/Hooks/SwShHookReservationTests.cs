@@ -6,6 +6,7 @@ using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
 using KM.SwSh.ExeFs;
+using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.IvScreen;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.StartingItems;
@@ -21,6 +22,8 @@ public sealed class SwShHookReservationTests
 {
     private const ulong SwordTitleId = 0x0100ABF008968000;
     private const ulong ShieldTitleId = 0x01008DB008C2C000;
+    private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
+    private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
     private const string RoyalCandyUnlimitedWorkflowId = "royal-candy-unlimited";
     private const string RoyalCandyStoryLimitsWorkflowId = "royal-candy-story-limits";
     private const string RoyalCandyUninstallWorkflowId = "royal-candy-uninstall";
@@ -53,7 +56,7 @@ public sealed class SwShHookReservationTests
     {
         using var temp = SwShPerformanceFixtureProject.Create();
         temp.WriteBaseRomFsFile("bin/script/amx/main_event_0020.amx", CreateVanillaBagEventScript());
-        temp.WriteBaseExeFsFile("main", CreateSharedHookNso());
+        temp.WriteBaseExeFsFile("main", CreateSharedHookNso(ProjectGame.Shield));
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(ShieldTitleId));
         var paths = temp.Paths with { SelectedGame = ProjectGame.Shield };
         InstallEmptyBagHook(paths);
@@ -61,6 +64,7 @@ public sealed class SwShHookReservationTests
 
         var bagHook = new SwShBagHookWorkflowService().Load(project);
         var catchCap = new SwShCatchCapWorkflowService().Load(project);
+        var gymUniformRemoval = new SwShGymUniformRemovalWorkflowService().Load(project);
         var ivScreen = new SwShIvScreenWorkflowService().Load(project);
         var royalCandy = new SwShRoyalCandyWorkflowService().Load(project);
         var startingItems = new SwShStartingItemsWorkflowService().Load(project);
@@ -76,6 +80,11 @@ public sealed class SwShHookReservationTests
         Assert.Equal(SwShWorkflowAvailability.Available, catchCap.Summary.Availability);
         Assert.Equal("available", catchCap.InstallStatus);
         Assert.Equal(9, catchCap.Caps.Count);
+
+        Assert.Equal(SwShWorkflowAvailability.Available, gymUniformRemoval.Summary.Availability);
+        Assert.Equal("available", gymUniformRemoval.InstallStatus);
+        Assert.Equal("main.text+0x01472630", gymUniformRemoval.PatchOffsetHex);
+        Assert.Contains(gymUniformRemoval.ReservedRegions, region => region.RegionId == "gym-uniform-removal-shield-handler");
 
         Assert.Equal(SwShWorkflowAvailability.Available, ivScreen.Summary.Availability);
         Assert.Equal("available", ivScreen.InstallStatus);
@@ -167,6 +176,225 @@ public sealed class SwShHookReservationTests
 
     [Theory]
     [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void GymUniformRemovalInstallsAlongsideCatchCapIvScreenAndRoyalCandy(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyCatchCap(paths);
+        ApplyIvScreen(paths);
+        ApplyRoyalCandy(paths, workflowId);
+        ApplyGymUniformRemoval(paths);
+
+        AssertGymUniformIpsInstalled(paths, game);
+        var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
+        Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
+        Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
+        Assert.Equal(ExpectedRoyalCandySignature(workflowId), SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void GymUniformRemovalPatchesOnlyOwnedHandlerBytesAndRestoresFromBase(ProjectGame game)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var patchedMain = SwShGymUniformRemovalMainPatcher.Apply(baseMain);
+        var baseText = SwShNsoFile.Parse(baseMain).Text.DecompressedData;
+        var patchedNso = SwShNsoFile.Parse(patchedMain);
+        var patchedText = patchedNso.Text.DecompressedData;
+        var patchOffset = GymUniformRemovalPatchOffset(game);
+
+        Assert.Equal(SwShNsoFile.ComputeHash(patchedText), patchedNso.Text.Hash);
+        Assert.Equal(0x320003E0u, ReadInstruction(patchedText, patchOffset));
+        Assert.Equal(0xD65F03C0u, ReadInstruction(patchedText, patchOffset + 4));
+        Assert.All(
+            ChangedTextOffsets(baseText, patchedText),
+            changedOffset => Assert.InRange(
+                changedOffset,
+                patchOffset,
+                patchOffset + SwShGymUniformRemovalMainPatcher.PatchLength - 1));
+
+        var restoredMain = SwShGymUniformRemovalMainPatcher.RestoreFromBase(patchedMain, baseMain);
+        var restoredNso = SwShNsoFile.Parse(restoredMain);
+        Assert.Equal(SwShNsoFile.ComputeHash(restoredNso.Text.DecompressedData), restoredNso.Text.Hash);
+        Assert.Equal(baseText, restoredNso.Text.DecompressedData);
+        Assert.Equal(SwShGymUniformRemovalInstallKind.NotInstalled, SwShGymUniformRemovalMainPatcher.Analyze(restoredMain).Kind);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void GymUniformRemovalCreatesReferenceIps32Patch(ProjectGame game)
+    {
+        var baseMain = CreateSharedHookNso(game);
+
+        var ipsBytes = SwShGymUniformRemovalMainPatcher.CreateIpsPatch(baseMain, game);
+        var analysis = SwShGymUniformRemovalMainPatcher.AnalyzeIpsPatch(ipsBytes, baseMain, game);
+
+        Assert.Equal(SwShGymUniformRemovalInstallKind.InstalledV1, analysis.Kind);
+        Assert.Equal(ExpectedGymUniformIpsBytes(game), ipsBytes);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void GymUniformRemovalRecognizesLegacyEofIpsPatchAsRefreshable(ProjectGame game)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var legacyIpsBytes = Convert.FromHexString(game == ProjectGame.Shield
+            ? "4950533332014726300008E0030032C0035FD6454F46"
+            : "4950533332014726000008E0030032C0035FD6454F46");
+
+        var analysis = SwShGymUniformRemovalMainPatcher.AnalyzeIpsPatch(legacyIpsBytes, baseMain, game);
+
+        Assert.Equal(SwShGymUniformRemovalInstallKind.InstalledCompatible, analysis.Kind);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void GymUniformRemovalRecognizesCompatibleReturnTrueStub(ProjectGame game)
+    {
+        var baseNso = SwShNsoFile.Parse(CreateSharedHookNso(game));
+        var text = baseNso.Text.DecompressedData.ToArray();
+        var patchOffset = GymUniformRemovalPatchOffset(game);
+        WriteInstruction(text, patchOffset, 0x52800020);
+        WriteInstruction(text, patchOffset + 4, 0xD65F03C0);
+        var compatibleMain = baseNso.Write(textDecompressedData: text);
+
+        var analysis = SwShGymUniformRemovalMainPatcher.Analyze(compatibleMain);
+        Assert.Equal(SwShGymUniformRemovalInstallKind.InstalledCompatible, analysis.Kind);
+
+        var refreshedText = SwShNsoFile.Parse(SwShGymUniformRemovalMainPatcher.Apply(compatibleMain)).Text.DecompressedData;
+        Assert.Equal(0x320003E0u, ReadInstruction(refreshedText, patchOffset));
+        Assert.Equal(0xD65F03C0u, ReadInstruction(refreshedText, patchOffset + 4));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void GymUniformRemovalBlocksForeignHandlerBytes(ProjectGame game)
+    {
+        var baseNso = SwShNsoFile.Parse(CreateSharedHookNso(game));
+        var text = baseNso.Text.DecompressedData.ToArray();
+        WriteInstruction(text, GymUniformRemovalPatchOffset(game), 0xD503201F);
+        var foreignMain = baseNso.Write(textDecompressedData: text);
+
+        var analysis = SwShGymUniformRemovalMainPatcher.Analyze(foreignMain);
+        Assert.Equal(SwShGymUniformRemovalInstallKind.Conflict, analysis.Kind);
+        Assert.Throws<InvalidDataException>(() => SwShGymUniformRemovalMainPatcher.Apply(foreignMain));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword, ProjectGame.Shield)]
+    [InlineData(ProjectGame.Shield, ProjectGame.Sword)]
+    public void GymUniformRemovalBlocksMainBuildIdThatDoesNotMatchSelectedGame(
+        ProjectGame selectedGame,
+        ProjectGame actualMainGame)
+    {
+        var mismatchedMain = CreateSharedHookNso(actualMainGame);
+        var directAnalysis = SwShGymUniformRemovalMainPatcher.Analyze(mismatchedMain, selectedGame);
+        Assert.Equal(SwShGymUniformRemovalInstallKind.GameMismatch, directAnalysis.Kind);
+        Assert.Throws<InvalidDataException>(() => SwShGymUniformRemovalMainPatcher.Apply(mismatchedMain, selectedGame));
+
+        using var temp = CreateHookProject(selectedGame);
+        temp.WriteBaseExeFsFile("main", mismatchedMain);
+        var paths = temp.Paths with { SelectedGame = selectedGame };
+        var project = new ProjectWorkspaceService().Open(paths);
+        var workflow = new SwShGymUniformRemovalWorkflowService().Load(project);
+
+        Assert.Equal("blocked", workflow.InstallStatus);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Sword and Shield use different patch sites", StringComparison.Ordinal));
+
+        var stage = new SwShGymUniformRemovalEditSessionService().StageInstall(paths, session: null);
+        Assert.Empty(stage.Session.PendingEdits);
+        Assert.Contains(
+            stage.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Sword and Shield use different patch sites", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword, ProjectGame.Shield)]
+    [InlineData(ProjectGame.Shield, ProjectGame.Sword)]
+    public void CatchCapBlocksMainBuildIdThatDoesNotMatchSelectedGame(
+        ProjectGame selectedGame,
+        ProjectGame actualMainGame)
+    {
+        var mismatchedMain = CreateSharedHookNso(actualMainGame);
+        var directAnalysis = SwShCatchCapMainPatcher.Analyze(mismatchedMain, selectedGame);
+        Assert.Equal(SwShCatchCapInstallKind.GameMismatch, directAnalysis.Kind);
+        Assert.Throws<InvalidDataException>(() => SwShCatchCapMainPatcher.Apply(
+            mismatchedMain,
+            Enumerable.Range(0, SwShCatchCapMainPatcher.CapCount)
+                .Select(index => index == SwShCatchCapMainPatcher.FinalBadgeCount ? 100 : 20 + index * 5)
+                .ToArray(),
+            selectedGame));
+
+        using var temp = CreateHookProject(selectedGame);
+        temp.WriteBaseExeFsFile("main", mismatchedMain);
+        var paths = temp.Paths with { SelectedGame = selectedGame };
+        var project = new ProjectWorkspaceService().Open(paths);
+        var workflow = new SwShCatchCapWorkflowService().Load(project);
+
+        Assert.Equal("blocked", workflow.InstallStatus);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Sword and Shield use different hook sites", StringComparison.Ordinal));
+
+        var stage = new SwShCatchCapEditSessionService().StageCaps(
+            paths,
+            Enumerable.Range(0, SwShCatchCapMainPatcher.CapCount)
+                .Select(index => new SwShCatchCapSelection(
+                    index,
+                    index == SwShCatchCapMainPatcher.FinalBadgeCount ? 100 : 20 + index * 5))
+                .ToArray(),
+            session: null);
+        Assert.Empty(stage.Session.PendingEdits);
+        Assert.Contains(
+            stage.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword, ProjectGame.Shield)]
+    [InlineData(ProjectGame.Shield, ProjectGame.Sword)]
+    public void IvScreenBlocksMainBuildIdThatDoesNotMatchSelectedGame(
+        ProjectGame selectedGame,
+        ProjectGame actualMainGame)
+    {
+        var mismatchedMain = CreateSharedHookNso(actualMainGame);
+        var directAnalysis = SwShIvScreenMainPatcher.Analyze(mismatchedMain, selectedGame);
+        Assert.Equal(SwShIvScreenInstallKind.GameMismatch, directAnalysis.Kind);
+        Assert.Throws<InvalidDataException>(() => SwShIvScreenMainPatcher.Apply(mismatchedMain, selectedGame));
+
+        using var temp = CreateHookProject(selectedGame);
+        temp.WriteBaseExeFsFile("main", mismatchedMain);
+        var paths = temp.Paths with { SelectedGame = selectedGame };
+        var project = new ProjectWorkspaceService().Open(paths);
+        var workflow = new SwShIvScreenWorkflowService().Load(project);
+
+        Assert.Equal("blocked", workflow.InstallStatus);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Sword and Shield use different Pokemon Summary hook sites", StringComparison.Ordinal));
+
+        var stage = new SwShIvScreenEditSessionService().StageInstall(paths, session: null);
+        Assert.Empty(stage.Session.PendingEdits);
+        Assert.Contains(
+            stage.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("foreign or conflicting Pokemon Summary hook", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
     public void RoyalCandyCleanupPreservesBagHookStartingItemsCatchCapAndIvScreen(ProjectGame game, string workflowId)
     {
         using var temp = CreateHookProject(game);
@@ -175,6 +403,7 @@ public sealed class SwShHookReservationTests
         ApplyStartingItems(paths);
         ApplyCatchCap(paths);
         ApplyIvScreen(paths);
+        ApplyGymUniformRemoval(paths);
         ApplyRoyalCandy(paths, workflowId);
 
         ApplyRoyalCandyCleanup(paths);
@@ -192,6 +421,7 @@ public sealed class SwShHookReservationTests
         var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
         Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
         Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
+        AssertGymUniformIpsInstalled(paths, game);
         Assert.Equal(SwShRoyalCandyExeFsSignatureKind.NotInstalled, SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
     }
 
@@ -261,6 +491,23 @@ public sealed class SwShHookReservationTests
 
     [Theory]
     [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void BagHookCleanupRemovesRoyalCandyExeFsAndPreservesGymUniformRemoval(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyRoyalCandy(paths, workflowId);
+        ApplyGymUniformRemoval(paths);
+
+        ApplyBagHookCleanup(paths);
+
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
+        AssertGymUniformIpsInstalled(paths, game);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
     public void CatchCapCleanupPreservesBagHookStartingItemsRoyalCandyAndIvScreen(ProjectGame game, string workflowId)
     {
         using var temp = CreateHookProject(game);
@@ -269,6 +516,7 @@ public sealed class SwShHookReservationTests
         ApplyStartingItems(paths);
         ApplyRoyalCandy(paths, workflowId);
         ApplyIvScreen(paths);
+        ApplyGymUniformRemoval(paths);
         ApplyCatchCap(paths);
 
         ApplyCatchCapCleanup(paths);
@@ -287,6 +535,7 @@ public sealed class SwShHookReservationTests
         var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
         Assert.Equal(SwShCatchCapInstallKind.NotInstalled, SwShCatchCapMainPatcher.Analyze(main).Kind);
         Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
+        AssertGymUniformIpsInstalled(paths, game);
         Assert.Equal(ExpectedRoyalCandySignature(workflowId), SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
     }
 
@@ -313,6 +562,7 @@ public sealed class SwShHookReservationTests
         InstallEmptyBagHook(paths);
         ApplyCatchCap(paths);
         ApplyRoyalCandy(paths, workflowId);
+        ApplyGymUniformRemoval(paths);
         ApplyIvScreen(paths);
 
         ApplyIvScreenCleanup(paths);
@@ -320,7 +570,44 @@ public sealed class SwShHookReservationTests
         var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
         Assert.Equal(SwShIvScreenInstallKind.NotInstalled, SwShIvScreenMainPatcher.Analyze(main).Kind);
         Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
+        AssertGymUniformIpsInstalled(paths, game);
         Assert.Equal(ExpectedRoyalCandySignature(workflowId), SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void GymUniformRemovalCleanupPreservesCatchCapIvScreenAndRoyalCandy(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyCatchCap(paths);
+        ApplyIvScreen(paths);
+        ApplyRoyalCandy(paths, workflowId);
+        ApplyGymUniformRemoval(paths);
+
+        ApplyGymUniformRemovalCleanup(paths);
+
+        var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
+        Assert.False(File.Exists(OutputPath(paths, SwShGymUniformRemovalMainPatcher.IpsRelativePath(game))));
+        Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
+        Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
+        Assert.Equal(ExpectedRoyalCandySignature(workflowId), SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void GymUniformRemovalCleanupRemovesExeFsOutputWhenNoOtherExeFsHookRemains(ProjectGame game)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        ApplyGymUniformRemoval(paths);
+
+        ApplyGymUniformRemovalCleanup(paths);
+
+        Assert.False(File.Exists(OutputPath(paths, SwShGymUniformRemovalMainPatcher.IpsRelativePath(game))));
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
     }
 
     [Theory]
@@ -777,7 +1064,7 @@ public sealed class SwShHookReservationTests
                         new SwShShopInventory([3, 4]),
                     ])])
                 .Write());
-        temp.WriteBaseExeFsFile("main", CreateSharedHookNso());
+        temp.WriteBaseExeFsFile("main", CreateSharedHookNso(game));
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(game == ProjectGame.Sword ? SwordTitleId : ShieldTitleId));
         return temp;
     }
@@ -866,6 +1153,55 @@ public sealed class SwShHookReservationTests
 
         var apply = service.ApplyChangePlan(paths, stage.Session, plan);
         Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    private static void ApplyGymUniformRemoval(ProjectPaths paths)
+    {
+        var service = new SwShGymUniformRemovalEditSessionService();
+        var stage = service.StageInstall(paths, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    private static void ApplyGymUniformRemovalCleanup(ProjectPaths paths)
+    {
+        var service = new SwShGymUniformRemovalEditSessionService();
+        var stage = service.StageUninstall(paths, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    private static void AssertGymUniformIpsInstalled(ProjectPaths paths, ProjectGame game)
+    {
+        var ipsRelativePath = SwShGymUniformRemovalMainPatcher.IpsRelativePath(game);
+        var ipsPath = OutputPath(paths, ipsRelativePath);
+        Assert.True(File.Exists(ipsPath));
+        var ipsBytes = File.ReadAllBytes(ipsPath);
+        var sourceMain = File.ReadAllBytes(Path.Combine(paths.BaseExeFsPath!, "main"));
+        var analysis = SwShGymUniformRemovalMainPatcher.AnalyzeIpsPatch(ipsBytes, sourceMain, game);
+
+        Assert.Equal(SwShGymUniformRemovalInstallKind.InstalledV1, analysis.Kind);
+        Assert.Equal("IPS32", System.Text.Encoding.ASCII.GetString(ipsBytes.AsSpan(0, 5)));
+        Assert.Equal("EEOF", System.Text.Encoding.ASCII.GetString(ipsBytes.AsSpan(ipsBytes.Length - 4, 4)));
+        Assert.Equal(23, ipsBytes.Length);
+        Assert.Equal(ExpectedGymUniformIpsBytes(game), ipsBytes);
+    }
+
+    private static byte[] ExpectedGymUniformIpsBytes(ProjectGame game)
+    {
+        return Convert.FromHexString(game == ProjectGame.Shield
+            ? "4950533332014726300008E0030032C0035FD645454F46"
+            : "4950533332014726000008E0030032C0035FD645454F46");
     }
 
     private static void ApplyRoyalCandy(ProjectPaths paths, string workflowId)
@@ -979,13 +1315,14 @@ public sealed class SwShHookReservationTests
         return Path.Combine(paths.BaseRomFsPath!, relativePath["romfs/".Length..].Replace('/', Path.DirectorySeparatorChar));
     }
 
-    private static byte[] CreateSharedHookNso()
+    private static byte[] CreateSharedHookNso(ProjectGame game = ProjectGame.Sword)
     {
         var text = new byte[0x0157D000];
         WriteRoyalCandyVanillaAnchors(text);
-        WriteCatchCapVanillaAnchors(text);
-        WriteIvScreenVanillaAnchors(text);
-        return CreateNso(text, [0x10], [0x20]);
+        WriteCatchCapVanillaAnchors(text, game);
+        WriteIvScreenVanillaAnchors(text, game);
+        WriteGymUniformRemovalVanillaAnchors(text);
+        return CreateNso(text, [0x10], [0x20], BuildIdForGame(game));
     }
 
     private static void WriteRoyalCandyVanillaAnchors(byte[] text)
@@ -1028,32 +1365,49 @@ public sealed class SwShHookReservationTests
         WriteInstruction(text, 0x007DDA8C, EncodeCmpImmediate(8, 0x32));
     }
 
-    private static void WriteCatchCapVanillaAnchors(byte[] text)
+    private static void WriteCatchCapVanillaAnchors(byte[] text, ProjectGame game = ProjectGame.Sword)
     {
+        var hookOffset = game == ProjectGame.Shield
+            ? SwShCatchCapMainPatcher.ShieldExeFsHookSiteOffset
+            : SwShCatchCapMainPatcher.ExeFsHookSiteOffset;
+        var tableOffset = game == ProjectGame.Shield
+            ? SwShCatchCapMainPatcher.ShieldExeFsTableOffset
+            : SwShCatchCapMainPatcher.ExeFsTableOffset;
+        var returnOffset = game == ProjectGame.Shield
+            ? SwShCatchCapMainPatcher.ShieldExeFsReturnOffset
+            : SwShCatchCapMainPatcher.ExeFsReturnOffset;
+
         // Sword/Shield has two adjacent catch cap formulas: the first feeds display text, and the
         // second is the runtime capture gate that blocks or allows the throw.
-        WriteInstruction(text, 0x013AE3AC, 0x0B000809);
-        WriteInstruction(text, 0x013AE3B0, 0xA9417BFD);
-        WriteInstruction(text, 0x013AE3B4, 0x12001C08);
-        WriteInstruction(text, 0x013AE3B8, 0x71001D1F);
-        WriteInstruction(text, 0x013AE3BC, 0x52800C88);
-        WriteInstruction(text, 0x013AE3C0, 0x11005129);
-        WriteInstruction(text, 0x013AE3C4, 0x1A898100);
-        WriteInstruction(text, 0x013AE3C8, 0xA8C24FF4);
-        WriteInstruction(text, 0x013AE3CC, 0xD65F03C0);
-        WriteCatchCapRuntimeVanillaFormula(text);
+        WriteInstruction(text, hookOffset, 0x0B000809);
+        WriteInstruction(text, tableOffset, 0xA9417BFD);
+        WriteInstruction(text, tableOffset + 4, 0x12001C08);
+        WriteInstruction(text, tableOffset + 8, 0x71001D1F);
+        WriteInstruction(text, tableOffset + 0x0C, 0x52800C88);
+        WriteInstruction(text, tableOffset + 0x10, 0x11005129);
+        WriteInstruction(text, tableOffset + 0x14, 0x1A898100);
+        WriteInstruction(text, returnOffset, 0xA8C24FF4);
+        WriteInstruction(text, returnOffset + 4, 0xD65F03C0);
+        WriteCatchCapRuntimeVanillaFormula(text, game);
     }
 
-    private static void WriteCatchCapRuntimeVanillaFormula(byte[] text)
+    private static void WriteCatchCapRuntimeVanillaFormula(byte[] text, ProjectGame game = ProjectGame.Sword)
     {
-        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset, 0x0B000809);
-        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 4, 0x12001C08);
-        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 8, 0x71001D1F);
-        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 0x0C, 0x52800C88);
-        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 0x10, 0x11005129);
-        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset + 0x14, 0x1A898100);
-        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeReturnOffset, 0xA8C17BFD);
-        WriteInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeReturnOffset + 4, 0xD65F03C0);
+        var runtimeOffset = game == ProjectGame.Shield
+            ? SwShCatchCapMainPatcher.ShieldExeFsRuntimeHookSiteOffset
+            : SwShCatchCapMainPatcher.ExeFsRuntimeHookSiteOffset;
+        var runtimeReturnOffset = game == ProjectGame.Shield
+            ? SwShCatchCapMainPatcher.ShieldExeFsRuntimeReturnOffset
+            : SwShCatchCapMainPatcher.ExeFsRuntimeReturnOffset;
+
+        WriteInstruction(text, runtimeOffset, 0x0B000809);
+        WriteInstruction(text, runtimeOffset + 4, 0x12001C08);
+        WriteInstruction(text, runtimeOffset + 8, 0x71001D1F);
+        WriteInstruction(text, runtimeOffset + 0x0C, 0x52800C88);
+        WriteInstruction(text, runtimeOffset + 0x10, 0x11005129);
+        WriteInstruction(text, runtimeOffset + 0x14, 0x1A898100);
+        WriteInstruction(text, runtimeReturnOffset, 0xA8C17BFD);
+        WriteInstruction(text, runtimeReturnOffset + 4, 0xD65F03C0);
     }
 
     private static void AssertRuntimeCatchCapHook(byte[] text)
@@ -1077,29 +1431,41 @@ public sealed class SwShHookReservationTests
         Assert.Equal(0xD65F03C0, ReadInstruction(text, SwShCatchCapMainPatcher.ExeFsRuntimeReturnOffset + 4));
     }
 
-    private static void WriteIvScreenVanillaAnchors(byte[] text)
+    private static void WriteIvScreenVanillaAnchors(byte[] text, ProjectGame game = ProjectGame.Sword)
     {
-        WriteInstruction(text, 0x0137F634, 0x94001F27);
-        WriteInstruction(text, 0x0138F268, 0x9400023E);
-        WriteInstruction(text, 0x013872D0, 0xD103C3FF);
-        WriteInstruction(text, 0x01385A70, 0xD10143FF);
-        WriteInstruction(text, 0x0138F990, 0xA9BC5FF8);
-        WriteInstruction(text, 0x0138FB60, 0xD10243FF);
-        WriteInstruction(text, 0x0138A1A0, 0xD10503FF);
-        WriteInstruction(text, 0x0138B1E0, 0xD10183FF);
-        WriteInstruction(text, 0x0138B1FC, 0x39592408);
-        WriteInstruction(text, 0x0138B200, 0x52000108);
-        WriteInstruction(text, 0x0139FB60, 0x340000A8);
-        WriteInstruction(text, 0x013B2F90, 0xD10143FF);
-        WriteInstruction(text, 0x013CA220, 0xF81D0FF5);
+        var shift = game == ProjectGame.Shield ? 0x30 : 0;
+        WriteInstruction(text, ShiftIvOffset(0x0137F634, shift), 0x94001F27);
+        WriteInstruction(text, ShiftIvOffset(0x0138F268, shift), 0x9400023E);
+        WriteInstruction(text, ShiftIvOffset(0x013872D0, shift), 0xD103C3FF);
+        WriteInstruction(text, ShiftIvOffset(0x01385A70, shift), 0xD10143FF);
+        WriteInstruction(text, ShiftIvOffset(0x0138F990, shift), 0xA9BC5FF8);
+        WriteInstruction(text, ShiftIvOffset(0x0138FB60, shift), 0xD10243FF);
+        WriteInstruction(text, ShiftIvOffset(0x0138A1A0, shift), 0xD10503FF);
+        WriteInstruction(text, ShiftIvOffset(0x0138B1E0, shift), 0xD10183FF);
+        WriteInstruction(text, ShiftIvOffset(0x0138B1FC, shift), 0x39592408);
+        WriteInstruction(text, ShiftIvOffset(0x0138B200, shift), 0x52000108);
+        WriteInstruction(text, ShiftIvOffset(0x0139FB60, shift), 0x340000A8);
+        WriteInstruction(text, ShiftIvOffset(0x013B2F90, shift), 0xD10143FF);
+        WriteInstruction(text, ShiftIvOffset(0x013CA220, shift), 0xF81D0FF5);
         WriteInstruction(text, 0x00779070, 0x7100143F);
         WriteInstruction(text, 0x00778E20, 0xA9BF7BFD);
         WriteInstruction(text, 0x007790D0, 0xA9BE4FF4);
-        WriteIvScreenCallSiteAnchors(text);
+        WriteIvScreenCallSiteAnchors(text, game);
     }
 
-    private static void WriteIvScreenCallSiteAnchors(byte[] text)
+    private static void WriteGymUniformRemovalVanillaAnchors(byte[] text)
     {
+        foreach (var offset in new[] { SwShGymUniformRemovalMainPatcher.SwordPatchOffset, SwShGymUniformRemovalMainPatcher.ShieldPatchOffset })
+        {
+            WriteInstruction(text, offset, 0xD0008CE8);
+            WriteInstruction(text, offset + 4, 0xB9400833);
+        }
+    }
+
+    private static void WriteIvScreenCallSiteAnchors(byte[] text, ProjectGame game = ProjectGame.Sword)
+    {
+        var shift = game == ProjectGame.Shield ? 0x30 : 0;
+
         foreach (var (offset, instruction) in new (int Offset, uint Instruction)[]
         {
             (0x0138FBE8, 0x97CFA48E),
@@ -1129,18 +1495,28 @@ public sealed class SwShHookReservationTests
             (0x0138AB60, 0x97CFC034),
             (0x0138AB90, 0x97CFBCF0),
             (0x0138ABA0, 0x97CFC024),
-            (0x0138AC88, 0x0B130008),
-            (0x0138ACAC, 0x0B130008),
-            (0x0138ACD0, 0x0B130008),
-            (0x0138ACF8, 0x0B170008),
-            (0x0138AD1C, 0x0B130008),
-            (0x0138AD40, 0x0B130008),
             (0x0138AE28, 0x97CFBE2E),
             (0x0138AE3C, 0x97CFBE29),
             (0x0138AE50, 0x97CFBE24),
             (0x0138AE64, 0x97CFBE1F),
             (0x0138AE78, 0x97CFBE1A),
             (0x0138AE8C, 0x97CFBE15),
+        })
+        {
+            WriteInstruction(
+                text,
+                ShiftIvOffset(offset, shift),
+                EncodeBranchLink(ShiftIvOffset(offset, shift), DecodeBranchTarget(instruction, offset)));
+        }
+
+        foreach (var (offset, instruction) in new (int Offset, uint Instruction)[]
+        {
+            (0x0138AC88, 0x0B130008),
+            (0x0138ACAC, 0x0B130008),
+            (0x0138ACD0, 0x0B130008),
+            (0x0138ACF8, 0x0B170008),
+            (0x0138AD1C, 0x0B130008),
+            (0x0138AD40, 0x0B130008),
             (0x0138AEAC, 0x2A1F03E8),
             (0x0138AEB0, 0x7103F27F),
             (0x0138AEB4, 0x54000063),
@@ -1192,7 +1568,7 @@ public sealed class SwShHookReservationTests
             (0x0139EF4C, 0x97FFAC95),
         })
         {
-            WriteInstruction(text, offset, instruction);
+            WriteInstruction(text, ShiftIvOffset(offset, shift), instruction);
         }
     }
 
@@ -1206,6 +1582,21 @@ public sealed class SwShHookReservationTests
         return BinaryPrimitives.ReadUInt32LittleEndian(text.AsSpan(offset, sizeof(uint)));
     }
 
+    private static int GymUniformRemovalPatchOffset(ProjectGame game)
+    {
+        return game == ProjectGame.Shield
+            ? SwShGymUniformRemovalMainPatcher.ShieldPatchOffset
+            : SwShGymUniformRemovalMainPatcher.SwordPatchOffset;
+    }
+
+    private static int[] ChangedTextOffsets(byte[] before, byte[] after)
+    {
+        Assert.Equal(before.Length, after.Length);
+        return Enumerable.Range(0, before.Length)
+            .Where(index => before[index] != after[index])
+            .ToArray();
+    }
+
     private static uint EncodeCmpImmediate(int register, int immediate)
     {
         return (uint)(0x7100001F | ((immediate & 0xFFF) << 10) | ((register & 0x1F) << 5));
@@ -1216,6 +1607,29 @@ public sealed class SwShHookReservationTests
         var delta = targetOffset - sourceOffset;
         var imm19 = delta >> 2;
         return (uint)(0x54000000 | ((imm19 & 0x7FFFF) << 5) | ((int)condition & 0xF));
+    }
+
+    private static uint EncodeBranchLink(int sourceOffset, int targetOffset)
+    {
+        var delta = targetOffset - sourceOffset;
+        var imm26 = delta >> 2;
+        return 0x94000000u | (uint)(imm26 & 0x03FFFFFF);
+    }
+
+    private static int DecodeBranchTarget(uint instruction, int sourceOffset)
+    {
+        var imm26 = (int)(instruction & 0x03FFFFFF);
+        if ((imm26 & 0x02000000) != 0)
+        {
+            imm26 |= unchecked((int)0xFC000000);
+        }
+
+        return sourceOffset + (imm26 << 2);
+    }
+
+    private static int ShiftIvOffset(int offset, int shift)
+    {
+        return offset + shift;
     }
 
     private static uint EncodeAdr(int register, int sourceOffset, int targetOffset)
@@ -1248,7 +1662,7 @@ public sealed class SwShHookReservationTests
         return 0xD503201F;
     }
 
-    private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data)
+    private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data, byte[]? buildId = null)
     {
         var textOffset = SwShNsoFile.HeaderSize;
         var roOffset = Align(textOffset + text.Length, 0x10);
@@ -1261,6 +1675,7 @@ public sealed class SwShHookReservationTests
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
         WriteSegmentHeader(output, 0x30, dataOffset, text.Length + ro.Length, data.Length);
         output.AsSpan(0x40, 0x20).Fill(0xAB);
+        (buildId ?? Convert.FromHexString(SwordBuildId)).CopyTo(output.AsSpan(0x40, 0x20));
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x68), data.Length);
@@ -1271,6 +1686,11 @@ public sealed class SwShHookReservationTests
         ro.CopyTo(output.AsSpan(roOffset));
         data.CopyTo(output.AsSpan(dataOffset));
         return output;
+    }
+
+    private static byte[] BuildIdForGame(ProjectGame game)
+    {
+        return Convert.FromHexString(game == ProjectGame.Shield ? ShieldBuildId : SwordBuildId);
     }
 
     private static void WriteSegmentHeader(byte[] output, int offset, int fileOffset, int memoryOffset, int decompressedSize)

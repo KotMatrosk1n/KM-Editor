@@ -38,7 +38,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
             "The synthetic baseline must include enough files to exercise project graph enumeration.");
 
         var workflowList = Record(measurements, "workflows.list", () => workflowService.List(temp.Paths));
-        Assert.Equal(24, workflowList.Workflows.Count);
+        Assert.Equal(26, workflowList.Workflows.Count);
 
         var items = Record(measurements, "items.load", () => workflowService.LoadItems(temp.Paths));
         var pokemon = Record(measurements, "pokemon.load", () => workflowService.LoadPokemon(temp.Paths));
@@ -62,9 +62,11 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var bagHook = Record(measurements, "bagHook.load", () => workflowService.LoadBagHook(temp.Paths));
         var catchCap = Record(measurements, "catchCap.load", () => workflowService.LoadCatchCap(temp.Paths));
         var ivScreen = Record(measurements, "ivScreen.load", () => workflowService.LoadIvScreen(temp.Paths));
+        var gymUniformRemoval = Record(measurements, "gymUniformRemoval.load", () => workflowService.LoadGymUniformRemoval(temp.Paths));
         var royalCandy = Record(measurements, "royalCandy.load", () => workflowService.LoadRoyalCandy(temp.Paths));
         var startingItems = Record(measurements, "startingItems.load", () => workflowService.LoadStartingItems(temp.Paths));
         var spreadsheetImport = Record(measurements, "spreadsheetImport.load", () => workflowService.LoadSpreadsheetImport(temp.Paths));
+        var modMerger = Record(measurements, "modMerger.load", () => workflowService.LoadModMerger(temp.Paths, null, null));
 
         Assert.Equal(SwShPerformanceFixtureProject.ItemCount, items.Stats.TotalItemCount);
         Assert.Equal(SwShPerformanceFixtureProject.PokemonCount, pokemon.Stats.TotalPokemonCount);
@@ -93,9 +95,11 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         Assert.Equal(20, bagHook.Stats.TotalSlotCount);
         Assert.Equal(9, catchCap.Stats.TotalCapCount);
         Assert.True(ivScreen.Stats.ReservedMainTextRegionCount > 0);
+        Assert.True(gymUniformRemoval.Stats.ReservedMainTextRegionCount > 0);
         Assert.True(royalCandy.Checks.Count > 0);
         Assert.Equal(19, startingItems.Stats.TotalGrantSlotCount);
         Assert.Single(spreadsheetImport.Profiles);
+        Assert.Equal(0, modMerger.Stats.MatchingFileCount);
 
         ReportMeasurements(measurements);
         AssertBudget(measurements, TimeSpan.FromSeconds(45));

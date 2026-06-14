@@ -266,7 +266,10 @@ public sealed class SwShCatchCapEditSessionService
 
         try
         {
-            var output = SwShCatchCapMainPatcher.Apply(File.ReadAllBytes(source.AbsolutePath), caps);
+            var output = SwShCatchCapMainPatcher.Apply(
+                File.ReadAllBytes(source.AbsolutePath),
+                caps,
+                paths.SelectedGame);
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             File.WriteAllBytes(targetPath, output);
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShCatchCapWorkflowService.ExeFsMainPath));
@@ -335,7 +338,8 @@ public sealed class SwShCatchCapEditSessionService
             var baseBytes = File.ReadAllBytes(basePath);
             var restored = SwShCatchCapMainPatcher.RestoreFromBase(
                 File.ReadAllBytes(targetPath),
-                baseBytes);
+                baseBytes,
+                paths.SelectedGame);
             if (restored.SequenceEqual(baseBytes) || !ContainsIndependentExeFsHook(restored))
             {
                 File.Delete(targetPath);
@@ -710,10 +714,7 @@ public sealed class SwShCatchCapEditSessionService
 
     private static bool ContainsIndependentExeFsHook(byte[] mainBytes)
     {
-        var ivScreenKind = SwShIvScreenMainPatcher.Analyze(mainBytes).Kind;
-        return SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(mainBytes).Kind
-                != SwShRoyalCandyExeFsSignatureKind.NotInstalled
-            || ivScreenKind is SwShIvScreenInstallKind.InstalledV1 or SwShIvScreenInstallKind.InstalledLegacyV1;
+        return SwShIndependentExeFsHookDetector.ContainsAny(mainBytes);
     }
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
