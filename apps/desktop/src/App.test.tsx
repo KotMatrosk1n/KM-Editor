@@ -118,6 +118,17 @@ describe('App', () => {
     expect(getPokemonSpriteId('Type: Null')).toBe('typenull');
   });
 
+  it('normalizes legendary form labels to bundled sprite ids', () => {
+    expect(getPokemonSpriteId('Necrozma (Dusk Mane)')).toBe('necrozma-duskmane');
+    expect(getPokemonSpriteId('Necrozma (Dawn Wings)')).toBe('necrozma-dawnwings');
+    expect(getPokemonSpriteId('Necrozma (Ultra Necrozma)')).toBe('necrozma-ultra');
+    expect(getPokemonSpriteIds('Giratina (Origin Forme)')).toEqual([
+      'giratina-origin-forme',
+      'giratina-origin',
+      'giratina'
+    ]);
+  });
+
   it('falls back from form-specific Pokemon sprite ids to the base species id', () => {
     expect(getPokemonSpriteIds('Tornadus (Therian Forme)')).toEqual([
       'tornadus-therian-forme',
