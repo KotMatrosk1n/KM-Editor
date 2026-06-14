@@ -386,9 +386,7 @@ internal static class SwShRoyalCandyCleanup
 
     private static bool ContainsIndependentExeFsHook(byte[] mainBytes)
     {
-        var ivScreenKind = SwShIvScreenMainPatcher.Analyze(mainBytes).Kind;
-        return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1
-            || ivScreenKind is SwShIvScreenInstallKind.InstalledV1 or SwShIvScreenInstallKind.InstalledLegacyV1;
+        return SwShIndependentExeFsHookDetector.ContainsAny(mainBytes);
     }
 
     private static bool IsShopDataOutput(string relativePath)

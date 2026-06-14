@@ -9,6 +9,7 @@ using KM.Api.Encounters;
 using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Gifts;
+using KM.Api.GymUniformRemoval;
 using KM.Api.Items;
 using KM.Api.IvScreen;
 using KM.Api.ModMerger;
@@ -34,6 +35,7 @@ using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Gifts;
+using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.IvScreen;
 using KM.SwSh.ModMerger;
 using KM.SwSh.Placement;
@@ -307,6 +309,13 @@ public static class SwShBridgeMapper
         return new LoadIvScreenWorkflowResponse(ToIvScreenWorkflowDto(workflow));
     }
 
+    public static LoadGymUniformRemovalWorkflowResponse ToDto(SwShGymUniformRemovalWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadGymUniformRemovalWorkflowResponse(ToGymUniformRemovalWorkflowDto(workflow));
+    }
+
     public static StageIvScreenInstallResponse ToDto(SwShIvScreenEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -317,12 +326,32 @@ public static class SwShBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static StageGymUniformRemovalInstallResponse ToDto(SwShGymUniformRemovalEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageGymUniformRemovalInstallResponse(
+            ToGymUniformRemovalWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static StageIvScreenUninstallResponse ToIvScreenUninstallDto(SwShIvScreenEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
 
         return new StageIvScreenUninstallResponse(
             ToIvScreenWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageGymUniformRemovalUninstallResponse ToGymUniformRemovalUninstallDto(SwShGymUniformRemovalEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageGymUniformRemovalUninstallResponse(
+            ToGymUniformRemovalWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1249,6 +1278,23 @@ public static class SwShBridgeMapper
             workflow.ReservedRegions.Select(ToDto).ToArray(),
             ToDto(workflow.Provenance),
             new IvScreenWorkflowStatsDto(
+                workflow.Stats.ReservedMainTextRegionCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static GymUniformRemovalWorkflowDto ToGymUniformRemovalWorkflowDto(SwShGymUniformRemovalWorkflow workflow)
+    {
+        return new GymUniformRemovalWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.BuildId,
+            workflow.PatchOffsetHex,
+            workflow.StubKind,
+            workflow.ReservedRegions.Select(ToDto).ToArray(),
+            ToDto(workflow.Provenance),
+            new GymUniformRemovalWorkflowStatsDto(
                 workflow.Stats.ReservedMainTextRegionCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
@@ -2316,6 +2362,25 @@ public static class SwShBridgeMapper
     private static IvScreenProvenanceDto ToDto(SwShIvScreenProvenance provenance)
     {
         return new IvScreenProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static GymUniformRemovalReservedRegionDto ToDto(SwShGymUniformRemovalReservedRegion region)
+    {
+        return new GymUniformRemovalReservedRegionDto(
+            region.RegionId,
+            region.Label,
+            region.OffsetLabel,
+            region.StartOffset,
+            region.Length,
+            region.Rule);
+    }
+
+    private static GymUniformRemovalProvenanceDto ToDto(SwShGymUniformRemovalProvenance provenance)
+    {
+        return new GymUniformRemovalProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

@@ -255,7 +255,9 @@ public sealed class SwShIvScreenEditSessionService
 
         try
         {
-            var output = SwShIvScreenMainPatcher.Apply(File.ReadAllBytes(source.AbsolutePath));
+            var output = SwShIvScreenMainPatcher.Apply(
+                File.ReadAllBytes(source.AbsolutePath),
+                paths.SelectedGame);
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             File.WriteAllBytes(targetPath, output);
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShIvScreenWorkflowService.ExeFsMainPath));
@@ -269,7 +271,7 @@ public sealed class SwShIvScreenEditSessionService
                 DiagnosticSeverity.Error,
                 $"IV Screen source file could not be patched: {exception.Message}",
                 file: SwShIvScreenWorkflowService.ExeFsMainPath,
-                expected: "Supported Sword 1.3.2 exefs/main NSO"));
+                expected: "Supported Sword/Shield 1.3.2 exefs/main NSO"));
         }
         catch (IOException exception)
         {
@@ -324,7 +326,8 @@ public sealed class SwShIvScreenEditSessionService
             var baseBytes = File.ReadAllBytes(basePath);
             var restored = SwShIvScreenMainPatcher.RestoreFromBase(
                 File.ReadAllBytes(targetPath),
-                baseBytes);
+                baseBytes,
+                paths.SelectedGame);
             if (restored.SequenceEqual(baseBytes) || !ContainsIndependentExeFsHook(restored))
             {
                 File.Delete(targetPath);
@@ -345,7 +348,7 @@ public sealed class SwShIvScreenEditSessionService
                 DiagnosticSeverity.Error,
                 $"IV Screen uninstall could not restore exefs/main: {exception.Message}",
                 file: SwShIvScreenWorkflowService.ExeFsMainPath,
-                expected: "Supported Sword 1.3.2 exefs/main NSO"));
+                expected: "Supported Sword/Shield 1.3.2 exefs/main NSO"));
         }
         catch (IOException exception)
         {
@@ -527,9 +530,7 @@ public sealed class SwShIvScreenEditSessionService
 
     private static bool ContainsIndependentExeFsHook(byte[] mainBytes)
     {
-        return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1
-            || SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(mainBytes).Kind
-                != SwShRoyalCandyExeFsSignatureKind.NotInstalled;
+        return SwShIndependentExeFsHookDetector.ContainsAny(mainBytes);
     }
 
     private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)

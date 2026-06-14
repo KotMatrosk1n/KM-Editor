@@ -7,9 +7,11 @@ namespace KM.Integration.Tests.Tools;
 
 internal static class SwShExeFsBridgeFixtures
 {
+    private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
+
     public static byte[] CreateCompatibleNso()
     {
-        return CreateNso(CreateCompatibleText(), [0x10], [0x20]);
+        return CreateNso(CreateCompatibleText(), [0x10], [0x20], Convert.FromHexString(SwordBuildId));
     }
 
     private static byte[] CreateCompatibleText()
@@ -56,7 +58,16 @@ internal static class SwShExeFsBridgeFixtures
         WriteInstruction(text, 0x013B2F90, 0xD10143FF);
         WriteInstruction(text, 0x013CA220, 0xF81D0FF5);
         WriteIvScreenCallSiteAnchors(text);
+        WriteGymUniformRemovalVanillaAnchors(text);
         return text;
+    }
+
+    private static void WriteGymUniformRemovalVanillaAnchors(byte[] text)
+    {
+        WriteInstruction(text, 0x01472600, 0xD0008CE8);
+        WriteInstruction(text, 0x01472604, 0xB9400833);
+        WriteInstruction(text, 0x01472630, 0xD0008CE8);
+        WriteInstruction(text, 0x01472634, 0xB9400833);
     }
 
     private static void WriteIvScreenCallSiteAnchors(byte[] text)
@@ -174,7 +185,7 @@ internal static class SwShExeFsBridgeFixtures
         return (uint)(0x54000000 | ((imm19 & 0x7FFFF) << 5) | ((int)condition & 0xF));
     }
 
-    private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data)
+    private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data, byte[]? buildId = null)
     {
         var textOffset = SwShNsoFile.HeaderSize;
         var roOffset = Align(textOffset + text.Length, 0x10);
@@ -187,6 +198,7 @@ internal static class SwShExeFsBridgeFixtures
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
         WriteSegmentHeader(output, 0x30, dataOffset, text.Length + ro.Length, data.Length);
         output.AsSpan(0x40, 0x20).Fill(0xAB);
+        (buildId ?? Convert.FromHexString(SwordBuildId)).CopyTo(output.AsSpan(0x40, 0x20));
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x68), data.Length);

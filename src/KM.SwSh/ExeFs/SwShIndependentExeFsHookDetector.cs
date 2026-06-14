@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+using KM.SwSh.CatchCap;
+using KM.SwSh.GymUniformRemoval;
+using KM.SwSh.IvScreen;
+using KM.SwSh.RoyalCandy;
+
+namespace KM.SwSh.ExeFs;
+
+internal static class SwShIndependentExeFsHookDetector
+{
+    public static bool ContainsAny(byte[] mainBytes)
+    {
+        ArgumentNullException.ThrowIfNull(mainBytes);
+
+        var ivScreenKind = SwShIvScreenMainPatcher.Analyze(mainBytes).Kind;
+        return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1
+            || SwShGymUniformRemovalMainPatcher.HasInstalledHook(mainBytes)
+            || ivScreenKind is SwShIvScreenInstallKind.InstalledV1 or SwShIvScreenInstallKind.InstalledLegacyV1
+            || SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(mainBytes).Kind
+                != SwShRoyalCandyExeFsSignatureKind.NotInstalled;
+    }
+}

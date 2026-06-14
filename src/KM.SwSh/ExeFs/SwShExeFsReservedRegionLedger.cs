@@ -27,6 +27,7 @@ internal static class SwShExeFsReservedRegionLedger
 {
     public const string OwnerBagHook = "Bag Hook";
     public const string OwnerCatchCap = "Catch Cap";
+    public const string OwnerGymUniformRemoval = "Gym Uniform Removal";
     public const string OwnerIvScreen = "IV Screen";
     public const string OwnerPokemonSummaryRuntime = "Pokemon Summary Runtime";
     public const string OwnerRoyalCandy = "Royal Candy";
@@ -200,6 +201,9 @@ internal static class SwShExeFsReservedRegionLedger
         new(OwnerIvScreen, "iv-screen-marker-2", ExeFsMainPath, "main.text", 0x01397934, 0x0C, "IV Screen marker/version fragment 2", "do-not-overwrite"),
         new(OwnerPokemonSummaryRuntime, "pokemon-summary-raw-iv-getter", ExeFsMainPath, "main.text", 0x00779070, 0x04, "Raw IV getter used by IV Screen", "do-not-overwrite"),
         new(OwnerPokemonSummaryRuntime, "pokemon-summary-hyper-training-iv-wrapper", ExeFsMainPath, "main.text", 0x007790D0, 0x04, "Hyper Training-adjusted IV wrapper not used by IV Screen", "do-not-overwrite"),
+
+        new(OwnerGymUniformRemoval, "gym-uniform-removal-sword-handler", ExeFsMainPath, "main.text", 0x01472600, 0x08, "Gym Uniform Removal Sword uniform-change handler", "do-not-overwrite"),
+        new(OwnerGymUniformRemoval, "gym-uniform-removal-shield-handler", ExeFsMainPath, "main.text", 0x01472630, 0x08, "Gym Uniform Removal Shield uniform-change handler", "do-not-overwrite"),
 
         new(OwnerRoyalCandy, "royal-candy-ui-check-a", ExeFsMainPath, "main.text", 0x00747988, 0x08, "Royal Candy medicine UI route", "do-not-overwrite"),
         new(OwnerRoyalCandy, "royal-candy-ui-check-b", ExeFsMainPath, "main.text", 0x00747D44, 0x08, "Royal Candy alternate medicine UI route", "do-not-overwrite"),

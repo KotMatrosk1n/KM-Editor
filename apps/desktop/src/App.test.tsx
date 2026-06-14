@@ -16,6 +16,7 @@ import {
   type ExeFsPatchWorkflow,
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
+  type GymUniformRemovalWorkflow,
   type IvScreenWorkflow,
   type ItemRecord,
   type ItemsWorkflow,
@@ -432,8 +433,8 @@ describe('App', () => {
         .getAllByRole('button')
         .filter((button) => button.classList.contains('nav-child-button'))
         .map((button) => button.textContent)
-        .slice(-4)
-    ).toEqual(['Catch Cap', 'IV Screen', 'Royal Candy', 'Starting Items']);
+        .slice(-5)
+    ).toEqual(['Catch Cap', 'Gym Uniform Removal', 'IV Screen', 'Royal Candy', 'Starting Items']);
     expect(screen.queryByRole('button', { name: 'Dynamax Adventures' })).not.toBeInTheDocument();
   });
 
@@ -3386,6 +3387,80 @@ describe('App', () => {
     );
   });
 
+  it('opens Gym Uniform Removal from Advanced Editors and applies the install workflow', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const stageGymUniformRemovalInstall = vi.fn(baseBridge.stageGymUniformRemovalInstall);
+    const createChangePlan = vi.fn(baseBridge.createChangePlan);
+    const applyChangePlan = vi.fn(baseBridge.applyChangePlan);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          applyChangePlan,
+          createChangePlan,
+          stageGymUniformRemovalInstall
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Gym Uniform Removal' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Gym Uniform Removal'
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Gym Uniform Removal can create a build-ID IPS patch in exefs.')).toBeInTheDocument();
+    expect(
+      screen.getByText(/keeps gym challenge and gym leader battle scripts/i)
+    ).toBeInTheDocument();
+    const behaviorTable = screen.getByRole('table', {
+      name: 'Gym Uniform Removal behavior summary'
+    });
+    expect(within(behaviorTable).getByText('Not installed')).toBeInTheDocument();
+    expect(within(behaviorTable).getByText('Installed')).toBeInTheDocument();
+    expect(
+      within(behaviorTable).getByText(/outfit does not change/i)
+    ).toBeInTheDocument();
+    const reservedRangesTable = screen.getByRole('table', {
+      name: 'Gym Uniform Removal reserved ranges'
+    });
+    expect(within(reservedRangesTable).getByText(/gym outfit handler override/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Stage Install' }));
+
+    await waitFor(() => expect(stageGymUniformRemovalInstall).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Review' }));
+
+    await waitFor(() => expect(createChangePlan).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => expect(applyChangePlan).toHaveBeenCalled());
+    expect(applyChangePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changePlan: expect.objectContaining({
+          writes: expect.arrayContaining([
+            expect.objectContaining({
+              targetRelativePath: 'exefs/A3B75BCD3311385AEED67FBEEB79CBB7BF02F471.ips'
+            })
+          ])
+        }),
+        session: expect.objectContaining({
+          pendingEdits: expect.arrayContaining([
+            expect.objectContaining({ domain: 'workflow.gymUniformRemoval' })
+          ])
+        })
+      })
+    );
+  });
+
   it('locks Starting Items key item quantities to one', async () => {
     const baseBridge = createMockProjectBridge({}, true);
     const stageStartingItems = vi.fn(baseBridge.stageStartingItems);
@@ -3824,10 +3899,10 @@ describe('App', () => {
           JSON.stringify([
             {
               draft: false,
-              html_url: 'https://github.example/releases/tag/v1.1.1',
-              name: 'KM Editor v1.1.1',
+              html_url: 'https://github.example/releases/tag/v1.2.1',
+              name: 'KM Editor v1.2.1',
               prerelease: false,
-              tag_name: 'v1.1.1'
+              tag_name: 'v1.2.1'
             }
           ]),
           { headers: { 'Content-Type': 'application/json' }, status: 200 }
@@ -3855,7 +3930,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Open Release' }));
 
     await waitFor(() =>
-      expect(openExternalUrl).toHaveBeenCalledWith('https://github.example/releases/tag/v1.1.1')
+      expect(openExternalUrl).toHaveBeenCalledWith('https://github.example/releases/tag/v1.2.1')
     );
     expect(openExternalUrl).toHaveBeenCalledTimes(1);
   });
@@ -3870,9 +3945,9 @@ describe('App', () => {
             {
               assets: [],
               draft: false,
-              html_url: 'https://github.example/releases/tag/v1.1.0',
+              html_url: 'https://github.example/releases/tag/v1.2.0',
               prerelease: false,
-              tag_name: 'v1.1.0'
+              tag_name: 'v1.2.0'
             }
           ]),
           { headers: { 'Content-Type': 'application/json' }, status: 200 }
@@ -3885,7 +3960,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('button', { name: 'Check for Updates' }));
 
-    expect(await screen.findByText('KM Editor v1.1.0 is up to date.')).toBeInTheDocument();
+    expect(await screen.findByText('KM Editor v1.2.0 is up to date.')).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Update Available' })).not.toBeInTheDocument();
   });
 
@@ -7522,6 +7597,41 @@ function createMockProjectBridge(
     },
     summary: catchCapWorkflowSummary
   };
+  const gymUniformRemovalWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Keeps the player in their current outfit during gym challenges and gym battles.',
+    diagnostics: [],
+    id: 'gymUniformRemoval',
+    label: 'Gym Uniform Removal'
+  };
+  const gymUniformRemovalWorkflow: GymUniformRemovalWorkflow = {
+    buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471',
+    diagnostics: [],
+    installMessage: 'Gym Uniform Removal can create a build-ID IPS patch in exefs.',
+    installStatus: canEdit ? 'available' : 'readOnly',
+    patchOffsetHex: 'main.text+0x01472600',
+    provenance: {
+      fileState: 'baseOnly',
+      sourceFile: 'exefs/main',
+      sourceLayer: 'base'
+    },
+    reservedRegions: [
+      {
+        label: 'Gym Uniform Removal gym outfit handler override',
+        length: 8,
+        offsetLabel: 'text+0x1472600..0x1472607',
+        regionId: 'gym-uniform-removal-sword-handler',
+        rule: 'do-not-overwrite',
+        startOffset: 0x01472600
+      }
+    ],
+    stats: {
+      reservedMainTextRegionCount: 1,
+      sourceFileCount: 1
+    },
+    stubKind: 'vanilla handler',
+    summary: gymUniformRemovalWorkflowSummary
+  };
   const ivScreenWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Installs the Pokemon Summary raw-IV screen hook.',
@@ -8152,6 +8262,22 @@ function createMockProjectBridge(
                               targetRelativePath: 'exefs/main'
                             }
                           ]
+                        : request.session.pendingEdits[0]?.domain === 'workflow.gymUniformRemoval'
+                        ? [
+                            {
+                              reason:
+                                'Install or refresh Gym Uniform Removal build-ID IPS patch in exefs.',
+                              replacesExistingOutput: false,
+                              sources: [
+                                {
+                                  layer: 'base',
+                                  relativePath: 'exefs/main'
+                                }
+                              ],
+                              targetRelativePath:
+                                'exefs/A3B75BCD3311385AEED67FBEEB79CBB7BF02F471.ips'
+                            }
+                          ]
                         : request.session.pendingEdits[0]?.domain === 'workflow.ivScreen'
                         ? [
                             {
@@ -8247,6 +8373,7 @@ function createMockProjectBridge(
           flagworkSaveWorkflowSummary,
           bagHookWorkflowSummary,
           catchCapWorkflowSummary,
+          gymUniformRemovalWorkflowSummary,
           ivScreenWorkflowSummary,
           royalCandyWorkflowSummary,
           startingItemsWorkflowSummary,
@@ -8399,6 +8526,85 @@ function createMockProjectBridge(
         workflow: {
           ...catchCapWorkflow,
           installMessage: 'Catch Cap Editor hook is installed for display and runtime capture checks.',
+          installStatus: 'installed',
+          provenance: {
+            fileState: 'layeredOverride',
+            sourceFile: 'exefs/main',
+            sourceLayer: 'layered'
+          }
+        }
+      }),
+    loadGymUniformRemovalWorkflow: () =>
+      Promise.resolve({
+        workflow: gymUniformRemovalWorkflow
+      }),
+    stageGymUniformRemovalInstall: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Gym Uniform Removal install is staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.gymUniformRemoval',
+              field: 'install',
+              newValue: 'true',
+              recordId: 'gym-uniform-removal-v1-install',
+              sources: [
+                {
+                  layer: 'generated',
+                  relativePath: 'exefs/A3B75BCD3311385AEED67FBEEB79CBB7BF02F471.ips'
+                },
+                {
+                  layer: 'base',
+                  relativePath: 'exefs/main'
+                }
+              ],
+              summary: 'Stage Gym Uniform Removal install.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-gym-uniform-install'
+        },
+        workflow: gymUniformRemovalWorkflow
+      }),
+    stageGymUniformRemovalUninstall: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Gym Uniform Removal uninstall is staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.gymUniformRemoval',
+              field: 'uninstall',
+              newValue: 'true',
+              recordId: 'gym-uniform-removal-v1-uninstall',
+              sources: [
+                {
+                  layer: 'generated',
+                  relativePath: 'exefs/A3B75BCD3311385AEED67FBEEB79CBB7BF02F471.ips'
+                },
+                {
+                  layer: 'base',
+                  relativePath: 'exefs/main'
+                }
+              ],
+              summary: 'Stage Gym Uniform Removal uninstall.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-gym-uniform-uninstall'
+        },
+        workflow: {
+          ...gymUniformRemovalWorkflow,
+          installMessage: 'Gym Uniform Removal is installed.',
           installStatus: 'installed',
           provenance: {
             fileState: 'layeredOverride',
@@ -10341,6 +10547,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Catch Cap Editor changes to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.gymUniformRemoval') {
+    return 'Applied Gym Uniform Removal changes to the configured LayeredFS output root.';
+  }
+
   if (domain === 'workflow.ivScreen') {
     return 'Applied IV Screen changes to the configured LayeredFS output root.';
   }
@@ -10406,6 +10616,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending Bag Hook install is valid for change-plan review.';
     case 'workflow.catchCap':
       return 'Pending Catch Cap Editor values are valid for change-plan review.';
+    case 'workflow.gymUniformRemoval':
+      return 'Pending Gym Uniform Removal change is valid for change-plan review.';
     case 'workflow.ivScreen':
       return 'Pending IV Screen change is valid for change-plan review.';
     case 'workflow.royalCandy':

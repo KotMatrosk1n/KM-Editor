@@ -47,6 +47,7 @@ public sealed class SwShIvScreenWorkflowService
                 summary,
                 "disabled",
                 "IV Screen cannot load until project paths validate.",
+                detectedGame: null,
                 provenance,
                 sourceFileCount: 0,
                 diagnostics);
@@ -64,6 +65,7 @@ public sealed class SwShIvScreenWorkflowService
                 summary,
                 "blocked",
                 "IV Screen cannot inspect the hook because exefs/main is missing.",
+                detectedGame: null,
                 provenance,
                 sourceFileCount: 0,
                 diagnostics);
@@ -77,11 +79,12 @@ public sealed class SwShIvScreenWorkflowService
                 DiagnosticSeverity.Error,
                 "ExeFS main could not be resolved from the project graph.",
                 file: entry.RelativePath,
-                expected: "Readable Sword 1.3.2 exefs/main NSO"));
+                expected: "Readable Sword/Shield 1.3.2 exefs/main NSO"));
             return CreateWorkflow(
                 summary,
                 "blocked",
                 "IV Screen cannot inspect the hook because exefs/main cannot be read.",
+                detectedGame: null,
                 provenance,
                 sourceFileCount: 0,
                 diagnostics);
@@ -89,7 +92,9 @@ public sealed class SwShIvScreenWorkflowService
 
         try
         {
-            var analysis = SwShIvScreenMainPatcher.Analyze(File.ReadAllBytes(sourcePath));
+            var analysis = SwShIvScreenMainPatcher.Analyze(
+                File.ReadAllBytes(sourcePath),
+                project.Paths.SelectedGame);
             var installStatus = analysis.Kind switch
             {
                 SwShIvScreenInstallKind.InstalledV1 => "installed",
@@ -98,19 +103,23 @@ public sealed class SwShIvScreenWorkflowService
                 SwShIvScreenInstallKind.ForeignPatch => "foreign",
                 _ => "blocked",
             };
-            if (analysis.Kind is SwShIvScreenInstallKind.ForeignPatch or SwShIvScreenInstallKind.Conflict)
+            if (analysis.Kind is SwShIvScreenInstallKind.UnsupportedBuild
+                or SwShIvScreenInstallKind.GameMismatch
+                or SwShIvScreenInstallKind.ForeignPatch
+                or SwShIvScreenInstallKind.Conflict)
             {
                 diagnostics.Add(CreateDiagnostic(
                     analysis.Kind == SwShIvScreenInstallKind.ForeignPatch ? DiagnosticSeverity.Warning : DiagnosticSeverity.Error,
                     analysis.Message,
                     file: entry.RelativePath,
-                    expected: "Vanilla Pokemon Summary graph refresh hook or IV Screen marker"));
+                    expected: "Selected-game Sword/Shield 1.3.2 exefs/main with vanilla Pokemon Summary hooks or an installed IV Screen marker"));
             }
 
             return CreateWorkflow(
                 summary,
                 installStatus,
                 analysis.Message,
+                analysis.DetectedGame,
                 provenance,
                 sourceFileCount: 1,
                 diagnostics);
@@ -121,11 +130,12 @@ public sealed class SwShIvScreenWorkflowService
                 DiagnosticSeverity.Error,
                 $"ExeFS main could not be inspected: {exception.Message}",
                 file: entry.RelativePath,
-                expected: "Readable Sword 1.3.2 exefs/main NSO"));
+                expected: "Readable Sword/Shield 1.3.2 exefs/main NSO"));
             return CreateWorkflow(
                 summary,
                 "blocked",
                 "IV Screen cannot inspect the hook because exefs/main could not be read.",
+                detectedGame: null,
                 provenance,
                 sourceFileCount: 0,
                 diagnostics);
@@ -136,11 +146,12 @@ public sealed class SwShIvScreenWorkflowService
         SwShWorkflowSummary summary,
         string installStatus,
         string installMessage,
+        ProjectGame? detectedGame,
         SwShIvScreenProvenance provenance,
         int sourceFileCount,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
-        var reservedRegions = SwShIvScreenMainPatcher.ReservedMainTextRegions()
+        var reservedRegions = SwShIvScreenMainPatcher.ReservedMainTextRegions(detectedGame)
             .Select(region => new SwShIvScreenReservedRegion(
                 region.FeatureId,
                 region.Label,
@@ -155,7 +166,9 @@ public sealed class SwShIvScreenWorkflowService
             installStatus,
             installMessage,
             Marker,
-            FormatTextOffset(SwShIvScreenMainPatcher.ExeFsHookSiteOffset),
+            FormatTextOffset(detectedGame == ProjectGame.Shield
+                ? SwShIvScreenMainPatcher.ShieldExeFsHookSiteOffset
+                : SwShIvScreenMainPatcher.ExeFsHookSiteOffset),
             FormatTextOffset(SwShIvScreenMainPatcher.RawIvGetterOffset),
             FormatTextOffset(SwShIvScreenMainPatcher.HyperTrainingIvWrapperOffset),
             reservedRegions,

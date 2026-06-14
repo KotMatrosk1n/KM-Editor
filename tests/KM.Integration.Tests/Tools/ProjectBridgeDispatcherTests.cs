@@ -8,6 +8,7 @@ using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.ExeFs;
 using KM.Api.Flagwork;
+using KM.Api.GymUniformRemoval;
 using KM.Api.Items;
 using KM.Api.IvScreen;
 using KM.Api.ModMerger;
@@ -29,6 +30,7 @@ using KM.Api.Workflows;
 using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
 using KM.SwSh.ExeFs;
+using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.IvScreen;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
@@ -42,6 +44,7 @@ namespace KM.Integration.Tests.Tools;
 public sealed class ProjectBridgeDispatcherTests
 {
     private const ulong RoyalCandyDyniteOreTraderShopHash = 0xF49C86F8683842BF;
+    private const string GymUniformRemovalSwordIpsPath = "exefs/A3B75BCD3311385AEED67FBEEB79CBB7BF02F471.ips";
     private const int RoyalCandyItemId = 1128;
 
     [Fact]
@@ -156,10 +159,12 @@ public sealed class ProjectBridgeDispatcherTests
                 "flagworkSave",
                 "bagHook",
                 "catchCap",
+                "gymUniformRemoval",
                 "ivScreen",
                 "royalCandy",
                 "startingItems",
                 "spreadsheetImport",
+                "modMerger",
             ],
             workflows.Select(workflow => workflow.Id).ToArray());
 
@@ -1825,6 +1830,87 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(0x340000A8u, ReadInstruction(outputText, 0x0139FB60));
 
         var reloadResponse = DeserializeResponse<LoadIvScreenWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.Null(reloadResponse.Error);
+        Assert.NotNull(reloadResponse.Payload);
+        Assert.Equal("installed", reloadResponse.Payload.Workflow.InstallStatus);
+    }
+
+    [Fact]
+    public void DispatchGymUniformRemovalStageValidatePlanAndApplyWritesLayeredIps()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loadJson = SerializeRequest(
+            KmCommandNames.LoadGymUniformRemovalWorkflow,
+            new LoadGymUniformRemovalWorkflowRequest(temp.Paths),
+            requestId: "request-gym-uniform-load");
+        var loadResponse = DeserializeResponse<LoadGymUniformRemovalWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.Null(loadResponse.Error);
+        Assert.NotNull(loadResponse.Payload);
+        Assert.Equal("available", loadResponse.Payload.Workflow.InstallStatus);
+        Assert.Equal("main.text+0x01472600", loadResponse.Payload.Workflow.PatchOffsetHex);
+
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageGymUniformRemovalInstall,
+            new StageGymUniformRemovalInstallRequest(temp.Paths, Session: null),
+            requestId: "request-gym-uniform-stage");
+        var stageResponse = DeserializeResponse<StageGymUniformRemovalInstallResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+        Assert.Single(stageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.gymUniformRemoval", stageResponse.Payload.Session.PendingEdits[0].Domain);
+        Assert.DoesNotContain(
+            stageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-gym-uniform-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-gym-uniform-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.True(planResponse.Payload.ChangePlan.CanApply);
+        var write = Assert.Single(planResponse.Payload.ChangePlan.Writes);
+        Assert.Equal(GymUniformRemovalSwordIpsPath, write.TargetRelativePath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageResponse.Payload.Session,
+                planResponse.Payload.ChangePlan),
+            requestId: "request-gym-uniform-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.DoesNotContain(
+            applyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == GymUniformRemovalSwordIpsPath);
+
+        var outputIpsPath = Path.Combine(temp.OutputRootPath, "exefs", "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471.ips");
+        Assert.Equal(
+            Convert.FromHexString("4950533332014726000008E0030032C0035FD645454F46"),
+            File.ReadAllBytes(outputIpsPath));
+
+        var reloadResponse = DeserializeResponse<LoadGymUniformRemovalWorkflowResponse>(dispatcher.Dispatch(loadJson));
         Assert.Null(reloadResponse.Error);
         Assert.NotNull(reloadResponse.Payload);
         Assert.Equal("installed", reloadResponse.Payload.Workflow.InstallStatus);
