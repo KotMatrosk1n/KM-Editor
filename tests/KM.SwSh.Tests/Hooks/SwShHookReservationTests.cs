@@ -7,6 +7,7 @@ using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
 using KM.SwSh.ExeFs;
 using KM.SwSh.GymUniformRemoval;
+using KM.SwSh.HyperTraining;
 using KM.SwSh.IvScreen;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.StartingItems;
@@ -191,6 +192,47 @@ public sealed class SwShHookReservationTests
         Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
         Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
         Assert.Equal(ExpectedRoyalCandySignature(workflowId), SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void HyperTrainingMainPatchPreservesCatchCapIvScreenAndRoyalCandy(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyCatchCap(paths);
+        ApplyIvScreen(paths);
+        ApplyRoyalCandy(paths, workflowId);
+
+        ApplyHyperTrainingMain(paths, minimumLevel: 50);
+
+        var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
+        var hyperTraining = SwShHyperTrainingMainPatcher.Analyze(main, game);
+        Assert.Equal(SwShHyperTrainingMainKind.CustomMinimumLevel, hyperTraining.Kind);
+        Assert.Equal(50, hyperTraining.MinimumLevel);
+        Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
+        Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
+        Assert.Equal(ExpectedRoyalCandySignature(workflowId), SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void CatchCapCleanupPreservesHyperTrainingMainPatch(ProjectGame game)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        ApplyHyperTrainingMain(paths, minimumLevel: 50);
+        ApplyCatchCap(paths);
+
+        ApplyCatchCapCleanup(paths);
+
+        var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
+        var hyperTraining = SwShHyperTrainingMainPatcher.Analyze(main, game);
+        Assert.Equal(SwShHyperTrainingMainKind.CustomMinimumLevel, hyperTraining.Kind);
+        Assert.Equal(50, hyperTraining.MinimumLevel);
+        Assert.Equal(SwShCatchCapInstallKind.NotInstalled, SwShCatchCapMainPatcher.Analyze(main).Kind);
     }
 
     [Theory]
@@ -1181,6 +1223,20 @@ public sealed class SwShHookReservationTests
         Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
+    private static void ApplyHyperTrainingMain(ProjectPaths paths, int minimumLevel)
+    {
+        var targetPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        var sourcePath = File.Exists(targetPath)
+            ? targetPath
+            : Path.Combine(paths.BaseExeFsPath!, "main");
+        var output = SwShHyperTrainingMainPatcher.ApplyMinimumLevel(
+            File.ReadAllBytes(sourcePath),
+            minimumLevel,
+            paths.SelectedGame);
+        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+        File.WriteAllBytes(targetPath, output);
+    }
+
     private static void AssertGymUniformIpsInstalled(ProjectPaths paths, ProjectGame game)
     {
         var ipsRelativePath = SwShGymUniformRemovalMainPatcher.IpsRelativePath(game);
@@ -1322,7 +1378,20 @@ public sealed class SwShHookReservationTests
         WriteCatchCapVanillaAnchors(text, game);
         WriteIvScreenVanillaAnchors(text, game);
         WriteGymUniformRemovalVanillaAnchors(text);
+        WriteHyperTrainingVanillaAnchors(text, game);
         return CreateNso(text, [0x10], [0x20], BuildIdForGame(game));
+    }
+
+    private static void WriteHyperTrainingVanillaAnchors(byte[] text, ProjectGame game)
+    {
+        var shift = game == ProjectGame.Shield ? 0x30 : 0;
+        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordPreflightCompareOffset + shift, EncodeCmpImmediate(0, 100));
+        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordEligibilityCompareOffset + shift, EncodeCmpImmediate(0, 100));
+        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordEligibilityBranchOffset + shift, 0x54000061);
+        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordGrayOutCompareOffset + shift, EncodeCmpImmediate(0, 100));
+        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordGrayOutBranchOffset + shift, 0x540000A1);
+        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordDetailCompareOffset + shift, EncodeCmpImmediate(0, 100));
+        WriteInstruction(text, SwShHyperTrainingMainPatcher.SwordDetailBranchOffset + shift, 0x540002C1);
     }
 
     private static void WriteRoyalCandyVanillaAnchors(byte[] text)

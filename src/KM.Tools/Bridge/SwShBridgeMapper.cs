@@ -10,6 +10,7 @@ using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
+using KM.Api.HyperTraining;
 using KM.Api.Items;
 using KM.Api.IvScreen;
 using KM.Api.ModMerger;
@@ -36,6 +37,7 @@ using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Gifts;
 using KM.SwSh.GymUniformRemoval;
+using KM.SwSh.HyperTraining;
 using KM.SwSh.IvScreen;
 using KM.SwSh.ModMerger;
 using KM.SwSh.Placement;
@@ -298,6 +300,23 @@ public static class SwShBridgeMapper
 
         return new StageCatchCapUninstallResponse(
             ToCatchCapWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadHyperTrainingWorkflowResponse ToDto(SwShHyperTrainingWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadHyperTrainingWorkflowResponse(ToHyperTrainingWorkflowDto(workflow));
+    }
+
+    public static StageHyperTrainingResponse ToDto(SwShHyperTrainingEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageHyperTrainingResponse(
+            ToHyperTrainingWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1261,7 +1280,21 @@ public static class SwShBridgeMapper
             ToDto(workflow.Provenance),
             new CatchCapWorkflowStatsDto(
                 workflow.Stats.TotalCapCount,
-            workflow.Stats.SourceFileCount),
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static HyperTrainingWorkflowDto ToHyperTrainingWorkflowDto(SwShHyperTrainingWorkflow workflow)
+    {
+        return new HyperTrainingWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            ToDto(workflow.LevelRule),
+            workflow.Sources.Select(ToDto).ToArray(),
+            new HyperTrainingWorkflowStatsDto(
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.OutputFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -2343,6 +2376,36 @@ public static class SwShBridgeMapper
     private static CatchCapProvenanceDto ToDto(SwShCatchCapProvenance provenance)
     {
         return new CatchCapProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static HyperTrainingLevelRuleDto ToDto(SwShHyperTrainingLevelRule rule)
+    {
+        return new HyperTrainingLevelRuleDto(
+            rule.MinimumLevel,
+            rule.VanillaMinimumLevel,
+            rule.MinimumAllowedLevel,
+            rule.MaximumAllowedLevel,
+            rule.ScriptCell,
+            rule.DialogueSummary,
+            rule.RuntimeSummary);
+    }
+
+    private static HyperTrainingSourceRecordDto ToDto(SwShHyperTrainingSourceRecord source)
+    {
+        return new HyperTrainingSourceRecordDto(
+            source.SourceId,
+            source.Label,
+            source.RelativePath,
+            source.Status,
+            ToDto(source.Provenance));
+    }
+
+    private static HyperTrainingProvenanceDto ToDto(SwShHyperTrainingProvenance provenance)
+    {
+        return new HyperTrainingProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

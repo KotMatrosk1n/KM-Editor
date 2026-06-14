@@ -10,6 +10,7 @@ using KM.SwSh.ExeFs;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Gifts;
 using KM.SwSh.GymUniformRemoval;
+using KM.SwSh.HyperTraining;
 using KM.SwSh.Items;
 using KM.SwSh.IvScreen;
 using KM.SwSh.ModMerger;
@@ -38,6 +39,7 @@ public sealed class SwShWorkflowService
     private readonly SwShExeFsPatchWorkflowService exeFsPatchWorkflowService;
     private readonly SwShBagHookWorkflowService bagHookWorkflowService;
     private readonly SwShCatchCapWorkflowService catchCapWorkflowService;
+    private readonly SwShHyperTrainingWorkflowService hyperTrainingWorkflowService;
     private readonly SwShGymUniformRemovalWorkflowService gymUniformRemovalWorkflowService;
     private readonly SwShIvScreenWorkflowService ivScreenWorkflowService;
     private readonly SwShFlagworkSaveWorkflowService flagworkSaveWorkflowService;
@@ -81,6 +83,7 @@ public sealed class SwShWorkflowService
         SwShExeFsPatchWorkflowService? exeFsPatchWorkflowService = null,
         SwShBagHookWorkflowService? bagHookWorkflowService = null,
         SwShCatchCapWorkflowService? catchCapWorkflowService = null,
+        SwShHyperTrainingWorkflowService? hyperTrainingWorkflowService = null,
         SwShGymUniformRemovalWorkflowService? gymUniformRemovalWorkflowService = null,
         SwShIvScreenWorkflowService? ivScreenWorkflowService = null,
         SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null,
@@ -98,6 +101,7 @@ public sealed class SwShWorkflowService
         this.exeFsPatchWorkflowService = exeFsPatchWorkflowService ?? new SwShExeFsPatchWorkflowService(sharedParsedDataCache);
         this.bagHookWorkflowService = bagHookWorkflowService ?? new SwShBagHookWorkflowService(this.itemsWorkflowService);
         this.catchCapWorkflowService = catchCapWorkflowService ?? new SwShCatchCapWorkflowService();
+        this.hyperTrainingWorkflowService = hyperTrainingWorkflowService ?? new SwShHyperTrainingWorkflowService();
         this.gymUniformRemovalWorkflowService = gymUniformRemovalWorkflowService ?? new SwShGymUniformRemovalWorkflowService();
         this.ivScreenWorkflowService = ivScreenWorkflowService ?? new SwShIvScreenWorkflowService();
         this.flagworkSaveWorkflowService = flagworkSaveWorkflowService ?? new SwShFlagworkSaveWorkflowService();
@@ -147,6 +151,7 @@ public sealed class SwShWorkflowService
             flagworkSaveWorkflowService.CreateSummary(project),
             bagHookWorkflowService.CreateSummary(project),
             catchCapWorkflowService.CreateSummary(project),
+            hyperTrainingWorkflowService.CreateSummary(project),
             gymUniformRemovalWorkflowService.CreateSummary(project),
             ivScreenWorkflowService.CreateSummary(project),
             royalCandyWorkflowService.CreateSummary(project),
@@ -348,6 +353,15 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return catchCapWorkflowService.Load(project);
+    }
+
+    public SwShHyperTrainingWorkflow LoadHyperTraining(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return hyperTrainingWorkflowService.Load(project);
     }
 
     public SwShIvScreenWorkflow LoadIvScreen(ProjectPaths paths)

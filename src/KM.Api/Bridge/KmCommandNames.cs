@@ -54,6 +54,8 @@ public static class KmCommandNames
     public const string LoadCatchCapWorkflow = "catchCap.load";
     public const string StageCatchCap = "catchCap.stage";
     public const string StageCatchCapUninstall = "catchCap.uninstall.stage";
+    public const string LoadHyperTrainingWorkflow = "hyperTraining.load";
+    public const string StageHyperTraining = "hyperTraining.stage";
     public const string LoadGymUniformRemovalWorkflow = "gymUniformRemoval.load";
     public const string StageGymUniformRemovalInstall = "gymUniformRemoval.install.stage";
     public const string StageGymUniformRemovalUninstall = "gymUniformRemoval.uninstall.stage";

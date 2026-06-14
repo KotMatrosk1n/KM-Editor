@@ -2,6 +2,7 @@
 
 using KM.SwSh.CatchCap;
 using KM.SwSh.GymUniformRemoval;
+using KM.SwSh.HyperTraining;
 using KM.SwSh.IvScreen;
 using KM.SwSh.RoyalCandy;
 
@@ -16,6 +17,7 @@ internal static class SwShIndependentExeFsHookDetector
         var ivScreenKind = SwShIvScreenMainPatcher.Analyze(mainBytes).Kind;
         return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1
             || SwShGymUniformRemovalMainPatcher.HasInstalledHook(mainBytes)
+            || SwShHyperTrainingMainPatcher.HasInstalledHook(mainBytes)
             || ivScreenKind is SwShIvScreenInstallKind.InstalledV1 or SwShIvScreenInstallKind.InstalledLegacyV1
             || SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(mainBytes).Kind
                 != SwShRoyalCandyExeFsSignatureKind.NotInstalled;

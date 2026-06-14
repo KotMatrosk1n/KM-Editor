@@ -2812,6 +2812,60 @@ h2 {
   min-width: 0;
 }
 
+.hyper-training-control {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  background: #111a2c;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.hyper-training-level-readout {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.hyper-training-level-readout span {
+  color: #aeb8ca;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hyper-training-level-readout strong {
+  color: #f4f7fb;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.hyper-training-slider {
+  width: 100%;
+  accent-color: var(--color-accent);
+}
+
+.hyper-training-input-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.hyper-training-input-row .table-cell-control {
+  width: 128px;
+}
+
+.hyper-training-source-row {
+  grid-template-columns: minmax(220px, 1.2fr) minmax(120px, 0.55fr) minmax(120px, 0.55fr);
+}
+
+.hyper-training-source-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .starting-items-row {
   grid-template-columns: 72px minmax(92px, 0.45fr) minmax(260px, 1.5fr) minmax(116px, 0.7fr);
 }
