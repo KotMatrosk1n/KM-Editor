@@ -458,6 +458,74 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Dynamax Adventures' })).not.toBeInTheDocument();
   });
 
+  it('shows clear Randomizer controls and applies shared seeds directly', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      clipboard: {
+        writeText
+      }
+    });
+    const applyRandomizer = vi.fn(async (request) =>
+      Promise.resolve({
+        applyResult: {
+          applyId: 'randomizer-apply-1',
+          diagnostics: [
+            {
+              message: 'Randomizer applied selected output.',
+              severity: 'info' as const
+            }
+          ],
+          writtenFiles: request.config.options.randomizePokemonStats
+            ? ['romfs/bin/pml/personal/personal_total.bin']
+            : []
+        },
+        seed: `KM1-MOCK-${request.config.userSeed || 'generated'}`
+      })
+    );
+    render(<App bridge={createMockProjectBridge({ applyRandomizer }, true)} />);
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(await screen.findByRole('button', { name: 'Tools' }));
+    await user.click(screen.getByRole('button', { name: 'Randomizer' }));
+
+    expect(screen.getByRole('button', { name: 'Catch Rates' })).toHaveAttribute(
+      'title',
+      expect.stringContaining('catch rates')
+    );
+    expect(screen.getByRole('button', { name: 'Moves' })).toBeInTheDocument();
+    expect(screen.queryByText('Randomize Misc')).not.toBeInTheDocument();
+    expect(screen.queryByText('Randomize Compatibility')).not.toBeInTheDocument();
+
+    const statsPanel = screen.getByRole('heading', { name: 'Stats' }).closest('section');
+    expect(statsPanel).not.toBeNull();
+    expect(within(statsPanel!).getByLabelText('HP')).not.toBeChecked();
+    expect(within(statsPanel!).getByLabelText('HP')).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Learnsets' }));
+    expect(screen.getByLabelText('Expand learnsets to 25 moves')).toHaveAttribute(
+      'title',
+      expect.stringContaining('25 move slots')
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Moves' }));
+    expect(screen.getByLabelText('Randomize Move Compatibility')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Shared Randomization Seed'), 'KMR1.friend.seed');
+    await user.click(screen.getByRole('button', { name: 'Apply Randomization Seed' }));
+    await user.click(await screen.findByRole('button', { name: 'Confirm Apply Seed' }));
+
+    await waitFor(() => expect(applyRandomizer).toHaveBeenCalledTimes(1));
+    expect(applyRandomizer.mock.calls[0]?.[0].config.rollSeed).toBe('mock-roll');
+    expect(applyRandomizer.mock.calls[0]?.[0].config.outputHash).toBe('mock-output');
+    expect(await screen.findByText('Randomizer applied selected output.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Copy Seed' }));
+    expect(writeText).toHaveBeenCalledWith('KM1-MOCK-mock-seed');
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+  });
+
   it('replaces existing editable field contents when typing after click', async () => {
     const user = userEvent.setup();
     useWorkbenchStore.setState({
@@ -8185,6 +8253,41 @@ function createMockProjectBridge(
     ivSpecialDefense: 'specialDefense',
     ivSpeed: 'speed'
   } as const;
+  const randomizerOptions = {
+    ability1: true,
+    ability2: true,
+    allowSameType: false,
+    compatibilityMachines: true,
+    compatibilityRecords: true,
+    compatibilityTutors: true,
+    hiddenAbility: true,
+    learnsetBanFixedDamageMoves: true,
+    learnsetExpandTo25: false,
+    learnsetRequireDamagingMove: true,
+    learnsetStabFirst: true,
+    randomizeGiftEncounters: false,
+    randomizePokemonAbilities: false,
+    randomizePokemonCatchRates: false,
+    randomizePokemonCompatibility: false,
+    randomizePokemonEvolutions: false,
+    randomizePokemonHeldItems: false,
+    randomizePokemonLearnsets: false,
+    randomizePokemonStats: false,
+    randomizePokemonTypes: false,
+    randomizeRaidBonusRewards: false,
+    randomizeRaidRewards: false,
+    randomizeStaticEncounters: false,
+    randomizeWildEncounters: false,
+    shufflePokemonStats: true,
+    statAttack: true,
+    statDefense: true,
+    statHp: true,
+    statSpecialAttack: true,
+    statSpecialDefense: true,
+    statSpeed: true,
+    typePrimary: true,
+    typeSecondary: true
+  };
 
   return {
     applyChangePlan: (request) =>
@@ -9339,6 +9442,49 @@ function createMockProjectBridge(
         writtenFiles: preview.canApply ? preview.files.map((file) => file.relativePath) : []
       });
     },
+    importRandomizerSeed: (request) =>
+      Promise.resolve({
+        config: {
+          options: {
+            ...randomizerOptions,
+            randomizePokemonStats: true
+          },
+          outputHash: 'mock-output',
+          rollSeed: 'mock-roll',
+          userSeed: 'mock-seed'
+        },
+        diagnostics: [],
+        seed: request.seed
+      }),
+    applyRandomizer: (request) =>
+      Promise.resolve({
+        applyResult: {
+          applyId: 'randomizer-apply-1',
+          diagnostics: [
+            {
+              message: 'Randomizer applied selected output.',
+              severity: 'info'
+            }
+          ],
+          writtenFiles: request.config.options.randomizePokemonStats
+            ? ['romfs/bin/pml/personal/personal_total.bin']
+            : []
+        },
+        seed: `KM1-MOCK-${request.config.userSeed || 'generated'}`
+      }),
+    restoreRandomizer: () =>
+      Promise.resolve({
+        applyResult: {
+          applyId: 'randomizer-restore-1',
+          diagnostics: [
+            {
+              message: 'Restore Vanilla Values removed tracked Randomizer output.',
+              severity: 'info'
+            }
+          ],
+          writtenFiles: ['romfs/bin/pml/personal/personal_total.bin']
+        }
+      }),
     previewSpreadsheetImport: (request) =>
       Promise.resolve({
         diagnostics: [

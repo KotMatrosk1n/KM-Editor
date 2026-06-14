@@ -96,6 +96,12 @@ import {
   type StageModMergeResponse,
   type ApplyModMergeRequest,
   type ApplyModMergeResponse,
+  type ImportRandomizerSeedRequest,
+  type ImportRandomizerSeedResponse,
+  type ApplyRandomizerRequest,
+  type ApplyRandomizerResponse,
+  type RestoreRandomizerRequest,
+  type RestoreRandomizerResponse,
   type LoadShopsWorkflowRequest,
   type LoadShopsWorkflowResponse,
   type LoadTextWorkflowRequest,
@@ -190,6 +196,9 @@ import {
   loadModMergerWorkflowResponseSchema,
   stageModMergeResponseSchema,
   applyModMergeResponseSchema,
+  importRandomizerSeedResponseSchema,
+  applyRandomizerResponseSchema,
+  restoreRandomizerResponseSchema,
   loadShopsWorkflowResponseSchema,
   loadTextWorkflowResponseSchema,
   loadTrainersWorkflowResponseSchema,
@@ -340,6 +349,11 @@ export type ProjectBridge = {
   ) => Promise<LoadModMergerWorkflowResponse>;
   stageModMerge: (request: StageModMergeRequest) => Promise<StageModMergeResponse>;
   applyModMerge: (request: ApplyModMergeRequest) => Promise<ApplyModMergeResponse>;
+  importRandomizerSeed: (
+    request: ImportRandomizerSeedRequest
+  ) => Promise<ImportRandomizerSeedResponse>;
+  applyRandomizer: (request: ApplyRandomizerRequest) => Promise<ApplyRandomizerResponse>;
+  restoreRandomizer: (request: RestoreRandomizerRequest) => Promise<RestoreRandomizerResponse>;
   loadShopsWorkflow: (request: LoadShopsWorkflowRequest) => Promise<LoadShopsWorkflowResponse>;
   loadTextWorkflow: (request: LoadTextWorkflowRequest) => Promise<LoadTextWorkflowResponse>;
   loadTrainersWorkflow: (
@@ -720,6 +734,27 @@ export function createProjectBridge(
         kmCommandNames.applyModMerge,
         request,
         applyModMergeResponseSchema
+      ),
+    importRandomizerSeed: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.importRandomizerSeed,
+        request,
+        importRandomizerSeedResponseSchema
+      ),
+    applyRandomizer: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.applyRandomizer,
+        request,
+        applyRandomizerResponseSchema
+      ),
+    restoreRandomizer: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.restoreRandomizer,
+        request,
+        restoreRandomizerResponseSchema
       ),
     loadShopsWorkflow: (request) =>
       sendProjectBridgeRequest(

@@ -69,6 +69,9 @@ export const kmCommandNameValues = [
   'modMerger.load',
   'modMerger.stage',
   'modMerger.apply',
+  'randomizer.seed.import',
+  'randomizer.apply',
+  'randomizer.restore',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -147,6 +150,9 @@ export const kmCommandNames = {
   loadModMergerWorkflow: 'modMerger.load',
   stageModMerge: 'modMerger.stage',
   applyModMerge: 'modMerger.apply',
+  importRandomizerSeed: 'randomizer.seed.import',
+  applyRandomizer: 'randomizer.apply',
+  restoreRandomizer: 'randomizer.restore',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -419,6 +425,62 @@ export const applyModMergeRequestSchema = z.strictObject({
   resolutions: z.array(modMergerConflictResolutionSchema),
   selectedDirectory1Files: z.array(z.string()),
   selectedDirectory2Files: z.array(z.string())
+});
+
+export const randomizerOptionsSchema = z.strictObject({
+  ability1: z.boolean(),
+  ability2: z.boolean(),
+  allowSameType: z.boolean(),
+  compatibilityMachines: z.boolean(),
+  compatibilityRecords: z.boolean(),
+  compatibilityTutors: z.boolean(),
+  hiddenAbility: z.boolean(),
+  learnsetBanFixedDamageMoves: z.boolean(),
+  learnsetExpandTo25: z.boolean(),
+  learnsetRequireDamagingMove: z.boolean(),
+  learnsetStabFirst: z.boolean(),
+  randomizeGiftEncounters: z.boolean(),
+  randomizePokemonAbilities: z.boolean(),
+  randomizePokemonCatchRates: z.boolean(),
+  randomizePokemonCompatibility: z.boolean(),
+  randomizePokemonEvolutions: z.boolean(),
+  randomizePokemonHeldItems: z.boolean(),
+  randomizePokemonLearnsets: z.boolean(),
+  randomizePokemonStats: z.boolean(),
+  randomizePokemonTypes: z.boolean(),
+  randomizeWildEncounters: z.boolean(),
+  randomizeRaidBonusRewards: z.boolean(),
+  randomizeRaidRewards: z.boolean(),
+  randomizeStaticEncounters: z.boolean(),
+  shufflePokemonStats: z.boolean(),
+  statAttack: z.boolean(),
+  statDefense: z.boolean(),
+  statHp: z.boolean(),
+  statSpecialAttack: z.boolean(),
+  statSpecialDefense: z.boolean(),
+  statSpeed: z.boolean(),
+  typePrimary: z.boolean(),
+  typeSecondary: z.boolean()
+});
+
+export const randomizerConfigSchema = z.strictObject({
+  options: randomizerOptionsSchema,
+  outputHash: z.string().nullable().optional().default(null),
+  rollSeed: z.string().nullable().optional().default(null),
+  userSeed: z.string().max(20)
+});
+
+export const importRandomizerSeedRequestSchema = z.strictObject({
+  seed: z.string()
+});
+
+export const applyRandomizerRequestSchema = z.strictObject({
+  config: randomizerConfigSchema,
+  paths: projectPathsSchema
+});
+
+export const restoreRandomizerRequestSchema = z.strictObject({
+  paths: projectPathsSchema
 });
 
 export const projectFileGraphEntrySchema = z.strictObject({
@@ -2916,6 +2978,21 @@ export const applyChangePlanResponseSchema = z.strictObject({
   applyResult: applyResultSchema
 });
 
+export const importRandomizerSeedResponseSchema = z.strictObject({
+  config: randomizerConfigSchema.nullable(),
+  diagnostics: z.array(apiDiagnosticSchema),
+  seed: z.string().nullable()
+});
+
+export const applyRandomizerResponseSchema = z.strictObject({
+  applyResult: applyResultSchema,
+  seed: z.string()
+});
+
+export const restoreRandomizerResponseSchema = z.strictObject({
+  applyResult: applyResultSchema
+});
+
 export function createBridgeRequestSchema<TPayloadSchema extends ZodTypeAny>(
   payloadSchema: TPayloadSchema
 ) {
@@ -3287,6 +3364,14 @@ export type StageModMergeRequest = z.infer<typeof stageModMergeRequestSchema>;
 export type StageModMergeResponse = z.infer<typeof stageModMergeResponseSchema>;
 export type ApplyModMergeRequest = z.infer<typeof applyModMergeRequestSchema>;
 export type ApplyModMergeResponse = z.infer<typeof applyModMergeResponseSchema>;
+export type RandomizerOptions = z.infer<typeof randomizerOptionsSchema>;
+export type RandomizerConfig = z.infer<typeof randomizerConfigSchema>;
+export type ImportRandomizerSeedRequest = z.infer<typeof importRandomizerSeedRequestSchema>;
+export type ImportRandomizerSeedResponse = z.infer<typeof importRandomizerSeedResponseSchema>;
+export type ApplyRandomizerRequest = z.infer<typeof applyRandomizerRequestSchema>;
+export type ApplyRandomizerResponse = z.infer<typeof applyRandomizerResponseSchema>;
+export type RestoreRandomizerRequest = z.infer<typeof restoreRandomizerRequestSchema>;
+export type RestoreRandomizerResponse = z.infer<typeof restoreRandomizerResponseSchema>;
 export type OpenProjectRequest = z.infer<typeof openProjectRequestSchema>;
 export type OpenProjectResponse = z.infer<typeof openProjectResponseSchema>;
 export type ProjectFileGraph = z.infer<typeof projectFileGraphSchema>;

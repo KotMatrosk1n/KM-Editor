@@ -745,6 +745,12 @@ h2 {
   list-style: none;
 }
 
+.diagnostic-list-scrollable {
+  max-height: min(430px, 58vh);
+  padding-right: 4px;
+  overflow: auto;
+}
+
 .diagnostic {
   display: grid;
   grid-template-columns: 80px minmax(0, 1fr);
@@ -2938,6 +2944,180 @@ h2 {
   cursor: default;
 }
 
+.randomizer-panel,
+.randomizer-option-panel,
+.randomizer-apply-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.randomizer-seed-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.randomizer-shared-seed-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.randomizer-seed-row .path-field {
+  min-width: 0;
+}
+
+.randomizer-shared-seed-row .path-field {
+  min-width: 0;
+}
+
+.randomizer-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.randomizer-category-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.randomizer-category-button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 12px;
+  color: var(--color-text-soft);
+  background: #0d1424;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.randomizer-category-button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.randomizer-category-button:hover,
+.randomizer-category-expanded {
+  color: var(--color-text);
+  background: #101828;
+  border-color: rgb(109 115 255 / 54%);
+}
+
+.randomizer-category-enabled {
+  box-shadow: inset 4px 0 0 var(--color-gold);
+}
+
+.randomizer-category-expanded svg:last-child {
+  transform: rotate(180deg);
+}
+
+.randomizer-option-panel {
+  align-self: start;
+}
+
+.randomizer-option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.randomizer-checkbox {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 40px;
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--color-text-soft);
+  background: #0d1424;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.randomizer-checkbox input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: var(--color-gold);
+}
+
+.randomizer-checkbox span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.randomizer-checkbox:has(input:checked) {
+  color: var(--color-text);
+  border-color: rgb(214 168 66 / 44%);
+  box-shadow: inset 4px 0 0 var(--color-gold);
+}
+
+.randomizer-checkbox:has(input:disabled) {
+  opacity: 0.58;
+}
+
+.randomizer-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.randomizer-output-seed {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-soft);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.randomizer-output-seed-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.randomizer-output-seed textarea,
+.randomizer-shared-seed-row textarea,
+.modal-panel .path-field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 96px;
+  padding: 10px;
+  color: var(--color-text);
+  background: #0d1424;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  outline: none;
+  resize: vertical;
+}
+
+.randomizer-output-seed textarea:focus,
+.randomizer-shared-seed-row textarea:focus,
+.modal-panel .path-field textarea:focus {
+  border-color: var(--color-accent-bright);
+  box-shadow: 0 0 0 3px rgb(109 115 255 / 24%);
+}
+
+.modal-panel .panel {
+  box-shadow: none;
+}
+
 .mod-merger-panel,
 .mod-merger-file-panel,
 .mod-merger-preview-panel,
@@ -4158,8 +4338,10 @@ h2 {
 .written-file-list {
   display: grid;
   gap: 8px;
+  max-height: 232px;
   margin: 16px 0 0;
-  padding: 0;
+  padding: 0 4px 0 0;
+  overflow: auto;
   list-style: none;
 }
 
@@ -4403,6 +4585,9 @@ input {
   .encounters-layout,
   .flagwork-layout,
   .royal-candy-layout,
+  .randomizer-seed-row,
+  .randomizer-shared-seed-row,
+  .randomizer-metrics,
   .mod-merger-directory-grid,
   .mod-merger-mode-group,
   .mod-merger-file-lists,
@@ -4479,6 +4664,8 @@ input {
   .moves-toolbar,
   .spreadsheet-import-toolbar,
   .spreadsheet-source-row,
+  .randomizer-category-bar,
+  .randomizer-option-grid,
   .mod-merger-output-note,
   .mod-merger-metrics,
   .mod-merger-preview-row,
