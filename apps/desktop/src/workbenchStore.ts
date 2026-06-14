@@ -15,6 +15,7 @@ import {
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
   type GymUniformRemovalWorkflow,
+  type HyperTrainingWorkflow,
   type ItemsWorkflow,
   type IvScreenWorkflow,
   type MovesWorkflow,
@@ -61,6 +62,7 @@ export type WorkbenchSection =
   | 'flagworkSave'
   | 'bagHook'
   | 'catchCap'
+  | 'hyperTraining'
   | 'gymUniformRemoval'
   | 'ivScreen'
   | 'exefsPatches'
@@ -103,6 +105,7 @@ type WorkbenchState = {
   encounterSearchText: string;
   encountersWorkflow: EncountersWorkflow | null;
   catchCapWorkflow: CatchCapWorkflow | null;
+  hyperTrainingWorkflow: HyperTrainingWorkflow | null;
   gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null;
   ivScreenWorkflow: IvScreenWorkflow | null;
   exeFsPatchSearchText: string;
@@ -188,6 +191,7 @@ type WorkbenchState = {
   setEncounterSearchText: (encounterSearchText: string) => void;
   setEncountersWorkflow: (encountersWorkflow: EncountersWorkflow) => void;
   setCatchCapWorkflow: (catchCapWorkflow: CatchCapWorkflow) => void;
+  setHyperTrainingWorkflow: (hyperTrainingWorkflow: HyperTrainingWorkflow) => void;
   setGymUniformRemovalWorkflow: (
     gymUniformRemovalWorkflow: GymUniformRemovalWorkflow
   ) => void;
@@ -322,6 +326,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     encounterSearchText: '',
     encountersWorkflow: null,
     catchCapWorkflow: null,
+    hyperTrainingWorkflow: null,
     gymUniformRemovalWorkflow: null,
     ivScreenWorkflow: null,
     exeFsPatchSearchText: '',
@@ -411,6 +416,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   encounterSearchText: '',
   encountersWorkflow: null,
   catchCapWorkflow: null,
+  hyperTrainingWorkflow: null,
   gymUniformRemovalWorkflow: null,
   ivScreenWorkflow: null,
   exeFsPatchSearchText: '',
@@ -672,6 +678,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       encounterSearchText: '',
       encountersWorkflow: null,
       catchCapWorkflow: null,
+      hyperTrainingWorkflow: null,
       gymUniformRemovalWorkflow: null,
       ivScreenWorkflow: null,
       exeFsPatchSearchText: '',
@@ -989,6 +996,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         selectedCatchCapBadgeCount
       };
     }),
+  setHyperTrainingWorkflow: (hyperTrainingWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'hyperTraining'),
+      hyperTrainingWorkflow
+    })),
   setIvScreenWorkflow: (ivScreenWorkflow) =>
     set((state) => ({
       activeSection: resolveWorkflowLoadSection(state.activeSection, 'ivScreen'),

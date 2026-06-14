@@ -17,6 +17,7 @@ import {
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
   type GymUniformRemovalWorkflow,
+  type HyperTrainingWorkflow,
   type IvScreenWorkflow,
   type ItemRecord,
   type ItemsWorkflow,
@@ -196,6 +197,7 @@ describe('App', () => {
       encounterSearchText: '',
       encountersWorkflow: null,
       catchCapWorkflow: null,
+      hyperTrainingWorkflow: null,
       exeFsPatchSearchText: '',
       exeFsPatchWorkflow: null,
       flagworkSaveSearchText: '',
@@ -444,8 +446,15 @@ describe('App', () => {
         .getAllByRole('button')
         .filter((button) => button.classList.contains('nav-child-button'))
         .map((button) => button.textContent)
-        .slice(-5)
-    ).toEqual(['Catch Cap', 'Gym Uniform Removal', 'IV Screen', 'Royal Candy', 'Starting Items']);
+        .slice(-6)
+    ).toEqual([
+      'Catch Cap',
+      'Hyper Training',
+      'Gym Uniform Removal',
+      'IV Screen',
+      'Royal Candy',
+      'Starting Items'
+    ]);
     expect(screen.queryByRole('button', { name: 'Dynamax Adventures' })).not.toBeInTheDocument();
   });
 
@@ -3318,6 +3327,86 @@ describe('App', () => {
         session: expect.objectContaining({
           pendingEdits: expect.arrayContaining([
             expect.objectContaining({ domain: 'workflow.catchCap' })
+          ])
+        })
+      })
+    );
+  });
+
+  it('opens Hyper Training from Advanced Editors and stages a clamped cutoff', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const stageHyperTraining = vi.fn(baseBridge.stageHyperTraining);
+    const createChangePlan = vi.fn(baseBridge.createChangePlan);
+    const applyChangePlan = vi.fn(baseBridge.applyChangePlan);
+    const user = userEvent.setup();
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          applyChangePlan,
+          createChangePlan,
+          stageHyperTraining
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output-root');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    expect(screen.getByRole('button', { name: 'Hyper Training' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Hyper Training' }));
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: 'Hyper Training'
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Hyper Training is using the vanilla Lv.100 minimum.')).toBeInTheDocument();
+
+    const cutoffInput = screen.getByLabelText('Cutoff');
+    await user.clear(cutoffInput);
+    await user.type(cutoffInput, '150');
+    expect(cutoffInput).toHaveValue(100);
+    await user.clear(cutoffInput);
+    await user.type(cutoffInput, '42');
+    expect(cutoffInput).toHaveValue(42);
+
+    await user.click(screen.getByRole('button', { name: 'Stage Cutoff' }));
+
+    await waitFor(() => expect(stageHyperTraining).toHaveBeenCalled());
+    expect(stageHyperTraining).toHaveBeenCalledWith(
+      expect.objectContaining({
+        minimumLevel: 42
+      })
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Review' }));
+
+    await waitFor(() => expect(createChangePlan).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => expect(applyChangePlan).toHaveBeenCalled());
+    expect(applyChangePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changePlan: expect.objectContaining({
+          writes: expect.arrayContaining([
+            expect.objectContaining({
+              targetRelativePath: 'romfs/bin/script/amx/hyper_training.amx'
+            }),
+            expect.objectContaining({
+              targetRelativePath: 'exefs/main'
+            }),
+            expect.objectContaining({
+              targetRelativePath: 'romfs/bin/message/English/script/sub_event_007.dat'
+            })
+          ])
+        }),
+        session: expect.objectContaining({
+          pendingEdits: expect.arrayContaining([
+            expect.objectContaining({ domain: 'workflow.hyperTraining' })
           ])
         })
       })
@@ -7608,6 +7697,69 @@ function createMockProjectBridge(
     },
     summary: catchCapWorkflowSummary
   };
+  const hyperTrainingWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description:
+      'Advanced editor for the Battle Tower Hyper Training NPC minimum level cutoff, matching English dialogue, and picker cutoff checks.',
+    diagnostics: [],
+    id: 'hyperTraining',
+    label: 'Hyper Training'
+  };
+  const hyperTrainingWorkflow: HyperTrainingWorkflow = {
+    diagnostics: [],
+    installMessage: 'Hyper Training is using the vanilla Lv.100 minimum.',
+    installStatus: canEdit ? 'available' : 'readOnly',
+    levelRule: {
+      dialogueSummary: 'English dialogue lines 0 and 3 mention the cutoff.',
+      maximumAllowedLevel: 100,
+      minimumAllowedLevel: 1,
+      minimumLevel: 100,
+      runtimeSummary:
+        'Picker cutoff lives at main.text+0x00F9A314 and related Hyper Training list/detail checks.',
+      scriptCell: 'AMX code cell 2294 (RND_TO_FLOOR operand)',
+      vanillaMinimumLevel: 100
+    },
+    sources: [
+      {
+        label: 'Hyper Training script',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/script/amx/hyper_training.amx',
+          sourceLayer: 'base'
+        },
+        relativePath: 'romfs/bin/script/amx/hyper_training.amx',
+        sourceId: 'script',
+        status: 'available'
+      },
+      {
+        label: 'English Hyper Training dialogue',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/message/English/script/sub_event_007.dat',
+          sourceLayer: 'base'
+        },
+        relativePath: 'romfs/bin/message/English/script/sub_event_007.dat',
+        sourceId: 'dialogue',
+        status: 'available'
+      },
+      {
+        label: 'Hyper Training picker runtime',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'exefs/main',
+          sourceLayer: 'base'
+        },
+        relativePath: 'exefs/main',
+        sourceId: 'runtime',
+        status: 'available'
+      }
+    ],
+    stats: {
+      outputFileCount: 3,
+      sourceFileCount: 3
+    },
+    summary: hyperTrainingWorkflowSummary
+  };
   const gymUniformRemovalWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Keeps the player in their current outfit during gym challenges and gym battles.',
@@ -8273,6 +8425,47 @@ function createMockProjectBridge(
                               targetRelativePath: 'exefs/main'
                             }
                           ]
+                        : request.session.pendingEdits[0]?.domain === 'workflow.hyperTraining'
+                        ? [
+                            {
+                              reason:
+                                'Set the Battle Tower Hyper Training script minimum level.',
+                              replacesExistingOutput: false,
+                              sources: [
+                                {
+                                  layer: 'base',
+                                  relativePath: 'romfs/bin/script/amx/hyper_training.amx'
+                                }
+                              ],
+                              targetRelativePath: 'romfs/bin/script/amx/hyper_training.amx'
+                            },
+                            {
+                              reason:
+                                'Update the Hyper Training party/box picker cutoff checks in exefs/main.',
+                              replacesExistingOutput: false,
+                              sources: [
+                                {
+                                  layer: 'base',
+                                  relativePath: 'exefs/main'
+                                }
+                              ],
+                              targetRelativePath: 'exefs/main'
+                            },
+                            {
+                              reason:
+                                'Update English Hyper Training NPC dialogue to mention the selected level.',
+                              replacesExistingOutput: false,
+                              sources: [
+                                {
+                                  layer: 'base',
+                                  relativePath:
+                                    'romfs/bin/message/English/script/sub_event_007.dat'
+                                }
+                              ],
+                              targetRelativePath:
+                                'romfs/bin/message/English/script/sub_event_007.dat'
+                            }
+                          ]
                         : request.session.pendingEdits[0]?.domain === 'workflow.gymUniformRemoval'
                         ? [
                             {
@@ -8384,6 +8577,7 @@ function createMockProjectBridge(
           flagworkSaveWorkflowSummary,
           bagHookWorkflowSummary,
           catchCapWorkflowSummary,
+          hyperTrainingWorkflowSummary,
           gymUniformRemovalWorkflowSummary,
           ivScreenWorkflowSummary,
           royalCandyWorkflowSummary,
@@ -8542,6 +8736,58 @@ function createMockProjectBridge(
             fileState: 'layeredOverride',
             sourceFile: 'exefs/main',
             sourceLayer: 'layered'
+          }
+        }
+      }),
+    loadHyperTrainingWorkflow: () =>
+      Promise.resolve({
+        workflow: hyperTrainingWorkflow
+      }),
+    stageHyperTraining: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: `Hyper Training minimum level Lv.${request.minimumLevel} is staged for change-plan review.`,
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.hyperTraining',
+              field: 'minimumLevel',
+              newValue: request.minimumLevel.toString(),
+              recordId: 'hyper-training-minimum-level',
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/script/amx/hyper_training.amx'
+                },
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/bin/message/English/script/sub_event_007.dat'
+                },
+                {
+                  layer: 'base',
+                  relativePath: 'exefs/main'
+                }
+              ],
+              summary: `Stage Hyper Training minimum level Lv.${request.minimumLevel}.`
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-hyper-training'
+        },
+        workflow: {
+          ...hyperTrainingWorkflow,
+          installMessage: `Hyper Training currently accepts Pokemon at Lv.${request.minimumLevel} or higher.`,
+          installStatus:
+            request.minimumLevel === 100
+              ? hyperTrainingWorkflow.installStatus
+              : 'installed',
+          levelRule: {
+            ...hyperTrainingWorkflow.levelRule,
+            minimumLevel: request.minimumLevel
           }
         }
       }),
@@ -10558,6 +10804,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Catch Cap Editor changes to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.hyperTraining') {
+    return 'Applied Hyper Training changes to the configured LayeredFS output root.';
+  }
+
   if (domain === 'workflow.gymUniformRemoval') {
     return 'Applied Gym Uniform Removal changes to the configured LayeredFS output root.';
   }
@@ -10627,6 +10877,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending Bag Hook install is valid for change-plan review.';
     case 'workflow.catchCap':
       return 'Pending Catch Cap Editor values are valid for change-plan review.';
+    case 'workflow.hyperTraining':
+      return 'Pending Hyper Training change is valid for change-plan review.';
     case 'workflow.gymUniformRemoval':
       return 'Pending Gym Uniform Removal change is valid for change-plan review.';
     case 'workflow.ivScreen':

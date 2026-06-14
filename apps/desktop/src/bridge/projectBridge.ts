@@ -16,6 +16,8 @@ import {
   type LoadBagHookWorkflowResponse,
   type LoadCatchCapWorkflowRequest,
   type LoadCatchCapWorkflowResponse,
+  type LoadHyperTrainingWorkflowRequest,
+  type LoadHyperTrainingWorkflowResponse,
   type LoadGymUniformRemovalWorkflowRequest,
   type LoadGymUniformRemovalWorkflowResponse,
   type LoadIvScreenWorkflowRequest,
@@ -68,6 +70,8 @@ import {
   type StageCatchCapResponse,
   type StageCatchCapUninstallRequest,
   type StageCatchCapUninstallResponse,
+  type StageHyperTrainingRequest,
+  type StageHyperTrainingResponse,
   type StageGymUniformRemovalInstallRequest,
   type StageGymUniformRemovalInstallResponse,
   type StageGymUniformRemovalUninstallRequest,
@@ -149,6 +153,7 @@ import {
   loadEncountersWorkflowResponseSchema,
   loadBagHookWorkflowResponseSchema,
   loadCatchCapWorkflowResponseSchema,
+  loadHyperTrainingWorkflowResponseSchema,
   loadGymUniformRemovalWorkflowResponseSchema,
   loadIvScreenWorkflowResponseSchema,
   loadExeFsPatchWorkflowResponseSchema,
@@ -172,6 +177,7 @@ import {
   stageBagHookUninstallResponseSchema,
   stageCatchCapResponseSchema,
   stageCatchCapUninstallResponseSchema,
+  stageHyperTrainingResponseSchema,
   stageGymUniformRemovalInstallResponseSchema,
   stageGymUniformRemovalUninstallResponseSchema,
   stageIvScreenInstallResponseSchema,
@@ -287,6 +293,12 @@ export type ProjectBridge = {
   stageCatchCapUninstall: (
     request: StageCatchCapUninstallRequest
   ) => Promise<StageCatchCapUninstallResponse>;
+  loadHyperTrainingWorkflow: (
+    request: LoadHyperTrainingWorkflowRequest
+  ) => Promise<LoadHyperTrainingWorkflowResponse>;
+  stageHyperTraining: (
+    request: StageHyperTrainingRequest
+  ) => Promise<StageHyperTrainingResponse>;
   loadGymUniformRemovalWorkflow: (
     request: LoadGymUniformRemovalWorkflowRequest
   ) => Promise<LoadGymUniformRemovalWorkflowResponse>;
@@ -477,6 +489,20 @@ export function createProjectBridge(
         kmCommandNames.stageCatchCapUninstall,
         request,
         stageCatchCapUninstallResponseSchema
+      ),
+    loadHyperTrainingWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadHyperTrainingWorkflow,
+        request,
+        loadHyperTrainingWorkflowResponseSchema
+      ),
+    stageHyperTraining: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageHyperTraining,
+        request,
+        stageHyperTrainingResponseSchema
       ),
     loadGymUniformRemovalWorkflow: (request) =>
       sendProjectBridgeRequest(

@@ -50,6 +50,8 @@ export const kmCommandNameValues = [
   'catchCap.load',
   'catchCap.stage',
   'catchCap.uninstall.stage',
+  'hyperTraining.load',
+  'hyperTraining.stage',
   'gymUniformRemoval.load',
   'gymUniformRemoval.install.stage',
   'gymUniformRemoval.uninstall.stage',
@@ -126,6 +128,8 @@ export const kmCommandNames = {
   loadCatchCapWorkflow: 'catchCap.load',
   stageCatchCap: 'catchCap.stage',
   stageCatchCapUninstall: 'catchCap.uninstall.stage',
+  loadHyperTrainingWorkflow: 'hyperTraining.load',
+  stageHyperTraining: 'hyperTraining.stage',
   loadGymUniformRemovalWorkflow: 'gymUniformRemoval.load',
   stageGymUniformRemovalInstall: 'gymUniformRemoval.install.stage',
   stageGymUniformRemovalUninstall: 'gymUniformRemoval.uninstall.stage',
@@ -272,6 +276,10 @@ export const loadBagHookWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadCatchCapWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadHyperTrainingWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -2149,6 +2157,61 @@ export const stageCatchCapUninstallResponseSchema = z.strictObject({
   workflow: catchCapWorkflowSchema
 });
 
+export const hyperTrainingProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const hyperTrainingSourceRecordSchema = z.strictObject({
+  label: z.string(),
+  provenance: hyperTrainingProvenanceSchema,
+  relativePath: z.string(),
+  sourceId: z.string(),
+  status: z.string()
+});
+
+export const hyperTrainingLevelRuleSchema = z.strictObject({
+  dialogueSummary: z.string(),
+  maximumAllowedLevel: z.number().int(),
+  minimumAllowedLevel: z.number().int(),
+  minimumLevel: z.number().int(),
+  runtimeSummary: z.string(),
+  scriptCell: z.string(),
+  vanillaMinimumLevel: z.number().int()
+});
+
+export const hyperTrainingWorkflowStatsSchema = z.strictObject({
+  outputFileCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative()
+});
+
+export const hyperTrainingWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  installMessage: z.string(),
+  installStatus: z.string(),
+  levelRule: hyperTrainingLevelRuleSchema,
+  sources: z.array(hyperTrainingSourceRecordSchema),
+  stats: hyperTrainingWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadHyperTrainingWorkflowResponseSchema = z.strictObject({
+  workflow: hyperTrainingWorkflowSchema
+});
+
+export const stageHyperTrainingRequestSchema = z.strictObject({
+  minimumLevel: z.number().int().min(1).max(100),
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable()
+});
+
+export const stageHyperTrainingResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: hyperTrainingWorkflowSchema
+});
+
 export const gymUniformRemovalProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -3000,6 +3063,8 @@ export type BagHookWorkflow = z.infer<typeof bagHookWorkflowSchema>;
 export type CatchCapRecord = z.infer<typeof catchCapRecordSchema>;
 export type CatchCapSelection = z.infer<typeof catchCapSelectionSchema>;
 export type CatchCapWorkflow = z.infer<typeof catchCapWorkflowSchema>;
+export type HyperTrainingSourceRecord = z.infer<typeof hyperTrainingSourceRecordSchema>;
+export type HyperTrainingWorkflow = z.infer<typeof hyperTrainingWorkflowSchema>;
 export type GymUniformRemovalReservedRegion = z.infer<
   typeof gymUniformRemovalReservedRegionSchema
 >;
@@ -3144,6 +3209,14 @@ export type StageCatchCapRequest = z.infer<typeof stageCatchCapRequestSchema>;
 export type StageCatchCapResponse = z.infer<typeof stageCatchCapResponseSchema>;
 export type StageCatchCapUninstallRequest = z.infer<typeof stageCatchCapUninstallRequestSchema>;
 export type StageCatchCapUninstallResponse = z.infer<typeof stageCatchCapUninstallResponseSchema>;
+export type LoadHyperTrainingWorkflowRequest = z.infer<
+  typeof loadHyperTrainingWorkflowRequestSchema
+>;
+export type LoadHyperTrainingWorkflowResponse = z.infer<
+  typeof loadHyperTrainingWorkflowResponseSchema
+>;
+export type StageHyperTrainingRequest = z.infer<typeof stageHyperTrainingRequestSchema>;
+export type StageHyperTrainingResponse = z.infer<typeof stageHyperTrainingResponseSchema>;
 export type LoadGymUniformRemovalWorkflowRequest = z.infer<
   typeof loadGymUniformRemovalWorkflowRequestSchema
 >;

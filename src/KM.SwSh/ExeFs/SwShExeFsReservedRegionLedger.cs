@@ -28,6 +28,7 @@ internal static class SwShExeFsReservedRegionLedger
     public const string OwnerBagHook = "Bag Hook";
     public const string OwnerCatchCap = "Catch Cap";
     public const string OwnerGymUniformRemoval = "Gym Uniform Removal";
+    public const string OwnerHyperTraining = "Hyper Training";
     public const string OwnerIvScreen = "IV Screen";
     public const string OwnerPokemonSummaryRuntime = "Pokemon Summary Runtime";
     public const string OwnerRoyalCandy = "Royal Candy";
@@ -204,6 +205,15 @@ internal static class SwShExeFsReservedRegionLedger
 
         new(OwnerGymUniformRemoval, "gym-uniform-removal-sword-handler", ExeFsMainPath, "main.text", 0x01472600, 0x08, "Gym Uniform Removal Sword uniform-change handler", "do-not-overwrite"),
         new(OwnerGymUniformRemoval, "gym-uniform-removal-shield-handler", ExeFsMainPath, "main.text", 0x01472630, 0x08, "Gym Uniform Removal Shield uniform-change handler", "do-not-overwrite"),
+
+        new(OwnerHyperTraining, "hyper-training-sword-preflight-compare", ExeFsMainPath, "main.text", 0x00F98F18, 0x04, "Hyper Training Sword picker preflight level compare", "do-not-overwrite"),
+        new(OwnerHyperTraining, "hyper-training-sword-eligibility-check", ExeFsMainPath, "main.text", 0x00F9A314, 0x08, "Hyper Training Sword picker eligibility compare and branch", "do-not-overwrite"),
+        new(OwnerHyperTraining, "hyper-training-sword-gray-out-check", ExeFsMainPath, "main.text", 0x00F9A334, 0x08, "Hyper Training Sword picker gray-out compare and branch", "do-not-overwrite"),
+        new(OwnerHyperTraining, "hyper-training-sword-detail-check", ExeFsMainPath, "main.text", 0x00F9E4C0, 0x08, "Hyper Training Sword selected-detail compare and branch", "do-not-overwrite"),
+        new(OwnerHyperTraining, "hyper-training-shield-preflight-compare", ExeFsMainPath, "main.text", 0x00F98F48, 0x04, "Hyper Training Shield picker preflight level compare", "do-not-overwrite"),
+        new(OwnerHyperTraining, "hyper-training-shield-eligibility-check", ExeFsMainPath, "main.text", 0x00F9A344, 0x08, "Hyper Training Shield picker eligibility compare and branch", "do-not-overwrite"),
+        new(OwnerHyperTraining, "hyper-training-shield-gray-out-check", ExeFsMainPath, "main.text", 0x00F9A364, 0x08, "Hyper Training Shield picker gray-out compare and branch", "do-not-overwrite"),
+        new(OwnerHyperTraining, "hyper-training-shield-detail-check", ExeFsMainPath, "main.text", 0x00F9E4F0, 0x08, "Hyper Training Shield selected-detail compare and branch", "do-not-overwrite"),
 
         new(OwnerRoyalCandy, "royal-candy-ui-check-a", ExeFsMainPath, "main.text", 0x00747988, 0x08, "Royal Candy medicine UI route", "do-not-overwrite"),
         new(OwnerRoyalCandy, "royal-candy-ui-check-b", ExeFsMainPath, "main.text", 0x00747D44, 0x08, "Royal Candy alternate medicine UI route", "do-not-overwrite"),

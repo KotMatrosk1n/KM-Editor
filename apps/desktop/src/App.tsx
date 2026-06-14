@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   Dna,
   Download,
+  Dumbbell,
   ExternalLink,
   FileSpreadsheet,
   FolderOpen,
@@ -83,6 +84,8 @@ import {
   type GiftPokemonRecord,
   type GiftPokemonWorkflow,
   type GymUniformRemovalWorkflow,
+  type HyperTrainingSourceRecord,
+  type HyperTrainingWorkflow,
   type ItemEditableField,
   type ItemsWorkflow,
   type IvScreenWorkflow,
@@ -378,6 +381,11 @@ const sections: Array<{
     icon: ShieldCheck
   },
   {
+    id: 'hyperTraining',
+    label: 'Hyper Training',
+    icon: Dumbbell
+  },
+  {
     id: 'gymUniformRemoval',
     label: 'Gym Uniform Removal',
     icon: Shirt
@@ -477,7 +485,14 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'advancedEditors',
     label: 'Advanced Editors',
-    sectionIds: ['catchCap', 'gymUniformRemoval', 'ivScreen', 'royalCandy', 'startingItems']
+    sectionIds: [
+      'catchCap',
+      'hyperTraining',
+      'gymUniformRemoval',
+      'ivScreen',
+      'royalCandy',
+      'startingItems'
+    ]
   }
 ];
 
@@ -610,6 +625,13 @@ const workflowDefinitions: Array<{
     description:
       'Independent ExeFS editor for badge catch caps 0-7. It patches the display and runtime capture checks; eight badges is locked at Lv.100 because full badges can catch any level.',
     icon: ShieldCheck
+  },
+  {
+    id: 'hyperTraining',
+    label: 'Hyper Training',
+    description:
+      'Advanced editor for the Battle Tower Hyper Training NPC minimum level cutoff, matching English dialogue, and picker cutoff checks.',
+    icon: Dumbbell
   },
   {
     id: 'gymUniformRemoval',
@@ -1338,12 +1360,16 @@ export function App({
   const setEncounterSearchText = useWorkbenchStore((state) => state.setEncounterSearchText);
   const setEncountersWorkflow = useWorkbenchStore((state) => state.setEncountersWorkflow);
   const catchCapWorkflow = useWorkbenchStore((state) => state.catchCapWorkflow);
+  const hyperTrainingWorkflow = useWorkbenchStore((state) => state.hyperTrainingWorkflow);
   const gymUniformRemovalWorkflow = useWorkbenchStore(
     (state) => state.gymUniformRemovalWorkflow
   );
   const ivScreenWorkflow = useWorkbenchStore((state) => state.ivScreenWorkflow);
   const setBagHookWorkflow = useWorkbenchStore((state) => state.setBagHookWorkflow);
   const setCatchCapWorkflow = useWorkbenchStore((state) => state.setCatchCapWorkflow);
+  const setHyperTrainingWorkflow = useWorkbenchStore(
+    (state) => state.setHyperTrainingWorkflow
+  );
   const setGymUniformRemovalWorkflow = useWorkbenchStore(
     (state) => state.setGymUniformRemovalWorkflow
   );
@@ -1546,6 +1572,8 @@ export function App({
   const [isBagHookStaging, setIsBagHookStaging] = useState(false);
   const [isCatchCapLoading, setIsCatchCapLoading] = useState(false);
   const [isCatchCapStaging, setIsCatchCapStaging] = useState(false);
+  const [isHyperTrainingLoading, setIsHyperTrainingLoading] = useState(false);
+  const [isHyperTrainingStaging, setIsHyperTrainingStaging] = useState(false);
   const [isGymUniformRemovalLoading, setIsGymUniformRemovalLoading] = useState(false);
   const [isGymUniformRemovalStaging, setIsGymUniformRemovalStaging] = useState(false);
   const [isIvScreenLoading, setIsIvScreenLoading] = useState(false);
@@ -1667,6 +1695,7 @@ export function App({
     useWorkbenchStore.setState({
       bagHookWorkflow: null,
       catchCapWorkflow: null,
+      hyperTrainingWorkflow: null,
       gymUniformRemovalWorkflow: null,
       ivScreenWorkflow: null,
       dynamaxAdventuresWorkflow: null,
@@ -2692,6 +2721,47 @@ export function App({
     }
   };
 
+  const handleOpenHyperTrainingWorkflow = async () => {
+    setIsHyperTrainingLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadHyperTrainingWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setHyperTrainingWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsHyperTrainingLoading(false);
+    }
+  };
+
+  const handleStageHyperTraining = async (minimumLevel: number) => {
+    setIsHyperTrainingStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageHyperTraining({
+        minimumLevel,
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setHyperTrainingWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('hyperTraining', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsHyperTrainingStaging(false);
+    }
+  };
+
   const handleOpenGymUniformRemovalWorkflow = async () => {
     setIsGymUniformRemovalLoading(true);
     setBridgeDiagnostics([]);
@@ -3116,6 +3186,12 @@ export function App({
           void handleOpenCatchCapWorkflow();
         }
         break;
+      case 'hyperTraining':
+        if (!hyperTrainingWorkflow && !isHyperTrainingLoading) {
+          markLazyLoadStarted();
+          void handleOpenHyperTrainingWorkflow();
+        }
+        break;
       case 'gymUniformRemoval':
         if (!gymUniformRemovalWorkflow && !isGymUniformRemovalLoading) {
           markLazyLoadStarted();
@@ -3165,6 +3241,7 @@ export function App({
     flagworkSaveWorkflow,
     giftPokemonWorkflow,
     gymUniformRemovalWorkflow,
+    hyperTrainingWorkflow,
     health?.canOpenEditableWorkflows,
     isEncountersLoading,
     isExeFsPatchLoading,
@@ -3179,6 +3256,7 @@ export function App({
     isBagHookLoading,
     isCatchCapLoading,
     isGymUniformRemovalLoading,
+    isHyperTrainingLoading,
     isIvScreenLoading,
     isMovesLoading,
     isPlacementLoading,
@@ -5203,6 +5281,14 @@ export function App({
         }
       );
     }
+    if (hyperTrainingWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadHyperTrainingWorkflow({ paths });
+          setHyperTrainingWorkflow(response.workflow);
+        }
+      );
+    }
     if (gymUniformRemovalWorkflow) {
       reloadTasks.push(
         async () => {
@@ -5516,6 +5602,7 @@ export function App({
               isDynamaxAdventuresLoading={isDynamaxAdventuresLoading}
               isBagHookLoading={isBagHookLoading}
               isCatchCapLoading={isCatchCapLoading}
+              isHyperTrainingLoading={isHyperTrainingLoading}
               isGymUniformRemovalLoading={isGymUniformRemovalLoading}
               isIvScreenLoading={isIvScreenLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
@@ -5533,6 +5620,7 @@ export function App({
               onOpenDynamaxAdventuresWorkflow={handleOpenDynamaxAdventuresWorkflow}
               onOpenBagHookWorkflow={handleOpenBagHookWorkflow}
               onOpenCatchCapWorkflow={handleOpenCatchCapWorkflow}
+              onOpenHyperTrainingWorkflow={handleOpenHyperTrainingWorkflow}
               onOpenGymUniformRemovalWorkflow={handleOpenGymUniformRemovalWorkflow}
               onOpenIvScreenWorkflow={handleOpenIvScreenWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
@@ -5955,6 +6043,26 @@ export function App({
               />
             )
           ) : null}
+          {activeSection === 'hyperTraining' ? (
+            isHyperTrainingLoading && !hyperTrainingWorkflow ? (
+              <WorkflowLoadingPanel label="Hyper Training" />
+            ) : (
+              <HyperTrainingSection
+                changePlan={changePlan}
+                editSession={getEditSessionForSection('hyperTraining')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isHyperTrainingStaging}
+                onApplyChangePlan={handleApplyChangePlan}
+                onCreateChangePlan={handleCreateChangePlan}
+                onDirtyChange={(isDirty) =>
+                  registerEditorDraftDirty('hyperTraining', isDirty)
+                }
+                onStageMinimumLevel={handleStageHyperTraining}
+                workflow={hyperTrainingWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'gymUniformRemoval' ? (
             isGymUniformRemovalLoading && !gymUniformRemovalWorkflow ? (
               <WorkflowLoadingPanel label="Gym Uniform Removal" />
@@ -6118,6 +6226,7 @@ export function App({
                 flagworkSaveWorkflow,
                 giftPokemonWorkflow,
                 behaviorWorkflow,
+                hyperTrainingWorkflow,
                 itemsWorkflow,
                 ivScreenWorkflow,
                 movesWorkflow,
@@ -6485,6 +6594,7 @@ function WorkflowsSection({
   isDynamaxAdventuresLoading,
   isBagHookLoading,
   isCatchCapLoading,
+  isHyperTrainingLoading,
   isGymUniformRemovalLoading,
   isIvScreenLoading,
   isRoyalCandyLoading,
@@ -6501,6 +6611,7 @@ function WorkflowsSection({
   onOpenDynamaxAdventuresWorkflow,
   onOpenBagHookWorkflow,
   onOpenCatchCapWorkflow,
+  onOpenHyperTrainingWorkflow,
   onOpenGymUniformRemovalWorkflow,
   onOpenIvScreenWorkflow,
   onOpenItemsWorkflow,
@@ -6543,6 +6654,7 @@ function WorkflowsSection({
   isDynamaxAdventuresLoading: boolean;
   isBagHookLoading: boolean;
   isCatchCapLoading: boolean;
+  isHyperTrainingLoading: boolean;
   isGymUniformRemovalLoading: boolean;
   isIvScreenLoading: boolean;
   isRoyalCandyLoading: boolean;
@@ -6559,6 +6671,7 @@ function WorkflowsSection({
   onOpenDynamaxAdventuresWorkflow: () => void;
   onOpenBagHookWorkflow: () => void;
   onOpenCatchCapWorkflow: () => void;
+  onOpenHyperTrainingWorkflow: () => void;
   onOpenGymUniformRemovalWorkflow: () => void;
   onOpenIvScreenWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
@@ -6625,6 +6738,7 @@ function WorkflowsSection({
           const isFlagworkSaveWorkflow = definition.id === 'flagworkSave';
           const isBagHookWorkflow = definition.id === 'bagHook';
           const isCatchCapWorkflow = definition.id === 'catchCap';
+          const isHyperTrainingWorkflow = definition.id === 'hyperTraining';
           const isGymUniformRemovalWorkflow = definition.id === 'gymUniformRemoval';
           const isIvScreenWorkflow = definition.id === 'ivScreen';
           const isExeFsPatchWorkflow = definition.id === 'exefsPatches';
@@ -6666,6 +6780,8 @@ function WorkflowsSection({
             isBagHookWorkflow && workflowState.availability !== 'disabled';
           const canOpenCatchCap =
             isCatchCapWorkflow && workflowState.availability !== 'disabled';
+          const canOpenHyperTraining =
+            isHyperTrainingWorkflow && workflowState.availability !== 'disabled';
           const canOpenGymUniformRemoval =
             isGymUniformRemovalWorkflow && workflowState.availability !== 'disabled';
           const canOpenIvScreen =
@@ -6918,6 +7034,19 @@ function WorkflowsSection({
                   >
                     <Icon aria-hidden="true" size={16} />
                     <span>{isCatchCapLoading ? 'Loading' : 'Open Catch Cap'}</span>
+                  </button>
+                ) : null}
+                {isHyperTrainingWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenHyperTraining || isHyperTrainingLoading}
+                    onClick={onOpenHyperTrainingWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>
+                      {isHyperTrainingLoading ? 'Loading' : 'Open Hyper Training'}
+                    </span>
                   </button>
                 ) : null}
                 {isGymUniformRemovalWorkflow ? (
@@ -11442,6 +11571,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.giftPokemon': 'Gift Pokemon',
     'workflow.gymUniformRemoval': 'Gym Uniform Removal',
     'workflow.behavior': 'Behavior',
+    'workflow.hyperTraining': 'Hyper Training',
     'workflow.items': 'Items',
     'workflow.ivScreen': 'IV Screen',
     'workflow.moves': 'Moves',
@@ -11672,6 +11802,13 @@ function getPendingEditDisplayDetails(
         newValueLabel: formatCatchCapPendingValue(edit.newValue),
         recordLabel: 'Catch Cap Editor'
       });
+    case 'workflow.hyperTraining':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'minimumLevel' ? 'Minimum level' : undefined,
+        newValueLabel: formatHyperTrainingPendingValue(edit.newValue),
+        recordLabel: 'Battle Tower NPC'
+      });
     case 'workflow.gymUniformRemoval':
       return createPendingEditDisplayDetails(edit, {
         editorLabel,
@@ -11759,6 +11896,15 @@ function formatCatchCapPendingValue(value: string | null | undefined) {
     });
 
   return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+function formatHyperTrainingPendingValue(value: string | null | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  const minimumLevel = Number.parseInt(value, 10);
+  return Number.isInteger(minimumLevel) ? `Lv. ${minimumLevel}` : value;
 }
 
 function formatStartingItemsPendingValue(
@@ -19953,6 +20099,310 @@ function IvScreenSection({
   );
 }
 
+function HyperTrainingSection({
+  changePlan,
+  editSession,
+  isChangePlanApplying,
+  isChangePlanCreating,
+  isStaging,
+  onApplyChangePlan,
+  onCreateChangePlan,
+  onDirtyChange,
+  onStageMinimumLevel,
+  workflow
+}: {
+  changePlan: ChangePlan | null;
+  editSession: EditSession | null;
+  isChangePlanApplying: boolean;
+  isChangePlanCreating: boolean;
+  isStaging: boolean;
+  onApplyChangePlan: () => void;
+  onCreateChangePlan: () => void;
+  onDirtyChange: (isDirty: boolean) => void;
+  onStageMinimumLevel: (minimumLevel: number) => void;
+  workflow: HyperTrainingWorkflow | null;
+}) {
+  const minimumAllowed = workflow?.levelRule.minimumAllowedLevel ?? 1;
+  const maximumAllowed = workflow?.levelRule.maximumAllowedLevel ?? 100;
+  const vanillaMinimumLevel = workflow?.levelRule.vanillaMinimumLevel ?? 100;
+  const currentMinimumLevel = workflow?.levelRule.minimumLevel ?? vanillaMinimumLevel;
+  const [levelInput, setLevelInput] = useState(currentMinimumLevel.toString());
+
+  useEffect(() => {
+    setLevelInput(currentMinimumLevel.toString());
+  }, [currentMinimumLevel]);
+
+  const parsedMinimumLevel = parseHyperTrainingLevelInput(levelInput);
+  const levelError =
+    parsedMinimumLevel === null
+      ? 'Enter a whole number.'
+      : parsedMinimumLevel < minimumAllowed || parsedMinimumLevel > maximumAllowed
+        ? `Choose Lv. ${minimumAllowed}-${maximumAllowed}.`
+        : null;
+  const normalizedMinimumLevel = levelError === null ? parsedMinimumLevel : null;
+  const stagedHyperTrainingEdit = editSession?.pendingEdits.find(
+    (edit) => edit.domain === 'workflow.hyperTraining'
+  );
+  const stagedMinimumLevel = parseHyperTrainingLevelInput(
+    stagedHyperTrainingEdit?.newValue ?? ''
+  );
+  const hasStagedChange =
+    stagedHyperTrainingEdit?.recordId === 'hyper-training-minimum-level' &&
+    stagedMinimumLevel !== null;
+  const canStage =
+    workflow?.summary.availability === 'available' &&
+    workflow.installStatus !== 'blocked' &&
+    normalizedMinimumLevel !== null &&
+    !isStaging;
+  const canRestore =
+    workflow?.summary.availability === 'available' &&
+    workflow.installStatus !== 'blocked' &&
+    !isStaging &&
+    currentMinimumLevel !== vanillaMinimumLevel;
+  const canReviewPlan = hasStagedChange && !isChangePlanCreating;
+  const canApplyPlan =
+    hasStagedChange &&
+    changePlan !== null &&
+    changePlan.canApply &&
+    changePlan.writes.length > 0 &&
+    !isChangePlanApplying;
+  const sliderValue =
+    normalizedMinimumLevel ?? clampHyperTrainingLevel(currentMinimumLevel, minimumAllowed, maximumAllowed);
+
+  useEffect(() => {
+    const hasLocalDraft =
+      levelError !== null ||
+      (normalizedMinimumLevel !== null && normalizedMinimumLevel !== currentMinimumLevel);
+    onDirtyChange(hasLocalDraft);
+  }, [currentMinimumLevel, levelError, normalizedMinimumLevel, onDirtyChange]);
+
+  const handleLevelInputChange = (value: string) => {
+    if (value.trim() === '') {
+      setLevelInput('');
+      return;
+    }
+
+    if (/^\d+$/.test(value.trim())) {
+      const parsed = Number.parseInt(value, 10);
+      setLevelInput(
+        clampHyperTrainingLevel(parsed, minimumAllowed, maximumAllowed).toString()
+      );
+      return;
+    }
+
+    setLevelInput(value);
+  };
+
+  return (
+    <>
+      <section aria-labelledby="hyper-training-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Dumbbell aria-hidden="true" size={18} />
+          <h2 id="hyper-training-heading">Hyper Training</h2>
+        </div>
+        <p className="workflow-description">
+          Hyper Training edits the Battle Tower NPC script, the paired English NPC
+          dialogue, and the party/box picker cutoff checks.
+        </p>
+
+        <div className="items-toolbar exefs-toolbar">
+          <Metric
+            label="Status"
+            value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
+          />
+          <Metric label="Current cutoff" value={`Lv. ${currentMinimumLevel}`} />
+          <Metric label="Vanilla cutoff" value={`Lv. ${vanillaMinimumLevel}`} />
+          <Metric
+            label="Outputs"
+            value={workflow ? workflow.stats.outputFileCount.toString() : '0'}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="flagwork-layout">
+            <div className="flagwork-stack">
+              <div className="hyper-training-control">
+                <div className="hyper-training-level-readout">
+                  <span>Minimum level</span>
+                  <strong>Lv. {sliderValue}</strong>
+                </div>
+                <input
+                  aria-label="Hyper Training minimum level"
+                  className="hyper-training-slider"
+                  max={maximumAllowed}
+                  min={minimumAllowed}
+                  onChange={(event) => setLevelInput(event.target.value)}
+                  step={1}
+                  type="range"
+                  value={sliderValue}
+                />
+                <div className="hyper-training-input-row">
+                  <label className="table-cell-control">
+                    <span>Cutoff</span>
+                    <input
+                      aria-invalid={levelError ? 'true' : undefined}
+                      max={maximumAllowed}
+                      min={minimumAllowed}
+                      onBlur={() => {
+                        if (normalizedMinimumLevel === null) {
+                          setLevelInput(currentMinimumLevel.toString());
+                        }
+                      }}
+                      onChange={(event) => handleLevelInputChange(event.target.value)}
+                      step={1}
+                      type="number"
+                      value={levelInput}
+                    />
+                  </label>
+                  <button
+                    className="primary-button"
+                    disabled={!canStage}
+                    onClick={() => {
+                      if (normalizedMinimumLevel !== null) {
+                        onStageMinimumLevel(normalizedMinimumLevel);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <Save aria-hidden="true" size={16} />
+                    <span>{isStaging ? 'Staging' : 'Stage Cutoff'}</span>
+                  </button>
+                  <button
+                    className="secondary-button"
+                    disabled={!canRestore}
+                    onClick={() => {
+                      setLevelInput(vanillaMinimumLevel.toString());
+                      onStageMinimumLevel(vanillaMinimumLevel);
+                    }}
+                    type="button"
+                  >
+                    <RotateCcw aria-hidden="true" size={16} />
+                    <span>Restore Lv. {vanillaMinimumLevel}</span>
+                  </button>
+                </div>
+                {levelError ? <p className="input-error">{levelError}</p> : null}
+              </div>
+
+              <div
+                className="exefs-table hyper-training-source-table"
+                role="table"
+                aria-label="Hyper Training source files"
+              >
+                <div className="exefs-row hyper-training-source-row exefs-row-heading" role="row">
+                  <span role="columnheader">Source</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Layer</span>
+                </div>
+                {workflow.sources.map((source) => (
+                  <HyperTrainingSourceRow key={source.sourceId} source={source} />
+                ))}
+              </div>
+            </div>
+
+            <aside aria-label="Hyper Training script details" className="encounter-inspector">
+              <div className="panel-heading">
+                <Dumbbell aria-hidden="true" size={18} />
+                <h3>Cutoff Details</h3>
+              </div>
+
+              <dl className="item-provenance-list">
+                <div>
+                  <dt>Script cell</dt>
+                  <dd>{workflow.levelRule.scriptCell}</dd>
+                </div>
+                <div>
+                  <dt>Dialogue</dt>
+                  <dd>{workflow.levelRule.dialogueSummary}</dd>
+                </div>
+                <div>
+                  <dt>Picker runtime</dt>
+                  <dd>{workflow.levelRule.runtimeSummary}</dd>
+                </div>
+                <div>
+                  <dt>Install message</dt>
+                  <dd>{workflow.installMessage}</dd>
+                </div>
+                <div>
+                  <dt>Staged cutoff</dt>
+                  <dd>{stagedMinimumLevel !== null ? `Lv. ${stagedMinimumLevel}` : 'None'}</dd>
+                </div>
+              </dl>
+
+              <div className="encounter-edit-form">
+                <div className="form-actions">
+                  <button
+                    className="secondary-button"
+                    disabled={!canReviewPlan}
+                    onClick={onCreateChangePlan}
+                    type="button"
+                  >
+                    <ClipboardCheck aria-hidden="true" size={16} />
+                    <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={!canApplyPlan}
+                    onClick={onApplyChangePlan}
+                    type="button"
+                  >
+                    <Save aria-hidden="true" size={16} />
+                    <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                  </button>
+                </div>
+              </div>
+            </aside>
+          </div>
+        ) : (
+          <p className="empty-copy">Open Hyper Training from Advanced Editors to inspect the NPC script.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function HyperTrainingSourceRow({ source }: { source: HyperTrainingSourceRecord }) {
+  return (
+    <div className="exefs-row hyper-training-source-row" role="row">
+      <span role="cell">{source.label}</span>
+      <span role="cell">
+        <span className={`status-pill ${getExeFsStatusClassName(source.status)}`}>
+          {formatHyperTrainingSourceStatus(source.status)}
+        </span>
+      </span>
+      <span role="cell">{formatSourceLayer(source.provenance.sourceLayer)}</span>
+    </div>
+  );
+}
+
+function parseHyperTrainingLevelInput(value: string) {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isInteger(parsed) ? parsed : null;
+}
+
+function clampHyperTrainingLevel(level: number, minimum: number, maximum: number) {
+  return Math.min(Math.max(level, minimum), maximum);
+}
+
+function formatHyperTrainingSourceStatus(status: string) {
+  switch (status) {
+    case 'available':
+      return 'Available';
+    case 'missing':
+      return 'Missing';
+    case 'optionalMissing':
+      return 'Optional missing';
+    default:
+      return status;
+  }
+}
+
 function GymUniformRemovalSection({
   changePlan,
   editSession,
@@ -22586,6 +23036,7 @@ type PendingEditContext = {
   flagworkSaveWorkflow: FlagworkSaveWorkflow | null;
   giftPokemonWorkflow: GiftPokemonWorkflow | null;
   behaviorWorkflow: BehaviorWorkflow | null;
+  hyperTrainingWorkflow: HyperTrainingWorkflow | null;
   itemsWorkflow: ItemsWorkflow | null;
   ivScreenWorkflow: IvScreenWorkflow | null;
   movesWorkflow: MovesWorkflow | null;

@@ -11,6 +11,7 @@ using KM.Api.ExeFs;
 using KM.Api.Flagwork;
 using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
+using KM.Api.HyperTraining;
 using KM.Api.Items;
 using KM.Api.IvScreen;
 using KM.Api.ModMerger;
@@ -41,6 +42,7 @@ using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
 using KM.SwSh.Gifts;
 using KM.SwSh.GymUniformRemoval;
+using KM.SwSh.HyperTraining;
 using KM.SwSh.Items;
 using KM.SwSh.IvScreen;
 using KM.SwSh.ModMerger;
@@ -70,6 +72,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShExeFsPatchEditSessionService exeFsPatchEditSessionService;
     private readonly SwShBagHookEditSessionService bagHookEditSessionService;
     private readonly SwShCatchCapEditSessionService catchCapEditSessionService;
+    private readonly SwShHyperTrainingEditSessionService hyperTrainingEditSessionService;
     private readonly SwShGymUniformRemovalEditSessionService gymUniformRemovalEditSessionService;
     private readonly SwShIvScreenEditSessionService ivScreenEditSessionService;
     private readonly SwShGiftPokemonEditSessionService giftPokemonEditSessionService;
@@ -99,6 +102,7 @@ public sealed class ProjectBridgeDispatcher
         SwShExeFsPatchEditSessionService? exeFsPatchEditSessionService = null,
         SwShBagHookEditSessionService? bagHookEditSessionService = null,
         SwShCatchCapEditSessionService? catchCapEditSessionService = null,
+        SwShHyperTrainingEditSessionService? hyperTrainingEditSessionService = null,
         SwShGymUniformRemovalEditSessionService? gymUniformRemovalEditSessionService = null,
         SwShIvScreenEditSessionService? ivScreenEditSessionService = null,
         SwShGiftPokemonEditSessionService? giftPokemonEditSessionService = null,
@@ -127,6 +131,7 @@ public sealed class ProjectBridgeDispatcher
         this.exeFsPatchEditSessionService = exeFsPatchEditSessionService ?? new SwShExeFsPatchEditSessionService(this.projectWorkspaceService);
         this.bagHookEditSessionService = bagHookEditSessionService ?? new SwShBagHookEditSessionService(this.projectWorkspaceService);
         this.catchCapEditSessionService = catchCapEditSessionService ?? new SwShCatchCapEditSessionService(this.projectWorkspaceService);
+        this.hyperTrainingEditSessionService = hyperTrainingEditSessionService ?? new SwShHyperTrainingEditSessionService(this.projectWorkspaceService);
         this.gymUniformRemovalEditSessionService = gymUniformRemovalEditSessionService ?? new SwShGymUniformRemovalEditSessionService(this.projectWorkspaceService);
         this.ivScreenEditSessionService = ivScreenEditSessionService ?? new SwShIvScreenEditSessionService(this.projectWorkspaceService);
         this.giftPokemonEditSessionService = giftPokemonEditSessionService ?? new SwShGiftPokemonEditSessionService(this.projectWorkspaceService);
@@ -213,6 +218,8 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadCatchCapWorkflow => DispatchLoadCatchCapWorkflow(requestJson),
                 KmCommandNames.StageCatchCap => DispatchStageCatchCap(requestJson),
                 KmCommandNames.StageCatchCapUninstall => DispatchStageCatchCapUninstall(requestJson),
+                KmCommandNames.LoadHyperTrainingWorkflow => DispatchLoadHyperTrainingWorkflow(requestJson),
+                KmCommandNames.StageHyperTraining => DispatchStageHyperTraining(requestJson),
                 KmCommandNames.LoadGymUniformRemovalWorkflow => DispatchLoadGymUniformRemovalWorkflow(requestJson),
                 KmCommandNames.StageGymUniformRemovalInstall => DispatchStageGymUniformRemovalInstall(requestJson),
                 KmCommandNames.StageGymUniformRemovalUninstall => DispatchStageGymUniformRemovalUninstall(requestJson),
@@ -843,6 +850,30 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadHyperTrainingWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadHyperTrainingWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadHyperTraining(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageHyperTraining(string requestJson)
+    {
+        var request = DeserializeRequest<StageHyperTrainingRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = hyperTrainingEditSessionService.StageMinimumLevel(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.MinimumLevel,
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadGymUniformRemovalWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadGymUniformRemovalWorkflowRequest>(requestJson);
@@ -1107,6 +1138,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.Validate(paths, session),
             EditSessionDomain.BagHook => bagHookEditSessionService.Validate(paths, session),
             EditSessionDomain.CatchCap => catchCapEditSessionService.Validate(paths, session),
+            EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.Validate(paths, session),
             EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.Validate(paths, session),
             EditSessionDomain.IvScreen => ivScreenEditSessionService.Validate(paths, session),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
@@ -1146,6 +1178,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.BagHook => bagHookEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.CatchCap => catchCapEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.IvScreen => ivScreenEditSessionService.CreateChangePlan(paths, session),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session),
@@ -1186,6 +1219,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.BagHook => bagHookEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.CatchCap => catchCapEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.IvScreen => ivScreenEditSessionService.ApplyChangePlan(paths, session, changePlan),
             EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
@@ -1234,6 +1268,7 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.exefsPatches"] => EditSessionDomain.ExeFsPatches,
             ["workflow.bagHook"] => EditSessionDomain.BagHook,
             ["workflow.catchCap"] => EditSessionDomain.CatchCap,
+            ["workflow.hyperTraining"] => EditSessionDomain.HyperTraining,
             ["workflow.gymUniformRemoval"] => EditSessionDomain.GymUniformRemoval,
             ["workflow.ivScreen"] => EditSessionDomain.IvScreen,
             ["workflow.giftPokemon"] => EditSessionDomain.GiftPokemon,
@@ -1336,6 +1371,7 @@ public sealed class ProjectBridgeDispatcher
         ExeFsPatches,
         BagHook,
         CatchCap,
+        HyperTraining,
         GymUniformRemoval,
         IvScreen,
         GiftPokemon,
