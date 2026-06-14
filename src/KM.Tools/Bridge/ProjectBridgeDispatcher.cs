@@ -20,6 +20,7 @@ using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Raids;
+using KM.Api.Randomizer;
 using KM.Api.Rentals;
 using KM.Api.RoyalCandy;
 using KM.Api.Shops;
@@ -50,6 +51,7 @@ using KM.SwSh.Moves;
 using KM.SwSh.Placement;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Raids;
+using KM.SwSh.Randomizer;
 using KM.SwSh.Rentals;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Shops;
@@ -89,6 +91,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShShopsEditSessionService shopsEditSessionService;
     private readonly SwShSpreadsheetImportExecutionService spreadsheetImportExecutionService;
     private readonly SwShModMergerWorkflowService modMergerWorkflowService;
+    private readonly SwShRandomizerService randomizerService;
     private readonly SwShStaticEncountersEditSessionService staticEncountersEditSessionService;
     private readonly SwShTextEditSessionService textEditSessionService;
     private readonly SwShTrainersEditSessionService trainersEditSessionService;
@@ -119,6 +122,7 @@ public sealed class ProjectBridgeDispatcher
         SwShShopsEditSessionService? shopsEditSessionService = null,
         SwShSpreadsheetImportExecutionService? spreadsheetImportExecutionService = null,
         SwShModMergerWorkflowService? modMergerWorkflowService = null,
+        SwShRandomizerService? randomizerService = null,
         SwShStaticEncountersEditSessionService? staticEncountersEditSessionService = null,
         SwShTextEditSessionService? textEditSessionService = null,
         SwShTrainersEditSessionService? trainersEditSessionService = null,
@@ -148,6 +152,7 @@ public sealed class ProjectBridgeDispatcher
         this.shopsEditSessionService = shopsEditSessionService ?? new SwShShopsEditSessionService(this.projectWorkspaceService);
         this.spreadsheetImportExecutionService = spreadsheetImportExecutionService ?? new SwShSpreadsheetImportExecutionService(this.projectWorkspaceService);
         this.modMergerWorkflowService = modMergerWorkflowService ?? new SwShModMergerWorkflowService(this.projectWorkspaceService);
+        this.randomizerService = randomizerService ?? new SwShRandomizerService(this.projectWorkspaceService);
         this.staticEncountersEditSessionService = staticEncountersEditSessionService ?? new SwShStaticEncountersEditSessionService(this.projectWorkspaceService);
         this.textEditSessionService = textEditSessionService ?? new SwShTextEditSessionService(this.projectWorkspaceService);
         this.trainersEditSessionService = trainersEditSessionService ?? new SwShTrainersEditSessionService(this.projectWorkspaceService);
@@ -237,6 +242,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadModMergerWorkflow => DispatchLoadModMergerWorkflow(requestJson),
                 KmCommandNames.StageModMerge => DispatchStageModMerge(requestJson),
                 KmCommandNames.ApplyModMerge => DispatchApplyModMerge(requestJson),
+                KmCommandNames.ImportRandomizerSeed => DispatchImportRandomizerSeed(requestJson),
+                KmCommandNames.ApplyRandomizer => DispatchApplyRandomizer(requestJson),
+                KmCommandNames.RestoreRandomizer => DispatchRestoreRandomizer(requestJson),
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
@@ -1099,6 +1107,40 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchImportRandomizerSeed(string requestJson)
+    {
+        var request = DeserializeRequest<ImportRandomizerSeedRequest>(requestJson);
+        var result = randomizerService.ImportSeed(request.Payload.Seed);
+        var response = new ImportRandomizerSeedResponse(
+            result.Config is null ? null : ToDto(result.Config),
+            result.Seed,
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchApplyRandomizer(string requestJson)
+    {
+        var request = DeserializeRequest<ApplyRandomizerRequest>(requestJson);
+        var result = randomizerService.Apply(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            ToCore(request.Payload.Config));
+        var response = new ApplyRandomizerResponse(
+            result.Seed,
+            EditSessionBridgeMapper.ToDto(result.ApplyResult));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchRestoreRandomizer(string requestJson)
+    {
+        var request = DeserializeRequest<RestoreRandomizerRequest>(requestJson);
+        var result = randomizerService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = new RestoreRandomizerResponse(EditSessionBridgeMapper.ToDto(result));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchUpdateItemField(string requestJson)
     {
         var request = DeserializeRequest<UpdateItemFieldRequest>(requestJson);
@@ -1323,6 +1365,92 @@ public sealed class ProjectBridgeDispatcher
             "Edit sessions cannot mix workflow domains in one change plan yet.",
             Domain: "workflow.editSession",
             Expected: "Pending edits from one workflow domain");
+    }
+
+    private static SwShRandomizerConfig ToCore(RandomizerConfigDto config)
+    {
+        return new SwShRandomizerConfig(config.UserSeed, ToCore(config.Options), config.RollSeed, config.OutputHash);
+    }
+
+    private static SwShRandomizerOptions ToCore(RandomizerOptionsDto options)
+    {
+        return new SwShRandomizerOptions(
+            options.RandomizePokemonStats,
+            options.ShufflePokemonStats,
+            options.StatHp,
+            options.StatAttack,
+            options.StatDefense,
+            options.StatSpecialAttack,
+            options.StatSpecialDefense,
+            options.StatSpeed,
+            options.RandomizePokemonTypes,
+            options.TypePrimary,
+            options.TypeSecondary,
+            options.AllowSameType,
+            options.RandomizePokemonAbilities,
+            options.Ability1,
+            options.Ability2,
+            options.HiddenAbility,
+            options.RandomizePokemonHeldItems,
+            options.RandomizePokemonCatchRates,
+            options.RandomizePokemonLearnsets,
+            options.LearnsetStabFirst,
+            options.LearnsetExpandTo25,
+            options.LearnsetBanFixedDamageMoves,
+            options.LearnsetRequireDamagingMove,
+            options.RandomizePokemonCompatibility,
+            options.CompatibilityMachines,
+            options.CompatibilityRecords,
+            options.CompatibilityTutors,
+            options.RandomizePokemonEvolutions,
+            options.RandomizeWildEncounters,
+            options.RandomizeStaticEncounters,
+            options.RandomizeGiftEncounters,
+            options.RandomizeRaidRewards,
+            options.RandomizeRaidBonusRewards);
+    }
+
+    private static RandomizerConfigDto ToDto(SwShRandomizerConfig config)
+    {
+        return new RandomizerConfigDto(config.UserSeed, ToDto(config.Options), config.RollSeed, config.OutputHash);
+    }
+
+    private static RandomizerOptionsDto ToDto(SwShRandomizerOptions options)
+    {
+        return new RandomizerOptionsDto(
+            options.RandomizePokemonStats,
+            options.ShufflePokemonStats,
+            options.StatHp,
+            options.StatAttack,
+            options.StatDefense,
+            options.StatSpecialAttack,
+            options.StatSpecialDefense,
+            options.StatSpeed,
+            options.RandomizePokemonTypes,
+            options.TypePrimary,
+            options.TypeSecondary,
+            options.AllowSameType,
+            options.RandomizePokemonAbilities,
+            options.Ability1,
+            options.Ability2,
+            options.HiddenAbility,
+            options.RandomizePokemonHeldItems,
+            options.RandomizePokemonCatchRates,
+            options.RandomizePokemonLearnsets,
+            options.LearnsetStabFirst,
+            options.LearnsetExpandTo25,
+            options.LearnsetBanFixedDamageMoves,
+            options.LearnsetRequireDamagingMove,
+            options.RandomizePokemonCompatibility,
+            options.CompatibilityMachines,
+            options.CompatibilityRecords,
+            options.CompatibilityTutors,
+            options.RandomizePokemonEvolutions,
+            options.RandomizeWildEncounters,
+            options.RandomizeStaticEncounters,
+            options.RandomizeGiftEncounters,
+            options.RandomizeRaidRewards,
+            options.RandomizeRaidBonusRewards);
     }
 
     private static BridgeRequest<TPayload> DeserializeRequest<TPayload>(string requestJson)

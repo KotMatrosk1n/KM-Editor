@@ -70,6 +70,7 @@ export type WorkbenchSection =
   | 'startingItems'
   | 'spreadsheetImport'
   | 'modMerger'
+  | 'randomizer'
   | 'changes'
   | 'settings';
 

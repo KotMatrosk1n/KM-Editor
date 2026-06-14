@@ -1,0 +1,2025 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+using KM.Core.Diagnostics;
+using KM.Core.Editing;
+using KM.Core.Files;
+using KM.Core.Projects;
+using KM.SwSh.Encounters;
+using KM.SwSh.Gifts;
+using KM.SwSh.Items;
+using KM.SwSh.Moves;
+using KM.SwSh.Pokemon;
+using KM.SwSh.Raids;
+using KM.SwSh.RoyalCandy;
+using KM.SwSh.StaticEncounters;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+namespace KM.SwSh.Randomizer;
+
+public sealed class SwShRandomizerService
+{
+    private const int ExpandedLearnsetMoveCount = 25;
+    private const int ExpandedLearnsetMaxLevel = 75;
+    private const string RandomizerDomain = "workflow.randomizer";
+    private const string PokemonEditDomain = "workflow.pokemon";
+    private const string EncountersEditDomain = "workflow.encounters";
+    private const string RandomizerManifestRelativePath = ".km-editor/randomizer-manifest.json";
+    private const int RoyalCandyItemId = 1128;
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+    };
+
+    private static readonly string[] FirstMoveIds =
+    [
+        "1",
+        "40",
+        "52",
+        "55",
+        "64",
+        "71",
+        "84",
+        "98",
+        "122",
+        "141",
+    ];
+
+    private readonly ProjectWorkspaceService projectWorkspaceService;
+    private readonly SwShPokemonWorkflowService pokemonWorkflowService;
+    private readonly SwShPokemonEditSessionService pokemonEditSessionService;
+    private readonly SwShMovesWorkflowService movesWorkflowService;
+    private readonly SwShItemsWorkflowService itemsWorkflowService;
+    private readonly SwShEncountersWorkflowService encountersWorkflowService;
+    private readonly SwShEncountersEditSessionService encountersEditSessionService;
+    private readonly SwShStaticEncountersWorkflowService staticEncountersWorkflowService;
+    private readonly SwShStaticEncountersEditSessionService staticEncountersEditSessionService;
+    private readonly SwShGiftPokemonWorkflowService giftPokemonWorkflowService;
+    private readonly SwShGiftPokemonEditSessionService giftPokemonEditSessionService;
+    private readonly SwShRaidRewardsWorkflowService raidRewardsWorkflowService;
+    private readonly SwShRaidRewardsEditSessionService raidRewardsEditSessionService;
+    private readonly SwShRoyalCandyWorkflowService royalCandyWorkflowService;
+
+    public SwShRandomizerService(
+        ProjectWorkspaceService? projectWorkspaceService = null,
+        SwShPokemonWorkflowService? pokemonWorkflowService = null,
+        SwShPokemonEditSessionService? pokemonEditSessionService = null,
+        SwShMovesWorkflowService? movesWorkflowService = null,
+        SwShItemsWorkflowService? itemsWorkflowService = null,
+        SwShEncountersWorkflowService? encountersWorkflowService = null,
+        SwShEncountersEditSessionService? encountersEditSessionService = null,
+        SwShStaticEncountersWorkflowService? staticEncountersWorkflowService = null,
+        SwShStaticEncountersEditSessionService? staticEncountersEditSessionService = null,
+        SwShGiftPokemonWorkflowService? giftPokemonWorkflowService = null,
+        SwShGiftPokemonEditSessionService? giftPokemonEditSessionService = null,
+        SwShRaidRewardsWorkflowService? raidRewardsWorkflowService = null,
+        SwShRaidRewardsEditSessionService? raidRewardsEditSessionService = null,
+        SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null)
+    {
+        this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
+        this.pokemonWorkflowService = pokemonWorkflowService ?? new SwShPokemonWorkflowService();
+        this.pokemonEditSessionService = pokemonEditSessionService ?? new SwShPokemonEditSessionService(this.projectWorkspaceService, this.pokemonWorkflowService);
+        this.movesWorkflowService = movesWorkflowService ?? new SwShMovesWorkflowService();
+        this.itemsWorkflowService = itemsWorkflowService ?? new SwShItemsWorkflowService();
+        this.encountersWorkflowService = encountersWorkflowService ?? new SwShEncountersWorkflowService();
+        this.encountersEditSessionService = encountersEditSessionService ?? new SwShEncountersEditSessionService(this.projectWorkspaceService, this.encountersWorkflowService);
+        this.staticEncountersWorkflowService = staticEncountersWorkflowService ?? new SwShStaticEncountersWorkflowService();
+        this.staticEncountersEditSessionService = staticEncountersEditSessionService ?? new SwShStaticEncountersEditSessionService(this.projectWorkspaceService, this.staticEncountersWorkflowService);
+        this.giftPokemonWorkflowService = giftPokemonWorkflowService ?? new SwShGiftPokemonWorkflowService();
+        this.giftPokemonEditSessionService = giftPokemonEditSessionService ?? new SwShGiftPokemonEditSessionService(this.projectWorkspaceService, this.giftPokemonWorkflowService);
+        this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
+        this.raidRewardsEditSessionService = raidRewardsEditSessionService ?? new SwShRaidRewardsEditSessionService(this.projectWorkspaceService, this.raidRewardsWorkflowService);
+        this.royalCandyWorkflowService = royalCandyWorkflowService ?? new SwShRoyalCandyWorkflowService();
+    }
+
+    public SwShRandomizerImportResult ImportSeed(string seed)
+    {
+        return SwShRandomizerSeedCodec.Import(seed);
+    }
+
+    internal SwShRandomizerPreviewResult Preview(ProjectPaths paths, SwShRandomizerConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(config);
+
+        var build = BuildDomainPlans(paths, config);
+        return new SwShRandomizerPreviewResult(
+            build.Config,
+            build.Seed,
+            CollapseDiagnostics(build.Diagnostics),
+            build.DomainPlans
+                .Select(plan => new SwShRandomizerPreviewDomain(
+                    plan.Label,
+                    plan.Session.PendingEdits
+                        .Select(edit => new SwShRandomizerPreviewEdit(
+                            edit.Domain ?? string.Empty,
+                            edit.RecordId ?? string.Empty,
+                            edit.Field ?? string.Empty,
+                            edit.NewValue ?? string.Empty,
+                            edit.Summary))
+                        .ToArray()))
+                .ToArray());
+    }
+
+    public SwShRandomizerApplyResult Apply(ProjectPaths paths, SwShRandomizerConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(config);
+
+        var build = BuildDomainPlans(paths, config);
+        var normalizedConfig = build.Config;
+        var exportedSeed = build.Seed;
+        var diagnostics = build.Diagnostics.ToList();
+        var domainPlans = build.DomainPlans;
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShRandomizerApplyResult(normalizedConfig, exportedSeed, CreateApplyResult(diagnostics));
+        }
+
+        foreach (var domainPlan in domainPlans)
+        {
+            var previewPlan = domainPlan.CreateChangePlan(paths, domainPlan.Session);
+            diagnostics.AddRange(previewPlan.Diagnostics);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShRandomizerApplyResult(normalizedConfig, exportedSeed, CreateApplyResult(diagnostics));
+        }
+
+        var appliedWrites = new List<ProjectFileReference>();
+        var manifestWrites = new List<PlannedFileWrite>();
+        foreach (var domainPlan in domainPlans)
+        {
+            var currentPlan = domainPlan.CreateChangePlan(paths, domainPlan.Session);
+            diagnostics.AddRange(currentPlan.Diagnostics);
+            if (!currentPlan.CanApply)
+            {
+                break;
+            }
+
+            var applyResult = domainPlan.ApplyChangePlan(paths, domainPlan.Session, currentPlan);
+            appliedWrites.AddRange(applyResult.WrittenFiles);
+            manifestWrites.AddRange(applyResult.Manifest.Writes);
+            diagnostics.AddRange(applyResult.Diagnostics);
+            if (applyResult.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                break;
+            }
+        }
+
+        var uniqueWrittenFiles = appliedWrites
+            .DistinctBy(file => $"{file.Layer}:{file.RelativePath}", StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        RecordRandomizerManifest(paths, uniqueWrittenFiles, diagnostics);
+
+        var aggregateApplyId = Guid.NewGuid().ToString("N");
+        var appliedAt = DateTimeOffset.UtcNow;
+        var aggregateResult = new ApplyResult(
+            aggregateApplyId,
+            appliedAt,
+            uniqueWrittenFiles,
+            new WriteManifest(
+                aggregateApplyId,
+                appliedAt,
+                manifestWrites
+                    .DistinctBy(write => write.TargetRelativePath, StringComparer.OrdinalIgnoreCase)
+                    .ToArray()),
+            CollapseDiagnostics(diagnostics));
+
+        return new SwShRandomizerApplyResult(normalizedConfig, exportedSeed, aggregateResult);
+    }
+
+    private RandomizerBuildResult BuildDomainPlans(ProjectPaths paths, SwShRandomizerConfig config)
+    {
+        var normalizedConfig = PrepareConfig(config);
+        var generationKey = SwShRandomizerSeedCodec.CreateGenerationKey(normalizedConfig);
+        var exportedSeed = SwShRandomizerSeedCodec.Export(normalizedConfig);
+        var diagnostics = new List<ValidationDiagnostic>();
+        var options = normalizedConfig.Options;
+
+        if (!options.HasAnySelection)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "At least one randomizer option must be selected.",
+                field: "options",
+                expected: "One or more enabled randomizer categories"));
+        }
+
+        var project = projectWorkspaceService.Open(paths);
+        if (!project.Health.CanOpenEditableWorkflows)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Randomizer requires valid base data and a configured LayeredFS output root.",
+                expected: "Editable project paths"));
+        }
+
+        var pokemonWorkflow = pokemonWorkflowService.Load(project);
+        AddWorkflowErrors(pokemonWorkflow.Diagnostics, diagnostics);
+        var pokemonTargets = CreatePokemonTargets(pokemonWorkflow).ToArray();
+        if (pokemonTargets.Length == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Randomizer could not find any present, sprite-backed Pokemon forms.",
+                field: "pokemon",
+                expected: "Loaded Pokemon personal data with legal SwSh forms"));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new RandomizerBuildResult(normalizedConfig, exportedSeed, diagnostics, Array.Empty<RandomizerDomainPlan>());
+        }
+
+        var movesWorkflow = ShouldLoadMoves(options)
+            ? movesWorkflowService.Load(project)
+            : null;
+        var itemsWorkflow = ShouldLoadItems(options)
+            ? itemsWorkflowService.Load(project)
+            : null;
+
+        if (movesWorkflow is not null)
+        {
+            AddWorkflowErrors(movesWorkflow.Diagnostics, diagnostics);
+        }
+
+        if (itemsWorkflow is not null)
+        {
+            AddWorkflowErrors(itemsWorkflow.Diagnostics, diagnostics);
+        }
+
+        var movePool = movesWorkflow is null
+            ? Array.Empty<MoveCandidate>()
+            : CreateMovePool(movesWorkflow, options.LearnsetBanFixedDamageMoves).ToArray();
+        if (options.RandomizePokemonLearnsets && movePool.Length == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokemon learnset randomization requires at least one usable move.",
+                field: "learnsets",
+                expected: "Loaded move data with usable, non-banned moves"));
+        }
+
+        var royalCandyInstalled = IsRoyalCandyInstalled(project);
+        var itemPool = itemsWorkflow is null
+            ? Array.Empty<ItemCandidate>()
+            : CreateItemPool(itemsWorkflow.Items, royalCandyInstalled).ToArray();
+        if ((options.RandomizePokemonHeldItems || options.RandomizeRaidRewards || options.RandomizeRaidBonusRewards) && itemPool.Length == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Item randomization requires at least one safe item candidate.",
+                field: "items",
+                expected: "Loaded item data with non-key, reward-safe item IDs"));
+        }
+
+        var domainPlans = new List<RandomizerDomainPlan>();
+        AddPokemonPlan(project, pokemonWorkflow, pokemonTargets, movePool, itemPool, generationKey, options, domainPlans, diagnostics);
+        AddWildEncounterPlan(project, pokemonTargets, generationKey, options, domainPlans, diagnostics);
+        AddStaticPlan(project, pokemonTargets, generationKey, options, domainPlans, diagnostics);
+        AddGiftPlan(project, pokemonTargets, generationKey, options, domainPlans, diagnostics);
+        AddRaidRewardPlan(project, itemPool, generationKey, options, domainPlans, diagnostics);
+
+        if (domainPlans.Count == 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Selected randomizer options did not produce any editable changes.",
+                field: "options",
+                expected: "Randomizer options with matching project data"));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new RandomizerBuildResult(normalizedConfig, exportedSeed, diagnostics, domainPlans);
+        }
+
+        var outputHash = ComputeOutputHash(domainPlans);
+        if (!string.IsNullOrWhiteSpace(normalizedConfig.OutputHash)
+            && !string.Equals(normalizedConfig.OutputHash, outputHash, StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Imported randomizer seed does not match the output that would be generated for the currently loaded project.",
+                field: "seed",
+                expected: "Project data matching the imported randomizer output"));
+        }
+
+        normalizedConfig = string.IsNullOrWhiteSpace(normalizedConfig.OutputHash)
+            ? normalizedConfig with { OutputHash = outputHash }
+            : normalizedConfig;
+        exportedSeed = SwShRandomizerSeedCodec.Export(normalizedConfig);
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new RandomizerBuildResult(normalizedConfig, exportedSeed, diagnostics, domainPlans);
+        }
+
+        return new RandomizerBuildResult(normalizedConfig, exportedSeed, diagnostics, domainPlans);
+    }
+
+    public ApplyResult Restore(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var diagnostics = new List<ValidationDiagnostic>();
+        var project = projectWorkspaceService.Open(paths);
+        if (!project.Health.CanOpenEditableWorkflows)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Restore Vanilla Values requires valid base data and a configured LayeredFS output root.",
+                expected: "Editable project paths"));
+        }
+
+        var outputRoot = project.Paths.OutputRootPath;
+        if (string.IsNullOrWhiteSpace(outputRoot))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Restore Vanilla Values requires a configured LayeredFS output root.",
+                expected: "Writable LayeredFS output root"));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateApplyResult(diagnostics);
+        }
+
+        var manifestPath = ResolveOutputPath(project.Paths, RandomizerManifestRelativePath);
+        if (manifestPath is null || !File.Exists(manifestPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                "No Randomizer restore manifest was found. There are no tracked randomizer files to restore.",
+                expected: "Previously applied Randomizer output"));
+            return CreateApplyResult(diagnostics);
+        }
+
+        RandomizerRestoreManifest? manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize<RandomizerRestoreManifest>(
+                File.ReadAllText(manifestPath),
+                JsonOptions);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Randomizer restore manifest could not be read: {ex.Message}",
+                file: RandomizerManifestRelativePath,
+                expected: "Readable Randomizer restore manifest"));
+            return CreateApplyResult(diagnostics);
+        }
+
+        if (manifest is null || manifest.Version != 1)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Randomizer restore manifest version is not supported.",
+                file: RandomizerManifestRelativePath,
+                expected: "KM Editor Randomizer restore manifest version 1"));
+            return CreateApplyResult(diagnostics);
+        }
+
+        var restoredFiles = new List<ProjectFileReference>();
+        foreach (var relativePath in (manifest.WrittenRelativePaths ?? Array.Empty<string>())
+            .Select(NormalizeRelativePath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!IsLayeredFsRelativePath(relativePath))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    "Skipped a tracked Randomizer path because it is outside romfs/exefs.",
+                    file: relativePath,
+                    expected: "Randomizer-owned romfs or exefs path"));
+                continue;
+            }
+
+            var targetPath = ResolveOutputPath(project.Paths, relativePath);
+            if (targetPath is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Skipped a tracked Randomizer path because it resolves outside Output Root.",
+                    file: relativePath,
+                    expected: "Path contained by Output Root"));
+                continue;
+            }
+
+            try
+            {
+                if (File.Exists(targetPath))
+                {
+                    File.Delete(targetPath);
+                    restoredFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, relativePath));
+                    DeleteEmptyParentDirectories(project.Paths.OutputRootPath!, targetPath);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Randomizer output file could not be restored: {ex.Message}",
+                    file: relativePath,
+                    expected: "Deletable generated output file"));
+            }
+        }
+
+        if (diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
+        {
+            try
+            {
+                File.Delete(manifestPath);
+                DeleteEmptyParentDirectories(project.Paths.OutputRootPath!, manifestPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Randomizer restore manifest could not be deleted: {ex.Message}",
+                    file: RandomizerManifestRelativePath,
+                    expected: "Deletable Randomizer restore manifest"));
+            }
+
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Info,
+                restoredFiles.Count == 0
+                    ? "Restore Vanilla Values completed. No tracked Randomizer output files were present."
+                    : $"Restore Vanilla Values removed {restoredFiles.Count.ToString(CultureInfo.InvariantCulture)} tracked Randomizer output file(s).",
+                expected: "Generated Randomizer files removed from Output Root"));
+        }
+
+        var applyId = Guid.NewGuid().ToString("N");
+        var appliedAt = DateTimeOffset.UtcNow;
+        return new ApplyResult(
+            applyId,
+            appliedAt,
+            restoredFiles,
+            new WriteManifest(applyId, appliedAt, Array.Empty<PlannedFileWrite>()),
+            diagnostics);
+    }
+
+    internal static IReadOnlyList<int> CreateRaidRewardItemPool(IEnumerable<SwShItemRecord> items, bool royalCandyInstalled)
+    {
+        return CreateItemPool(items, royalCandyInstalled)
+            .Select(item => item.ItemId)
+            .ToArray();
+    }
+
+    private void AddPokemonPlan(
+        OpenedProject project,
+        SwShPokemonWorkflow workflow,
+        IReadOnlyList<PokemonCandidate> pokemonTargets,
+        IReadOnlyList<MoveCandidate> movePool,
+        IReadOnlyList<ItemCandidate> itemPool,
+        string generationKey,
+        SwShRandomizerOptions options,
+        ICollection<RandomizerDomainPlan> plans,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!ShouldRandomizePokemon(options))
+        {
+            return;
+        }
+
+        var edits = new List<PendingEdit>();
+        var pokemon = workflow.Pokemon
+            .Where(IsEditablePokemon)
+            .OrderBy(record => record.PersonalId)
+            .ToArray();
+
+        if (options.RandomizePokemonStats)
+        {
+            AddStatEdits(pokemon, options, generationKey, edits, diagnostics);
+        }
+
+        if (options.RandomizePokemonTypes)
+        {
+            AddTypeEdits(pokemon, options, generationKey, edits, diagnostics);
+        }
+
+        if (options.RandomizePokemonAbilities)
+        {
+            AddAbilityEdits(pokemon, generationKey, options, edits, diagnostics);
+        }
+
+        if (options.RandomizePokemonHeldItems)
+        {
+            AddHeldItemEdits(pokemon, itemPool, generationKey, edits);
+        }
+
+        if (options.RandomizePokemonCatchRates)
+        {
+            AddCatchRateEdits(pokemon, generationKey, edits);
+        }
+
+        if (options.RandomizePokemonLearnsets)
+        {
+            if (SwShPokemonWorkflowService.ResolveLearnsetDataSource(project) is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon learnset randomization requires learnset data.",
+                    file: SwShPokemonWorkflowService.LearnsetDataPath,
+                    field: "learnsets",
+                    expected: "Readable learnset data"));
+            }
+            else
+            {
+                AddLearnsetEdits(pokemon, movePool, generationKey, options, edits, diagnostics);
+            }
+        }
+
+        if (options.RandomizePokemonCompatibility)
+        {
+            AddCompatibilityEdits(pokemon, generationKey, options, edits);
+        }
+
+        if (options.RandomizePokemonEvolutions)
+        {
+            AddEvolutionEdits(project, pokemon, pokemonTargets, generationKey, edits);
+        }
+
+        if (edits.Count == 0)
+        {
+            return;
+        }
+
+        plans.Add(new RandomizerDomainPlan(
+            "Pokemon",
+            CreateSession(edits),
+            pokemonEditSessionService.CreateChangePlan,
+            pokemonEditSessionService.ApplyChangePlan));
+    }
+
+    private void AddWildEncounterPlan(
+        OpenedProject project,
+        IReadOnlyList<PokemonCandidate> pokemonTargets,
+        string generationKey,
+        SwShRandomizerOptions options,
+        ICollection<RandomizerDomainPlan> plans,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!options.RandomizeWildEncounters)
+        {
+            return;
+        }
+
+        var workflow = encountersWorkflowService.Load(project);
+        AddWorkflowErrors(workflow.Diagnostics, diagnostics);
+        var rng = DeterministicRandom.Create(generationKey, "wildEncounters");
+        var edits = new List<PendingEdit>();
+
+        foreach (var group in workflow.Tables
+            .Where(table => table.Slots.Count > 0)
+            .GroupBy(CreateWildEncounterMirrorKey, StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal))
+        {
+            var tables = group
+                .OrderBy(table => table.GameVersion, StringComparer.Ordinal)
+                .ThenBy(table => table.Location, StringComparer.Ordinal)
+                .ThenBy(table => table.Area, StringComparer.Ordinal)
+                .ThenBy(table => table.TableId, StringComparer.Ordinal)
+                .ToArray();
+            var randomizedSlotCount = Math.Min(10, tables.Max(table => table.Slots.Count));
+            if (randomizedSlotCount == 0)
+            {
+                continue;
+            }
+
+            var targets = Enumerable.Range(0, randomizedSlotCount)
+                .Select(_ => rng.Pick(pokemonTargets))
+                .ToArray();
+            var weightsByCount = new Dictionary<int, IReadOnlyList<int>>();
+
+            foreach (var table in tables)
+            {
+                var slots = table.Slots
+                    .OrderBy(slot => slot.Slot)
+                    .ToArray();
+                var activeSlots = slots.Take(10).ToArray();
+                if (activeSlots.Length == 0)
+                {
+                    continue;
+                }
+
+                if (!weightsByCount.TryGetValue(activeSlots.Length, out var weights))
+                {
+                    weights = CreateStrictDescendingSlotWeights(activeSlots.Length, rng);
+                    weightsByCount[activeSlots.Length] = weights;
+                }
+
+                for (var slotIndex = 0; slotIndex < activeSlots.Length; slotIndex++)
+                {
+                    var slot = activeSlots[slotIndex];
+                    var target = targets[slotIndex];
+                    var recordId = SwShEncountersWorkflowService.CreateSlotRecordId(table.TableId, slot.Slot);
+                    var source = Source(table.Provenance);
+
+                    edits.Add(CreateEdit(
+                        EncountersEditDomain,
+                        $"Randomize wild encounter {table.Location} {table.Area} {table.EncounterType} slot {slot.Slot} species",
+                        recordId,
+                        SwShEncountersWorkflowService.SpeciesIdField,
+                        target.SpeciesId,
+                        source));
+                    edits.Add(CreateEdit(
+                        EncountersEditDomain,
+                        $"Randomize wild encounter {table.Location} {table.Area} {table.EncounterType} slot {slot.Slot} form",
+                        recordId,
+                        SwShEncountersWorkflowService.FormField,
+                        target.Form,
+                        source));
+                    edits.Add(CreateEdit(
+                        EncountersEditDomain,
+                        $"Randomize wild encounter {table.Location} {table.Area} {table.EncounterType} slot {slot.Slot} probability",
+                        recordId,
+                        SwShEncountersWorkflowService.ProbabilityField,
+                        weights[slotIndex],
+                        source));
+                }
+
+                foreach (var extraSlot in slots.Skip(10).Where(slot => slot.Weight != 0))
+                {
+                    edits.Add(CreateEdit(
+                        EncountersEditDomain,
+                        $"Disable extra wild encounter {table.Location} {table.Area} {table.EncounterType} slot {extraSlot.Slot} probability",
+                        SwShEncountersWorkflowService.CreateSlotRecordId(table.TableId, extraSlot.Slot),
+                        SwShEncountersWorkflowService.ProbabilityField,
+                        0,
+                        Source(table.Provenance)));
+                }
+            }
+        }
+
+        if (edits.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Wild encounter randomization did not find any editable encounter tables.",
+                field: "wildEncounters"));
+            return;
+        }
+
+        plans.Add(new RandomizerDomainPlan(
+            "Wild Encounters",
+            CreateSession(edits),
+            encountersEditSessionService.CreateChangePlan,
+            encountersEditSessionService.ApplyChangePlan));
+    }
+
+    private void AddStaticPlan(
+        OpenedProject project,
+        IReadOnlyList<PokemonCandidate> pokemonTargets,
+        string generationKey,
+        SwShRandomizerOptions options,
+        ICollection<RandomizerDomainPlan> plans,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!options.RandomizeStaticEncounters)
+        {
+            return;
+        }
+
+        var workflow = staticEncountersWorkflowService.Load(project);
+        AddWorkflowErrors(workflow.Diagnostics, diagnostics);
+        var rng = DeterministicRandom.Create(generationKey, "staticEncounters");
+        var edits = new List<PendingEdit>();
+
+        foreach (var encounter in workflow.Encounters.OrderBy(encounter => encounter.EncounterIndex))
+        {
+            if (encounter.SpeciesId <= 0)
+            {
+                continue;
+            }
+
+            var target = rng.Pick(pokemonTargets);
+            var recordId = SwShStaticEncountersWorkflowService.CreateEncounterRecordId(encounter.EncounterIndex);
+            var source = Source(encounter.Provenance);
+            edits.Add(CreateEdit(
+                SwShStaticEncountersWorkflowService.StaticEncountersEditDomain,
+                $"Randomize static encounter {encounter.Label} species",
+                recordId,
+                SwShStaticEncountersWorkflowService.SpeciesField,
+                target.SpeciesId,
+                source));
+            edits.Add(CreateEdit(
+                SwShStaticEncountersWorkflowService.StaticEncountersEditDomain,
+                $"Randomize static encounter {encounter.Label} form",
+                recordId,
+                SwShStaticEncountersWorkflowService.FormField,
+                target.Form,
+                source));
+            if (encounter.CanGigantamax)
+            {
+                edits.Add(CreateEdit(
+                    SwShStaticEncountersWorkflowService.StaticEncountersEditDomain,
+                    $"Clear static encounter {encounter.Label} Gigantamax flag",
+                    recordId,
+                    SwShStaticEncountersWorkflowService.CanGigantamaxField,
+                    0,
+                    source));
+            }
+        }
+
+        if (edits.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Static encounter randomization did not find any populated encounters.",
+                field: "staticEncounters"));
+            return;
+        }
+
+        plans.Add(new RandomizerDomainPlan(
+            "Static Encounters",
+            CreateSession(edits),
+            staticEncountersEditSessionService.CreateChangePlan,
+            staticEncountersEditSessionService.ApplyChangePlan));
+    }
+
+    private void AddGiftPlan(
+        OpenedProject project,
+        IReadOnlyList<PokemonCandidate> pokemonTargets,
+        string generationKey,
+        SwShRandomizerOptions options,
+        ICollection<RandomizerDomainPlan> plans,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!options.RandomizeGiftEncounters)
+        {
+            return;
+        }
+
+        var workflow = giftPokemonWorkflowService.Load(project);
+        AddWorkflowErrors(workflow.Diagnostics, diagnostics);
+        var rng = DeterministicRandom.Create(generationKey, "giftEncounters");
+        var edits = new List<PendingEdit>();
+
+        foreach (var gift in workflow.Gifts.OrderBy(gift => gift.GiftIndex))
+        {
+            if (gift.SpeciesId <= 0)
+            {
+                continue;
+            }
+
+            var target = rng.Pick(pokemonTargets);
+            var recordId = SwShGiftPokemonWorkflowService.CreateGiftRecordId(gift.GiftIndex);
+            var source = Source(gift.Provenance);
+            edits.Add(CreateEdit(
+                SwShGiftPokemonWorkflowService.GiftPokemonEditDomain,
+                $"Randomize gift Pokemon {gift.Label} species",
+                recordId,
+                SwShGiftPokemonWorkflowService.SpeciesField,
+                target.SpeciesId,
+                source));
+            edits.Add(CreateEdit(
+                SwShGiftPokemonWorkflowService.GiftPokemonEditDomain,
+                $"Randomize gift Pokemon {gift.Label} form",
+                recordId,
+                SwShGiftPokemonWorkflowService.FormField,
+                target.Form,
+                source));
+            if (gift.CanGigantamax)
+            {
+                edits.Add(CreateEdit(
+                    SwShGiftPokemonWorkflowService.GiftPokemonEditDomain,
+                    $"Clear gift Pokemon {gift.Label} Gigantamax flag",
+                    recordId,
+                    SwShGiftPokemonWorkflowService.CanGigantamaxField,
+                    0,
+                    source));
+            }
+        }
+
+        if (edits.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Gift encounter randomization did not find any populated gifts.",
+                field: "giftEncounters"));
+            return;
+        }
+
+        plans.Add(new RandomizerDomainPlan(
+            "Gift Encounters",
+            CreateSession(edits),
+            giftPokemonEditSessionService.CreateChangePlan,
+            giftPokemonEditSessionService.ApplyChangePlan));
+    }
+
+    private void AddRaidRewardPlan(
+        OpenedProject project,
+        IReadOnlyList<ItemCandidate> itemPool,
+        string generationKey,
+        SwShRandomizerOptions options,
+        ICollection<RandomizerDomainPlan> plans,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (options.RandomizeRaidRewards)
+        {
+            AddRaidRewardPlan(
+                project,
+                itemPool,
+                generationKey,
+                SwShRaidRewardWorkflowKind.Drop,
+                SwShRaidRewardsEditSessionService.RaidRewardsEditDomain,
+                "raidRewards",
+                "Raid Rewards",
+                plans,
+                diagnostics);
+        }
+
+        if (options.RandomizeRaidBonusRewards)
+        {
+            AddRaidRewardPlan(
+                project,
+                itemPool,
+                generationKey,
+                SwShRaidRewardWorkflowKind.Bonus,
+                SwShRaidRewardsEditSessionService.RaidBonusRewardsEditDomain,
+                "raidBonusRewards",
+                "Raid Bonus Rewards",
+                plans,
+                diagnostics);
+        }
+    }
+
+    private void AddRaidRewardPlan(
+        OpenedProject project,
+        IReadOnlyList<ItemCandidate> itemPool,
+        string generationKey,
+        SwShRaidRewardWorkflowKind kind,
+        string editDomain,
+        string module,
+        string label,
+        ICollection<RandomizerDomainPlan> plans,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var workflow = raidRewardsWorkflowService.Load(project, kind);
+        AddWorkflowErrors(workflow.Diagnostics, diagnostics);
+        var rng = DeterministicRandom.Create(generationKey, module);
+        var edits = new List<PendingEdit>();
+
+        foreach (var table in workflow.Tables.OrderBy(table => table.TableId, StringComparer.Ordinal))
+        {
+            foreach (var reward in table.Rewards.OrderBy(reward => reward.Slot))
+            {
+                if (reward.ItemId <= 0)
+                {
+                    continue;
+                }
+
+                var item = rng.Pick(itemPool);
+                edits.Add(CreateEdit(
+                    editDomain,
+                    $"Randomize {label} {table.DisplayName} slot {reward.Slot}",
+                    SwShRaidRewardsWorkflowService.CreateRewardRecordId(table.TableId, reward.Slot),
+                    SwShRaidRewardsWorkflowService.ItemIdField,
+                    item.ItemId,
+                    Source(table.Provenance)));
+            }
+        }
+
+        if (edits.Count == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"{label} randomization did not find any populated reward entries.",
+                field: module));
+            return;
+        }
+
+        plans.Add(new RandomizerDomainPlan(
+            label,
+            CreateSession(edits),
+            raidRewardsEditSessionService.CreateChangePlan,
+            raidRewardsEditSessionService.ApplyChangePlan));
+    }
+
+    private static void AddStatEdits(
+        IReadOnlyList<SwShPokemonRecord> pokemon,
+        SwShRandomizerOptions options,
+        string exportedSeed,
+        ICollection<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var selectedFields = CreateSelectedStatFields(options).ToArray();
+        if (selectedFields.Length == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Pokemon stat randomization is enabled but no stat fields are selected.",
+                field: "stats"));
+            return;
+        }
+
+        var rng = DeterministicRandom.Create(exportedSeed, "pokemon.stats");
+        foreach (var record in pokemon)
+        {
+            var values = selectedFields
+                .Select(field => GetStatValue(record, field))
+                .ToArray();
+            var randomizedValues = options.ShufflePokemonStats
+                ? values.ToArray()
+                : DistributeStatTotal(values.Sum(), values.Length, rng);
+            if (options.ShufflePokemonStats)
+            {
+                rng.Shuffle(randomizedValues);
+            }
+
+            for (var i = 0; i < selectedFields.Length; i++)
+            {
+                edits.Add(CreatePokemonEdit(
+                    record,
+                    selectedFields[i],
+                    randomizedValues[i],
+                    $"Randomize {record.Name} stat {selectedFields[i]}"));
+            }
+        }
+    }
+
+    private static void AddTypeEdits(
+        IReadOnlyList<SwShPokemonRecord> pokemon,
+        SwShRandomizerOptions options,
+        string exportedSeed,
+        ICollection<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!options.TypePrimary && !options.TypeSecondary)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Pokemon type randomization is enabled but no type fields are selected.",
+                field: "types"));
+            return;
+        }
+
+        var typeOptions = SwShPokemonWorkflowService.GetEditableField(SwShPokemonWorkflowService.Type1Field)?.Options
+            .Select(option => option.Value)
+            .Where(value => value >= 0)
+            .ToArray() ?? Array.Empty<int>();
+        if (typeOptions.Length == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokemon type randomization could not resolve valid type IDs.",
+                field: "types",
+                expected: "Pokemon type editable field options"));
+            return;
+        }
+
+        var rng = DeterministicRandom.Create(exportedSeed, "pokemon.types");
+        foreach (var record in pokemon)
+        {
+            var type1 = options.TypePrimary ? rng.Pick(typeOptions) : record.Personal.Type1;
+            var type2 = options.TypeSecondary ? rng.Pick(typeOptions) : record.Personal.Type2;
+            if (!options.AllowSameType && typeOptions.Length > 1 && type2 == type1)
+            {
+                type2 = typeOptions.First(value => value != type1);
+            }
+
+            if (options.TypePrimary)
+            {
+                edits.Add(CreatePokemonEdit(
+                    record,
+                    SwShPokemonWorkflowService.Type1Field,
+                    type1,
+                    $"Randomize {record.Name} primary type"));
+            }
+
+            if (options.TypeSecondary)
+            {
+                edits.Add(CreatePokemonEdit(
+                    record,
+                    SwShPokemonWorkflowService.Type2Field,
+                    type2,
+                    $"Randomize {record.Name} secondary type"));
+            }
+        }
+    }
+
+    private static void AddAbilityEdits(
+        IReadOnlyList<SwShPokemonRecord> pokemon,
+        string exportedSeed,
+        SwShRandomizerOptions options,
+        ICollection<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!options.Ability1 && !options.Ability2 && !options.HiddenAbility)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Pokemon ability randomization is enabled but no ability slots are selected.",
+                field: "abilities"));
+            return;
+        }
+
+        var abilityPool = pokemon
+            .SelectMany(record => new[]
+            {
+                record.Abilities.Ability1,
+                record.Abilities.Ability2,
+                record.Abilities.HiddenAbility,
+            })
+            .Where(value => value > 0)
+            .Distinct()
+            .Order()
+            .ToArray();
+        if (abilityPool.Length == 0)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pokemon ability randomization could not resolve valid ability IDs.",
+                field: "abilities",
+                expected: "Pokemon personal data with ability IDs"));
+            return;
+        }
+
+        var rng = DeterministicRandom.Create(exportedSeed, "pokemon.abilities");
+        foreach (var record in pokemon)
+        {
+            var available = abilityPool.ToList();
+            if (options.Ability1)
+            {
+                var ability = PickAndCycle(rng, available, abilityPool);
+                edits.Add(CreatePokemonEdit(record, SwShPokemonWorkflowService.Ability1Field, ability, $"Randomize {record.Name} ability 1"));
+            }
+
+            if (options.Ability2)
+            {
+                var ability = PickAndCycle(rng, available, abilityPool);
+                edits.Add(CreatePokemonEdit(record, SwShPokemonWorkflowService.Ability2Field, ability, $"Randomize {record.Name} ability 2"));
+            }
+
+            if (options.HiddenAbility)
+            {
+                var ability = PickAndCycle(rng, available, abilityPool);
+                edits.Add(CreatePokemonEdit(record, SwShPokemonWorkflowService.HiddenAbilityField, ability, $"Randomize {record.Name} hidden ability"));
+            }
+        }
+    }
+
+    private static void AddHeldItemEdits(
+        IReadOnlyList<SwShPokemonRecord> pokemon,
+        IReadOnlyList<ItemCandidate> itemPool,
+        string exportedSeed,
+        ICollection<PendingEdit> edits)
+    {
+        var rng = DeterministicRandom.Create(exportedSeed, "pokemon.heldItems");
+        foreach (var record in pokemon)
+        {
+            AddHeldItemEdit(record, SwShPokemonWorkflowService.HeldItem1Field, itemPool, rng, edits);
+            AddHeldItemEdit(record, SwShPokemonWorkflowService.HeldItem2Field, itemPool, rng, edits);
+            AddHeldItemEdit(record, SwShPokemonWorkflowService.HeldItem3Field, itemPool, rng, edits);
+        }
+    }
+
+    private static void AddCatchRateEdits(
+        IReadOnlyList<SwShPokemonRecord> pokemon,
+        string exportedSeed,
+        ICollection<PendingEdit> edits)
+    {
+        var rng = DeterministicRandom.Create(exportedSeed, "pokemon.catchRates");
+        foreach (var record in pokemon)
+        {
+            edits.Add(CreatePokemonEdit(
+                record,
+                SwShPokemonWorkflowService.CatchRateField,
+                rng.NextInt(byte.MaxValue) + 1,
+                $"Randomize {record.Name} catch rate"));
+        }
+    }
+
+    private static void AddLearnsetEdits(
+        IReadOnlyList<SwShPokemonRecord> pokemon,
+        IReadOnlyList<MoveCandidate> movePool,
+        string exportedSeed,
+        SwShRandomizerOptions options,
+        ICollection<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (movePool.Count == 0)
+        {
+            return;
+        }
+
+        var rng = DeterministicRandom.Create(exportedSeed, "pokemon.learnsets");
+        foreach (var record in pokemon.Where(record => record.Learnset.Count > 0))
+        {
+            var levels = CreateLearnsetLevels(record.Learnset, options.LearnsetExpandTo25);
+            var moves = GenerateLearnset(record, movePool, levels.Count, options, rng);
+            if (moves.Count != levels.Count)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pokemon learnset randomization could not create {levels.Count} distinct moves for {record.Name}.",
+                    field: "learnsets",
+                    expected: "Enough legal move candidates"));
+                continue;
+            }
+
+            for (var slot = 0; slot < moves.Count; slot++)
+            {
+                edits.Add(new PendingEdit(
+                    PokemonEditDomain,
+                    $"Randomize {record.Name} learnset slot {slot}",
+                    [Source(record.Provenance)],
+                    record.PersonalId.ToString(CultureInfo.InvariantCulture),
+                    string.Create(CultureInfo.InvariantCulture, $"learnset:upsert:{slot}"),
+                    string.Create(CultureInfo.InvariantCulture, $"{moves[slot].MoveId}:{levels[slot]}")));
+            }
+        }
+    }
+
+    internal static IReadOnlyList<int> CreateExpandedLearnsetLevels(int count)
+    {
+        if (count <= 0)
+        {
+            return Array.Empty<int>();
+        }
+
+        if (count == 1)
+        {
+            return [1];
+        }
+
+        var levels = new int[count];
+        for (var index = 0; index < levels.Length; index++)
+        {
+            levels[index] = 1 + (int)Math.Round(
+                index * (ExpandedLearnsetMaxLevel - 1) / (double)(levels.Length - 1),
+                MidpointRounding.AwayFromZero);
+        }
+
+        return levels;
+    }
+
+    private static IReadOnlyList<int> CreateLearnsetLevels(
+        IReadOnlyList<SwShPokemonLearnsetMove> learnset,
+        bool expandTo25)
+    {
+        var existingLevels = learnset
+            .OrderBy(move => move.Slot)
+            .Select(move => move.Level)
+            .ToArray();
+        if (!expandTo25 || existingLevels.Length >= ExpandedLearnsetMoveCount)
+        {
+            return existingLevels;
+        }
+
+        return CreateExpandedLearnsetLevels(ExpandedLearnsetMoveCount);
+    }
+
+    private static void AddCompatibilityEdits(
+        IReadOnlyList<SwShPokemonRecord> pokemon,
+        string exportedSeed,
+        SwShRandomizerOptions options,
+        ICollection<PendingEdit> edits)
+    {
+        var selectedGroupIds = new HashSet<string>(StringComparer.Ordinal)
+        {
+            { options.CompatibilityMachines ? SwShPokemonWorkflowService.TechnicalMachineCompatibilityGroupId : string.Empty },
+            { options.CompatibilityRecords ? SwShPokemonWorkflowService.TechnicalRecordCompatibilityGroupId : string.Empty },
+        };
+
+        if (options.CompatibilityTutors)
+        {
+            selectedGroupIds.Add(SwShPokemonWorkflowService.TypeTutorCompatibilityGroupId);
+            selectedGroupIds.Add(SwShPokemonWorkflowService.ArmorTutorCompatibilityGroupId);
+        }
+
+        selectedGroupIds.Remove(string.Empty);
+        var rng = DeterministicRandom.Create(exportedSeed, "pokemon.compatibility");
+        foreach (var record in pokemon)
+        {
+            foreach (var group in record.Compatibility.Where(group => selectedGroupIds.Contains(group.GroupId)))
+            {
+                foreach (var entry in group.Entries)
+                {
+                    edits.Add(new PendingEdit(
+                        PokemonEditDomain,
+                        $"Randomize {record.Name} {group.Label} compatibility {entry.Label}",
+                        [Source(record.Provenance)],
+                        record.PersonalId.ToString(CultureInfo.InvariantCulture),
+                        SwShPokemonWorkflowService.CreateCompatibilityFieldId(group.GroupId, entry.Slot),
+                        rng.NextInt(100) < 45 ? "1" : "0"));
+                }
+            }
+        }
+    }
+
+    private static void AddEvolutionEdits(
+        OpenedProject project,
+        IReadOnlyList<SwShPokemonRecord> pokemon,
+        IReadOnlyList<PokemonCandidate> pokemonTargets,
+        string exportedSeed,
+        ICollection<PendingEdit> edits)
+    {
+        var rng = DeterministicRandom.Create(exportedSeed, "pokemon.evolutions");
+        foreach (var record in pokemon.Where(record => record.Evolutions.Count > 0))
+        {
+            if (SwShPokemonWorkflowService.ResolveEvolutionDataSource(project, record.PersonalId) is null)
+            {
+                continue;
+            }
+
+            var forwardTargets = pokemonTargets
+                .Where(candidate => candidate.EvolutionStage > record.EvolutionStage)
+                .ToArray();
+            var candidatePool = forwardTargets.Length > 0
+                ? forwardTargets
+                : pokemonTargets.Where(candidate => candidate.PersonalId != record.PersonalId).ToArray();
+            if (candidatePool.Length == 0)
+            {
+                continue;
+            }
+
+            foreach (var evolution in record.Evolutions.OrderBy(evolution => evolution.Slot))
+            {
+                if (evolution.Method <= 0)
+                {
+                    continue;
+                }
+
+                var target = rng.Pick(candidatePool);
+                edits.Add(new PendingEdit(
+                    PokemonEditDomain,
+                    $"Randomize {record.Name} evolution slot {evolution.Slot}",
+                    [Source(record.Provenance)],
+                    record.PersonalId.ToString(CultureInfo.InvariantCulture),
+                    string.Create(CultureInfo.InvariantCulture, $"evolution:upsert:{evolution.Slot}"),
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{evolution.Method}:{evolution.Argument}:{target.SpeciesId}:{target.Form}:{evolution.Level}")));
+            }
+        }
+    }
+
+    private static IReadOnlyList<MoveCandidate> GenerateLearnset(
+        SwShPokemonRecord pokemon,
+        IReadOnlyList<MoveCandidate> movePool,
+        int count,
+        SwShRandomizerOptions options,
+        DeterministicRandom rng)
+    {
+        if (count == 0)
+        {
+            return Array.Empty<MoveCandidate>();
+        }
+
+        var selected = new List<MoveCandidate>(count);
+        var available = movePool.ToList();
+        if (options.LearnsetStabFirst)
+        {
+            var stabMoves = available
+                .Where(move => move.Type == pokemon.Personal.Type1 || move.Type == pokemon.Personal.Type2)
+                .ToArray();
+            var firstMove = stabMoves.Length > 0
+                ? rng.Pick(stabMoves)
+                : PickPreferredFirstMove(available, rng);
+            selected.Add(firstMove);
+            available.RemoveAll(move => move.MoveId == firstMove.MoveId);
+        }
+
+        while (selected.Count < count && available.Count > 0)
+        {
+            var move = rng.Pick(available);
+            selected.Add(move);
+            available.RemoveAll(candidate => candidate.MoveId == move.MoveId);
+        }
+
+        if (selected.Count == count
+            && options.LearnsetRequireDamagingMove
+            && selected.All(move => !move.IsDamaging))
+        {
+            var damaging = movePool
+                .Where(move => move.IsDamaging && selected.All(selectedMove => selectedMove.MoveId != move.MoveId))
+                .ToArray();
+            if (damaging.Length > 0)
+            {
+                selected[^1] = rng.Pick(damaging);
+            }
+        }
+
+        return selected;
+    }
+
+    private static MoveCandidate PickPreferredFirstMove(IReadOnlyList<MoveCandidate> available, DeterministicRandom rng)
+    {
+        var preferred = available
+            .Where(move => FirstMoveIds.Contains(move.MoveId.ToString(CultureInfo.InvariantCulture), StringComparer.Ordinal))
+            .ToArray();
+
+        return preferred.Length > 0
+            ? rng.Pick(preferred)
+            : rng.Pick(available);
+    }
+
+    private static IReadOnlyList<PokemonCandidate> CreatePokemonTargets(SwShPokemonWorkflow workflow)
+    {
+        var strictTargets = workflow.Pokemon
+            .Where(IsLegalPokemonTarget)
+            .ToArray();
+        var targets = strictTargets.Length > 0
+            ? strictTargets
+            : workflow.Pokemon.Where(IsPresentPokemonTarget);
+
+        return targets
+            .Select(record => new PokemonCandidate(
+                record.PersonalId,
+                record.SpeciesId,
+                Math.Clamp(record.Form, byte.MinValue, byte.MaxValue),
+                record.Personal.Type1,
+                record.Personal.Type2,
+                record.EvolutionStage,
+                Source(record.Provenance)))
+            .GroupBy(candidate => $"{candidate.SpeciesId}:{candidate.Form}", StringComparer.Ordinal)
+            .Select(group => group.First())
+            .OrderBy(candidate => candidate.SpeciesId)
+            .ThenBy(candidate => candidate.Form)
+            .ToArray();
+    }
+
+    private static IEnumerable<MoveCandidate> CreateMovePool(SwShMovesWorkflow workflow, bool banFixedDamageMoves)
+    {
+        var fixedDamageMoves = banFixedDamageMoves
+            ? new HashSet<int>([49, 82])
+            : new HashSet<int>();
+
+        return workflow.Moves
+            .Where(move => move.MoveId > 0
+                && move.CanUseMove
+                && move.PP > 0
+                && !fixedDamageMoves.Contains(move.MoveId)
+                && !IsMaxMove(move))
+            .Select(move => new MoveCandidate(
+                move.MoveId,
+                move.Type,
+                move.Category != 0,
+                Source(move.Provenance)))
+            .OrderBy(move => move.MoveId);
+    }
+
+    private static IEnumerable<ItemCandidate> CreateItemPool(IEnumerable<SwShItemRecord> items, bool royalCandyInstalled)
+    {
+        var strictPool = items
+            .Where(item => IsSafeItemCandidate(item, royalCandyInstalled, strict: true))
+            .Select(item => new ItemCandidate(item.ItemId, Source(item.Provenance)))
+            .OrderBy(item => item.ItemId)
+            .ToArray();
+        if (strictPool.Length > 0)
+        {
+            return strictPool;
+        }
+
+        return items
+            .Where(item => IsSafeItemCandidate(item, royalCandyInstalled, strict: false))
+            .Select(item => new ItemCandidate(item.ItemId, Source(item.Provenance)))
+            .OrderBy(item => item.ItemId)
+            .ToArray();
+    }
+
+    private static bool IsSafeItemCandidate(SwShItemRecord item, bool royalCandyInstalled, bool strict)
+    {
+        if (item.ItemId <= 0
+            || item.ItemId > SwShRaidRewardsWorkflowService.MaximumItemId
+            || (royalCandyInstalled && item.ItemId == RoyalCandyItemId)
+            || string.IsNullOrWhiteSpace(item.Name))
+        {
+            return false;
+        }
+
+        if (!strict)
+        {
+            return true;
+        }
+
+        return !ContainsIgnoreCase(item.Category, "key")
+            && !ContainsIgnoreCase(item.Category, "system")
+            && item.Metadata.Pouch is not 7 and not 8;
+    }
+
+    private bool IsRoyalCandyInstalled(OpenedProject project)
+    {
+        var workflow = royalCandyWorkflowService.Load(project);
+        return workflow.Workflows.Any(workflow =>
+            workflow.ItemId == RoyalCandyItemId
+            && string.Equals(workflow.Status, "installed", StringComparison.Ordinal));
+    }
+
+    private static SwShRandomizerConfig PrepareConfig(SwShRandomizerConfig config)
+    {
+        var normalized = SwShRandomizerSeedCodec.Normalize(config);
+        return normalized with
+        {
+            UserSeed = string.IsNullOrEmpty(normalized.UserSeed)
+                ? GenerateToken(length: 12)
+                : normalized.UserSeed,
+            RollSeed = string.IsNullOrWhiteSpace(normalized.RollSeed)
+                ? GenerateToken(length: 16)
+                : normalized.RollSeed,
+        };
+    }
+
+    private static string GenerateToken(int length)
+    {
+        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+        Span<byte> bytes = stackalloc byte[length];
+        RandomNumberGenerator.Fill(bytes);
+        Span<char> chars = stackalloc char[length];
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            chars[i] = alphabet[bytes[i] % alphabet.Length];
+        }
+
+        return new string(chars);
+    }
+
+    private static EditSession CreateSession(IEnumerable<PendingEdit> edits)
+    {
+        return EditSession.Start() with
+        {
+            PendingEdits = edits.ToArray(),
+        };
+    }
+
+    private static PendingEdit CreatePokemonEdit(
+        SwShPokemonRecord pokemon,
+        string field,
+        int value,
+        string summary)
+    {
+        return CreateEdit(
+            PokemonEditDomain,
+            summary,
+            pokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
+            field,
+            value,
+            Source(pokemon.Provenance));
+    }
+
+    private static PendingEdit CreateEdit(
+        string domain,
+        string summary,
+        string recordId,
+        string field,
+        int value,
+        ProjectFileReference source)
+    {
+        return new PendingEdit(
+            domain,
+            summary,
+            [source],
+            recordId,
+            field,
+            value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static ProjectFileReference Source(SwShPokemonProvenance provenance)
+    {
+        return new ProjectFileReference(provenance.SourceLayer, provenance.SourceFile);
+    }
+
+    private static ProjectFileReference Source(SwShMoveProvenance provenance)
+    {
+        return new ProjectFileReference(provenance.SourceLayer, provenance.SourceFile);
+    }
+
+    private static ProjectFileReference Source(SwShItemProvenance provenance)
+    {
+        return new ProjectFileReference(provenance.SourceLayer, provenance.SourceFile);
+    }
+
+    private static ProjectFileReference Source(SwShStaticEncounterProvenance provenance)
+    {
+        return new ProjectFileReference(provenance.SourceLayer, provenance.SourceFile);
+    }
+
+    private static ProjectFileReference Source(SwShGiftPokemonProvenance provenance)
+    {
+        return new ProjectFileReference(provenance.SourceLayer, provenance.SourceFile);
+    }
+
+    private static ProjectFileReference Source(SwShEncounterProvenance provenance)
+    {
+        return new ProjectFileReference(provenance.SourceLayer, provenance.SourceFile);
+    }
+
+    private static ProjectFileReference Source(SwShRaidRewardProvenance provenance)
+    {
+        return new ProjectFileReference(provenance.SourceLayer, provenance.SourceFile);
+    }
+
+    private static ValidationDiagnostic CreateDiagnostic(
+        DiagnosticSeverity severity,
+        string message,
+        string? file = null,
+        string? field = null,
+        string? expected = null)
+    {
+        return new ValidationDiagnostic(
+            severity,
+            message,
+            file,
+            RandomizerDomain,
+            field,
+            expected);
+    }
+
+    private static ApplyResult CreateApplyResult(IReadOnlyList<ValidationDiagnostic> diagnostics)
+    {
+        var applyId = Guid.NewGuid().ToString("N");
+        var appliedAt = DateTimeOffset.UtcNow;
+        return new ApplyResult(
+            applyId,
+            appliedAt,
+            Array.Empty<ProjectFileReference>(),
+            new WriteManifest(applyId, appliedAt, Array.Empty<PlannedFileWrite>()),
+            CollapseDiagnostics(diagnostics));
+    }
+
+    private static IReadOnlyList<ValidationDiagnostic> CollapseDiagnostics(
+        IEnumerable<ValidationDiagnostic> diagnostics)
+    {
+        var collapsed = new List<CollapsedDiagnostic>();
+        foreach (var diagnostic in diagnostics)
+        {
+            var existing = collapsed.FirstOrDefault(item =>
+                item.Diagnostic.Severity == diagnostic.Severity
+                && string.Equals(item.Diagnostic.Message, diagnostic.Message, StringComparison.Ordinal)
+                && string.Equals(item.Diagnostic.File, diagnostic.File, StringComparison.Ordinal)
+                && string.Equals(item.Diagnostic.Domain, diagnostic.Domain, StringComparison.Ordinal)
+                && string.Equals(item.Diagnostic.Field, diagnostic.Field, StringComparison.Ordinal)
+                && string.Equals(item.Diagnostic.Expected, diagnostic.Expected, StringComparison.Ordinal));
+            if (existing is null)
+            {
+                collapsed.Add(new CollapsedDiagnostic(diagnostic, count: 1));
+                continue;
+            }
+
+            existing.Count++;
+        }
+
+        return collapsed
+            .Select(item => item.Count == 1
+                ? item.Diagnostic
+                : item.Diagnostic with
+                {
+                    Message = string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{item.Diagnostic.Message} ({item.Count} times)"),
+                })
+            .ToArray();
+    }
+
+    private static void RecordRandomizerManifest(
+        ProjectPaths paths,
+        IReadOnlyList<ProjectFileReference> writtenFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var trackedPaths = writtenFiles
+            .Where(file => file.Layer == ProjectFileLayer.Generated)
+            .Select(file => NormalizeRelativePath(file.RelativePath))
+            .Where(IsLayeredFsRelativePath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (trackedPaths.Length == 0)
+        {
+            return;
+        }
+
+        var manifestPath = ResolveOutputPath(paths, RandomizerManifestRelativePath);
+        if (manifestPath is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Randomizer restore manifest could not be written because Output Root is not writable.",
+                file: RandomizerManifestRelativePath,
+                expected: "Writable path under Output Root"));
+            return;
+        }
+
+        var mergedPaths = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var relativePath in trackedPaths)
+        {
+            mergedPaths.Add(relativePath);
+        }
+
+        if (File.Exists(manifestPath))
+        {
+            try
+            {
+                var existingManifest = JsonSerializer.Deserialize<RandomizerRestoreManifest>(
+                    File.ReadAllText(manifestPath),
+                    JsonOptions);
+                if (existingManifest?.Version == 1)
+                {
+                    foreach (var relativePath in (existingManifest.WrittenRelativePaths ?? Array.Empty<string>()).Select(NormalizeRelativePath))
+                    {
+                        if (IsLayeredFsRelativePath(relativePath))
+                        {
+                            mergedPaths.Add(relativePath);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Existing Randomizer restore manifest could not be merged and will be replaced: {ex.Message}",
+                    file: RandomizerManifestRelativePath,
+                    expected: "Readable Randomizer restore manifest"));
+            }
+        }
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(manifestPath)!);
+            var manifest = new RandomizerRestoreManifest(
+                Version: 1,
+                UpdatedAt: DateTimeOffset.UtcNow,
+                WrittenRelativePaths: mergedPaths.ToArray());
+            File.WriteAllText(manifestPath, JsonSerializer.Serialize(manifest, JsonOptions));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Randomizer restore manifest could not be written: {ex.Message}",
+                file: RandomizerManifestRelativePath,
+                expected: "Writable Randomizer restore manifest"));
+        }
+    }
+
+    private static string? ResolveOutputPath(ProjectPaths paths, string targetRelativePath)
+    {
+        if (string.IsNullOrWhiteSpace(paths.OutputRootPath)
+            || string.IsNullOrWhiteSpace(targetRelativePath)
+            || Path.IsPathRooted(targetRelativePath))
+        {
+            return null;
+        }
+
+        var outputRoot = Path.GetFullPath(paths.OutputRootPath);
+        var targetPath = Path.GetFullPath(Path.Combine(
+            outputRoot,
+            targetRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+
+        return IsPathInsideRoot(outputRoot, targetPath)
+            ? targetPath
+            : null;
+    }
+
+    private static bool IsPathInsideRoot(string outputRoot, string targetPath)
+    {
+        var relativePath = Path.GetRelativePath(outputRoot, targetPath);
+        return !Path.IsPathRooted(relativePath)
+            && !string.Equals(relativePath, "..", StringComparison.Ordinal)
+            && !relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            && !relativePath.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
+    private static string NormalizeRelativePath(string? relativePath)
+    {
+        return (relativePath ?? string.Empty).Replace('\\', '/').TrimStart('/');
+    }
+
+    private static bool IsLayeredFsRelativePath(string relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath)
+            || Path.IsPathRooted(relativePath)
+            || relativePath.Split('/').Any(part => string.Equals(part, "..", StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        return relativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase)
+            || relativePath.StartsWith("exefs/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void DeleteEmptyParentDirectories(string outputRootPath, string filePath)
+    {
+        var outputRoot = Path.GetFullPath(outputRootPath);
+        var directory = Path.GetDirectoryName(Path.GetFullPath(filePath));
+        while (!string.IsNullOrWhiteSpace(directory)
+            && IsPathInsideRoot(outputRoot, directory)
+            && !string.Equals(
+                Path.TrimEndingDirectorySeparator(directory),
+                Path.TrimEndingDirectorySeparator(outputRoot),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (Directory.EnumerateFileSystemEntries(directory).Any())
+            {
+                break;
+            }
+
+            Directory.Delete(directory);
+            directory = Path.GetDirectoryName(directory);
+        }
+    }
+
+    private static void AddWorkflowErrors(
+        IEnumerable<ValidationDiagnostic> sourceDiagnostics,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var diagnostic in sourceDiagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            diagnostics.Add(diagnostic);
+        }
+    }
+
+    private static bool ShouldRandomizePokemon(SwShRandomizerOptions options)
+    {
+        return options.RandomizePokemonStats
+            || options.RandomizePokemonTypes
+            || options.RandomizePokemonAbilities
+            || options.RandomizePokemonHeldItems
+            || options.RandomizePokemonCatchRates
+            || options.RandomizePokemonLearnsets
+            || options.RandomizePokemonCompatibility
+            || options.RandomizePokemonEvolutions;
+    }
+
+    private static bool ShouldLoadMoves(SwShRandomizerOptions options)
+    {
+        return options.RandomizePokemonLearnsets;
+    }
+
+    private static bool ShouldLoadItems(SwShRandomizerOptions options)
+    {
+        return options.RandomizePokemonHeldItems
+            || options.RandomizeRaidRewards
+            || options.RandomizeRaidBonusRewards;
+    }
+
+    private static bool IsEditablePokemon(SwShPokemonRecord record)
+    {
+        return record.PersonalId > 0 && record.SpeciesId > 0;
+    }
+
+    private static bool IsLegalPokemonTarget(SwShPokemonRecord record)
+    {
+        return record.PersonalId > 0
+            && record.SpeciesId > 0
+            && record.Personal.IsPresentInGame
+            && record.Personal.HasSpriteForm
+            && record.DexPresence.IsPresentInGame;
+    }
+
+    private static bool IsPresentPokemonTarget(SwShPokemonRecord record)
+    {
+        return record.PersonalId > 0
+            && record.SpeciesId > 0
+            && record.Personal.IsPresentInGame
+            && record.DexPresence.IsPresentInGame
+            && record.BaseStats.Total > 0;
+    }
+
+    private static bool IsMaxMove(SwShMoveRecord move)
+    {
+        return move.Name.StartsWith("Max ", StringComparison.OrdinalIgnoreCase)
+            || move.Name.StartsWith("G-Max ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<string> CreateSelectedStatFields(SwShRandomizerOptions options)
+    {
+        if (options.StatHp)
+        {
+            yield return SwShPokemonWorkflowService.HPField;
+        }
+
+        if (options.StatAttack)
+        {
+            yield return SwShPokemonWorkflowService.AttackField;
+        }
+
+        if (options.StatDefense)
+        {
+            yield return SwShPokemonWorkflowService.DefenseField;
+        }
+
+        if (options.StatSpecialAttack)
+        {
+            yield return SwShPokemonWorkflowService.SpecialAttackField;
+        }
+
+        if (options.StatSpecialDefense)
+        {
+            yield return SwShPokemonWorkflowService.SpecialDefenseField;
+        }
+
+        if (options.StatSpeed)
+        {
+            yield return SwShPokemonWorkflowService.SpeedField;
+        }
+    }
+
+    private static int GetStatValue(SwShPokemonRecord record, string field)
+    {
+        return field switch
+        {
+            SwShPokemonWorkflowService.HPField => record.BaseStats.HP,
+            SwShPokemonWorkflowService.AttackField => record.BaseStats.Attack,
+            SwShPokemonWorkflowService.DefenseField => record.BaseStats.Defense,
+            SwShPokemonWorkflowService.SpecialAttackField => record.BaseStats.SpecialAttack,
+            SwShPokemonWorkflowService.SpecialDefenseField => record.BaseStats.SpecialDefense,
+            SwShPokemonWorkflowService.SpeedField => record.BaseStats.Speed,
+            _ => 1,
+        };
+    }
+
+    private static int[] DistributeStatTotal(int total, int count, DeterministicRandom rng)
+    {
+        var values = Enumerable.Repeat(1, count).ToArray();
+        var remaining = Math.Clamp(total - count, 0, count * 254);
+        while (remaining > 0)
+        {
+            var index = rng.NextInt(count);
+            var room = 255 - values[index];
+            if (room <= 0)
+            {
+                continue;
+            }
+
+            var add = Math.Min(room, Math.Min(remaining, rng.NextInt(Math.Min(room, remaining)) + 1));
+            values[index] += add;
+            remaining -= add;
+        }
+
+        return values;
+    }
+
+    private static int PickAndCycle(DeterministicRandom rng, List<int> available, IReadOnlyList<int> fallback)
+    {
+        if (available.Count == 0)
+        {
+            foreach (var value in fallback)
+            {
+                available.Add(value);
+            }
+        }
+
+        var picked = rng.Pick(available);
+        available.Remove(picked);
+        return picked;
+    }
+
+    private static void AddHeldItemEdit(
+        SwShPokemonRecord record,
+        string field,
+        IReadOnlyList<ItemCandidate> itemPool,
+        DeterministicRandom rng,
+        ICollection<PendingEdit> edits)
+    {
+        var value = rng.NextInt(100) < 35
+            ? rng.Pick(itemPool).ItemId
+            : 0;
+        edits.Add(CreatePokemonEdit(record, field, value, $"Randomize {record.Name} held item {field}"));
+    }
+
+    private static string CreateWildEncounterMirrorKey(SwShEncounterTableRecord table)
+    {
+        if (SwShEncountersWorkflowService.TryParseTableId(
+            table.TableId,
+            out var member,
+            out var tableIndex,
+            out var zoneId,
+            out var subTableIndex))
+        {
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"{member.GameKey}:{tableIndex}:{zoneId:X16}:{subTableIndex}");
+        }
+
+        return $"{table.GameVersion}:{table.Location}:{table.EncounterType}";
+    }
+
+    internal static IReadOnlyList<int> CreateStrictDescendingSlotWeights(int count, DeterministicRandom rng)
+    {
+        ArgumentNullException.ThrowIfNull(rng);
+
+        if (count <= 0)
+        {
+            return Array.Empty<int>();
+        }
+
+        if (count == 1)
+        {
+            return [100];
+        }
+
+        var weights = Enumerable.Range(0, count)
+            .Select(index => count - index)
+            .ToArray();
+        var minimumTotal = count * (count + 1) / 2;
+        if (minimumTotal > 100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(count), "Strictly descending encounter weights cannot sum to 100 for this many slots.");
+        }
+
+        var remaining = 100 - minimumTotal;
+        while (remaining > 0)
+        {
+            var prefixLength = rng.NextInt(Math.Min(count, remaining)) + 1;
+            for (var index = 0; index < prefixLength; index++)
+            {
+                weights[index]++;
+            }
+
+            remaining -= prefixLength;
+        }
+
+        return weights;
+    }
+
+    private static string ComputeOutputHash(IEnumerable<RandomizerDomainPlan> domainPlans)
+    {
+        var edits = domainPlans
+            .SelectMany(plan => plan.Session.PendingEdits.Select(edit => new RandomizerOutputEdit(
+                plan.Label,
+                edit.Domain ?? string.Empty,
+                edit.RecordId ?? string.Empty,
+                edit.Field ?? string.Empty,
+                edit.NewValue ?? string.Empty)))
+            .OrderBy(edit => edit.Plan, StringComparer.Ordinal)
+            .ThenBy(edit => edit.Domain, StringComparer.Ordinal)
+            .ThenBy(edit => edit.RecordId, StringComparer.Ordinal)
+            .ThenBy(edit => edit.Field, StringComparer.Ordinal)
+            .ThenBy(edit => edit.NewValue, StringComparer.Ordinal)
+            .ToArray();
+        var payload = JsonSerializer.SerializeToUtf8Bytes(edits);
+        var hash = SHA256.HashData(payload);
+
+        return SwShRandomizerSeedCodec.Base64UrlEncode(hash.AsSpan(0, 16));
+    }
+
+    private static bool ContainsIgnoreCase(string value, string text)
+    {
+        return value.Contains(text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed record RandomizerOutputEdit(
+        string Plan,
+        string Domain,
+        string RecordId,
+        string Field,
+        string NewValue);
+
+    private sealed class CollapsedDiagnostic(ValidationDiagnostic diagnostic, int count)
+    {
+        public ValidationDiagnostic Diagnostic { get; } = diagnostic;
+
+        public int Count { get; set; } = count;
+    }
+
+    private sealed record RandomizerDomainPlan(
+        string Label,
+        EditSession Session,
+        Func<ProjectPaths, EditSession, ChangePlan> CreateChangePlan,
+        Func<ProjectPaths, EditSession, ChangePlan, ApplyResult> ApplyChangePlan);
+
+    private sealed record RandomizerBuildResult(
+        SwShRandomizerConfig Config,
+        string Seed,
+        IReadOnlyList<ValidationDiagnostic> Diagnostics,
+        IReadOnlyList<RandomizerDomainPlan> DomainPlans);
+
+    private sealed record PokemonCandidate(
+        int PersonalId,
+        int SpeciesId,
+        int Form,
+        int Type1,
+        int Type2,
+        int EvolutionStage,
+        ProjectFileReference Source);
+
+    private sealed record MoveCandidate(
+        int MoveId,
+        int Type,
+        bool IsDamaging,
+        ProjectFileReference Source);
+
+    private sealed record ItemCandidate(
+        int ItemId,
+        ProjectFileReference Source);
+
+    private sealed record RandomizerRestoreManifest(
+        int Version,
+        DateTimeOffset UpdatedAt,
+        IReadOnlyList<string> WrittenRelativePaths);
+}
