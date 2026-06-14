@@ -26522,6 +26522,12 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['tapu-koko', 'tapukoko'],
   ['tapu-lele', 'tapulele'],
   ['type:-null', 'typenull'],
+  ['necrozma-(dusk-mane)', 'necrozma-duskmane'],
+  ['necrozma-dusk-mane', 'necrozma-duskmane'],
+  ['necrozma-(dawn-wings)', 'necrozma-dawnwings'],
+  ['necrozma-dawn-wings', 'necrozma-dawnwings'],
+  ['necrozma-(ultra-necrozma)', 'necrozma-ultra'],
+  ['necrozma-ultra-necrozma', 'necrozma-ultra'],
   ['toxtricity-low-key-gmax', 'toxtricity-gmax']
 ]);
 
