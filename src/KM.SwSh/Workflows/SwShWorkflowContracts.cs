@@ -29,6 +29,7 @@ public static class SwShWorkflowIds
     public const string HyperTraining = "hyperTraining";
     public const string GymUniformRemoval = "gymUniformRemoval";
     public const string IvScreen = "ivScreen";
+    public const string TypeChart = "typeChart";
     public const string ExeFsPatches = "exefsPatches";
     public const string RoyalCandy = "royalCandy";
     public const string StartingItems = "startingItems";

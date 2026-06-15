@@ -19,6 +19,7 @@ using KM.SwSh.RoyalCandy;
 using KM.SwSh.Shops;
 using KM.SwSh.StaticEncounters;
 using KM.SwSh.Text;
+using KM.SwSh.TypeChart;
 using KM.SwSh.Trainers;
 using KM.SwSh.Trades;
 
@@ -177,6 +178,10 @@ internal static class SwShWorkflowDependencyValidator
             SwShWorkflowIds.ExeFsPatches =>
             [
                 File("ExeFS main", SwShExeFsPatchWorkflowService.ExeFsMainPath),
+            ],
+            SwShWorkflowIds.TypeChart =>
+            [
+                File("Type Chart ExeFS main", SwShTypeChartWorkflowService.ExeFsMainPath),
             ],
             SwShWorkflowIds.RoyalCandy =>
             [

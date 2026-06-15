@@ -46,6 +46,7 @@ import { listen } from '@tauri-apps/api/event';
 import {
   type ReactNode,
   Component,
+  Fragment,
   createContext,
   type ErrorInfo,
   useCallback,
@@ -159,6 +160,8 @@ import {
   type TextEditableField,
   type TextEntryRecord,
   type TextWorkflow,
+  type TypeChartSourceRecord,
+  type TypeChartWorkflow,
   type TradePokemonEditableField,
   type TradePokemonRecord,
   type TradePokemonWorkflow,
@@ -194,6 +197,8 @@ import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
 
 const appVersion = tauriConfig.version;
+
+type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
 
 const textControlInserts = [
   {
@@ -432,6 +437,11 @@ const sections: Array<{
     icon: Dumbbell
   },
   {
+    id: 'typeChart',
+    label: 'Type Chart',
+    icon: Swords
+  },
+  {
     id: 'gymUniformRemoval',
     label: 'Gym Uniform Removal',
     icon: Shirt
@@ -539,6 +549,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     sectionIds: [
       'catchCap',
       'hyperTraining',
+      'typeChart',
       'gymUniformRemoval',
       'ivScreen',
       'royalCandy',
@@ -683,6 +694,13 @@ const workflowDefinitions: Array<{
     description:
       'Advanced editor for the Battle Tower Hyper Training NPC minimum level cutoff, matching English dialogue, and picker cutoff checks.',
     icon: Dumbbell
+  },
+  {
+    id: 'typeChart',
+    label: 'Type Chart',
+    description:
+      'Advanced editor for the Sword/Shield type-effectiveness table in exefs/main.',
+    icon: Swords
   },
   {
     id: 'gymUniformRemoval',
@@ -1679,6 +1697,7 @@ export function App({
   const setEncountersWorkflow = useWorkbenchStore((state) => state.setEncountersWorkflow);
   const catchCapWorkflow = useWorkbenchStore((state) => state.catchCapWorkflow);
   const hyperTrainingWorkflow = useWorkbenchStore((state) => state.hyperTrainingWorkflow);
+  const typeChartWorkflow = useWorkbenchStore((state) => state.typeChartWorkflow);
   const gymUniformRemovalWorkflow = useWorkbenchStore(
     (state) => state.gymUniformRemovalWorkflow
   );
@@ -1688,6 +1707,7 @@ export function App({
   const setHyperTrainingWorkflow = useWorkbenchStore(
     (state) => state.setHyperTrainingWorkflow
   );
+  const setTypeChartWorkflow = useWorkbenchStore((state) => state.setTypeChartWorkflow);
   const setGymUniformRemovalWorkflow = useWorkbenchStore(
     (state) => state.setGymUniformRemovalWorkflow
   );
@@ -1892,6 +1912,8 @@ export function App({
   const [isCatchCapStaging, setIsCatchCapStaging] = useState(false);
   const [isHyperTrainingLoading, setIsHyperTrainingLoading] = useState(false);
   const [isHyperTrainingStaging, setIsHyperTrainingStaging] = useState(false);
+  const [isTypeChartLoading, setIsTypeChartLoading] = useState(false);
+  const [isTypeChartStaging, setIsTypeChartStaging] = useState(false);
   const [isGymUniformRemovalLoading, setIsGymUniformRemovalLoading] = useState(false);
   const [isGymUniformRemovalStaging, setIsGymUniformRemovalStaging] = useState(false);
   const [isIvScreenLoading, setIsIvScreenLoading] = useState(false);
@@ -3095,6 +3117,47 @@ export function App({
     }
   };
 
+  const handleOpenTypeChartWorkflow = async () => {
+    setIsTypeChartLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadTypeChartWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setTypeChartWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTypeChartLoading(false);
+    }
+  };
+
+  const handleStageTypeChart = async (values: TypeChartEffectivenessValue[]) => {
+    setIsTypeChartStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageTypeChart({
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        values
+      });
+      setTypeChartWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('typeChart', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTypeChartStaging(false);
+    }
+  };
+
   const handleOpenGymUniformRemovalWorkflow = async () => {
     setIsGymUniformRemovalLoading(true);
     setBridgeDiagnostics([]);
@@ -3525,6 +3588,12 @@ export function App({
           void handleOpenHyperTrainingWorkflow();
         }
         break;
+      case 'typeChart':
+        if (!typeChartWorkflow && !isTypeChartLoading) {
+          markLazyLoadStarted();
+          void handleOpenTypeChartWorkflow();
+        }
+        break;
       case 'gymUniformRemoval':
         if (!gymUniformRemovalWorkflow && !isGymUniformRemovalLoading) {
           markLazyLoadStarted();
@@ -3603,6 +3672,7 @@ export function App({
     isSpreadsheetImportLoading,
     isTextLoading,
     isTrainersLoading,
+    isTypeChartLoading,
     itemsWorkflow,
     ivScreenWorkflow,
     lazyLoadedWorkflowSections,
@@ -3622,6 +3692,7 @@ export function App({
     textWorkflow,
     tradePokemonWorkflow,
     trainersWorkflow,
+    typeChartWorkflow,
     workflows
   ]);
 
@@ -5901,6 +5972,14 @@ const resetModMergerPlan = () => {
         }
       );
     }
+    if (typeChartWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadTypeChartWorkflow({ paths });
+          setTypeChartWorkflow(response.workflow);
+        }
+      );
+    }
     if (gymUniformRemovalWorkflow) {
       reloadTasks.push(
         async () => {
@@ -6683,6 +6762,24 @@ const resetModMergerPlan = () => {
               />
             )
           ) : null}
+          {activeSection === 'typeChart' ? (
+            isTypeChartLoading && !typeChartWorkflow ? (
+              <WorkflowLoadingPanel label="Type Chart" />
+            ) : (
+              <TypeChartSection
+                changePlan={changePlan}
+                editSession={getEditSessionForSection('typeChart')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isTypeChartStaging}
+                onApplyChangePlan={handleApplyChangePlan}
+                onCreateChangePlan={handleCreateChangePlan}
+                onDirtyChange={(isDirty) => registerEditorDraftDirty('typeChart', isDirty)}
+                onStageChart={handleStageTypeChart}
+                workflow={typeChartWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'gymUniformRemoval' ? (
             isGymUniformRemovalLoading && !gymUniformRemovalWorkflow ? (
               <WorkflowLoadingPanel label="Gym Uniform Removal" />
@@ -6893,6 +6990,7 @@ const resetModMergerPlan = () => {
                 startingItemsWorkflow,
                 staticEncountersWorkflow,
                 textWorkflow,
+                typeChartWorkflow,
                 tradePokemonWorkflow,
                 trainersWorkflow
               }}
@@ -12294,6 +12392,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.startingItems': 'Starting Items',
     'workflow.staticEncounters': 'Static Encounters',
     'workflow.text': 'Text',
+    'workflow.typeChart': 'Type Chart',
     'workflow.tradePokemon': 'Trade Pokemon',
     'workflow.trainers': 'Trainers'
   };
@@ -12517,6 +12616,13 @@ function getPendingEditDisplayDetails(
         newValueLabel: formatHyperTrainingPendingValue(edit.newValue),
         recordLabel: 'Battle Tower NPC'
       });
+    case 'workflow.typeChart':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'effectiveness' ? 'Effectiveness table' : undefined,
+        newValueLabel: formatTypeChartPendingValue(edit.newValue, context),
+        recordLabel: '18x18 type chart'
+      });
     case 'workflow.gymUniformRemoval':
       return createPendingEditDisplayDetails(edit, {
         editorLabel,
@@ -12613,6 +12719,23 @@ function formatHyperTrainingPendingValue(value: string | null | undefined) {
 
   const minimumLevel = Number.parseInt(value, 10);
   return Number.isInteger(minimumLevel) ? `Lv. ${minimumLevel}` : value;
+}
+
+function formatTypeChartPendingValue(
+  value: string | null | undefined,
+  context: PendingEditContext
+) {
+  const values = decodeTypeChartPendingValues(value);
+  if (!values) {
+    return undefined;
+  }
+
+  const currentValues = getTypeChartWorkflowValues(context.typeChartWorkflow);
+  const changedCount = currentValues
+    ? values.filter((effectiveness, index) => effectiveness !== currentValues[index]).length
+    : values.length;
+
+  return `${changedCount} changed matchup${changedCount === 1 ? '' : 's'}`;
 }
 
 function formatStartingItemsPendingValue(
@@ -20807,6 +20930,349 @@ function IvScreenSection({
   );
 }
 
+const typeChartEffectivenessOptions: Array<{
+  value: TypeChartEffectivenessValue;
+  label: string;
+  display: string;
+  className: string;
+}> = [
+  { value: 0, label: 'Immune', display: '0', className: 'immune' },
+  { value: 2, label: 'Not Very Effective', display: '½', className: 'not-very' },
+  { value: 4, label: 'Normal', display: '', className: 'normal' },
+  { value: 8, label: 'Super Effective', display: '2', className: 'super' }
+];
+
+function TypeChartSection({
+  changePlan,
+  editSession,
+  isChangePlanApplying,
+  isChangePlanCreating,
+  isStaging,
+  onApplyChangePlan,
+  onCreateChangePlan,
+  onDirtyChange,
+  onStageChart,
+  workflow
+}: {
+  changePlan: ChangePlan | null;
+  editSession: EditSession | null;
+  isChangePlanApplying: boolean;
+  isChangePlanCreating: boolean;
+  isStaging: boolean;
+  onApplyChangePlan: () => void;
+  onCreateChangePlan: () => void;
+  onDirtyChange: (isDirty: boolean) => void;
+  onStageChart: (values: TypeChartEffectivenessValue[]) => void;
+  workflow: TypeChartWorkflow | null;
+}) {
+  const workflowValues = useMemo(() => getTypeChartWorkflowValues(workflow), [workflow]);
+  const stagedTypeChartEdit = editSession?.pendingEdits.find(
+    (edit) => edit.domain === 'workflow.typeChart'
+  );
+  const stagedValues = useMemo(
+    () => decodeTypeChartPendingValues(stagedTypeChartEdit?.newValue),
+    [stagedTypeChartEdit?.newValue]
+  );
+  const cleanValues = stagedValues ?? workflowValues ?? createDefaultTypeChartValues();
+  const cleanValuesKey = cleanValues.join(',');
+  const [draftValues, setDraftValues] =
+    useState<TypeChartEffectivenessValue[]>(cleanValues);
+
+  useEffect(() => {
+    setDraftValues(cleanValues);
+  }, [cleanValuesKey]);
+
+  const isDirty = !areTypeChartValuesEqual(draftValues, cleanValues);
+  const hasStagedChange = stagedValues !== null;
+  const canEdit =
+    workflow?.summary.availability === 'available' &&
+    workflow.installStatus !== 'blocked' &&
+    !isStaging &&
+    !isChangePlanApplying;
+  const canStage = canEdit && isDirty;
+  const canReviewPlan = hasStagedChange && !isDirty && !isChangePlanCreating;
+  const canApplyPlan =
+    hasStagedChange &&
+    !isDirty &&
+    changePlan !== null &&
+    changePlan.canApply &&
+    changePlan.writes.length > 0 &&
+    !isChangePlanApplying;
+
+  useEffect(() => {
+    onDirtyChange(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  const updateCell = (
+    attackTypeIndex: number,
+    defenseTypeIndex: number,
+    value: TypeChartEffectivenessValue
+  ) => {
+    const index = attackTypeIndex * 18 + defenseTypeIndex;
+    setDraftValues((current) => {
+      const next = current.slice();
+      next[index] = value;
+      return next;
+    });
+  };
+
+  return (
+    <>
+      <section aria-labelledby="type-chart-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Swords aria-hidden="true" size={18} />
+          <h2 id="type-chart-heading">Type Chart</h2>
+        </div>
+
+        <div className="items-toolbar exefs-toolbar">
+          <Metric
+            label="Status"
+            value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
+          />
+          <Metric label="Offset" value={workflow?.chartOffsetHex ?? 'Unknown'} />
+          <Metric
+            label="Build"
+            value={
+              workflow?.buildId && workflow.buildId !== 'unknown'
+                ? workflow.buildId.slice(0, 12)
+                : 'Unknown'
+            }
+          />
+          <Metric label="Staged" value={hasStagedChange ? 'Yes' : 'No'} />
+        </div>
+
+        {workflow ? (
+          <div className="type-chart-editor">
+            <div className="type-chart-scroll" aria-label="Type effectiveness chart">
+              <div className="type-chart-grid">
+                <div className="type-chart-axis-label">
+                  <span>DEFENSE →</span>
+                  <span>ATTACK ↴</span>
+                </div>
+                {workflow.types.map((type) => (
+                  <TypeChartTypeBadge key={`defense-${type.typeIndex}`} type={type} />
+                ))}
+                {workflow.types.map((attackType) => (
+                  <Fragment key={`attack-row-${attackType.typeIndex}`}>
+                    <TypeChartTypeBadge isRowHeader type={attackType} />
+                    {workflow.types.map((defenseType) => {
+                      const index = attackType.typeIndex * 18 + defenseType.typeIndex;
+                      const value = draftValues[index] ?? 4;
+                      return (
+                        <TypeChartCellControl
+                          attackTypeLabel={attackType.label}
+                          defenseTypeLabel={defenseType.label}
+                          disabled={!canEdit}
+                          key={`${attackType.typeIndex}-${defenseType.typeIndex}`}
+                          onChange={(nextValue) =>
+                            updateCell(
+                              attackType.typeIndex,
+                              defenseType.typeIndex,
+                              nextValue
+                            )
+                          }
+                          value={value}
+                        />
+                      );
+                    })}
+                  </Fragment>
+                ))}
+              </div>
+            </div>
+
+            <div className="type-chart-actions">
+              <button
+                className="primary-button"
+                disabled={!canStage}
+                onClick={() => onStageChart(draftValues)}
+                type="button"
+              >
+                <Save aria-hidden="true" size={16} />
+                <span>{isStaging ? 'Staging' : 'Stage Type Chart'}</span>
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canReviewPlan}
+                onClick={onCreateChangePlan}
+                type="button"
+              >
+                <ClipboardCheck aria-hidden="true" size={16} />
+                <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+              </button>
+              <button
+                className="primary-button"
+                disabled={!canApplyPlan}
+                onClick={onApplyChangePlan}
+                type="button"
+              >
+                <Save aria-hidden="true" size={16} />
+                <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+              </button>
+            </div>
+
+            <TypeChartSourceSummary source={workflow.source} />
+          </div>
+        ) : (
+          <p className="empty-copy">Open Type Chart from Advanced Editors to inspect the type-effectiveness table.</p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function TypeChartTypeBadge({
+  isRowHeader = false,
+  type
+}: {
+  isRowHeader?: boolean;
+  type: TypeChartWorkflow['types'][number];
+}) {
+  return (
+    <div
+      className={isRowHeader ? 'type-chart-type-badge type-chart-row-badge' : 'type-chart-type-badge'}
+      style={{ backgroundColor: type.color }}
+      title={type.label}
+    >
+      {isRowHeader ? type.label.toLocaleUpperCase() : type.shortLabel}
+    </div>
+  );
+}
+
+function TypeChartCellControl({
+  attackTypeLabel,
+  defenseTypeLabel,
+  disabled,
+  onChange,
+  value
+}: {
+  attackTypeLabel: string;
+  defenseTypeLabel: string;
+  disabled: boolean;
+  onChange: (value: TypeChartEffectivenessValue) => void;
+  value: TypeChartEffectivenessValue;
+}) {
+  const option = getTypeChartEffectivenessOption(value);
+  const label = `${attackTypeLabel} attacking ${defenseTypeLabel}: ${option.label}`;
+
+  return (
+    <label
+      className={`type-chart-cell type-chart-cell-${option.className}`}
+      title={label}
+    >
+      <span aria-hidden="true">{option.display}</span>
+      <select
+        aria-label={label}
+        disabled={disabled}
+        onChange={(event) => {
+          const nextValue = parseTypeChartEffectivenessValue(event.target.value);
+          if (nextValue !== null) {
+            onChange(nextValue);
+          }
+        }}
+        value={value}
+      >
+        {typeChartEffectivenessOptions.map((candidate) => (
+          <option key={candidate.value} value={candidate.value}>
+            {candidate.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function TypeChartSourceSummary({ source }: { source: TypeChartSourceRecord | null }) {
+  if (!source) {
+    return null;
+  }
+
+  return (
+    <dl className="type-chart-source-summary">
+      <div>
+        <dt>Source</dt>
+        <dd>{source.relativePath}</dd>
+      </div>
+      <div>
+        <dt>Layer</dt>
+        <dd>{formatSourceLayer(source.provenance.sourceLayer)}</dd>
+      </div>
+      <div>
+        <dt>File state</dt>
+        <dd>{formatFileState(source.provenance.fileState)}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function getTypeChartEffectivenessOption(value: TypeChartEffectivenessValue) {
+  return (
+    typeChartEffectivenessOptions.find((option) => option.value === value) ??
+    typeChartEffectivenessOptions[2]!
+  );
+}
+
+function parseTypeChartEffectivenessValue(value: string) {
+  const parsed = Number.parseInt(value, 10);
+  return isTypeChartEffectivenessValue(parsed) ? parsed : null;
+}
+
+function isTypeChartEffectivenessValue(
+  value: number
+): value is TypeChartEffectivenessValue {
+  return value === 0 || value === 2 || value === 4 || value === 8;
+}
+
+function createDefaultTypeChartValues(): TypeChartEffectivenessValue[] {
+  return Array.from({ length: 18 * 18 }, () => 4 as TypeChartEffectivenessValue);
+}
+
+function getTypeChartWorkflowValues(
+  workflow: TypeChartWorkflow | null
+): TypeChartEffectivenessValue[] | null {
+  if (!workflow) {
+    return null;
+  }
+
+  const values = createDefaultTypeChartValues();
+  for (const cell of workflow.cells) {
+    const index = cell.attackTypeIndex * 18 + cell.defenseTypeIndex;
+    if (index >= 0 && index < values.length && isTypeChartEffectivenessValue(cell.effectiveness)) {
+      values[index] = cell.effectiveness;
+    }
+  }
+
+  return values;
+}
+
+function decodeTypeChartPendingValues(
+  value: string | null | undefined
+): TypeChartEffectivenessValue[] | null {
+  if (!value || value.length !== 18 * 18 * 2 || value.length % 2 !== 0) {
+    return null;
+  }
+
+  const values: TypeChartEffectivenessValue[] = [];
+  for (let index = 0; index < value.length; index += 2) {
+    const parsed = Number.parseInt(value.slice(index, index + 2), 16);
+    if (!isTypeChartEffectivenessValue(parsed)) {
+      return null;
+    }
+
+    values.push(parsed);
+  }
+
+  return values.length === 18 * 18 ? values : null;
+}
+
+function areTypeChartValuesEqual(
+  left: readonly TypeChartEffectivenessValue[],
+  right: readonly TypeChartEffectivenessValue[]
+) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 function HyperTrainingSection({
   changePlan,
   editSession,
@@ -24586,6 +25052,7 @@ type PendingEditContext = {
   startingItemsWorkflow: StartingItemsWorkflow | null;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
   textWorkflow: TextWorkflow | null;
+  typeChartWorkflow: TypeChartWorkflow | null;
   tradePokemonWorkflow: TradePokemonWorkflow | null;
   trainersWorkflow: TrainersWorkflow | null;
 };

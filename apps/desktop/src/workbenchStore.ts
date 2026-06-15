@@ -34,6 +34,7 @@ import {
   type StaticEncountersWorkflow,
   type ShopsWorkflow,
   type TextWorkflow,
+  type TypeChartWorkflow,
   type TradePokemonWorkflow,
   type TrainersWorkflow,
   type WorkflowSummary
@@ -63,6 +64,7 @@ export type WorkbenchSection =
   | 'bagHook'
   | 'catchCap'
   | 'hyperTraining'
+  | 'typeChart'
   | 'gymUniformRemoval'
   | 'ivScreen'
   | 'exefsPatches'
@@ -107,6 +109,7 @@ type WorkbenchState = {
   encountersWorkflow: EncountersWorkflow | null;
   catchCapWorkflow: CatchCapWorkflow | null;
   hyperTrainingWorkflow: HyperTrainingWorkflow | null;
+  typeChartWorkflow: TypeChartWorkflow | null;
   gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null;
   ivScreenWorkflow: IvScreenWorkflow | null;
   exeFsPatchSearchText: string;
@@ -193,6 +196,7 @@ type WorkbenchState = {
   setEncountersWorkflow: (encountersWorkflow: EncountersWorkflow) => void;
   setCatchCapWorkflow: (catchCapWorkflow: CatchCapWorkflow) => void;
   setHyperTrainingWorkflow: (hyperTrainingWorkflow: HyperTrainingWorkflow) => void;
+  setTypeChartWorkflow: (typeChartWorkflow: TypeChartWorkflow) => void;
   setGymUniformRemovalWorkflow: (
     gymUniformRemovalWorkflow: GymUniformRemovalWorkflow
   ) => void;
@@ -328,6 +332,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     encountersWorkflow: null,
     catchCapWorkflow: null,
     hyperTrainingWorkflow: null,
+    typeChartWorkflow: null,
     gymUniformRemovalWorkflow: null,
     ivScreenWorkflow: null,
     exeFsPatchSearchText: '',
@@ -418,6 +423,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   encountersWorkflow: null,
   catchCapWorkflow: null,
   hyperTrainingWorkflow: null,
+  typeChartWorkflow: null,
   gymUniformRemovalWorkflow: null,
   ivScreenWorkflow: null,
   exeFsPatchSearchText: '',
@@ -1001,6 +1007,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({
       activeSection: resolveWorkflowLoadSection(state.activeSection, 'hyperTraining'),
       hyperTrainingWorkflow
+    })),
+  setTypeChartWorkflow: (typeChartWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'typeChart'),
+      typeChartWorkflow
     })),
   setIvScreenWorkflow: (ivScreenWorkflow) =>
     set((state) => ({

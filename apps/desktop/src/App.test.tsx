@@ -42,6 +42,7 @@ import {
   type TextWorkflow,
   type TradePokemonWorkflow,
   type TrainersWorkflow,
+  type TypeChartWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
 import { type ProjectBridge } from './bridge/projectBridge';
@@ -453,10 +454,11 @@ describe('App', () => {
         .getAllByRole('button')
         .filter((button) => button.classList.contains('nav-child-button'))
         .map((button) => button.textContent)
-        .slice(-6)
+        .slice(-7)
     ).toEqual([
       'Catch Cap',
       'Hyper Training',
+      'Type Chart',
       'Gym Uniform Removal',
       'IV Screen',
       'Royal Candy',
@@ -7850,6 +7852,70 @@ function createMockProjectBridge(
     },
     summary: hyperTrainingWorkflowSummary
   };
+  const typeChartWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Advanced editor for the Sword/Shield type-effectiveness table in exefs/main.',
+    diagnostics: [],
+    id: 'typeChart',
+    label: 'Type Chart'
+  };
+  const typeChartTypes = [
+    ['NOR', 'Normal', '#A8A878'],
+    ['FIR', 'Fire', '#F05030'],
+    ['WAT', 'Water', '#6890F0'],
+    ['ELE', 'Electric', '#F8D030'],
+    ['GRA', 'Grass', '#78C850'],
+    ['ICE', 'Ice', '#78C8F0'],
+    ['FIG', 'Fighting', '#A05038'],
+    ['POI', 'Poison', '#A040A0'],
+    ['GRO', 'Ground', '#E0C068'],
+    ['FLY', 'Flying', '#8080F0'],
+    ['PSY', 'Psychic', '#F85888'],
+    ['BUG', 'Bug', '#A8B820'],
+    ['ROC', 'Rock', '#B8A038'],
+    ['GHO', 'Ghost', '#6060B0'],
+    ['DRA', 'Dragon', '#7038F8'],
+    ['DAR', 'Dark', '#705848'],
+    ['STE', 'Steel', '#B8B8D0'],
+    ['FAI', 'Fairy', '#EE99EE']
+  ] as const;
+  const typeChartWorkflow: TypeChartWorkflow = {
+    buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471',
+    cells: Array.from({ length: 18 * 18 }, (_, index) => ({
+      attackTypeIndex: Math.floor(index / 18),
+      defenseTypeIndex: index % 18,
+      effectiveness: 4 as const,
+      vanillaEffectiveness: 4 as const
+    })),
+    chartOffsetHex: 'main.ro+0x00743600',
+    detectedGame: 'sword',
+    diagnostics: [],
+    installMessage: 'Type Chart is using the vanilla Sword/Shield effectiveness table.',
+    installStatus: canEdit ? 'available' : 'readOnly',
+    source: {
+      label: 'ExeFS main',
+      provenance: {
+        fileState: 'baseOnly',
+        sourceFile: 'exefs/main',
+        sourceLayer: 'base'
+      },
+      relativePath: 'exefs/main',
+      sourceId: 'runtime',
+      status: 'available'
+    },
+    stats: {
+      chartCellCount: 18 * 18,
+      outputFileCount: 1,
+      sourceFileCount: 1
+    },
+    summary: typeChartWorkflowSummary,
+    types: typeChartTypes.map(([shortLabel, label, color], typeIndex) => ({
+      color,
+      label,
+      shortLabel,
+      typeIndex
+    }))
+  };
   const gymUniformRemovalWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Keeps the player in their current outfit during gym challenges and gym battles.',
@@ -8769,6 +8835,7 @@ function createMockProjectBridge(
           bagHookWorkflowSummary,
           catchCapWorkflowSummary,
           hyperTrainingWorkflowSummary,
+          typeChartWorkflowSummary,
           gymUniformRemovalWorkflowSummary,
           ivScreenWorkflowSummary,
           royalCandyWorkflowSummary,
@@ -8980,6 +9047,48 @@ function createMockProjectBridge(
             ...hyperTrainingWorkflow.levelRule,
             minimumLevel: request.minimumLevel
           }
+        }
+      }),
+    loadTypeChartWorkflow: () =>
+      Promise.resolve({
+        workflow: typeChartWorkflow
+      }),
+    stageTypeChart: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Type Chart effectiveness values are staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.typeChart',
+              field: 'effectiveness',
+              newValue: request.values
+                .map((value) => value.toString(16).padStart(2, '0'))
+                .join('')
+                .toUpperCase(),
+              recordId: 'type-chart',
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'exefs/main'
+                }
+              ],
+              summary: 'Stage Type Chart effectiveness values.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-type-chart'
+        },
+        workflow: {
+          ...typeChartWorkflow,
+          cells: typeChartWorkflow.cells.map((cell, index) => ({
+            ...cell,
+            effectiveness: request.values[index] ?? cell.effectiveness
+          }))
         }
       }),
     loadGymUniformRemovalWorkflow: () =>

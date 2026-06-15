@@ -17,6 +17,7 @@ using KM.Api.ModMerger;
 using KM.Api.Placement;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
+using KM.Api.Projects;
 using KM.Api.Rentals;
 using KM.Api.Shops;
 using KM.Api.Raids;
@@ -27,7 +28,9 @@ using KM.Api.Text;
 using KM.Api.SpreadsheetImport;
 using KM.Api.Trainers;
 using KM.Api.Trades;
+using KM.Api.TypeChart;
 using KM.Api.Workflows;
+using KM.Core.Projects;
 using KM.SwSh.Behavior;
 using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
@@ -53,6 +56,7 @@ using KM.SwSh.Text;
 using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.Trainers;
 using KM.SwSh.Trades;
+using KM.SwSh.TypeChart;
 using KM.SwSh.Workflows;
 using KM.SwSh.Items;
 
@@ -317,6 +321,23 @@ public static class SwShBridgeMapper
 
         return new StageHyperTrainingResponse(
             ToHyperTrainingWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadTypeChartWorkflowResponse ToDto(SwShTypeChartWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTypeChartWorkflowResponse(ToTypeChartWorkflowDto(workflow));
+    }
+
+    public static StageTypeChartResponse ToDto(SwShTypeChartEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageTypeChartResponse(
+            ToTypeChartWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1294,7 +1315,26 @@ public static class SwShBridgeMapper
             workflow.Sources.Select(ToDto).ToArray(),
             new HyperTrainingWorkflowStatsDto(
                 workflow.Stats.SourceFileCount,
-                workflow.Stats.OutputFileCount),
+            workflow.Stats.OutputFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TypeChartWorkflowDto ToTypeChartWorkflowDto(SwShTypeChartWorkflow workflow)
+    {
+        return new TypeChartWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.BuildId,
+            workflow.ChartOffsetHex,
+            ToProjectGameDto(workflow.DetectedGame),
+            workflow.Source is null ? null : ToDto(workflow.Source),
+            workflow.Types.Select(ToDto).ToArray(),
+            workflow.Cells.Select(ToDto).ToArray(),
+            new TypeChartWorkflowStatsDto(
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.OutputFileCount,
+                workflow.Stats.ChartCellCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -2411,6 +2451,42 @@ public static class SwShBridgeMapper
             ProjectBridgeMapper.ToDto(provenance.FileState));
     }
 
+    private static TypeChartSourceRecordDto ToDto(SwShTypeChartSourceRecord source)
+    {
+        return new TypeChartSourceRecordDto(
+            source.SourceId,
+            source.Label,
+            source.RelativePath,
+            source.Status,
+            ToDto(source.Provenance));
+    }
+
+    private static TypeChartProvenanceDto ToDto(SwShTypeChartProvenance provenance)
+    {
+        return new TypeChartProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static TypeChartTypeDefinitionDto ToDto(SwShTypeChartTypeDefinition type)
+    {
+        return new TypeChartTypeDefinitionDto(
+            type.TypeIndex,
+            type.Label,
+            type.ShortLabel,
+            type.Color);
+    }
+
+    private static TypeChartCellDto ToDto(SwShTypeChartCell cell)
+    {
+        return new TypeChartCellDto(
+            cell.AttackTypeIndex,
+            cell.DefenseTypeIndex,
+            cell.Effectiveness,
+            cell.VanillaEffectiveness);
+    }
+
     private static IvScreenReservedRegionDto ToDto(SwShIvScreenReservedRegion region)
     {
         return new IvScreenReservedRegionDto(
@@ -2447,6 +2523,19 @@ public static class SwShBridgeMapper
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static ProjectGameDto? ToProjectGameDto(ProjectGame? game)
+    {
+        return game switch
+        {
+            ProjectGame.Sword => ProjectGameDto.Sword,
+            ProjectGame.Shield => ProjectGameDto.Shield,
+            ProjectGame.Scarlet => ProjectGameDto.Scarlet,
+            ProjectGame.Violet => ProjectGameDto.Violet,
+            null => null,
+            _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
+        };
     }
 
     private static RoyalCandyWorkflowRecordDto ToDto(SwShRoyalCandyWorkflowRecord workflow)

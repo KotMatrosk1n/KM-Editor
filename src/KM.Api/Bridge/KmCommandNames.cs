@@ -62,6 +62,8 @@ public static class KmCommandNames
     public const string LoadIvScreenWorkflow = "ivScreen.load";
     public const string StageIvScreenInstall = "ivScreen.install.stage";
     public const string StageIvScreenUninstall = "ivScreen.uninstall.stage";
+    public const string LoadTypeChartWorkflow = "typeChart.load";
+    public const string StageTypeChart = "typeChart.stage";
     public const string LoadExeFsPatchWorkflow = "exefsPatches.load";
     public const string StageExeFsPatch = "exefsPatches.patch.stage";
     public const string LoadRoyalCandyWorkflow = "royalCandy.load";

@@ -14,6 +14,14 @@ internal static class SwShExeFsBridgeFixtures
         return CreateNso(CreateCompatibleText(), [0x10], [0x20], Convert.FromHexString(SwordBuildId));
     }
 
+    public static byte[] CreateTypeChartCompatibleNso()
+    {
+        var ro = new byte[0x00743600 + (18 * 18) + 0x40];
+        Array.Fill(ro, (byte)0xCC);
+        ro.AsSpan(0x00743600, 18 * 18).Fill(0x04);
+        return CreateNso(CreateCompatibleText(), ro, [0x20], Convert.FromHexString(SwordBuildId));
+    }
+
     private static byte[] CreateCompatibleText()
     {
         var text = new byte[0x0157D000];
