@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Core.Projects;
 using KM.Formats.SwSh;
 using System.Buffers.Binary;
+using System.Globalization;
 
 namespace KM.SwSh.ExeFs;
 
@@ -23,6 +25,7 @@ internal enum SwShRoyalCandyExeFsSignatureKind
     NotInstalled,
     Unlimited,
     StoryLimits,
+    GameMismatch,
     ForeignPatch,
 }
 
@@ -42,6 +45,8 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     private const int StoryQuantityMaxCompareOffset = 0x007BB3C0;
     private const int QuantityMoveOffset = 0x007B1F20;
     private const int StoryInventoryClampSelectOffset = 0x007BAF3C;
+    private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
+    private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
     private const uint ExpectedQuantityMove = 0x2A0003E2; // MOV w2, w0
     private const uint ExpectedQuantityClampSelect = 0x1A963316;
     private const uint NopInstruction = 0xD503201F;
@@ -65,11 +70,23 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             SwShExeFsReservedRegionLedger.OwnerRoyalCandy,
             SwShExeFsReservedRegionLedger.OwnerRoyalCandyStoryLimits);
 
-    public static SwShRoyalCandyExeFsSignature AnalyzeInstallation(byte[] mainBytes)
+    private static int ReservedAnchorCount => UiRouteChecks.Length
+        + EqualBranchChecks.Length
+        + 2
+        + 1
+        + 1;
+
+    public static SwShRoyalCandyExeFsSignature AnalyzeInstallation(byte[] mainBytes, ProjectGame? expectedGame = null)
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
         var nso = SwShNsoFile.Parse(mainBytes);
+        var gameMismatch = CreateGameMismatchSignature(nso.BuildId, expectedGame);
+        if (gameMismatch is not null)
+        {
+            return gameMismatch;
+        }
+
         var text = nso.Text.DecompressedData;
         var routeInstalledCount = UiRouteChecks.Count(check => IsUiRouteCheckInstalled(text, check));
         var equalInstalledCount = EqualBranchChecks.Count(check => IsEqualBranchCheckInstalled(text, check));
@@ -124,11 +141,12 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             recognizedAnchorCount);
     }
 
-    public static byte[] ApplyBasePatch(byte[] mainBytes)
+    public static byte[] ApplyBasePatch(byte[] mainBytes, ProjectGame? expectedGame = null)
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
         var nso = SwShNsoFile.Parse(mainBytes);
+        ValidateSelectedGame(nso.BuildId, expectedGame);
         var text = nso.Text.DecompressedData.ToArray();
 
         PatchExpCandyFixedAmountBypass(text);
@@ -140,7 +158,8 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
     public static byte[] ApplyStoryLimitsPatch(
         byte[] mainBytes,
-        IReadOnlyList<SwShRoyalCandyStoryLevelCap> levelCaps)
+        IReadOnlyList<SwShRoyalCandyStoryLevelCap> levelCaps,
+        ProjectGame? expectedGame = null)
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
         ArgumentNullException.ThrowIfNull(levelCaps);
@@ -151,6 +170,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         }
 
         var nso = SwShNsoFile.Parse(mainBytes);
+        ValidateSelectedGame(nso.BuildId, expectedGame);
         var text = nso.Text.DecompressedData.ToArray();
 
         PatchExpCandyFixedAmountBypass(text);
@@ -161,13 +181,18 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         return nso.Write(textDecompressedData: text);
     }
 
-    public static byte[] RestoreFromBase(byte[] currentMainBytes, byte[] baseMainBytes)
+    public static byte[] RestoreFromBase(
+        byte[] currentMainBytes,
+        byte[] baseMainBytes,
+        ProjectGame? expectedGame = null)
     {
         ArgumentNullException.ThrowIfNull(currentMainBytes);
         ArgumentNullException.ThrowIfNull(baseMainBytes);
 
         var currentNso = SwShNsoFile.Parse(currentMainBytes);
         var baseNso = SwShNsoFile.Parse(baseMainBytes);
+        ValidateSelectedGame(currentNso.BuildId, expectedGame);
+        ValidateSelectedGame(baseNso.BuildId, expectedGame);
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;
         if (currentText.Length != baseText.Length)
@@ -185,6 +210,72 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         }
 
         return currentNso.Write(textDecompressedData: currentText);
+    }
+
+    private static void ValidateSelectedGame(byte[] buildId, ProjectGame? expectedGame)
+    {
+        var mismatch = CreateGameMismatchSignature(buildId, expectedGame);
+        if (mismatch is not null)
+        {
+            throw new InvalidDataException(mismatch.Message);
+        }
+    }
+
+    private static SwShRoyalCandyExeFsSignature? CreateGameMismatchSignature(byte[] buildId, ProjectGame? expectedGame)
+    {
+        if (expectedGame is null)
+        {
+            return null;
+        }
+
+        var detectedGame = DetectGame(buildId);
+        if (detectedGame == expectedGame.Value)
+        {
+            return null;
+        }
+
+        var buildDescription = detectedGame is null
+            ? "an unsupported Sword/Shield build"
+            : FormatGame(detectedGame.Value);
+        return new SwShRoyalCandyExeFsSignature(
+            SwShRoyalCandyExeFsSignatureKind.GameMismatch,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Selected {FormatGame(expectedGame.Value)}, but exefs/main build ID is {buildDescription}. Royal Candy will not patch a different game's executable."),
+            ReservedAnchorCount,
+            RecognizedAnchorCount: 0);
+    }
+
+    private static ProjectGame? DetectGame(byte[] buildId)
+    {
+        var formattedBuildId = FormatBuildId(buildId);
+        if (string.Equals(formattedBuildId, SwordBuildId, StringComparison.OrdinalIgnoreCase))
+        {
+            return ProjectGame.Sword;
+        }
+
+        if (string.Equals(formattedBuildId, ShieldBuildId, StringComparison.OrdinalIgnoreCase))
+        {
+            return ProjectGame.Shield;
+        }
+
+        return null;
+    }
+
+    private static string FormatBuildId(byte[] buildId)
+    {
+        var buildIdLength = Math.Min(20, buildId.Length);
+        return Convert.ToHexString(buildId.AsSpan(0, buildIdLength));
+    }
+
+    private static string FormatGame(ProjectGame game)
+    {
+        return game switch
+        {
+            ProjectGame.Sword => "Pokemon Sword",
+            ProjectGame.Shield => "Pokemon Shield",
+            _ => game.ToString(),
+        };
     }
 
     private static void PatchRoyalCandyUiRoute(byte[] text, bool skipStoryLimitHooks = false)

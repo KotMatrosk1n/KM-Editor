@@ -286,23 +286,26 @@ public sealed class SwShPlacementEditSessionService
                 continue;
             }
 
-            objects[index] = OverlayPendingEdit(objects[index], edit);
+            objects[index] = OverlayPendingEdit(objects[index], edit.Field, edit.NewValue);
         }
 
         return workflow with { Objects = objects };
     }
 
-    private static SwShPlacedObjectRecord OverlayPendingEdit(SwShPlacedObjectRecord placedObject, PendingEdit edit)
+    private static SwShPlacedObjectRecord OverlayPendingEdit(
+        SwShPlacedObjectRecord placedObject,
+        string field,
+        string newValue)
     {
-        return edit.Field switch
+        return field switch
         {
-            SwShPlacementWorkflowService.LocationXField when TryParseDouble(edit.NewValue, out var value) => placedObject with { X = value },
-            SwShPlacementWorkflowService.LocationYField when TryParseDouble(edit.NewValue, out var value) => placedObject with { Y = value },
-            SwShPlacementWorkflowService.LocationZField when TryParseDouble(edit.NewValue, out var value) => placedObject with { Z = value },
-            SwShPlacementWorkflowService.RotationYField when TryParseDouble(edit.NewValue, out var value) => placedObject with { RotationY = value },
-            SwShPlacementWorkflowService.QuantityField when TryParseInt(edit.NewValue, out var value) => placedObject with { Quantity = value },
-            SwShPlacementWorkflowService.ChanceField when TryParseInt(edit.NewValue, out var value) => placedObject with { Chance = value },
-            SwShPlacementWorkflowService.ItemIdField when TryParseInt(edit.NewValue, out var value) => placedObject with
+            SwShPlacementWorkflowService.LocationXField when TryParseDouble(newValue, out var value) => placedObject with { X = value },
+            SwShPlacementWorkflowService.LocationYField when TryParseDouble(newValue, out var value) => placedObject with { Y = value },
+            SwShPlacementWorkflowService.LocationZField when TryParseDouble(newValue, out var value) => placedObject with { Z = value },
+            SwShPlacementWorkflowService.RotationYField when TryParseDouble(newValue, out var value) => placedObject with { RotationY = value },
+            SwShPlacementWorkflowService.QuantityField when TryParseInt(newValue, out var value) => placedObject with { Quantity = value },
+            SwShPlacementWorkflowService.ChanceField when TryParseInt(newValue, out var value) => placedObject with { Chance = value },
+            SwShPlacementWorkflowService.ItemIdField when TryParseInt(newValue, out var value) => placedObject with
             {
                 ItemId = (uint)value,
                 ItemName = string.Create(CultureInfo.InvariantCulture, $"Item {value}"),

@@ -24,6 +24,7 @@ const errorKindPrefixes = {
 } as const satisfies Record<ReportableErrorKind, string>;
 
 const reportedGlobalErrorCodes = new Set<string>();
+let uninstallGlobalErrorHandlers: (() => void) | null = null;
 
 export function createReportableError(
   error: unknown,
@@ -70,21 +71,36 @@ export function formatReportableErrorMessage(report: ReportableError) {
 }
 
 export function installGlobalErrorHandlers() {
-  window.addEventListener('error', (event) => {
+  if (uninstallGlobalErrorHandlers !== null) {
+    return uninstallGlobalErrorHandlers;
+  }
+
+  const handleError = (event: ErrorEvent) => {
     showGlobalReportableError(
       event.error ?? event.message,
       'unhandled',
       'KM Editor hit an unexpected app error.'
     );
-  });
+  };
 
-  window.addEventListener('unhandledrejection', (event) => {
+  const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
     showGlobalReportableError(
       event.reason,
       'unhandledRejection',
       'KM Editor hit an unexpected background error.'
     );
-  });
+  };
+
+  window.addEventListener('error', handleError);
+  window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+  uninstallGlobalErrorHandlers = () => {
+    window.removeEventListener('error', handleError);
+    window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    uninstallGlobalErrorHandlers = null;
+  };
+
+  return uninstallGlobalErrorHandlers;
 }
 
 function showGlobalReportableError(

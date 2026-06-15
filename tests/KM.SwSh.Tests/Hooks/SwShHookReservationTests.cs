@@ -112,7 +112,7 @@ public sealed class SwShHookReservationTests
     {
         var region = Assert.Single(SwShExeFsReservedRegionLedger.MainRoRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerTypeChart));
 
-        Assert.Equal("type-chart-sword", region.FeatureId);
+        Assert.Equal("type-chart-swsh", region.FeatureId);
         Assert.Equal(SwShExeFsReservedRegionLedger.ExeFsMainPath, region.RelativePath);
         Assert.Equal("main.ro", region.Area);
         Assert.Equal(0x00743600, region.StartOffset);
@@ -451,6 +451,42 @@ public sealed class SwShHookReservationTests
             stage.Diagnostics,
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
                 && diagnostic.Message.Contains("foreign or conflicting Pokemon Summary hook", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword, ProjectGame.Shield)]
+    [InlineData(ProjectGame.Shield, ProjectGame.Sword)]
+    public void RoyalCandyBlocksMainBuildIdThatDoesNotMatchSelectedGame(
+        ProjectGame selectedGame,
+        ProjectGame actualMainGame)
+    {
+        var mismatchedMain = CreateSharedHookNso(actualMainGame);
+        var directAnalysis = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(mismatchedMain, selectedGame);
+        Assert.Equal(SwShRoyalCandyExeFsSignatureKind.GameMismatch, directAnalysis.Kind);
+        Assert.Throws<InvalidDataException>(() => SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(mismatchedMain, selectedGame));
+
+        using var temp = CreateHookProject(selectedGame);
+        temp.WriteBaseExeFsFile("main", mismatchedMain);
+        var paths = temp.Paths with { SelectedGame = selectedGame };
+        InstallEmptyBagHook(paths);
+        var project = new ProjectWorkspaceService().Open(paths);
+        var workflow = new SwShRoyalCandyWorkflowService().Load(project);
+
+        Assert.Contains(
+            workflow.Checks,
+            check => check.Status == "Fail"
+                && check.Message.Contains("will not patch a different game's executable", StringComparison.Ordinal));
+
+        var stage = new SwShRoyalCandyEditSessionService().StageWorkflow(
+            paths,
+            RoyalCandyUnlimitedWorkflowId,
+            levelCaps: null,
+            session: null);
+        Assert.Empty(stage.Session.PendingEdits);
+        Assert.Contains(
+            stage.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("will not patch a different game's executable", StringComparison.Ordinal));
     }
 
     [Theory]

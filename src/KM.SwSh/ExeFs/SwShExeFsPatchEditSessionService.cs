@@ -197,7 +197,9 @@ public sealed class SwShExeFsPatchEditSessionService
 
         try
         {
-            var output = SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(File.ReadAllBytes(source.AbsolutePath));
+            var output = SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(
+                File.ReadAllBytes(source.AbsolutePath),
+                paths.SelectedGame);
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             File.WriteAllBytes(targetPath, output);
             writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Generated, SwShExeFsPatchWorkflowService.ExeFsMainPath));

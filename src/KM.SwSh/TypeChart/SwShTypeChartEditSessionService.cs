@@ -231,9 +231,10 @@ public sealed class SwShTypeChartEditSessionService
 
         try
         {
+            var gameOrderValues = SwShTypeChartWorkflowService.ToGameOrder(values);
             var output = SwShTypeChartMainPatcher.ApplyChart(
                 File.ReadAllBytes(source.AbsolutePath),
-                values,
+                gameOrderValues,
                 paths.SelectedGame);
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
             File.WriteAllBytes(targetPath, output);

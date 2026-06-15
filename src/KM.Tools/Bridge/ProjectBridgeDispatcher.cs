@@ -1571,7 +1571,10 @@ public sealed class ProjectBridgeDispatcher
             options.RandomizeStaticEncounters,
             options.RandomizeGiftEncounters,
             options.RandomizeRaidRewards,
-            options.RandomizeRaidBonusRewards);
+            options.RandomizeRaidBonusRewards,
+            options.RandomizeTypeChart,
+            options.TypeChartNoImmunities,
+            options.TypeChartOneImmunityPerType);
     }
 
     private static RandomizerConfigDto ToDto(SwShRandomizerConfig config)
@@ -1614,7 +1617,10 @@ public sealed class ProjectBridgeDispatcher
             options.RandomizeStaticEncounters,
             options.RandomizeGiftEncounters,
             options.RandomizeRaidRewards,
-            options.RandomizeRaidBonusRewards);
+            options.RandomizeRaidBonusRewards,
+            options.RandomizeTypeChart,
+            options.TypeChartNoImmunities,
+            options.TypeChartOneImmunityPerType);
     }
 
     private static BridgeRequest<TPayload> DeserializeRequest<TPayload>(string requestJson)

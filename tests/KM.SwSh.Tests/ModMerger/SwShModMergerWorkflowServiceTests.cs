@@ -514,26 +514,38 @@ public sealed class SwShModMergerWorkflowServiceTests
             []);
         Assert.True(warmup.Preview.CanApply);
 
-        ForceFullCollection();
-        var beforeBytes = GC.GetTotalMemory(forceFullCollection: true);
+        var stageReferences = new List<WeakReference<SwShModMergerStageResult>>();
         for (var iteration = 0; iteration < 60; iteration++)
         {
-            var stage = service.Stage(
-                temp.Paths,
-                modDirectory1,
-                modDirectory2,
-                [largePath],
-                [largePath],
-                []);
-            Assert.True(stage.Preview.CanApply);
-            Assert.Equal("safeMerge", Assert.Single(stage.Preview.Files).MergeKind);
+            stageReferences.Add(StageAndCaptureStageResult(service, temp, modDirectory1, modDirectory2, largePath));
         }
 
         ForceFullCollection();
-        var afterBytes = GC.GetTotalMemory(forceFullCollection: true);
-        Assert.True(
-            afterBytes <= beforeBytes + (16 * 1024 * 1024),
-            $"Repeated Mod Merger staging retained too much memory. Before: {beforeBytes}; after: {afterBytes}.");
+        Assert.All(
+            stageReferences,
+            reference => Assert.False(
+                reference.TryGetTarget(out _),
+                "Repeated Mod Merger staging retained a stage result."));
+    }
+
+    private static WeakReference<SwShModMergerStageResult> StageAndCaptureStageResult(
+        SwShModMergerWorkflowService service,
+        TemporarySwShProject temp,
+        string modDirectory1,
+        string modDirectory2,
+        string largePath)
+    {
+        var stage = service.Stage(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [largePath],
+            [largePath],
+            []);
+        Assert.True(stage.Preview.CanApply);
+        Assert.Equal("safeMerge", Assert.Single(stage.Preview.Files).MergeKind);
+
+        return new WeakReference<SwShModMergerStageResult>(stage);
     }
 
     private static string CreateModDirectory(TemporarySwShProject temp, string name)
