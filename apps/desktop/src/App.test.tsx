@@ -1644,7 +1644,7 @@ describe('App', () => {
     expect(screen.getByText('Set Potion pouch to 4.')).toBeInTheDocument();
   });
 
-  it('opens Text from Viewers as a view-only workflow', async () => {
+  it('opens Text from Viewers with editable text control helpers', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -1662,9 +1662,24 @@ describe('App', () => {
       screen.getAllByText('romfs/bin/message/English/common/story.dat').length
     ).toBeGreaterThan(0);
 
-    expect(screen.getByText('View Only')).toBeInTheDocument();
     expect(screen.getByLabelText('Text value')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Edit' })).not.toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const textValue = screen.getByLabelText('Text value') as HTMLTextAreaElement;
+    expect(textValue).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Insert Line break \\n' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Insert Wait + clear \\c\\n' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Insert Wait + scroll \\r\\n' })).not.toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Insert Line break \\n' }));
+    await user.click(screen.getByRole('button', { name: 'Insert Wait + clear \\c\\n' }));
+    await user.click(screen.getByRole('button', { name: 'Insert Wait + scroll \\r\\n' }));
+
+    expect(textValue.value).toContain('\\n');
+    expect(textValue.value).toContain('\\c\\n');
+    expect(textValue.value).toContain('\\r\\n');
   });
 
   it('opens Trainers, edits a party level, reviews a trainer plan, and applies it', async () => {

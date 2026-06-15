@@ -13,6 +13,8 @@ public sealed class SwShGameTextFile
     private const ushort KeyAdvance = 0x2983;
     private const ushort Terminator = 0x0000;
     private const ushort VariableMarker = 0x0010;
+    private const ushort TextReturn = 0xBE00;
+    private const ushort TextClear = 0xBE01;
     private const int HeaderSize = 0x10;
     private const int LineEntrySize = 0x08;
 
@@ -198,6 +200,19 @@ public sealed class SwShGameTextFile
         offset += sizeof(ushort);
         var variable = BinaryPrimitives.ReadUInt16LittleEndian(data[offset..]);
         offset += sizeof(ushort);
+
+        if (count == 1 && variable == TextReturn)
+        {
+            builder.Append("\\r");
+            return;
+        }
+
+        if (count == 1 && variable == TextClear)
+        {
+            builder.Append("\\c");
+            return;
+        }
+
         var argumentCount = Math.Max(0, count - 1);
         var arguments = new List<string>(argumentCount);
 
@@ -225,14 +240,35 @@ public sealed class SwShGameTextFile
             if (text[i] == '\\' && i + 1 < text.Length)
             {
                 var escaped = text[++i];
-                values.Add(escaped switch
+                switch (escaped)
                 {
-                    'n' => '\n',
-                    '\\' => '\\',
-                    '[' => '[',
-                    '{' => '{',
-                    _ => escaped,
-                });
+                    case 'n':
+                        values.Add('\n');
+                        break;
+                    case '\\':
+                        values.Add('\\');
+                        break;
+                    case '[':
+                        values.Add('[');
+                        break;
+                    case '{':
+                        values.Add('{');
+                        break;
+                    case 'r':
+                        values.Add(VariableMarker);
+                        values.Add(1);
+                        values.Add(TextReturn);
+                        break;
+                    case 'c':
+                        values.Add(VariableMarker);
+                        values.Add(1);
+                        values.Add(TextClear);
+                        break;
+                    default:
+                        values.Add('\\');
+                        values.Add(escaped);
+                        break;
+                }
                 continue;
             }
 

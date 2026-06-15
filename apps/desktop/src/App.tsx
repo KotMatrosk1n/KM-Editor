@@ -195,6 +195,27 @@ import tauriConfig from '../src-tauri/tauri.conf.json';
 
 const appVersion = tauriConfig.version;
 
+const textControlInserts = [
+  {
+    display: '\\n',
+    label: 'Line break',
+    title: 'Insert a normal line break inside the same message box.',
+    value: '\\n'
+  },
+  {
+    display: '\\c\\n',
+    label: 'Wait + clear',
+    title: 'Insert the A-button continue prompt, clear the box, then continue on the next line.',
+    value: '\\c\\n'
+  },
+  {
+    display: '\\r\\n',
+    label: 'Wait + scroll',
+    title: 'Insert the wait/scroll advance control, then continue on the next line.',
+    value: '\\r\\n'
+  }
+] as const;
+
 export class AppErrorBoundary extends Component<
   { children: ReactNode },
   { report: ReportableError | null }
@@ -10481,7 +10502,7 @@ function TextSection({
       entries.find((entry) => entry.textKey === selectedTextKey) ?? filteredEntries[0] ?? null,
     [entries, filteredEntries, selectedTextKey]
   );
-  const canEditText = false;
+  const canEditText = workflow?.summary.availability === 'available';
   const pendingTextKeys = useMemo(() => getPendingTextKeys(editSession), [editSession]);
 
   return (
@@ -10597,10 +10618,13 @@ function SelectedTextPanel({
   onUpdateTextEntry: (textKey: string, value: string) => Promise<boolean>;
 }) {
   const [draftsByTextKey, setDraftsByTextKey] = useState<Record<string, string>>({});
+  const textValueTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const valueField = editableFields.find((field) => field.field === 'value');
   const draftValue = entry ? draftsByTextKey[entry.textKey] ?? entry.value : '';
   const isTextDraftDirty =
     entry !== null && (draftsByTextKey[entry.textKey] ?? entry.value) !== entry.value;
+  const isTextInputDisabled =
+    entry === null || !canEditText || editSession === null || isTextUpdating || !entry.canEdit;
   useRegisterEditorDraftDirty(
     'text',
     Object.entries(draftsByTextKey).some(([textKey, value]) => {
@@ -10624,6 +10648,52 @@ function SelectedTextPanel({
       return nextDrafts;
     });
   }, [entry, isTextDraftDirty]);
+
+  const updateTextDraft = useCallback(
+    (nextValue: string) => {
+      if (!entry) {
+        return;
+      }
+
+      setDraftsByTextKey((currentDrafts) => {
+        if (nextValue === entry.value) {
+          const nextDrafts = { ...currentDrafts };
+          delete nextDrafts[entry.textKey];
+          return nextDrafts;
+        }
+
+        return {
+          ...currentDrafts,
+          [entry.textKey]: nextValue
+        };
+      });
+    },
+    [entry]
+  );
+
+  const insertTextControlToken = useCallback(
+    (token: string) => {
+      if (!entry || isTextInputDisabled) {
+        return;
+      }
+
+      const textarea = textValueTextareaRef.current;
+      const shouldUseTextareaSelection = textarea !== null && document.activeElement === textarea;
+      const selectionStart = shouldUseTextareaSelection
+        ? textarea.selectionStart
+        : draftValue.length;
+      const selectionEnd = shouldUseTextareaSelection ? textarea.selectionEnd : draftValue.length;
+      const nextValue = `${draftValue.slice(0, selectionStart)}${token}${draftValue.slice(selectionEnd)}`;
+      const nextCursorPosition = selectionStart + token.length;
+      updateTextDraft(nextValue);
+
+      window.requestAnimationFrame(() => {
+        textarea?.focus();
+        textarea?.setSelectionRange(nextCursorPosition, nextCursorPosition);
+      });
+    },
+    [draftValue, entry, isTextInputDisabled, updateTextDraft]
+  );
 
   const draftState = getTextDraftState(draftValue, entry, valueField);
   const canSubmit = editSession !== null && draftState.canSubmit;
@@ -10661,31 +10731,34 @@ function SelectedTextPanel({
           </dl>
 
           <div className="text-edit-form">
-            <label className="path-field">
+            <div className="path-field">
               <span>{valueField?.label ?? 'Text value'}</span>
+              <div aria-label="Insert text controls" className="text-token-toolbar" role="toolbar">
+                {textControlInserts.map((token) => (
+                  <button
+                    aria-label={`Insert ${token.label} ${token.display}`}
+                    className="text-token-button"
+                    disabled={isTextInputDisabled}
+                    key={token.value}
+                    onClick={() => insertTextControlToken(token.value)}
+                    title={token.title}
+                    type="button"
+                  >
+                    <span>{token.label}</span>
+                    <code>{token.display}</code>
+                  </button>
+                ))}
+              </div>
               <textarea
                 aria-label={valueField?.label ?? 'Text value'}
-                disabled={!canEditText || editSession === null || isTextUpdating || !entry.canEdit}
+                disabled={isTextInputDisabled}
                 maxLength={valueField?.maximumLength ?? undefined}
-                onChange={(event) =>
-                  setDraftsByTextKey((currentDrafts) => {
-                    const nextValue = event.target.value;
-                    if (nextValue === entry.value) {
-                      const nextDrafts = { ...currentDrafts };
-                      delete nextDrafts[entry.textKey];
-                      return nextDrafts;
-                    }
-
-                    return {
-                      ...currentDrafts,
-                      [entry.textKey]: nextValue
-                    };
-                  })
-                }
+                onChange={(event) => updateTextDraft(event.target.value)}
+                ref={textValueTextareaRef}
                 rows={8}
                 value={draftValue}
               />
-            </label>
+            </div>
 
             {!entry.canEdit ? (
               <p className="empty-copy">{entry.editBlockedReason ?? 'This text line is read-only.'}</p>
