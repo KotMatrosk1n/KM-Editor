@@ -64,7 +64,8 @@ using KM.SwSh.Trainers;
 using KM.SwSh.Trades;
 using KM.SwSh.TypeChart;
 using KM.SwSh.Workflows;
-using KM.SV;
+using KM.SV.ModMerger;
+using KM.SV.Workflows;
 using System.Text.Json;
 
 namespace KM.Tools.Bridge;

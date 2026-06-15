@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-namespace KM.SV;
+namespace KM.SV.Data;
 
 public static class SvDataPaths
 {

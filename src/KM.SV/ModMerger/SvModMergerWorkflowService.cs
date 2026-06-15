@@ -4,12 +4,13 @@ using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.SV;
 using KM.SwSh.Workflows;
+using KM.SV.Workflows;
 using SharpCompress.Common;
 using SharpCompress.Readers;
 using System.Security.Cryptography;
 using System.Text.Json;
 
-namespace KM.SV;
+namespace KM.SV.ModMerger;
 
 public sealed class SvModMergerWorkflowService
 {

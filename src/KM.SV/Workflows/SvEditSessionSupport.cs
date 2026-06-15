@@ -7,7 +7,7 @@ using KM.Core.Projects;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
-namespace KM.SV;
+namespace KM.SV.Workflows;
 
 internal static class SvEditSessionSupport
 {

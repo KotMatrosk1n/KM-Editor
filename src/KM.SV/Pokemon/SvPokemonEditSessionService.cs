@@ -7,9 +7,11 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.Items;
 using KM.SwSh.Pokemon;
+using KM.SV.Data;
+using KM.SV.Workflows;
 using System.Globalization;
 
-namespace KM.SV;
+namespace KM.SV.Pokemon;
 
 internal sealed class SvPokemonEditSessionService
 {

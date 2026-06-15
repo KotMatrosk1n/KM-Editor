@@ -7,8 +7,13 @@ using KM.SwSh.Items;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
+using KM.SV.Encounters;
+using KM.SV.Items;
+using KM.SV.ModMerger;
+using KM.SV.Pokemon;
+using KM.SV.Trainers;
 
-namespace KM.SV;
+namespace KM.SV.Workflows;
 
 public sealed class SvWorkflowService
 {
