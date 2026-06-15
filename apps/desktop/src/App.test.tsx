@@ -35,6 +35,9 @@ import {
   type ShopsWorkflow,
   type SpreadsheetImportWorkflow,
   type StartingItemsWorkflow,
+  type SvModMergerPreview,
+  type SvModMergerSource,
+  type SvModMergerWorkflow,
   type StaticEncountersWorkflow,
   type TextWorkflow,
   type TradePokemonWorkflow,
@@ -311,6 +314,10 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', { name: 'Which game are you using?' })
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pokemon Sword' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pokemon Shield' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pokemon Scarlet' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Pokemon Violet' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Project Setup' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Pokemon Shield' }));
@@ -8204,6 +8211,72 @@ function createMockProjectBridge(
       unresolvedConflictCount: 0
     };
   };
+  const svModMergerWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Smart merge ordered Scarlet/Violet RomFS mods.',
+    diagnostics: [],
+    id: 'modMerger',
+    label: 'S/V Mod Merger'
+  };
+  const createSvModMergerWorkflow = (
+    modSources: SvModMergerSource[],
+    outputRootPath: string | null
+  ): SvModMergerWorkflow => ({
+    diagnostics: [],
+    outputRootPath,
+    sources: modSources.map((source, index) => ({
+      diagnostics: [],
+      fileCount: source.isEnabled ? 1 : 0,
+      isEnabled: source.isEnabled,
+      kind: source.path.endsWith('.zip') || source.path.endsWith('.rar') ? 'archive' : 'folder',
+      name: source.path.split(/[\\/]/).pop()?.replace(/\.(zip|rar)$/i, '') || `Source ${index + 1}`,
+      overrideCount: index > 0 && source.isEnabled ? 1 : 0,
+      path: source.path,
+      sourceIndex: index,
+      status: source.isEnabled ? 'ready' : 'disabled'
+    })),
+    stats: {
+      enabledSourceCount: modSources.filter((source) => source.isEnabled).length,
+      outputFileCount: modSources.some((source) => source.isEnabled) ? 1 : 0,
+      overrideCount: Math.max(0, modSources.filter((source) => source.isEnabled).length - 1),
+      sourceCount: modSources.length,
+      sourceFileCount: modSources.filter((source) => source.isEnabled).length
+    },
+    summary: svModMergerWorkflowSummary
+  });
+  const createSvModMergerPreview = (
+    modSources: SvModMergerSource[]
+  ): SvModMergerPreview => {
+    const enabledSources = modSources.filter((source) => source.isEnabled);
+    const sourceName =
+      enabledSources.at(-1)?.path.split(/[\\/]/).pop()?.replace(/\.(zip|rar)$/i, '') ?? '';
+
+    return {
+      canApply: enabledSources.length > 0,
+      conflictFileCount: 0,
+      diagnostics: [],
+      files:
+        enabledSources.length > 0
+          ? [
+              {
+                mergeKind: enabledSources.length > 1 ? 'smartMerge' : 'singleSource',
+                outputRelativePath: 'romfs/bin/mock/data.bin',
+                overrideCount: Math.max(0, enabledSources.length - 1),
+                relativePath: 'romfs/bin/mock/data.bin',
+                sourceIndex: modSources.lastIndexOf(enabledSources.at(-1)!),
+                sourceName,
+                status: 'ready',
+                summary: 'Smart merge preview fixture.',
+                supportKind: 'Scarlet/Violet RomFS file'
+              }
+            ]
+          : [],
+      readyFileCount: enabledSources.length > 0 ? 1 : 0,
+      selectedFileCount: enabledSources.length > 0 ? 1 : 0,
+      status: enabledSources.length > 0 ? 'ready' : 'empty',
+      unresolvedConflictCount: 0
+    };
+  };
 
   let currentGiftPokemonWorkflow = giftPokemonWorkflow;
   let currentTradePokemonWorkflow = tradePokemonWorkflow;
@@ -9439,6 +9512,29 @@ function createMockProjectBridge(
           modDirectory1: request.modDirectory1,
           modDirectory2: request.modDirectory2
         },
+        writtenFiles: preview.canApply ? preview.files.map((file) => file.relativePath) : []
+      });
+    },
+    loadSvModMergerWorkflow: (request) =>
+      Promise.resolve({
+        workflow: createSvModMergerWorkflow(request.modSources, request.paths.outputRootPath)
+      }),
+    stageSvModMerge: (request) => {
+      const preview = createSvModMergerPreview(request.modSources);
+
+      return Promise.resolve({
+        diagnostics: preview.diagnostics,
+        preview,
+        workflow: createSvModMergerWorkflow(request.modSources, request.paths.outputRootPath)
+      });
+    },
+    applySvModMerge: (request) => {
+      const preview = createSvModMergerPreview(request.modSources);
+
+      return Promise.resolve({
+        diagnostics: preview.diagnostics,
+        preview,
+        workflow: createSvModMergerWorkflow(request.modSources, request.paths.outputRootPath),
         writtenFiles: preview.canApply ? preview.files.map((file) => file.relativePath) : []
       });
     },

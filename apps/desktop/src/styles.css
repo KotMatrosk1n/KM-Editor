@@ -1606,6 +1606,26 @@ h2 {
   accent-color: #4f46e5;
 }
 
+.compact-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  color: #dbe7f5;
+  background: #0f1728;
+  border: 1px solid #34435f;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.compact-checkbox input {
+  width: 15px;
+  height: 15px;
+  accent-color: #4f46e5;
+}
+
 .compatibility-editor {
   display: grid;
   gap: 10px;

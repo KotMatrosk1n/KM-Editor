@@ -10,8 +10,6 @@ public sealed class ProjectValidator
 {
     private const int NpdmTitleIdOffset = 0x290;
     private const int NpdmMinimumTitleIdLength = NpdmTitleIdOffset + sizeof(ulong);
-    private const ulong SwordTitleId = 0x0100ABF008968000;
-    private const ulong ShieldTitleId = 0x01008DB008C2C000;
 
     private readonly ProjectFileGraphBuilder fileGraphBuilder;
 
@@ -39,7 +37,7 @@ public sealed class ProjectValidator
 
         AddBasePathSafetyDiagnostics(baseRomFs, baseExeFs);
         AddOutputRootSafetyDiagnostics(outputRoot, baseRomFs, baseExeFs);
-        AddSelectedGameDiagnostics(baseExeFs, outputRoot, paths.SelectedGame);
+        AddSelectedGameDiagnostics(baseRomFs, baseExeFs, outputRoot, paths.SelectedGame);
 
         var pathResults = new[]
         {
@@ -272,6 +270,7 @@ public sealed class ProjectValidator
     }
 
     private static void AddSelectedGameDiagnostics(
+        PathValidationDraft baseRomFs,
         PathValidationDraft baseExeFs,
         PathValidationDraft outputRoot,
         ProjectGame? selectedGame)
@@ -281,8 +280,40 @@ public sealed class ProjectValidator
             return;
         }
 
+        AddBaseRomFsGameDiagnostic(baseRomFs, selectedGame.Value);
         AddBaseExeFsGameDiagnostic(baseExeFs, selectedGame.Value);
         AddOutputRootGameDiagnostic(outputRoot, selectedGame.Value);
+    }
+
+    private static void AddBaseRomFsGameDiagnostic(PathValidationDraft baseRomFs, ProjectGame selectedGame)
+    {
+        if (!baseRomFs.IsValid)
+        {
+            return;
+        }
+
+        var gameInfo = ProjectGameMetadata.Get(selectedGame);
+        if (!gameInfo.UsesTrinityRomFs)
+        {
+            return;
+        }
+
+        var trpfdPath = Path.Combine(baseRomFs.Path!, "arc", "data.trpfd");
+        var trpfsPath = Path.Combine(baseRomFs.Path!, "arc", "data.trpfs");
+        if (!File.Exists(trpfdPath) || !File.Exists(trpfsPath))
+        {
+            baseRomFs.Status = ProjectPathStatus.Unsafe;
+            baseRomFs.AddDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Base RomFS does not contain the Trinity archive required for {gameInfo.DisplayName}.",
+                expected: "arc/data.trpfd and arc/data.trpfs");
+            return;
+        }
+
+        baseRomFs.AddDiagnostic(
+            DiagnosticSeverity.Info,
+            $"Base RomFS contains the Trinity archive required for {gameInfo.DisplayName}.",
+            expected: "arc/data.trpfd and arc/data.trpfs");
     }
 
     private static void AddBaseExeFsGameDiagnostic(PathValidationDraft baseExeFs, ProjectGame selectedGame)
@@ -324,7 +355,7 @@ public sealed class ProjectValidator
                 baseExeFs.Status = ProjectPathStatus.Unsafe;
                 baseExeFs.AddDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Base ExeFS title id 0x{titleId:X16} is not recognized as Pokemon Sword or Pokemon Shield.",
+                    $"Base ExeFS title id 0x{titleId:X16} is not recognized as {ProjectGameMetadata.FormatRecognizedGameList()}.",
                     expected: $"0x{GetTitleId(selectedGame):X16} for {FormatGame(selectedGame)}");
                 return;
             }
@@ -385,46 +416,32 @@ public sealed class ProjectValidator
             return;
         }
 
-        var otherGame = selectedGame == ProjectGame.Sword ? ProjectGame.Shield : ProjectGame.Sword;
-        var otherTitleId = GetTitleId(otherGame).ToString("X16");
-        if (string.Equals(folderName, otherTitleId, StringComparison.OrdinalIgnoreCase))
+        var otherGame = ProjectGameMetadata.All.FirstOrDefault(info =>
+            info.Game != selectedGame
+            && string.Equals(folderName, info.TitleId.ToString("X16"), StringComparison.OrdinalIgnoreCase));
+        if (otherGame is not null)
         {
             outputRoot.Status = ProjectPathStatus.Unsafe;
             outputRoot.AddDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Selected {FormatGame(selectedGame)}, but Output Root folder is the {FormatGame(otherGame)} title id 0x{otherTitleId}.",
+                $"Selected {FormatGame(selectedGame)}, but Output Root folder is the {otherGame.DisplayName} title id 0x{otherGame.TitleId:X16}.",
                 expected: $"LayeredFS output folder named {selectedTitleId}");
         }
     }
 
     private static ProjectGame? DetectGame(ulong titleId)
     {
-        return titleId switch
-        {
-            SwordTitleId => ProjectGame.Sword,
-            ShieldTitleId => ProjectGame.Shield,
-            _ => null,
-        };
+        return ProjectGameMetadata.DetectByTitleId(titleId);
     }
 
     private static ulong GetTitleId(ProjectGame game)
     {
-        return game switch
-        {
-            ProjectGame.Sword => SwordTitleId,
-            ProjectGame.Shield => ShieldTitleId,
-            _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
-        };
+        return ProjectGameMetadata.Get(game).TitleId;
     }
 
     private static string FormatGame(ProjectGame game)
     {
-        return game switch
-        {
-            ProjectGame.Sword => "Pokemon Sword",
-            ProjectGame.Shield => "Pokemon Shield",
-            _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
-        };
+        return ProjectGameMetadata.Get(game).DisplayName;
     }
 
     private static bool PathsOverlap(string? firstPath, string? secondPath)

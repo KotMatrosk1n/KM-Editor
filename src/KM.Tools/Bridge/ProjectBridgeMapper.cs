@@ -140,6 +140,8 @@ public static class ProjectBridgeMapper
         {
             ProjectGameDto.Sword => ProjectGame.Sword,
             ProjectGameDto.Shield => ProjectGame.Shield,
+            ProjectGameDto.Scarlet => ProjectGame.Scarlet,
+            ProjectGameDto.Violet => ProjectGame.Violet,
             null => null,
             _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
         };

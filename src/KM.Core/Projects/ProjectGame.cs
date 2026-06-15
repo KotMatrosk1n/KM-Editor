@@ -6,4 +6,6 @@ public enum ProjectGame
 {
     Sword,
     Shield,
+    Scarlet,
+    Violet,
 }

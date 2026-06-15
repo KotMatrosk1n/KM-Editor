@@ -47,4 +47,22 @@ public sealed class ProjectFileGraphBuilderTests
         Assert.Equal(2, graph.ToSummary().BaseFileCount);
         Assert.Equal(0, graph.ToSummary().LayeredFileCount);
     }
+
+    [Fact]
+    public void BuildAddsKnownScarletVioletVirtualRomFsFilesFromTrinityArchive()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        temp.WriteBaseRomFsFile("arc/data.trpfd", "descriptor");
+        temp.WriteBaseRomFsFile("arc/data.trpfs", "storage");
+        temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteOutputFile("romfs/avalon/data/personal_array.bin", "layered-personal");
+
+        var graph = new ProjectFileGraphBuilder().Build(
+            temp.Paths with { SelectedGame = ProjectGame.Scarlet });
+
+        var entriesByPath = graph.Entries.ToDictionary(entry => entry.RelativePath);
+        Assert.Equal(ProjectFileGraphEntryState.LayeredOverride, entriesByPath["romfs/avalon/data/personal_array.bin"].State);
+        Assert.Equal(ProjectFileGraphEntryState.BaseOnly, entriesByPath["romfs/world/data/item/itemdata/itemdata_array.bin"].State);
+        Assert.Equal(ProjectFileGraphEntryState.BaseOnly, entriesByPath["romfs/arc/data.trpfd"].State);
+    }
 }

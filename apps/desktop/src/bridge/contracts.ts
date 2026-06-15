@@ -69,6 +69,9 @@ export const kmCommandNameValues = [
   'modMerger.load',
   'modMerger.stage',
   'modMerger.apply',
+  'svModMerger.load',
+  'svModMerger.stage',
+  'svModMerger.apply',
   'randomizer.seed.import',
   'randomizer.apply',
   'randomizer.restore',
@@ -150,6 +153,9 @@ export const kmCommandNames = {
   loadModMergerWorkflow: 'modMerger.load',
   stageModMerge: 'modMerger.stage',
   applyModMerge: 'modMerger.apply',
+  loadSvModMergerWorkflow: 'svModMerger.load',
+  stageSvModMerge: 'svModMerger.stage',
+  applySvModMerge: 'svModMerger.apply',
   importRandomizerSeed: 'randomizer.seed.import',
   applyRandomizer: 'randomizer.apply',
   restoreRandomizer: 'randomizer.restore',
@@ -178,7 +184,7 @@ export const apiErrorSchema = z.strictObject({
   message: z.string()
 });
 
-export const projectGameSchema = z.enum(['sword', 'shield']);
+export const projectGameSchema = z.enum(['sword', 'shield', 'scarlet', 'violet']);
 export type ProjectGame = z.infer<typeof projectGameSchema>;
 
 export const projectPathsSchema = z.strictObject({
@@ -425,6 +431,26 @@ export const applyModMergeRequestSchema = z.strictObject({
   resolutions: z.array(modMergerConflictResolutionSchema),
   selectedDirectory1Files: z.array(z.string()),
   selectedDirectory2Files: z.array(z.string())
+});
+
+export const svModMergerSourceSchema = z.strictObject({
+  isEnabled: z.boolean(),
+  path: z.string()
+});
+
+export const loadSvModMergerWorkflowRequestSchema = z.strictObject({
+  modSources: z.array(svModMergerSourceSchema),
+  paths: projectPathsSchema
+});
+
+export const stageSvModMergeRequestSchema = z.strictObject({
+  modSources: z.array(svModMergerSourceSchema),
+  paths: projectPathsSchema
+});
+
+export const applySvModMergeRequestSchema = z.strictObject({
+  modSources: z.array(svModMergerSourceSchema),
+  paths: projectPathsSchema
 });
 
 export const randomizerOptionsSchema = z.strictObject({
@@ -2711,6 +2737,74 @@ export const applyModMergeResponseSchema = z.strictObject({
   writtenFiles: z.array(z.string())
 });
 
+export const svModMergerSourceRecordSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  fileCount: z.number().int().nonnegative(),
+  isEnabled: z.boolean(),
+  kind: z.string(),
+  name: z.string(),
+  overrideCount: z.number().int().nonnegative(),
+  path: z.string(),
+  sourceIndex: z.number().int().nonnegative(),
+  status: z.string()
+});
+
+export const svModMergerWorkflowStatsSchema = z.strictObject({
+  enabledSourceCount: z.number().int().nonnegative(),
+  outputFileCount: z.number().int().nonnegative(),
+  overrideCount: z.number().int().nonnegative(),
+  sourceCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative()
+});
+
+export const svModMergerWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  outputRootPath: z.string().nullable(),
+  sources: z.array(svModMergerSourceRecordSchema),
+  stats: svModMergerWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const svModMergerFilePreviewRecordSchema = z.strictObject({
+  mergeKind: z.string(),
+  outputRelativePath: z.string(),
+  overrideCount: z.number().int().nonnegative(),
+  relativePath: z.string(),
+  sourceIndex: z.number().int(),
+  sourceName: z.string(),
+  status: z.string(),
+  summary: z.string(),
+  supportKind: z.string()
+});
+
+export const svModMergerPreviewSchema = z.strictObject({
+  canApply: z.boolean(),
+  conflictFileCount: z.number().int().nonnegative(),
+  diagnostics: z.array(apiDiagnosticSchema),
+  files: z.array(svModMergerFilePreviewRecordSchema),
+  readyFileCount: z.number().int().nonnegative(),
+  selectedFileCount: z.number().int().nonnegative(),
+  status: z.string(),
+  unresolvedConflictCount: z.number().int().nonnegative()
+});
+
+export const loadSvModMergerWorkflowResponseSchema = z.strictObject({
+  workflow: svModMergerWorkflowSchema
+});
+
+export const stageSvModMergeResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  preview: svModMergerPreviewSchema,
+  workflow: svModMergerWorkflowSchema
+});
+
+export const applySvModMergeResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  preview: svModMergerPreviewSchema,
+  workflow: svModMergerWorkflowSchema,
+  writtenFiles: z.array(z.string())
+});
+
 export const updateItemFieldRequestSchema = z.strictObject({
   field: z.string(),
   itemId: z.number().int().nonnegative(),
@@ -3174,6 +3268,13 @@ export type ModMergerFileRecord = z.infer<typeof modMergerFileRecordSchema>;
 export type ModMergerMergeMode = z.infer<typeof modMergerMergeModeSchema>;
 export type ModMergerPreview = z.infer<typeof modMergerPreviewSchema>;
 export type ModMergerWorkflow = z.infer<typeof modMergerWorkflowSchema>;
+export type SvModMergerFilePreviewRecord = z.infer<
+  typeof svModMergerFilePreviewRecordSchema
+>;
+export type SvModMergerPreview = z.infer<typeof svModMergerPreviewSchema>;
+export type SvModMergerSource = z.infer<typeof svModMergerSourceSchema>;
+export type SvModMergerSourceRecord = z.infer<typeof svModMergerSourceRecordSchema>;
+export type SvModMergerWorkflow = z.infer<typeof svModMergerWorkflowSchema>;
 export type ListWorkflowsRequest = z.infer<typeof listWorkflowsRequestSchema>;
 export type ListWorkflowsResponse = z.infer<typeof listWorkflowsResponseSchema>;
 export type LoadItemsWorkflowRequest = z.infer<typeof loadItemsWorkflowRequestSchema>;
@@ -3364,6 +3465,16 @@ export type StageModMergeRequest = z.infer<typeof stageModMergeRequestSchema>;
 export type StageModMergeResponse = z.infer<typeof stageModMergeResponseSchema>;
 export type ApplyModMergeRequest = z.infer<typeof applyModMergeRequestSchema>;
 export type ApplyModMergeResponse = z.infer<typeof applyModMergeResponseSchema>;
+export type LoadSvModMergerWorkflowRequest = z.infer<
+  typeof loadSvModMergerWorkflowRequestSchema
+>;
+export type LoadSvModMergerWorkflowResponse = z.infer<
+  typeof loadSvModMergerWorkflowResponseSchema
+>;
+export type StageSvModMergeRequest = z.infer<typeof stageSvModMergeRequestSchema>;
+export type StageSvModMergeResponse = z.infer<typeof stageSvModMergeResponseSchema>;
+export type ApplySvModMergeRequest = z.infer<typeof applySvModMergeRequestSchema>;
+export type ApplySvModMergeResponse = z.infer<typeof applySvModMergeResponseSchema>;
 export type RandomizerOptions = z.infer<typeof randomizerOptionsSchema>;
 export type RandomizerConfig = z.infer<typeof randomizerConfigSchema>;
 export type ImportRandomizerSeedRequest = z.infer<typeof importRandomizerSeedRequestSchema>;

@@ -4,6 +4,7 @@
     <Project Path="src/KM.Api/KM.Api.csproj" />
     <Project Path="src/KM.Core/KM.Core.csproj" />
     <Project Path="src/KM.Formats/KM.Formats.csproj" />
+    <Project Path="src/KM.SV/KM.SV.csproj" />
     <Project Path="src/KM.SwSh/KM.SwSh.csproj" />
     <Project Path="src/KM.Tools/KM.Tools.csproj" />
   </Folder>

@@ -62,6 +62,7 @@ using KM.SwSh.Text;
 using KM.SwSh.Trainers;
 using KM.SwSh.Trades;
 using KM.SwSh.Workflows;
+using KM.SV;
 using System.Text.Json;
 
 namespace KM.Tools.Bridge;
@@ -97,6 +98,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShTrainersEditSessionService trainersEditSessionService;
     private readonly SwShTradePokemonEditSessionService tradePokemonEditSessionService;
     private readonly SwShWorkflowService swShWorkflowService;
+    private readonly SvWorkflowService svWorkflowService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -127,7 +129,8 @@ public sealed class ProjectBridgeDispatcher
         SwShTextEditSessionService? textEditSessionService = null,
         SwShTrainersEditSessionService? trainersEditSessionService = null,
         SwShTradePokemonEditSessionService? tradePokemonEditSessionService = null,
-        SwShWorkflowService? swShWorkflowService = null)
+        SwShWorkflowService? swShWorkflowService = null,
+        SvWorkflowService? svWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -160,6 +163,7 @@ public sealed class ProjectBridgeDispatcher
         this.swShWorkflowService = swShWorkflowService ?? new SwShWorkflowService(
             this.projectWorkspaceService,
             modMergerWorkflowService: this.modMergerWorkflowService);
+        this.svWorkflowService = svWorkflowService ?? new SvWorkflowService(this.projectWorkspaceService);
     }
 
     public string Dispatch(string requestJson)
@@ -242,6 +246,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadModMergerWorkflow => DispatchLoadModMergerWorkflow(requestJson),
                 KmCommandNames.StageModMerge => DispatchStageModMerge(requestJson),
                 KmCommandNames.ApplyModMerge => DispatchApplyModMerge(requestJson),
+                KmCommandNames.LoadSvModMergerWorkflow => DispatchLoadSvModMergerWorkflow(requestJson),
+                KmCommandNames.StageSvModMerge => DispatchStageSvModMerge(requestJson),
+                KmCommandNames.ApplySvModMerge => DispatchApplySvModMerge(requestJson),
                 KmCommandNames.ImportRandomizerSeed => DispatchImportRandomizerSeed(requestJson),
                 KmCommandNames.ApplyRandomizer => DispatchApplyRandomizer(requestJson),
                 KmCommandNames.RestoreRandomizer => DispatchRestoreRandomizer(requestJson),
@@ -295,7 +302,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchListWorkflows(string requestJson)
     {
         var request = DeserializeRequest<ListWorkflowsRequest>(requestJson);
-        var workflowList = swShWorkflowService.List(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var workflowList = IsScarletViolet(paths)
+            ? svWorkflowService.List(paths)
+            : swShWorkflowService.List(paths);
         var response = SwShBridgeMapper.ToDto(workflowList);
 
         return SerializeSuccess(response, request.RequestId);
@@ -304,7 +314,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadItemsWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadItemsWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadItems(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var workflow = IsScarletViolet(paths)
+            ? svWorkflowService.LoadItems(paths)
+            : swShWorkflowService.LoadItems(paths);
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -313,7 +326,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadPokemonWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadPokemonWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadPokemon(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var workflow = IsScarletViolet(paths)
+            ? svWorkflowService.LoadPokemon(paths)
+            : swShWorkflowService.LoadPokemon(paths);
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -325,12 +341,20 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = pokemonEditSessionService.UpdateField(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.PersonalId,
-            request.Payload.Field,
-            request.Payload.Value);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var result = IsScarletViolet(paths)
+            ? svWorkflowService.UpdatePokemonField(
+                paths,
+                session,
+                request.Payload.PersonalId,
+                request.Payload.Field,
+                request.Payload.Value)
+            : pokemonEditSessionService.UpdateField(
+                paths,
+                session,
+                request.Payload.PersonalId,
+                request.Payload.Field,
+                request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -342,14 +366,24 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = pokemonEditSessionService.UpdateLearnset(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.PersonalId,
-            request.Payload.Action,
-            request.Payload.Slot,
-            request.Payload.MoveId,
-            request.Payload.Level);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var result = IsScarletViolet(paths)
+            ? svWorkflowService.UpdatePokemonLearnset(
+                paths,
+                session,
+                request.Payload.PersonalId,
+                request.Payload.Action,
+                request.Payload.Slot,
+                request.Payload.MoveId,
+                request.Payload.Level)
+            : pokemonEditSessionService.UpdateLearnset(
+                paths,
+                session,
+                request.Payload.PersonalId,
+                request.Payload.Action,
+                request.Payload.Slot,
+                request.Payload.MoveId,
+                request.Payload.Level);
         var response = SwShBridgeMapper.ToDtoLearnsetUpdate(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -361,17 +395,30 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = pokemonEditSessionService.UpdateEvolution(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.PersonalId,
-            request.Payload.Action,
-            request.Payload.Slot,
-            request.Payload.Method,
-            request.Payload.Argument,
-            request.Payload.Species,
-            request.Payload.Form,
-            request.Payload.Level);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var result = IsScarletViolet(paths)
+            ? svWorkflowService.UpdatePokemonEvolution(
+                paths,
+                session,
+                request.Payload.PersonalId,
+                request.Payload.Action,
+                request.Payload.Slot,
+                request.Payload.Method,
+                request.Payload.Argument,
+                request.Payload.Species,
+                request.Payload.Form,
+                request.Payload.Level)
+            : pokemonEditSessionService.UpdateEvolution(
+                paths,
+                session,
+                request.Payload.PersonalId,
+                request.Payload.Action,
+                request.Payload.Slot,
+                request.Payload.Method,
+                request.Payload.Argument,
+                request.Payload.Species,
+                request.Payload.Form,
+                request.Payload.Level);
         var response = SwShBridgeMapper.ToDtoEvolutionUpdate(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -431,7 +478,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadTrainersWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadTrainersWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadTrainers(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var workflow = IsScarletViolet(paths)
+            ? svWorkflowService.LoadTrainers(paths)
+            : swShWorkflowService.LoadTrainers(paths);
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -443,13 +493,22 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = trainersEditSessionService.UpdateField(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.TrainerId,
-            request.Payload.Slot,
-            request.Payload.Field,
-            request.Payload.Value);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var result = IsScarletViolet(paths)
+            ? svWorkflowService.UpdateTrainerField(
+                paths,
+                session,
+                request.Payload.TrainerId,
+                request.Payload.Slot,
+                request.Payload.Field,
+                request.Payload.Value)
+            : trainersEditSessionService.UpdateField(
+                paths,
+                session,
+                request.Payload.TrainerId,
+                request.Payload.Slot,
+                request.Payload.Field,
+                request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -615,7 +674,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadEncountersWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadEncountersWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadEncounters(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var workflow = IsScarletViolet(paths)
+            ? svWorkflowService.LoadEncounters(paths)
+            : swShWorkflowService.LoadEncounters(paths);
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -627,13 +689,22 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = encountersEditSessionService.UpdateSlotField(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.TableId,
-            request.Payload.Slot,
-            request.Payload.Field,
-            request.Payload.Value);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var result = IsScarletViolet(paths)
+            ? svWorkflowService.UpdateEncounterSlotField(
+                paths,
+                session,
+                request.Payload.TableId,
+                request.Payload.Slot,
+                request.Payload.Field,
+                request.Payload.Value)
+            : encountersEditSessionService.UpdateSlotField(
+                paths,
+                session,
+                request.Payload.TableId,
+                request.Payload.Slot,
+                request.Payload.Field,
+                request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -1107,6 +1178,39 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadSvModMergerWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadSvModMergerWorkflowRequest>(requestJson);
+        var workflow = svWorkflowService.LoadModMerger(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ModSources.Select(ToCore).ToArray());
+        var response = SvBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageSvModMerge(string requestJson)
+    {
+        var request = DeserializeRequest<StageSvModMergeRequest>(requestJson);
+        var result = svWorkflowService.StageModMerge(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ModSources.Select(ToCore).ToArray());
+        var response = SvBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchApplySvModMerge(string requestJson)
+    {
+        var request = DeserializeRequest<ApplySvModMergeRequest>(requestJson);
+        var result = svWorkflowService.ApplyModMerge(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ModSources.Select(ToCore).ToArray());
+        var response = SvBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchImportRandomizerSeed(string requestJson)
     {
         var request = DeserializeRequest<ImportRandomizerSeedRequest>(requestJson);
@@ -1147,12 +1251,20 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = itemsEditSessionService.UpdateField(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.ItemId,
-            request.Payload.Field,
-            request.Payload.Value);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var result = IsScarletViolet(paths)
+            ? svWorkflowService.UpdateItemField(
+                paths,
+                session,
+                request.Payload.ItemId,
+                request.Payload.Field,
+                request.Payload.Value)
+            : itemsEditSessionService.UpdateField(
+                paths,
+                session,
+                request.Payload.ItemId,
+                request.Payload.Field,
+                request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -1173,36 +1285,38 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<ValidateEditSessionRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var validation = GetEditSessionDomain(session) switch
-        {
-            EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.Validate(paths, session),
-            EditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
-            EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.Validate(paths, session),
-            EditSessionDomain.BagHook => bagHookEditSessionService.Validate(paths, session),
-            EditSessionDomain.CatchCap => catchCapEditSessionService.Validate(paths, session),
-            EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.Validate(paths, session),
-            EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.Validate(paths, session),
-            EditSessionDomain.IvScreen => ivScreenEditSessionService.Validate(paths, session),
-            EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
-            EditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
-            EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.Validate(paths, session),
-            EditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
-            EditSessionDomain.Behavior => behaviorEditSessionService.Validate(paths, session),
-            EditSessionDomain.RaidBattles => raidBattlesEditSessionService.Validate(paths, session),
-            EditSessionDomain.RaidRewards => raidRewardsEditSessionService.Validate(paths, session),
-            EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.Validate(paths, session),
-            EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.Validate(paths, session),
-            EditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
-            EditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
-            EditSessionDomain.Text => textEditSessionService.Validate(paths, session),
-            EditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
-            EditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
-            EditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
-            EditSessionDomain.RoyalCandy => royalCandyEditSessionService.Validate(paths, session),
-            EditSessionDomain.StartingItems => startingItemsEditSessionService.Validate(paths, session),
-            EditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
-            _ => itemsEditSessionService.Validate(paths, session),
-        };
+        var validation = IsScarletViolet(paths)
+            ? svWorkflowService.ValidateEditSession(paths, session)
+            : GetEditSessionDomain(session) switch
+            {
+                EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.Validate(paths, session),
+                EditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
+                EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.Validate(paths, session),
+                EditSessionDomain.BagHook => bagHookEditSessionService.Validate(paths, session),
+                EditSessionDomain.CatchCap => catchCapEditSessionService.Validate(paths, session),
+                EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.Validate(paths, session),
+                EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.Validate(paths, session),
+                EditSessionDomain.IvScreen => ivScreenEditSessionService.Validate(paths, session),
+                EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
+                EditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
+                EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.Validate(paths, session),
+                EditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
+                EditSessionDomain.Behavior => behaviorEditSessionService.Validate(paths, session),
+                EditSessionDomain.RaidBattles => raidBattlesEditSessionService.Validate(paths, session),
+                EditSessionDomain.RaidRewards => raidRewardsEditSessionService.Validate(paths, session),
+                EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.Validate(paths, session),
+                EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.Validate(paths, session),
+                EditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
+                EditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
+                EditSessionDomain.Text => textEditSessionService.Validate(paths, session),
+                EditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
+                EditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
+                EditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
+                EditSessionDomain.RoyalCandy => royalCandyEditSessionService.Validate(paths, session),
+                EditSessionDomain.StartingItems => startingItemsEditSessionService.Validate(paths, session),
+                EditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
+                _ => itemsEditSessionService.Validate(paths, session),
+            };
         var response = SwShBridgeMapper.ToDto(validation);
 
         return SerializeSuccess(response, request.RequestId);
@@ -1213,36 +1327,38 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<CreateChangePlanRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var changePlan = GetEditSessionDomain(session) switch
-        {
-            EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.BagHook => bagHookEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.CatchCap => catchCapEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.IvScreen => ivScreenEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.Behavior => behaviorEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.RaidBattles => raidBattlesEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.RaidRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.Text => textEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.RoyalCandy => royalCandyEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.StartingItems => startingItemsEditSessionService.CreateChangePlan(paths, session),
-            EditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
-            _ => itemsEditSessionService.CreateChangePlan(paths, session),
-        };
+        var changePlan = IsScarletViolet(paths)
+            ? svWorkflowService.CreateChangePlan(paths, session)
+            : GetEditSessionDomain(session) switch
+            {
+                EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.BagHook => bagHookEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.CatchCap => catchCapEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.IvScreen => ivScreenEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.Behavior => behaviorEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.RaidBattles => raidBattlesEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.RaidRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.Text => textEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.RoyalCandy => royalCandyEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.StartingItems => startingItemsEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
+                _ => itemsEditSessionService.CreateChangePlan(paths, session),
+            };
         var response = new CreateChangePlanResponse(EditSessionBridgeMapper.ToDto(changePlan));
 
         return SerializeSuccess(response, request.RequestId);
@@ -1254,36 +1370,38 @@ public sealed class ProjectBridgeDispatcher
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var changePlan = EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan);
-        var applyResult = GetEditSessionDomain(session) switch
-        {
-            EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.BagHook => bagHookEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.CatchCap => catchCapEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.IvScreen => ivScreenEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.Behavior => behaviorEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.RaidBattles => raidBattlesEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.RaidRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.Text => textEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.RoyalCandy => royalCandyEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.StartingItems => startingItemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            EditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
-            _ => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-        };
+        var applyResult = IsScarletViolet(paths)
+            ? svWorkflowService.ApplyChangePlan(paths, session, changePlan)
+            : GetEditSessionDomain(session) switch
+            {
+                EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.BagHook => bagHookEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.CatchCap => catchCapEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.IvScreen => ivScreenEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.Behavior => behaviorEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.RaidBattles => raidBattlesEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.RaidRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.Text => textEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.RoyalCandy => royalCandyEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.StartingItems => startingItemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
+                _ => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
+            };
         var response = new ApplyChangePlanResponse(EditSessionBridgeMapper.ToDto(applyResult));
 
         return SerializeSuccess(response, request.RequestId);
@@ -1329,6 +1447,11 @@ public sealed class ProjectBridgeDispatcher
         };
     }
 
+    private static bool IsScarletViolet(ProjectPaths paths)
+    {
+        return paths.SelectedGame is ProjectGame.Scarlet or ProjectGame.Violet;
+    }
+
     private static SwShEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
     {
         var diagnostics = new[]
@@ -1370,6 +1493,11 @@ public sealed class ProjectBridgeDispatcher
     private static SwShRandomizerConfig ToCore(RandomizerConfigDto config)
     {
         return new SwShRandomizerConfig(config.UserSeed, ToCore(config.Options), config.RollSeed, config.OutputHash);
+    }
+
+    private static SvModMergerSourceRequest ToCore(SvModMergerSourceDto source)
+    {
+        return new SvModMergerSourceRequest(source.Path, source.IsEnabled);
     }
 
     private static SwShRandomizerOptions ToCore(RandomizerOptionsDto options)

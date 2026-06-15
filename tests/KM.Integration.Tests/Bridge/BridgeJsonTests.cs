@@ -34,6 +34,25 @@ public sealed class BridgeJsonTests
     }
 
     [Fact]
+    public void SerializesScarletProjectGameAsCamelCaseName()
+    {
+        var paths = new ProjectPathsDto(
+            "base-romfs",
+            "base-exefs",
+            OutputRootPath: null,
+            SaveFilePath: null,
+            SelectedGame: ProjectGameDto.Scarlet);
+        var request = new BridgeRequest<ValidateProjectRequest>(
+            KmCommandNames.ValidateProject,
+            new ValidateProjectRequest(paths),
+            RequestId: "request-scarlet");
+
+        var json = JsonSerializer.Serialize(request, BridgeJson.SerializerOptions);
+
+        Assert.Contains("\"selectedGame\":\"scarlet\"", json);
+    }
+
+    [Fact]
     public void SerializesResponseEnvelopeWithStringDiagnostics()
     {
         var diagnostic = new ApiDiagnostic(ApiDiagnosticSeverity.Warning, "Project has missing optional output.");
