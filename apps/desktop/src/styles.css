@@ -1943,6 +1943,54 @@ h2 {
   border-top: 1px solid #26344d;
 }
 
+.text-token-toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.text-token-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  min-width: 0;
+  padding: 0 10px;
+  color: #f4f7fb;
+  background: #121b2d;
+  border: 1px solid #34435f;
+  border-radius: 8px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.text-token-button:hover:not(:disabled) {
+  border-color: #d6a842;
+  box-shadow: inset 3px 0 0 #d6a842;
+}
+
+.text-token-button:disabled {
+  color: #68748a;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.text-token-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-token-button code {
+  flex: 0 0 auto;
+  color: #f3cd5c;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
 .path-field textarea {
   width: 100%;
   min-width: 0;
