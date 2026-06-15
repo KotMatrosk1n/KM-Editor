@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Diagnostics;
+using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Encounters;
+using KM.SwSh.ExeFs;
 using KM.SwSh.Gifts;
 using KM.SwSh.Items;
 using KM.SwSh.Moves;
@@ -16,12 +18,17 @@ using KM.SwSh.Tests.Items;
 using KM.SwSh.Tests.Pokemon;
 using KM.SwSh.Tests.Raids;
 using KM.SwSh.Tests.StaticEncounters;
+using KM.SwSh.TypeChart;
+using System.Buffers.Binary;
 using Xunit;
 
 namespace KM.SwSh.Tests.Randomizer;
 
 public sealed class SwShRandomizerOptionCoverageTests
 {
+    private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
+    private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
+
     [Fact]
     public void PreviewCreatesEditsForEverySelectableRandomizerOption()
     {
@@ -38,6 +45,7 @@ public sealed class SwShRandomizerOptionCoverageTests
         Assert.Contains(preview.Domains, domain => domain.Label == "Gift Encounters");
         Assert.Contains(preview.Domains, domain => domain.Label == "Raid Rewards");
         Assert.Contains(preview.Domains, domain => domain.Label == "Raid Bonus Rewards");
+        Assert.Contains(preview.Domains, domain => domain.Label == "Type Chart");
 
         AssertHasPokemonField(edits, SwShPokemonWorkflowService.HPField);
         AssertHasPokemonField(edits, SwShPokemonWorkflowService.AttackField);
@@ -85,15 +93,10 @@ public sealed class SwShRandomizerOptionCoverageTests
             edits.Where(edit => edit.Domain == "workflow.pokemon" && edit.Field.StartsWith("learnset:upsert:", StringComparison.Ordinal)),
             edit => ParseLearnsetLevel(edit) == 75);
         Assert.All(
-            edits.Where(edit => edit.Domain == "workflow.pokemon" && edit.Field == SwShPokemonWorkflowService.Type2Field),
-            edit =>
-            {
-                var matchingType1 = edits.Single(candidate =>
-                    candidate.Domain == edit.Domain
-                    && candidate.RecordId == edit.RecordId
-                    && candidate.Field == SwShPokemonWorkflowService.Type1Field);
-                Assert.NotEqual(matchingType1.NewValue, edit.NewValue);
-            });
+            edits.Where(edit => edit.Domain == "workflow.pokemon"
+                && (edit.Field == SwShPokemonWorkflowService.Type1Field
+                    || edit.Field == SwShPokemonWorkflowService.Type2Field)),
+            edit => Assert.InRange(int.Parse(edit.NewValue), 0, 17));
 
         Assert.Contains(edits, edit => edit.Domain == "workflow.encounters" && edit.Field == SwShEncountersWorkflowService.SpeciesIdField);
         Assert.Contains(edits, edit => edit.Domain == "workflow.encounters" && edit.Field == SwShEncountersWorkflowService.FormField);
@@ -122,6 +125,19 @@ public sealed class SwShRandomizerOptionCoverageTests
         Assert.Contains(edits, edit => edit.Domain == SwShGiftPokemonWorkflowService.GiftPokemonEditDomain && edit.Field == SwShGiftPokemonWorkflowService.CanGigantamaxField && edit.NewValue == "0");
         Assert.Contains(edits, edit => edit.Domain == SwShRaidRewardsEditSessionService.RaidRewardsEditDomain && edit.Field == SwShRaidRewardsWorkflowService.ItemIdField);
         Assert.Contains(edits, edit => edit.Domain == SwShRaidRewardsEditSessionService.RaidBonusRewardsEditDomain && edit.Field == SwShRaidRewardsWorkflowService.ItemIdField);
+        var typeChartValues = DecodeTypeChartValues(Assert.Single(edits, edit =>
+            edit.Domain == SwShTypeChartEditSessionService.TypeChartEditDomain
+            && edit.Field == "effectiveness").NewValue);
+        Assert.All(typeChartValues, value => Assert.Contains(value, new[] { 0, 2, 4, 8 }));
+        Assert.All(
+            Enumerable.Range(0, SwShTypeChartMainPatcher.TypeCount),
+            attackType => Assert.InRange(
+                typeChartValues
+                    .Skip(attackType * SwShTypeChartMainPatcher.TypeCount)
+                    .Take(SwShTypeChartMainPatcher.TypeCount)
+                    .Count(value => value == 0),
+                0,
+                1));
     }
 
     [Fact]
@@ -217,6 +233,86 @@ public sealed class SwShRandomizerOptionCoverageTests
     }
 
     [Fact]
+    public void TypeChartRandomizerHonorsImmunityConstraints()
+    {
+        using var temp = CreateRandomizerProject();
+        var service = new SwShRandomizerService();
+
+        var noImmunities = service.Preview(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeTypeChart = true,
+            TypeChartNoImmunities = true,
+        }));
+        AssertNoErrors(noImmunities);
+        var noImmunityValues = DecodeTypeChartValues(Assert.Single(AllEdits(noImmunities), edit =>
+            edit.Domain == SwShTypeChartEditSessionService.TypeChartEditDomain).NewValue);
+        Assert.DoesNotContain(0, noImmunityValues);
+
+        var oneImmunityPerType = service.Preview(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeTypeChart = true,
+            TypeChartOneImmunityPerType = true,
+        }));
+        AssertNoErrors(oneImmunityPerType);
+        var limitedImmunityValues = DecodeTypeChartValues(Assert.Single(AllEdits(oneImmunityPerType), edit =>
+            edit.Domain == SwShTypeChartEditSessionService.TypeChartEditDomain).NewValue);
+        Assert.All(
+            Enumerable.Range(0, SwShTypeChartMainPatcher.TypeCount),
+            attackType => Assert.InRange(
+                limitedImmunityValues
+                    .Skip(attackType * SwShTypeChartMainPatcher.TypeCount)
+                    .Take(SwShTypeChartMainPatcher.TypeCount)
+                    .Count(value => value == 0),
+                0,
+                1));
+    }
+
+    [Fact]
+    public void PokemonTypeRandomizerCanChangeBetweenSingleAndDualTyping()
+    {
+        var typeOptions = Enumerable.Range(0, 18).ToArray();
+        var sawSingleToDual = false;
+        var sawDualToSingle = false;
+
+        for (var index = 0; index < 200 && (!sawSingleToDual || !sawDualToSingle); index++)
+        {
+            var singleRoll = SwShRandomizerService.CreateRandomizedTypePair(
+                originalType1: 10,
+                originalType2: 10,
+                typeOptions,
+                DeterministicRandom.Create("type-shape", $"single-{index}"));
+            sawSingleToDual |= singleRoll.Type1 != singleRoll.Type2;
+
+            var dualRoll = SwShRandomizerService.CreateRandomizedTypePair(
+                originalType1: 11,
+                originalType2: 3,
+                typeOptions,
+                DeterministicRandom.Create("type-shape", $"dual-{index}"));
+            sawDualToSingle |= dualRoll.Type1 == dualRoll.Type2;
+        }
+
+        Assert.True(sawSingleToDual);
+        Assert.True(sawDualToSingle);
+    }
+
+    [Fact]
+    public void TypeChartRandomizerDoesNotRequirePokemonPersonalData()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseExeFsFile("main", CreateTypeChartCompatibleNso());
+        var service = new SwShRandomizerService();
+
+        var preview = service.Preview(temp.Paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeTypeChart = true,
+        }));
+
+        AssertNoErrors(preview);
+        Assert.Contains(preview.Domains, domain => domain.Label == "Type Chart");
+        Assert.Single(AllEdits(preview), edit => edit.Domain == SwShTypeChartEditSessionService.TypeChartEditDomain);
+    }
+
+    [Fact]
     public void ApplyAllSelectableRandomizerOptionsWritesExpectedOutputDomains()
     {
         using var temp = CreateRandomizerProject();
@@ -231,6 +327,44 @@ public sealed class SwShRandomizerOptionCoverageTests
         Assert.Contains(result.ApplyResult.WrittenFiles, file => file.RelativePath == SwShEncountersWorkflowService.WildDataPath);
         Assert.Contains(result.ApplyResult.WrittenFiles, file => file.RelativePath == SwShStaticEncountersWorkflowService.StaticEncounterDataPath);
         Assert.Contains(result.ApplyResult.WrittenFiles, file => file.RelativePath == SwShGiftPokemonWorkflowService.GiftPokemonDataPath);
+        Assert.Contains(result.ApplyResult.WrittenFiles, file => file.RelativePath == SwShTypeChartWorkflowService.ExeFsMainPath);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword, "encount_symbol_k.bin")]
+    [InlineData(ProjectGame.Shield, "encount_symbol_t.bin")]
+    public void ApplyWildAndTypeChartRandomizerUsesSelectedGameExecutableAndEncounterMembers(
+        ProjectGame game,
+        string expectedSymbolMember)
+    {
+        using var temp = CreateRandomizerProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        var service = new SwShRandomizerService();
+        var result = service.Apply(paths, CreateConfig(SwShRandomizerOptions.Empty with
+        {
+            RandomizeWildEncounters = true,
+            RandomizeTypeChart = true,
+        }));
+
+        Assert.DoesNotContain(result.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(result.ApplyResult.WrittenFiles, file => file.RelativePath == SwShEncountersWorkflowService.WildDataPath);
+        Assert.Contains(result.ApplyResult.WrittenFiles, file => file.RelativePath == SwShTypeChartWorkflowService.ExeFsMainPath);
+
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "data_table.gfpak")));
+        Assert.True(outputPack.TryGetFileByName(expectedSymbolMember, out _));
+
+        var typeChartAnalysis = SwShTypeChartMainPatcher.Analyze(
+            File.ReadAllBytes(Path.Combine(temp.OutputRootPath, "exefs", "main")),
+            game);
+        Assert.Equal(SwShTypeChartMainKind.Modified, typeChartAnalysis.Kind);
+        Assert.Equal(game, typeChartAnalysis.DetectedGame);
     }
 
     private static SwShRandomizerOptions AllRandomizerOptions()
@@ -270,6 +404,9 @@ public sealed class SwShRandomizerOptionCoverageTests
             RandomizeGiftEncounters = true,
             RandomizeRaidRewards = true,
             RandomizeRaidBonusRewards = true,
+            RandomizeTypeChart = true,
+            TypeChartNoImmunities = false,
+            TypeChartOneImmunityPerType = true,
         };
     }
 
@@ -278,17 +415,18 @@ public sealed class SwShRandomizerOptionCoverageTests
         return new SwShRandomizerConfig("verify-options", options, RollSeed: "roll-fixed");
     }
 
-    private static TemporarySwShProject CreateRandomizerProject()
+    private static TemporarySwShProject CreateRandomizerProject(ProjectGame game = ProjectGame.Sword)
     {
         var temp = TemporarySwShProject.Create();
         WritePokemonData(temp);
         WriteMoveData(temp);
         SwShItemsWorkflowServiceTests.WriteBaseItems(temp);
-        WriteWildAndRaidData(temp);
+        WriteWildAndRaidData(temp, game);
         SwShStaticEncountersWorkflowServiceTests.WriteStaticEncounterFixture(temp);
         SwShGiftPokemonWorkflowServiceTests.WriteGiftFixture(temp);
         WriteMessageTables(temp);
-        temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteBaseExeFsFile("main", CreateTypeChartCompatibleNso(game));
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, game);
 
         return temp;
     }
@@ -352,12 +490,14 @@ public sealed class SwShRandomizerOptionCoverageTests
                 "Fairy"));
     }
 
-    private static void WriteWildAndRaidData(TemporarySwShProject temp)
+    private static void WriteWildAndRaidData(TemporarySwShProject temp, ProjectGame game = ProjectGame.Sword)
     {
+        var symbolMember = game == ProjectGame.Shield ? "encount_symbol_t.bin" : "encount_symbol_k.bin";
+        var hiddenMember = game == ProjectGame.Shield ? "encount_t.bin" : "encount_k.bin";
         var pack = SwShGfPackFile.Create(
         [
-            new SwShGfPackNamedFile("encount_symbol_k.bin", CreateTenSlotEncounterArchive().Write()),
-            new SwShGfPackNamedFile("encount_k.bin", CreateTenSlotEncounterArchive(speciesOffset: 2).Write()),
+            new SwShGfPackNamedFile(symbolMember, CreateTenSlotEncounterArchive().Write()),
+            new SwShGfPackNamedFile(hiddenMember, CreateTenSlotEncounterArchive(speciesOffset: 2).Write()),
             new SwShGfPackNamedFile("nest_hole_drop_rewards.bin", SwShRaidRewardTestFixtures.CreateDropArchive().Write()),
             new SwShGfPackNamedFile("nest_hole_bonus_rewards.bin", SwShRaidRewardTestFixtures.CreateBonusArchive().Write()),
         ]);
@@ -514,6 +654,69 @@ public sealed class SwShRandomizerOptionCoverageTests
     private static bool IsDamagingMove(int moveId)
     {
         return moveId % 4 != 0;
+    }
+
+    private static int[] DecodeTypeChartValues(string value)
+    {
+        return Convert.FromHexString(value)
+            .Select(effectiveness => (int)effectiveness)
+            .ToArray();
+    }
+
+    private static byte[] CreateTypeChartCompatibleNso(ProjectGame game = ProjectGame.Sword)
+    {
+        var text = Enumerable.Range(0, 0x40).Select(index => (byte)(0x80 + index)).ToArray();
+        var ro = new byte[SwShTypeChartMainPatcher.SwordRoChartOffset + SwShTypeChartMainPatcher.ChartLength + 0x40];
+        var data = Enumerable.Range(0, 0x20).Select(index => (byte)(0x20 + index)).ToArray();
+        Array.Fill(ro, (byte)0xCC);
+        SwShTypeChartMainPatcher.VanillaChartValues
+            .Select(value => checked((byte)value))
+            .ToArray()
+            .CopyTo(ro.AsSpan(SwShTypeChartMainPatcher.SwordRoChartOffset));
+
+        return CreateNso(text, ro, data, BuildIdForGame(game));
+    }
+
+    private static byte[] BuildIdForGame(ProjectGame game)
+    {
+        return Convert.FromHexString(game == ProjectGame.Shield ? ShieldBuildId : SwordBuildId);
+    }
+
+    private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data, byte[] buildId)
+    {
+        var textOffset = SwShNsoFile.HeaderSize;
+        var roOffset = Align(textOffset + text.Length, 0x10);
+        var dataOffset = Align(roOffset + ro.Length, 0x10);
+        var output = new byte[Align(dataOffset + data.Length, 0x10)];
+
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), SwShNsoFile.Magic);
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x04), 1);
+        WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
+        WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
+        WriteSegmentHeader(output, 0x30, dataOffset, text.Length + ro.Length, data.Length);
+        buildId.CopyTo(output.AsSpan(0x40, 0x20));
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x68), data.Length);
+        SwShNsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
+        SwShNsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
+        SwShNsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
+        text.CopyTo(output.AsSpan(textOffset));
+        ro.CopyTo(output.AsSpan(roOffset));
+        data.CopyTo(output.AsSpan(dataOffset));
+        return output;
+    }
+
+    private static void WriteSegmentHeader(byte[] output, int offset, int fileOffset, int memoryOffset, int decompressedSize)
+    {
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset), fileOffset);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset + 0x04), memoryOffset);
+        BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(offset + 0x08), decompressedSize);
+    }
+
+    private static int Align(int value, int alignment)
+    {
+        return (value + alignment - 1) / alignment * alignment;
     }
 
     private static byte[] CreateTextTable(params string[] values)

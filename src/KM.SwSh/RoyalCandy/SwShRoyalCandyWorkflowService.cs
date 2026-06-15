@@ -545,8 +545,13 @@ public sealed class SwShRoyalCandyWorkflowService
 
         try
         {
-            var signature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(File.ReadAllBytes(sourcePath));
-            var status = signature.Kind == SwShRoyalCandyExeFsSignatureKind.ForeignPatch ? "Fail" : "Pass";
+            var signature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(
+                File.ReadAllBytes(sourcePath),
+                project.Paths.SelectedGame);
+            var status = signature.Kind is SwShRoyalCandyExeFsSignatureKind.ForeignPatch
+                or SwShRoyalCandyExeFsSignatureKind.GameMismatch
+                ? "Fail"
+                : "Pass";
             AddCheck(
                 checks,
                 $"{PreflightWorkflowId}:royal-candy-reserved-anchors",
@@ -1118,7 +1123,9 @@ public sealed class SwShRoyalCandyWorkflowService
 
         try
         {
-            var signature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(File.ReadAllBytes(sourcePath));
+            var signature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(
+                File.ReadAllBytes(sourcePath),
+                project.Paths.SelectedGame);
             return signature.Kind switch
             {
                 SwShRoyalCandyExeFsSignatureKind.StoryLimits => RoyalCandyInstallKind.StoryLimits,
@@ -1210,7 +1217,9 @@ public sealed class SwShRoyalCandyWorkflowService
 
         try
         {
-            var signature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(File.ReadAllBytes(sourcePath));
+            var signature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(
+                File.ReadAllBytes(sourcePath),
+                project.Paths.SelectedGame);
             return signature.Kind != SwShRoyalCandyExeFsSignatureKind.NotInstalled;
         }
         catch (InvalidDataException)

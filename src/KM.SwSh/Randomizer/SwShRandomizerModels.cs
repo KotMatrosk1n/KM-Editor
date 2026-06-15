@@ -38,7 +38,10 @@ public sealed record SwShRandomizerOptions(
     bool RandomizeStaticEncounters,
     bool RandomizeGiftEncounters,
     bool RandomizeRaidRewards,
-    bool RandomizeRaidBonusRewards)
+    bool RandomizeRaidBonusRewards,
+    bool RandomizeTypeChart,
+    bool TypeChartNoImmunities,
+    bool TypeChartOneImmunityPerType)
 {
     public static SwShRandomizerOptions Empty { get; } = new(
         RandomizePokemonStats: false,
@@ -73,7 +76,10 @@ public sealed record SwShRandomizerOptions(
         RandomizeStaticEncounters: false,
         RandomizeGiftEncounters: false,
         RandomizeRaidRewards: false,
-        RandomizeRaidBonusRewards: false);
+        RandomizeRaidBonusRewards: false,
+        RandomizeTypeChart: false,
+        TypeChartNoImmunities: false,
+        TypeChartOneImmunityPerType: false);
 
     public bool HasAnySelection =>
         RandomizePokemonStats
@@ -88,7 +94,8 @@ public sealed record SwShRandomizerOptions(
         || RandomizeStaticEncounters
         || RandomizeGiftEncounters
         || RandomizeRaidRewards
-        || RandomizeRaidBonusRewards;
+        || RandomizeRaidBonusRewards
+        || RandomizeTypeChart;
 }
 
 public sealed record SwShRandomizerConfig(

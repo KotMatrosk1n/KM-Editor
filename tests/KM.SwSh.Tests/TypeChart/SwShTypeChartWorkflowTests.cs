@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.ExeFs;
+using KM.SwSh.Tests.Encounters;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.TypeChart;
 using System.Buffers.Binary;
@@ -16,15 +17,17 @@ public sealed class SwShTypeChartWorkflowTests
     private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
     private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
 
-    [Fact]
-    public void AnalyzeFindsVanillaSwordTypeChart()
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void AnalyzeFindsVanillaSelectedGameTypeChart(ProjectGame game)
     {
-        var main = CreateSyntheticTypeChartMain();
+        var main = CreateSyntheticTypeChartMain(game);
 
-        var analysis = SwShTypeChartMainPatcher.Analyze(main, ProjectGame.Sword);
+        var analysis = SwShTypeChartMainPatcher.Analyze(main, game);
 
         Assert.Equal(SwShTypeChartMainKind.Vanilla, analysis.Kind);
-        Assert.Equal(ProjectGame.Sword, analysis.DetectedGame);
+        Assert.Equal(game, analysis.DetectedGame);
         Assert.Equal("main.ro+0x00743600", analysis.ChartOffsetHex);
         Assert.Equal(SwShTypeChartMainPatcher.VanillaChartValues, analysis.EffectivenessValues);
     }
@@ -41,20 +44,23 @@ public sealed class SwShTypeChartWorkflowTests
         Assert.Contains("will not patch a different game's executable", analysis.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void ApplyChartPatchesOnlyReservedRoChartBytes()
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void ApplyChartPatchesOnlyReservedRoChartBytes(ProjectGame game)
     {
-        var main = CreateSyntheticTypeChartMain();
+        var main = CreateSyntheticTypeChartMain(game);
         var before = SwShNsoFile.Parse(main);
         var values = SwShTypeChartMainPatcher.VanillaChartValues.ToArray();
         values[0] = 0;
         values[(1 * SwShTypeChartMainPatcher.TypeCount) + 4] = 2;
 
-        var patched = SwShTypeChartMainPatcher.ApplyChart(main, values, ProjectGame.Sword);
+        var patched = SwShTypeChartMainPatcher.ApplyChart(main, values, game);
         var after = SwShNsoFile.Parse(patched);
-        var analysis = SwShTypeChartMainPatcher.Analyze(patched, ProjectGame.Sword);
+        var analysis = SwShTypeChartMainPatcher.Analyze(patched, game);
 
         Assert.Equal(SwShTypeChartMainKind.Modified, analysis.Kind);
+        Assert.Equal(game, analysis.DetectedGame);
         Assert.Equal(values, analysis.EffectivenessValues);
         Assert.Equal(before.Text.DecompressedData, after.Text.DecompressedData);
         Assert.Equal(before.Data.DecompressedData, after.Data.DecompressedData);
@@ -65,22 +71,25 @@ public sealed class SwShTypeChartWorkflowTests
                 region => SwShExeFsReservedRegionLedger.Overlaps(region, changedOffset, 1)));
     }
 
-    [Fact]
-    public void ApplyVanillaChartRestoresOnlyTypeChartBytesAndPreservesOtherExeFsEdits()
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void ApplyVanillaChartRestoresOnlyTypeChartBytesAndPreservesOtherExeFsEdits(ProjectGame game)
     {
-        var mainWithOtherEdits = CreateSyntheticTypeChartMainWithOtherExeFsEdits();
+        var mainWithOtherEdits = CreateSyntheticTypeChartMainWithOtherExeFsEdits(game);
         var customValues = SwShTypeChartMainPatcher.VanillaChartValues.ToArray();
         customValues[0] = 0;
         customValues[(1 * SwShTypeChartMainPatcher.TypeCount) + 4] = 2;
 
-        var installed = SwShTypeChartMainPatcher.ApplyChart(mainWithOtherEdits, customValues, ProjectGame.Sword);
+        var installed = SwShTypeChartMainPatcher.ApplyChart(mainWithOtherEdits, customValues, game);
         var restored = SwShTypeChartMainPatcher.ApplyChart(
             installed,
             SwShTypeChartMainPatcher.VanillaChartValues,
-            ProjectGame.Sword);
-        var restoredAnalysis = SwShTypeChartMainPatcher.Analyze(restored, ProjectGame.Sword);
+            game);
+        var restoredAnalysis = SwShTypeChartMainPatcher.Analyze(restored, game);
 
         Assert.Equal(SwShTypeChartMainKind.Vanilla, restoredAnalysis.Kind);
+        Assert.Equal(game, restoredAnalysis.DetectedGame);
         AssertOnlyReservedRoBytesChanged(mainWithOtherEdits, installed);
         AssertOnlyReservedRoBytesChanged(installed, restored);
         AssertOtherExeFsEditsStillPresent(restored);
@@ -98,20 +107,44 @@ public sealed class SwShTypeChartWorkflowTests
     }
 
     [Fact]
-    public void StageAndApplyTypeChartWritesExeFsMainOutput()
+    public void LoadPresentsVanillaChartInDisplayTypeOrder()
     {
         using var temp = TemporarySwShProject.Create();
         temp.WriteBaseExeFsFile("main", CreateSyntheticTypeChartMain());
-        var values = SwShTypeChartMainPatcher.VanillaChartValues.ToArray();
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShTypeChartWorkflowService().Load(project);
+
+        AssertEffectiveness(workflow, attackTypeIndex: 1, defenseTypeIndex: 4, expected: 8); // Fire -> Grass
+        AssertEffectiveness(workflow, attackTypeIndex: 1, defenseTypeIndex: 2, expected: 2); // Fire -> Water
+        AssertEffectiveness(workflow, attackTypeIndex: 0, defenseTypeIndex: 13, expected: 0); // Normal -> Ghost
+        AssertEffectiveness(workflow, attackTypeIndex: 3, defenseTypeIndex: 8, expected: 0); // Electric -> Ground
+        AssertEffectiveness(workflow, attackTypeIndex: 6, defenseTypeIndex: 0, expected: 8); // Fighting -> Normal
+        AssertEffectiveness(workflow, attackTypeIndex: 17, defenseTypeIndex: 14, expected: 8); // Fairy -> Dragon
+        AssertEffectiveness(workflow, attackTypeIndex: 7, defenseTypeIndex: 16, expected: 0); // Poison -> Steel
+        AssertEffectiveness(workflow, attackTypeIndex: 13, defenseTypeIndex: 0, expected: 0); // Ghost -> Normal
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void StageAndApplyTypeChartWritesExeFsMainOutput(ProjectGame game)
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseExeFsFile("main", CreateSyntheticTypeChartMain(game));
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, game);
+        var paths = temp.Paths with { SelectedGame = game };
+        var values = SwShTypeChartWorkflowService.ToDisplayOrder(SwShTypeChartMainPatcher.VanillaChartValues);
         values[0] = 0;
         values[(14 * SwShTypeChartMainPatcher.TypeCount) + 17] = 2;
+        var expectedGameOrderValues = SwShTypeChartWorkflowService.ToGameOrder(values);
         var service = new SwShTypeChartEditSessionService();
 
-        var staged = service.StageChart(temp.Paths, values, session: null);
-        var plan = service.CreateChangePlan(temp.Paths, staged.Session);
-        var apply = service.ApplyChangePlan(temp.Paths, staged.Session, plan);
+        var staged = service.StageChart(paths, values, session: null);
+        var plan = service.CreateChangePlan(paths, staged.Session);
+        var apply = service.ApplyChangePlan(paths, staged.Session, plan);
         var outputMain = File.ReadAllBytes(Path.Combine(temp.OutputRootPath, "exefs", "main"));
-        var analysis = SwShTypeChartMainPatcher.Analyze(outputMain, ProjectGame.Sword);
+        var analysis = SwShTypeChartMainPatcher.Analyze(outputMain, game);
 
         Assert.DoesNotContain(staged.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
         Assert.DoesNotContain(plan.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
@@ -120,7 +153,20 @@ public sealed class SwShTypeChartWorkflowTests
         Assert.Contains(plan.Writes, write => write.TargetRelativePath == SwShTypeChartWorkflowService.ExeFsMainPath);
         Assert.Contains(apply.WrittenFiles, file => file.RelativePath == SwShTypeChartWorkflowService.ExeFsMainPath);
         Assert.Equal(SwShTypeChartMainKind.Modified, analysis.Kind);
-        Assert.Equal(values, analysis.EffectivenessValues);
+        Assert.Equal(game, analysis.DetectedGame);
+        Assert.Equal(expectedGameOrderValues, analysis.EffectivenessValues);
+    }
+
+    private static void AssertEffectiveness(
+        SwShTypeChartWorkflow workflow,
+        int attackTypeIndex,
+        int defenseTypeIndex,
+        int expected)
+    {
+        var cell = Assert.Single(
+            workflow.Cells,
+            cell => cell.AttackTypeIndex == attackTypeIndex && cell.DefenseTypeIndex == defenseTypeIndex);
+        Assert.Equal(expected, cell.Effectiveness);
     }
 
     private static byte[] CreateSyntheticTypeChartMain(ProjectGame game = ProjectGame.Sword)
@@ -137,9 +183,9 @@ public sealed class SwShTypeChartWorkflowTests
         return CreateNso(text, ro, data, BuildIdForGame(game));
     }
 
-    private static byte[] CreateSyntheticTypeChartMainWithOtherExeFsEdits()
+    private static byte[] CreateSyntheticTypeChartMainWithOtherExeFsEdits(ProjectGame game = ProjectGame.Sword)
     {
-        var nso = SwShNsoFile.Parse(CreateSyntheticTypeChartMain());
+        var nso = SwShNsoFile.Parse(CreateSyntheticTypeChartMain(game));
         var text = nso.Text.DecompressedData.ToArray();
         var ro = nso.Ro.DecompressedData.ToArray();
         var data = nso.Data.DecompressedData.ToArray();

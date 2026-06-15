@@ -118,7 +118,8 @@ internal static class SwShRoyalCandyCleanup
         var baseBytes = File.ReadAllBytes(basePath);
         var restored = SwShExeFsRoyalCandyMainPatcher.RestoreFromBase(
             File.ReadAllBytes(targetPath),
-            baseBytes);
+            baseBytes,
+            paths.SelectedGame);
         if (restored.SequenceEqual(baseBytes) || !ContainsIndependentExeFsHook(restored))
         {
             File.Delete(targetPath);
@@ -346,7 +347,9 @@ internal static class SwShRoyalCandyCleanup
 
         try
         {
-            return SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(File.ReadAllBytes(sourcePath)).Kind
+            return SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(
+                File.ReadAllBytes(sourcePath),
+                project.Paths.SelectedGame).Kind
                 != SwShRoyalCandyExeFsSignatureKind.NotInstalled;
         }
         catch (InvalidDataException)

@@ -838,10 +838,13 @@ public sealed class SwShRoyalCandyEditSessionService
 
                 return SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
                     File.ReadAllBytes(source.AbsolutePath),
-                    storyLevelCaps);
+                    storyLevelCaps,
+                    project.Paths.SelectedGame);
             }
 
-            return SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(File.ReadAllBytes(source.AbsolutePath));
+            return SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(
+                File.ReadAllBytes(source.AbsolutePath),
+                project.Paths.SelectedGame);
         }
 
         diagnostics.Add(CreateDiagnostic(

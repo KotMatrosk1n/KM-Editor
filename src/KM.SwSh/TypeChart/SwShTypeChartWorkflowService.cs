@@ -12,6 +12,28 @@ public sealed class SwShTypeChartWorkflowService
 {
     public const string ExeFsMainPath = "exefs/main";
 
+    private static readonly int[] DisplayTypeOrderGameIndexes =
+    [
+        0,  // Normal
+        9,  // Fire
+        10, // Water
+        12, // Electric
+        11, // Grass
+        14, // Ice
+        1,  // Fighting
+        3,  // Poison
+        4,  // Ground
+        2,  // Flying
+        13, // Psychic
+        6,  // Bug
+        5,  // Rock
+        7,  // Ghost
+        15, // Dragon
+        16, // Dark
+        8,  // Steel
+        17, // Fairy
+    ];
+
     private static readonly SwShTypeChartTypeDefinition[] TypeDefinitions =
     [
         new(0, "Normal", "NOR", "#A8A878"),
@@ -185,14 +207,53 @@ public sealed class SwShTypeChartWorkflowService
 
     private static SwShTypeChartCell[] CreateCells(IReadOnlyList<int> values)
     {
-        var vanilla = SwShTypeChartMainPatcher.VanillaChartValues;
+        var displayValues = ToDisplayOrder(values);
+        var vanilla = ToDisplayOrder(SwShTypeChartMainPatcher.VanillaChartValues);
         return Enumerable.Range(0, SwShTypeChartMainPatcher.ChartLength)
             .Select(index => new SwShTypeChartCell(
                 AttackTypeIndex: index / SwShTypeChartMainPatcher.TypeCount,
                 DefenseTypeIndex: index % SwShTypeChartMainPatcher.TypeCount,
-                Effectiveness: values[index],
+                Effectiveness: displayValues[index],
                 VanillaEffectiveness: vanilla[index]))
             .ToArray();
+    }
+
+    internal static int[] ToDisplayOrder(IReadOnlyList<int> gameOrderValues)
+    {
+        SwShTypeChartMainPatcher.ValidateValues(gameOrderValues);
+
+        var values = new int[SwShTypeChartMainPatcher.ChartLength];
+        for (var attackDisplayIndex = 0; attackDisplayIndex < SwShTypeChartMainPatcher.TypeCount; attackDisplayIndex++)
+        {
+            var attackGameIndex = DisplayTypeOrderGameIndexes[attackDisplayIndex];
+            for (var defenseDisplayIndex = 0; defenseDisplayIndex < SwShTypeChartMainPatcher.TypeCount; defenseDisplayIndex++)
+            {
+                var defenseGameIndex = DisplayTypeOrderGameIndexes[defenseDisplayIndex];
+                values[(attackDisplayIndex * SwShTypeChartMainPatcher.TypeCount) + defenseDisplayIndex] =
+                    gameOrderValues[(attackGameIndex * SwShTypeChartMainPatcher.TypeCount) + defenseGameIndex];
+            }
+        }
+
+        return values;
+    }
+
+    internal static int[] ToGameOrder(IReadOnlyList<int> displayOrderValues)
+    {
+        SwShTypeChartMainPatcher.ValidateValues(displayOrderValues);
+
+        var values = new int[SwShTypeChartMainPatcher.ChartLength];
+        for (var attackDisplayIndex = 0; attackDisplayIndex < SwShTypeChartMainPatcher.TypeCount; attackDisplayIndex++)
+        {
+            var attackGameIndex = DisplayTypeOrderGameIndexes[attackDisplayIndex];
+            for (var defenseDisplayIndex = 0; defenseDisplayIndex < SwShTypeChartMainPatcher.TypeCount; defenseDisplayIndex++)
+            {
+                var defenseGameIndex = DisplayTypeOrderGameIndexes[defenseDisplayIndex];
+                values[(attackGameIndex * SwShTypeChartMainPatcher.TypeCount) + defenseGameIndex] =
+                    displayOrderValues[(attackDisplayIndex * SwShTypeChartMainPatcher.TypeCount) + defenseDisplayIndex];
+            }
+        }
+
+        return values;
     }
 
     private static SwShTypeChartMainAnalysis CreateDefaultAnalysis()

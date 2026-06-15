@@ -224,7 +224,7 @@ internal static class SwShExeFsReservedRegionLedger
         new(OwnerHyperTraining, "hyper-training-shield-gray-out-check", ExeFsMainPath, "main.text", 0x00F9A364, 0x08, "Hyper Training Shield picker gray-out compare and branch", "do-not-overwrite"),
         new(OwnerHyperTraining, "hyper-training-shield-detail-check", ExeFsMainPath, "main.text", 0x00F9E4F0, 0x08, "Hyper Training Shield selected-detail compare and branch", "do-not-overwrite"),
 
-        new(OwnerTypeChart, "type-chart-sword", ExeFsMainPath, "main.ro", 0x00743600, 0x144, "Sword type-effectiveness table", "payload-only"),
+        new(OwnerTypeChart, "type-chart-swsh", ExeFsMainPath, "main.ro", 0x00743600, 0x144, "Sword/Shield type-effectiveness table", "payload-only"),
 
         new(OwnerRoyalCandy, "royal-candy-ui-check-a", ExeFsMainPath, "main.text", 0x00747988, 0x08, "Royal Candy medicine UI route", "do-not-overwrite"),
         new(OwnerRoyalCandy, "royal-candy-ui-check-b", ExeFsMainPath, "main.text", 0x00747D44, 0x08, "Royal Candy alternate medicine UI route", "do-not-overwrite"),

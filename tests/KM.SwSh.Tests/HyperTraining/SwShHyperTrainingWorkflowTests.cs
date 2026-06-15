@@ -70,7 +70,7 @@ public sealed class SwShHyperTrainingWorkflowTests
         var parsed = SwShGameTextFile.Parse(patched);
 
         Assert.Contains("Lv. 42", parsed.Lines[0].Text, StringComparison.Ordinal);
-        Assert.Contains("[VAR BE00]", parsed.Lines[0].Text, StringComparison.Ordinal);
+        Assert.Contains("\\r\\nundergo", parsed.Lines[0].Text, StringComparison.Ordinal);
         Assert.Contains("Lv. 42", parsed.Lines[3].Text, StringComparison.Ordinal);
         Assert.Equal("Untouched \\[VAR 0102(0001)] line.", parsed.Lines[4].Text);
     }

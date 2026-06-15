@@ -142,10 +142,17 @@ internal static class SwShRandomizerSeedCodec
         return config with
         {
             UserSeed = userSeed,
-            Options = config.Options ?? SwShRandomizerOptions.Empty,
+            Options = NormalizeOptions(config.Options ?? SwShRandomizerOptions.Empty),
             RollSeed = string.IsNullOrWhiteSpace(config.RollSeed) ? null : config.RollSeed,
             OutputHash = string.IsNullOrWhiteSpace(config.OutputHash) ? null : config.OutputHash,
         };
+    }
+
+    private static SwShRandomizerOptions NormalizeOptions(SwShRandomizerOptions options)
+    {
+        return options.TypeChartNoImmunities && options.TypeChartOneImmunityPerType
+            ? options with { TypeChartOneImmunityPerType = false }
+            : options;
     }
 
     private static SwShRandomizerImportResult Invalid(string message)
@@ -395,6 +402,9 @@ internal static class SwShRandomizerSeedCodec
             options.RandomizeGiftEncounters,
             options.RandomizeRaidRewards,
             options.RandomizeRaidBonusRewards,
+            options.RandomizeTypeChart,
+            options.TypeChartNoImmunities,
+            options.TypeChartOneImmunityPerType,
         };
         Span<byte> bytes = stackalloc byte[(flags.Length + 7) / 8];
         for (var index = 0; index < flags.Length; index++)
@@ -456,7 +466,10 @@ internal static class SwShRandomizerSeedCodec
             Flag(29),
             Flag(30),
             Flag(31),
-            Flag(32));
+            Flag(32),
+            Flag(33),
+            Flag(34),
+            Flag(35));
     }
 
     private sealed record CompactSeedPayload(

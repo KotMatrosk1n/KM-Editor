@@ -6,6 +6,10 @@ import {
   ArrowDown,
   ArrowLeftRight,
   ArrowUp,
+  BadgeCheck,
+  BadgePlus,
+  Cable,
+  Candy,
   CheckCircle,
   ChevronDown,
   ClipboardCheck,
@@ -16,23 +20,33 @@ import {
   ExternalLink,
   FileSpreadsheet,
   FolderOpen,
+  Gift,
+  GitMerge,
   GripVertical,
   Layers,
   ListChecks,
+  MapPinned,
   MapPin,
   Package,
+  PackagePlus,
   Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
   Save,
+  ScanLine,
   Search,
   Settings as SettingsIcon,
   Shirt,
+  Shield,
   ShieldCheck,
   Shuffle,
   Swords,
+  Store,
+  Table2,
   Trash2,
+  Trees,
+  UsersRound,
   Wrench,
   X,
   Zap,
@@ -195,6 +209,14 @@ import {
 } from './workbenchStore';
 import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
+import { ApplyResultSection, DiagnosticsSection, Metric } from './components/workflowPanels';
+import { RandomizerSection } from './features/randomizer/RandomizerSection';
+import {
+  TypeChartSection,
+  decodeTypeChartPendingValues,
+  getTypeChartWorkflowValues
+} from './features/type-chart/TypeChartSection';
+import { formatBagHookStatus, formatFileState, formatSourceLayer } from './utils/workflowFormatters';
 
 const appVersion = tauriConfig.version;
 
@@ -354,12 +376,12 @@ const sections: Array<{
   {
     id: 'trainers',
     label: 'Trainers',
-    icon: Activity
+    icon: UsersRound
   },
   {
     id: 'giftPokemon',
     label: 'Gift Pokemon',
-    icon: Dna
+    icon: Gift
   },
   {
     id: 'tradePokemon',
@@ -384,32 +406,32 @@ const sections: Array<{
   {
     id: 'shops',
     label: 'Shops',
-    icon: ListChecks
+    icon: Store
   },
   {
     id: 'encounters',
     label: 'Wild Encounters',
-    icon: Layers
+    icon: Trees
   },
   {
     id: 'raidBattles',
     label: 'Raid Battles',
-    icon: ShieldCheck
+    icon: Shield
   },
   {
     id: 'raidRewards',
     label: 'Raid Rewards',
-    icon: ShieldCheck
+    icon: BadgePlus
   },
   {
     id: 'raidBonusRewards',
     label: 'Raid Bonus Rewards',
-    icon: ShieldCheck
+    icon: BadgeCheck
   },
   {
     id: 'placement',
     label: 'Placement',
-    icon: MapPin
+    icon: MapPinned
   },
   {
     id: 'behavior',
@@ -424,12 +446,27 @@ const sections: Array<{
   {
     id: 'bagHook',
     label: 'Bag Hook',
-    icon: Wrench
+    icon: Cable
+  },
+  {
+    id: 'royalCandy',
+    label: 'Royal Candy',
+    icon: Candy
+  },
+  {
+    id: 'startingItems',
+    label: 'Starting Items',
+    icon: PackagePlus
   },
   {
     id: 'catchCap',
     label: 'Catch Cap',
     icon: ShieldCheck
+  },
+  {
+    id: 'ivScreen',
+    label: 'IV Screen',
+    icon: ScanLine
   },
   {
     id: 'hyperTraining',
@@ -439,7 +476,7 @@ const sections: Array<{
   {
     id: 'typeChart',
     label: 'Type Chart',
-    icon: Swords
+    icon: Table2
   },
   {
     id: 'gymUniformRemoval',
@@ -447,24 +484,9 @@ const sections: Array<{
     icon: Shirt
   },
   {
-    id: 'ivScreen',
-    label: 'IV Screen',
-    icon: Dna
-  },
-  {
     id: 'exefsPatches',
     label: 'ExeFS Patches',
     icon: Wrench
-  },
-  {
-    id: 'royalCandy',
-    label: 'Royal Candy',
-    icon: CheckCircle
-  },
-  {
-    id: 'startingItems',
-    label: 'Starting Items',
-    icon: Package
   },
   {
     id: 'spreadsheetImport',
@@ -474,7 +496,7 @@ const sections: Array<{
   {
     id: 'modMerger',
     label: 'Mod Merger',
-    icon: Layers
+    icon: GitMerge
   },
   {
     id: 'randomizer',
@@ -547,13 +569,13 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     id: 'advancedEditors',
     label: 'Advanced Editors',
     sectionIds: [
+      'royalCandy',
+      'startingItems',
       'catchCap',
+      'ivScreen',
       'hyperTraining',
       'typeChart',
-      'gymUniformRemoval',
-      'ivScreen',
-      'royalCandy',
-      'startingItems'
+      'gymUniformRemoval'
     ]
   }
 ];
@@ -606,13 +628,13 @@ const workflowDefinitions: Array<{
     id: 'trainers',
     label: 'Trainers',
     description: 'Trainer parties, classes, battle types, and source provenance.',
-    icon: Activity
+    icon: UsersRound
   },
   {
     id: 'giftPokemon',
     label: 'Gift Pokemon',
     description: 'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
-    icon: Dna
+    icon: Gift
   },
   {
     id: 'tradePokemon',
@@ -630,37 +652,37 @@ const workflowDefinitions: Array<{
     id: 'shops',
     label: 'Shops',
     description: 'Shop inventories, prices, stock limits, and source provenance.',
-    icon: ListChecks
+    icon: Store
   },
   {
     id: 'encounters',
     label: 'Wild Encounters',
     description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
-    icon: Layers
+    icon: Trees
   },
   {
     id: 'raidBattles',
     label: 'Raid Battles',
     description: 'Raid Pokemon slots, star probabilities, ability rolls, guaranteed perfect IVs, and source provenance.',
-    icon: ShieldCheck
+    icon: Shield
   },
   {
     id: 'raidRewards',
     label: 'Raid Rewards',
     description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
-    icon: ShieldCheck
+    icon: BadgePlus
   },
   {
     id: 'raidBonusRewards',
     label: 'Raid Bonus Rewards',
     description: 'Raid bonus reward tables, item quantities, den usage, and source provenance.',
-    icon: ShieldCheck
+    icon: BadgeCheck
   },
   {
     id: 'placement',
     label: 'Placement',
     description: 'Placed objects, map coordinates, script links, and source provenance.',
-    icon: MapPin
+    icon: MapPinned
   },
   {
     id: 'behavior',
@@ -679,7 +701,21 @@ const workflowDefinitions: Array<{
     label: 'Bag Hook',
     description:
       'Install this first for Royal Candy or Starting Items. It grants nothing by itself; uninstall removes dependent Royal Candy and Starting Items outputs.',
-    icon: Wrench
+    icon: Cable
+  },
+  {
+    id: 'royalCandy',
+    label: 'Royal Candy Workflows',
+    description:
+      'Requires Bag Hook, uses only Bag Hook slot 1, and patches reserved Royal Candy ExeFS regions. Use Remove Royal Candy to uninstall safely.',
+    icon: Candy
+  },
+  {
+    id: 'startingItems',
+    label: 'Starting Items',
+    description:
+      'Requires Bag Hook and uses only slots 2-20. Clear selected slots and apply to remove Starting Items without touching Royal Candy.',
+    icon: PackagePlus
   },
   {
     id: 'catchCap',
@@ -687,6 +723,13 @@ const workflowDefinitions: Array<{
     description:
       'Independent ExeFS editor for badge catch caps 0-7. It patches the display and runtime capture checks; eight badges is locked at Lv.100 because full badges can catch any level.',
     icon: ShieldCheck
+  },
+  {
+    id: 'ivScreen',
+    label: 'IV Screen',
+    description:
+      'Independent ExeFS editor for raw IV numbers on the Pokemon Summary stats graph. It uses its own reserved hook and cave slots.',
+    icon: ScanLine
   },
   {
     id: 'hyperTraining',
@@ -700,7 +743,7 @@ const workflowDefinitions: Array<{
     label: 'Type Chart',
     description:
       'Advanced editor for the Sword/Shield type-effectiveness table in exefs/main.',
-    icon: Swords
+    icon: Table2
   },
   {
     id: 'gymUniformRemoval',
@@ -708,27 +751,6 @@ const workflowDefinitions: Array<{
     description:
       'Independent ExeFS editor that keeps gym challenge and gym leader battle scripts from changing the player into the gym uniform.',
     icon: Shirt
-  },
-  {
-    id: 'ivScreen',
-    label: 'IV Screen',
-    description:
-      'Independent ExeFS editor for raw IV numbers on the Pokemon Summary stats graph. It uses its own reserved hook and cave slots.',
-    icon: Dna
-  },
-  {
-    id: 'royalCandy',
-    label: 'Royal Candy Workflows',
-    description:
-      'Requires Bag Hook, uses only Bag Hook slot 1, and patches reserved Royal Candy ExeFS regions. Use Remove Royal Candy to uninstall safely.',
-    icon: CheckCircle
-  },
-  {
-    id: 'startingItems',
-    label: 'Starting Items',
-    description:
-      'Requires Bag Hook and uses only slots 2-20. Clear selected slots and apply to remove Starting Items without touching Royal Candy.',
-    icon: Package
   },
   {
     id: 'spreadsheetImport',
@@ -741,7 +763,7 @@ const workflowDefinitions: Array<{
     label: 'Mod Merger',
     description:
       'Merge matching RomFS files from two mod folders, resolve overlapping byte edits, and write merged files to Output Root.',
-    icon: Layers
+    icon: GitMerge
   }
 ];
 
@@ -773,273 +795,6 @@ const modMergerModeOptions: Array<{
     label: 'Mod 2 Priority'
   }
 ];
-
-type RandomizerOptionKey = keyof RandomizerOptions;
-
-const defaultRandomizerOptions: RandomizerOptions = {
-  ability1: true,
-  ability2: true,
-  allowSameType: false,
-  compatibilityMachines: true,
-  compatibilityRecords: true,
-  compatibilityTutors: true,
-  hiddenAbility: true,
-  learnsetBanFixedDamageMoves: true,
-  learnsetExpandTo25: false,
-  learnsetRequireDamagingMove: true,
-  learnsetStabFirst: true,
-  randomizeGiftEncounters: false,
-  randomizePokemonAbilities: false,
-  randomizePokemonCatchRates: false,
-  randomizePokemonCompatibility: false,
-  randomizePokemonEvolutions: false,
-  randomizePokemonHeldItems: false,
-  randomizePokemonLearnsets: false,
-  randomizePokemonStats: false,
-  randomizePokemonTypes: false,
-  randomizeWildEncounters: false,
-  randomizeRaidBonusRewards: false,
-  randomizeRaidRewards: false,
-  randomizeStaticEncounters: false,
-  shufflePokemonStats: true,
-  statAttack: true,
-  statDefense: true,
-  statHp: true,
-  statSpecialAttack: true,
-  statSpecialDefense: true,
-  statSpeed: true,
-  typePrimary: true,
-  typeSecondary: true
-};
-
-const randomizerCategoryDefinitions: Array<{
-  enabledKey: RandomizerOptionKey;
-  enabledLabel: string;
-  fields: Array<{ help: string; key: RandomizerOptionKey; label: string }>;
-  help: string;
-  icon: LucideIcon;
-  id: string;
-  label: string;
-}> = [
-  {
-    enabledKey: 'randomizePokemonStats',
-    enabledLabel: 'Randomize Base Stats',
-    fields: [
-      {
-        help: 'Shuffle the selected base stat values within each Pokemon instead of generating a fresh stat spread.',
-        key: 'shufflePokemonStats',
-        label: 'Shuffle stat values'
-      },
-      { help: 'Include base HP when base stats are randomized.', key: 'statHp', label: 'HP' },
-      {
-        help: 'Include base Attack when base stats are randomized.',
-        key: 'statAttack',
-        label: 'Attack'
-      },
-      {
-        help: 'Include base Defense when base stats are randomized.',
-        key: 'statDefense',
-        label: 'Defense'
-      },
-      {
-        help: 'Include base Special Attack when base stats are randomized.',
-        key: 'statSpecialAttack',
-        label: 'Sp. Attack'
-      },
-      {
-        help: 'Include base Special Defense when base stats are randomized.',
-        key: 'statSpecialDefense',
-        label: 'Sp. Defense'
-      },
-      { help: 'Include base Speed when base stats are randomized.', key: 'statSpeed', label: 'Speed' }
-    ],
-    help: 'Randomizes Pokemon base stat values while keeping values within safe personal-data limits.',
-    icon: Activity,
-    id: 'stats',
-    label: 'Stats'
-  },
-  {
-    enabledKey: 'randomizePokemonTypes',
-    enabledLabel: 'Randomize Types',
-    fields: [
-      { help: 'Randomize each Pokemon primary type.', key: 'typePrimary', label: 'Primary type' },
-      { help: 'Randomize each Pokemon secondary type.', key: 'typeSecondary', label: 'Secondary type' },
-      {
-        help: 'Allow a Pokemon primary and secondary type to roll the same type.',
-        key: 'allowSameType',
-        label: 'Allow duplicate types'
-      }
-    ],
-    help: 'Randomizes Pokemon primary and secondary personal-data types.',
-    icon: Dna,
-    id: 'types',
-    label: 'Types'
-  },
-  {
-    enabledKey: 'randomizePokemonAbilities',
-    enabledLabel: 'Randomize Abilities',
-    fields: [
-      { help: 'Randomize ability slot 1 for each Pokemon.', key: 'ability1', label: 'Ability 1' },
-      { help: 'Randomize ability slot 2 for each Pokemon.', key: 'ability2', label: 'Ability 2' },
-      {
-        help: 'Randomize the hidden ability slot for each Pokemon.',
-        key: 'hiddenAbility',
-        label: 'Hidden ability'
-      }
-    ],
-    help: 'Randomizes Pokemon personal-data ability slots using valid loaded ability IDs.',
-    icon: CheckCircle,
-    id: 'abilities',
-    label: 'Abilities'
-  },
-  {
-    enabledKey: 'randomizePokemonHeldItems',
-    enabledLabel: 'Randomize Held Items',
-    fields: [],
-    help: 'Randomizes each Pokemon common, uncommon, and rare held item slots using safe item candidates.',
-    icon: Package,
-    id: 'heldItems',
-    label: 'Held Items'
-  },
-  {
-    enabledKey: 'randomizePokemonCatchRates',
-    enabledLabel: 'Randomize Catch Rates',
-    fields: [],
-    help: 'Randomizes Pokemon catch rates between 1 and 255 in personal data.',
-    icon: SettingsIcon,
-    id: 'misc',
-    label: 'Catch Rates'
-  },
-  {
-    enabledKey: 'randomizePokemonLearnsets',
-    enabledLabel: 'Randomize Learnsets',
-    fields: [
-      {
-        help: 'Prefer a same-type attack bonus move in the first learnset slot when one is available.',
-        key: 'learnsetStabFirst',
-        label: 'STAB first move'
-      },
-      {
-        help: 'Expand randomized learnsets with fewer than 25 moves to 25 move slots spread from Lv. 1 to Lv. 75.',
-        key: 'learnsetExpandTo25',
-        label: 'Expand learnsets to 25 moves'
-      },
-      {
-        help: 'Exclude fixed-damage moves such as Sonic Boom and Dragon Rage from randomized learnsets.',
-        key: 'learnsetBanFixedDamageMoves',
-        label: 'Ban fixed-damage moves'
-      },
-      {
-        help: 'Make sure each randomized learnset contains at least one damaging move when possible.',
-        key: 'learnsetRequireDamagingMove',
-        label: 'Require damaging move'
-      }
-    ],
-    help: 'Randomizes Pokemon level-up learnset moves using legal, usable moves from the loaded move table.',
-    icon: Zap,
-    id: 'learnsets',
-    label: 'Learnsets'
-  },
-  {
-    enabledKey: 'randomizePokemonCompatibility',
-    enabledLabel: 'Randomize Move Compatibility',
-    fields: [
-      { help: 'Randomize TM learn compatibility for each Pokemon.', key: 'compatibilityMachines', label: 'TMs' },
-      { help: 'Randomize TR learn compatibility for each Pokemon.', key: 'compatibilityRecords', label: 'TRs' },
-      {
-        help: 'Randomize move tutor compatibility, including type tutors and Armor tutor moves.',
-        key: 'compatibilityTutors',
-        label: 'Tutors'
-      }
-    ],
-    help: 'Randomizes whether each Pokemon can learn TM, TR, and tutor moves.',
-    icon: ListChecks,
-    id: 'compatibility',
-    label: 'Moves'
-  },
-  {
-    enabledKey: 'randomizePokemonEvolutions',
-    enabledLabel: 'Randomize Evolutions',
-    fields: [],
-    help: 'Randomizes evolution target species/forms while keeping existing evolution methods, arguments, and levels.',
-    icon: ArrowUp,
-    id: 'evolutions',
-    label: 'Evolutions'
-  }
-];
-
-const randomizerEncounterOptions: Array<{
-  help: string;
-  key: RandomizerOptionKey;
-  label: string;
-}> = [
-  {
-    help: 'Randomize wild encounter Pokemon/form slots and encounter percentages for symbol, hidden, fishing, shaking tree, and weather tables where they exist.',
-    key: 'randomizeWildEncounters',
-    label: 'Randomize Wild Encounters'
-  },
-  {
-    help: 'Randomize species/forms for fixed overworld or scripted static encounters.',
-    key: 'randomizeStaticEncounters',
-    label: 'Randomize Static Encounters'
-  },
-  {
-    help: 'Randomize species/forms for Pokemon received as gifts from scripts or event data.',
-    key: 'randomizeGiftEncounters',
-    label: 'Randomize Gift Encounters'
-  },
-  {
-    help: 'Randomize raid drop rewards with safe item candidates; Royal Candy item 1128 is excluded when Royal Candy is installed.',
-    key: 'randomizeRaidRewards',
-    label: 'Randomize Raid Rewards'
-  },
-  {
-    help: 'Randomize raid bonus rewards with safe item candidates; Royal Candy item 1128 is excluded when Royal Candy is installed.',
-    key: 'randomizeRaidBonusRewards',
-    label: 'Randomize Raid Bonus Rewards'
-  }
-];
-
-const randomizerChildKeysByParent: Partial<Record<RandomizerOptionKey, RandomizerOptionKey[]>> = {
-  randomizePokemonAbilities: ['ability1', 'ability2', 'hiddenAbility'],
-  randomizePokemonCompatibility: [
-    'compatibilityMachines',
-    'compatibilityRecords',
-    'compatibilityTutors'
-  ],
-  randomizePokemonLearnsets: [
-    'learnsetStabFirst',
-    'learnsetExpandTo25',
-    'learnsetBanFixedDamageMoves',
-    'learnsetRequireDamagingMove'
-  ],
-  randomizePokemonStats: [
-    'shufflePokemonStats',
-    'statHp',
-    'statAttack',
-    'statDefense',
-    'statSpecialAttack',
-    'statSpecialDefense',
-    'statSpeed'
-  ],
-  randomizePokemonTypes: ['typePrimary', 'typeSecondary', 'allowSameType']
-};
-
-function createEffectiveRandomizerOptions(options: RandomizerOptions): RandomizerOptions {
-  const effective = { ...options };
-
-  for (const [parentKey, childKeys] of Object.entries(randomizerChildKeysByParent) as Array<
-    [RandomizerOptionKey, RandomizerOptionKey[]]
-  >) {
-    if (!effective[parentKey]) {
-      for (const childKey of childKeys) {
-        effective[childKey] = false;
-      }
-    }
-  }
-
-  return effective;
-}
 
 const pathFields: Array<{
   field: ProjectPathFieldName;
@@ -20930,349 +20685,6 @@ function IvScreenSection({
   );
 }
 
-const typeChartEffectivenessOptions: Array<{
-  value: TypeChartEffectivenessValue;
-  label: string;
-  display: string;
-  className: string;
-}> = [
-  { value: 0, label: 'Immune', display: '0', className: 'immune' },
-  { value: 2, label: 'Not Very Effective', display: '½', className: 'not-very' },
-  { value: 4, label: 'Normal', display: '', className: 'normal' },
-  { value: 8, label: 'Super Effective', display: '2', className: 'super' }
-];
-
-function TypeChartSection({
-  changePlan,
-  editSession,
-  isChangePlanApplying,
-  isChangePlanCreating,
-  isStaging,
-  onApplyChangePlan,
-  onCreateChangePlan,
-  onDirtyChange,
-  onStageChart,
-  workflow
-}: {
-  changePlan: ChangePlan | null;
-  editSession: EditSession | null;
-  isChangePlanApplying: boolean;
-  isChangePlanCreating: boolean;
-  isStaging: boolean;
-  onApplyChangePlan: () => void;
-  onCreateChangePlan: () => void;
-  onDirtyChange: (isDirty: boolean) => void;
-  onStageChart: (values: TypeChartEffectivenessValue[]) => void;
-  workflow: TypeChartWorkflow | null;
-}) {
-  const workflowValues = useMemo(() => getTypeChartWorkflowValues(workflow), [workflow]);
-  const stagedTypeChartEdit = editSession?.pendingEdits.find(
-    (edit) => edit.domain === 'workflow.typeChart'
-  );
-  const stagedValues = useMemo(
-    () => decodeTypeChartPendingValues(stagedTypeChartEdit?.newValue),
-    [stagedTypeChartEdit?.newValue]
-  );
-  const cleanValues = stagedValues ?? workflowValues ?? createDefaultTypeChartValues();
-  const cleanValuesKey = cleanValues.join(',');
-  const [draftValues, setDraftValues] =
-    useState<TypeChartEffectivenessValue[]>(cleanValues);
-
-  useEffect(() => {
-    setDraftValues(cleanValues);
-  }, [cleanValuesKey]);
-
-  const isDirty = !areTypeChartValuesEqual(draftValues, cleanValues);
-  const hasStagedChange = stagedValues !== null;
-  const canEdit =
-    workflow?.summary.availability === 'available' &&
-    workflow.installStatus !== 'blocked' &&
-    !isStaging &&
-    !isChangePlanApplying;
-  const canStage = canEdit && isDirty;
-  const canReviewPlan = hasStagedChange && !isDirty && !isChangePlanCreating;
-  const canApplyPlan =
-    hasStagedChange &&
-    !isDirty &&
-    changePlan !== null &&
-    changePlan.canApply &&
-    changePlan.writes.length > 0 &&
-    !isChangePlanApplying;
-
-  useEffect(() => {
-    onDirtyChange(isDirty);
-  }, [isDirty, onDirtyChange]);
-
-  const updateCell = (
-    attackTypeIndex: number,
-    defenseTypeIndex: number,
-    value: TypeChartEffectivenessValue
-  ) => {
-    const index = attackTypeIndex * 18 + defenseTypeIndex;
-    setDraftValues((current) => {
-      const next = current.slice();
-      next[index] = value;
-      return next;
-    });
-  };
-
-  return (
-    <>
-      <section aria-labelledby="type-chart-heading" className="panel wide-panel">
-        <div className="panel-heading">
-          <Swords aria-hidden="true" size={18} />
-          <h2 id="type-chart-heading">Type Chart</h2>
-        </div>
-
-        <div className="items-toolbar exefs-toolbar">
-          <Metric
-            label="Status"
-            value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'}
-          />
-          <Metric label="Offset" value={workflow?.chartOffsetHex ?? 'Unknown'} />
-          <Metric
-            label="Build"
-            value={
-              workflow?.buildId && workflow.buildId !== 'unknown'
-                ? workflow.buildId.slice(0, 12)
-                : 'Unknown'
-            }
-          />
-          <Metric label="Staged" value={hasStagedChange ? 'Yes' : 'No'} />
-        </div>
-
-        {workflow ? (
-          <div className="type-chart-editor">
-            <div className="type-chart-scroll" aria-label="Type effectiveness chart">
-              <div className="type-chart-grid">
-                <div className="type-chart-axis-label">
-                  <span>DEFENSE →</span>
-                  <span>ATTACK ↴</span>
-                </div>
-                {workflow.types.map((type) => (
-                  <TypeChartTypeBadge key={`defense-${type.typeIndex}`} type={type} />
-                ))}
-                {workflow.types.map((attackType) => (
-                  <Fragment key={`attack-row-${attackType.typeIndex}`}>
-                    <TypeChartTypeBadge isRowHeader type={attackType} />
-                    {workflow.types.map((defenseType) => {
-                      const index = attackType.typeIndex * 18 + defenseType.typeIndex;
-                      const value = draftValues[index] ?? 4;
-                      return (
-                        <TypeChartCellControl
-                          attackTypeLabel={attackType.label}
-                          defenseTypeLabel={defenseType.label}
-                          disabled={!canEdit}
-                          key={`${attackType.typeIndex}-${defenseType.typeIndex}`}
-                          onChange={(nextValue) =>
-                            updateCell(
-                              attackType.typeIndex,
-                              defenseType.typeIndex,
-                              nextValue
-                            )
-                          }
-                          value={value}
-                        />
-                      );
-                    })}
-                  </Fragment>
-                ))}
-              </div>
-            </div>
-
-            <div className="type-chart-actions">
-              <button
-                className="primary-button"
-                disabled={!canStage}
-                onClick={() => onStageChart(draftValues)}
-                type="button"
-              >
-                <Save aria-hidden="true" size={16} />
-                <span>{isStaging ? 'Staging' : 'Stage Type Chart'}</span>
-              </button>
-              <button
-                className="secondary-button"
-                disabled={!canReviewPlan}
-                onClick={onCreateChangePlan}
-                type="button"
-              >
-                <ClipboardCheck aria-hidden="true" size={16} />
-                <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
-              </button>
-              <button
-                className="primary-button"
-                disabled={!canApplyPlan}
-                onClick={onApplyChangePlan}
-                type="button"
-              >
-                <Save aria-hidden="true" size={16} />
-                <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
-              </button>
-            </div>
-
-            <TypeChartSourceSummary source={workflow.source} />
-          </div>
-        ) : (
-          <p className="empty-copy">Open Type Chart from Advanced Editors to inspect the type-effectiveness table.</p>
-        )}
-      </section>
-
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
-    </>
-  );
-}
-
-function TypeChartTypeBadge({
-  isRowHeader = false,
-  type
-}: {
-  isRowHeader?: boolean;
-  type: TypeChartWorkflow['types'][number];
-}) {
-  return (
-    <div
-      className={isRowHeader ? 'type-chart-type-badge type-chart-row-badge' : 'type-chart-type-badge'}
-      style={{ backgroundColor: type.color }}
-      title={type.label}
-    >
-      {isRowHeader ? type.label.toLocaleUpperCase() : type.shortLabel}
-    </div>
-  );
-}
-
-function TypeChartCellControl({
-  attackTypeLabel,
-  defenseTypeLabel,
-  disabled,
-  onChange,
-  value
-}: {
-  attackTypeLabel: string;
-  defenseTypeLabel: string;
-  disabled: boolean;
-  onChange: (value: TypeChartEffectivenessValue) => void;
-  value: TypeChartEffectivenessValue;
-}) {
-  const option = getTypeChartEffectivenessOption(value);
-  const label = `${attackTypeLabel} attacking ${defenseTypeLabel}: ${option.label}`;
-
-  return (
-    <label
-      className={`type-chart-cell type-chart-cell-${option.className}`}
-      title={label}
-    >
-      <span aria-hidden="true">{option.display}</span>
-      <select
-        aria-label={label}
-        disabled={disabled}
-        onChange={(event) => {
-          const nextValue = parseTypeChartEffectivenessValue(event.target.value);
-          if (nextValue !== null) {
-            onChange(nextValue);
-          }
-        }}
-        value={value}
-      >
-        {typeChartEffectivenessOptions.map((candidate) => (
-          <option key={candidate.value} value={candidate.value}>
-            {candidate.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function TypeChartSourceSummary({ source }: { source: TypeChartSourceRecord | null }) {
-  if (!source) {
-    return null;
-  }
-
-  return (
-    <dl className="type-chart-source-summary">
-      <div>
-        <dt>Source</dt>
-        <dd>{source.relativePath}</dd>
-      </div>
-      <div>
-        <dt>Layer</dt>
-        <dd>{formatSourceLayer(source.provenance.sourceLayer)}</dd>
-      </div>
-      <div>
-        <dt>File state</dt>
-        <dd>{formatFileState(source.provenance.fileState)}</dd>
-      </div>
-    </dl>
-  );
-}
-
-function getTypeChartEffectivenessOption(value: TypeChartEffectivenessValue) {
-  return (
-    typeChartEffectivenessOptions.find((option) => option.value === value) ??
-    typeChartEffectivenessOptions[2]!
-  );
-}
-
-function parseTypeChartEffectivenessValue(value: string) {
-  const parsed = Number.parseInt(value, 10);
-  return isTypeChartEffectivenessValue(parsed) ? parsed : null;
-}
-
-function isTypeChartEffectivenessValue(
-  value: number
-): value is TypeChartEffectivenessValue {
-  return value === 0 || value === 2 || value === 4 || value === 8;
-}
-
-function createDefaultTypeChartValues(): TypeChartEffectivenessValue[] {
-  return Array.from({ length: 18 * 18 }, () => 4 as TypeChartEffectivenessValue);
-}
-
-function getTypeChartWorkflowValues(
-  workflow: TypeChartWorkflow | null
-): TypeChartEffectivenessValue[] | null {
-  if (!workflow) {
-    return null;
-  }
-
-  const values = createDefaultTypeChartValues();
-  for (const cell of workflow.cells) {
-    const index = cell.attackTypeIndex * 18 + cell.defenseTypeIndex;
-    if (index >= 0 && index < values.length && isTypeChartEffectivenessValue(cell.effectiveness)) {
-      values[index] = cell.effectiveness;
-    }
-  }
-
-  return values;
-}
-
-function decodeTypeChartPendingValues(
-  value: string | null | undefined
-): TypeChartEffectivenessValue[] | null {
-  if (!value || value.length !== 18 * 18 * 2 || value.length % 2 !== 0) {
-    return null;
-  }
-
-  const values: TypeChartEffectivenessValue[] = [];
-  for (let index = 0; index < value.length; index += 2) {
-    const parsed = Number.parseInt(value.slice(index, index + 2), 16);
-    if (!isTypeChartEffectivenessValue(parsed)) {
-      return null;
-    }
-
-    values.push(parsed);
-  }
-
-  return values.length === 18 * 18 ? values : null;
-}
-
-function areTypeChartValuesEqual(
-  left: readonly TypeChartEffectivenessValue[],
-  right: readonly TypeChartEffectivenessValue[]
-) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
 function HyperTrainingSection({
   changePlan,
   editSession,
@@ -23410,601 +22822,6 @@ function StartingItemsSection({
   );
 }
 
-function RandomizerSection({
-  canApply,
-  isApplying,
-  onApplyRandomizer,
-  onImportSeed,
-  onRestoreRandomizer
-}: {
-  canApply: boolean;
-  isApplying: boolean;
-  onApplyRandomizer: (
-    config: RandomizerConfig,
-    operation?: 'randomize' | 'applySeed'
-  ) => Promise<ApplyRandomizerResponse>;
-  onImportSeed: (seed: string) => Promise<ImportRandomizerSeedResponse>;
-  onRestoreRandomizer: () => Promise<RestoreRandomizerResponse>;
-}) {
-  const [userSeed, setUserSeed] = useState('');
-  const [options, setOptions] = useState<RandomizerOptions>(defaultRandomizerOptions);
-  const [rollSeed, setRollSeed] = useState<string | null>(null);
-  const [outputHash, setOutputHash] = useState<string | null>(null);
-  const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(
-    () => new Set(['stats'])
-  );
-  const [seedOutput, setSeedOutput] = useState('');
-  const [diagnostics, setDiagnostics] = useState<ApiDiagnostic[]>([]);
-  const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [isSeedConfirmOpen, setIsSeedConfirmOpen] = useState(false);
-  const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = useState(false);
-  const [importSeedText, setImportSeedText] = useState('');
-  const [isImporting, setIsImporting] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
-  const [copySeedStatus, setCopySeedStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
-  const copySeedStatusTimerRef = useRef<number | null>(null);
-  const selectedOptionCount = useMemo(
-    () => Object.entries(options).filter(([key, value]) => key.startsWith('randomize') && value).length,
-    [options]
-  );
-  const pokemonCategoryCount = useMemo(
-    () => randomizerCategoryDefinitions.filter((category) => options[category.enabledKey]).length,
-    [options]
-  );
-  const encounterOptionCount = useMemo(
-    () => randomizerEncounterOptions.filter((option) => options[option.key]).length,
-    [options]
-  );
-  const canRandomize = canApply && selectedOptionCount > 0 && !isApplying && !isImporting && !isRestoring;
-  const canApplySharedSeed =
-    canApply && !isApplying && !isImporting && !isRestoring && Boolean(importSeedText.trim());
-  const canRestoreVanillaValues = canApply && !isApplying && !isImporting && !isRestoring;
-  const canCopySeed = Boolean(seedOutput.trim());
-  const hasImportedReplay = Boolean(rollSeed && outputHash);
-
-  useEffect(() => {
-    setCopySeedStatus('idle');
-  }, [seedOutput]);
-
-  useEffect(
-    () => () => {
-      if (copySeedStatusTimerRef.current !== null) {
-        window.clearTimeout(copySeedStatusTimerRef.current);
-      }
-    },
-    []
-  );
-
-  const clearImportedReplay = () => {
-    setRollSeed(null);
-    setOutputHash(null);
-    setSeedOutput('');
-    setDiagnostics([]);
-    setApplyResult(null);
-  };
-
-  const handleUserSeedChange = (value: string) => {
-    setUserSeed(value.slice(0, 20));
-    clearImportedReplay();
-  };
-
-  const handleToggleCategory = (categoryId: string) => {
-    setExpandedCategoryIds((current) => {
-      const next = new Set(current);
-      if (next.has(categoryId)) {
-        next.delete(categoryId);
-      } else {
-        next.add(categoryId);
-      }
-
-      return next;
-    });
-  };
-
-  const handleToggleOption = (key: RandomizerOptionKey) => {
-    setOptions((current) => ({
-      ...current,
-      [key]: !current[key]
-    }));
-    clearImportedReplay();
-  };
-
-  const handleResetOptions = () => {
-    setOptions(defaultRandomizerOptions);
-    setExpandedCategoryIds(new Set(['stats']));
-    clearImportedReplay();
-  };
-
-  const handleCopySeed = async () => {
-    const seed = seedOutput.trim();
-    if (!seed) {
-      return;
-    }
-
-    if (copySeedStatusTimerRef.current !== null) {
-      window.clearTimeout(copySeedStatusTimerRef.current);
-    }
-
-    try {
-      await writeTextToClipboard(seed);
-      setCopySeedStatus('copied');
-    } catch {
-      setCopySeedStatus('failed');
-    }
-
-    copySeedStatusTimerRef.current = window.setTimeout(() => {
-      setCopySeedStatus('idle');
-      copySeedStatusTimerRef.current = null;
-    }, 1800);
-  };
-
-  const handleConfirmImportSeed = async () => {
-    const seed = importSeedText.trim();
-    if (!seed) {
-      return;
-    }
-
-    setIsSeedConfirmOpen(false);
-    setIsImporting(true);
-    try {
-      const importResponse = await onImportSeed(seed);
-      setDiagnostics(importResponse.diagnostics);
-      setApplyResult(null);
-
-      if (importResponse.config) {
-        const replayConfig = {
-          ...importResponse.config,
-          options: createEffectiveRandomizerOptions(importResponse.config.options)
-        };
-        setUserSeed(replayConfig.userSeed);
-        setOptions(replayConfig.options);
-        setRollSeed(replayConfig.rollSeed ?? null);
-        setOutputHash(replayConfig.outputHash ?? null);
-        setSeedOutput(importResponse.seed ?? seed);
-
-        if (importResponse.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
-          return;
-        }
-
-        const applyResponse = await onApplyRandomizer(replayConfig, 'applySeed');
-        const hasErrors = applyResponse.applyResult.diagnostics.some(
-          (diagnostic) => diagnostic.severity === 'error'
-        );
-
-        setSeedOutput(applyResponse.seed);
-        setApplyResult(applyResponse.applyResult);
-        setDiagnostics(applyResponse.applyResult.diagnostics);
-        if (!hasErrors) {
-          setRollSeed(null);
-          setOutputHash(null);
-        }
-      }
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  const handleConfirmRestoreVanillaValues = async () => {
-    setIsRestoreConfirmOpen(false);
-    setIsRestoring(true);
-    try {
-      const response = await onRestoreRandomizer();
-      setApplyResult(response.applyResult);
-      setDiagnostics(response.applyResult.diagnostics);
-      setSeedOutput('');
-      setRollSeed(null);
-      setOutputHash(null);
-    } finally {
-      setIsRestoring(false);
-    }
-  };
-
-  const handleConfirmRandomize = async () => {
-    setIsConfirmOpen(false);
-    const response = await onApplyRandomizer({
-      options: createEffectiveRandomizerOptions(options),
-      outputHash,
-      rollSeed,
-      userSeed
-    });
-    const hasErrors = response.applyResult.diagnostics.some(
-      (diagnostic) => diagnostic.severity === 'error'
-    );
-
-    setSeedOutput(response.seed);
-    setApplyResult(response.applyResult);
-    setDiagnostics(response.applyResult.diagnostics);
-    if (!hasErrors) {
-      setRollSeed(null);
-      setOutputHash(null);
-    }
-  };
-
-  return (
-    <>
-      <section aria-labelledby="randomizer-heading" className="panel wide-panel randomizer-panel">
-        <div className="panel-heading">
-          <Shuffle aria-hidden="true" size={18} />
-          <h2 id="randomizer-heading">Randomizer</h2>
-        </div>
-
-        <div className="randomizer-seed-row">
-          <label
-            className="path-field"
-            title="Optional personal text mixed into new Randomize rolls. This is limited to 20 characters and is included in generated shared seeds."
-          >
-            <span>Base Seed</span>
-            <input
-              maxLength={20}
-              onChange={(event) => handleUserSeedChange(event.currentTarget.value)}
-              placeholder="Optional, 20 characters max"
-              title="Optional personal text mixed into new Randomize rolls. This is limited to 20 characters and is included in generated shared seeds."
-              value={userSeed}
-            />
-          </label>
-        </div>
-
-        <div className="randomizer-metrics">
-          <Metric label="Pokemon categories" value={pokemonCategoryCount.toString()} />
-          <Metric label="Encounters and rewards" value={encounterOptionCount.toString()} />
-          <Metric label="Replay seed" value={hasImportedReplay ? 'Imported' : 'New roll'} />
-        </div>
-
-        <div className="randomizer-category-bar" aria-label="Pokemon randomizer categories">
-          {randomizerCategoryDefinitions.map((category) => {
-            const Icon = category.icon;
-            const isExpanded = expandedCategoryIds.has(category.id);
-            const isEnabled = options[category.enabledKey];
-
-            return (
-              <button
-                aria-expanded={isExpanded}
-                className={`randomizer-category-button ${
-                  isExpanded ? 'randomizer-category-expanded' : ''
-                } ${isEnabled ? 'randomizer-category-enabled' : ''}`}
-                key={category.id}
-                onClick={() => handleToggleCategory(category.id)}
-                title={category.help}
-                type="button"
-              >
-                <Icon aria-hidden="true" size={16} />
-                <span>{category.label}</span>
-                <ChevronDown aria-hidden="true" size={16} />
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      {randomizerCategoryDefinitions
-        .filter((category) => expandedCategoryIds.has(category.id))
-        .map((category) => {
-          const Icon = category.icon;
-          const categoryEnabled = options[category.enabledKey];
-
-          return (
-            <section
-              aria-labelledby={`randomizer-${category.id}-heading`}
-              className="panel randomizer-option-panel"
-              key={category.id}
-            >
-              <div className="panel-heading">
-                <Icon aria-hidden="true" size={18} />
-                <h2 id={`randomizer-${category.id}-heading`}>{category.label}</h2>
-              </div>
-              <div className="randomizer-option-grid">
-                <label className="randomizer-checkbox" title={category.help}>
-                  <input
-                    checked={categoryEnabled}
-                    onChange={() => handleToggleOption(category.enabledKey)}
-                    title={category.help}
-                    type="checkbox"
-                  />
-                  <span>{category.enabledLabel}</span>
-                </label>
-                {category.fields.map((field) => {
-                  const isFieldChecked = categoryEnabled && options[field.key];
-
-                  return (
-                    <label className="randomizer-checkbox" key={field.key} title={field.help}>
-                      <input
-                        checked={isFieldChecked}
-                        disabled={!categoryEnabled}
-                        onChange={() => handleToggleOption(field.key)}
-                        title={field.help}
-                        type="checkbox"
-                      />
-                      <span>{field.label}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </section>
-          );
-        })}
-
-      <section aria-labelledby="randomizer-encounters-heading" className="panel randomizer-option-panel">
-        <div className="panel-heading">
-          <MapPin aria-hidden="true" size={18} />
-          <h2 id="randomizer-encounters-heading">Encounters and Rewards</h2>
-        </div>
-        <div className="randomizer-option-grid">
-          {randomizerEncounterOptions.map((option) => (
-            <label className="randomizer-checkbox" key={option.key} title={option.help}>
-              <input
-                checked={options[option.key]}
-                onChange={() => handleToggleOption(option.key)}
-                title={option.help}
-                type="checkbox"
-              />
-              <span>{option.label}</span>
-            </label>
-          ))}
-        </div>
-      </section>
-
-      <section aria-labelledby="randomizer-apply-heading" className="panel wide-panel randomizer-apply-panel">
-        <div className="panel-heading">
-          <Save aria-hidden="true" size={18} />
-          <h2 id="randomizer-apply-heading">Apply Randomizer</h2>
-        </div>
-        <div className="randomizer-action-row">
-          <button
-            className="danger-button"
-            disabled={!canRestoreVanillaValues}
-            onClick={() => setIsRestoreConfirmOpen(true)}
-            title={
-              canRestoreVanillaValues
-                ? 'Delete tracked Randomizer output files from Output Root to restore vanilla/base game values for those data files.'
-                : 'Validate editable project paths before restoring tracked Randomizer output files.'
-            }
-            type="button"
-          >
-            <RefreshCw aria-hidden="true" size={16} />
-            <span>{isRestoring ? 'Restoring' : 'Restore Vanilla Values'}</span>
-          </button>
-          <button
-            className="secondary-button"
-            disabled={isApplying || isImporting || isRestoring}
-            onClick={handleResetOptions}
-            title="Reset only clears Randomizer selections, seed text, generated seed output, and replay state. It does not restore or delete files already written to Output Root."
-            type="button"
-          >
-            <RotateCcw aria-hidden="true" size={16} />
-            <span>Reset Selections</span>
-          </button>
-          <button
-            className="primary-button"
-            disabled={!canRandomize}
-            onClick={() => setIsConfirmOpen(true)}
-            title={
-              canRandomize
-                ? 'Randomize the selected data and write it to Output Root.'
-                : 'Select at least one option and validate editable project paths first.'
-            }
-            type="button"
-          >
-            <Shuffle aria-hidden="true" size={16} />
-            <span>{isApplying ? 'Randomizing' : 'Randomize'}</span>
-          </button>
-        </div>
-        <div className="randomizer-output-seed">
-          <div className="randomizer-output-seed-heading">
-            <span>Randomizer Seed</span>
-            <button
-              className="secondary-button"
-              disabled={!canCopySeed}
-              onClick={handleCopySeed}
-              title={
-                canCopySeed
-                  ? 'Copy the generated Randomizer Seed to the system clipboard.'
-                  : 'Randomize or apply a shared seed before copying.'
-              }
-              type="button"
-            >
-              <Copy aria-hidden="true" size={16} />
-              <span>
-                {copySeedStatus === 'copied'
-                  ? 'Copied'
-                  : copySeedStatus === 'failed'
-                  ? 'Copy Failed'
-                  : 'Copy Seed'}
-              </span>
-            </button>
-          </div>
-          <textarea
-            aria-label="Randomizer Seed"
-            readOnly
-            rows={4}
-            title="Copy this seed after Randomize or Apply Randomization Seed succeeds. It represents the generated output for the selected project data."
-            value={seedOutput}
-          />
-        </div>
-        <div className="randomizer-shared-seed-row">
-          <label
-            className="path-field"
-            title="Paste a shared KM1 seed here to apply that exact randomizer output to the current project. Legacy KMR1 seeds are still accepted."
-          >
-            <span>Shared Randomization Seed</span>
-            <textarea
-              onChange={(event) => setImportSeedText(event.currentTarget.value)}
-              rows={3}
-              title="Paste a shared KM1 seed here to apply that exact randomizer output to the current project. Legacy KMR1 seeds are still accepted."
-              value={importSeedText}
-            />
-          </label>
-          <button
-            className="purple-button"
-            disabled={!canApplySharedSeed}
-            onClick={() => setIsSeedConfirmOpen(true)}
-            title={
-              canApplySharedSeed
-                ? 'Apply the pasted shared seed directly to Output Root using its saved replay data.'
-                : 'Paste a shared seed and validate editable project paths before applying it.'
-            }
-            type="button"
-          >
-            <ClipboardCheck aria-hidden="true" size={16} />
-            <span>{isImporting ? 'Applying Seed' : 'Apply Randomization Seed'}</span>
-          </button>
-        </div>
-      </section>
-
-      {applyResult ? <ApplyResultSection applyResult={applyResult} /> : null}
-      {diagnostics.length > 0 ? (
-        <DiagnosticsSection diagnostics={diagnostics} scrollAfterEntries={5} />
-      ) : null}
-
-      {isConfirmOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <section
-            aria-labelledby="randomizer-confirm-heading"
-            aria-modal="true"
-            className="modal-panel"
-            role="dialog"
-          >
-            <div className="panel-heading">
-              <AlertTriangle aria-hidden="true" size={18} />
-              <h2 id="randomizer-confirm-heading">Randomize Selected Data?</h2>
-            </div>
-            <p className="modal-copy">
-              KM Editor will write randomized output files for the selected categories to
-              Output Root. Existing output files for those data domains may be replaced.
-            </p>
-            <div className="modal-actions">
-              <button
-                className="primary-button"
-                disabled={isApplying}
-                onClick={handleConfirmRandomize}
-                type="button"
-              >
-                <Shuffle aria-hidden="true" size={16} />
-                <span>{isApplying ? 'Randomizing' : 'Confirm Randomize'}</span>
-              </button>
-              <button
-                className="secondary-button"
-                disabled={isApplying}
-                onClick={() => setIsConfirmOpen(false)}
-                type="button"
-              >
-                <X aria-hidden="true" size={16} />
-                <span>Cancel</span>
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {isSeedConfirmOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <section
-            aria-labelledby="randomizer-seed-confirm-heading"
-            aria-modal="true"
-            className="modal-panel"
-            role="dialog"
-          >
-            <div className="panel-heading">
-              <AlertTriangle aria-hidden="true" size={18} />
-              <h2 id="randomizer-seed-confirm-heading">Apply Shared Randomization Seed?</h2>
-            </div>
-            <p className="modal-copy">
-              KM Editor will read the pasted seed, select the options stored inside it,
-              and immediately write that exact randomized output to Output Root. Existing
-              output files for those data domains may be replaced.
-            </p>
-            <div className="modal-actions">
-              <button
-                className="purple-button"
-                disabled={isApplying || isImporting}
-                onClick={handleConfirmImportSeed}
-                type="button"
-              >
-                <ClipboardCheck aria-hidden="true" size={16} />
-                <span>{isImporting ? 'Applying Seed' : 'Confirm Apply Seed'}</span>
-              </button>
-              <button
-                className="secondary-button"
-                disabled={isApplying || isImporting}
-                onClick={() => setIsSeedConfirmOpen(false)}
-                type="button"
-              >
-                <X aria-hidden="true" size={16} />
-                <span>Cancel</span>
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {isRestoreConfirmOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <section
-            aria-labelledby="randomizer-restore-confirm-heading"
-            aria-modal="true"
-            className="modal-panel"
-            role="dialog"
-          >
-            <div className="panel-heading">
-              <AlertTriangle aria-hidden="true" size={18} />
-              <h2 id="randomizer-restore-confirm-heading">Restore Vanilla Values?</h2>
-            </div>
-            <p className="modal-copy">
-              KM Editor will delete tracked Randomizer-generated files from Output Root
-              so those romfs/exefs files fall back to the base game. This can remove
-              randomizer changes previously written to those files.
-            </p>
-            <div className="modal-actions">
-              <button
-                className="danger-button"
-                disabled={isApplying || isRestoring}
-                onClick={handleConfirmRestoreVanillaValues}
-                type="button"
-              >
-                <RefreshCw aria-hidden="true" size={16} />
-                <span>{isRestoring ? 'Restoring' : 'Confirm Restore'}</span>
-              </button>
-              <button
-                className="secondary-button"
-                disabled={isApplying || isRestoring}
-                onClick={() => setIsRestoreConfirmOpen(false)}
-                type="button"
-              >
-                <X aria-hidden="true" size={16} />
-                <span>Cancel</span>
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-async function writeTextToClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const textArea = document.createElement('textarea');
-  textArea.value = text;
-  textArea.setAttribute('readonly', '');
-  textArea.style.position = 'fixed';
-  textArea.style.top = '-1000px';
-  textArea.style.opacity = '0';
-  document.body.append(textArea);
-  textArea.select();
-
-  try {
-    if (!document.execCommand('copy')) {
-      throw new Error('Clipboard copy command failed.');
-    }
-  } finally {
-    textArea.remove();
-  }
-}
-
 function SvModMergerSection({
   applyResult,
   isApplying,
@@ -25325,32 +24142,6 @@ function ChangePlanSection({
   );
 }
 
-function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }) {
-  return (
-    <section aria-labelledby="apply-result-heading" className="panel wide-panel">
-      <div className="panel-heading">
-        <CheckCircle aria-hidden="true" size={18} />
-        <h2 id="apply-result-heading">Save Result</h2>
-      </div>
-
-      <div className="change-plan-status">
-        <Metric label="Save ID" value={applyResult.applyId} />
-        <Metric label="Written files" value={applyResult.writtenFiles.length.toString()} />
-      </div>
-
-      {applyResult.writtenFiles.length > 0 ? (
-        <ul className="written-file-list">
-          {applyResult.writtenFiles.map((writtenFile) => (
-            <li key={writtenFile}>{writtenFile}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="empty-copy">No files were written.</p>
-      )}
-    </section>
-  );
-}
-
 function SaveProgressModal({ progress }: { progress: SaveProgressState }) {
   return (
     <div className="modal-backdrop" role="presentation">
@@ -25706,52 +24497,6 @@ function PathStatusSection({ health }: { health: ProjectHealth | null }) {
   );
 }
 
-function DiagnosticsSection({
-  diagnostics,
-  scrollAfterEntries
-}: {
-  diagnostics: ApiDiagnostic[];
-  scrollAfterEntries?: number;
-}) {
-  const isScrollable = scrollAfterEntries !== undefined && diagnostics.length > scrollAfterEntries;
-
-  return (
-    <section aria-labelledby="diagnostics-heading" className="panel">
-      <div className="panel-heading">
-        <Activity aria-hidden="true" size={18} />
-        <h2 id="diagnostics-heading">Diagnostics</h2>
-      </div>
-
-      {diagnostics.length > 0 ? (
-        <ul className={`diagnostic-list ${isScrollable ? 'diagnostic-list-scrollable' : ''}`}>
-          {diagnostics.map((diagnostic, index) => (
-            <li
-              className={`diagnostic diagnostic-${diagnostic.severity}`}
-              key={`${diagnostic.severity}-${diagnostic.message}-${index}`}
-            >
-              <strong>{formatDiagnosticSeverity(diagnostic.severity)}</strong>
-              <span>{formatDiagnosticMessage(diagnostic)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="empty-copy">No diagnostics.</p>
-      )}
-    </section>
-  );
-}
-
-function formatDiagnosticSeverity(severity: ApiDiagnostic['severity']) {
-  switch (severity) {
-    case 'error':
-      return 'Error';
-    case 'warning':
-      return 'Warning';
-    case 'info':
-      return 'Info';
-  }
-}
-
 function getModMergerStatusClassName(status: string) {
   switch (status) {
     case 'ready':
@@ -25856,15 +24601,6 @@ function getFileName(path: string) {
 
 function isScarletVioletGame(game: ProjectGame | null | undefined) {
   return game === 'scarlet' || game === 'violet';
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric">
-      <span className="metric-label">{label}</span>
-      <span className="metric-value metric-value-small">{value}</span>
-    </div>
-  );
 }
 
 function filterItems(items: ItemRecord[], searchText: string) {
@@ -29992,36 +28728,6 @@ function formatRoyalCandyStatus(status: string) {
   }
 }
 
-function formatBagHookStatus(status: string) {
-  switch (status.toLocaleLowerCase()) {
-    case 'available':
-      return 'Available';
-    case 'blocked':
-      return 'Blocked';
-    case 'conflict':
-      return 'Conflict';
-    case 'empty':
-      return 'Empty';
-    case 'foreign':
-      return 'Foreign';
-    case 'installed':
-      return 'Installed';
-    case 'legacy':
-      return 'Legacy';
-    case 'occupied':
-      return 'Occupied';
-    case 'repairable':
-      return 'Repair needed';
-    case 'readonly':
-    case 'read-only':
-      return 'Read-only';
-    case 'unavailable':
-      return 'Unavailable';
-    default:
-      return status.length > 0 ? `${status[0]!.toLocaleUpperCase()}${status.slice(1)}` : status;
-  }
-}
-
 function formatStartingItemOption(option: StartingItemOptionRecord) {
   return `${option.name} (#${option.itemId})${option.isKeyItem ? ' [Key]' : ''}`;
 }
@@ -30866,33 +29572,6 @@ const workflowAvailabilityClassNames = {
   readOnly: 'status-warning'
 } as const;
 
-function formatSourceLayer(
-  layer:
-    | EncounterTableRecord['provenance']['sourceLayer']
-    | DynamaxAdventureRecord['provenance']['sourceLayer']
-    | FlagRecord['provenance']['sourceLayer']
-    | GiftPokemonRecord['provenance']['sourceLayer']
-    | ItemRecord['provenance']['sourceLayer']
-    | MoveRecord['provenance']['sourceLayer']
-    | PokemonRecord['provenance']['sourceLayer']
-    | RaidRewardTableRecord['provenance']['sourceLayer']
-    | RentalPokemonRecord['provenance']['sourceLayer']
-    | SaveBlockRecord['provenance']['sourceLayer']
-    | ShopRecord['provenance']['sourceLayer']
-    | SpreadsheetImportProfileRecord['provenance']['sourceLayer']
-    | StaticEncounterRecord['provenance']['sourceLayer']
-    | TextEntryRecord['provenance']['sourceLayer']
-    | TradePokemonRecord['provenance']['sourceLayer']
-    | TrainerRecord['provenance']['sourceLayer']
-) {
-  return {
-    base: 'Base',
-    generated: 'Generated',
-    layered: 'LayeredFS',
-    pending: 'Pending'
-  }[layer];
-}
-
 function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][number]['layer']) {
   return {
     base: 'Base',
@@ -30900,32 +29579,6 @@ function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][n
     layered: 'LayeredFS',
     pending: 'Pending'
   }[layer];
-}
-
-function formatFileState(
-  state:
-    | EncounterTableRecord['provenance']['fileState']
-    | DynamaxAdventureRecord['provenance']['fileState']
-    | FlagRecord['provenance']['fileState']
-    | GiftPokemonRecord['provenance']['fileState']
-    | ItemRecord['provenance']['fileState']
-    | MoveRecord['provenance']['fileState']
-    | PokemonRecord['provenance']['fileState']
-    | RaidRewardTableRecord['provenance']['fileState']
-    | RentalPokemonRecord['provenance']['fileState']
-    | SaveBlockRecord['provenance']['fileState']
-    | ShopRecord['provenance']['fileState']
-    | SpreadsheetImportProfileRecord['provenance']['fileState']
-    | StaticEncounterRecord['provenance']['fileState']
-    | TextEntryRecord['provenance']['fileState']
-    | TradePokemonRecord['provenance']['fileState']
-    | TrainerRecord['provenance']['fileState']
-) {
-  return {
-    baseOnly: 'Base only',
-    layeredOnly: 'Layered only',
-    layeredOverride: 'Layered override'
-  }[state];
 }
 
 function getPathStatusClassName(pathValidation: ProjectPathValidation | undefined) {

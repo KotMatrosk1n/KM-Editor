@@ -1,9 +1,21 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { describe, expect, it } from 'vitest';
-import { createReportableError, formatReportableErrorMessage } from './errorReporting';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  createReportableError,
+  formatReportableErrorMessage,
+  installGlobalErrorHandlers
+} from './errorReporting';
 
 describe('error reporting', () => {
+  let cleanupGlobalErrorHandlers: (() => void) | null = null;
+
+  afterEach(() => {
+    cleanupGlobalErrorHandlers?.();
+    cleanupGlobalErrorHandlers = null;
+    vi.restoreAllMocks();
+  });
+
   it('creates screenshot-friendly reportable error messages', () => {
     const report = createReportableError(new Error('Render failed'), {
       kind: 'render'
@@ -24,5 +36,30 @@ describe('error reporting', () => {
 
     expect(report.message).toBe('The background task failed.');
     expect(report.code).toMatch(/^KM-UI-PROMISE-[0-9A-Z]{6}$/);
+  });
+
+  it('installs global error handlers only once and exposes cleanup', () => {
+    const addEventListener = vi.spyOn(window, 'addEventListener');
+    const removeEventListener = vi.spyOn(window, 'removeEventListener');
+
+    const firstCleanup = installGlobalErrorHandlers();
+    cleanupGlobalErrorHandlers = firstCleanup;
+    const secondCleanup = installGlobalErrorHandlers();
+
+    expect(secondCleanup).toBe(firstCleanup);
+    expect(addEventListener).toHaveBeenCalledTimes(2);
+    expect(addEventListener.mock.calls.map(([eventName]) => eventName)).toEqual([
+      'error',
+      'unhandledrejection'
+    ]);
+
+    firstCleanup();
+    cleanupGlobalErrorHandlers = null;
+
+    expect(removeEventListener).toHaveBeenCalledTimes(2);
+    expect(removeEventListener.mock.calls.map(([eventName]) => eventName)).toEqual([
+      'error',
+      'unhandledrejection'
+    ]);
   });
 });

@@ -17,6 +17,7 @@ using KM.SwSh.StaticEncounters;
 using KM.SwSh.Text;
 using KM.SwSh.Trades;
 using KM.SwSh.Trainers;
+using KM.SwSh.TypeChart;
 using KM.SwSh.Workflows;
 using System.Diagnostics;
 using Xunit;
@@ -38,7 +39,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
             "The synthetic baseline must include enough files to exercise project graph enumeration.");
 
         var workflowList = Record(measurements, "workflows.list", () => workflowService.List(temp.Paths));
-        Assert.Equal(27, workflowList.Workflows.Count);
+        Assert.Equal(28, workflowList.Workflows.Count);
 
         var items = Record(measurements, "items.load", () => workflowService.LoadItems(temp.Paths));
         var pokemon = Record(measurements, "pokemon.load", () => workflowService.LoadPokemon(temp.Paths));
@@ -63,6 +64,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var catchCap = Record(measurements, "catchCap.load", () => workflowService.LoadCatchCap(temp.Paths));
         var ivScreen = Record(measurements, "ivScreen.load", () => workflowService.LoadIvScreen(temp.Paths));
         var gymUniformRemoval = Record(measurements, "gymUniformRemoval.load", () => workflowService.LoadGymUniformRemoval(temp.Paths));
+        var typeChart = Record(measurements, "typeChart.load", () => workflowService.LoadTypeChart(temp.Paths));
         var royalCandy = Record(measurements, "royalCandy.load", () => workflowService.LoadRoyalCandy(temp.Paths));
         var startingItems = Record(measurements, "startingItems.load", () => workflowService.LoadStartingItems(temp.Paths));
         var spreadsheetImport = Record(measurements, "spreadsheetImport.load", () => workflowService.LoadSpreadsheetImport(temp.Paths));
@@ -96,6 +98,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         Assert.Equal(9, catchCap.Stats.TotalCapCount);
         Assert.True(ivScreen.Stats.ReservedMainTextRegionCount > 0);
         Assert.True(gymUniformRemoval.Stats.ReservedMainTextRegionCount > 0);
+        Assert.Equal(SwShTypeChartMainPatcher.ChartLength, typeChart.Stats.ChartCellCount);
         Assert.True(royalCandy.Checks.Count > 0);
         Assert.Equal(19, startingItems.Stats.TotalGrantSlotCount);
         Assert.Single(spreadsheetImport.Profiles);

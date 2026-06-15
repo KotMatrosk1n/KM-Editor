@@ -486,6 +486,7 @@ export const randomizerOptionsSchema = z.strictObject({
   randomizeRaidBonusRewards: z.boolean(),
   randomizeRaidRewards: z.boolean(),
   randomizeStaticEncounters: z.boolean(),
+  randomizeTypeChart: z.boolean(),
   shufflePokemonStats: z.boolean(),
   statAttack: z.boolean(),
   statDefense: z.boolean(),
@@ -493,6 +494,8 @@ export const randomizerOptionsSchema = z.strictObject({
   statSpecialAttack: z.boolean(),
   statSpecialDefense: z.boolean(),
   statSpeed: z.boolean(),
+  typeChartNoImmunities: z.boolean(),
+  typeChartOneImmunityPerType: z.boolean(),
   typePrimary: z.boolean(),
   typeSecondary: z.boolean()
 });

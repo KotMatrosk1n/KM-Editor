@@ -12,6 +12,7 @@ using KM.SwSh.Pokemon;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.StaticEncounters;
+using KM.SwSh.TypeChart;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -28,6 +29,7 @@ public sealed class SwShRandomizerService
     private const string EncountersEditDomain = "workflow.encounters";
     private const string RandomizerManifestRelativePath = ".km-editor/randomizer-manifest.json";
     private const int RoyalCandyItemId = 1128;
+    private const int PokemonTypeShapeChangeChancePercent = 30;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -63,6 +65,8 @@ public sealed class SwShRandomizerService
     private readonly SwShRaidRewardsWorkflowService raidRewardsWorkflowService;
     private readonly SwShRaidRewardsEditSessionService raidRewardsEditSessionService;
     private readonly SwShRoyalCandyWorkflowService royalCandyWorkflowService;
+    private readonly SwShTypeChartWorkflowService typeChartWorkflowService;
+    private readonly SwShTypeChartEditSessionService typeChartEditSessionService;
 
     public SwShRandomizerService(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -78,7 +82,9 @@ public sealed class SwShRandomizerService
         SwShGiftPokemonEditSessionService? giftPokemonEditSessionService = null,
         SwShRaidRewardsWorkflowService? raidRewardsWorkflowService = null,
         SwShRaidRewardsEditSessionService? raidRewardsEditSessionService = null,
-        SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null)
+        SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null,
+        SwShTypeChartWorkflowService? typeChartWorkflowService = null,
+        SwShTypeChartEditSessionService? typeChartEditSessionService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.pokemonWorkflowService = pokemonWorkflowService ?? new SwShPokemonWorkflowService();
@@ -94,6 +100,8 @@ public sealed class SwShRandomizerService
         this.raidRewardsWorkflowService = raidRewardsWorkflowService ?? new SwShRaidRewardsWorkflowService();
         this.raidRewardsEditSessionService = raidRewardsEditSessionService ?? new SwShRaidRewardsEditSessionService(this.projectWorkspaceService, this.raidRewardsWorkflowService);
         this.royalCandyWorkflowService = royalCandyWorkflowService ?? new SwShRoyalCandyWorkflowService();
+        this.typeChartWorkflowService = typeChartWorkflowService ?? new SwShTypeChartWorkflowService();
+        this.typeChartEditSessionService = typeChartEditSessionService ?? new SwShTypeChartEditSessionService(this.projectWorkspaceService, this.typeChartWorkflowService);
     }
 
     public SwShRandomizerImportResult ImportSeed(string seed)
@@ -221,10 +229,18 @@ public sealed class SwShRandomizerService
                 expected: "Editable project paths"));
         }
 
-        var pokemonWorkflow = pokemonWorkflowService.Load(project);
-        AddWorkflowErrors(pokemonWorkflow.Diagnostics, diagnostics);
-        var pokemonTargets = CreatePokemonTargets(pokemonWorkflow).ToArray();
-        if (pokemonTargets.Length == 0)
+        var pokemonWorkflow = ShouldLoadPokemon(options)
+            ? pokemonWorkflowService.Load(project)
+            : null;
+        if (pokemonWorkflow is not null)
+        {
+            AddWorkflowErrors(pokemonWorkflow.Diagnostics, diagnostics);
+        }
+
+        var pokemonTargets = pokemonWorkflow is null
+            ? Array.Empty<PokemonCandidate>()
+            : CreatePokemonTargets(pokemonWorkflow).ToArray();
+        if (pokemonWorkflow is not null && pokemonTargets.Length == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -281,11 +297,15 @@ public sealed class SwShRandomizerService
         }
 
         var domainPlans = new List<RandomizerDomainPlan>();
-        AddPokemonPlan(project, pokemonWorkflow, pokemonTargets, movePool, itemPool, generationKey, options, domainPlans, diagnostics);
+        if (pokemonWorkflow is not null)
+        {
+            AddPokemonPlan(project, pokemonWorkflow, pokemonTargets, movePool, itemPool, generationKey, options, domainPlans, diagnostics);
+        }
         AddWildEncounterPlan(project, pokemonTargets, generationKey, options, domainPlans, diagnostics);
         AddStaticPlan(project, pokemonTargets, generationKey, options, domainPlans, diagnostics);
         AddGiftPlan(project, pokemonTargets, generationKey, options, domainPlans, diagnostics);
         AddRaidRewardPlan(project, itemPool, generationKey, options, domainPlans, diagnostics);
+        AddTypeChartPlan(project, generationKey, options, domainPlans, diagnostics);
 
         if (domainPlans.Count == 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
         {
@@ -909,6 +929,103 @@ public sealed class SwShRandomizerService
             raidRewardsEditSessionService.ApplyChangePlan));
     }
 
+    private void AddTypeChartPlan(
+        OpenedProject project,
+        string generationKey,
+        SwShRandomizerOptions options,
+        ICollection<RandomizerDomainPlan> plans,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!options.RandomizeTypeChart)
+        {
+            return;
+        }
+
+        var workflow = typeChartWorkflowService.Load(project);
+        var workflowErrors = workflow.Diagnostics
+            .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        foreach (var diagnostic in workflowErrors)
+        {
+            diagnostics.Add(diagnostic);
+        }
+
+        if (workflowErrors.Length > 0)
+        {
+            return;
+        }
+
+        var currentValues = workflow.Cells
+            .OrderBy(cell => cell.AttackTypeIndex)
+            .ThenBy(cell => cell.DefenseTypeIndex)
+            .Select(cell => cell.Effectiveness)
+            .ToArray();
+        var randomizedValues = CreateRandomizedTypeChartValues(currentValues, generationKey, options);
+        var staged = typeChartEditSessionService.StageChart(project.Paths, randomizedValues, session: null);
+        foreach (var diagnostic in staged.Diagnostics.Where(diagnostic => diagnostic.Severity != DiagnosticSeverity.Info))
+        {
+            diagnostics.Add(diagnostic);
+        }
+
+        if (staged.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return;
+        }
+
+        plans.Add(new RandomizerDomainPlan(
+            "Type Chart",
+            staged.Session,
+            typeChartEditSessionService.CreateChangePlan,
+            typeChartEditSessionService.ApplyChangePlan));
+    }
+
+    internal static int[] CreateRandomizedTypeChartValues(
+        IReadOnlyList<int> currentValues,
+        string generationKey,
+        SwShRandomizerOptions options)
+    {
+        SwShTypeChartMainPatcher.ValidateValues(currentValues);
+
+        var rng = DeterministicRandom.Create(generationKey, "typeChart");
+        var vanillaDistribution = SwShTypeChartWorkflowService
+            .ToDisplayOrder(SwShTypeChartMainPatcher.VanillaChartValues)
+            .Where(value => !options.TypeChartNoImmunities || value != 0)
+            .ToArray();
+        var nonImmuneDistribution = vanillaDistribution
+            .Where(value => value != 0)
+            .ToArray();
+        var values = new int[SwShTypeChartMainPatcher.ChartLength];
+        var immunityCountsByAttackType = new int[SwShTypeChartMainPatcher.TypeCount];
+
+        for (var attackType = 0; attackType < SwShTypeChartMainPatcher.TypeCount; attackType++)
+        {
+            for (var defenseType = 0; defenseType < SwShTypeChartMainPatcher.TypeCount; defenseType++)
+            {
+                var value = rng.Pick(vanillaDistribution);
+                if (value == 0
+                    && options.TypeChartOneImmunityPerType
+                    && immunityCountsByAttackType[attackType] > 0)
+                {
+                    value = rng.Pick(nonImmuneDistribution);
+                }
+
+                if (value == 0)
+                {
+                    immunityCountsByAttackType[attackType]++;
+                }
+
+                values[(attackType * SwShTypeChartMainPatcher.TypeCount) + defenseType] = value;
+            }
+        }
+
+        if (values.SequenceEqual(currentValues))
+        {
+            values[0] = values[0] == 4 ? 2 : 4;
+        }
+
+        return values;
+    }
+
     private static void AddStatEdits(
         IReadOnlyList<SwShPokemonRecord> pokemon,
         SwShRandomizerOptions options,
@@ -970,6 +1087,8 @@ public sealed class SwShRandomizerService
         var typeOptions = SwShPokemonWorkflowService.GetEditableField(SwShPokemonWorkflowService.Type1Field)?.Options
             .Select(option => option.Value)
             .Where(value => value >= 0)
+            .Distinct()
+            .Order()
             .ToArray() ?? Array.Empty<int>();
         if (typeOptions.Length == 0)
         {
@@ -984,11 +1103,24 @@ public sealed class SwShRandomizerService
         var rng = DeterministicRandom.Create(exportedSeed, "pokemon.types");
         foreach (var record in pokemon)
         {
-            var type1 = options.TypePrimary ? rng.Pick(typeOptions) : record.Personal.Type1;
-            var type2 = options.TypeSecondary ? rng.Pick(typeOptions) : record.Personal.Type2;
-            if (!options.AllowSameType && typeOptions.Length > 1 && type2 == type1)
+            int type1;
+            int type2;
+            if (options.TypePrimary && options.TypeSecondary)
             {
-                type2 = typeOptions.First(value => value != type1);
+                (type1, type2) = CreateRandomizedTypePair(
+                    record.Personal.Type1,
+                    record.Personal.Type2,
+                    typeOptions,
+                    rng);
+            }
+            else
+            {
+                type1 = options.TypePrimary ? rng.Pick(typeOptions) : record.Personal.Type1;
+                type2 = options.TypeSecondary ? rng.Pick(typeOptions) : record.Personal.Type2;
+                if (!options.AllowSameType && typeOptions.Length > 1 && type2 == type1)
+                {
+                    type2 = typeOptions.First(value => value != type1);
+                }
             }
 
             if (options.TypePrimary)
@@ -1009,6 +1141,35 @@ public sealed class SwShRandomizerService
                     $"Randomize {record.Name} secondary type"));
             }
         }
+    }
+
+    internal static (int Type1, int Type2) CreateRandomizedTypePair(
+        int originalType1,
+        int originalType2,
+        IReadOnlyList<int> typeOptions,
+        DeterministicRandom rng)
+    {
+        ArgumentNullException.ThrowIfNull(typeOptions);
+        ArgumentNullException.ThrowIfNull(rng);
+        if (typeOptions.Count == 0)
+        {
+            throw new ArgumentException("Type options cannot be empty.", nameof(typeOptions));
+        }
+
+        var wasSingleType = originalType1 == originalType2;
+        var useSingleType = wasSingleType;
+        if (typeOptions.Count > 1 && rng.NextInt(100) < PokemonTypeShapeChangeChancePercent)
+        {
+            useSingleType = !wasSingleType;
+        }
+
+        var type1 = rng.Pick(typeOptions);
+        if (useSingleType || typeOptions.Count == 1)
+        {
+            return (type1, type1);
+        }
+
+        return (type1, PickDifferentType(typeOptions, type1, rng));
     }
 
     private static void AddAbilityEdits(
@@ -1755,6 +1916,14 @@ public sealed class SwShRandomizerService
             || options.RandomizePokemonEvolutions;
     }
 
+    private static bool ShouldLoadPokemon(SwShRandomizerOptions options)
+    {
+        return ShouldRandomizePokemon(options)
+            || options.RandomizeWildEncounters
+            || options.RandomizeStaticEncounters
+            || options.RandomizeGiftEncounters;
+    }
+
     private static bool ShouldLoadMoves(SwShRandomizerOptions options)
     {
         return options.RandomizePokemonLearnsets;
@@ -1862,6 +2031,15 @@ public sealed class SwShRandomizerService
         }
 
         return values;
+    }
+
+    private static int PickDifferentType(IReadOnlyList<int> typeOptions, int type1, DeterministicRandom rng)
+    {
+        var alternatives = typeOptions
+            .Where(value => value != type1)
+            .ToArray();
+
+        return alternatives.Length > 0 ? rng.Pick(alternatives) : type1;
     }
 
     private static int PickAndCycle(DeterministicRandom rng, List<int> available, IReadOnlyList<int> fallback)

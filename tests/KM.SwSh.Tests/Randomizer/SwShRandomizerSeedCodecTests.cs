@@ -22,6 +22,8 @@ public sealed class SwShRandomizerSeedCodecTests
                 LearnsetExpandTo25 = true,
                 RandomizeWildEncounters = true,
                 RandomizeRaidRewards = true,
+                RandomizeTypeChart = true,
+                TypeChartOneImmunityPerType = true,
                 StatDefense = false,
             },
             RollSeed: "roll-001",
@@ -41,6 +43,8 @@ public sealed class SwShRandomizerSeedCodecTests
         Assert.True(imported.Config.Options.LearnsetExpandTo25);
         Assert.True(imported.Config.Options.RandomizeWildEncounters);
         Assert.True(imported.Config.Options.RandomizeRaidRewards);
+        Assert.True(imported.Config.Options.RandomizeTypeChart);
+        Assert.True(imported.Config.Options.TypeChartOneImmunityPerType);
         Assert.False(imported.Config.Options.StatDefense);
         Assert.Equal("roll-001", imported.Config.RollSeed);
         Assert.Equal("output-abc", imported.Config.OutputHash);

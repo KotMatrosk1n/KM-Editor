@@ -39,7 +39,10 @@ public sealed record RandomizerOptionsDto(
     bool RandomizeStaticEncounters,
     bool RandomizeGiftEncounters,
     bool RandomizeRaidRewards,
-    bool RandomizeRaidBonusRewards);
+    bool RandomizeRaidBonusRewards,
+    bool RandomizeTypeChart,
+    bool TypeChartNoImmunities,
+    bool TypeChartOneImmunityPerType);
 
 public sealed record RandomizerConfigDto(
     string UserSeed,

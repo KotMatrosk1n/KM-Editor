@@ -1,11 +1,11 @@
 {
   "name": "@km-editor/desktop",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --build && vite build",
+    "build": "pnpm run typecheck && vite build",
     "preview": "vite preview",
     "sidecar:publish": "node scripts/publish-sidecar.mjs",
     "sprites:download": "node scripts/download-sprites.mjs --refresh",
@@ -13,7 +13,8 @@
     "tauri": "tauri",
     "tauri:build": "tauri build",
     "tauri:dev": "tauri dev",
-    "typecheck": "tsc --build",
+    "check:file-size": "node scripts/check-file-size.mjs",
+    "typecheck": "tsc --build && node scripts/check-file-size.mjs",
     "test": "vitest",
     "test:run": "vitest run",
     "test:workflow": "playwright test"
