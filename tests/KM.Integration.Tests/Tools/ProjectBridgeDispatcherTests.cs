@@ -159,6 +159,7 @@ public sealed class ProjectBridgeDispatcherTests
                 "flagworkSave",
                 "bagHook",
                 "catchCap",
+                "hyperTraining",
                 "gymUniformRemoval",
                 "ivScreen",
                 "royalCandy",

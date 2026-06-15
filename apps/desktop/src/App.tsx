@@ -98,6 +98,7 @@ import {
   type ModMergerPreview,
   type ModMergerWorkflow,
   type ApplyModMergeResponse,
+  type ApplySvModMergeResponse,
   type ApplyRandomizerResponse,
   type ImportRandomizerSeedResponse,
   type RestoreRandomizerResponse,
@@ -149,6 +150,9 @@ import {
   type StartingItemGrantSelection,
   type StartingItemOptionRecord,
   type StartingItemsWorkflow,
+  type SvModMergerPreview,
+  type SvModMergerSource,
+  type SvModMergerWorkflow,
   type StaticEncounterEditableField,
   type StaticEncounterRecord,
   type StaticEncountersWorkflow,
@@ -261,6 +265,18 @@ const gameDefinitions = {
     label: 'Pokemon Shield',
     title: 'Pokemon Shield Editor',
     titleId: '01008DB008C2C000'
+  },
+  scarlet: {
+    icon: Dna,
+    label: 'Pokemon Scarlet',
+    title: 'Pokemon Scarlet Editor',
+    titleId: '0100A3D008C5C000'
+  },
+  violet: {
+    icon: Activity,
+    label: 'Pokemon Violet',
+    title: 'Pokemon Violet Editor',
+    titleId: '01008F6008C5E000'
   }
 } as const satisfies Record<
   ProjectGame,
@@ -271,6 +287,8 @@ const gameDefinitions = {
     titleId: string;
   }
 >;
+
+const visibleGameSelectionGames = ['sword', 'shield'] as const satisfies readonly ProjectGame[];
 
 const sections: Array<{
   id: WorkbenchSection;
@@ -1874,6 +1892,15 @@ export function App({
   const [modMergerApplyResult, setModMergerApplyResult] = useState<ApplyModMergeResponse | null>(
     null
   );
+  const [svModSources, setSvModSources] = useState<SvModMergerSource[]>([]);
+  const [svModMergerWorkflow, setSvModMergerWorkflow] = useState<SvModMergerWorkflow | null>(
+    null
+  );
+  const [svModMergerPreview, setSvModMergerPreview] = useState<SvModMergerPreview | null>(
+    null
+  );
+  const [svModMergerApplyResult, setSvModMergerApplyResult] =
+    useState<ApplySvModMergeResponse | null>(null);
   const [modMergerSelectedDirectory1Files, setModMergerSelectedDirectory1Files] = useState<
     Set<string>
   >(() => new Set());
@@ -2003,6 +2030,10 @@ export function App({
       tradePokemonWorkflow: null,
       trainersWorkflow: null
     });
+    setSvModMergerWorkflow(null);
+    setSvModMergerPreview(null);
+    setSvModMergerApplyResult(null);
+    setSvModSources([]);
     setLazyLoadedWorkflowSections(new Set());
     setEditorDraftDirtySections(new Set());
   }, []);
@@ -3597,10 +3628,15 @@ export function App({
     }
   };
 
-  const resetModMergerPlan = () => {
+const resetModMergerPlan = () => {
     setModMergerPreview(null);
     setModMergerApplyResult(null);
     setModMergerResolutions({});
+  };
+
+  const resetSvModMergerPlan = () => {
+    setSvModMergerPreview(null);
+    setSvModMergerApplyResult(null);
   };
 
   const loadModMergerWorkflow = async (directory1: string, directory2: string) => {
@@ -3621,8 +3657,90 @@ export function App({
     }
   };
 
+  const loadSvModMergerWorkflow = async (modSources: SvModMergerSource[]) => {
+    setIsModMergerLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadSvModMergerWorkflow({
+        modSources,
+        paths: toProjectPaths(draftPaths)
+      });
+      setSvModMergerWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsModMergerLoading(false);
+    }
+  };
+
   const handleOpenModMergerWorkflow = async () => {
+    if (isScarletVioletGame(selectedGame)) {
+      await loadSvModMergerWorkflow(svModSources);
+      return;
+    }
+
     await loadModMergerWorkflow(modMergerDirectory1, modMergerDirectory2);
+  };
+
+  const handleAddSvModSource = async (kind: 'folder' | 'archive') => {
+    try {
+      const selection =
+        kind === 'folder'
+          ? await desktopServices.pickFolder({
+              defaultPath: draftPaths.outputRootPath || undefined,
+              title: 'Add S/V Mod Folder'
+            })
+          : await desktopServices.pickFile({
+              defaultPath: draftPaths.outputRootPath || undefined,
+              title: 'Add S/V Mod Archive'
+            });
+
+      if (!selection) {
+        return;
+      }
+
+      const nextSources = [...svModSources, { isEnabled: true, path: selection }];
+      setSvModSources(nextSources);
+      resetSvModMergerPlan();
+      await loadSvModMergerWorkflow(nextSources);
+    } catch (error) {
+      setBridgeDiagnostics(
+        toDesktopDiagnostics(error, 'Could not choose a Scarlet/Violet mod source.')
+      );
+    }
+  };
+
+  const handleToggleSvModSource = async (sourceIndex: number) => {
+    const nextSources = svModSources.map((source, index) =>
+      index === sourceIndex ? { ...source, isEnabled: !source.isEnabled } : source
+    );
+    setSvModSources(nextSources);
+    resetSvModMergerPlan();
+    await loadSvModMergerWorkflow(nextSources);
+  };
+
+  const handleMoveSvModSource = async (sourceIndex: number, direction: -1 | 1) => {
+    const targetIndex = sourceIndex + direction;
+    if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= svModSources.length) {
+      return;
+    }
+
+    const nextSources = [...svModSources];
+    [nextSources[sourceIndex], nextSources[targetIndex]] = [
+      nextSources[targetIndex],
+      nextSources[sourceIndex]
+    ];
+    setSvModSources(nextSources);
+    resetSvModMergerPlan();
+    await loadSvModMergerWorkflow(nextSources);
+  };
+
+  const handleRemoveSvModSource = async (sourceIndex: number) => {
+    const nextSources = svModSources.filter((_, index) => index !== sourceIndex);
+    setSvModSources(nextSources);
+    resetSvModMergerPlan();
+    await loadSvModMergerWorkflow(nextSources);
   };
 
   const handlePickModMergerDirectory = async (slot: 1 | 2) => {
@@ -3694,6 +3812,27 @@ export function App({
     }));
 
   const handleStageModMerge = async () => {
+    if (isScarletVioletGame(selectedGame)) {
+      setIsModMergerStaging(true);
+      setBridgeDiagnostics([]);
+      setSvModMergerApplyResult(null);
+
+      try {
+        const response = await bridge.stageSvModMerge({
+          modSources: svModSources,
+          paths: toProjectPaths(draftPaths)
+        });
+        setSvModMergerWorkflow(response.workflow);
+        setSvModMergerPreview(response.preview);
+      } catch (error) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      } finally {
+        setIsModMergerStaging(false);
+      }
+
+      return;
+    }
+
     setIsModMergerStaging(true);
     setBridgeDiagnostics([]);
     setModMergerApplyResult(null);
@@ -3728,6 +3867,36 @@ export function App({
   };
 
   const handleApplyModMerge = async () => {
+    if (isScarletVioletGame(selectedGame)) {
+      setIsModMergerApplying(true);
+      setBridgeDiagnostics([]);
+      setSvModMergerApplyResult(null);
+
+      try {
+        const paths = toProjectPaths(draftPaths);
+        const response = await bridge.applySvModMerge({
+          modSources: svModSources,
+          paths
+        });
+        setSvModMergerWorkflow(response.workflow);
+        setSvModMergerPreview(response.preview);
+        setSvModMergerApplyResult(response);
+
+        const hasApplyErrors = response.diagnostics.some(
+          (diagnostic) => diagnostic.severity === 'error'
+        );
+        if (!hasApplyErrors && response.writtenFiles.length > 0) {
+          await refreshLoadedWorkflowsAfterApply(paths);
+        }
+      } catch (error) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      } finally {
+        setIsModMergerApplying(false);
+      }
+
+      return;
+    }
+
     setIsModMergerApplying(true);
     setBridgeDiagnostics([]);
     setModMergerApplyResult(null);
@@ -5853,6 +6022,7 @@ export function App({
   }
 
   const canShowWorkflowNavigation = Boolean(health?.canOpenEditableWorkflows);
+  const availableWorkflowSectionIds = new Set(workflows.map((workflow) => workflow.id));
 
   return (
     <CancelEditSessionContext.Provider value={requestCancelEditSession}>
@@ -5891,6 +6061,13 @@ export function App({
           })}
 
           {canShowWorkflowNavigation ? workflowNavigationGroups.map((group) => {
+            const visibleSectionIds = isScarletVioletGame(selectedGame)
+              ? group.sectionIds.filter((sectionId) => availableWorkflowSectionIds.has(sectionId))
+              : group.sectionIds;
+            if (visibleSectionIds.length === 0) {
+              return null;
+            }
+
             const isExpanded = expandedWorkflowGroups.has(group.id);
 
             return (
@@ -5906,7 +6083,7 @@ export function App({
                 </button>
                 {isExpanded ? (
                   <div className="nav-group-items">
-                    {group.sectionIds.map((sectionId) => {
+                    {visibleSectionIds.map((sectionId) => {
                       const section = sections.find((candidate) => candidate.id === sectionId);
                       if (!section) {
                         return null;
@@ -6612,7 +6789,30 @@ export function App({
             />
           ) : null}
           {activeSection === 'modMerger' ? (
-            isModMergerLoading && !modMergerWorkflow ? (
+            isScarletVioletGame(selectedGame) ? (
+              isModMergerLoading && !svModMergerWorkflow ? (
+                <WorkflowLoadingPanel label="S/V Mod Merger" />
+              ) : (
+                <SvModMergerSection
+                  applyResult={svModMergerApplyResult}
+                  isApplying={isModMergerApplying}
+                  isDesktopAvailable={desktopServices.isAvailable}
+                  isLoading={isModMergerLoading}
+                  isStaging={isModMergerStaging}
+                  modSources={svModSources}
+                  onAddArchive={() => handleAddSvModSource('archive')}
+                  onAddFolder={() => handleAddSvModSource('folder')}
+                  onApplyMerge={handleApplyModMerge}
+                  onMoveSource={handleMoveSvModSource}
+                  onRemoveSource={handleRemoveSvModSource}
+                  onStageMerge={handleStageModMerge}
+                  onToggleSource={handleToggleSvModSource}
+                  outputRootPath={draftPaths.outputRootPath}
+                  preview={svModMergerPreview}
+                  workflow={svModMergerWorkflow}
+                />
+              )
+            ) : isModMergerLoading && !modMergerWorkflow ? (
               <WorkflowLoadingPanel label="Mod Merger" />
             ) : (
               <ModMergerSection
@@ -6745,7 +6945,7 @@ function GameSelectionPage({
         <img alt="" aria-hidden="true" className="game-selection-logo" src={kmLogoUrl} />
         <h1 id="game-selection-heading">Which game are you using?</h1>
         <div className="game-choice-actions">
-          {(['sword', 'shield'] as const).map((game) => {
+          {visibleGameSelectionGames.map((game) => {
             const definition = gameDefinitions[game];
             const Icon = definition.icon;
 
@@ -7123,6 +7323,10 @@ function WorkflowsSection({
   pendingEditCount: number;
   workflows: WorkflowSummary[];
 }) {
+  const visibleWorkflowDefinitions = workflowDefinitions.filter((definition) =>
+    workflows.some((workflow) => workflow.id === definition.id)
+  );
+
   if (!health?.canOpenEditableWorkflows) {
     return (
       <section aria-labelledby="workflows-heading" className="panel wide-panel">
@@ -7145,7 +7349,7 @@ function WorkflowsSection({
       </div>
 
       <div className="workflow-list">
-        {workflowDefinitions.map((definition) => {
+        {visibleWorkflowDefinitions.map((definition) => {
           const workflow = workflows.find((candidate) => candidate.id === definition.id);
           const workflowState = getWorkflowState(health, workflow);
           const Icon = definition.icon;
@@ -23262,6 +23466,238 @@ async function writeTextToClipboard(text: string): Promise<void> {
   }
 }
 
+function SvModMergerSection({
+  applyResult,
+  isApplying,
+  isDesktopAvailable,
+  isLoading,
+  isStaging,
+  modSources,
+  onAddArchive,
+  onAddFolder,
+  onApplyMerge,
+  onMoveSource,
+  onRemoveSource,
+  onStageMerge,
+  onToggleSource,
+  outputRootPath,
+  preview,
+  workflow
+}: {
+  applyResult: ApplySvModMergeResponse | null;
+  isApplying: boolean;
+  isDesktopAvailable: boolean;
+  isLoading: boolean;
+  isStaging: boolean;
+  modSources: SvModMergerSource[];
+  onAddArchive: () => void;
+  onAddFolder: () => void;
+  onApplyMerge: () => void;
+  onMoveSource: (sourceIndex: number, direction: -1 | 1) => void;
+  onRemoveSource: (sourceIndex: number) => void;
+  onStageMerge: () => void;
+  onToggleSource: (sourceIndex: number) => void;
+  outputRootPath: string;
+  preview: SvModMergerPreview | null;
+  workflow: SvModMergerWorkflow | null;
+}) {
+  const canStage = modSources.some((source) => source.isEnabled) && !isStaging && !isLoading;
+  const canApply = Boolean(preview?.canApply) && !isApplying && !isStaging;
+
+  return (
+    <>
+      <section aria-labelledby="sv-mod-merger-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Layers aria-hidden="true" size={18} />
+          <h2 id="sv-mod-merger-heading">S/V Mod Merger</h2>
+        </div>
+
+        <div className="editor-toolbar">
+          <button
+            className="secondary-button"
+            disabled={!isDesktopAvailable || isLoading}
+            onClick={onAddFolder}
+            type="button"
+          >
+            <FolderOpen aria-hidden="true" size={16} />
+            <span>Add Folder</span>
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!isDesktopAvailable || isLoading}
+            onClick={onAddArchive}
+            type="button"
+          >
+            <Package aria-hidden="true" size={16} />
+            <span>Add Archive</span>
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!canStage}
+            onClick={onStageMerge}
+            type="button"
+          >
+            <ListChecks aria-hidden="true" size={16} />
+            <span>{isStaging ? 'Staging' : 'Stage Merge'}</span>
+          </button>
+          <button
+            className="purple-button"
+            disabled={!canApply}
+            onClick={onApplyMerge}
+            type="button"
+          >
+            <ClipboardCheck aria-hidden="true" size={16} />
+            <span>{isApplying ? 'Applying' : 'Apply Merge'}</span>
+          </button>
+        </div>
+
+        <div className="metric-grid">
+          <Metric label="Sources" value={String(workflow?.stats.sourceCount ?? modSources.length)} />
+          <Metric
+            label="Enabled"
+            value={String(
+              workflow?.stats.enabledSourceCount ??
+                modSources.filter((source) => source.isEnabled).length
+            )}
+          />
+          <Metric label="Output files" value={String(workflow?.stats.outputFileCount ?? 0)} />
+          <Metric label="Overrides" value={String(workflow?.stats.overrideCount ?? 0)} />
+        </div>
+
+        <div className="workflow-list" title="Sources apply top to bottom; lower enabled sources win when smart merge falls back.">
+          {modSources.length === 0 ? (
+            <p className="empty-copy">No S/V mod sources added.</p>
+          ) : (
+            modSources.map((source, index) => {
+              const sourceRecord = workflow?.sources[index];
+              const isFirst = index === 0;
+              const isLast = index === modSources.length - 1;
+
+              return (
+                <article className="workflow-row" key={`${source.path}-${index}`}>
+                  <div>
+                    <h3>{sourceRecord?.name ?? getFileName(source.path)}</h3>
+                    <p>{source.path}</p>
+                    <span className="inline-metric">
+                      {sourceRecord?.fileCount ?? 0} files
+                    </span>
+                  </div>
+                  <div className="workflow-actions">
+                    <span
+                      className={`status-pill ${getModMergerStatusClassName(sourceRecord?.status ?? 'pending')}`}
+                    >
+                      {formatModMergerStatus(sourceRecord?.status ?? 'pending')}
+                    </span>
+                    <label className="compact-checkbox">
+                      <input
+                        checked={source.isEnabled}
+                        disabled={isLoading || isStaging || isApplying}
+                        onChange={() => onToggleSource(index)}
+                        type="checkbox"
+                      />
+                      <span>Enabled</span>
+                    </label>
+                    <button
+                      aria-label="Move source up"
+                      className="secondary-button icon-button"
+                      disabled={isFirst || isLoading || isStaging || isApplying}
+                      onClick={() => onMoveSource(index, -1)}
+                      title="Move source up"
+                      type="button"
+                    >
+                      <ArrowUp aria-hidden="true" size={16} />
+                    </button>
+                    <button
+                      aria-label="Move source down"
+                      className="secondary-button icon-button"
+                      disabled={isLast || isLoading || isStaging || isApplying}
+                      onClick={() => onMoveSource(index, 1)}
+                      title="Move source down"
+                      type="button"
+                    >
+                      <ArrowDown aria-hidden="true" size={16} />
+                    </button>
+                    <button
+                      aria-label="Remove source"
+                      className="danger-button icon-button"
+                      disabled={isLoading || isStaging || isApplying}
+                      onClick={() => onRemoveSource(index)}
+                      title="Remove source"
+                      type="button"
+                    >
+                      <Trash2 aria-hidden="true" size={16} />
+                    </button>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </div>
+      </section>
+
+      {preview ? (
+        <section aria-labelledby="sv-mod-merger-preview-heading" className="panel wide-panel">
+          <div className="panel-heading">
+            <ListChecks aria-hidden="true" size={18} />
+            <h2 id="sv-mod-merger-preview-heading">Merge Preview</h2>
+          </div>
+          <div className="metric-grid">
+            <Metric label="Plan status" value={formatModMergerStatus(preview.status)} />
+            <Metric label="Ready files" value={String(preview.readyFileCount)} />
+            <Metric label="Selected files" value={String(preview.selectedFileCount)} />
+            <Metric label="Output Root" value={outputRootPath || 'Not set'} />
+          </div>
+          <div className="workflow-list">
+            {preview.files.map((file) => (
+              <article className="workflow-row" key={file.relativePath}>
+                <div>
+                  <h3>{file.relativePath}</h3>
+                  <p>{file.summary}</p>
+                  <span className="inline-metric">{file.sourceName}</span>
+                </div>
+                <div className="workflow-actions">
+                  <span className={`status-pill ${getModMergerStatusClassName(file.status)}`}>
+                    {formatModMergerStatus(file.status)}
+                  </span>
+                  <span className="status-pill">
+                    {formatSvModMergerMergeKind(file.mergeKind)}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {applyResult ? (
+        <section aria-labelledby="sv-mod-merger-apply-heading" className="panel wide-panel">
+          <div className="panel-heading">
+            <ClipboardCheck aria-hidden="true" size={18} />
+            <h2 id="sv-mod-merger-apply-heading">Apply Result</h2>
+          </div>
+          <div className="metric-grid">
+            <Metric label="Written files" value={String(applyResult.writtenFiles.length)} />
+            <Metric
+              label="Apply status"
+              value={formatModMergerStatus(applyResult.preview.status)}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {workflow && workflow.diagnostics.length > 0 ? (
+        <DiagnosticsSection diagnostics={workflow.diagnostics} scrollAfterEntries={5} />
+      ) : null}
+      {preview && preview.diagnostics.length > 0 ? (
+        <DiagnosticsSection diagnostics={preview.diagnostics} scrollAfterEntries={5} />
+      ) : null}
+      {applyResult && applyResult.diagnostics.length > 0 ? (
+        <DiagnosticsSection diagnostics={applyResult.diagnostics} scrollAfterEntries={5} />
+      ) : null}
+    </>
+  );
+}
+
 function ModMergerSection({
   applyResult,
   directory1,
@@ -24780,8 +25216,10 @@ function getModMergerStatusClassName(status: string) {
   switch (status) {
     case 'ready':
       return 'status-ready';
+    case 'priorityFallback':
     case 'needsResolution':
     case 'empty':
+    case 'pending':
       return 'status-warning';
     case 'blocked':
     case 'error':
@@ -24810,6 +25248,8 @@ function formatModMergerStatus(status: string) {
   switch (status) {
     case 'ready':
       return 'Ready';
+    case 'priorityFallback':
+      return 'Priority fallback';
     case 'needsResolution':
       return 'Needs resolution';
     case 'blocked':
@@ -24818,8 +25258,27 @@ function formatModMergerStatus(status: string) {
       return 'Empty';
     case 'error':
       return 'Error';
+    case 'pending':
+      return 'Pending';
     default:
       return status.replace(/([a-z])([A-Z])/g, '$1 $2');
+  }
+}
+
+function formatSvModMergerMergeKind(mergeKind: string) {
+  switch (mergeKind) {
+    case 'smartMerge':
+      return 'Smart merge';
+    case 'priorityFallback':
+      return 'Priority fallback';
+    case 'singleSource':
+      return 'Single source';
+    case 'identical':
+      return 'Identical';
+    case 'readError':
+      return 'Read error';
+    default:
+      return mergeKind.replace(/([a-z])([A-Z])/g, '$1 $2');
   }
 }
 
@@ -24848,6 +25307,15 @@ function formatModMergerMergeKind(mergeKind: string) {
 
 function formatResolutionSource(source: ModMergerConflictResolution['source']) {
   return source === 'mod1' ? 'Mod Directory 1' : 'Mod Directory 2';
+}
+
+function getFileName(path: string) {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  return normalized.split('/').pop() || path;
+}
+
+function isScarletVioletGame(game: ProjectGame | null | undefined) {
+  return game === 'scarlet' || game === 'violet';
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

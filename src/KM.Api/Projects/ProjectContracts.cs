@@ -9,6 +9,8 @@ public enum ProjectGameDto
 {
     Sword,
     Shield,
+    Scarlet,
+    Violet,
 }
 
 public sealed record ProjectPathsDto

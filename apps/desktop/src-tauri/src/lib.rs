@@ -7,10 +7,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
 
 const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
+const OODLE_RESOURCE_PATHS: [&str; 2] = [
+    "oodle/win-x64/oo2core_8_win64.dll",
+    "resources/oodle/win-x64/oo2core_8_win64.dll",
+];
+const OODLE_ENV_VAR: &str = "KM_EDITOR_BUNDLED_OODLE_PATH";
 const WINDOW_CLOSE_REQUESTED_EVENT: &str = "km-editor://window-close-requested";
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -104,7 +110,8 @@ fn resolve_bundled_bridge_command(
         .sidecar(BRIDGE_SIDECAR_NAME)
         .map_err(|error| format!("Could not resolve the bundled project bridge sidecar: {error}"))?
         .arg("bridge-once");
-    let command: Command = sidecar_command.into();
+    let mut command: Command = sidecar_command.into();
+    attach_bundled_oodle_path(app_handle, &mut command)?;
     let program_path = Path::new(command.get_program());
 
     if program_path.is_file() {
@@ -127,8 +134,50 @@ fn resolve_dev_bridge_command() -> Result<Command, String> {
             "bridge-once",
         ])
         .current_dir(repo_root);
+    attach_repo_oodle_path(&mut command)?;
 
     Ok(command)
+}
+
+fn attach_bundled_oodle_path(
+    app_handle: &tauri::AppHandle,
+    command: &mut Command,
+) -> Result<(), String> {
+    let mut fallback_path = None;
+    for candidate in OODLE_RESOURCE_PATHS {
+        let oodle_path = app_handle
+            .path()
+            .resolve(candidate, BaseDirectory::Resource)
+            .map_err(|error| format!("Could not resolve bundled Oodle resource path: {error}"))?;
+
+        if oodle_path.is_file() {
+            command.env(OODLE_ENV_VAR, oodle_path);
+            return Ok(());
+        }
+
+        fallback_path.get_or_insert(oodle_path);
+    }
+
+    if let Some(oodle_path) = fallback_path {
+        command.env(OODLE_ENV_VAR, oodle_path);
+    }
+
+    Ok(())
+}
+
+fn attach_repo_oodle_path(command: &mut Command) -> Result<(), String> {
+    let repo_root = resolve_repo_root()?;
+    let oodle_path = repo_root
+        .join("apps")
+        .join("desktop")
+        .join("src-tauri")
+        .join("resources")
+        .join("oodle")
+        .join("win-x64")
+        .join("oo2core_8_win64.dll");
+
+    command.env(OODLE_ENV_VAR, oodle_path);
+    Ok(())
 }
 
 #[tauri::command(rename_all = "camelCase")]

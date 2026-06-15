@@ -1,0 +1,108 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+using System.Runtime.InteropServices;
+
+namespace KM.Formats.SV;
+
+public sealed class SvOodleLibrary : IDisposable
+{
+    private readonly nint libraryHandle;
+    private readonly OodleLzDecompress decompress;
+    private bool disposed;
+
+    private SvOodleLibrary(nint libraryHandle, OodleLzDecompress decompress)
+    {
+        this.libraryHandle = libraryHandle;
+        this.decompress = decompress;
+    }
+
+    public static SvOodleLibrary LoadBundled()
+    {
+        var oodlePath = SvBundledOodle.ResolveRequiredPath();
+        var libraryHandle = NativeLibrary.Load(oodlePath);
+
+        try
+        {
+            var export = NativeLibrary.GetExport(libraryHandle, "OodleLZ_Decompress");
+            var decompress = Marshal.GetDelegateForFunctionPointer<OodleLzDecompress>(export);
+            return new SvOodleLibrary(libraryHandle, decompress);
+        }
+        catch
+        {
+            NativeLibrary.Free(libraryHandle);
+            throw;
+        }
+    }
+
+    public byte[] Decompress(ReadOnlySpan<byte> compressedData, int decompressedSize)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(decompressedSize);
+
+        var input = Marshal.AllocHGlobal(compressedData.Length);
+        var output = Marshal.AllocHGlobal(decompressedSize);
+
+        try
+        {
+            Marshal.Copy(compressedData.ToArray(), 0, input, compressedData.Length);
+            var written = decompress(
+                input,
+                compressedData.Length,
+                output,
+                decompressedSize,
+                fuzzSafe: 0,
+                checkCrc: 0,
+                verbosity: 0,
+                decBufBase: nint.Zero,
+                decBufSize: 0,
+                fpCallback: nint.Zero,
+                callbackUserData: nint.Zero,
+                decoderMemory: nint.Zero,
+                decoderMemorySize: 0,
+                threadPhase: 0);
+
+            if (written != decompressedSize)
+            {
+                throw new InvalidDataException(
+                    $"Oodle decompressed {written} bytes, but {decompressedSize} bytes were expected.");
+            }
+
+            var result = new byte[decompressedSize];
+            Marshal.Copy(output, result, 0, decompressedSize);
+            return result;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(input);
+            Marshal.FreeHGlobal(output);
+        }
+    }
+
+    public void Dispose()
+    {
+        if (disposed)
+        {
+            return;
+        }
+
+        NativeLibrary.Free(libraryHandle);
+        disposed = true;
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate long OodleLzDecompress(
+        nint buffer,
+        long bufferSize,
+        nint outputBuffer,
+        long outputBufferSize,
+        int fuzzSafe,
+        int checkCrc,
+        int verbosity,
+        nint decBufBase,
+        long decBufSize,
+        nint fpCallback,
+        nint callbackUserData,
+        nint decoderMemory,
+        long decoderMemorySize,
+        int threadPhase);
+}

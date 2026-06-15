@@ -1159,6 +1159,8 @@ function loadValidatedProjectPathCache(): ValidatedProjectPathCache {
     const cache: ValidatedProjectPathCache = {};
     const shieldPaths = coerceProjectPathDraftValues(parsedValue.shield);
     const swordPaths = coerceProjectPathDraftValues(parsedValue.sword);
+    const scarletPaths = coerceProjectPathDraftValues(parsedValue.scarlet);
+    const violetPaths = coerceProjectPathDraftValues(parsedValue.violet);
 
     if (shieldPaths) {
       cache.shield = shieldPaths;
@@ -1166,6 +1168,14 @@ function loadValidatedProjectPathCache(): ValidatedProjectPathCache {
 
     if (swordPaths) {
       cache.sword = swordPaths;
+    }
+
+    if (scarletPaths) {
+      cache.scarlet = scarletPaths;
+    }
+
+    if (violetPaths) {
+      cache.violet = violetPaths;
     }
 
     return cache;

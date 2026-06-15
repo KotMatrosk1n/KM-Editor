@@ -96,6 +96,12 @@ import {
   type StageModMergeResponse,
   type ApplyModMergeRequest,
   type ApplyModMergeResponse,
+  type LoadSvModMergerWorkflowRequest,
+  type LoadSvModMergerWorkflowResponse,
+  type StageSvModMergeRequest,
+  type StageSvModMergeResponse,
+  type ApplySvModMergeRequest,
+  type ApplySvModMergeResponse,
   type ImportRandomizerSeedRequest,
   type ImportRandomizerSeedResponse,
   type ApplyRandomizerRequest,
@@ -196,6 +202,9 @@ import {
   loadModMergerWorkflowResponseSchema,
   stageModMergeResponseSchema,
   applyModMergeResponseSchema,
+  loadSvModMergerWorkflowResponseSchema,
+  stageSvModMergeResponseSchema,
+  applySvModMergeResponseSchema,
   importRandomizerSeedResponseSchema,
   applyRandomizerResponseSchema,
   restoreRandomizerResponseSchema,
@@ -349,6 +358,15 @@ export type ProjectBridge = {
   ) => Promise<LoadModMergerWorkflowResponse>;
   stageModMerge: (request: StageModMergeRequest) => Promise<StageModMergeResponse>;
   applyModMerge: (request: ApplyModMergeRequest) => Promise<ApplyModMergeResponse>;
+  loadSvModMergerWorkflow: (
+    request: LoadSvModMergerWorkflowRequest
+  ) => Promise<LoadSvModMergerWorkflowResponse>;
+  stageSvModMerge: (
+    request: StageSvModMergeRequest
+  ) => Promise<StageSvModMergeResponse>;
+  applySvModMerge: (
+    request: ApplySvModMergeRequest
+  ) => Promise<ApplySvModMergeResponse>;
   importRandomizerSeed: (
     request: ImportRandomizerSeedRequest
   ) => Promise<ImportRandomizerSeedResponse>;
@@ -734,6 +752,27 @@ export function createProjectBridge(
         kmCommandNames.applyModMerge,
         request,
         applyModMergeResponseSchema
+      ),
+    loadSvModMergerWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadSvModMergerWorkflow,
+        request,
+        loadSvModMergerWorkflowResponseSchema
+      ),
+    stageSvModMerge: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageSvModMerge,
+        request,
+        stageSvModMergeResponseSchema
+      ),
+    applySvModMerge: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.applySvModMerge,
+        request,
+        applySvModMergeResponseSchema
       ),
     importRandomizerSeed: (request) =>
       sendProjectBridgeRequest(

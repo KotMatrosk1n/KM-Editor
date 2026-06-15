@@ -13,6 +13,7 @@ public sealed class ProjectValidatorTests
     private const int NpdmTitleIdOffset = 0x290;
     private const ulong SwordTitleId = 0x0100ABF008968000;
     private const ulong ShieldTitleId = 0x01008DB008C2C000;
+    private const ulong ScarletTitleId = 0x0100A3D008C5C000;
 
     [Fact]
     public void ValidateReturnsEditableReadyWhenBaseAndOutputPathsAreSafe()
@@ -134,6 +135,48 @@ public sealed class ProjectValidatorTests
             health.Diagnostics,
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
                 && diagnostic.Message.Contains("matches selected Pokemon Shield", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateAcceptsSelectedScarletGameWhenBaseExeFsAndTrinityArchiveMatch()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        temp.WriteBaseRomFsFile("arc/data.trpfd", "descriptor");
+        temp.WriteBaseRomFsFile("arc/data.trpfs", "storage");
+        temp.WriteBaseExeFsFile("main", "base-main");
+        WriteBaseExeFsBytes(temp, "main.npdm", CreateNpdm(ScarletTitleId));
+
+        var health = new ProjectValidator().Validate(temp.Paths with { SelectedGame = ProjectGame.Scarlet });
+
+        Assert.Equal(ProjectHealthState.EditableReady, health.State);
+        Assert.Contains(
+            health.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.Contains("Trinity archive required for Pokemon Scarlet", StringComparison.Ordinal));
+        Assert.Contains(
+            health.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.Contains("matches selected Pokemon Scarlet", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateBlocksSelectedScarletGameWhenTrinityArchiveIsMissing()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", "base-main");
+        WriteBaseExeFsBytes(temp, "main.npdm", CreateNpdm(ScarletTitleId));
+
+        var health = new ProjectValidator().Validate(temp.Paths with { SelectedGame = ProjectGame.Scarlet });
+
+        Assert.Equal(ProjectHealthState.Blocked, health.State);
+        Assert.Contains(
+            health.Paths,
+            path => path.Role == ProjectPathRole.BaseRomFs && path.Status == ProjectPathStatus.Unsafe);
+        Assert.Contains(
+            health.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("does not contain the Trinity archive", StringComparison.Ordinal));
     }
 
     [Fact]

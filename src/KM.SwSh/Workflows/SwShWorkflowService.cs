@@ -127,6 +127,11 @@ public sealed class SwShWorkflowService
     {
         ArgumentNullException.ThrowIfNull(paths);
 
+        if (!ProjectGameMetadata.IsSwordShield(paths.SelectedGame))
+        {
+            return new SwShWorkflowList([]);
+        }
+
         var project = projectWorkspaceService.Open(paths);
 
         var summaries = new[]

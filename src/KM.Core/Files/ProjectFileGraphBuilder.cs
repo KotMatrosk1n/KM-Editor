@@ -21,6 +21,7 @@ public sealed class ProjectFileGraphBuilder
 
         // Prefix base roots with their LayeredFS target folder so provenance and write plans share one path space.
         AddBaseRoot(entries, paths.BaseRomFsPath, "romfs");
+        AddScarletVioletVirtualRomFs(entries, paths);
         AddBaseRoot(entries, paths.BaseExeFsPath, "exefs");
         AddLayeredRoot(entries, paths.OutputRootPath);
 
@@ -29,6 +30,42 @@ public sealed class ProjectFileGraphBuilder
                 .OrderBy(entry => entry.Key, StringComparer.OrdinalIgnoreCase)
                 .Select(entry => entry.Value.ToEntry(entry.Key))
                 .ToArray());
+    }
+
+    private static void AddScarletVioletVirtualRomFs(
+        IDictionary<string, FileGraphAccumulator> entries,
+        ProjectPaths paths)
+    {
+        if (!ShouldExposeScarletVioletVirtualFiles(paths))
+        {
+            return;
+        }
+
+        foreach (var virtualPath in ScarletVioletKnownRomFsFiles.Paths)
+        {
+            var relativePath = $"romfs/{virtualPath}";
+            var accumulator = GetOrAdd(entries, relativePath);
+            accumulator.BaseFile ??= new ProjectFileReference(ProjectFileLayer.Base, relativePath);
+        }
+    }
+
+    private static bool ShouldExposeScarletVioletVirtualFiles(ProjectPaths paths)
+    {
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath)
+            || !Directory.Exists(paths.BaseRomFsPath)
+            || !HasTrinityArchive(paths.BaseRomFsPath))
+        {
+            return false;
+        }
+
+        return paths.SelectedGame is ProjectGame.Scarlet or ProjectGame.Violet
+            || paths.SelectedGame is null;
+    }
+
+    private static bool HasTrinityArchive(string baseRomFsPath)
+    {
+        return File.Exists(Path.Combine(baseRomFsPath, "arc", "data.trpfd"))
+            && File.Exists(Path.Combine(baseRomFsPath, "arc", "data.trpfs"));
     }
 
     private static void AddBaseRoot(

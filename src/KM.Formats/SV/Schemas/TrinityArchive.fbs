@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+namespace KM.Formats.SV.Trinity;
+
+table EmptyTable {
+}
+
+table FileDescriptorEntry {
+  pack_index: ulong;
+  unk_1: EmptyTable;
+}
+
+table PackDescriptorEntry {
+  file_size: ulong;
+  file_count: ulong;
+}
+
+table FileDescriptor {
+  file_hashes: [ulong];
+  pack_names: [string];
+  files: [FileDescriptorEntry];
+  packs: [PackDescriptorEntry];
+}
+
+table FileSystem {
+  file_hashes: [ulong];
+  file_offsets: [ulong];
+}
+
+table PackedFile {
+  field_00: uint;
+  encryption_type: byte;
+  level: ubyte;
+  file_size: ulong;
+  file_buffer: [ubyte];
+}
+
+table PackedArchive {
+  file_hashes: [ulong];
+  files: [PackedFile];
+}
+
+root_type FileDescriptor;

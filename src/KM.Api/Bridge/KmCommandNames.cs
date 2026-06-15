@@ -73,6 +73,9 @@ public static class KmCommandNames
     public const string LoadModMergerWorkflow = "modMerger.load";
     public const string StageModMerge = "modMerger.stage";
     public const string ApplyModMerge = "modMerger.apply";
+    public const string LoadSvModMergerWorkflow = "svModMerger.load";
+    public const string StageSvModMerge = "svModMerger.stage";
+    public const string ApplySvModMerge = "svModMerger.apply";
     public const string ImportRandomizerSeed = "randomizer.seed.import";
     public const string ApplyRandomizer = "randomizer.apply";
     public const string RestoreRandomizer = "randomizer.restore";

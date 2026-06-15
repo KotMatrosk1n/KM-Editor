@@ -5,6 +5,7 @@
     <ProjectReference Include="..\..\src\KM.Api\KM.Api.csproj" />
     <ProjectReference Include="..\..\src\KM.Core\KM.Core.csproj" />
     <ProjectReference Include="..\..\src\KM.Formats\KM.Formats.csproj" />
+    <ProjectReference Include="..\..\src\KM.SV\KM.SV.csproj" />
     <ProjectReference Include="..\..\src\KM.SwSh\KM.SwSh.csproj" />
     <ProjectReference Include="..\..\src\KM.Tools\KM.Tools.csproj" />
   </ItemGroup>
