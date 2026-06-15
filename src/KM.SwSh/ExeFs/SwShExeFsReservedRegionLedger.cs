@@ -20,7 +20,15 @@ internal sealed record SwShExeFsReservedRegion(
 
     public string OffsetLabel => StartOffset is null || Length is null
         ? "whole-file"
-        : string.Create(CultureInfo.InvariantCulture, $"text+0x{StartOffset.Value:X}..0x{StartOffset.Value + Length.Value - 1:X}");
+        : string.Create(CultureInfo.InvariantCulture, $"{FormatArea(Area)}+0x{StartOffset.Value:X}..0x{StartOffset.Value + Length.Value - 1:X}");
+
+    private static string FormatArea(string area)
+    {
+        const string mainPrefix = "main.";
+        return area.StartsWith(mainPrefix, StringComparison.Ordinal)
+            ? area[mainPrefix.Length..]
+            : area;
+    }
 }
 
 internal static class SwShExeFsReservedRegionLedger
@@ -34,6 +42,7 @@ internal static class SwShExeFsReservedRegionLedger
     public const string OwnerRoyalCandy = "Royal Candy";
     public const string OwnerRoyalCandyStoryLimits = "Royal Candy with Story Limits";
     public const string OwnerStartingItems = "Starting Items";
+    public const string OwnerTypeChart = "Type Chart";
 
     public const string ExeFsMainPath = SwShExeFsPatchWorkflowService.ExeFsMainPath;
     public const string BagEventScriptPath = "romfs/bin/script/amx/main_event_0020.amx";
@@ -215,6 +224,8 @@ internal static class SwShExeFsReservedRegionLedger
         new(OwnerHyperTraining, "hyper-training-shield-gray-out-check", ExeFsMainPath, "main.text", 0x00F9A364, 0x08, "Hyper Training Shield picker gray-out compare and branch", "do-not-overwrite"),
         new(OwnerHyperTraining, "hyper-training-shield-detail-check", ExeFsMainPath, "main.text", 0x00F9E4F0, 0x08, "Hyper Training Shield selected-detail compare and branch", "do-not-overwrite"),
 
+        new(OwnerTypeChart, "type-chart-sword", ExeFsMainPath, "main.ro", 0x00743600, 0x144, "Sword type-effectiveness table", "payload-only"),
+
         new(OwnerRoyalCandy, "royal-candy-ui-check-a", ExeFsMainPath, "main.text", 0x00747988, 0x08, "Royal Candy medicine UI route", "do-not-overwrite"),
         new(OwnerRoyalCandy, "royal-candy-ui-check-b", ExeFsMainPath, "main.text", 0x00747D44, 0x08, "Royal Candy alternate medicine UI route", "do-not-overwrite"),
         new(OwnerRoyalCandy, "royal-candy-ui-check-c", ExeFsMainPath, "main.text", 0x0074BA24, 0x08, "Royal Candy party target route", "do-not-overwrite"),
@@ -248,6 +259,17 @@ internal static class SwShExeFsReservedRegionLedger
         return regions
             .Where(region => string.Equals(region.RelativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(region.Area, "main.text", StringComparison.Ordinal)
+                && string.Equals(region.Owner, owner, StringComparison.Ordinal)
+                && region.StartOffset is not null
+                && region.Length is not null)
+            .ToArray();
+    }
+
+    public static IReadOnlyList<SwShExeFsReservedRegion> MainRoRegionsForOwner(string owner)
+    {
+        return regions
+            .Where(region => string.Equals(region.RelativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(region.Area, "main.ro", StringComparison.Ordinal)
                 && string.Equals(region.Owner, owner, StringComparison.Ordinal)
                 && region.StartOffset is not null
                 && region.Length is not null)

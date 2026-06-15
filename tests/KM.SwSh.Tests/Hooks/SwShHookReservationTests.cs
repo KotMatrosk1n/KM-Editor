@@ -108,7 +108,20 @@ public sealed class SwShHookReservationTests
     }
 
     [Fact]
-    public void ReservedMainTextRegionsDoNotOverlapBetweenFeatureFamilies()
+    public void TypeChartReservesTheVerifiedMainRoRange()
+    {
+        var region = Assert.Single(SwShExeFsReservedRegionLedger.MainRoRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerTypeChart));
+
+        Assert.Equal("type-chart-sword", region.FeatureId);
+        Assert.Equal(SwShExeFsReservedRegionLedger.ExeFsMainPath, region.RelativePath);
+        Assert.Equal("main.ro", region.Area);
+        Assert.Equal(0x00743600, region.StartOffset);
+        Assert.Equal(0x144, region.Length);
+        Assert.Equal("ro+0x743600..0x743743", region.OffsetLabel);
+    }
+
+    [Fact]
+    public void ReservedMainRegionsDoNotOverlapBetweenFeatureFamiliesInSameSegment()
     {
         var regions = SwShExeFsReservedRegionLedger.Regions
             .Where(region => string.Equals(region.RelativePath, SwShExeFsReservedRegionLedger.ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
@@ -123,6 +136,11 @@ public sealed class SwShHookReservationTests
                 var left = regions[leftIndex];
                 var right = regions[rightIndex];
                 if (IsSameFeatureFamily(left.Owner, right.Owner))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(left.Area, right.Area, StringComparison.Ordinal))
                 {
                     continue;
                 }

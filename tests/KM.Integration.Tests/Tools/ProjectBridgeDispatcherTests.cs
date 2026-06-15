@@ -26,6 +26,7 @@ using KM.Api.StartingItems;
 using KM.Api.Text;
 using KM.Api.Trades;
 using KM.Api.Trainers;
+using KM.Api.TypeChart;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
@@ -1733,6 +1734,82 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotEqual(0x2A0003E2u, ReadInstruction(outputText, 0x007B1F20));
         Assert.Contains(EncodeCmpImmediate(register: 22, immediate: 1128), ReadAlignedInstructions(outputText));
         Assert.Equal(SwShNsoFile.ComputeHash(outputText), outputNso.Text.Hash);
+    }
+
+    [Fact]
+    public void DispatchTypeChartStageValidatePlanAndApplyWritesLayeredMain()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateTypeChartCompatibleNso());
+        var dispatcher = new ProjectBridgeDispatcher();
+        var loadJson = SerializeRequest(
+            KmCommandNames.LoadTypeChartWorkflow,
+            new LoadTypeChartWorkflowRequest(temp.Paths),
+            requestId: "request-type-chart-load");
+        var loadResponse = DeserializeResponse<LoadTypeChartWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.Null(loadResponse.Error);
+        Assert.NotNull(loadResponse.Payload);
+        Assert.NotEqual("blocked", loadResponse.Payload.Workflow.InstallStatus);
+        Assert.Equal(324, loadResponse.Payload.Workflow.Cells.Count);
+
+        var values = Enumerable.Repeat(4, 18 * 18).ToArray();
+        values[0] = 0;
+        values[(1 * 18) + 4] = 2;
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageTypeChart,
+            new StageTypeChartRequest(temp.Paths, Session: null, Values: values),
+            requestId: "request-type-chart-stage");
+        var stageResponse = DeserializeResponse<StageTypeChartResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+        Assert.Single(stageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.typeChart", stageResponse.Payload.Session.PendingEdits[0].Domain);
+        Assert.DoesNotContain(
+            stageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-type-chart-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-type-chart-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.True(planResponse.Payload.ChangePlan.CanApply);
+        var write = Assert.Single(planResponse.Payload.ChangePlan.Writes);
+        Assert.Equal("exefs/main", write.TargetRelativePath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageResponse.Payload.Session,
+                planResponse.Payload.ChangePlan),
+            requestId: "request-type-chart-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.DoesNotContain(
+            applyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(applyResponse.Payload.ApplyResult.WrittenFiles, relativePath => relativePath == "exefs/main");
+
+        var reloadResponse = DeserializeResponse<LoadTypeChartWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.Null(reloadResponse.Error);
+        Assert.NotNull(reloadResponse.Payload);
+        Assert.Equal("modified", reloadResponse.Payload.Workflow.InstallStatus);
+        Assert.Equal(0, reloadResponse.Payload.Workflow.Cells.Single(cell => cell.AttackTypeIndex == 0 && cell.DefenseTypeIndex == 0).Effectiveness);
+        Assert.Equal(2, reloadResponse.Payload.Workflow.Cells.Single(cell => cell.AttackTypeIndex == 1 && cell.DefenseTypeIndex == 4).Effectiveness);
     }
 
     [Fact]

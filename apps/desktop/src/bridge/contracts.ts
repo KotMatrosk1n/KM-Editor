@@ -52,6 +52,8 @@ export const kmCommandNameValues = [
   'catchCap.uninstall.stage',
   'hyperTraining.load',
   'hyperTraining.stage',
+  'typeChart.load',
+  'typeChart.stage',
   'gymUniformRemoval.load',
   'gymUniformRemoval.install.stage',
   'gymUniformRemoval.uninstall.stage',
@@ -136,6 +138,8 @@ export const kmCommandNames = {
   stageCatchCapUninstall: 'catchCap.uninstall.stage',
   loadHyperTrainingWorkflow: 'hyperTraining.load',
   stageHyperTraining: 'hyperTraining.stage',
+  loadTypeChartWorkflow: 'typeChart.load',
+  stageTypeChart: 'typeChart.stage',
   loadGymUniformRemovalWorkflow: 'gymUniformRemoval.load',
   stageGymUniformRemovalInstall: 'gymUniformRemoval.install.stage',
   stageGymUniformRemovalUninstall: 'gymUniformRemoval.uninstall.stage',
@@ -292,6 +296,10 @@ export const loadCatchCapWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadHyperTrainingWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadTypeChartWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -2300,6 +2308,70 @@ export const stageHyperTrainingResponseSchema = z.strictObject({
   workflow: hyperTrainingWorkflowSchema
 });
 
+export const typeChartProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const typeChartSourceRecordSchema = z.strictObject({
+  label: z.string(),
+  provenance: typeChartProvenanceSchema,
+  relativePath: z.string(),
+  sourceId: z.string(),
+  status: z.string()
+});
+
+export const typeChartTypeDefinitionSchema = z.strictObject({
+  color: z.string(),
+  label: z.string(),
+  shortLabel: z.string(),
+  typeIndex: z.number().int().min(0)
+});
+
+export const typeChartCellSchema = z.strictObject({
+  attackTypeIndex: z.number().int().min(0),
+  defenseTypeIndex: z.number().int().min(0),
+  effectiveness: z.union([z.literal(0), z.literal(2), z.literal(4), z.literal(8)]),
+  vanillaEffectiveness: z.union([z.literal(0), z.literal(2), z.literal(4), z.literal(8)])
+});
+
+export const typeChartWorkflowStatsSchema = z.strictObject({
+  chartCellCount: z.number().int().nonnegative(),
+  outputFileCount: z.number().int().nonnegative(),
+  sourceFileCount: z.number().int().nonnegative()
+});
+
+export const typeChartWorkflowSchema = z.strictObject({
+  buildId: z.string(),
+  cells: z.array(typeChartCellSchema),
+  chartOffsetHex: z.string(),
+  detectedGame: projectGameSchema.nullable(),
+  diagnostics: z.array(apiDiagnosticSchema),
+  installMessage: z.string(),
+  installStatus: z.string(),
+  source: typeChartSourceRecordSchema.nullable(),
+  stats: typeChartWorkflowStatsSchema,
+  summary: workflowSummarySchema,
+  types: z.array(typeChartTypeDefinitionSchema)
+});
+
+export const loadTypeChartWorkflowResponseSchema = z.strictObject({
+  workflow: typeChartWorkflowSchema
+});
+
+export const stageTypeChartRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  values: z.array(z.union([z.literal(0), z.literal(2), z.literal(4), z.literal(8)])).length(324)
+});
+
+export const stageTypeChartResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: typeChartWorkflowSchema
+});
+
 export const gymUniformRemovalProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -3236,6 +3308,10 @@ export type CatchCapSelection = z.infer<typeof catchCapSelectionSchema>;
 export type CatchCapWorkflow = z.infer<typeof catchCapWorkflowSchema>;
 export type HyperTrainingSourceRecord = z.infer<typeof hyperTrainingSourceRecordSchema>;
 export type HyperTrainingWorkflow = z.infer<typeof hyperTrainingWorkflowSchema>;
+export type TypeChartCell = z.infer<typeof typeChartCellSchema>;
+export type TypeChartSourceRecord = z.infer<typeof typeChartSourceRecordSchema>;
+export type TypeChartTypeDefinition = z.infer<typeof typeChartTypeDefinitionSchema>;
+export type TypeChartWorkflow = z.infer<typeof typeChartWorkflowSchema>;
 export type GymUniformRemovalReservedRegion = z.infer<
   typeof gymUniformRemovalReservedRegionSchema
 >;
@@ -3395,6 +3471,14 @@ export type LoadHyperTrainingWorkflowResponse = z.infer<
 >;
 export type StageHyperTrainingRequest = z.infer<typeof stageHyperTrainingRequestSchema>;
 export type StageHyperTrainingResponse = z.infer<typeof stageHyperTrainingResponseSchema>;
+export type LoadTypeChartWorkflowRequest = z.infer<
+  typeof loadTypeChartWorkflowRequestSchema
+>;
+export type LoadTypeChartWorkflowResponse = z.infer<
+  typeof loadTypeChartWorkflowResponseSchema
+>;
+export type StageTypeChartRequest = z.infer<typeof stageTypeChartRequestSchema>;
+export type StageTypeChartResponse = z.infer<typeof stageTypeChartResponseSchema>;
 export type LoadGymUniformRemovalWorkflowRequest = z.infer<
   typeof loadGymUniformRemovalWorkflowRequestSchema
 >;

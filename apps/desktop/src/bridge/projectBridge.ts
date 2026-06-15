@@ -18,6 +18,8 @@ import {
   type LoadCatchCapWorkflowResponse,
   type LoadHyperTrainingWorkflowRequest,
   type LoadHyperTrainingWorkflowResponse,
+  type LoadTypeChartWorkflowRequest,
+  type LoadTypeChartWorkflowResponse,
   type LoadGymUniformRemovalWorkflowRequest,
   type LoadGymUniformRemovalWorkflowResponse,
   type LoadIvScreenWorkflowRequest,
@@ -72,6 +74,8 @@ import {
   type StageCatchCapUninstallResponse,
   type StageHyperTrainingRequest,
   type StageHyperTrainingResponse,
+  type StageTypeChartRequest,
+  type StageTypeChartResponse,
   type StageGymUniformRemovalInstallRequest,
   type StageGymUniformRemovalInstallResponse,
   type StageGymUniformRemovalUninstallRequest,
@@ -166,6 +170,7 @@ import {
   loadBagHookWorkflowResponseSchema,
   loadCatchCapWorkflowResponseSchema,
   loadHyperTrainingWorkflowResponseSchema,
+  loadTypeChartWorkflowResponseSchema,
   loadGymUniformRemovalWorkflowResponseSchema,
   loadIvScreenWorkflowResponseSchema,
   loadExeFsPatchWorkflowResponseSchema,
@@ -190,6 +195,7 @@ import {
   stageCatchCapResponseSchema,
   stageCatchCapUninstallResponseSchema,
   stageHyperTrainingResponseSchema,
+  stageTypeChartResponseSchema,
   stageGymUniformRemovalInstallResponseSchema,
   stageGymUniformRemovalUninstallResponseSchema,
   stageIvScreenInstallResponseSchema,
@@ -317,6 +323,12 @@ export type ProjectBridge = {
   stageHyperTraining: (
     request: StageHyperTrainingRequest
   ) => Promise<StageHyperTrainingResponse>;
+  loadTypeChartWorkflow: (
+    request: LoadTypeChartWorkflowRequest
+  ) => Promise<LoadTypeChartWorkflowResponse>;
+  stageTypeChart: (
+    request: StageTypeChartRequest
+  ) => Promise<StageTypeChartResponse>;
   loadGymUniformRemovalWorkflow: (
     request: LoadGymUniformRemovalWorkflowRequest
   ) => Promise<LoadGymUniformRemovalWorkflowResponse>;
@@ -535,6 +547,20 @@ export function createProjectBridge(
         kmCommandNames.stageHyperTraining,
         request,
         stageHyperTrainingResponseSchema
+      ),
+    loadTypeChartWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadTypeChartWorkflow,
+        request,
+        loadTypeChartWorkflowResponseSchema
+      ),
+    stageTypeChart: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageTypeChart,
+        request,
+        stageTypeChartResponseSchema
       ),
     loadGymUniformRemovalWorkflow: (request) =>
       sendProjectBridgeRequest(
