@@ -5,8 +5,10 @@ using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.SwSh.Encounters;
 using KM.SwSh.Workflows;
+using KM.SV.Data;
+using KM.SV.Workflows;
 
-namespace KM.SV;
+namespace KM.SV.Encounters;
 
 internal sealed class SvEncountersWorkflowService
 {

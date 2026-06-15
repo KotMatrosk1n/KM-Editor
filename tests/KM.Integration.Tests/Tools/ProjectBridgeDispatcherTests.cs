@@ -163,6 +163,7 @@ public sealed class ProjectBridgeDispatcherTests
                 "hyperTraining",
                 "gymUniformRemoval",
                 "ivScreen",
+                "typeChart",
                 "royalCandy",
                 "startingItems",
                 "spreadsheetImport",

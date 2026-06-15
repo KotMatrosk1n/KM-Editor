@@ -3,7 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.SwSh.Workflows;
 
-namespace KM.SV;
+namespace KM.SV.ModMerger;
 
 public sealed record SvModMergerSourceRequest(
     string Path,

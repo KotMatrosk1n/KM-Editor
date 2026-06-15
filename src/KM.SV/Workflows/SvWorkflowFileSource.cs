@@ -6,7 +6,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SV;
 
-namespace KM.SV;
+namespace KM.SV.Workflows;
 
 internal sealed class SvWorkflowFileSource
 {

@@ -6,8 +6,10 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
+using KM.SV.Data;
+using KM.SV.Workflows;
 
-namespace KM.SV;
+namespace KM.SV.Pokemon;
 
 internal sealed class SvPokemonWorkflowService
 {

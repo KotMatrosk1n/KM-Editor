@@ -4,7 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.SwSh.Workflows;
 
-namespace KM.SV;
+namespace KM.SV.Workflows;
 
 internal static class SvWorkflowSupport
 {

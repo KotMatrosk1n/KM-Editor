@@ -12,7 +12,7 @@ using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
-using KM.SV;
+using KM.SV.Data;
 using KM.Integration.Tests.Tools;
 using KM.Tools.Bridge;
 using Xunit;

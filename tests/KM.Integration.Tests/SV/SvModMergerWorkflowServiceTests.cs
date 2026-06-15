@@ -8,7 +8,7 @@ using KM.Core.Projects;
 using KM.Formats.SV;
 using KM.Formats.SV.Trinity;
 using KM.Integration.Tests.Tools;
-using KM.SV;
+using KM.SV.ModMerger;
 using Xunit;
 
 namespace KM.Integration.Tests.SV;

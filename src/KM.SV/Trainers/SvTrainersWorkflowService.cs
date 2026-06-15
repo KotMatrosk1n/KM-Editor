@@ -5,8 +5,10 @@ using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
+using KM.SV.Data;
+using KM.SV.Workflows;
 
-namespace KM.SV;
+namespace KM.SV.Trainers;
 
 internal sealed class SvTrainersWorkflowService
 {

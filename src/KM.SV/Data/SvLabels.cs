@@ -2,7 +2,7 @@
 
 using System.Globalization;
 
-namespace KM.SV;
+namespace KM.SV.Data;
 
 internal static class SvLabels
 {
