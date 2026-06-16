@@ -47,6 +47,7 @@ import {
   Trash2,
   Trees,
   UsersRound,
+  Waypoints,
   Wrench,
   X,
   Zap,
@@ -402,7 +403,7 @@ const sections: Array<{
   {
     id: 'dynamaxAdventures',
     label: 'Dynamax Adventures',
-    icon: ShieldCheck
+    icon: Waypoints
   },
   {
     id: 'shops',
@@ -582,7 +583,8 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'hyperTraining',
       'typeChart',
       'fashionUnlock',
-      'gymUniformRemoval'
+      'gymUniformRemoval',
+      'dynamaxAdventures'
     ]
   }
 ];
@@ -15162,7 +15164,7 @@ function DynamaxAdventuresSection({
     <>
       <section aria-labelledby="dynamax-adventures-heading" className="panel wide-panel">
         <div className="panel-heading">
-          <ShieldCheck aria-hidden="true" size={18} />
+          <Waypoints aria-hidden="true" size={18} />
           <h2 id="dynamax-adventures-heading">Dynamax Adventures</h2>
         </div>
 
@@ -15406,7 +15408,7 @@ function SelectedDynamaxAdventurePanel({
   return (
     <aside aria-label="Selected Dynamax Adventure provenance" className="trainer-inspector">
       <div className="panel-heading">
-        <ShieldCheck aria-hidden="true" size={18} />
+        <Waypoints aria-hidden="true" size={18} />
         <h3>Selected Adventure</h3>
       </div>
 
