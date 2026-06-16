@@ -10,6 +10,7 @@ import {
   type EncountersWorkflow,
   type EncounterTableRecord,
   type ExeFsPatchWorkflow,
+  type FashionUnlockWorkflow,
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
   type GymUniformRemovalWorkflow,
@@ -3541,6 +3542,24 @@ export function createMockProjectBridge(
       typeIndex
     }))
   };
+  const fashionUnlockWorkflowSummary: WorkflowSummary = { availability: canEdit ? 'available' : 'readOnly', description: 'Unlocks fashion ownership checks without editing the save file.', diagnostics: [], id: 'fashionUnlock', label: 'Fashion Unlock' };
+  const fashionUnlockWorkflow: FashionUnlockWorkflow = {
+    buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471',
+    detectedGame: 'sword',
+    diagnostics: [],
+    directGetterOffsetHex: 'main.text+0x0143A2B0',
+    installMessage: 'Fashion Unlock is not installed. Installing makes clothing ownership checks return unlocked without editing the save file.',
+    installStatus: canEdit ? 'available' : 'readOnly',
+    mappedGetterOffsetHex: 'main.text+0x0143A300',
+    provenance: { fileState: 'baseOnly', sourceFile: 'exefs/main', sourceLayer: 'base' },
+    reservedRegions: [
+      { label: 'Fashion Unlock Sword direct ownership getter', length: 8, offsetLabel: 'text+0x143A2B0..0x143A2B7', regionId: 'fashion-unlock-sword-direct-owned-getter', rule: 'do-not-overwrite', startOffset: 0x0143a2b0 },
+      { label: 'Fashion Unlock Sword mapped ownership getter', length: 8, offsetLabel: 'text+0x143A300..0x143A307', regionId: 'fashion-unlock-sword-mapped-owned-getter', rule: 'do-not-overwrite', startOffset: 0x0143a300 }
+    ],
+    stats: { reservedMainTextRegionCount: 2, sourceFileCount: 1 },
+    stubKind: 'vanilla ownership getters',
+    summary: fashionUnlockWorkflowSummary
+  };
   const gymUniformRemovalWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Keeps the player in their current outfit during gym challenges and gym battles.',
@@ -3883,26 +3902,35 @@ export function createMockProjectBridge(
     const matchedFiles = selectedDirectory1Files.filter((relativePath) =>
       selectedDirectory2Set.has(relativePath)
     );
-    const selectedFiles = matchedFiles.map((relativePath) => ({
+    const createReadyFile = (
+      relativePath: string,
+      mergeKind: string,
+      summary: string,
+      directory1ChangeCount: number,
+      directory2ChangeCount: number
+    ) => ({
       conflictCount: 0,
-      directory1ChangeCount: 1,
-      directory2ChangeCount: 1,
-      mergeKind: 'smartMerge',
+      directory1ChangeCount,
+      directory2ChangeCount,
+      mergeKind,
       outputRelativePath: relativePath,
       relativePath,
       status: 'ready',
-      summary: 'Non-overlapping byte changes can be merged safely.',
+      summary,
       supportKind: 'Shop data'
-    }));
-    const diagnostics =
-      selectedDirectory1Only.length === 0 && selectedDirectory2Only.length === 0
-        ? []
-      : [
-          {
-            message: 'Files missing from one side were ignored for the merge.',
-            severity: 'warning' as const
-          }
-        ];
+    });
+    const selectedFiles = [
+      ...selectedDirectory1Only.map((relativePath) =>
+        createReadyFile(relativePath, 'singleSource', 'Only Mod Directory 1 contains this file, so KM will copy it.', 1, 0)
+      ),
+      ...selectedDirectory2Only.map((relativePath) =>
+        createReadyFile(relativePath, 'singleSource', 'Only Mod Directory 2 contains this file, so KM will copy it.', 0, 1)
+      ),
+      ...matchedFiles.map((relativePath) =>
+        createReadyFile(relativePath, 'smartMerge', 'Non-overlapping byte changes can be merged safely.', 1, 1)
+      )
+    ].sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+    const diagnostics: ModMergerPreview['diagnostics'] = [];
 
     return {
       canApply: selectedFiles.length > 0,
@@ -4351,6 +4379,21 @@ export function createMockProjectBridge(
                                 'romfs/bin/message/English/script/sub_event_007.dat'
                             }
                           ]
+                        : request.session.pendingEdits[0]?.domain === 'workflow.fashionUnlock'
+                        ? [
+                            {
+                              reason:
+                                'Install or refresh Fashion Unlock ownership-check stubs in exefs/main.',
+                              replacesExistingOutput: false,
+                              sources: [
+                                {
+                                  layer: 'base',
+                                  relativePath: 'exefs/main'
+                                }
+                              ],
+                              targetRelativePath: 'exefs/main'
+                            }
+                          ]
                         : request.session.pendingEdits[0]?.domain === 'workflow.gymUniformRemoval'
                         ? [
                             {
@@ -4464,6 +4507,7 @@ export function createMockProjectBridge(
           catchCapWorkflowSummary,
           hyperTrainingWorkflowSummary,
           typeChartWorkflowSummary,
+          fashionUnlockWorkflowSummary,
           gymUniformRemovalWorkflowSummary,
           ivScreenWorkflowSummary,
           royalCandyWorkflowSummary,
@@ -4717,6 +4761,62 @@ export function createMockProjectBridge(
             ...cell,
             effectiveness: request.values[index] ?? cell.effectiveness
           }))
+        }
+      }),
+    loadFashionUnlockWorkflow: () =>
+      Promise.resolve({
+        workflow: fashionUnlockWorkflow
+      }),
+    stageFashionUnlockInstall: (request) =>
+      Promise.resolve({
+        diagnostics: [{ message: 'Fashion Unlock install is staged for change-plan review.', severity: 'info' }],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.fashionUnlock',
+              field: 'install',
+              newValue: 'true',
+              recordId: 'fashion-unlock-v1-install',
+              sources: [{ layer: 'base', relativePath: 'exefs/main' }],
+              summary: 'Stage Fashion Unlock install.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-fashion-unlock-install'
+        },
+        workflow: fashionUnlockWorkflow
+      }),
+    stageFashionUnlockUninstall: (request) =>
+      Promise.resolve({
+        diagnostics: [{ message: 'Fashion Unlock uninstall is staged for change-plan review.', severity: 'info' }],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.fashionUnlock',
+              field: 'uninstall',
+              newValue: 'true',
+              recordId: 'fashion-unlock-v1-uninstall',
+              sources: [
+                { layer: 'generated', relativePath: 'exefs/main' },
+                { layer: 'base', relativePath: 'exefs/main' }
+              ],
+              summary: 'Stage Fashion Unlock uninstall.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-fashion-unlock-uninstall'
+        },
+        workflow: {
+          ...fashionUnlockWorkflow,
+          installMessage:
+            'Fashion Unlock is installed. Fashion ownership checks return unlocked while the ExeFS patch is active.',
+          installStatus: 'installed',
+          provenance: {
+            fileState: 'layeredOverride',
+            sourceFile: 'exefs/main',
+            sourceLayer: 'layered'
+          },
+          stubKind: 'return-true ownership stubs'
         }
       }),
     loadGymUniformRemovalWorkflow: () =>
@@ -6802,6 +6902,10 @@ function getApplyMessage(targetRelativePath: string, domain: string | undefined)
     return 'Applied Hyper Training changes to the configured LayeredFS output root.';
   }
 
+  if (domain === 'workflow.fashionUnlock') {
+    return 'Applied Fashion Unlock changes to the configured LayeredFS output root.';
+  }
+
   if (domain === 'workflow.gymUniformRemoval') {
     return 'Applied Gym Uniform Removal changes to the configured LayeredFS output root.';
   }
@@ -6873,6 +6977,8 @@ function getValidationMessage(domain: string | undefined) {
       return 'Pending Catch Cap Editor values are valid for change-plan review.';
     case 'workflow.hyperTraining':
       return 'Pending Hyper Training change is valid for change-plan review.';
+    case 'workflow.fashionUnlock':
+      return 'Pending Fashion Unlock change is valid for change-plan review.';
     case 'workflow.gymUniformRemoval':
       return 'Pending Gym Uniform Removal change is valid for change-plan review.';
     case 'workflow.ivScreen':

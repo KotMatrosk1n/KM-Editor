@@ -12,6 +12,7 @@ import {
   type EditSession,
   type EncountersWorkflow,
   type ExeFsPatchWorkflow,
+  type FashionUnlockWorkflow,
   type FlagworkSaveWorkflow,
   type GiftPokemonWorkflow,
   type GymUniformRemovalWorkflow,
@@ -65,6 +66,7 @@ export type WorkbenchSection =
   | 'catchCap'
   | 'hyperTraining'
   | 'typeChart'
+  | 'fashionUnlock'
   | 'gymUniformRemoval'
   | 'ivScreen'
   | 'exefsPatches'
@@ -110,6 +112,7 @@ type WorkbenchState = {
   catchCapWorkflow: CatchCapWorkflow | null;
   hyperTrainingWorkflow: HyperTrainingWorkflow | null;
   typeChartWorkflow: TypeChartWorkflow | null;
+  fashionUnlockWorkflow: FashionUnlockWorkflow | null;
   gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null;
   ivScreenWorkflow: IvScreenWorkflow | null;
   exeFsPatchSearchText: string;
@@ -197,6 +200,7 @@ type WorkbenchState = {
   setCatchCapWorkflow: (catchCapWorkflow: CatchCapWorkflow) => void;
   setHyperTrainingWorkflow: (hyperTrainingWorkflow: HyperTrainingWorkflow) => void;
   setTypeChartWorkflow: (typeChartWorkflow: TypeChartWorkflow) => void;
+  setFashionUnlockWorkflow: (fashionUnlockWorkflow: FashionUnlockWorkflow) => void;
   setGymUniformRemovalWorkflow: (
     gymUniformRemovalWorkflow: GymUniformRemovalWorkflow
   ) => void;
@@ -333,6 +337,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     catchCapWorkflow: null,
     hyperTrainingWorkflow: null,
     typeChartWorkflow: null,
+    fashionUnlockWorkflow: null,
     gymUniformRemovalWorkflow: null,
     ivScreenWorkflow: null,
     exeFsPatchSearchText: '',
@@ -424,6 +429,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   catchCapWorkflow: null,
   hyperTrainingWorkflow: null,
   typeChartWorkflow: null,
+  fashionUnlockWorkflow: null,
   gymUniformRemovalWorkflow: null,
   ivScreenWorkflow: null,
   exeFsPatchSearchText: '',
@@ -686,6 +692,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       encountersWorkflow: null,
       catchCapWorkflow: null,
       hyperTrainingWorkflow: null,
+      typeChartWorkflow: null,
+      fashionUnlockWorkflow: null,
       gymUniformRemovalWorkflow: null,
       ivScreenWorkflow: null,
       exeFsPatchSearchText: '',
@@ -1012,6 +1020,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({
       activeSection: resolveWorkflowLoadSection(state.activeSection, 'typeChart'),
       typeChartWorkflow
+    })),
+  setFashionUnlockWorkflow: (fashionUnlockWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'fashionUnlock'),
+      fashionUnlockWorkflow
     })),
   setIvScreenWorkflow: (ivScreenWorkflow) =>
     set((state) => ({

@@ -256,28 +256,16 @@ public sealed class SwShModMergerWorkflowService
 
         var selected1 = NormalizeSelectedFiles(selectedDirectory1Files);
         var selected2 = NormalizeSelectedFiles(selectedDirectory2Files);
-        if (selected1.Count == 0 && selected2.Count == 0)
+        var selected = selected1
+            .Union(selected2, StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (selected.Length == 0)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Select matching files from both mod directories before staging a merge.",
-                expected: "At least one identical selected RomFS file"));
-            return new MergePlan(files, conflicts, outputs);
-        }
-
-        var onlyIn1 = selected1.Except(selected2, StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
-        var onlyIn2 = selected2.Except(selected1, StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (onlyIn1.Length > 0 || onlyIn2.Length > 0)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"Files missing from one side were ignored for the merge. Directory 1 only: {FormatPathList(onlyIn1)}. Directory 2 only: {FormatPathList(onlyIn2)}.",
-                expected: "Only files present in both selected mod directories are merged"));
-        }
-
-        var selectedBoth = selected1.Intersect(selected2, StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (selectedBoth.Length == 0)
-        {
+                "Select at least one RomFS file before staging a merge.",
+                expected: "At least one selected RomFS file"));
             return new MergePlan(files, conflicts, outputs);
         }
 
@@ -288,20 +276,31 @@ public sealed class SwShModMergerWorkflowService
                 resolution => resolution.Source,
                 StringComparer.Ordinal);
 
-        foreach (var relativePath in selectedBoth)
+        foreach (var relativePath in selected)
         {
-            MergeFile(
-                paths,
-                root1,
-                root2,
-                relativePath,
-                mergeMode,
-                includeOutputs,
-                resolutionMap,
-                files,
-                conflicts,
-                outputs,
-                diagnostics);
+            if (selected1.Contains(relativePath) && selected2.Contains(relativePath))
+            {
+                MergeFile(
+                    paths,
+                    root1,
+                    root2,
+                    relativePath,
+                    mergeMode,
+                    includeOutputs,
+                    resolutionMap,
+                    files,
+                    conflicts,
+                    outputs,
+                    diagnostics);
+            }
+            else if (selected1.Contains(relativePath))
+            {
+                CopySingleSourceFile(root1, relativePath, "mod1", includeOutputs, files, outputs, diagnostics);
+            }
+            else
+            {
+                CopySingleSourceFile(root2, relativePath, "mod2", includeOutputs, files, outputs, diagnostics);
+            }
         }
 
         return new MergePlan(files, conflicts, outputs);
@@ -321,20 +320,34 @@ public sealed class SwShModMergerWorkflowService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var supportKind = GetSupportKind(relativePath);
-        var relativeInsideRomFs = relativePath[RomFsPrefix.Length..].Replace('/', Path.DirectorySeparatorChar);
-        var modPath1 = Path.Combine(root1, relativeInsideRomFs);
-        var modPath2 = Path.Combine(root2, relativeInsideRomFs);
+        var modPath1 = ResolveModFilePath(root1, relativePath);
+        var modPath2 = ResolveModFilePath(root2, relativePath);
         var basePath = string.IsNullOrWhiteSpace(paths.BaseRomFsPath)
             ? null
-            : Path.Combine(paths.BaseRomFsPath, relativeInsideRomFs);
+            : Path.Combine(paths.BaseRomFsPath, GetRelativeInsideRomFs(relativePath));
 
-        if (!File.Exists(modPath1) || !File.Exists(modPath2))
+        var hasMod1File = File.Exists(modPath1);
+        var hasMod2File = File.Exists(modPath2);
+        if (!hasMod1File || !hasMod2File)
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"Selected file '{relativePath}' was ignored because it is missing from one mod directory.",
-                file: relativePath,
-                expected: "Only files present in both selected mod directories are merged"));
+            if (hasMod1File)
+            {
+                CopySingleSourceFile(root1, relativePath, "mod1", includeOutputs, files, outputs, diagnostics);
+            }
+            else if (hasMod2File)
+            {
+                CopySingleSourceFile(root2, relativePath, "mod2", includeOutputs, files, outputs, diagnostics);
+            }
+            else
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Selected file '{relativePath}' could not be found in either mod directory.",
+                    file: relativePath,
+                    expected: "Readable selected RomFS file"));
+                files.Add(CreateFilePreview(relativePath, supportKind, "error", "error", CreateReadErrorSummary(), 0, 0, 0));
+            }
+
             return;
         }
 
@@ -549,6 +562,66 @@ public sealed class SwShModMergerWorkflowService
         }
     }
 
+    private static void CopySingleSourceFile(
+        string root,
+        string relativePath,
+        string source,
+        bool includeOutputs,
+        ICollection<SwShModMergerFilePreviewRecord> files,
+        ICollection<MergeOutput> outputs,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var supportKind = GetSupportKind(relativePath);
+        var modPath = ResolveModFilePath(root, relativePath);
+        if (!File.Exists(modPath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Selected file '{relativePath}' could not be copied because it is missing from {FormatResolutionSource(source)}.",
+                file: relativePath,
+                expected: "Readable selected RomFS file"));
+            files.Add(CreateFilePreview(relativePath, supportKind, "error", "error", CreateReadErrorSummary(), 0, 0, 0));
+            return;
+        }
+
+        try
+        {
+            var sourceBytes = File.ReadAllBytes(modPath);
+            if (includeOutputs)
+            {
+                outputs.Add(CreateMergeOutput(relativePath, sourceBytes));
+            }
+
+            files.Add(CreateFilePreview(
+                relativePath,
+                supportKind,
+                "ready",
+                "singleSource",
+                CreateSingleSourceCopySummary(source),
+                source == "mod1" ? 1 : 0,
+                source == "mod2" ? 1 : 0,
+                0));
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Selected file could not be read: {exception.Message}",
+                file: relativePath,
+                expected: "Readable RomFS file"));
+            files.Add(CreateFilePreview(relativePath, supportKind, "error", "error", CreateReadErrorSummary(), 0, 0, 0));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Selected file could not be read: {exception.Message}",
+                file: relativePath,
+                expected: "Readable RomFS file"));
+            files.Add(CreateFilePreview(relativePath, supportKind, "error", "error", CreateReadErrorSummary(), 0, 0, 0));
+        }
+    }
+
     private static void MergeFileByReplacementMode(
         string relativePath,
         string supportKind,
@@ -720,6 +793,16 @@ public sealed class SwShModMergerWorkflowService
 
         var childRomFs = Path.Combine(fullPath, "romfs");
         return Directory.Exists(childRomFs) ? childRomFs : null;
+    }
+
+    private static string ResolveModFilePath(string romFsRoot, string relativePath)
+    {
+        return Path.Combine(romFsRoot, GetRelativeInsideRomFs(relativePath));
+    }
+
+    private static string GetRelativeInsideRomFs(string relativePath)
+    {
+        return relativePath[RomFsPrefix.Length..].Replace('/', Path.DirectorySeparatorChar);
     }
 
     private static SortedSet<string> NormalizeSelectedFiles(IReadOnlyList<string> selectedFiles)
@@ -1013,6 +1096,11 @@ public sealed class SwShModMergerWorkflowService
         return $"Only {FormatResolutionSource(source)} changed this file from vanilla, so KM will use that changed file.";
     }
 
+    private static string CreateSingleSourceCopySummary(string source)
+    {
+        return $"Only {FormatResolutionSource(source)} contains this file, so KM will copy that file to the output.";
+    }
+
     private static string CreateLengthConflictSummary()
     {
         return "Smart Merge cannot combine this file because one or both mods changed the file length. Choose which whole file should win.";
@@ -1239,16 +1327,6 @@ public sealed class SwShModMergerWorkflowService
     private static bool IsReplacementMode(string mergeMode)
     {
         return mergeMode is SwShModMergerMergeModes.PreferMod1 or SwShModMergerMergeModes.PreferMod2;
-    }
-
-    private static string FormatPathList(IReadOnlyList<string> paths)
-    {
-        if (paths.Count == 0)
-        {
-            return "none";
-        }
-
-        return string.Join(", ", paths.Take(3)) + (paths.Count > 3 ? ", ..." : string.Empty);
     }
 
     private static string FormatResolutionSource(string resolution)

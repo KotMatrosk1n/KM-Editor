@@ -7,6 +7,7 @@ using KM.Api.DynamaxAdventures;
 using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.ExeFs;
+using KM.Api.FashionUnlock;
 using KM.Api.Flagwork;
 using KM.Api.GymUniformRemoval;
 using KM.Api.Items;
@@ -161,9 +162,10 @@ public sealed class ProjectBridgeDispatcherTests
                 "bagHook",
                 "catchCap",
                 "hyperTraining",
+                "typeChart",
+                "fashionUnlock",
                 "gymUniformRemoval",
                 "ivScreen",
-                "typeChart",
                 "royalCandy",
                 "startingItems",
                 "spreadsheetImport",
@@ -1915,6 +1917,90 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchFashionUnlockStageValidatePlanAndApplyWritesLayeredMain()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        temp.WriteBaseRomFsFile("data/items.bin", "base-items");
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loadJson = SerializeRequest(
+            KmCommandNames.LoadFashionUnlockWorkflow,
+            new LoadFashionUnlockWorkflowRequest(temp.Paths),
+            requestId: "request-fashion-unlock-load");
+        var loadResponse = DeserializeResponse<LoadFashionUnlockWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.Null(loadResponse.Error);
+        Assert.NotNull(loadResponse.Payload);
+        Assert.Equal("available", loadResponse.Payload.Workflow.InstallStatus);
+        Assert.Equal("main.text+0x0143A2B0", loadResponse.Payload.Workflow.DirectGetterOffsetHex);
+        Assert.Equal("main.text+0x0143A300", loadResponse.Payload.Workflow.MappedGetterOffsetHex);
+
+        var stageJson = SerializeRequest(
+            KmCommandNames.StageFashionUnlockInstall,
+            new StageFashionUnlockInstallRequest(temp.Paths, Session: null),
+            requestId: "request-fashion-unlock-stage");
+        var stageResponse = DeserializeResponse<StageFashionUnlockInstallResponse>(dispatcher.Dispatch(stageJson));
+        Assert.Null(stageResponse.Error);
+        Assert.NotNull(stageResponse.Payload);
+        Assert.Single(stageResponse.Payload.Session.PendingEdits);
+        Assert.Equal("workflow.fashionUnlock", stageResponse.Payload.Session.PendingEdits[0].Domain);
+        Assert.DoesNotContain(
+            stageResponse.Payload.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var validateJson = SerializeRequest(
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-fashion-unlock-validate");
+        var validateResponse = DeserializeResponse<ValidateEditSessionResponse>(dispatcher.Dispatch(validateJson));
+        Assert.Null(validateResponse.Error);
+        Assert.NotNull(validateResponse.Payload);
+        Assert.True(validateResponse.Payload.IsValid);
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, stageResponse.Payload.Session),
+            requestId: "request-fashion-unlock-plan");
+        var planResponse = DeserializeResponse<CreateChangePlanResponse>(dispatcher.Dispatch(planJson));
+        Assert.Null(planResponse.Error);
+        Assert.NotNull(planResponse.Payload);
+        Assert.True(planResponse.Payload.ChangePlan.CanApply);
+        var write = Assert.Single(planResponse.Payload.ChangePlan.Writes);
+        Assert.Equal("exefs/main", write.TargetRelativePath);
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(
+                temp.Paths,
+                stageResponse.Payload.Session,
+                planResponse.Payload.ChangePlan),
+            requestId: "request-fashion-unlock-apply");
+        var applyResponse = DeserializeResponse<ApplyChangePlanResponse>(dispatcher.Dispatch(applyJson));
+
+        Assert.Null(applyResponse.Error);
+        Assert.NotNull(applyResponse.Payload);
+        Assert.DoesNotContain(
+            applyResponse.Payload.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(
+            applyResponse.Payload.ApplyResult.WrittenFiles,
+            relativePath => relativePath == "exefs/main");
+
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var outputText = SwShNsoFile.Parse(File.ReadAllBytes(outputMainPath)).Text.DecompressedData;
+        Assert.Equal(0x52800020u, ReadInstruction(outputText, 0x0143A2B0));
+        Assert.Equal(0xD65F03C0u, ReadInstruction(outputText, 0x0143A2B4));
+        Assert.Equal(0x52800020u, ReadInstruction(outputText, 0x0143A300));
+        Assert.Equal(0xD65F03C0u, ReadInstruction(outputText, 0x0143A304));
+
+        var reloadResponse = DeserializeResponse<LoadFashionUnlockWorkflowResponse>(dispatcher.Dispatch(loadJson));
+        Assert.Null(reloadResponse.Error);
+        Assert.NotNull(reloadResponse.Payload);
+        Assert.Equal("installed", reloadResponse.Payload.Workflow.InstallStatus);
+    }
+
+    [Fact]
     public void DispatchGymUniformRemovalStageValidatePlanAndApplyWritesLayeredIps()
     {
         using var temp = TemporaryBridgeProject.Create();
@@ -2749,15 +2835,19 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
-    public void DispatchModMergerStagesAndAppliesMatchingRomFsFiles()
+    public void DispatchModMergerStagesAndAppliesMatchingAndOneSidedRomFsFiles()
     {
         using var temp = TemporaryBridgeProject.Create();
         const string relativePath = "romfs/bin/test.bin";
+        const string directory1OnlyPath = "romfs/bin/dir1-only.bin";
+        const string directory2OnlyPath = "romfs/bin/dir2-only.bin";
         var modDirectory1 = Directory.CreateDirectory(Path.Combine(temp.RootPath, "mod-1")).FullName;
         var modDirectory2 = Directory.CreateDirectory(Path.Combine(temp.RootPath, "mod-2")).FullName;
         temp.WriteBaseRomFsFile("bin/test.bin", [0, 0, 0]);
         WriteBinaryFile(modDirectory1, relativePath, [1, 0, 0]);
         WriteBinaryFile(modDirectory2, relativePath, [0, 2, 0]);
+        WriteBinaryFile(modDirectory1, directory1OnlyPath, [9]);
+        WriteBinaryFile(modDirectory2, directory2OnlyPath, [8, 8]);
         var dispatcher = new ProjectBridgeDispatcher();
 
         var loadResponse = DeserializeResponse<LoadModMergerWorkflowResponse>(
@@ -2776,14 +2866,15 @@ public sealed class ProjectBridgeDispatcherTests
                     temp.Paths,
                     modDirectory1,
                     modDirectory2,
-                    [relativePath],
-                    [relativePath],
+                    [relativePath, directory1OnlyPath],
+                    [relativePath, directory2OnlyPath],
                     []),
                 requestId: "request-mod-merger-stage")));
         Assert.Null(stageResponse.Error);
         Assert.NotNull(stageResponse.Payload);
         Assert.True(stageResponse.Payload.Preview.CanApply);
         Assert.Empty(stageResponse.Payload.Preview.Conflicts);
+        Assert.Equal(3, stageResponse.Payload.Preview.Files.Count);
 
         var applyResponse = DeserializeResponse<ApplyModMergeResponse>(
             dispatcher.Dispatch(SerializeRequest(
@@ -2792,17 +2883,23 @@ public sealed class ProjectBridgeDispatcherTests
                     temp.Paths,
                     modDirectory1,
                     modDirectory2,
-                    [relativePath],
-                    [relativePath],
+                    [relativePath, directory1OnlyPath],
+                    [relativePath, directory2OnlyPath],
                     []),
                 requestId: "request-mod-merger-apply")));
 
         Assert.Null(applyResponse.Error);
         Assert.NotNull(applyResponse.Payload);
-        Assert.Equal([relativePath], applyResponse.Payload.WrittenFiles);
+        Assert.Equal([directory1OnlyPath, directory2OnlyPath, relativePath], applyResponse.Payload.WrittenFiles);
         Assert.Equal(
             [1, 2, 0],
             File.ReadAllBytes(Path.Combine(temp.OutputRootPath, "romfs", "bin", "test.bin")));
+        Assert.Equal(
+            [9],
+            File.ReadAllBytes(Path.Combine(temp.OutputRootPath, "romfs", "bin", "dir1-only.bin")));
+        Assert.Equal(
+            [8, 8],
+            File.ReadAllBytes(Path.Combine(temp.OutputRootPath, "romfs", "bin", "dir2-only.bin")));
     }
 
     [Fact]

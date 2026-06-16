@@ -8,6 +8,7 @@ using KM.Api.DynamaxAdventures;
 using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.ExeFs;
+using KM.Api.FashionUnlock;
 using KM.Api.Flagwork;
 using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
@@ -42,6 +43,7 @@ using KM.SwSh.CatchCap;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
+using KM.SwSh.FashionUnlock;
 using KM.SwSh.Gifts;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
@@ -79,6 +81,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShBagHookEditSessionService bagHookEditSessionService;
     private readonly SwShCatchCapEditSessionService catchCapEditSessionService;
     private readonly SwShHyperTrainingEditSessionService hyperTrainingEditSessionService;
+    private readonly SwShFashionUnlockEditSessionService fashionUnlockEditSessionService;
     private readonly SwShGymUniformRemovalEditSessionService gymUniformRemovalEditSessionService;
     private readonly SwShIvScreenEditSessionService ivScreenEditSessionService;
     private readonly SwShTypeChartEditSessionService typeChartEditSessionService;
@@ -112,6 +115,7 @@ public sealed class ProjectBridgeDispatcher
         SwShBagHookEditSessionService? bagHookEditSessionService = null,
         SwShCatchCapEditSessionService? catchCapEditSessionService = null,
         SwShHyperTrainingEditSessionService? hyperTrainingEditSessionService = null,
+        SwShFashionUnlockEditSessionService? fashionUnlockEditSessionService = null,
         SwShGymUniformRemovalEditSessionService? gymUniformRemovalEditSessionService = null,
         SwShIvScreenEditSessionService? ivScreenEditSessionService = null,
         SwShTypeChartEditSessionService? typeChartEditSessionService = null,
@@ -144,6 +148,7 @@ public sealed class ProjectBridgeDispatcher
         this.bagHookEditSessionService = bagHookEditSessionService ?? new SwShBagHookEditSessionService(this.projectWorkspaceService);
         this.catchCapEditSessionService = catchCapEditSessionService ?? new SwShCatchCapEditSessionService(this.projectWorkspaceService);
         this.hyperTrainingEditSessionService = hyperTrainingEditSessionService ?? new SwShHyperTrainingEditSessionService(this.projectWorkspaceService);
+        this.fashionUnlockEditSessionService = fashionUnlockEditSessionService ?? new SwShFashionUnlockEditSessionService(this.projectWorkspaceService);
         this.gymUniformRemovalEditSessionService = gymUniformRemovalEditSessionService ?? new SwShGymUniformRemovalEditSessionService(this.projectWorkspaceService);
         this.ivScreenEditSessionService = ivScreenEditSessionService ?? new SwShIvScreenEditSessionService(this.projectWorkspaceService);
         this.typeChartEditSessionService = typeChartEditSessionService ?? new SwShTypeChartEditSessionService(this.projectWorkspaceService);
@@ -235,14 +240,17 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.StageCatchCapUninstall => DispatchStageCatchCapUninstall(requestJson),
                 KmCommandNames.LoadHyperTrainingWorkflow => DispatchLoadHyperTrainingWorkflow(requestJson),
                 KmCommandNames.StageHyperTraining => DispatchStageHyperTraining(requestJson),
+                KmCommandNames.LoadTypeChartWorkflow => DispatchLoadTypeChartWorkflow(requestJson),
+                KmCommandNames.StageTypeChart => DispatchStageTypeChart(requestJson),
+                KmCommandNames.LoadFashionUnlockWorkflow => DispatchLoadFashionUnlockWorkflow(requestJson),
+                KmCommandNames.StageFashionUnlockInstall => DispatchStageFashionUnlockInstall(requestJson),
+                KmCommandNames.StageFashionUnlockUninstall => DispatchStageFashionUnlockUninstall(requestJson),
                 KmCommandNames.LoadGymUniformRemovalWorkflow => DispatchLoadGymUniformRemovalWorkflow(requestJson),
                 KmCommandNames.StageGymUniformRemovalInstall => DispatchStageGymUniformRemovalInstall(requestJson),
                 KmCommandNames.StageGymUniformRemovalUninstall => DispatchStageGymUniformRemovalUninstall(requestJson),
                 KmCommandNames.LoadIvScreenWorkflow => DispatchLoadIvScreenWorkflow(requestJson),
                 KmCommandNames.StageIvScreenInstall => DispatchStageIvScreenInstall(requestJson),
                 KmCommandNames.StageIvScreenUninstall => DispatchStageIvScreenUninstall(requestJson),
-                KmCommandNames.LoadTypeChartWorkflow => DispatchLoadTypeChartWorkflow(requestJson),
-                KmCommandNames.StageTypeChart => DispatchStageTypeChart(requestJson),
                 KmCommandNames.LoadExeFsPatchWorkflow => DispatchLoadExeFsPatchWorkflow(requestJson),
                 KmCommandNames.StageExeFsPatch => DispatchStageExeFsPatch(requestJson),
                 KmCommandNames.LoadRoyalCandyWorkflow => DispatchLoadRoyalCandyWorkflow(requestJson),
@@ -985,6 +993,43 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadFashionUnlockWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadFashionUnlockWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadFashionUnlock(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageFashionUnlockInstall(string requestJson)
+    {
+        var request = DeserializeRequest<StageFashionUnlockInstallRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = fashionUnlockEditSessionService.StageInstall(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageFashionUnlockUninstall(string requestJson)
+    {
+        var request = DeserializeRequest<StageFashionUnlockUninstallRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = fashionUnlockEditSessionService.StageUninstall(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SwShBridgeMapper.ToFashionUnlockUninstallDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadGymUniformRemovalWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadGymUniformRemovalWorkflowRequest>(requestJson);
@@ -1328,6 +1373,7 @@ public sealed class ProjectBridgeDispatcher
                 EditSessionDomain.CatchCap => catchCapEditSessionService.Validate(paths, session),
                 EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.Validate(paths, session),
                 EditSessionDomain.TypeChart => typeChartEditSessionService.Validate(paths, session),
+                EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.Validate(paths, session),
                 EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.Validate(paths, session),
                 EditSessionDomain.IvScreen => ivScreenEditSessionService.Validate(paths, session),
                 EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
@@ -1371,6 +1417,7 @@ public sealed class ProjectBridgeDispatcher
                 EditSessionDomain.CatchCap => catchCapEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.TypeChart => typeChartEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.IvScreen => ivScreenEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session),
@@ -1415,6 +1462,7 @@ public sealed class ProjectBridgeDispatcher
                 EditSessionDomain.CatchCap => catchCapEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.TypeChart => typeChartEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.IvScreen => ivScreenEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
@@ -1465,6 +1513,7 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.catchCap"] => EditSessionDomain.CatchCap,
             ["workflow.hyperTraining"] => EditSessionDomain.HyperTraining,
             ["workflow.typeChart"] => EditSessionDomain.TypeChart,
+            ["workflow.fashionUnlock"] => EditSessionDomain.FashionUnlock,
             ["workflow.gymUniformRemoval"] => EditSessionDomain.GymUniformRemoval,
             ["workflow.ivScreen"] => EditSessionDomain.IvScreen,
             ["workflow.giftPokemon"] => EditSessionDomain.GiftPokemon,
@@ -1671,6 +1720,7 @@ public sealed class ProjectBridgeDispatcher
         CatchCap,
         HyperTraining,
         TypeChart,
+        FashionUnlock,
         GymUniformRemoval,
         IvScreen,
         GiftPokemon,

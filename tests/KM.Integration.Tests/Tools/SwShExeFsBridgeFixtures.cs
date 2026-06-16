@@ -67,6 +67,7 @@ internal static class SwShExeFsBridgeFixtures
         WriteInstruction(text, 0x013CA220, 0xF81D0FF5);
         WriteIvScreenCallSiteAnchors(text);
         WriteGymUniformRemovalVanillaAnchors(text);
+        WriteFashionUnlockVanillaAnchors(text);
         return text;
     }
 
@@ -76,6 +77,14 @@ internal static class SwShExeFsBridgeFixtures
         WriteInstruction(text, 0x01472604, 0xB9400833);
         WriteInstruction(text, 0x01472630, 0xD0008CE8);
         WriteInstruction(text, 0x01472634, 0xB9400833);
+    }
+
+    private static void WriteFashionUnlockVanillaAnchors(byte[] text)
+    {
+        WriteInstruction(text, 0x0143A2B0, 0xAA0003E8);
+        WriteInstruction(text, 0x0143A2B4, 0x2A1F03E0);
+        WriteInstruction(text, 0x0143A300, 0xD10603FF);
+        WriteInstruction(text, 0x0143A304, 0xA9145FFC);
     }
 
     private static void WriteIvScreenCallSiteAnchors(byte[] text)

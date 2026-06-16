@@ -92,6 +92,7 @@ import {
   type ExeFsPatchRecord,
   type ExeFsPatchWorkflow,
   type ExeFsSegmentRecord,
+  type FashionUnlockWorkflow,
   type FlagRecord,
   type FlagworkSaveWorkflow,
   type CatchCapRecord,
@@ -210,6 +211,7 @@ import {
 import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
 import { ApplyResultSection, DiagnosticsSection, Metric } from './components/workflowPanels';
+import { FashionUnlockSection } from './features/fashion-unlock/FashionUnlockSection';
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
 import {
   TypeChartSection,
@@ -219,7 +221,6 @@ import {
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from './utils/workflowFormatters';
 
 const appVersion = tauriConfig.version;
-
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
 
 const textControlInserts = [
@@ -479,6 +480,11 @@ const sections: Array<{
     icon: Table2
   },
   {
+    id: 'fashionUnlock',
+    label: 'Fashion Unlock',
+    icon: Shirt
+  },
+  {
     id: 'gymUniformRemoval',
     label: 'Gym Uniform Removal',
     icon: Shirt
@@ -575,6 +581,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'ivScreen',
       'hyperTraining',
       'typeChart',
+      'fashionUnlock',
       'gymUniformRemoval'
     ]
   }
@@ -744,6 +751,13 @@ const workflowDefinitions: Array<{
     description:
       'Advanced editor for the Sword/Shield type-effectiveness table in exefs/main.',
     icon: Table2
+  },
+  {
+    id: 'fashionUnlock',
+    label: 'Fashion Unlock',
+    description:
+      'Advanced ExeFS editor that unlocks fashion ownership checks without editing the save file.',
+    icon: Shirt
   },
   {
     id: 'gymUniformRemoval',
@@ -1453,6 +1467,7 @@ export function App({
   const catchCapWorkflow = useWorkbenchStore((state) => state.catchCapWorkflow);
   const hyperTrainingWorkflow = useWorkbenchStore((state) => state.hyperTrainingWorkflow);
   const typeChartWorkflow = useWorkbenchStore((state) => state.typeChartWorkflow);
+  const fashionUnlockWorkflow = useWorkbenchStore((state) => state.fashionUnlockWorkflow);
   const gymUniformRemovalWorkflow = useWorkbenchStore(
     (state) => state.gymUniformRemovalWorkflow
   );
@@ -1463,6 +1478,9 @@ export function App({
     (state) => state.setHyperTrainingWorkflow
   );
   const setTypeChartWorkflow = useWorkbenchStore((state) => state.setTypeChartWorkflow);
+  const setFashionUnlockWorkflow = useWorkbenchStore(
+    (state) => state.setFashionUnlockWorkflow
+  );
   const setGymUniformRemovalWorkflow = useWorkbenchStore(
     (state) => state.setGymUniformRemovalWorkflow
   );
@@ -1669,6 +1687,8 @@ export function App({
   const [isHyperTrainingStaging, setIsHyperTrainingStaging] = useState(false);
   const [isTypeChartLoading, setIsTypeChartLoading] = useState(false);
   const [isTypeChartStaging, setIsTypeChartStaging] = useState(false);
+  const [isFashionUnlockLoading, setIsFashionUnlockLoading] = useState(false);
+  const [isFashionUnlockStaging, setIsFashionUnlockStaging] = useState(false);
   const [isGymUniformRemovalLoading, setIsGymUniformRemovalLoading] = useState(false);
   const [isGymUniformRemovalStaging, setIsGymUniformRemovalStaging] = useState(false);
   const [isIvScreenLoading, setIsIvScreenLoading] = useState(false);
@@ -1802,6 +1822,8 @@ export function App({
       bagHookWorkflow: null,
       catchCapWorkflow: null,
       hyperTrainingWorkflow: null,
+      typeChartWorkflow: null,
+      fashionUnlockWorkflow: null,
       gymUniformRemovalWorkflow: null,
       ivScreenWorkflow: null,
       dynamaxAdventuresWorkflow: null,
@@ -2913,6 +2935,70 @@ export function App({
     }
   };
 
+  const handleOpenFashionUnlockWorkflow = async () => {
+    setIsFashionUnlockLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadFashionUnlockWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setFashionUnlockWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsFashionUnlockLoading(false);
+    }
+  };
+
+  const handleStageFashionUnlockInstall = async () => {
+    setIsFashionUnlockStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageFashionUnlockInstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setFashionUnlockWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('fashionUnlock', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsFashionUnlockStaging(false);
+    }
+  };
+
+  const handleStageFashionUnlockUninstall = async () => {
+    setIsFashionUnlockStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageFashionUnlockUninstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setFashionUnlockWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('fashionUnlock', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsFashionUnlockStaging(false);
+    }
+  };
+
   const handleOpenGymUniformRemovalWorkflow = async () => {
     setIsGymUniformRemovalLoading(true);
     setBridgeDiagnostics([]);
@@ -3349,6 +3435,12 @@ export function App({
           void handleOpenTypeChartWorkflow();
         }
         break;
+      case 'fashionUnlock':
+        if (!fashionUnlockWorkflow && !isFashionUnlockLoading) {
+          markLazyLoadStarted();
+          void handleOpenFashionUnlockWorkflow();
+        }
+        break;
       case 'gymUniformRemoval':
         if (!gymUniformRemovalWorkflow && !isGymUniformRemovalLoading) {
           markLazyLoadStarted();
@@ -3395,6 +3487,7 @@ export function App({
     dynamaxAdventuresWorkflow,
     encountersWorkflow,
     exeFsPatchWorkflow,
+    fashionUnlockWorkflow,
     flagworkSaveWorkflow,
     giftPokemonWorkflow,
     gymUniformRemovalWorkflow,
@@ -3412,6 +3505,7 @@ export function App({
     isBehaviorLoading,
     isBagHookLoading,
     isCatchCapLoading,
+    isFashionUnlockLoading,
     isGymUniformRemovalLoading,
     isHyperTrainingLoading,
     isIvScreenLoading,
@@ -5735,6 +5829,14 @@ const resetModMergerPlan = () => {
         }
       );
     }
+    if (fashionUnlockWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadFashionUnlockWorkflow({ paths });
+          setFashionUnlockWorkflow(response.workflow);
+        }
+      );
+    }
     if (gymUniformRemovalWorkflow) {
       reloadTasks.push(
         async () => {
@@ -6057,6 +6159,7 @@ const resetModMergerPlan = () => {
               isBagHookLoading={isBagHookLoading}
               isCatchCapLoading={isCatchCapLoading}
               isHyperTrainingLoading={isHyperTrainingLoading}
+              isFashionUnlockLoading={isFashionUnlockLoading}
               isGymUniformRemovalLoading={isGymUniformRemovalLoading}
               isIvScreenLoading={isIvScreenLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
@@ -6075,6 +6178,7 @@ const resetModMergerPlan = () => {
               onOpenBagHookWorkflow={handleOpenBagHookWorkflow}
               onOpenCatchCapWorkflow={handleOpenCatchCapWorkflow}
               onOpenHyperTrainingWorkflow={handleOpenHyperTrainingWorkflow}
+              onOpenFashionUnlockWorkflow={handleOpenFashionUnlockWorkflow}
               onOpenGymUniformRemovalWorkflow={handleOpenGymUniformRemovalWorkflow}
               onOpenIvScreenWorkflow={handleOpenIvScreenWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
@@ -6535,6 +6639,24 @@ const resetModMergerPlan = () => {
               />
             )
           ) : null}
+          {activeSection === 'fashionUnlock' ? (
+            isFashionUnlockLoading && !fashionUnlockWorkflow ? (
+              <WorkflowLoadingPanel label="Fashion Unlock" />
+            ) : (
+              <FashionUnlockSection
+                changePlan={changePlan}
+                editSession={getEditSessionForSection('fashionUnlock')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isFashionUnlockStaging}
+                onApplyChangePlan={handleApplyChangePlan}
+                onCreateChangePlan={handleCreateChangePlan}
+                onStageInstall={handleStageFashionUnlockInstall}
+                onStageUninstall={handleStageFashionUnlockUninstall}
+                workflow={fashionUnlockWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'gymUniformRemoval' ? (
             isGymUniformRemovalLoading && !gymUniformRemovalWorkflow ? (
               <WorkflowLoadingPanel label="Gym Uniform Removal" />
@@ -6727,6 +6849,7 @@ const resetModMergerPlan = () => {
                 dynamaxAdventuresWorkflow,
                 encountersWorkflow,
                 exeFsPatchWorkflow,
+                fashionUnlockWorkflow,
                 flagworkSaveWorkflow,
                 giftPokemonWorkflow,
                 behaviorWorkflow,
@@ -7100,6 +7223,7 @@ function WorkflowsSection({
   isBagHookLoading,
   isCatchCapLoading,
   isHyperTrainingLoading,
+  isFashionUnlockLoading,
   isGymUniformRemovalLoading,
   isIvScreenLoading,
   isRoyalCandyLoading,
@@ -7117,6 +7241,7 @@ function WorkflowsSection({
   onOpenBagHookWorkflow,
   onOpenCatchCapWorkflow,
   onOpenHyperTrainingWorkflow,
+  onOpenFashionUnlockWorkflow,
   onOpenGymUniformRemovalWorkflow,
   onOpenIvScreenWorkflow,
   onOpenItemsWorkflow,
@@ -7160,6 +7285,7 @@ function WorkflowsSection({
   isBagHookLoading: boolean;
   isCatchCapLoading: boolean;
   isHyperTrainingLoading: boolean;
+  isFashionUnlockLoading: boolean;
   isGymUniformRemovalLoading: boolean;
   isIvScreenLoading: boolean;
   isRoyalCandyLoading: boolean;
@@ -7177,6 +7303,7 @@ function WorkflowsSection({
   onOpenBagHookWorkflow: () => void;
   onOpenCatchCapWorkflow: () => void;
   onOpenHyperTrainingWorkflow: () => void;
+  onOpenFashionUnlockWorkflow: () => void;
   onOpenGymUniformRemovalWorkflow: () => void;
   onOpenIvScreenWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
@@ -7248,6 +7375,7 @@ function WorkflowsSection({
           const isBagHookWorkflow = definition.id === 'bagHook';
           const isCatchCapWorkflow = definition.id === 'catchCap';
           const isHyperTrainingWorkflow = definition.id === 'hyperTraining';
+          const isFashionUnlockWorkflow = definition.id === 'fashionUnlock';
           const isGymUniformRemovalWorkflow = definition.id === 'gymUniformRemoval';
           const isIvScreenWorkflow = definition.id === 'ivScreen';
           const isExeFsPatchWorkflow = definition.id === 'exefsPatches';
@@ -7291,6 +7419,8 @@ function WorkflowsSection({
             isCatchCapWorkflow && workflowState.availability !== 'disabled';
           const canOpenHyperTraining =
             isHyperTrainingWorkflow && workflowState.availability !== 'disabled';
+          const canOpenFashionUnlock =
+            isFashionUnlockWorkflow && workflowState.availability !== 'disabled';
           const canOpenGymUniformRemoval =
             isGymUniformRemovalWorkflow && workflowState.availability !== 'disabled';
           const canOpenIvScreen =
@@ -7556,6 +7686,17 @@ function WorkflowsSection({
                     <span>
                       {isHyperTrainingLoading ? 'Loading' : 'Open Hyper Training'}
                     </span>
+                  </button>
+                ) : null}
+                {isFashionUnlockWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenFashionUnlock || isFashionUnlockLoading}
+                    onClick={onOpenFashionUnlockWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>{isFashionUnlockLoading ? 'Loading' : 'Open Fashion Unlock'}</span>
                   </button>
                 ) : null}
                 {isGymUniformRemovalWorkflow ? (
@@ -12129,6 +12270,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.encounters': 'Wild Encounters',
     'workflow.exefs': 'ExeFS Patches',
     'workflow.exefsPatches': 'ExeFS Patches',
+    'workflow.fashionUnlock': 'Fashion Unlock',
     'workflow.giftPokemon': 'Gift Pokemon',
     'workflow.gymUniformRemoval': 'Gym Uniform Removal',
     'workflow.behavior': 'Behavior',
@@ -12377,6 +12519,16 @@ function getPendingEditDisplayDetails(
         fieldLabel: edit.field === 'effectiveness' ? 'Effectiveness table' : undefined,
         newValueLabel: formatTypeChartPendingValue(edit.newValue, context),
         recordLabel: '18x18 type chart'
+      });
+    case 'workflow.fashionUnlock':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'install' ? 'Install' : 'Uninstall',
+        newValueLabel:
+          edit.recordId === 'fashion-unlock-v1-install'
+            ? 'Unlock fashion ownership checks'
+            : 'Restore base bytes',
+        recordLabel: 'Fashion Unlock'
       });
     case 'workflow.gymUniformRemoval':
       return createPendingEditDisplayDetails(edit, {
@@ -23107,17 +23259,10 @@ function ModMergerSection({
   const directory1Files = workflow?.directory1Files ?? [];
   const directory2Files = workflow?.directory2Files ?? [];
   const effectiveOutputRootPath = (workflow?.outputRootPath ?? outputRootPath.trim()) || null;
-  const selectedDirectory1Only = Array.from(selectedDirectory1Files).filter(
-    (path) => !selectedDirectory2Files.has(path)
-  ).length;
-  const selectedDirectory2Only = Array.from(selectedDirectory2Files).filter(
-    (path) => !selectedDirectory1Files.has(path)
-  ).length;
-  const selectionMismatchCount = selectedDirectory1Only + selectedDirectory2Only;
-  const selectedPairCount =
-    selectionMismatchCount === 0
-      ? selectedDirectory1Files.size
-      : Math.min(selectedDirectory1Files.size, selectedDirectory2Files.size);
+  const selectedFileCount = new Set([
+    ...selectedDirectory1Files,
+    ...selectedDirectory2Files
+  ]).size;
   const hasSelectedFiles =
     selectedDirectory1Files.size > 0 || selectedDirectory2Files.size > 0;
   const canSelectAll = directory1Files.length > 0 || directory2Files.length > 0;
@@ -23247,12 +23392,8 @@ function ModMergerSection({
             value={(workflow?.stats.matchingFileCount ?? 0).toString()}
           />
           <Metric
-            label="Selected pairs"
-            value={
-              selectionMismatchCount === 0
-                ? selectedPairCount.toString()
-                : `${selectedPairCount} with mismatch`
-            }
+            label="Selected files"
+            value={selectedFileCount.toString()}
           />
         </div>
       </section>
@@ -23311,16 +23452,8 @@ function ModMergerSection({
             <Save aria-hidden="true" size={16} />
             <span>{isApplying ? 'Applying' : 'Apply'}</span>
           </button>
-          <span
-            className={`mod-merger-selection-status ${
-              selectionMismatchCount > 0 ? 'mod-merger-selection-mismatch' : ''
-            }`}
-          >
-            {selectionMismatchCount > 0
-              ? `${selectionMismatchCount} one-sided selection${
-                  selectionMismatchCount === 1 ? '' : 's'
-                } ignored`
-              : 'Selections match'}
+          <span className="mod-merger-selection-status">
+            {hasSelectedFiles ? `${selectedFileCount} selected` : 'No files selected'}
           </span>
         </div>
 
@@ -23851,6 +23984,7 @@ type PendingEditContext = {
   dynamaxAdventuresWorkflow: DynamaxAdventuresWorkflow | null;
   encountersWorkflow: EncountersWorkflow | null;
   exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
+  fashionUnlockWorkflow: FashionUnlockWorkflow | null;
   flagworkSaveWorkflow: FlagworkSaveWorkflow | null;
   giftPokemonWorkflow: GiftPokemonWorkflow | null;
   behaviorWorkflow: BehaviorWorkflow | null;
@@ -24576,7 +24710,7 @@ function formatModMergerMergeKind(mergeKind: string) {
     case 'replacement':
       return 'Replacement';
     case 'singleSource':
-      return 'One mod changed it';
+      return 'Single source';
     case 'unchanged':
       return 'Same file';
     case 'manualChoice':
