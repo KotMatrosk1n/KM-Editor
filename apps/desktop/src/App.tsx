@@ -41,13 +41,13 @@ import {
   Shield,
   ShieldCheck,
   Shuffle,
+  Sparkles,
   Swords,
   Store,
   Table2,
   Trash2,
   Trees,
   UsersRound,
-  Waypoints,
   Wrench,
   X,
   Zap,
@@ -212,8 +212,14 @@ import {
 import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
 import { ApplyResultSection, DiagnosticsSection, Metric } from './components/workflowPanels';
+import {
+  type FairyGymBoostSelection,
+  type FairyGymBoostsWorkflow
+} from './bridge/fairyGymBoostsContracts';
+import { FairyGymBoostsSection } from './features/fairy-gym-boosts/FairyGymBoostsSection';
 import { FashionUnlockSection } from './features/fashion-unlock/FashionUnlockSection';
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
+import { workflowDefinitions } from './features/workflows/workflowDefinitions';
 import {
   TypeChartSection,
   decodeTypeChartPendingValues,
@@ -403,7 +409,7 @@ const sections: Array<{
   {
     id: 'dynamaxAdventures',
     label: 'Dynamax Adventures',
-    icon: Waypoints
+    icon: ShieldCheck
   },
   {
     id: 'shops',
@@ -479,6 +485,11 @@ const sections: Array<{
     id: 'typeChart',
     label: 'Type Chart',
     icon: Table2
+  },
+  {
+    id: 'fairyGymBoosts',
+    label: 'Fairy Gym Boosts',
+    icon: Sparkles
   },
   {
     id: 'fashionUnlock',
@@ -582,9 +593,9 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'ivScreen',
       'hyperTraining',
       'typeChart',
+      'fairyGymBoosts',
       'fashionUnlock',
-      'gymUniformRemoval',
-      'dynamaxAdventures'
+      'gymUniformRemoval'
     ]
   }
 ];
@@ -602,186 +613,6 @@ const utilityNavigationSections = sections.filter((section) =>
 
 const githubReleasesApiUrl = 'https://api.github.com/repos/KotMatrosk1n/KM-Editor/releases';
 const githubLatestReleaseUrl = 'https://github.com/KotMatrosk1n/KM-Editor/releases/latest';
-
-const workflowDefinitions: Array<{
-  id: string;
-  label: string;
-  description: string;
-  icon: LucideIcon;
-}> = [
-  {
-    id: 'items',
-    label: 'Items',
-    description: 'Item records, names, and source provenance.',
-    icon: Package
-  },
-  {
-    id: 'pokemon',
-    label: 'Pokemon',
-    description: 'Pokemon personal stats, forms, evolutions, learnsets, and source provenance.',
-    icon: Dna
-  },
-  {
-    id: 'moves',
-    label: 'Moves',
-    description: 'Move stats, target behavior, secondary effects, flags, and source provenance.',
-    icon: Zap
-  },
-  {
-    id: 'text',
-    label: 'Text and Dialogue Map',
-    description: 'Text entries, dialogue references, and source provenance.',
-    icon: ListChecks
-  },
-  {
-    id: 'trainers',
-    label: 'Trainers',
-    description: 'Trainer parties, classes, battle types, and source provenance.',
-    icon: UsersRound
-  },
-  {
-    id: 'giftPokemon',
-    label: 'Gift Pokemon',
-    description: 'Scripted gift Pokemon records, IV modes, items, moves, and source provenance.',
-    icon: Gift
-  },
-  {
-    id: 'tradePokemon',
-    label: 'Trade Pokemon',
-    description: 'In-game trade records, requested Pokemon, IV modes, relearn moves, and source provenance.',
-    icon: ArrowLeftRight
-  },
-  {
-    id: 'staticEncounters',
-    label: 'Static Encounters',
-    description: 'Scripted overworld and story encounter records, IV modes, moves, rules, and source provenance.',
-    icon: MapPin
-  },
-  {
-    id: 'shops',
-    label: 'Shops',
-    description: 'Shop inventories, prices, stock limits, and source provenance.',
-    icon: Store
-  },
-  {
-    id: 'encounters',
-    label: 'Wild Encounters',
-    description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
-    icon: Trees
-  },
-  {
-    id: 'raidBattles',
-    label: 'Raid Battles',
-    description: 'Raid Pokemon slots, star probabilities, ability rolls, guaranteed perfect IVs, and source provenance.',
-    icon: Shield
-  },
-  {
-    id: 'raidRewards',
-    label: 'Raid Rewards',
-    description: 'Raid reward tables, den ranks, item quantities, and source provenance.',
-    icon: BadgePlus
-  },
-  {
-    id: 'raidBonusRewards',
-    label: 'Raid Bonus Rewards',
-    description: 'Raid bonus reward tables, item quantities, den usage, and source provenance.',
-    icon: BadgeCheck
-  },
-  {
-    id: 'placement',
-    label: 'Placement',
-    description: 'Placed objects, map coordinates, script links, and source provenance.',
-    icon: MapPinned
-  },
-  {
-    id: 'behavior',
-    label: 'Behavior',
-    description: 'Symbol encounter behavior profiles, model anchors, collision radii, and source provenance.',
-    icon: Activity
-  },
-  {
-    id: 'flagworkSave',
-    label: 'Flagwork and Save Inspectors',
-    description: 'Game flags, save blocks, inspector metadata, and source provenance.',
-    icon: Save
-  },
-  {
-    id: 'bagHook',
-    label: 'Bag Hook',
-    description:
-      'Install this first for Royal Candy or Starting Items. It grants nothing by itself; uninstall removes dependent Royal Candy and Starting Items outputs.',
-    icon: Cable
-  },
-  {
-    id: 'royalCandy',
-    label: 'Royal Candy Workflows',
-    description:
-      'Requires Bag Hook, uses only Bag Hook slot 1, and patches reserved Royal Candy ExeFS regions. Use Remove Royal Candy to uninstall safely.',
-    icon: Candy
-  },
-  {
-    id: 'startingItems',
-    label: 'Starting Items',
-    description:
-      'Requires Bag Hook and uses only slots 2-20. Clear selected slots and apply to remove Starting Items without touching Royal Candy.',
-    icon: PackagePlus
-  },
-  {
-    id: 'catchCap',
-    label: 'Catch Cap Editor',
-    description:
-      'Independent ExeFS editor for badge catch caps 0-7. It patches the display and runtime capture checks; eight badges is locked at Lv.100 because full badges can catch any level.',
-    icon: ShieldCheck
-  },
-  {
-    id: 'ivScreen',
-    label: 'IV Screen',
-    description:
-      'Independent ExeFS editor for raw IV numbers on the Pokemon Summary stats graph. It uses its own reserved hook and cave slots.',
-    icon: ScanLine
-  },
-  {
-    id: 'hyperTraining',
-    label: 'Hyper Training',
-    description:
-      'Advanced editor for the Battle Tower Hyper Training NPC minimum level cutoff, matching English dialogue, and picker cutoff checks.',
-    icon: Dumbbell
-  },
-  {
-    id: 'typeChart',
-    label: 'Type Chart',
-    description:
-      'Advanced editor for the Sword/Shield type-effectiveness table in exefs/main.',
-    icon: Table2
-  },
-  {
-    id: 'fashionUnlock',
-    label: 'Fashion Unlock',
-    description:
-      'Advanced ExeFS editor that unlocks fashion ownership checks without editing the save file.',
-    icon: Shirt
-  },
-  {
-    id: 'gymUniformRemoval',
-    label: 'Gym Uniform Removal',
-    description:
-      'Independent ExeFS editor that keeps gym challenge and gym leader battle scripts from changing the player into the gym uniform.',
-    icon: Shirt
-  },
-  {
-    id: 'spreadsheetImport',
-    label: 'Spreadsheet Import',
-    description: 'CSV and TSV import profiles that execute through backend edit sessions.',
-    icon: FileSpreadsheet
-  },
-  {
-    id: 'modMerger',
-    label: 'Mod Merger',
-    description:
-      'Merge matching RomFS files from two mod folders, resolve overlapping byte edits, and write merged files to Output Root.',
-    icon: GitMerge
-  }
-];
 
 const modMergerModeOptions: Array<{
   description: string;
@@ -1469,6 +1300,9 @@ export function App({
   const catchCapWorkflow = useWorkbenchStore((state) => state.catchCapWorkflow);
   const hyperTrainingWorkflow = useWorkbenchStore((state) => state.hyperTrainingWorkflow);
   const typeChartWorkflow = useWorkbenchStore((state) => state.typeChartWorkflow);
+  const fairyGymBoostsWorkflow = useWorkbenchStore(
+    (state) => state.fairyGymBoostsWorkflow
+  );
   const fashionUnlockWorkflow = useWorkbenchStore((state) => state.fashionUnlockWorkflow);
   const gymUniformRemovalWorkflow = useWorkbenchStore(
     (state) => state.gymUniformRemovalWorkflow
@@ -1480,6 +1314,9 @@ export function App({
     (state) => state.setHyperTrainingWorkflow
   );
   const setTypeChartWorkflow = useWorkbenchStore((state) => state.setTypeChartWorkflow);
+  const setFairyGymBoostsWorkflow = useWorkbenchStore(
+    (state) => state.setFairyGymBoostsWorkflow
+  );
   const setFashionUnlockWorkflow = useWorkbenchStore(
     (state) => state.setFashionUnlockWorkflow
   );
@@ -1689,6 +1526,8 @@ export function App({
   const [isHyperTrainingStaging, setIsHyperTrainingStaging] = useState(false);
   const [isTypeChartLoading, setIsTypeChartLoading] = useState(false);
   const [isTypeChartStaging, setIsTypeChartStaging] = useState(false);
+  const [isFairyGymBoostsLoading, setIsFairyGymBoostsLoading] = useState(false);
+  const [isFairyGymBoostsStaging, setIsFairyGymBoostsStaging] = useState(false);
   const [isFashionUnlockLoading, setIsFashionUnlockLoading] = useState(false);
   const [isFashionUnlockStaging, setIsFashionUnlockStaging] = useState(false);
   const [isGymUniformRemovalLoading, setIsGymUniformRemovalLoading] = useState(false);
@@ -1826,6 +1665,7 @@ export function App({
       catchCapWorkflow: null,
       hyperTrainingWorkflow: null,
       typeChartWorkflow: null,
+      fairyGymBoostsWorkflow: null,
       fashionUnlockWorkflow: null,
       gymUniformRemovalWorkflow: null,
       ivScreenWorkflow: null,
@@ -2938,6 +2778,47 @@ export function App({
     }
   };
 
+  const handleOpenFairyGymBoostsWorkflow = async () => {
+    setIsFairyGymBoostsLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadFairyGymBoostsWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setFairyGymBoostsWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsFairyGymBoostsLoading(false);
+    }
+  };
+
+  const handleStageFairyGymBoosts = async (selections: FairyGymBoostSelection[]) => {
+    setIsFairyGymBoostsStaging(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+
+    try {
+      const response = await bridge.stageFairyGymBoosts({
+        paths: toProjectPaths(draftPaths),
+        selections,
+        session: editSession
+      });
+      setFairyGymBoostsWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setEditValidationDiagnostics(response.diagnostics);
+      registerEditorDraftDirty('fairyGymBoosts', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsFairyGymBoostsStaging(false);
+    }
+  };
+
   const handleOpenFashionUnlockWorkflow = async () => {
     setIsFashionUnlockLoading(true);
     setBridgeDiagnostics([]);
@@ -3438,6 +3319,12 @@ export function App({
           void handleOpenTypeChartWorkflow();
         }
         break;
+      case 'fairyGymBoosts':
+        if (!fairyGymBoostsWorkflow && !isFairyGymBoostsLoading) {
+          markLazyLoadStarted();
+          void handleOpenFairyGymBoostsWorkflow();
+        }
+        break;
       case 'fashionUnlock':
         if (!fashionUnlockWorkflow && !isFashionUnlockLoading) {
           markLazyLoadStarted();
@@ -3490,6 +3377,7 @@ export function App({
     dynamaxAdventuresWorkflow,
     encountersWorkflow,
     exeFsPatchWorkflow,
+    fairyGymBoostsWorkflow,
     fashionUnlockWorkflow,
     flagworkSaveWorkflow,
     giftPokemonWorkflow,
@@ -3508,6 +3396,7 @@ export function App({
     isBehaviorLoading,
     isBagHookLoading,
     isCatchCapLoading,
+    isFairyGymBoostsLoading,
     isFashionUnlockLoading,
     isGymUniformRemovalLoading,
     isHyperTrainingLoading,
@@ -5832,6 +5721,14 @@ const resetModMergerPlan = () => {
         }
       );
     }
+    if (fairyGymBoostsWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadFairyGymBoostsWorkflow({ paths });
+          setFairyGymBoostsWorkflow(response.workflow);
+        }
+      );
+    }
     if (fashionUnlockWorkflow) {
       reloadTasks.push(
         async () => {
@@ -6162,6 +6059,7 @@ const resetModMergerPlan = () => {
               isBagHookLoading={isBagHookLoading}
               isCatchCapLoading={isCatchCapLoading}
               isHyperTrainingLoading={isHyperTrainingLoading}
+              isFairyGymBoostsLoading={isFairyGymBoostsLoading}
               isFashionUnlockLoading={isFashionUnlockLoading}
               isGymUniformRemovalLoading={isGymUniformRemovalLoading}
               isIvScreenLoading={isIvScreenLoading}
@@ -6181,6 +6079,7 @@ const resetModMergerPlan = () => {
               onOpenBagHookWorkflow={handleOpenBagHookWorkflow}
               onOpenCatchCapWorkflow={handleOpenCatchCapWorkflow}
               onOpenHyperTrainingWorkflow={handleOpenHyperTrainingWorkflow}
+              onOpenFairyGymBoostsWorkflow={handleOpenFairyGymBoostsWorkflow}
               onOpenFashionUnlockWorkflow={handleOpenFashionUnlockWorkflow}
               onOpenGymUniformRemovalWorkflow={handleOpenGymUniformRemovalWorkflow}
               onOpenIvScreenWorkflow={handleOpenIvScreenWorkflow}
@@ -6642,6 +6541,26 @@ const resetModMergerPlan = () => {
               />
             )
           ) : null}
+          {activeSection === 'fairyGymBoosts' ? (
+            isFairyGymBoostsLoading && !fairyGymBoostsWorkflow ? (
+              <WorkflowLoadingPanel label="Fairy Gym Boosts" />
+            ) : (
+              <FairyGymBoostsSection
+                changePlan={changePlan}
+                editSession={getEditSessionForSection('fairyGymBoosts')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isFairyGymBoostsStaging}
+                onApplyChangePlan={handleApplyChangePlan}
+                onCreateChangePlan={handleCreateChangePlan}
+                onDirtyChange={(isDirty) =>
+                  registerEditorDraftDirty('fairyGymBoosts', isDirty)
+                }
+                onStageBoosts={handleStageFairyGymBoosts}
+                workflow={fairyGymBoostsWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'fashionUnlock' ? (
             isFashionUnlockLoading && !fashionUnlockWorkflow ? (
               <WorkflowLoadingPanel label="Fashion Unlock" />
@@ -6852,6 +6771,7 @@ const resetModMergerPlan = () => {
                 dynamaxAdventuresWorkflow,
                 encountersWorkflow,
                 exeFsPatchWorkflow,
+                fairyGymBoostsWorkflow,
                 fashionUnlockWorkflow,
                 flagworkSaveWorkflow,
                 giftPokemonWorkflow,
@@ -7226,6 +7146,7 @@ function WorkflowsSection({
   isBagHookLoading,
   isCatchCapLoading,
   isHyperTrainingLoading,
+  isFairyGymBoostsLoading,
   isFashionUnlockLoading,
   isGymUniformRemovalLoading,
   isIvScreenLoading,
@@ -7244,6 +7165,7 @@ function WorkflowsSection({
   onOpenBagHookWorkflow,
   onOpenCatchCapWorkflow,
   onOpenHyperTrainingWorkflow,
+  onOpenFairyGymBoostsWorkflow,
   onOpenFashionUnlockWorkflow,
   onOpenGymUniformRemovalWorkflow,
   onOpenIvScreenWorkflow,
@@ -7288,6 +7210,7 @@ function WorkflowsSection({
   isBagHookLoading: boolean;
   isCatchCapLoading: boolean;
   isHyperTrainingLoading: boolean;
+  isFairyGymBoostsLoading: boolean;
   isFashionUnlockLoading: boolean;
   isGymUniformRemovalLoading: boolean;
   isIvScreenLoading: boolean;
@@ -7306,6 +7229,7 @@ function WorkflowsSection({
   onOpenBagHookWorkflow: () => void;
   onOpenCatchCapWorkflow: () => void;
   onOpenHyperTrainingWorkflow: () => void;
+  onOpenFairyGymBoostsWorkflow: () => void;
   onOpenFashionUnlockWorkflow: () => void;
   onOpenGymUniformRemovalWorkflow: () => void;
   onOpenIvScreenWorkflow: () => void;
@@ -7378,6 +7302,7 @@ function WorkflowsSection({
           const isBagHookWorkflow = definition.id === 'bagHook';
           const isCatchCapWorkflow = definition.id === 'catchCap';
           const isHyperTrainingWorkflow = definition.id === 'hyperTraining';
+          const isFairyGymBoostsWorkflow = definition.id === 'fairyGymBoosts';
           const isFashionUnlockWorkflow = definition.id === 'fashionUnlock';
           const isGymUniformRemovalWorkflow = definition.id === 'gymUniformRemoval';
           const isIvScreenWorkflow = definition.id === 'ivScreen';
@@ -7422,6 +7347,8 @@ function WorkflowsSection({
             isCatchCapWorkflow && workflowState.availability !== 'disabled';
           const canOpenHyperTraining =
             isHyperTrainingWorkflow && workflowState.availability !== 'disabled';
+          const canOpenFairyGymBoosts =
+            isFairyGymBoostsWorkflow && workflowState.availability !== 'disabled';
           const canOpenFashionUnlock =
             isFashionUnlockWorkflow && workflowState.availability !== 'disabled';
           const canOpenGymUniformRemoval =
@@ -7688,6 +7615,19 @@ function WorkflowsSection({
                     <Icon aria-hidden="true" size={16} />
                     <span>
                       {isHyperTrainingLoading ? 'Loading' : 'Open Hyper Training'}
+                    </span>
+                  </button>
+                ) : null}
+                {isFairyGymBoostsWorkflow ? (
+                  <button
+                    className="secondary-button compact-button"
+                    disabled={!canOpenFairyGymBoosts || isFairyGymBoostsLoading}
+                    onClick={onOpenFairyGymBoostsWorkflow}
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    <span>
+                      {isFairyGymBoostsLoading ? 'Loading' : 'Open Fairy Gym Boosts'}
                     </span>
                   </button>
                 ) : null}
@@ -12543,6 +12483,13 @@ function getPendingEditDisplayDetails(
         newValueLabel: formatTypeChartPendingValue(edit.newValue, context),
         recordLabel: '18x18 type chart'
       });
+    case 'workflow.fairyGymBoosts':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'boostSelections' ? 'Answer outcomes' : undefined,
+        newValueLabel: formatFairyGymBoostsPendingValue(edit.newValue),
+        recordLabel: 'Fairy Gym questions'
+      });
     case 'workflow.fashionUnlock':
       return createPendingEditDisplayDetails(edit, {
         editorLabel,
@@ -12666,6 +12613,18 @@ function formatTypeChartPendingValue(
     : values.length;
 
   return `${changedCount} changed matchup${changedCount === 1 ? '' : 's'}`;
+}
+
+function formatFairyGymBoostsPendingValue(value: string | null | undefined) {
+  const outcomeCount =
+    value
+      ?.split(';')
+      .map((part) => part.trim())
+      .filter(Boolean).length ?? 0;
+
+  return outcomeCount > 0
+    ? `${outcomeCount} answer outcome${outcomeCount === 1 ? '' : 's'}`
+    : undefined;
 }
 
 function formatStartingItemsPendingValue(
@@ -15164,7 +15123,7 @@ function DynamaxAdventuresSection({
     <>
       <section aria-labelledby="dynamax-adventures-heading" className="panel wide-panel">
         <div className="panel-heading">
-          <Waypoints aria-hidden="true" size={18} />
+          <ShieldCheck aria-hidden="true" size={18} />
           <h2 id="dynamax-adventures-heading">Dynamax Adventures</h2>
         </div>
 
@@ -15408,7 +15367,7 @@ function SelectedDynamaxAdventurePanel({
   return (
     <aside aria-label="Selected Dynamax Adventure provenance" className="trainer-inspector">
       <div className="panel-heading">
-        <Waypoints aria-hidden="true" size={18} />
+        <ShieldCheck aria-hidden="true" size={18} />
         <h3>Selected Adventure</h3>
       </div>
 
@@ -24003,6 +23962,7 @@ type PendingEditContext = {
   dynamaxAdventuresWorkflow: DynamaxAdventuresWorkflow | null;
   encountersWorkflow: EncountersWorkflow | null;
   exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
+  fairyGymBoostsWorkflow: FairyGymBoostsWorkflow | null;
   fashionUnlockWorkflow: FashionUnlockWorkflow | null;
   flagworkSaveWorkflow: FlagworkSaveWorkflow | null;
   giftPokemonWorkflow: GiftPokemonWorkflow | null;

@@ -7,6 +7,7 @@ using KM.Api.CatchCap;
 using KM.Api.DynamaxAdventures;
 using KM.Api.Encounters;
 using KM.Api.ExeFs;
+using KM.Api.FairyGymBoosts;
 using KM.Api.FashionUnlock;
 using KM.Api.Flagwork;
 using KM.Api.Gifts;
@@ -38,6 +39,7 @@ using KM.SwSh.CatchCap;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
+using KM.SwSh.FairyGymBoosts;
 using KM.SwSh.FashionUnlock;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Gifts;
@@ -369,6 +371,23 @@ public static class SwShBridgeMapper
 
         return new StageTypeChartResponse(
             ToTypeChartWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadFairyGymBoostsWorkflowResponse ToDto(SwShFairyGymBoostsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadFairyGymBoostsWorkflowResponse(ToFairyGymBoostsWorkflowDto(workflow));
+    }
+
+    public static StageFairyGymBoostsResponse ToDto(SwShFairyGymBoostsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageFairyGymBoostsResponse(
+            ToFairyGymBoostsWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1470,6 +1489,20 @@ public static class SwShBridgeMapper
                 workflow.Stats.SourceFileCount,
                 workflow.Stats.OutputFileCount,
             workflow.Stats.ChartCellCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static FairyGymBoostsWorkflowDto ToFairyGymBoostsWorkflowDto(
+        SwShFairyGymBoostsWorkflow workflow)
+    {
+        return new FairyGymBoostsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Trainers.Select(ToDto).ToArray(),
+            workflow.Sources.Select(ToDto).ToArray(),
+            new FairyGymBoostsWorkflowStatsDto(
+                workflow.Stats.TrainerCount,
+                workflow.Stats.BoostCount,
+                workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -2639,6 +2672,49 @@ public static class SwShBridgeMapper
             cell.DefenseTypeIndex,
             cell.Effectiveness,
             cell.VanillaEffectiveness);
+    }
+
+    private static FairyGymBoostsSourceRecordDto ToDto(SwShFairyGymBoostsSourceRecord source)
+    {
+        return new FairyGymBoostsSourceRecordDto(
+            source.SourceId,
+            source.Label,
+            source.RelativePath,
+            source.Status,
+            ToDto(source.Provenance));
+    }
+
+    private static FairyGymBoostsProvenanceDto ToDto(SwShFairyGymBoostsProvenance provenance)
+    {
+        return new FairyGymBoostsProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static FairyGymBoostTrainerDto ToDto(SwShFairyGymBoostTrainer trainer)
+    {
+        return new FairyGymBoostTrainerDto(
+            trainer.TrainerId,
+            trainer.NpcName,
+            trainer.DisplayOrder,
+            trainer.Boosts.Select(ToDto).ToArray());
+    }
+
+    private static FairyGymBoostRecordDto ToDto(SwShFairyGymBoostRecord boost)
+    {
+        return new FairyGymBoostRecordDto(
+            boost.BoostId,
+            boost.SequenceFile,
+            boost.AnswerChoice,
+            boost.AnswerText,
+            boost.QuestionText,
+            boost.DefaultResultKind,
+            boost.ResultKind,
+            boost.EffectId,
+            boost.EffectLabel,
+            boost.StageAmount,
+            boost.AffectedStats);
     }
 
     private static IvScreenReservedRegionDto ToDto(SwShIvScreenReservedRegion region)

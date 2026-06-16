@@ -40,6 +40,7 @@ import {
   type TrainersWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
+import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
 
 export type WorkbenchSection =
   | 'health'
@@ -66,6 +67,7 @@ export type WorkbenchSection =
   | 'catchCap'
   | 'hyperTraining'
   | 'typeChart'
+  | 'fairyGymBoosts'
   | 'fashionUnlock'
   | 'gymUniformRemoval'
   | 'ivScreen'
@@ -112,6 +114,7 @@ type WorkbenchState = {
   catchCapWorkflow: CatchCapWorkflow | null;
   hyperTrainingWorkflow: HyperTrainingWorkflow | null;
   typeChartWorkflow: TypeChartWorkflow | null;
+  fairyGymBoostsWorkflow: FairyGymBoostsWorkflow | null;
   fashionUnlockWorkflow: FashionUnlockWorkflow | null;
   gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null;
   ivScreenWorkflow: IvScreenWorkflow | null;
@@ -200,6 +203,7 @@ type WorkbenchState = {
   setCatchCapWorkflow: (catchCapWorkflow: CatchCapWorkflow) => void;
   setHyperTrainingWorkflow: (hyperTrainingWorkflow: HyperTrainingWorkflow) => void;
   setTypeChartWorkflow: (typeChartWorkflow: TypeChartWorkflow) => void;
+  setFairyGymBoostsWorkflow: (fairyGymBoostsWorkflow: FairyGymBoostsWorkflow) => void;
   setFashionUnlockWorkflow: (fashionUnlockWorkflow: FashionUnlockWorkflow) => void;
   setGymUniformRemovalWorkflow: (
     gymUniformRemovalWorkflow: GymUniformRemovalWorkflow
@@ -337,6 +341,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     catchCapWorkflow: null,
     hyperTrainingWorkflow: null,
     typeChartWorkflow: null,
+    fairyGymBoostsWorkflow: null,
     fashionUnlockWorkflow: null,
     gymUniformRemovalWorkflow: null,
     ivScreenWorkflow: null,
@@ -429,6 +434,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   catchCapWorkflow: null,
   hyperTrainingWorkflow: null,
   typeChartWorkflow: null,
+  fairyGymBoostsWorkflow: null,
   fashionUnlockWorkflow: null,
   gymUniformRemovalWorkflow: null,
   ivScreenWorkflow: null,
@@ -693,6 +699,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       catchCapWorkflow: null,
       hyperTrainingWorkflow: null,
       typeChartWorkflow: null,
+      fairyGymBoostsWorkflow: null,
       fashionUnlockWorkflow: null,
       gymUniformRemovalWorkflow: null,
       ivScreenWorkflow: null,
@@ -1020,6 +1027,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({
       activeSection: resolveWorkflowLoadSection(state.activeSection, 'typeChart'),
       typeChartWorkflow
+    })),
+  setFairyGymBoostsWorkflow: (fairyGymBoostsWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'fairyGymBoosts'),
+      fairyGymBoostsWorkflow
     })),
   setFashionUnlockWorkflow: (fashionUnlockWorkflow) =>
     set((state) => ({
