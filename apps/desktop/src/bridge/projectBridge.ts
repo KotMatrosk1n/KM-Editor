@@ -40,6 +40,12 @@ import {
   type LoadRentalPokemonWorkflowResponse,
   type LoadDynamaxAdventuresWorkflowRequest,
   type LoadDynamaxAdventuresWorkflowResponse,
+  type PlanDynamaxAdventureSeedRequest,
+  type PlanDynamaxAdventureSeedResponse,
+  type SearchDynamaxAdventureSeedRequest,
+  type SearchDynamaxAdventureSeedResponse,
+  type SetDynamaxAdventureSaveSeedRequest,
+  type SetDynamaxAdventureSaveSeedResponse,
   type LoadItemsWorkflowRequest,
   type LoadItemsWorkflowResponse,
   type LoadMovesWorkflowRequest,
@@ -187,6 +193,9 @@ import {
   loadStaticEncountersWorkflowResponseSchema,
   loadRentalPokemonWorkflowResponseSchema,
   loadDynamaxAdventuresWorkflowResponseSchema,
+  planDynamaxAdventureSeedResponseSchema,
+  searchDynamaxAdventureSeedResponseSchema,
+  setDynamaxAdventureSaveSeedResponseSchema,
   loadItemsWorkflowResponseSchema,
   loadMovesWorkflowResponseSchema,
   loadPokemonWorkflowResponseSchema,
@@ -281,6 +290,15 @@ export type ProjectBridge = {
   loadDynamaxAdventuresWorkflow: (
     request: LoadDynamaxAdventuresWorkflowRequest
   ) => Promise<LoadDynamaxAdventuresWorkflowResponse>;
+  planDynamaxAdventureSeed: (
+    request: PlanDynamaxAdventureSeedRequest
+  ) => Promise<PlanDynamaxAdventureSeedResponse>;
+  searchDynamaxAdventureSeed: (
+    request: SearchDynamaxAdventureSeedRequest
+  ) => Promise<SearchDynamaxAdventureSeedResponse>;
+  setDynamaxAdventureSaveSeed: (
+    request: SetDynamaxAdventureSaveSeedRequest
+  ) => Promise<SetDynamaxAdventureSaveSeedResponse>;
   loadItemsWorkflow: (request: LoadItemsWorkflowRequest) => Promise<LoadItemsWorkflowResponse>;
   loadMovesWorkflow: (request: LoadMovesWorkflowRequest) => Promise<LoadMovesWorkflowResponse>;
   loadPokemonWorkflow: (
@@ -698,6 +716,27 @@ export function createProjectBridge(
         kmCommandNames.loadDynamaxAdventuresWorkflow,
         request,
         loadDynamaxAdventuresWorkflowResponseSchema
+      ),
+    planDynamaxAdventureSeed: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.planDynamaxAdventureSeed,
+        request,
+        planDynamaxAdventureSeedResponseSchema
+      ),
+    searchDynamaxAdventureSeed: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.searchDynamaxAdventureSeed,
+        request,
+        searchDynamaxAdventureSeedResponseSchema
+      ),
+    setDynamaxAdventureSaveSeed: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.setDynamaxAdventureSaveSeed,
+        request,
+        setDynamaxAdventureSaveSeedResponseSchema
       ),
     loadItemsWorkflow: (request) =>
       sendProjectBridgeRequest(

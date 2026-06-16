@@ -99,6 +99,22 @@ public sealed class SwShDynamaxAdventureArchiveTests
     }
 
     [Fact]
+    public void RebuildingParsedRecordsReintroducesOmittedFlatBufferDefaults()
+    {
+        var original = CreateArchive().Write();
+        ClearTableField(original, entryIndex: 1, fieldIndex: 3);
+        ClearTableField(original, entryIndex: 1, fieldIndex: 11);
+        var parsed = SwShDynamaxAdventureArchive.Parse(original);
+
+        var rebuilt = new SwShDynamaxAdventureArchive(parsed.Entries).Write();
+
+        Assert.Equal(0, ReadEntryFieldOffset(original, entryIndex: 1, fieldIndex: 3));
+        Assert.Equal(0, ReadEntryFieldOffset(original, entryIndex: 1, fieldIndex: 11));
+        Assert.NotEqual(0, ReadEntryFieldOffset(rebuilt, entryIndex: 1, fieldIndex: 3));
+        Assert.NotEqual(0, ReadEntryFieldOffset(rebuilt, entryIndex: 1, fieldIndex: 11));
+    }
+
+    [Fact]
     public void ParsedWriteEditsRejectsNonDefaultChangesToOmittedFields()
     {
         var original = CreateArchive().Write();
@@ -110,6 +126,49 @@ public sealed class SwShDynamaxAdventureArchiveTests
         [
             new(1, SwShDynamaxAdventureField.Form, 2),
         ]));
+        Assert.Contains("omitted FlatBuffer default", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParsedWriteRowCopiesCopiesMetadataAndPreservesTargetAdventureIndex()
+    {
+        var original = CreateArchive().Write();
+        var parsed = SwShDynamaxAdventureArchive.Parse(original);
+
+        var output = parsed.WriteRowCopies(
+        [
+            new(TargetEntryIndex: 0, SourceEntryIndex: 1, PreserveTargetAdventureIndex: true),
+            new(TargetEntryIndex: 1, SourceEntryIndex: 0, PreserveTargetAdventureIndex: true),
+        ]);
+        var edited = SwShDynamaxAdventureArchive.Parse(output);
+
+        Assert.Equal(original.Length, output.Length);
+
+        Assert.Equal(25, edited.Entries[0].Species);
+        Assert.Equal(0x0102030405060708UL, edited.Entries[0].SingleCaptureFlagBlock);
+        Assert.Equal(0x0807060504030201UL, edited.Entries[0].UiMessageId);
+        Assert.Equal(100, edited.Entries[0].AdventureIndex);
+        Assert.Equal([3, 4, 5, 6], edited.Entries[0].Moves);
+
+        Assert.Equal(133, edited.Entries[1].Species);
+        Assert.Equal(0x1122334455667788UL, edited.Entries[1].SingleCaptureFlagBlock);
+        Assert.Equal(0x8877665544332211UL, edited.Entries[1].UiMessageId);
+        Assert.Equal(101, edited.Entries[1].AdventureIndex);
+        Assert.Equal([1, 2, 10, 20], edited.Entries[1].Moves);
+    }
+
+    [Fact]
+    public void ParsedWriteRowCopiesRejectsNonDefaultCopiesToOmittedFields()
+    {
+        var original = CreateArchive().Write();
+        ClearTableField(original, entryIndex: 1, fieldIndex: 3);
+        var parsed = SwShDynamaxAdventureArchive.Parse(original);
+
+        var exception = Assert.Throws<InvalidDataException>(() => parsed.WriteRowCopies(
+        [
+            new(TargetEntryIndex: 1, SourceEntryIndex: 0, PreserveTargetAdventureIndex: true),
+        ]));
+
         Assert.Contains("omitted FlatBuffer default", exception.Message, StringComparison.Ordinal);
     }
 

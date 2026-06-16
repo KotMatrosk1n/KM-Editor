@@ -33,6 +33,9 @@ public static class KmCommandNames
     public const string UpdateRentalPokemonField = "rentalPokemon.field.update";
     public const string LoadDynamaxAdventuresWorkflow = "dynamaxAdventures.load";
     public const string UpdateDynamaxAdventureField = "dynamaxAdventures.field.update";
+    public const string PlanDynamaxAdventureSeed = "dynamaxAdventures.seed.plan";
+    public const string SearchDynamaxAdventureSeed = "dynamaxAdventures.seed.search";
+    public const string SetDynamaxAdventureSaveSeed = "dynamaxAdventures.seed.save.set";
     public const string LoadShopsWorkflow = "shops.load";
     public const string UpdateShopInventoryItem = "shops.inventory.update";
     public const string LoadEncountersWorkflow = "encounters.load";

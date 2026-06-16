@@ -2630,19 +2630,20 @@ export function createMockProjectBridge(
         valueKind: 'integer'
       }
     ],
+    safeNormalSpeciesOptions: [{ label: '467 Magmortar', value: 467 }],
     encounters: [
       {
-        ability: 0,
-        abilityLabel: 'Ability 1',
+        ability: 0, abilityLabel: 'Ability 1',
         abilityOptions: [],
         adventureIndex: 0,
-        ballItem: 'Poke Ball',
-        ballItemId: 4,
+        ballItem: 'Poke Ball', ballItemId: 4,
+        bossTargetSpecies: 'Grookey', bossTargetSpeciesId: 810,
+        bossTargetOptions: [],
         entryIndex: 0,
         form: 0,
         gigantamaxLabel: 'Normal',
         gigantamaxState: 1,
-        guaranteedPerfectIvs: 5,
+        guaranteedPerfectIvs: 5, isEditable: true,
         isSingleCapture: true,
         isStoryProgressGated: false,
         ivs: {
@@ -2662,6 +2663,7 @@ export function createMockProjectBridge(
           { move: 'None', moveId: 0, slot: 2 },
           { move: 'None', moveId: 0, slot: 3 }
         ],
+        moveOptions: [],
         otGender: 0,
         otGenderLabel: 'Male',
         provenance: {
@@ -2690,8 +2692,7 @@ export function createMockProjectBridge(
             specialDefense: -1,
             speed: -1
           },
-          ivSummary:
-            '6 guaranteed perfect / Atk 31 / Def Random / SpA Random / SpD Random / Spe Random',
+          ivSummary: '6 guaranteed perfect / Atk 31 / Def Random / SpA Random / SpD Random / Spe Random',
           level: 60,
           moves: [
             { move: 'Growl', moveId: 2, slot: 0 },
@@ -5555,6 +5556,9 @@ export function createMockProjectBridge(
       Promise.resolve({
         workflow: dynamaxAdventuresWorkflow
       }),
+    planDynamaxAdventureSeed: (request) => Promise.resolve({
+      plan: { diagnostics: [], encounters: dynamaxAdventuresWorkflow.encounters.slice(0, 2).map((encounter) => ({ form: encounter.form, isBoss: false, row: encounter.entryIndex, species: encounter.speciesId })), npcCount: request.npcCount, rentals: dynamaxAdventuresWorkflow.encounters.slice(0, 1).map((encounter) => ({ form: encounter.form, isBoss: false, row: encounter.entryIndex, species: encounter.speciesId })), requiredRowPositions: request.requiredRows.map((row) => ({ kind: 'encounter' as const, row, slot: 0 })), seed: request.seed }
+    }), searchDynamaxAdventureSeed: (request) => Promise.resolve({ search: { diagnostics: [], limit: request.limit, maxResults: request.maxResults, npcCount: request.npcCount, results: request.maxResults > 0 ? [{ positions: request.requiredRows.map((row) => ({ kind: 'encounter' as const, row, slot: 0 })), seed: request.startSeed }] : [], startSeed: request.startSeed } }), setDynamaxAdventureSaveSeed: (request) => Promise.resolve({ result: { backupFilePath: null, checksumsValid: true, diagnostics: [], newSeed: request.seed, oldSeed: request.seed, saveFilePath: request.paths.saveFilePath, wasChanged: false } }),
     loadShopsWorkflow: () =>
       Promise.resolve({
         workflow: shopsWorkflow

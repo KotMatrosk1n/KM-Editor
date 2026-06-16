@@ -15,6 +15,7 @@ namespace KM.SwSh.DynamaxAdventures;
 public sealed class SwShDynamaxAdventuresWorkflowService
 {
     public const string SpeciesField = "species";
+    public const string BossTargetSpeciesField = "bossTargetSpecies";
     public const string FormField = "form";
     public const string LevelField = "level";
     public const string BallItemIdField = "ballItemId";
@@ -104,6 +105,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         ..Enumerable.Range(0, 32).Select(value => new SwShDynamaxAdventureEditableFieldOption(value, $"{value} IV")),
     ];
 
+    // Fields here are covered by the loose DA table builder plus the ExeFS summary and command mirror patcher.
     private static readonly HashSet<string> SafeEditableFieldNames =
     [
         SpeciesField,
@@ -162,8 +164,9 @@ public sealed class SwShDynamaxAdventuresWorkflowService
     private static readonly IReadOnlyList<SwShDynamaxAdventureEditableField> BaseEditableFields =
     [
         CreateField(SpeciesField, "Species", "integer", 0, SwShDynamaxAdventureArchive.MaximumIdValue),
+        CreateField(BossTargetSpeciesField, "Boss target species", "integer", 0, SwShDynamaxAdventureArchive.MaximumIdValue),
         CreateField(FormField, "Form", "integer", 0, SwShDynamaxAdventureArchive.MaximumByteValue, FormOptions),
-        CreateField(LevelField, "Level", "integer", 0, SwShDynamaxAdventureArchive.MaximumByteValue),
+        CreateField(LevelField, "Level", "integer", 1, 100),
         CreateField(BallItemIdField, "Ball item", "integer", 0, SwShDynamaxAdventureArchive.MaximumIdValue),
         CreateField(AbilityField, "Ability roll", "integer", 0, SwShDynamaxAdventureArchive.MaximumAbilityRoll, AbilityOptions),
         CreateField(GigantamaxStateField, "Gigantamax state", "integer", 0, SwShDynamaxAdventureArchive.MaximumGigantamaxState, GigantamaxOptions),
@@ -228,15 +231,32 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
         try
         {
-            var archive = SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(source.AbsolutePath));
+            var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+            var archive = SwShDynamaxAdventureArchive.Parse(sourceBytes);
             var vanillaArchive = LoadVanillaArchive(project, diagnostics);
+            if (vanillaArchive is not null && sourceBytes.Length != vanillaArchive.Length)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    "Dynamax Adventures source table layout differs from the vanilla table. Restore the generated Adventure table before making new Pokemon edits.",
+                    file: source.GraphEntry.RelativePath,
+                    expected: "Vanilla-length Dynamax Adventures table"));
+            }
+
             var provenance = CreateProvenance(source.GraphEntry);
+            var bossSpeciesForms = archive.Entries
+                .Where(entry => SwShDynamaxAdventureSafetyRules.IsBossEntryIndex(entry.EntryIndex))
+                .Select(entry => (entry.Species, entry.Form))
+                .ToHashSet();
             var encounters = archive.Entries
                 .Select(entry => ToEncounterEntry(
                     entry,
+                    archive.Entries,
                     lookupTables,
                     provenance,
-                    vanillaArchive?.Entries.FirstOrDefault(vanillaEntry => vanillaEntry.EntryIndex == entry.EntryIndex)))
+                    IsSafeEditableEncounter(entry, bossSpeciesForms, lookupTables.PersonalRecords),
+                    null,
+                    vanillaArchive?.Archive.Entries.FirstOrDefault(vanillaEntry => vanillaEntry.EntryIndex == entry.EntryIndex)))
                 .ToArray();
             var sourceFileCount = 1 + lookupTables.SourceFileCount;
 
@@ -349,10 +369,12 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         DynamaxAdventureLookupTables lookupTables,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
+        var safeNormalSpeciesOptions = CreateSafeNormalSpeciesOptions(encounters, lookupTables);
         return new SwShDynamaxAdventuresWorkflow(
             summary,
             encounters,
-            CreateEditableFields(lookupTables),
+            CreateEditableFields(lookupTables, safeNormalSpeciesOptions),
+            safeNormalSpeciesOptions,
             new SwShDynamaxAdventuresWorkflowStats(
                 encounters.Count,
                 encounters.Count(encounter => encounter.IsSingleCapture),
@@ -364,16 +386,13 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
     private static DynamaxAdventureLookupTables CreateEmptyLookupTables()
     {
-        return new DynamaxAdventureLookupTables([], new HashSet<int>(), [], [], new HashSet<int>(), SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
+        return new DynamaxAdventureLookupTables([], new HashSet<int>(), [], [], new HashSet<int>(), [], [], SwShPokemonAbilityOptionResolver.Empty, SourceFileCount: 0);
     }
 
     private static IReadOnlyList<SwShDynamaxAdventureEditableField> CreateEditableFields(
-        DynamaxAdventureLookupTables lookupTables)
+        DynamaxAdventureLookupTables lookupTables,
+        IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> safeNormalSpeciesOptions)
     {
-        var speciesOptions = SwShSpeciesAvailability.CreateSpeciesOptions(
-            lookupTables.SpeciesNames,
-            lookupTables.PresentSpeciesIds,
-            (value, label) => new SwShDynamaxAdventureEditableFieldOption(value, label));
         var itemOptions = CreateIndexedOptions(lookupTables.ItemNames, "Item");
         var moveOptions = SwShMoveAvailability.CreateMoveOptions(
             lookupTables.MoveNames,
@@ -384,12 +403,78 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             .Where(field => SafeEditableFieldNames.Contains(field.Field))
             .Select(field => field.Field switch
             {
-                SpeciesField => field with { Options = speciesOptions },
+                SpeciesField => field with { Options = safeNormalSpeciesOptions },
                 BallItemIdField => field with { Options = itemOptions },
                 Move0Field or Move1Field or Move2Field or Move3Field => field with { Options = moveOptions },
                 _ => field,
             })
             .ToArray();
+    }
+
+    private static IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> CreateSafeNormalSpeciesOptions(
+        IReadOnlyList<SwShDynamaxAdventureEntry> encounters,
+        DynamaxAdventureLookupTables lookupTables)
+    {
+        if (lookupTables.SpeciesNames.Count == 0)
+        {
+            return [];
+        }
+
+        var usedNormalSpeciesForms = encounters
+            .Where(encounter => SwShDynamaxAdventureSafetyRules.IsNormalEntryIndex(encounter.EntryIndex))
+            .Select(encounter => (encounter.SpeciesId, encounter.Form))
+            .ToHashSet();
+        var bossSpeciesForms = encounters
+            .Where(encounter => SwShDynamaxAdventureSafetyRules.IsBossEntryIndex(encounter.EntryIndex))
+            .Select(encounter => (encounter.SpeciesId, encounter.Form))
+            .ToHashSet();
+
+        return lookupTables.SpeciesNames
+            .Select((name, species) => (name, species))
+            .Where(entry => SwShDynamaxAdventureSafetyRules.CanUseAsNormalReplacement(
+                entry.species,
+                form: 0,
+                usedNormalSpeciesForms,
+                bossSpeciesForms,
+                lookupTables.PersonalRecords))
+            .Select(entry => new SwShDynamaxAdventureEditableFieldOption(
+                entry.species,
+                FormatSpeciesOptionLabel(entry.species, entry.name)))
+            .ToArray();
+    }
+
+    private static string FormatSpeciesOptionLabel(int speciesId, string name)
+    {
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{speciesId:000} {(string.IsNullOrWhiteSpace(name) ? $"Species {speciesId.ToString(CultureInfo.InvariantCulture)}" : name)}");
+    }
+
+    private static bool IsSafeEditableEncounter(
+        SwShDynamaxAdventureRecord entry,
+        IReadOnlySet<(int Species, int Form)> bossSpeciesForms,
+        IReadOnlyList<SwShPersonalRecord> personalRecords)
+    {
+        if (!SwShDynamaxAdventureSafetyRules.IsNormalEntryIndex(entry.EntryIndex)
+            || entry.Species <= 0
+            || entry.Species > SwShDynamaxAdventureSafetyRules.MaximumVerifiedNormalReplacementSpecies
+            || bossSpeciesForms.Contains((entry.Species, entry.Form))
+            || SwShDynamaxAdventureSafetyRules.IsSpecialNormalRouteSpecies(entry.Species)
+            || SwShDynamaxAdventureSafetyRules.IsBattleFusionSpecies(entry.Species))
+        {
+            return false;
+        }
+
+        var personal = SwShDynamaxAdventureSafetyRules.ResolvePersonalRecord(
+            entry.Species,
+            entry.Form,
+            personalRecords);
+        if (personalRecords.Count > 0 && personal?.IsPresentInGame != true)
+        {
+            return false;
+        }
+
+        return personal?.CanNotDynamax != true;
     }
 
     private static IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> CreateIndexedOptions(
@@ -407,8 +492,11 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
     private static SwShDynamaxAdventureEntry ToEncounterEntry(
         SwShDynamaxAdventureRecord entry,
+        IReadOnlyList<SwShDynamaxAdventureRecord> entries,
         DynamaxAdventureLookupTables lookupTables,
         SwShDynamaxAdventureProvenance provenance,
+        bool isEditable,
+        int? activeBossTargetSpeciesId,
         SwShDynamaxAdventureRecord? vanillaEntry = null)
     {
         var species = GetIndexedName(entry.Species, lookupTables.SpeciesNames, "Species");
@@ -423,6 +511,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
         return new SwShDynamaxAdventureEntry(
             entry.EntryIndex,
+            isEditable,
             CreateLabel(entry.EntryIndex, entry.AdventureIndex, species, entry.Species, entry.Form, versionLabel),
             entry.AdventureIndex,
             entry.Species,
@@ -458,8 +547,116 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             provenance)
         {
             AbilityOptions = CreateAbilityOptions(lookupTables, entry.Species, entry.Form),
+            MoveOptions = CreateMoveOptions(lookupTables, entry, vanillaEntry),
+            BossTargetOptions = CreateBossTargetOptions(entry, entries, lookupTables),
+            BossTargetSpeciesId = activeBossTargetSpeciesId ?? entry.Species,
+            BossTargetSpecies = GetIndexedName(activeBossTargetSpeciesId ?? entry.Species, lookupTables.SpeciesNames, "Species"),
             VanillaPokemon = vanillaEntry is null ? null : ToPokemonSnapshot(vanillaEntry, lookupTables),
         };
+    }
+
+    private static IReadOnlyDictionary<int, int> LoadActiveBossTargetRemaps(
+        OpenedProject project,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var mainPath = ResolveOutputPath(project.Paths, "exefs/main");
+        if (mainPath is null || !File.Exists(mainPath))
+        {
+            return new Dictionary<int, int>();
+        }
+
+        try
+        {
+            if (!SwShDynamaxAdventuresBossTargetPatcher.TryReadConditionalTargetSpeciesRemap(
+                File.ReadAllBytes(mainPath),
+                out var remap))
+            {
+                return new Dictionary<int, int>();
+            }
+
+            return new Dictionary<int, int>
+            {
+                [remap.FromSpecies] = remap.ToSpecies,
+            };
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Generated exefs/main contains an unrecognized Dynamax Adventures boss target remap: {exception.Message}",
+                file: "exefs/main",
+                expected: "Owned Dynamax Adventures boss target patch or vanilla call sites"));
+            return new Dictionary<int, int>();
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Generated exefs/main could not be read for Dynamax Adventures boss target detection: {exception.Message}",
+                file: "exefs/main",
+                expected: "Readable generated ExeFS main"));
+            return new Dictionary<int, int>();
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Generated exefs/main could not be read for Dynamax Adventures boss target detection: {exception.Message}",
+                file: "exefs/main",
+                expected: "Readable generated ExeFS main"));
+            return new Dictionary<int, int>();
+        }
+    }
+
+    private static IReadOnlyList<SwShDynamaxAdventureBossTargetOption> CreateBossTargetOptions(
+        SwShDynamaxAdventureRecord entry,
+        IReadOnlyList<SwShDynamaxAdventureRecord> entries,
+        DynamaxAdventureLookupTables lookupTables)
+    {
+        if (!SwShDynamaxAdventureSafetyRules.IsBossEntryIndex(entry.EntryIndex))
+        {
+            return [];
+        }
+
+        var bossEntries = entries
+            .Where(candidate => SwShDynamaxAdventureSafetyRules.IsBossEntryIndex(candidate.EntryIndex))
+            .ToArray();
+        var bossSpeciesCounts = bossEntries
+            .GroupBy(candidate => candidate.Species)
+            .ToDictionary(group => group.Key, group => group.Count());
+        if (bossSpeciesCounts.GetValueOrDefault(entry.Species) != 1)
+        {
+            return [];
+        }
+
+        return bossEntries
+            .Where(candidate => candidate.EntryIndex != entry.EntryIndex
+                && candidate.Version == entry.Version
+                && candidate.IsStoryProgressGated == entry.IsStoryProgressGated
+                && bossSpeciesCounts.GetValueOrDefault(candidate.Species) == 1)
+            .OrderBy(candidate => candidate.EntryIndex)
+            .Select(candidate =>
+            {
+                var species = GetIndexedName(candidate.Species, lookupTables.SpeciesNames, "Species");
+                var versionLabel = GetOptionLabel(VersionOptions, candidate.Version, "Version");
+                return new SwShDynamaxAdventureBossTargetOption(
+                    candidate.EntryIndex,
+                    candidate.AdventureIndex,
+                    candidate.Species,
+                    species,
+                    candidate.Form,
+                    candidate.Version,
+                    versionLabel,
+                    candidate.IsStoryProgressGated,
+                    CreateLabel(
+                        candidate.EntryIndex,
+                        candidate.AdventureIndex,
+                        species,
+                        candidate.Species,
+                        candidate.Form,
+                        versionLabel));
+            })
+            .ToArray();
     }
 
     private static SwShDynamaxAdventurePokemonSnapshot ToPokemonSnapshot(
@@ -551,6 +748,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         var itemDisplayNames = SwShItemsWorkflowService.CreateItemDisplayNames(project, itemNames, moveNames);
         var presentSpeciesIds = SwShSpeciesAvailability.LoadPresentSpeciesIds(project);
         var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
+        var personalRecords = LoadPersonalRecords(project);
+        var learnsetRecords = LoadLearnsetRecords(project);
         var abilityResolver = SwShPokemonAbilityOptionResolver.Load(project);
 
         return new DynamaxAdventureLookupTables(
@@ -559,13 +758,125 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             itemDisplayNames,
             moveNames,
             usableMoveIds,
+            personalRecords,
+            learnsetRecords,
             abilityResolver,
             SourceFileCount:
                 (speciesNames.Length > 0 ? 1 : 0)
                 + (itemNames.Length > 0 ? 1 : 0)
                 + (moveNames.Length > 0 ? 1 : 0)
                 + (presentSpeciesIds.Count > 0 ? 1 : 0)
-                + (usableMoveIds.Count > 0 ? 1 : 0));
+                + (usableMoveIds.Count > 0 ? 1 : 0)
+                + (learnsetRecords.Count > 0 ? 1 : 0));
+    }
+
+    private static IReadOnlyList<SwShPersonalRecord> LoadPersonalRecords(OpenedProject project)
+    {
+        var source = ResolveWorkflowFile(project, SwShPersonalTable.PersonalDataRelativePath);
+        if (source is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            return SwShPersonalTable.Parse(File.ReadAllBytes(source.AbsolutePath)).Records;
+        }
+        catch (InvalidDataException)
+        {
+            return [];
+        }
+        catch (IOException)
+        {
+            return [];
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    private static IReadOnlyList<SwShPokemonLearnsetRecord> LoadLearnsetRecords(OpenedProject project)
+    {
+        var source = ResolveWorkflowFile(project, SwShPokemonLearnsetTable.LearnsetDataRelativePath);
+        if (source is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            return SwShPokemonLearnsetTable.Parse(File.ReadAllBytes(source.AbsolutePath)).Records;
+        }
+        catch (InvalidDataException)
+        {
+            return [];
+        }
+        catch (IOException)
+        {
+            return [];
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    private static IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> CreateMoveOptions(
+        DynamaxAdventureLookupTables lookupTables,
+        SwShDynamaxAdventureRecord entry,
+        SwShDynamaxAdventureRecord? vanillaEntry)
+    {
+        if (lookupTables.MoveNames.Count == 0
+            || lookupTables.UsableMoveIds.Count == 0
+            || lookupTables.PersonalRecords.Count == 0
+            || lookupTables.LearnsetRecords.Count == 0)
+        {
+            return [];
+        }
+
+        var personal = SwShDynamaxAdventureSafetyRules.ResolvePersonalRecord(
+            entry.Species,
+            entry.Form,
+            lookupTables.PersonalRecords);
+        if (personal is null)
+        {
+            return [];
+        }
+
+        var learnset = personal.PersonalId < lookupTables.LearnsetRecords.Count
+            ? lookupTables.LearnsetRecords[personal.PersonalId]
+            : null;
+        var moveIds = new SortedSet<int>();
+        foreach (var moveId in lookupTables.UsableMoveIds)
+        {
+            if (SwShDynamaxAdventureSafetyRules.CanLearnMove(personal, learnset, moveId, entry.Level))
+            {
+                moveIds.Add(moveId);
+            }
+        }
+
+        foreach (var moveId in entry.Moves)
+        {
+            moveIds.Add(moveId);
+        }
+
+        if (vanillaEntry is not null
+            && vanillaEntry.Species == entry.Species
+            && vanillaEntry.Form == entry.Form
+            && entry.Level >= vanillaEntry.Level)
+        {
+            foreach (var moveId in vanillaEntry.Moves)
+            {
+                moveIds.Add(moveId);
+            }
+        }
+
+        return moveIds
+            .Select(moveId => new SwShDynamaxAdventureEditableFieldOption(
+                moveId,
+                FormatMoveOptionLabel(moveId, lookupTables.MoveNames)))
+            .ToArray();
     }
 
     private static IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> CreateAbilityOptions(
@@ -590,7 +901,15 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             ?? GetOptionLabel(AbilityOptions, value, "Ability roll");
     }
 
-    private static SwShDynamaxAdventureArchive? LoadVanillaArchive(
+    private static string FormatMoveOptionLabel(int moveId, IReadOnlyList<string> moveNames)
+    {
+        var label = (uint)moveId < (uint)moveNames.Count && !string.IsNullOrWhiteSpace(moveNames[moveId])
+            ? moveNames[moveId]
+            : moveId == 0 ? "None" : $"Move {moveId.ToString(CultureInfo.InvariantCulture)}";
+        return string.Create(CultureInfo.InvariantCulture, $"{moveId:000} {label}");
+    }
+
+    private static VanillaDynamaxAdventureTable? LoadVanillaArchive(
         OpenedProject project,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -612,7 +931,10 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
         try
         {
-            return SwShDynamaxAdventureArchive.Parse(File.ReadAllBytes(sourcePath));
+            var data = File.ReadAllBytes(sourcePath);
+            return new VanillaDynamaxAdventureTable(
+                SwShDynamaxAdventureArchive.Parse(data),
+                data.Length);
         }
         catch (InvalidDataException exception)
         {
@@ -852,8 +1174,14 @@ public sealed class SwShDynamaxAdventuresWorkflowService
         IReadOnlyList<string> ItemNames,
         IReadOnlyList<string> MoveNames,
         IReadOnlySet<int> UsableMoveIds,
+        IReadOnlyList<SwShPersonalRecord> PersonalRecords,
+        IReadOnlyList<SwShPokemonLearnsetRecord> LearnsetRecords,
         SwShPokemonAbilityOptionResolver AbilityResolver,
         int SourceFileCount);
+
+    private sealed record VanillaDynamaxAdventureTable(
+        SwShDynamaxAdventureArchive Archive,
+        int Length);
 
     internal sealed record WorkflowFileSource(
         ProjectFileGraphEntry GraphEntry,

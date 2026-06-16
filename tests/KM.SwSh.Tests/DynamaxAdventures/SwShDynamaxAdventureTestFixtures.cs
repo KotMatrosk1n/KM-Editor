@@ -70,6 +70,39 @@ internal static class SwShDynamaxAdventureTestFixtures
         ]);
     }
 
+    public static void WriteBasePersonalData(TemporarySwShProject temp, int count = 200)
+    {
+        temp.WriteBaseRomFsFile(
+            SwShPersonalTable.PersonalDataRelativePath["romfs/".Length..],
+            CreatePersonalTable(Enumerable.Range(0, count).Select(_ =>
+            {
+                var record = CreatePersonalRecord(type1: 0, type2: 0);
+                record[0x21] |= 0x40;
+                return record;
+            })));
+    }
+
+    public static byte[] CreatePersonalTable(IEnumerable<byte[]> records)
+    {
+        var rows = records.ToArray();
+        var data = new byte[rows.Length * SwShPersonalTable.RecordSize];
+        for (var index = 0; index < rows.Length; index++)
+        {
+            rows[index].CopyTo(data.AsSpan(index * SwShPersonalTable.RecordSize));
+        }
+
+        return data;
+    }
+
+    public static byte[] CreatePersonalRecord(int type1, int type2)
+    {
+        var record = new byte[SwShPersonalTable.RecordSize];
+        record[0x06] = checked((byte)type1);
+        record[0x07] = checked((byte)type2);
+        record[0x20] = 1;
+        return record;
+    }
+
     public static byte[] CreateCompatibleMain()
     {
         var archive = CreateArchive();
@@ -95,6 +128,43 @@ internal static class SwShDynamaxAdventureTestFixtures
         SwShDynamaxAdventuresMainPatcher.WriteSummary(ro, archive.Entries);
 
         return CreateNso(text, ro, []);
+    }
+
+    public static byte[] CreateBossTargetCompatibleMain()
+    {
+        var text = new byte[SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset + sizeof(uint)];
+        var ro = new byte[] { 1, 2, 3, 4 };
+        var data = new byte[] { 5, 6, 7, 8 };
+
+        WriteInstruction(
+            text,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteAOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteAVanillaInstruction);
+        WriteInstruction(
+            text,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteBVanillaInstruction);
+
+        return CreateNso(text, ro, data);
+    }
+
+    public static byte[] CreateBossTargetAndSummaryCompatibleMain(int entryCount)
+    {
+        var text = new byte[SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset + sizeof(uint)];
+        var ro = new byte[SwShDynamaxAdventuresMainPatcher.SummaryOffset
+            + (entryCount * SwShDynamaxAdventuresMainPatcher.SummaryEntrySize)];
+        var data = new byte[] { 5, 6, 7, 8 };
+
+        WriteInstruction(
+            text,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteAOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteAVanillaInstruction);
+        WriteInstruction(
+            text,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteBVanillaInstruction);
+
+        return CreateNso(text, ro, data);
     }
 
     private static byte[] CreateTextTable(int highestIndex, params (int index, string value)[] entries)

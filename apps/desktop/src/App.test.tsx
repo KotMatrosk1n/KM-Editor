@@ -461,7 +461,7 @@ describe('App', () => {
         .getAllByRole('button')
         .filter((button) => button.classList.contains('nav-child-button'))
         .map((button) => button.textContent)
-        .slice(-7)
+        .slice(-8)
     ).toEqual([
       'Royal Candy',
       'Starting Items',
@@ -469,6 +469,7 @@ describe('App', () => {
       'IV Screen',
       'Hyper Training',
       'Type Chart',
+      'Fashion Unlock',
       'Gym Uniform Removal'
     ]);
     expect(screen.queryByRole('button', { name: 'Dynamax Adventures' })).not.toBeInTheDocument();
@@ -2183,6 +2184,65 @@ describe('App', () => {
         'Applied Static Encounter change plan to the configured LayeredFS output root.'
       )
     ).toBeInTheDocument();
+  });
+
+  it('hides unsafe Dynamax Adventures boss rows from the editor', async () => {
+    const user = userEvent.setup();
+    const health = createHealthForValidatedPaths('base-romfs', 'base-exefs', 'output', null);
+    useWorkbenchStore.setState({
+      activeSection: 'dynamaxAdventures',
+      dynamaxAdventuresWorkflow: {
+        diagnostics: [], editableFields: [
+          { field: 'species', label: 'Species', maximumValue: 65535, minimumValue: 0, options: [{ label: '467 Magmortar', value: 467 }], valueKind: 'integer' }
+        ],
+        encounters: [{
+          ability: 0, abilityLabel: 'Ability 1', abilityOptions: [], adventureIndex: 101,
+          ballItem: 'Poke Ball', ballItemId: 4, bossTargetOptions: [],
+          bossTargetSpecies: 'Pikachu', bossTargetSpeciesId: 25, entryIndex: 1, form: 0,
+          gigantamaxLabel: 'Normal', gigantamaxState: 1, guaranteedPerfectIvs: 2,
+          isEditable: true,
+          isSingleCapture: false, isStoryProgressGated: false,
+          ivs: { attack: -1, defense: -1, hp: -2, specialAttack: -1, specialDefense: -1, speed: -1 },
+          ivSummary: '2 guaranteed perfect / Atk Random / Def Random / SpA Random / SpD Random / Spe Random',
+          label: '001 / 101 - Pikachu', level: 60,
+          moveOptions: [], moves: [], otGender: 1, otGenderLabel: 'Female',
+          provenance: { fileState: 'baseOnly', sourceFile: 'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin', sourceLayer: 'base' },
+          shinyRoll: 1, shinyRollLabel: 'Enabled', singleCaptureFlagBlock: '0x0000000000000001',
+          species: 'Pikachu', speciesId: 25, uiMessageId: '0x0000000000000002',
+          vanillaPokemon: null, version: 0, versionLabel: 'Both'
+        }, {
+          ability: 0, abilityLabel: 'Ability 1', abilityOptions: [], adventureIndex: 1003,
+          ballItem: 'Poke Ball', ballItemId: 4, bossTargetOptions: [{ adventureIndex: 1004, entryIndex: 227, form: 0, isStoryProgressGated: false, label: 'Adventure 1004: Mewtwo', species: 'Mewtwo', speciesId: 150, version: 0, versionLabel: 'Both' }],
+          bossTargetSpecies: 'Articuno', bossTargetSpeciesId: 144, entryIndex: 226, form: 0,
+          gigantamaxLabel: 'Normal', gigantamaxState: 1, guaranteedPerfectIvs: 5,
+          isEditable: false,
+          isSingleCapture: true, isStoryProgressGated: false,
+          ivs: { attack: -1, defense: -1, hp: -5, specialAttack: -1, specialDefense: -1, speed: -1 },
+          ivSummary: '5 guaranteed perfect / Atk Random / Def Random / SpA Random / SpD Random / Spe Random',
+          label: 'Adventure 1003: Articuno Lv. 70', level: 70,
+          moveOptions: [], moves: [], otGender: 1, otGenderLabel: 'Female',
+          provenance: { fileState: 'baseOnly', sourceFile: 'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin', sourceLayer: 'base' },
+          shinyRoll: 1, shinyRollLabel: 'Enabled', singleCaptureFlagBlock: '0x00000000000000E2',
+          species: 'Articuno', speciesId: 144, uiMessageId: '0x0000000000000100',
+          vanillaPokemon: null, version: 0, versionLabel: 'Both'
+        }],
+        safeNormalSpeciesOptions: [],
+        stats: { guaranteedPerfectIvEncounterCount: 1, singleCaptureCount: 1, sourceFileCount: 1, storyGatedCount: 0, totalEncounterCount: 1 },
+        summary: { availability: 'available', description: 'Dynamax Adventures fixture.', diagnostics: [], id: 'dynamaxAdventures', label: 'Dynamax Adventures' }
+      } as unknown as DynamaxAdventuresWorkflow,
+      openProject: { fileGraph: { entries: [], summary: health.fileGraph }, health, projectId: 'project-1' },
+      projectStatus: 'open',
+      selectedDynamaxAdventureEntryIndex: 226
+    });
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Dynamax Adventures' })).toBeInTheDocument();
+    expect(screen.getAllByText('001 / 101 - Pikachu').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Adventure 1003: Articuno Lv. 70')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(await screen.findByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Species')).not.toBeDisabled();
+    expect(screen.queryByLabelText('Boss target species')).not.toBeInTheDocument();
   });
 
   it.each([
