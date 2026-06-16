@@ -2,6 +2,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="PKHeX.Core" Version="25.9.25" />
     <ProjectReference Include="..\KM.Core\KM.Core.csproj" />
     <ProjectReference Include="..\KM.Formats\KM.Formats.csproj" />
   </ItemGroup>

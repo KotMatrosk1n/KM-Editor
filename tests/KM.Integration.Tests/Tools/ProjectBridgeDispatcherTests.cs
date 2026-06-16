@@ -31,6 +31,7 @@ using KM.Api.TypeChart;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
+using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.ExeFs;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.IvScreen;
@@ -692,6 +693,8 @@ public sealed class ProjectBridgeDispatcherTests
     {
         using var temp = TemporaryBridgeProject.Create();
         SwShDynamaxAdventureBridgeFixtures.WriteBaseDynamaxAdventures(temp);
+        SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp);
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseMoveLegalityData(temp);
         temp.WriteBaseExeFsFile("main", "base-main");
         var requestJson = SerializeRequest(
             KmCommandNames.LoadDynamaxAdventuresWorkflow,
@@ -708,13 +711,229 @@ public sealed class ProjectBridgeDispatcherTests
         var encounter = response.Payload.Workflow.Encounters[0];
         Assert.Equal(0, encounter.EntryIndex);
         Assert.Equal("Eevee", encounter.Species);
-        Assert.Equal("Ability 2", encounter.AbilityLabel);
+        Assert.StartsWith("Ability 2", encounter.AbilityLabel, StringComparison.Ordinal);
         Assert.Equal(4, encounter.GuaranteedPerfectIvs);
         Assert.Equal("0x1122334455667788", encounter.SingleCaptureFlagBlock);
         Assert.Equal("romfs/bin/appli/chika/data_table/underground_exploration_poke.bin", encounter.Provenance.SourceFile);
         Assert.Equal(ProjectFileLayerDto.Base, encounter.Provenance.SourceLayer);
         Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "guaranteedPerfectIvs");
         Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "ivAttack");
+        var pikachu = response.Payload.Workflow.Encounters.Single(row => row.EntryIndex == 1);
+        Assert.Contains(pikachu.MoveOptions, option => option.Value == 85 && option.Label == "085 Thunderbolt");
+        Assert.Contains(pikachu.MoveOptions, option => option.Value == 3);
+        Assert.DoesNotContain(pikachu.MoveOptions, option => option.Value == 10);
+    }
+
+    [Fact]
+    public void DispatchLoadDynamaxAdventuresWorkflowMarksBossRowsUnsafe()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShDynamaxAdventureBridgeFixtures.WriteBossTargetDynamaxAdventures(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadDynamaxAdventuresWorkflow,
+            new LoadDynamaxAdventuresWorkflowRequest(temp.Paths with { OutputRootPath = null }),
+            requestId: "request-dynamax-boss-targets");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<LoadDynamaxAdventuresWorkflowResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-dynamax-boss-targets", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.DoesNotContain(response.Payload.Workflow.EditableFields, field => field.Field == "bossTargetSpecies");
+        var normal = response.Payload.Workflow.Encounters.Single(row => row.EntryIndex == 0);
+        Assert.True(normal.IsEditable);
+        Assert.Empty(normal.BossTargetOptions);
+        var articuno = response.Payload.Workflow.Encounters.Single(row => row.EntryIndex == 226);
+        Assert.False(articuno.IsEditable);
+        Assert.Equal(144, articuno.BossTargetSpeciesId);
+        Assert.Equal("Articuno", articuno.BossTargetSpecies);
+        var option = Assert.Single(articuno.BossTargetOptions);
+        Assert.Equal(227, option.EntryIndex);
+        Assert.Equal(1004, option.AdventureIndex);
+        Assert.Equal(150, option.SpeciesId);
+        Assert.Equal("Mewtwo", option.Species);
+        Assert.Equal("Mewtwo", response.Payload.Workflow.Encounters.Single(row => row.EntryIndex == 227).Species);
+    }
+
+    [Fact]
+    public void DispatchDynamaxAdventureBossTargetRemapIsRejected()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShDynamaxAdventureBridgeFixtures.WriteBossTargetDynamaxAdventures(temp);
+        temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateDynamaxAdventureBossTargetCompatibleNso(entryCount: 230));
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var dispatcher = new ProjectBridgeDispatcher();
+        var updateJson = SerializeRequest(
+            KmCommandNames.UpdateDynamaxAdventureField,
+            new UpdateDynamaxAdventureFieldRequest(
+                temp.Paths,
+                Session: null,
+                EntryIndex: 226,
+                Field: "bossTargetSpecies",
+                Value: "150"),
+            requestId: "request-dynamax-boss-target-update");
+        var updateResponse = DeserializeResponse<UpdateDynamaxAdventureFieldResponse>(dispatcher.Dispatch(updateJson));
+        Assert.Null(updateResponse.Error);
+        Assert.NotNull(updateResponse.Payload);
+        Assert.Empty(updateResponse.Payload.Session.PendingEdits);
+        Assert.Contains(
+            updateResponse.Payload.Diagnostics,
+            diagnostic =>
+                diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("is not supported", StringComparison.Ordinal));
+        Assert.False(File.Exists(outputMainPath));
+    }
+
+    [Fact]
+    public void DispatchDynamaxAdventureSeedPlanUsesActiveAdventureRows()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseDynamaxAdventures(temp);
+        SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            SwShDynamaxAdventureBridgeFixtures.CreateArchive().WriteEdits(
+            [
+                new(1, SwShDynamaxAdventureField.Species, 467),
+            ]));
+        var requestJson = SerializeRequest(
+            KmCommandNames.PlanDynamaxAdventureSeed,
+            new PlanDynamaxAdventureSeedRequest(temp.Paths, "0x0", NpcCount: 0, RequiredRows: [1]),
+            requestId: "request-dynamax-seed-plan");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<PlanDynamaxAdventureSeedResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-dynamax-seed-plan", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.Equal("0x0000000000000000", response.Payload.Plan.Seed);
+        Assert.Contains(response.Payload.Plan.Rentals.Concat(response.Payload.Plan.Encounters), template =>
+            template.Row == 1
+            && template.Species == 467);
+        Assert.Contains(response.Payload.Plan.RequiredRowPositions, position => position.Row == 1);
+    }
+
+    [Fact]
+    public void DispatchDynamaxAdventureSeedSearchReturnsMatchingSeeds()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShDynamaxAdventureBridgeFixtures.WriteBaseDynamaxAdventures(temp);
+        SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp);
+        var requestJson = SerializeRequest(
+            KmCommandNames.SearchDynamaxAdventureSeed,
+            new SearchDynamaxAdventureSeedRequest(
+                temp.Paths,
+                RequiredRows: [0],
+                NpcCount: 0,
+                StartSeed: "0",
+                Limit: "1",
+                MaxResults: 1),
+            requestId: "request-dynamax-seed-search");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<SearchDynamaxAdventureSeedResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-dynamax-seed-search", response.RequestId);
+        Assert.NotNull(response.Payload);
+        var result = Assert.Single(response.Payload.Search.Results);
+        Assert.Equal("0x0000000000000000", result.Seed);
+        Assert.Contains(result.Positions, position => position.Row == 0);
+    }
+
+    [Fact]
+    public void DispatchDynamaxAdventureSeedPlanWarnsForBossRows()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShDynamaxAdventureBridgeFixtures.WriteSeedPlanningDynamaxAdventures(temp, rowCount: 230);
+        SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp, count: 400);
+        var requestJson = SerializeRequest(
+            KmCommandNames.PlanDynamaxAdventureSeed,
+            new PlanDynamaxAdventureSeedRequest(
+                temp.Paths,
+                Seed: "0",
+                NpcCount: 0,
+                RequiredRows: [226]),
+            requestId: "request-dynamax-seed-plan-boss-row");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<PlanDynamaxAdventureSeedResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Empty(response.Payload.Plan.RequiredRowPositions);
+        Assert.Contains(response.Payload.Plan.Diagnostics, diagnostic =>
+            diagnostic.Severity == ApiDiagnosticSeverity.Warning
+            && diagnostic.Message.Contains("cannot select boss row(s) 226", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DispatchDynamaxAdventureSeedSearchRejectsBossRows()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShDynamaxAdventureBridgeFixtures.WriteSeedPlanningDynamaxAdventures(temp, rowCount: 230);
+        SwShDynamaxAdventureBridgeFixtures.WriteBasePersonalData(temp, count: 400);
+        var requestJson = SerializeRequest(
+            KmCommandNames.SearchDynamaxAdventureSeed,
+            new SearchDynamaxAdventureSeedRequest(
+                temp.Paths,
+                RequiredRows: [226],
+                NpcCount: 0,
+                StartSeed: "0",
+                Limit: "100",
+                MaxResults: 1),
+            requestId: "request-dynamax-seed-search-boss-row");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<SearchDynamaxAdventureSeedResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.NotNull(response.Payload);
+        Assert.Empty(response.Payload.Search.Results);
+        Assert.Contains(response.Payload.Search.Diagnostics, diagnostic =>
+            diagnostic.Severity == ApiDiagnosticSeverity.Error
+            && diagnostic.Message.Contains("cannot select boss row(s) 226", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DispatchSetDynamaxAdventureSaveSeedRejectsInvalidSeed()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        var requestJson = SerializeRequest(
+            KmCommandNames.SetDynamaxAdventureSaveSeed,
+            new SetDynamaxAdventureSaveSeedRequest(temp.Paths, Seed: "not-a-seed"),
+            requestId: "request-dynamax-save-seed-invalid");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<SetDynamaxAdventureSaveSeedResponse>(responseJson);
+
+        Assert.NotNull(response.Error);
+        Assert.Equal("dynamaxAdventures.seed.invalid", response.Error.Code);
+        Assert.Null(response.Payload);
+    }
+
+    [Fact]
+    public void DispatchSetDynamaxAdventureSaveSeedReturnsMissingSaveDiagnostic()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        var requestJson = SerializeRequest(
+            KmCommandNames.SetDynamaxAdventureSaveSeed,
+            new SetDynamaxAdventureSaveSeedRequest(temp.Paths, Seed: "0x1234"),
+            requestId: "request-dynamax-save-seed-missing");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<SetDynamaxAdventureSaveSeedResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-dynamax-save-seed-missing", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.False(response.Payload.Result.WasChanged);
+        Assert.Contains(response.Payload.Result.Diagnostics, diagnostic =>
+            diagnostic.Severity == ApiDiagnosticSeverity.Error
+            && diagnostic.Message.Contains("save file", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

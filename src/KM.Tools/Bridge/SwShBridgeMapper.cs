@@ -190,6 +190,35 @@ public static class SwShBridgeMapper
         return new LoadDynamaxAdventuresWorkflowResponse(ToDynamaxAdventuresWorkflowDto(workflow));
     }
 
+    public static PlanDynamaxAdventureSeedResponse ToDto(SwShDynamaxAdventureSeedPlanResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new PlanDynamaxAdventureSeedResponse(ToDynamaxAdventureSeedPlanDto(result));
+    }
+
+    public static SearchDynamaxAdventureSeedResponse ToDto(SwShDynamaxAdventureSeedSearchPlanResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new SearchDynamaxAdventureSeedResponse(ToDynamaxAdventureSeedSearchDto(result));
+    }
+
+    public static SetDynamaxAdventureSaveSeedResponse ToDto(SwShDynamaxAdventureSaveSeedResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new SetDynamaxAdventureSaveSeedResponse(
+            new DynamaxAdventureSaveSeedDto(
+                result.SaveFilePath,
+                result.BackupFilePath,
+                result.OldSeed,
+                result.NewSeed,
+                result.WasChanged,
+                result.ChecksumsValid,
+                result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()));
+    }
+
     public static LoadEncountersWorkflowResponse ToDto(SwShEncountersWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -1074,6 +1103,7 @@ public static class SwShBridgeMapper
             ToDto(workflow.Summary),
             workflow.Encounters.Select(ToDto).ToArray(),
             workflow.EditableFields.Select(ToDto).ToArray(),
+            workflow.SafeNormalSpeciesOptions.Select(ToDto).ToArray(),
             new DynamaxAdventuresWorkflowStatsDto(
                 workflow.Stats.TotalEncounterCount,
                 workflow.Stats.SingleCaptureCount,
@@ -1087,11 +1117,14 @@ public static class SwShBridgeMapper
     {
         return new DynamaxAdventureRecordDto(
             encounter.EntryIndex,
+            encounter.IsEditable,
             encounter.Label,
             encounter.AdventureIndex,
             encounter.SpeciesId,
             encounter.Species,
             encounter.Form,
+            encounter.BossTargetSpeciesId,
+            encounter.BossTargetSpecies,
             encounter.Level,
             encounter.BallItemId,
             encounter.BallItem,
@@ -1119,10 +1152,27 @@ public static class SwShBridgeMapper
                 ProjectBridgeMapper.ToDto(encounter.Provenance.FileState)))
         {
             AbilityOptions = encounter.AbilityOptions.Select(ToDto).ToArray(),
+            MoveOptions = encounter.MoveOptions.Select(ToDto).ToArray(),
+            BossTargetOptions = encounter.BossTargetOptions.Select(ToDto).ToArray(),
             VanillaPokemon = encounter.VanillaPokemon is null
                 ? null
                 : ToDto(encounter.VanillaPokemon),
         };
+    }
+
+    private static DynamaxAdventureBossTargetOptionDto ToDto(
+        SwShDynamaxAdventureBossTargetOption option)
+    {
+        return new DynamaxAdventureBossTargetOptionDto(
+            option.EntryIndex,
+            option.AdventureIndex,
+            option.SpeciesId,
+            option.Species,
+            option.Form,
+            option.Version,
+            option.VersionLabel,
+            option.IsStoryProgressGated,
+            option.Label);
     }
 
     private static DynamaxAdventurePokemonSnapshotDto ToDto(
@@ -1176,6 +1226,62 @@ public static class SwShBridgeMapper
     private static DynamaxAdventureEditableFieldOptionDto ToDto(SwShDynamaxAdventureEditableFieldOption option)
     {
         return new DynamaxAdventureEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static DynamaxAdventureSeedPlanDto ToDynamaxAdventureSeedPlanDto(
+        SwShDynamaxAdventureSeedPlanResult result)
+    {
+        return new DynamaxAdventureSeedPlanDto(
+            FormatSeed(result.Seed),
+            result.NpcCount,
+            result.Rentals.Select(ToDto).ToArray(),
+            result.Encounters.Select(ToDto).ToArray(),
+            result.RequiredRowPositions.Select(ToDto).ToArray(),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static DynamaxAdventureSeedSearchDto ToDynamaxAdventureSeedSearchDto(
+        SwShDynamaxAdventureSeedSearchPlanResult result)
+    {
+        return new DynamaxAdventureSeedSearchDto(
+            result.NpcCount,
+            FormatSeed(result.StartSeed),
+            FormatSeed(result.Limit),
+            result.MaxResults,
+            result.Results.Select(ToDto).ToArray(),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static DynamaxAdventureSeedSearchMatchDto ToDto(
+        SwShDynamaxAdventureSeedSearchPlanMatch match)
+    {
+        return new DynamaxAdventureSeedSearchMatchDto(
+            FormatSeed(match.Seed),
+            match.Positions.Select(ToDto).ToArray());
+    }
+
+    private static DynamaxAdventureSeedTemplateDto ToDto(
+        SwShDynamaxAdventureSeedPlanTemplate template)
+    {
+        return new DynamaxAdventureSeedTemplateDto(
+            template.Row,
+            template.Species,
+            template.Form,
+            template.IsBoss);
+    }
+
+    private static DynamaxAdventureSeedRowPositionDto ToDto(
+        SwShDynamaxAdventureSeedPlanRowPosition position)
+    {
+        return new DynamaxAdventureSeedRowPositionDto(
+            position.Row,
+            position.Kind == SwShDynamaxAdventureSeedPlanSlotKind.Rental ? "rental" : "encounter",
+            position.Slot);
+    }
+
+    private static string FormatSeed(ulong value)
+    {
+        return $"0x{value:X16}";
     }
 
     private static TrainersWorkflowDto ToTrainersWorkflowDto(SwShTrainersWorkflow workflow)

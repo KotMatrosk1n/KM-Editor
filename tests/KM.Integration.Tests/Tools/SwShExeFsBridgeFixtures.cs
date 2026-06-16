@@ -8,6 +8,8 @@ namespace KM.Integration.Tests.Tools;
 internal static class SwShExeFsBridgeFixtures
 {
     private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
+    private const int DynamaxAdventureSummaryOffset = 0x00774054;
+    private const int DynamaxAdventureSummaryEntrySize = 0x06;
 
     public static byte[] CreateCompatibleNso()
     {
@@ -20,6 +22,15 @@ internal static class SwShExeFsBridgeFixtures
         Array.Fill(ro, (byte)0xCC);
         ro.AsSpan(0x00743600, 18 * 18).Fill(0x04);
         return CreateNso(CreateCompatibleText(), ro, [0x20], Convert.FromHexString(SwordBuildId));
+    }
+
+    public static byte[] CreateDynamaxAdventureBossTargetCompatibleNso(int entryCount)
+    {
+        var text = new byte[0x015D68AC + sizeof(uint)];
+        var ro = new byte[DynamaxAdventureSummaryOffset + (entryCount * DynamaxAdventureSummaryEntrySize)];
+        WriteInstruction(text, 0x015D615C, 0x2A1503E1);
+        WriteInstruction(text, 0x015D68AC, 0x2A1403E1);
+        return CreateNso(text, ro, [0x20], Convert.FromHexString(SwordBuildId));
     }
 
     private static byte[] CreateCompatibleText()

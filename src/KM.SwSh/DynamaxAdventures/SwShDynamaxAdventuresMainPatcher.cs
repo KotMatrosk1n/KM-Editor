@@ -8,7 +8,7 @@ namespace KM.SwSh.DynamaxAdventures;
 
 internal static class SwShDynamaxAdventuresMainPatcher
 {
-    public const int SummaryOffset = 0x00775054;
+    public const int SummaryOffset = 0x00774054;
     public const int SummaryEntrySize = 0x06;
 
     internal const int LocalSpeciesPresentMismatchBranchOffset = 0x00EA52AC;
@@ -86,9 +86,10 @@ internal static class SwShDynamaxAdventuresMainPatcher
         var baseText = baseNso.Text.DecompressedData;
         var baseRo = baseNso.Ro.DecompressedData;
 
-        if (currentText.Length != baseText.Length)
+        currentText = SwShDynamaxAdventuresBossTargetPatcher.RestoreTextFromBase(currentText, baseText.AsSpan());
+        if (currentText.Length < baseText.Length)
         {
-            throw new InvalidDataException("Dynamax Adventures restore requires current and base main NSO files with matching .text sizes.");
+            throw new InvalidDataException("Dynamax Adventures restore requires current main.text to be at least as large as base main.text.");
         }
 
         if (currentRo.Length != baseRo.Length)

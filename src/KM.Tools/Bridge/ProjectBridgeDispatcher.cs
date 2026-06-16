@@ -68,6 +68,7 @@ using KM.SwSh.TypeChart;
 using KM.SwSh.Workflows;
 using KM.SV.ModMerger;
 using KM.SV.Workflows;
+using System.Globalization;
 using System.Text.Json;
 
 namespace KM.Tools.Bridge;
@@ -76,6 +77,8 @@ public sealed class ProjectBridgeDispatcher
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SwShDynamaxAdventuresEditSessionService dynamaxAdventuresEditSessionService;
+    private readonly SwShDynamaxAdventureSeedPlanningService dynamaxAdventureSeedPlanningService;
+    private readonly SwShDynamaxAdventureSaveSeedService dynamaxAdventureSaveSeedService;
     private readonly SwShEncountersEditSessionService encountersEditSessionService;
     private readonly SwShExeFsPatchEditSessionService exeFsPatchEditSessionService;
     private readonly SwShBagHookEditSessionService bagHookEditSessionService;
@@ -110,6 +113,8 @@ public sealed class ProjectBridgeDispatcher
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
         SwShDynamaxAdventuresEditSessionService? dynamaxAdventuresEditSessionService = null,
+        SwShDynamaxAdventureSeedPlanningService? dynamaxAdventureSeedPlanningService = null,
+        SwShDynamaxAdventureSaveSeedService? dynamaxAdventureSaveSeedService = null,
         SwShEncountersEditSessionService? encountersEditSessionService = null,
         SwShExeFsPatchEditSessionService? exeFsPatchEditSessionService = null,
         SwShBagHookEditSessionService? bagHookEditSessionService = null,
@@ -143,6 +148,8 @@ public sealed class ProjectBridgeDispatcher
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
+        this.dynamaxAdventureSeedPlanningService = dynamaxAdventureSeedPlanningService ?? new SwShDynamaxAdventureSeedPlanningService(this.projectWorkspaceService);
+        this.dynamaxAdventureSaveSeedService = dynamaxAdventureSaveSeedService ?? new SwShDynamaxAdventureSaveSeedService();
         this.encountersEditSessionService = encountersEditSessionService ?? new SwShEncountersEditSessionService(this.projectWorkspaceService);
         this.exeFsPatchEditSessionService = exeFsPatchEditSessionService ?? new SwShExeFsPatchEditSessionService(this.projectWorkspaceService);
         this.bagHookEditSessionService = bagHookEditSessionService ?? new SwShBagHookEditSessionService(this.projectWorkspaceService);
@@ -217,6 +224,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateRentalPokemonField => DispatchUpdateRentalPokemonField(requestJson),
                 KmCommandNames.LoadDynamaxAdventuresWorkflow => DispatchLoadDynamaxAdventuresWorkflow(requestJson),
                 KmCommandNames.UpdateDynamaxAdventureField => DispatchUpdateDynamaxAdventureField(requestJson),
+                KmCommandNames.PlanDynamaxAdventureSeed => DispatchPlanDynamaxAdventureSeed(requestJson),
+                KmCommandNames.SearchDynamaxAdventureSeed => DispatchSearchDynamaxAdventureSeed(requestJson),
+                KmCommandNames.SetDynamaxAdventureSaveSeed => DispatchSetDynamaxAdventureSaveSeed(requestJson),
                 KmCommandNames.LoadShopsWorkflow => DispatchLoadShopsWorkflow(requestJson),
                 KmCommandNames.UpdateShopInventoryItem => DispatchUpdateShopInventoryItem(requestJson),
                 KmCommandNames.LoadEncountersWorkflow => DispatchLoadEncountersWorkflow(requestJson),
@@ -664,6 +674,77 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.EntryIndex,
             request.Payload.Field,
             request.Payload.Value);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchPlanDynamaxAdventureSeed(string requestJson)
+    {
+        var request = DeserializeRequest<PlanDynamaxAdventureSeedRequest>(requestJson);
+        if (!TryParseSeed(request.Payload.Seed, out var seed))
+        {
+            return SerializeFailure(
+                "dynamaxAdventures.seed.invalid",
+                $"Dynamax Adventures seed '{request.Payload.Seed}' is not a valid 64-bit seed.",
+                request.RequestId);
+        }
+
+        var result = dynamaxAdventureSeedPlanningService.Predict(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            seed,
+            request.Payload.NpcCount,
+            request.Payload.RequiredRows);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchSearchDynamaxAdventureSeed(string requestJson)
+    {
+        var request = DeserializeRequest<SearchDynamaxAdventureSeedRequest>(requestJson);
+        if (!TryParseSeed(request.Payload.StartSeed, out var startSeed))
+        {
+            return SerializeFailure(
+                "dynamaxAdventures.seed.invalidStart",
+                $"Dynamax Adventures start seed '{request.Payload.StartSeed}' is not a valid 64-bit seed.",
+                request.RequestId);
+        }
+
+        if (!TryParseSeed(request.Payload.Limit, out var limit))
+        {
+            return SerializeFailure(
+                "dynamaxAdventures.seed.invalidLimit",
+                $"Dynamax Adventures seed search limit '{request.Payload.Limit}' is not a valid 64-bit value.",
+                request.RequestId);
+        }
+
+        var result = dynamaxAdventureSeedPlanningService.SearchRows(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.RequiredRows,
+            request.Payload.NpcCount,
+            startSeed,
+            limit,
+            request.Payload.MaxResults);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchSetDynamaxAdventureSaveSeed(string requestJson)
+    {
+        var request = DeserializeRequest<SetDynamaxAdventureSaveSeedRequest>(requestJson);
+        if (!TryParseSeed(request.Payload.Seed, out var seed))
+        {
+            return SerializeFailure(
+                "dynamaxAdventures.seed.invalid",
+                $"Dynamax Adventures seed '{request.Payload.Seed}' is not a valid 64-bit seed.",
+                request.RequestId);
+        }
+
+        var result = dynamaxAdventureSaveSeedService.SetSeed(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            seed);
         var response = SwShBridgeMapper.ToDto(result);
 
         return SerializeSuccess(response, request.RequestId);
@@ -1670,6 +1751,31 @@ public sealed class ProjectBridgeDispatcher
             options.RandomizeTypeChart,
             options.TypeChartNoImmunities,
             options.TypeChartOneImmunityPerType);
+    }
+
+    private static bool TryParseSeed(string? value, out ulong seed)
+    {
+        seed = 0;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return ulong.TryParse(
+                trimmed[2..],
+                NumberStyles.AllowHexSpecifier,
+                CultureInfo.InvariantCulture,
+                out seed);
+        }
+
+        return ulong.TryParse(
+            trimmed,
+            NumberStyles.None,
+            CultureInfo.InvariantCulture,
+            out seed);
     }
 
     private static BridgeRequest<TPayload> DeserializeRequest<TPayload>(string requestJson)

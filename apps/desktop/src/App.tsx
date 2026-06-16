@@ -1787,7 +1787,8 @@ export function App({
     !isChangePlanCreating &&
     !isSessionValidating;
   const activeSectionIsEditor =
-    groupedWorkflowSectionIds.has(activeSection) && activeSection !== 'randomizer';
+    (groupedWorkflowSectionIds.has(activeSection) || activeSection === 'dynamaxAdventures') &&
+    activeSection !== 'randomizer';
   const activeEditorHasLocalDrafts = editorDraftDirtySections.has(activeSection);
   const activeSectionOwnsEditSession =
     editSession !== null && editSessionSection !== null && editSessionSection === activeSection;
@@ -11734,6 +11735,26 @@ function withPokemonInstanceIvPresetOptions<T extends NumericEditableField>(fiel
   };
 }
 
+function withDynamaxAdventureSpeciesOptions<T extends NumericEditableField>(field: T, encounter: DynamaxAdventureRecord | null, safeNormalSpeciesOptions: EditableFieldOption[]): T {
+  if (encounter !== null && encounter.moveOptions.length > 0 && staticEncounterMoveFieldNames.includes(field.field as (typeof staticEncounterMoveFieldNames)[number])) {
+    return { ...field, options: encounter.moveOptions };
+  }
+
+  if (field.field !== giftSpeciesFieldName || encounter === null) {
+    return field;
+  }
+
+  if (safeNormalSpeciesOptions.length === 0) return field;
+
+  const options = safeNormalSpeciesOptions.some((option) => option.value === encounter.speciesId)
+    ? safeNormalSpeciesOptions
+    : [
+        ...safeNormalSpeciesOptions,
+        { label: `${encounter.speciesId.toString().padStart(3, '0')} ${encounter.species}`, value: encounter.speciesId }
+      ].sort((left, right) => left.value - right.value);
+  return { ...field, options };
+}
+
 function isPokemonInstanceIvPresetField(fieldName: string) {
   return (
     fieldName === giftFlawlessIvCountFieldName ||
@@ -12696,6 +12717,25 @@ function parseStartingItemsPendingGrantInputs(value: string | null | undefined) 
   }
 
   return grants;
+}
+
+function parseRoyalCandyPendingLevelCapInputs(value: string | null | undefined) {
+  const levelCaps = new Map<number, string>();
+  if (!value?.startsWith('storyLimits|')) {
+    return levelCaps;
+  }
+
+  for (const part of value.slice('storyLimits|'.length).split(';')) {
+    const [slotText, levelCapText] = part.split('=');
+    const slot = Number.parseInt(slotText ?? '', 10);
+    if (!Number.isInteger(slot) || levelCapText === undefined) {
+      continue;
+    }
+
+    levelCaps.set(slot, levelCapText);
+  }
+
+  return levelCaps;
 }
 
 function getPokemonPendingEditDisplayDetails(
@@ -15100,16 +15140,17 @@ function DynamaxAdventuresSection({
   workflow: DynamaxAdventuresWorkflow | null;
 }) {
   const encounters = workflow?.encounters ?? [];
+  const editableEncounters = useMemo(() => encounters.filter((encounter) => encounter.isEditable), [encounters]);
   const filteredEncounters = useMemo(
-    () => filterDynamaxAdventures(encounters, searchText),
-    [encounters, searchText]
+    () => filterDynamaxAdventures(editableEncounters, searchText),
+    [editableEncounters, searchText]
   );
   const selectedEncounter = useMemo(
     () =>
-      encounters.find((encounter) => encounter.entryIndex === selectedEntryIndex) ??
+      editableEncounters.find((encounter) => encounter.entryIndex === selectedEntryIndex) ??
       filteredEncounters[0] ??
       null,
-    [encounters, filteredEncounters, selectedEntryIndex]
+    [editableEncounters, filteredEncounters, selectedEntryIndex]
   );
   const canEditDynamaxAdventures = workflow?.summary.availability === 'available';
   const pendingEntryIndexes = useMemo(
@@ -15138,8 +15179,8 @@ function DynamaxAdventuresSection({
             />
           </label>
           <Metric
-            label="Loaded encounters"
-            value={workflow ? workflow.stats.totalEncounterCount.toString() : '0'}
+            label="Editable rows"
+            value={workflow ? editableEncounters.length.toString() : '0'}
           />
           <Metric
             label="Source files"
@@ -15222,6 +15263,7 @@ function DynamaxAdventuresSection({
               onStartEditSession={onStartEditSession}
               onUpdateDynamaxAdventureField={onUpdateDynamaxAdventureField}
               onUpdateDynamaxAdventureFields={onUpdateDynamaxAdventureFields}
+              safeNormalSpeciesOptions={workflow.safeNormalSpeciesOptions}
             />
           </div>
         ) : (
@@ -15250,7 +15292,8 @@ function SelectedDynamaxAdventurePanel({
   onCreateChangePlan,
   onStartEditSession,
   onUpdateDynamaxAdventureField,
-  onUpdateDynamaxAdventureFields
+  onUpdateDynamaxAdventureFields,
+  safeNormalSpeciesOptions
 }: {
   canEditDynamaxAdventures: boolean;
   changePlan: ChangePlan | null;
@@ -15269,6 +15312,7 @@ function SelectedDynamaxAdventurePanel({
     entryIndex: number,
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
+  safeNormalSpeciesOptions: EditableFieldOption[];
 }) {
   const [draftsByEntryIndex, setDraftsByEntryIndex] = useState<
     Record<string, Record<string, string>>
@@ -15282,8 +15326,8 @@ function SelectedDynamaxAdventurePanel({
             field.field as (typeof dynamaxAdventureFieldNames)[number]
           )
         )
-        .map(withPokemonInstanceIvPresetOptions),
-    [editableFields]
+        .map((field) => withDynamaxAdventureSpeciesOptions(withPokemonInstanceIvPresetOptions(field), encounter, safeNormalSpeciesOptions)),
+    [editableFields, encounter, safeNormalSpeciesOptions]
   );
   const adventureFieldGroups = useMemo(
     () => groupNumericEditableFields(adventureFields, getPokemonInstanceFieldGroup),
@@ -15424,6 +15468,13 @@ function SelectedDynamaxAdventurePanel({
                         encounter,
                         field.field
                       );
+                      const disabledReason =
+                        getPokemonInstanceIvStatDisabledReason(
+                          field.field,
+                          adventureFields,
+                          drafts
+                        ) ??
+                        undefined;
                       const draftValue = drafts[field.field] ?? '';
                       const draftState = getTrainerFieldDraftState(
                         draftValue,
@@ -15449,13 +15500,7 @@ function SelectedDynamaxAdventurePanel({
                             editSession === null ||
                             isDynamaxAdventureUpdating
                           }
-                          disabledReason={
-                            getPokemonInstanceIvStatDisabledReason(
-                              field.field,
-                              adventureFields,
-                              drafts
-                            ) ?? undefined
-                          }
+                          disabledReason={disabledReason}
                           draftState={draftState}
                           draftValue={draftValue}
                           field={field}
@@ -15610,52 +15655,6 @@ function SelectedDynamaxAdventurePanel({
         <p className="empty-copy">No Adventure encounter selected.</p>
       )}
     </aside>
-  );
-}
-
-function DynamaxAdventureFieldInput({
-  disabled,
-  draftValue,
-  field,
-  formOptionContext,
-  onChange
-}: {
-  disabled: boolean;
-  draftValue: string;
-  field: DynamaxAdventureEditableField;
-  formOptionContext?: SpeciesFormOptionContext;
-  onChange: (value: string) => void;
-}) {
-  const options = getContextualFieldOptions(field, formOptionContext);
-
-  if (options.length > 0) {
-    return (
-      <SearchableOptionInput
-        ariaLabel={field.label}
-        disabled={disabled}
-        title={getEditableFieldHelp(field)}
-        onChange={onChange}
-        options={addDraftFallbackOption(
-          options,
-          draftValue,
-          draftValue === '' ? 'Custom value' : draftValue
-        )}
-        value={draftValue}
-      />
-    );
-  }
-
-  return (
-    <input
-      aria-label={field.label}
-      disabled={disabled}
-      max={field.maximumValue ?? undefined}
-      min={field.minimumValue ?? undefined}
-      title={getEditableFieldHelp(field)}
-      onChange={(event) => onChange(event.target.value)}
-      type="number"
-      value={draftValue}
-    />
   );
 }
 
@@ -22280,8 +22279,25 @@ function SelectedRoyalCandyPanel({
       .join('|') ?? '';
   const isStoryLimitWorkflow = selectedWorkflow?.workflowId === 'royal-candy-story-limits';
   const levelCapRows = isStoryLimitWorkflow ? (selectedWorkflow?.levelCaps ?? []) : [];
+  const stagedRoyalCandyEdit = editSession?.pendingEdits.find(
+    (edit) => edit.domain === 'workflow.royalCandy'
+  );
+  const isSelectedWorkflowStaged =
+    selectedWorkflow !== null && stagedRoyalCandyEdit?.recordId === selectedWorkflow.workflowId;
+  const stagedRoyalCandyLevelCapInputs = useMemo(
+    () =>
+      isSelectedWorkflowStaged
+        ? parseRoyalCandyPendingLevelCapInputs(stagedRoyalCandyEdit?.newValue)
+        : new Map<number, string>(),
+    [isSelectedWorkflowStaged, stagedRoyalCandyEdit?.newValue]
+  );
+  const stagedRoyalCandyLevelCapSignature =
+    isSelectedWorkflowStaged && stagedRoyalCandyEdit?.newValue ? stagedRoyalCandyEdit.newValue : '';
   const parsedLevelCaps = levelCapRows.map((levelCap) => {
-    const rawValue = levelCapInputs[levelCap.slot] ?? levelCap.levelCap.toString();
+    const rawValue =
+      levelCapInputs[levelCap.slot] ??
+      stagedRoyalCandyLevelCapInputs.get(levelCap.slot) ??
+      levelCap.levelCap.toString();
     const parsedValue = Number.parseInt(rawValue, 10);
     return {
       ...levelCap,
@@ -22335,11 +22351,6 @@ function SelectedRoyalCandyPanel({
     isStoryLimitWorkflow &&
     selectedWorkflow !== null &&
     (selectedWorkflow.status === 'available' || selectedWorkflow.status === 'warning');
-  const stagedRoyalCandyEdit = editSession?.pendingEdits.find(
-    (edit) => edit.domain === 'workflow.royalCandy'
-  );
-  const isSelectedWorkflowStaged =
-    selectedWorkflow !== null && stagedRoyalCandyEdit?.recordId === selectedWorkflow.workflowId;
   const canReviewPlan = isSelectedWorkflowStaged && !isChangePlanCreating;
   const canApplyPlan =
     isSelectedWorkflowStaged &&
@@ -22358,11 +22369,17 @@ function SelectedRoyalCandyPanel({
       Object.fromEntries(
         (selectedWorkflow?.levelCaps ?? []).map((levelCap) => [
           levelCap.slot,
-          levelCap.levelCap.toString()
+          stagedRoyalCandyLevelCapInputs.get(levelCap.slot) ?? levelCap.levelCap.toString()
         ])
       )
     );
-  }, [isStoryLimitWorkflow, selectedLevelCapSignature, selectedWorkflow?.workflowId]);
+  }, [
+    isStoryLimitWorkflow,
+    selectedLevelCapSignature,
+    selectedWorkflow?.workflowId,
+    stagedRoyalCandyLevelCapInputs,
+    stagedRoyalCandyLevelCapSignature
+  ]);
 
   return (
     <aside
