@@ -55,6 +55,61 @@ public sealed class SwShDynamaxAdventuresBossTargetPatcherTests
     }
 
     [Fact]
+    public void ApplyConditionalTargetSpeciesRemapWritesShieldOwnedBranchesAndStubs()
+    {
+        var archive = CreateBossArchive();
+        var baseMain = SwShDynamaxAdventureTestFixtures.CreateBossTargetCompatibleMain(
+            SwShDynamaxAdventuresBossTargetPatcher.ShieldCallSiteOffsetDelta,
+            SwShDynamaxAdventuresMainPatcher.ShieldBuildId);
+
+        var patchedMain = SwShDynamaxAdventuresBossTargetPatcher.ApplyConditionalTargetSpeciesRemap(
+            baseMain,
+            archive,
+            fromSpecies: 144,
+            toSpecies: 150);
+
+        var baseNso = SwShNsoFile.Parse(baseMain);
+        var patchedNso = SwShNsoFile.Parse(patchedMain);
+        var baseText = baseNso.Text.DecompressedData;
+        var patchedText = patchedNso.Text.DecompressedData;
+        var callSiteAOffset = SwShDynamaxAdventuresBossTargetPatcher.CallSiteAOffset
+            + SwShDynamaxAdventuresBossTargetPatcher.ShieldCallSiteOffsetDelta;
+        var callSiteBOffset = SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset
+            + SwShDynamaxAdventuresBossTargetPatcher.ShieldCallSiteOffsetDelta;
+        var stubAOffset = baseText.Length;
+        var stubBOffset = stubAOffset + SwShDynamaxAdventuresBossTargetPatcher.StubSize;
+
+        Assert.Equal(
+            SwShDynamaxAdventuresBossTargetPatcher.EncodeBranch(callSiteAOffset, stubAOffset),
+            ReadInstruction(patchedText.AsSpan(), callSiteAOffset));
+        Assert.Equal(
+            SwShDynamaxAdventuresBossTargetPatcher.EncodeBranch(callSiteBOffset, stubBOffset),
+            ReadInstruction(patchedText.AsSpan(), callSiteBOffset));
+        AssertStub(
+            patchedText.AsSpan(),
+            stubAOffset,
+            callSiteAOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteASourceRegister);
+        AssertStub(
+            patchedText.AsSpan(),
+            stubBOffset,
+            callSiteBOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteBSourceRegister);
+
+        Assert.True(SwShDynamaxAdventuresBossTargetPatcher.TryReadConditionalTargetSpeciesRemap(
+            patchedMain,
+            out var remap));
+        Assert.Equal(144, remap.FromSpecies);
+        Assert.Equal(150, remap.ToSpecies);
+
+        var restoredText = SwShDynamaxAdventuresBossTargetPatcher.RestoreTextFromBase(
+            patchedText.ToArray(),
+            baseText.AsSpan(),
+            SwShDynamaxAdventuresBossTargetPatcher.ShieldCallSiteOffsetDelta);
+        Assert.Equal(baseText.ToArray(), restoredText);
+    }
+
+    [Fact]
     public void TryReadConditionalTargetSpeciesRemapReturnsOwnedRemap()
     {
         var archive = CreateBossArchive();

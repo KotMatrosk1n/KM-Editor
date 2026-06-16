@@ -11,6 +11,7 @@ internal static class SwShDynamaxAdventuresBossTargetPatcher
     internal const int TextEndPaddedOffset = 0x01901000;
     internal const int CallSiteAOffset = 0x015D615C;
     internal const int CallSiteBOffset = 0x015D68AC;
+    internal const int ShieldCallSiteOffsetDelta = 0x90;
     internal const uint CallSiteAVanillaInstruction = 0x2A1503E1; // mov w1, w21
     internal const uint CallSiteBVanillaInstruction = 0x2A1403E1; // mov w1, w20
     internal const int CallSiteASourceRegister = 21;
@@ -23,16 +24,18 @@ internal static class SwShDynamaxAdventuresBossTargetPatcher
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
-        var text = SwShNsoFile.Parse(mainBytes).Text.DecompressedData;
+        var nso = SwShNsoFile.Parse(mainBytes);
+        var text = nso.Text.DecompressedData;
+        var callSiteOffsetDelta = GetCallSiteOffsetDelta(nso.BuildId);
         var hasA = TryReadOwnedCallSite(
             text,
-            CallSiteAOffset,
+            CallSiteAOffset + callSiteOffsetDelta,
             CallSiteASourceRegister,
             "boss target species call A",
             out var remapA);
         var hasB = TryReadOwnedCallSite(
             text,
-            CallSiteBOffset,
+            CallSiteBOffset + callSiteOffsetDelta,
             CallSiteBSourceRegister,
             "boss target species call B",
             out var remapB);
@@ -66,6 +69,9 @@ internal static class SwShDynamaxAdventuresBossTargetPatcher
 
         var nso = SwShNsoFile.Parse(mainBytes);
         var text = nso.Text.DecompressedData.ToArray();
+        var callSiteOffsetDelta = GetCallSiteOffsetDelta(nso.BuildId);
+        var callSiteAOffset = CallSiteAOffset + callSiteOffsetDelta;
+        var callSiteBOffset = CallSiteBOffset + callSiteOffsetDelta;
         var stubAOffset = text.Length;
         var stubBOffset = stubAOffset + StubSize;
         var newTextLength = stubBOffset + StubSize;
@@ -78,15 +84,18 @@ internal static class SwShDynamaxAdventuresBossTargetPatcher
         }
 
         Array.Resize(ref text, newTextLength);
-        WriteBranchToStub(text, CallSiteAOffset, stubAOffset, CallSiteAVanillaInstruction, "boss target species call A");
-        WriteBranchToStub(text, CallSiteBOffset, stubBOffset, CallSiteBVanillaInstruction, "boss target species call B");
-        WriteStub(text, stubAOffset, CallSiteAOffset, CallSiteASourceRegister, fromSpecies, toSpecies);
-        WriteStub(text, stubBOffset, CallSiteBOffset, CallSiteBSourceRegister, fromSpecies, toSpecies);
+        WriteBranchToStub(text, callSiteAOffset, stubAOffset, CallSiteAVanillaInstruction, "boss target species call A");
+        WriteBranchToStub(text, callSiteBOffset, stubBOffset, CallSiteBVanillaInstruction, "boss target species call B");
+        WriteStub(text, stubAOffset, callSiteAOffset, CallSiteASourceRegister, fromSpecies, toSpecies);
+        WriteStub(text, stubBOffset, callSiteBOffset, CallSiteBSourceRegister, fromSpecies, toSpecies);
 
         return nso.Write(textDecompressedData: text);
     }
 
-    internal static byte[] RestoreTextFromBase(byte[] currentText, ReadOnlySpan<byte> baseText)
+    internal static byte[] RestoreTextFromBase(
+        byte[] currentText,
+        ReadOnlySpan<byte> baseText,
+        int callSiteOffsetDelta = 0)
     {
         ArgumentNullException.ThrowIfNull(currentText);
 
@@ -100,14 +109,14 @@ internal static class SwShDynamaxAdventuresBossTargetPatcher
         RestoreOwnedCallSiteIfNeeded(
             text,
             baseText,
-            CallSiteAOffset,
+            CallSiteAOffset + callSiteOffsetDelta,
             CallSiteASourceRegister,
             "boss target species call A",
             ownedStubRanges);
         RestoreOwnedCallSiteIfNeeded(
             text,
             baseText,
-            CallSiteBOffset,
+            CallSiteBOffset + callSiteOffsetDelta,
             CallSiteBSourceRegister,
             "boss target species call B",
             ownedStubRanges);
@@ -119,6 +128,16 @@ internal static class SwShDynamaxAdventuresBossTargetPatcher
         }
 
         return text;
+    }
+
+    internal static int GetCallSiteOffsetDelta(byte[] buildId)
+    {
+        return string.Equals(
+            SwShDynamaxAdventuresMainPatcher.FormatBuildId(buildId),
+            SwShDynamaxAdventuresMainPatcher.ShieldBuildId,
+            StringComparison.OrdinalIgnoreCase)
+            ? ShieldCallSiteOffsetDelta
+            : 0;
     }
 
     private static SwShDynamaxAdventureRecord ValidateBossSpecies(SwShDynamaxAdventureArchive archive, int species, string label)

@@ -10,6 +10,8 @@ internal static class SwShDynamaxAdventuresMainPatcher
 {
     public const int SummaryOffset = 0x00774054;
     public const int SummaryEntrySize = 0x06;
+    internal const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
+    internal const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
 
     internal const int LocalSpeciesPresentMismatchBranchOffset = 0x00EA52AC;
     internal const int LocalSpeciesMissingMismatchBranchOffset = 0x00EA52C0;
@@ -26,6 +28,7 @@ internal static class SwShDynamaxAdventuresMainPatcher
     internal const int DaiFormPresentMismatchBranchOffset = 0x00EA78FC;
     internal const int DaiFormMissingMismatchBranchOffset = 0x00EA7910;
     internal const int DaiGigantamaxMismatchBranchOffset = 0x00EA7918;
+    internal const int ShieldCommandValidatorOffsetDelta = 0x30;
 
     private const uint NopInstruction = 0xD503201F;
 
@@ -59,11 +62,12 @@ internal static class SwShDynamaxAdventuresMainPatcher
         var nso = SwShNsoFile.Parse(mainBytes);
         var text = nso.Text.DecompressedData.ToArray();
         var ro = nso.Ro.DecompressedData.ToArray();
+        var commandValidatorOffsetDelta = GetCommandValidatorOffsetDelta(nso.BuildId);
 
         WriteSummary(ro, archive.Entries);
         if (patchCommandValidatorMirrors)
         {
-            PatchCommandValidatorMirrors(text);
+            PatchCommandValidatorMirrors(text, commandValidatorOffsetDelta);
         }
 
         return nso.Write(textDecompressedData: text, roDecompressedData: ro);
@@ -85,8 +89,13 @@ internal static class SwShDynamaxAdventuresMainPatcher
         var currentRo = currentNso.Ro.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;
         var baseRo = baseNso.Ro.DecompressedData;
+        var commandValidatorOffsetDelta = GetCommandValidatorOffsetDelta(baseNso.BuildId);
+        var bossTargetCallSiteOffsetDelta = SwShDynamaxAdventuresBossTargetPatcher.GetCallSiteOffsetDelta(baseNso.BuildId);
 
-        currentText = SwShDynamaxAdventuresBossTargetPatcher.RestoreTextFromBase(currentText, baseText.AsSpan());
+        currentText = SwShDynamaxAdventuresBossTargetPatcher.RestoreTextFromBase(
+            currentText,
+            baseText.AsSpan(),
+            bossTargetCallSiteOffsetDelta);
         if (currentText.Length < baseText.Length)
         {
             throw new InvalidDataException("Dynamax Adventures restore requires current main.text to be at least as large as base main.text.");
@@ -98,7 +107,7 @@ internal static class SwShDynamaxAdventuresMainPatcher
         }
 
         RestoreSummaryFromBase(currentRo, baseRo, entryCount);
-        RestoreCommandValidatorMirrors(currentText, baseText);
+        RestoreCommandValidatorMirrors(currentText, baseText, commandValidatorOffsetDelta);
 
         return currentNso.Write(textDecompressedData: currentText, roDecompressedData: currentRo);
     }
@@ -133,13 +142,13 @@ internal static class SwShDynamaxAdventuresMainPatcher
         }
     }
 
-    internal static void PatchCommandValidatorMirrors(byte[] text)
+    internal static void PatchCommandValidatorMirrors(byte[] text, int offsetDelta = 0)
     {
         ArgumentNullException.ThrowIfNull(text);
 
         foreach (var (offset, vanillaInstruction, label) in CommandMirrorFailureBranches)
         {
-            WriteNopIfVanillaOrOwned(text, offset, vanillaInstruction, label);
+            WriteNopIfVanillaOrOwned(text, offset + offsetDelta, vanillaInstruction, label);
         }
     }
 
@@ -152,12 +161,28 @@ internal static class SwShDynamaxAdventuresMainPatcher
         baseRo.Span.Slice(SummaryOffset, length).CopyTo(currentRo.AsSpan(SummaryOffset, length));
     }
 
-    private static void RestoreCommandValidatorMirrors(byte[] currentText, ReadOnlyMemory<byte> baseText)
+    private static void RestoreCommandValidatorMirrors(
+        byte[] currentText,
+        ReadOnlyMemory<byte> baseText,
+        int offsetDelta)
     {
         foreach (var (offset, _, label) in CommandMirrorFailureBranches)
         {
-            RestoreInstructionIfOwned(currentText, baseText.Span, offset, label);
+            RestoreInstructionIfOwned(currentText, baseText.Span, offset + offsetDelta, label);
         }
+    }
+
+    internal static int GetCommandValidatorOffsetDelta(byte[] buildId)
+    {
+        return string.Equals(FormatBuildId(buildId), ShieldBuildId, StringComparison.OrdinalIgnoreCase)
+            ? ShieldCommandValidatorOffsetDelta
+            : 0;
+    }
+
+    internal static string FormatBuildId(byte[] buildId)
+    {
+        var buildIdLength = Math.Min(20, buildId.Length);
+        return Convert.ToHexString(buildId.AsSpan(0, buildIdLength));
     }
 
     private static int ValidateSignedSummaryValue(int value, int minimum, int maximum, string field)

@@ -1243,6 +1243,51 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     }
 
     [Fact]
+    public void ApplySpeciesEditWritesShieldDynamaxAdventureMainMirror()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteBaseExeFsFile(
+            "main",
+            SwShDynamaxAdventureTestFixtures.CreateCompatibleMain(
+                SwShDynamaxAdventuresMainPatcher.ShieldCommandValidatorOffsetDelta,
+                SwShDynamaxAdventuresMainPatcher.ShieldBuildId));
+        var service = new SwShDynamaxAdventuresEditSessionService();
+
+        var update = service.UpdateField(temp.Paths, null, 0, SwShDynamaxAdventuresWorkflowService.SpeciesField, "467");
+        var validation = service.Validate(temp.Paths, update.Session);
+        Assert.True(validation.IsValid);
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+        Assert.True(plan.CanApply);
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+
+        var mainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var nso = SwShNsoFile.Parse(File.ReadAllBytes(mainPath));
+        var text = nso.Text.DecompressedData.AsSpan();
+        Assert.Equal(
+            0xD503201Fu,
+            ReadInstruction(
+                text,
+                SwShDynamaxAdventuresMainPatcher.LocalSpeciesPresentMismatchBranchOffset
+                    + SwShDynamaxAdventuresMainPatcher.ShieldCommandValidatorOffsetDelta));
+        Assert.Equal(
+            0xD503201Fu,
+            ReadInstruction(
+                text,
+                SwShDynamaxAdventuresMainPatcher.NestSpeciesPresentMismatchBranchOffset
+                    + SwShDynamaxAdventuresMainPatcher.ShieldCommandValidatorOffsetDelta));
+        Assert.Equal(
+            0xD503201Fu,
+            ReadInstruction(
+                text,
+                SwShDynamaxAdventuresMainPatcher.DaiSpeciesPresentMismatchBranchOffset
+                    + SwShDynamaxAdventuresMainPatcher.ShieldCommandValidatorOffsetDelta));
+    }
+
+    [Fact]
     public void ApplyGigantamaxEditWritesCommandValidatorMirror()
     {
         using var temp = TemporarySwShProject.Create();
