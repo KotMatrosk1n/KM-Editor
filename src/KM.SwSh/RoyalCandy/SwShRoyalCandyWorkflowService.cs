@@ -75,7 +75,7 @@ public sealed class SwShRoyalCandyWorkflowService
         new(36, SceneMainMasterWorkHash, "Marnie 196", "Marnie 196", "workAtLeast", 760),
         new(38, 0xABFC3E0B626D6B24, "Kabu 037", "Kabu 037"),
         new(40, SceneMainMasterWorkHash, "Hop 124/125/126", "Hop 124/125/126", "workAtLeast", 950),
-        new(42, 0xC07B67FC3148B754, "Bea 077", "Bea 077"),
+        new(42, 0xC07B67FC3148B754, "Bea 077", "Allister 078"),
         new(44, SceneMainMasterWorkHash, "Bede 133", "Bede 133", "workAtLeast", 1090),
         new(47, 0xDF7AC7105B946783, "Opal 108", "Opal 108"),
         new(50, SceneMainMasterWorkHash, "Hop 127/128/129", "Hop 127/128/129", "workAtLeast", 1200),
@@ -183,6 +183,7 @@ public sealed class SwShRoyalCandyWorkflowService
 
         var gameFlavor = AddNpdmFlavorCheck(project, checks, sourceMap, sourceEntries);
         var installationState = DetectRoyalCandyInstallation(project);
+        var installedStoryLevelCaps = ReadInstalledStoryLevelCapOverrides(project, sourceMap, installationState);
         var exeFsWorkflow = exeFsPatchWorkflowService.Load(project);
         AddExeFsCompatibilityChecks(checks, exeFsWorkflow, installationState);
         AddRoyalCandyReservedAnchorChecks(project, checks, sourceMap);
@@ -195,7 +196,12 @@ public sealed class SwShRoyalCandyWorkflowService
 
         var preflightChecks = checks.Where(check => check.WorkflowId == PreflightWorkflowId).ToArray();
         var installStatus = DetermineInstallStatus(preflightChecks, outputRootReady, installationState);
-        var workflows = CreateWorkflows(installStatus, gameFlavor, SelectPrimaryProvenance(sourceEntries), installationState).ToList();
+        var workflows = CreateWorkflows(
+            installStatus,
+            gameFlavor,
+            SelectPrimaryProvenance(sourceEntries),
+            installationState,
+            installedStoryLevelCaps).ToList();
         var outputs = new List<SwShRoyalCandyOutputRecord>();
 
         outputs.AddRange(CreateInstallOutputs(UnlimitedWorkflowId, installStatus, sourceMap, textSets));
@@ -685,7 +691,8 @@ public sealed class SwShRoyalCandyWorkflowService
         string installStatus,
         string gameFlavor,
         SwShRoyalCandyProvenance provenance,
-        RoyalCandyInstallationState installationState)
+        RoyalCandyInstallationState installationState,
+        IReadOnlyDictionary<LevelCapMilestoneKey, int> installedStoryLevelCaps)
     {
         return
         [
@@ -712,7 +719,7 @@ public sealed class SwShRoyalCandyWorkflowService
                 RareCandyItemId,
                 GetInstallWorkflowStatus(StoryLimitsWorkflowId, installStatus, installationState),
                 $"Prepares Royal Candy item {RoyalCandyItemId}, claims Bag Hook slot 1, and installs the reserved ExeFS Royal Candy story-limit signature so level gains follow story progress in Pokemon {FormatGameFlavor(gameFlavor)} projects.",
-                CreateLevelCaps(gameFlavor),
+                CreateLevelCaps(gameFlavor, installedStoryLevelCaps),
                 CreateInstallSteps(includeStoryLimits: true),
                 provenance),
         ];
@@ -738,20 +745,38 @@ public sealed class SwShRoyalCandyWorkflowService
 
     public static IReadOnlyList<SwShRoyalCandyLevelCapRecord> CreateLevelCaps(string gameFlavor)
     {
+        return CreateLevelCaps(gameFlavor, new Dictionary<LevelCapMilestoneKey, int>());
+    }
+
+    private static IReadOnlyList<SwShRoyalCandyLevelCapRecord> CreateLevelCaps(
+        string gameFlavor,
+        IReadOnlyDictionary<LevelCapMilestoneKey, int> installedStoryLevelCaps)
+    {
         var useShieldNames = string.Equals(gameFlavor, "Shield", StringComparison.OrdinalIgnoreCase);
         return DefaultLevelCapMilestones
-            .Select((definition, index) => new SwShRoyalCandyLevelCapRecord(
-                Slot: index,
-                MilestoneId: string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"{index}:{definition.ProgressHash:X16}:{definition.WorkMinimum}"),
-                Label: useShieldNames ? definition.ShieldName : definition.SwordName,
-                LevelCap: definition.DefaultCap,
-                MinimumLevelCap: MinimumStoryLevelCap,
-                MaximumLevelCap: MaximumStoryLevelCap,
-                ProgressKind: definition.ProgressKind,
-                ProgressHash: string.Create(CultureInfo.InvariantCulture, $"0x{definition.ProgressHash:X16}"),
-                WorkMinimum: definition.ProgressKind == "workAtLeast" ? definition.WorkMinimum : null))
+            .Select((definition, index) =>
+            {
+                var key = new LevelCapMilestoneKey(
+                    definition.ProgressHash,
+                    definition.ProgressKind,
+                    definition.ProgressKind == "workAtLeast" ? definition.WorkMinimum : 0);
+                var levelCap = installedStoryLevelCaps.TryGetValue(key, out var installedLevelCap)
+                    ? installedLevelCap
+                    : definition.DefaultCap;
+
+                return new SwShRoyalCandyLevelCapRecord(
+                    Slot: index,
+                    MilestoneId: string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{index}:{definition.ProgressHash:X16}:{definition.WorkMinimum}"),
+                    Label: useShieldNames ? definition.ShieldName : definition.SwordName,
+                    LevelCap: levelCap,
+                    MinimumLevelCap: MinimumStoryLevelCap,
+                    MaximumLevelCap: MaximumStoryLevelCap,
+                    ProgressKind: definition.ProgressKind,
+                    ProgressHash: string.Create(CultureInfo.InvariantCulture, $"0x{definition.ProgressHash:X16}"),
+                    WorkMinimum: definition.ProgressKind == "workAtLeast" ? definition.WorkMinimum : null);
+            })
             .ToArray();
     }
 
@@ -1033,8 +1058,22 @@ public sealed class SwShRoyalCandyWorkflowService
                 "No Royal Candy LayeredFS output was detected.");
         }
 
-        var installKind = DetectRoyalCandyTextInstallKind(project, identifyingEntries)
-            ?? DetectRoyalCandyExeFsInstallKind(project, identifyingEntries);
+        var textInstallKind = DetectRoyalCandyTextInstallKind(project, identifyingEntries);
+        var exeFsInstallKind = DetectRoyalCandyExeFsInstallKind(project, identifyingEntries);
+        if (textInstallKind is not null
+            && exeFsInstallKind is not null
+            && textInstallKind.Value != exeFsInstallKind.Value)
+        {
+            return new RoyalCandyInstallationState(
+                RoyalCandyInstallKind.UnknownConflict,
+                null,
+                layeredEntries,
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"LayeredFS output contains mixed Royal Candy targets: item text identifies {FormatRoyalCandyInstallKind(textInstallKind.Value)}, but exefs/main identifies {FormatRoyalCandyInstallKind(exeFsInstallKind.Value)}. Remove stale Royal Candy output and reinstall one variant."));
+        }
+
+        var installKind = exeFsInstallKind ?? textInstallKind;
         if (installKind is not null)
         {
             var workflowId = installKind.Value == RoyalCandyInstallKind.StoryLimits
@@ -1059,6 +1098,16 @@ public sealed class SwShRoyalCandyWorkflowService
             string.Create(
                 CultureInfo.InvariantCulture,
                 $"LayeredFS output contains {layeredEntries.Length:N0} Royal Candy target file(s), but KM could not identify them as Unlimited Royal Candy or Royal Candy with Story Limits."));
+    }
+
+    private static string FormatRoyalCandyInstallKind(RoyalCandyInstallKind installKind)
+    {
+        return installKind switch
+        {
+            RoyalCandyInstallKind.StoryLimits => StoryLimitsRoyalCandyName,
+            RoyalCandyInstallKind.Unlimited => UnlimitedRoyalCandyName,
+            _ => "unknown Royal Candy output",
+        };
     }
 
     private static RoyalCandyInstallKind? DetectRoyalCandyTextInstallKind(
@@ -1141,6 +1190,55 @@ public sealed class SwShRoyalCandyWorkflowService
         }
 
         return null;
+    }
+
+    private static IReadOnlyDictionary<LevelCapMilestoneKey, int> ReadInstalledStoryLevelCapOverrides(
+        OpenedProject project,
+        IReadOnlyDictionary<string, ProjectFileGraphEntry> sourceMap,
+        RoyalCandyInstallationState installationState)
+    {
+        if (installationState.Kind != RoyalCandyInstallKind.StoryLimits
+            || !sourceMap.TryGetValue(ExeFsMainPath, out var entry))
+        {
+            return new Dictionary<LevelCapMilestoneKey, int>();
+        }
+
+        var sourcePath = ResolveSourcePath(project.Paths, entry);
+        if (sourcePath is null || !File.Exists(sourcePath))
+        {
+            return new Dictionary<LevelCapMilestoneKey, int>();
+        }
+
+        try
+        {
+            return SwShExeFsRoyalCandyMainPatcher
+                .ReadInstalledStoryLevelCaps(File.ReadAllBytes(sourcePath), project.Paths.SelectedGame)
+                .ToDictionary(
+                    cap => new LevelCapMilestoneKey(
+                        cap.ProgressHash,
+                        FormatProgressKind(cap.ProgressKind),
+                        cap.ProgressKind == SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast
+                            ? cap.WorkMinimum
+                            : 0),
+                    cap => cap.LevelCap);
+        }
+        catch (InvalidDataException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+
+        return new Dictionary<LevelCapMilestoneKey, int>();
+    }
+
+    private static string FormatProgressKind(SwShRoyalCandyStoryLevelCapProgressKind progressKind)
+    {
+        return progressKind switch
+        {
+            SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast => "workAtLeast",
+            _ => "flag",
+        };
     }
 
     private static IEnumerable<ProjectFileGraphEntry> GetKnownRoyalCandyLayeredEntries(OpenedProject project)
@@ -1594,6 +1692,11 @@ public sealed class SwShRoyalCandyWorkflowService
         string ShieldName,
         string ProgressKind = "flag",
         int WorkMinimum = 0);
+
+    private readonly record struct LevelCapMilestoneKey(
+        ulong ProgressHash,
+        string ProgressKind,
+        int WorkMinimum);
 
     private enum RoyalCandyInstallKind
     {

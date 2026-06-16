@@ -4092,6 +4092,9 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Stage' }));
 
     await waitFor(() => expect(stageRoyalCandyWorkflow).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByLabelText('Level cap after defeating Hop 004/005/006')).toHaveValue(12)
+    );
     expect(stageRoyalCandyWorkflow).toHaveBeenCalledWith(
       expect.objectContaining({
         levelCaps: [
