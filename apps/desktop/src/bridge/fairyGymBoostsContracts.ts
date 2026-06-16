@@ -42,6 +42,7 @@ export const fairyGymBoostRecordSchema = z.strictObject({
   answerChoice: z.number().int().positive(),
   answerText: z.string(),
   boostId: z.string(),
+  defaultEffectId: z.number().int().min(0).max(6),
   defaultResultKind: fairyGymBoostResultKindSchema,
   effectId: z.number().int().nonnegative(),
   effectLabel: z.string(),

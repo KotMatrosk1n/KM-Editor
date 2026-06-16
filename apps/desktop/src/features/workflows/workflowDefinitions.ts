@@ -27,6 +27,7 @@ import {
   Table2,
   Trees,
   UsersRound,
+  Waypoints,
   Zap,
   type LucideIcon
 } from 'lucide-react';
@@ -202,6 +203,13 @@ export const workflowDefinitions: Array<{
     description:
       'Independent ExeFS editor that keeps gym challenge and gym leader battle scripts from changing the player into the gym uniform.',
     icon: Shirt
+  },
+  {
+    id: 'dynamaxAdventures',
+    label: 'Dynamax Adventures',
+    description:
+      'Safe editor for normal route Dynamax Adventures rows with backend guarded species, moves, levels, IVs, and ExeFS mirror support.',
+    icon: Waypoints
   },
   {
     id: 'spreadsheetImport',

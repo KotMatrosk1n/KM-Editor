@@ -91,7 +91,7 @@ function createBoost(
   answerText: string,
   questionText: string,
   resultKind: FairyGymBoostResultKind,
-    effectId: number,
+  effectId: number,
   effectLabel: string,
   stageAmount: number,
   affectedStats: FairyGymBoostsWorkflow['trainers'][number]['boosts'][number]['affectedStats']
@@ -101,6 +101,7 @@ function createBoost(
     answerChoice,
     answerText,
     boostId,
+    defaultEffectId: effectId,
     defaultResultKind: resultKind,
     effectId,
     effectLabel,

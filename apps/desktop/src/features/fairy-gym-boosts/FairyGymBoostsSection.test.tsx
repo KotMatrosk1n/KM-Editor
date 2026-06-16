@@ -69,3 +69,67 @@ it('edits per-answer outcomes and stages guarded Fairy Gym boost selections', as
     resultKind: 'increase'
   });
 });
+
+it('restores Fairy Gym drafts to vanilla answer outcomes', async () => {
+  const user = userEvent.setup();
+  const fixture = createFairyGymBoostsWorkflowFixture(true);
+  const fairyGymBoostsWorkflow = {
+    ...fixture.fairyGymBoostsWorkflow,
+    trainers: fixture.fairyGymBoostsWorkflow.trainers.map((trainer) => ({
+      ...trainer,
+      boosts: trainer.boosts.map((boost) =>
+        boost.boostId === 'opal-nickname-magic-user'
+          ? {
+              ...boost,
+              effectId: 0,
+              resultKind: 'none' as const
+            }
+          : boost
+      )
+    }))
+  };
+  const onStageBoosts = vi.fn();
+
+  render(
+    <FairyGymBoostsSection
+      changePlan={null}
+      editSession={null}
+      isChangePlanApplying={false}
+      isChangePlanCreating={false}
+      isStaging={false}
+      onApplyChangePlan={vi.fn()}
+      onCreateChangePlan={vi.fn()}
+      onDirtyChange={vi.fn()}
+      onStageBoosts={onStageBoosts}
+      workflow={fairyGymBoostsWorkflow}
+    />
+  );
+
+  await user.click(screen.getByRole('tab', { name: 'Opal' }));
+
+  const magicUserCard = screen.getByText('The magic-user').closest('article');
+  expect(magicUserCard).not.toBeNull();
+
+  const outcomeSelect = within(magicUserCard!).getByLabelText('The magic-user outcome');
+  expect(outcomeSelect).toHaveDisplayValue('No effect');
+
+  const restoreButton = screen.getByRole('button', { name: 'Restore to Vanilla' });
+  expect(restoreButton).toBeEnabled();
+  await user.click(restoreButton);
+  expect(outcomeSelect).toHaveDisplayValue('-2 Speed');
+
+  await user.click(screen.getByRole('button', { name: /Stage Fairy Gym Boosts/i }));
+
+  expect(onStageBoosts).toHaveBeenCalledTimes(1);
+  const stagedSelections = onStageBoosts.mock.calls[0][0] as FairyGymBoostSelection[];
+  expect(
+    stagedSelections.find(
+      (selection: FairyGymBoostSelection) =>
+        selection.boostId === 'opal-nickname-magic-user'
+    )
+  ).toEqual({
+    boostId: 'opal-nickname-magic-user',
+    effectId: 6,
+    resultKind: 'decrease'
+  });
+});
