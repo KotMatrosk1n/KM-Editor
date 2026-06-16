@@ -25,6 +25,7 @@ public sealed record SwShFairyGymBoostRecord(
     int AnswerChoice,
     string AnswerText,
     string QuestionText,
+    int DefaultEffectId,
     string DefaultResultKind,
     string ResultKind,
     int EffectId,

@@ -253,6 +253,7 @@ public sealed class SwShFairyGymBoostsWorkflowService
             boost.AnswerChoice,
             boost.AnswerText,
             boost.QuestionText,
+            boost.EffectId,
             boost.ResultKind,
             selection.ResultKind,
             selection.EffectId,

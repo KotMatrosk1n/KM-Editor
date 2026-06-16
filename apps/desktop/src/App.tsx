@@ -48,6 +48,7 @@ import {
   Trash2,
   Trees,
   UsersRound,
+  Waypoints,
   Wrench,
   X,
   Zap,
@@ -409,7 +410,7 @@ const sections: Array<{
   {
     id: 'dynamaxAdventures',
     label: 'Dynamax Adventures',
-    icon: ShieldCheck
+    icon: Waypoints
   },
   {
     id: 'shops',
@@ -595,7 +596,8 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'typeChart',
       'fairyGymBoosts',
       'fashionUnlock',
-      'gymUniformRemoval'
+      'gymUniformRemoval',
+      'dynamaxAdventures'
     ]
   }
 ];

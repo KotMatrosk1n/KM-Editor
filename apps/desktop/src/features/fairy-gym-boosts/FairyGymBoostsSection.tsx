@@ -84,6 +84,10 @@ export function FairyGymBoostsSection({
     () => mergeSelections(workflowSelections, stagedSelections),
     [workflowSelections, stagedSelections]
   );
+  const vanillaSelections = useMemo(
+    () => getFairyGymBoostVanillaSelections(workflow),
+    [workflow]
+  );
   const cleanSelectionsKey = encodeSelectionsKey(cleanSelections);
 
   const [selectedTrainerId, setSelectedTrainerId] = useState<number | null>(null);
@@ -122,7 +126,7 @@ export function FairyGymBoostsSection({
     !isStaging &&
     !isChangePlanApplying;
   const canStage = canEdit && isDirty;
-  const canReset = canEdit && isDirty;
+  const canRestoreVanilla = canEdit && !areSelectionsEqual(draftSelections, vanillaSelections);
   const canReviewPlan = hasStagedChange && !isDirty && !isChangePlanCreating;
   const canApplyPlan =
     hasStagedChange &&
@@ -209,12 +213,12 @@ export function FairyGymBoostsSection({
             <div className="type-chart-actions fairy-gym-actions">
               <button
                 className="danger-button"
-                disabled={!canReset}
-                onClick={() => setDrafts(createDrafts(cleanSelections))}
+                disabled={!canRestoreVanilla}
+                onClick={() => setDrafts(createDrafts(vanillaSelections))}
                 type="button"
               >
                 <RotateCcw aria-hidden="true" size={16} />
-                <span>Reset to Current</span>
+                <span>Restore to Vanilla</span>
               </button>
               <button
                 className="primary-button"
@@ -367,12 +371,32 @@ function getFairyGymBoostWorkflowSelections(
   );
 }
 
+function getFairyGymBoostVanillaSelections(
+  workflow: FairyGymBoostsWorkflow | null
+): FairyGymBoostSelection[] {
+  return (
+    workflow?.trainers.flatMap((trainer) => trainer.boosts.map(boostToVanillaSelection)) ?? []
+  );
+}
+
 function boostToSelection(boost: FairyGymBoostRecord): FairyGymBoostSelection {
   return {
     boostId: boost.boostId,
     effectId: isSupportedOutcome(boost.effectId, boost.resultKind) ? boost.effectId : 0,
     resultKind: isSupportedOutcome(boost.effectId, boost.resultKind)
       ? boost.resultKind
+      : 'none'
+  };
+}
+
+function boostToVanillaSelection(boost: FairyGymBoostRecord): FairyGymBoostSelection {
+  return {
+    boostId: boost.boostId,
+    effectId: isSupportedOutcome(boost.defaultEffectId, boost.defaultResultKind)
+      ? boost.defaultEffectId
+      : 0,
+    resultKind: isSupportedOutcome(boost.defaultEffectId, boost.defaultResultKind)
+      ? boost.defaultResultKind
       : 'none'
   };
 }

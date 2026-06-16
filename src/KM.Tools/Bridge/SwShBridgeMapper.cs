@@ -2709,6 +2709,7 @@ public static class SwShBridgeMapper
             boost.AnswerChoice,
             boost.AnswerText,
             boost.QuestionText,
+            boost.DefaultEffectId,
             boost.DefaultResultKind,
             boost.ResultKind,
             boost.EffectId,
