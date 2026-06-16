@@ -461,18 +461,9 @@ describe('App', () => {
         .getAllByRole('button')
         .filter((button) => button.classList.contains('nav-child-button'))
         .map((button) => button.textContent)
-        .slice(-8)
-    ).toEqual([
-      'Royal Candy',
-      'Starting Items',
-      'Catch Cap',
-      'IV Screen',
-      'Hyper Training',
-      'Type Chart',
-      'Fashion Unlock',
-      'Gym Uniform Removal'
-    ]);
-    expect(screen.queryByRole('button', { name: 'Dynamax Adventures' })).not.toBeInTheDocument();
+        .slice(-9)
+    ).toEqual(['Royal Candy', 'Starting Items', 'Catch Cap', 'IV Screen', 'Hyper Training', 'Type Chart', 'Fashion Unlock', 'Gym Uniform Removal', 'Dynamax Adventures']);
+    expect(within(navigation).getByRole('button', { name: 'Dynamax Adventures' })).toBeInTheDocument();
   });
 
   it('resets Type Chart draft values to vanilla before staging', async () => {
@@ -2300,7 +2291,7 @@ describe('App', () => {
     expect(screen.getByText(expectedSummary)).toBeInTheDocument();
   });
 
-  it('hides shelved Rental Pokemon and Dynamax Adventures entry points', async () => {
+  it('keeps Rental Pokemon hidden while Dynamax Adventures opens from Advanced Editors', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -2312,7 +2303,10 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Rental Pokemon' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
-    expect(screen.queryByRole('button', { name: 'Dynamax Adventures' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Dynamax Adventures' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Dynamax Adventures' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Rental Pokemon' })).not.toBeInTheDocument();
   });
 
   it('opens Shops, edits an inventory item, reviews a shop plan, and applies it', async () => {
