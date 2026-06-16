@@ -10,6 +10,7 @@ using KM.SwSh.RoyalCandy;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.Workflows;
 using System.Buffers.Binary;
+using System.Globalization;
 using Xunit;
 
 namespace KM.SwSh.Tests.RoyalCandy;
@@ -65,6 +66,66 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
     }
 
     [Fact]
+    public void CreateLevelCapsUsesVersionSpecificGymFourLabels()
+    {
+        var swordCaps = SwShRoyalCandyWorkflowService.CreateLevelCaps("Sword");
+        var shieldCaps = SwShRoyalCandyWorkflowService.CreateLevelCaps("Shield");
+
+        var swordGymFour = swordCaps.Single(cap => cap.LevelCap == 42);
+        var shieldGymFour = shieldCaps.Single(cap => cap.LevelCap == 42);
+
+        Assert.Equal("Bea 077", swordGymFour.Label);
+        Assert.Equal("Allister 078", shieldGymFour.Label);
+        Assert.Equal("0xC07B67FC3148B754", swordGymFour.ProgressHash);
+        Assert.Equal(swordGymFour.ProgressHash, shieldGymFour.ProgressHash);
+    }
+
+    [Fact]
+    public void LoadUsesShieldStoryCapLabelsForShieldProjects()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x01008DB008C2C000));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShRoyalCandyWorkflowService().Load(project);
+
+        var storyLimits = workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-story-limits");
+        Assert.Contains(storyLimits.LevelCaps, cap => cap.Label == "Allister 078");
+        Assert.DoesNotContain(storyLimits.LevelCaps, cap => cap.Label == "Bea 077");
+    }
+
+    [Fact]
+    public void LoadReflectsInstalledCustomStoryLevelCaps()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        var defaultCaps = SwShRoyalCandyWorkflowService.CreateLevelCaps("Sword");
+        var customCaps = defaultCaps
+            .Select(cap => new SwShRoyalCandyStoryLevelCap(
+                LevelCap: cap.LevelCap + 1,
+                ProgressHash: ulong.Parse(cap.ProgressHash[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture),
+                Label: cap.Label,
+                ProgressKind: cap.ProgressKind == "workAtLeast"
+                    ? SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast
+                    : SwShRoyalCandyStoryLevelCapProgressKind.Flag,
+                WorkMinimum: cap.WorkMinimum ?? 0))
+            .ToArray();
+        temp.WriteOutputFile(
+            "exefs/main",
+            SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(CreateCompatibleNso(), customCaps));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShRoyalCandyWorkflowService().Load(project);
+
+        var storyLimits = workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-story-limits");
+        Assert.Equal("installed", storyLimits.Status);
+        Assert.Equal(11, storyLimits.LevelCaps.Single(cap => cap.Slot == 0).LevelCap);
+        Assert.Equal(43, storyLimits.LevelCaps.Single(cap => cap.Label == "Bea 077").LevelCap);
+        Assert.Equal(91, storyLimits.LevelCaps.Single(cap => cap.Label == "Leon 149/189/190").LevelCap);
+    }
+
+    [Fact]
     public void LoadBlocksInstallWhenRequiredInputsAreMissing()
     {
         using var temp = TemporarySwShProject.Create();
@@ -107,6 +168,33 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
             workflow.Diagnostics,
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
                 && diagnostic.Message.Contains("Royal Candy with Story Limits is installed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LoadFlagsMixedRoyalCandyTextAndExeFsVariants()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteRoyalCandyBaseInputs(temp);
+        temp.WriteOutputFile(
+            "romfs/bin/message/English/common/iteminfo.dat",
+            CreateTextTable(
+                1128,
+                (1128, "A candy packed with strange energy. Its full power follows the current story limit.")));
+        temp.WriteOutputFile("exefs/main", SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(CreateCompatibleNso()));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShRoyalCandyWorkflowService().Load(project);
+
+        var unlimited = workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-unlimited");
+        var storyLimits = workflow.Workflows.Single(record => record.WorkflowId == "royal-candy-story-limits");
+        Assert.Equal("blocked", unlimited.Status);
+        Assert.Equal("blocked", storyLimits.Status);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("mixed Royal Candy targets", StringComparison.Ordinal)
+                && diagnostic.Message.Contains("item text identifies Royal Candy with Story Limits", StringComparison.Ordinal)
+                && diagnostic.Message.Contains("exefs/main identifies Unlimited Royal Candy", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -247,6 +335,7 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         WriteInstruction(text, 0x007BC1BC, EncodeCmpImmediate(9, 4));
         WriteInstruction(text, 0x007BC1C4, EncodeCmpImmediate(9, 4));
         WriteInstruction(text, 0x007B1F20, 0x2A0003E2);
+        WriteInstruction(text, 0x007BAF38, 0x6B36231F);
         WriteInstruction(text, 0x007BAF3C, 0x1A963316);
         WriteInstruction(text, 0x007DDA8C, EncodeCmpImmediate(8, 0x32));
         return text;

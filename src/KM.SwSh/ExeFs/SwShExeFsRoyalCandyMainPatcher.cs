@@ -20,6 +20,12 @@ internal sealed record SwShRoyalCandyStoryLevelCap(
     SwShRoyalCandyStoryLevelCapProgressKind ProgressKind = SwShRoyalCandyStoryLevelCapProgressKind.Flag,
     int WorkMinimum = 0);
 
+internal sealed record SwShRoyalCandyInstalledStoryLevelCap(
+    int LevelCap,
+    ulong ProgressHash,
+    SwShRoyalCandyStoryLevelCapProgressKind ProgressKind,
+    int WorkMinimum);
+
 internal enum SwShRoyalCandyExeFsSignatureKind
 {
     NotInstalled,
@@ -45,6 +51,8 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     private const int StoryQuantityMaxCompareOffset = 0x007BB3C0;
     private const int QuantityMoveOffset = 0x007B1F20;
     private const int StoryInventoryClampSelectOffset = 0x007BAF3C;
+    private const int FlagGetOffset = 0x01410F00;
+    private const int WorkGetOffset = 0x014114C0;
     private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
     private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
     private const uint ExpectedQuantityMove = 0x2A0003E2; // MOV w2, w0
@@ -55,8 +63,8 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     [
         0x0077A5F0,
         0x007C8330,
-        0x01410F00,
-        0x014114C0,
+        FlagGetOffset,
+        WorkGetOffset,
     ];
 
     private static readonly IReadOnlyList<SwShExeFsReservedRegion> MainTextReservations =
@@ -139,6 +147,23 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             "Royal Candy reserved ExeFS anchors are vanilla and available.",
             reservedAnchorCount,
             recognizedAnchorCount);
+    }
+
+    internal static IReadOnlyList<SwShRoyalCandyInstalledStoryLevelCap> ReadInstalledStoryLevelCaps(
+        byte[] mainBytes,
+        ProjectGame? expectedGame = null)
+    {
+        ArgumentNullException.ThrowIfNull(mainBytes);
+
+        var nso = SwShNsoFile.Parse(mainBytes);
+        ValidateSelectedGame(nso.BuildId, expectedGame);
+        var text = nso.Text.DecompressedData;
+        if (!TryResolveStoryCapHelperOffset(text, out var helperOffset))
+        {
+            return Array.Empty<SwShRoyalCandyInstalledStoryLevelCap>();
+        }
+
+        return ReadStoryCapLadder(text, helperOffset);
     }
 
     public static byte[] ApplyBasePatch(byte[] mainBytes, ProjectGame? expectedGame = null)
@@ -396,8 +421,6 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     {
         const int flagworkGlobalAddress = 0x02610798;
         const int flagworkObjectOffset = 0x1B8;
-        const int flagGetOffset = 0x01410F00;
-        const int workGetOffset = 0x014114C0;
 
         var checks = milestones.Select((milestone, index) => new
         {
@@ -417,8 +440,8 @@ internal static class SwShExeFsRoyalCandyMainPatcher
                 nextOffset,
                 flagworkGlobalAddress,
                 flagworkObjectOffset,
-                flagGetOffset,
-                workGetOffset);
+                FlagGetOffset,
+                WorkGetOffset);
         }
 
         WriteInstruction(text, defaultReturn, EncodeMovzImmediate32(0, defaultCap));
@@ -887,6 +910,153 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         return false;
     }
 
+    private static bool TryResolveStoryCapHelperOffset(ReadOnlySpan<byte> text, out int helperOffset)
+    {
+        helperOffset = 0;
+        const int branchOffset = StoryUseGateCompareOffset + 4;
+
+        if (!TryReadInstruction(text, branchOffset, out var itemCheckBranch)
+            || !IsConditionalBranch(itemCheckBranch, Arm64Condition.NE)
+            || !TryDecodeConditionalBranchTarget(itemCheckBranch, branchOffset, out var itemCheckOffset)
+            || !TryReadInstruction(text, itemCheckOffset + 8, out var firstLogicBranch)
+            || !TryDecodeBranchTarget(firstLogicBranch, itemCheckOffset + 8, out var firstLogicOffset)
+            || !TryReadInstruction(text, firstLogicOffset + 8, out var secondLogicBranch)
+            || !TryDecodeBranchTarget(secondLogicBranch, firstLogicOffset + 8, out var secondLogicOffset)
+            || !TryReadInstruction(text, secondLogicOffset + 4, out var helperCall)
+            || !IsBranchLink(helperCall)
+            || !TryDecodeBranchTarget(helperCall, secondLogicOffset + 4, out helperOffset))
+        {
+            return false;
+        }
+
+        return helperOffset >= 0 && helperOffset < text.Length;
+    }
+
+    private static IReadOnlyList<SwShRoyalCandyInstalledStoryLevelCap> ReadStoryCapLadder(
+        ReadOnlySpan<byte> text,
+        int helperOffset)
+    {
+        var records = new List<SwShRoyalCandyInstalledStoryLevelCap>();
+        var visited = new HashSet<int>();
+        var offset = helperOffset;
+        while (records.Count < 64 && visited.Add(offset))
+        {
+            if (IsStoryCapDefaultReturn(text, offset))
+            {
+                break;
+            }
+
+            if (!TryReadStoryCapCheck(text, offset, out var record, out var nextOffset))
+            {
+                break;
+            }
+
+            records.Add(record);
+            offset = nextOffset;
+        }
+
+        return records;
+    }
+
+    private static bool TryReadStoryCapCheck(
+        ReadOnlySpan<byte> text,
+        int loadGlobalOffset,
+        out SwShRoyalCandyInstalledStoryLevelCap record,
+        out int nextOffset)
+    {
+        record = null!;
+        nextOffset = 0;
+
+        if (!TryReadInstruction(text, loadGlobalOffset + 8, out var loadTableBranch)
+            || !TryDecodeBranchTarget(loadTableBranch, loadGlobalOffset + 8, out var loadTableOffset)
+            || !TryReadInstruction(text, loadTableOffset + 8, out var hashLowBranch)
+            || !TryDecodeBranchTarget(hashLowBranch, loadTableOffset + 8, out var hashLowOffset)
+            || !TryReadInstruction(text, hashLowOffset, out var hashLowMovz)
+            || !TryReadInstruction(text, hashLowOffset + 4, out var hashMidLowMovk)
+            || !TryDecodeMovzImmediate64(hashLowMovz, register: 1, shift: 0, out var hashPart0)
+            || !TryDecodeMovkImmediate64(hashMidLowMovk, register: 1, shift: 16, out var hashPart1)
+            || !TryReadInstruction(text, hashLowOffset + 8, out var hashHighBranch)
+            || !TryDecodeBranchTarget(hashHighBranch, hashLowOffset + 8, out var hashHighOffset)
+            || !TryReadInstruction(text, hashHighOffset, out var hashMidHighMovk)
+            || !TryReadInstruction(text, hashHighOffset + 4, out var hashHighMovk)
+            || !TryDecodeMovkImmediate64(hashMidHighMovk, register: 1, shift: 32, out var hashPart2)
+            || !TryDecodeMovkImmediate64(hashHighMovk, register: 1, shift: 48, out var hashPart3)
+            || !TryReadInstruction(text, hashHighOffset + 8, out var callBranch)
+            || !TryDecodeBranchTarget(callBranch, hashHighOffset + 8, out var callOffset)
+            || !TryReadInstruction(text, callOffset + 4, out var accessorCall)
+            || !TryDecodeBranchTarget(accessorCall, callOffset + 4, out var accessorOffset)
+            || !TryReadInstruction(text, callOffset + 8, out var restoreBranch)
+            || !TryDecodeBranchTarget(restoreBranch, callOffset + 8, out var restoreOffset)
+            || !TryReadInstruction(text, restoreOffset + 4, out var decisionBranch)
+            || !TryDecodeBranchTarget(decisionBranch, restoreOffset + 4, out var decisionOffset))
+        {
+            return false;
+        }
+
+        var progressHash = (ulong)(ushort)hashPart0
+            | ((ulong)(ushort)hashPart1 << 16)
+            | ((ulong)(ushort)hashPart2 << 32)
+            | ((ulong)(ushort)hashPart3 << 48);
+
+        var progressKind = accessorOffset switch
+        {
+            FlagGetOffset => SwShRoyalCandyStoryLevelCapProgressKind.Flag,
+            WorkGetOffset => SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast,
+            _ => (SwShRoyalCandyStoryLevelCapProgressKind?)null,
+        };
+        if (progressKind is null)
+        {
+            return false;
+        }
+
+        int returnCapOffset;
+        var workMinimum = 0;
+        if (progressKind.Value == SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast)
+        {
+            if (!TryReadInstruction(text, decisionOffset, out var compareInstruction)
+                || !TryDecodeCmpImmediate(compareInstruction, register: 0, out workMinimum)
+                || !TryReadInstruction(text, decisionOffset + 4, out var capBranch)
+                || !IsConditionalBranch(capBranch, Arm64Condition.HS)
+                || !TryDecodeConditionalBranchTarget(capBranch, decisionOffset + 4, out returnCapOffset)
+                || !TryReadInstruction(text, decisionOffset + 8, out var nextBranch)
+                || !TryDecodeBranchTarget(nextBranch, decisionOffset + 8, out nextOffset))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            if (!TryReadInstruction(text, decisionOffset, out var capBranch)
+                || !TryDecodeCompareAndBranchNonZero32(capBranch, register: 0, decisionOffset, out returnCapOffset)
+                || !TryReadInstruction(text, decisionOffset + 4, out var nextBranch)
+                || !TryDecodeBranchTarget(nextBranch, decisionOffset + 4, out nextOffset))
+            {
+                return false;
+            }
+        }
+
+        if (!TryReadInstruction(text, returnCapOffset, out var returnCapInstruction)
+            || !TryDecodeMovzImmediate32(returnCapInstruction, register: 0, out var levelCap))
+        {
+            return false;
+        }
+
+        record = new SwShRoyalCandyInstalledStoryLevelCap(
+            levelCap,
+            progressHash,
+            progressKind.Value,
+            workMinimum);
+        return true;
+    }
+
+    private static bool IsStoryCapDefaultReturn(ReadOnlySpan<byte> text, int offset)
+    {
+        return TryReadInstruction(text, offset, out var capInstruction)
+            && TryDecodeMovzImmediate32(capInstruction, register: 0, out _)
+            && TryReadInstruction(text, offset + 4, out var retInstruction)
+            && retInstruction == EncodeRet();
+    }
+
     private static bool TryReadInstruction(ReadOnlySpan<byte> text, int offset, out uint instruction)
     {
         instruction = 0;
@@ -1072,6 +1242,85 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
         var immediate = SignExtend((int)((instruction >> 5) & 0x7FFFF), 19) << 2;
         targetOffset = sourceOffset + immediate;
+        return true;
+    }
+
+    private static bool TryDecodeCompareAndBranchNonZero32(
+        uint instruction,
+        int register,
+        int sourceOffset,
+        out int targetOffset)
+    {
+        targetOffset = 0;
+        if ((instruction & 0xFF000000u) != 0x35000000u
+            || (instruction & 0x1Fu) != (uint)(register & 0x1F))
+        {
+            return false;
+        }
+
+        return TryDecodeCompareAndBranchTarget(instruction, sourceOffset, out targetOffset);
+    }
+
+    private static bool TryDecodeMovzImmediate32(uint instruction, int register, out int immediate)
+    {
+        immediate = 0;
+        if ((instruction & 0xFF800000u) != 0x52800000u
+            || (instruction & 0x1Fu) != (uint)(register & 0x1F)
+            || ((instruction >> 21) & 0x3u) != 0)
+        {
+            return false;
+        }
+
+        immediate = (int)((instruction >> 5) & 0xFFFF);
+        return true;
+    }
+
+    private static bool TryDecodeMovzImmediate64(
+        uint instruction,
+        int register,
+        int shift,
+        out int immediate)
+    {
+        immediate = 0;
+        if ((instruction & 0xFF800000u) != 0xD2800000u
+            || (instruction & 0x1Fu) != (uint)(register & 0x1F)
+            || ((instruction >> 21) & 0x3u) != (uint)(shift / 16))
+        {
+            return false;
+        }
+
+        immediate = (int)((instruction >> 5) & 0xFFFF);
+        return true;
+    }
+
+    private static bool TryDecodeMovkImmediate64(
+        uint instruction,
+        int register,
+        int shift,
+        out int immediate)
+    {
+        immediate = 0;
+        if ((instruction & 0xFF800000u) != 0xF2800000u
+            || (instruction & 0x1Fu) != (uint)(register & 0x1F)
+            || ((instruction >> 21) & 0x3u) != (uint)(shift / 16))
+        {
+            return false;
+        }
+
+        immediate = (int)((instruction >> 5) & 0xFFFF);
+        return true;
+    }
+
+    private static bool TryDecodeCmpImmediate(uint instruction, int register, out int immediate)
+    {
+        immediate = 0;
+        if ((instruction & 0xFFC0001Fu) != 0x7100001Fu
+            || ((instruction >> 5) & 0x1Fu) != (uint)(register & 0x1F))
+        {
+            return false;
+        }
+
+        immediate = (int)((instruction >> 10) & 0xFFF);
         return true;
     }
 
