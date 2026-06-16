@@ -20,6 +20,8 @@ import {
   type LoadHyperTrainingWorkflowResponse,
   type LoadTypeChartWorkflowRequest,
   type LoadTypeChartWorkflowResponse,
+  type LoadFashionUnlockWorkflowRequest,
+  type LoadFashionUnlockWorkflowResponse,
   type LoadGymUniformRemovalWorkflowRequest,
   type LoadGymUniformRemovalWorkflowResponse,
   type LoadIvScreenWorkflowRequest,
@@ -76,6 +78,10 @@ import {
   type StageHyperTrainingResponse,
   type StageTypeChartRequest,
   type StageTypeChartResponse,
+  type StageFashionUnlockInstallRequest,
+  type StageFashionUnlockInstallResponse,
+  type StageFashionUnlockUninstallRequest,
+  type StageFashionUnlockUninstallResponse,
   type StageGymUniformRemovalInstallRequest,
   type StageGymUniformRemovalInstallResponse,
   type StageGymUniformRemovalUninstallRequest,
@@ -171,6 +177,7 @@ import {
   loadCatchCapWorkflowResponseSchema,
   loadHyperTrainingWorkflowResponseSchema,
   loadTypeChartWorkflowResponseSchema,
+  loadFashionUnlockWorkflowResponseSchema,
   loadGymUniformRemovalWorkflowResponseSchema,
   loadIvScreenWorkflowResponseSchema,
   loadExeFsPatchWorkflowResponseSchema,
@@ -196,6 +203,8 @@ import {
   stageCatchCapUninstallResponseSchema,
   stageHyperTrainingResponseSchema,
   stageTypeChartResponseSchema,
+  stageFashionUnlockInstallResponseSchema,
+  stageFashionUnlockUninstallResponseSchema,
   stageGymUniformRemovalInstallResponseSchema,
   stageGymUniformRemovalUninstallResponseSchema,
   stageIvScreenInstallResponseSchema,
@@ -329,6 +338,15 @@ export type ProjectBridge = {
   stageTypeChart: (
     request: StageTypeChartRequest
   ) => Promise<StageTypeChartResponse>;
+  loadFashionUnlockWorkflow: (
+    request: LoadFashionUnlockWorkflowRequest
+  ) => Promise<LoadFashionUnlockWorkflowResponse>;
+  stageFashionUnlockInstall: (
+    request: StageFashionUnlockInstallRequest
+  ) => Promise<StageFashionUnlockInstallResponse>;
+  stageFashionUnlockUninstall: (
+    request: StageFashionUnlockUninstallRequest
+  ) => Promise<StageFashionUnlockUninstallResponse>;
   loadGymUniformRemovalWorkflow: (
     request: LoadGymUniformRemovalWorkflowRequest
   ) => Promise<LoadGymUniformRemovalWorkflowResponse>;
@@ -561,6 +579,27 @@ export function createProjectBridge(
         kmCommandNames.stageTypeChart,
         request,
         stageTypeChartResponseSchema
+      ),
+    loadFashionUnlockWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadFashionUnlockWorkflow,
+        request,
+        loadFashionUnlockWorkflowResponseSchema
+      ),
+    stageFashionUnlockInstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageFashionUnlockInstall,
+        request,
+        stageFashionUnlockInstallResponseSchema
+      ),
+    stageFashionUnlockUninstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageFashionUnlockUninstall,
+        request,
+        stageFashionUnlockUninstallResponseSchema
       ),
     loadGymUniformRemovalWorkflow: (request) =>
       sendProjectBridgeRequest(

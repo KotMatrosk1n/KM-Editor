@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.SwSh.CatchCap;
+using KM.SwSh.FashionUnlock;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.IvScreen;
@@ -16,6 +17,7 @@ internal static class SwShIndependentExeFsHookDetector
 
         var ivScreenKind = SwShIvScreenMainPatcher.Analyze(mainBytes).Kind;
         return SwShCatchCapMainPatcher.Analyze(mainBytes).Kind == SwShCatchCapInstallKind.InstalledV1
+            || SwShFashionUnlockMainPatcher.HasInstalledHook(mainBytes)
             || SwShGymUniformRemovalMainPatcher.HasInstalledHook(mainBytes)
             || SwShHyperTrainingMainPatcher.HasInstalledHook(mainBytes)
             || ivScreenKind is SwShIvScreenInstallKind.InstalledV1 or SwShIvScreenInstallKind.InstalledLegacyV1

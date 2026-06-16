@@ -54,6 +54,9 @@ export const kmCommandNameValues = [
   'hyperTraining.stage',
   'typeChart.load',
   'typeChart.stage',
+  'fashionUnlock.load',
+  'fashionUnlock.install.stage',
+  'fashionUnlock.uninstall.stage',
   'gymUniformRemoval.load',
   'gymUniformRemoval.install.stage',
   'gymUniformRemoval.uninstall.stage',
@@ -140,6 +143,9 @@ export const kmCommandNames = {
   stageHyperTraining: 'hyperTraining.stage',
   loadTypeChartWorkflow: 'typeChart.load',
   stageTypeChart: 'typeChart.stage',
+  loadFashionUnlockWorkflow: 'fashionUnlock.load',
+  stageFashionUnlockInstall: 'fashionUnlock.install.stage',
+  stageFashionUnlockUninstall: 'fashionUnlock.uninstall.stage',
   loadGymUniformRemovalWorkflow: 'gymUniformRemoval.load',
   stageGymUniformRemovalInstall: 'gymUniformRemoval.install.stage',
   stageGymUniformRemovalUninstall: 'gymUniformRemoval.uninstall.stage',
@@ -300,6 +306,10 @@ export const loadHyperTrainingWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadTypeChartWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadFashionUnlockWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -2375,6 +2385,24 @@ export const stageTypeChartResponseSchema = z.strictObject({
   workflow: typeChartWorkflowSchema
 });
 
+export const fashionUnlockProvenanceSchema = z.strictObject({ fileState: projectFileGraphEntryStateSchema, sourceFile: z.string(), sourceLayer: projectFileLayerSchema });
+
+export const fashionUnlockReservedRegionSchema = z.strictObject({ label: z.string(), length: z.number().int().nullable(), offsetLabel: z.string(), regionId: z.string(), rule: z.string(), startOffset: z.number().int().nullable() });
+
+export const fashionUnlockWorkflowStatsSchema = z.strictObject({ reservedMainTextRegionCount: z.number().int().nonnegative(), sourceFileCount: z.number().int().nonnegative() });
+
+export const fashionUnlockWorkflowSchema = z.strictObject({ buildId: z.string(), detectedGame: projectGameSchema.nullable(), diagnostics: z.array(apiDiagnosticSchema), directGetterOffsetHex: z.string(), installMessage: z.string(), installStatus: z.string(), mappedGetterOffsetHex: z.string(), provenance: fashionUnlockProvenanceSchema, reservedRegions: z.array(fashionUnlockReservedRegionSchema), stats: fashionUnlockWorkflowStatsSchema, stubKind: z.string(), summary: workflowSummarySchema });
+
+export const loadFashionUnlockWorkflowResponseSchema = z.strictObject({ workflow: fashionUnlockWorkflowSchema });
+
+export const stageFashionUnlockInstallRequestSchema = z.strictObject({ paths: projectPathsSchema, session: editSessionSchema.nullable() });
+
+export const stageFashionUnlockInstallResponseSchema = z.strictObject({ diagnostics: z.array(apiDiagnosticSchema), session: editSessionSchema, workflow: fashionUnlockWorkflowSchema });
+
+export const stageFashionUnlockUninstallRequestSchema = z.strictObject({ paths: projectPathsSchema, session: editSessionSchema.nullable() });
+
+export const stageFashionUnlockUninstallResponseSchema = z.strictObject({ diagnostics: z.array(apiDiagnosticSchema), session: editSessionSchema, workflow: fashionUnlockWorkflowSchema });
+
 export const gymUniformRemovalProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -3315,6 +3343,8 @@ export type TypeChartCell = z.infer<typeof typeChartCellSchema>;
 export type TypeChartSourceRecord = z.infer<typeof typeChartSourceRecordSchema>;
 export type TypeChartTypeDefinition = z.infer<typeof typeChartTypeDefinitionSchema>;
 export type TypeChartWorkflow = z.infer<typeof typeChartWorkflowSchema>;
+export type FashionUnlockReservedRegion = z.infer<typeof fashionUnlockReservedRegionSchema>;
+export type FashionUnlockWorkflow = z.infer<typeof fashionUnlockWorkflowSchema>;
 export type GymUniformRemovalReservedRegion = z.infer<
   typeof gymUniformRemovalReservedRegionSchema
 >;
@@ -3482,6 +3512,24 @@ export type LoadTypeChartWorkflowResponse = z.infer<
 >;
 export type StageTypeChartRequest = z.infer<typeof stageTypeChartRequestSchema>;
 export type StageTypeChartResponse = z.infer<typeof stageTypeChartResponseSchema>;
+export type LoadFashionUnlockWorkflowRequest = z.infer<
+  typeof loadFashionUnlockWorkflowRequestSchema
+>;
+export type LoadFashionUnlockWorkflowResponse = z.infer<
+  typeof loadFashionUnlockWorkflowResponseSchema
+>;
+export type StageFashionUnlockInstallRequest = z.infer<
+  typeof stageFashionUnlockInstallRequestSchema
+>;
+export type StageFashionUnlockInstallResponse = z.infer<
+  typeof stageFashionUnlockInstallResponseSchema
+>;
+export type StageFashionUnlockUninstallRequest = z.infer<
+  typeof stageFashionUnlockUninstallRequestSchema
+>;
+export type StageFashionUnlockUninstallResponse = z.infer<
+  typeof stageFashionUnlockUninstallResponseSchema
+>;
 export type LoadGymUniformRemovalWorkflowRequest = z.infer<
   typeof loadGymUniformRemovalWorkflowRequestSchema
 >;

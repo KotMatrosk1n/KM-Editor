@@ -374,13 +374,11 @@ public sealed class SwShModMergerWorkflowServiceTests
     }
 
     [Fact]
-    public void StageIgnoresSelectedFilesMissingFromOneSide()
+    public void StageIncludesOneSidedSelectionsAsCopyReadyFiles()
     {
         using var temp = TemporarySwShProject.Create();
         var modDirectory1 = CreateModDirectory(temp, "mod-1");
         var modDirectory2 = CreateModDirectory(temp, "mod-2");
-        temp.WriteBaseRomFsFile("bin/a.bin", [0]);
-        temp.WriteBaseRomFsFile("bin/b.bin", [0]);
         WriteFile(modDirectory1, "romfs/bin/a.bin", [1]);
         WriteFile(modDirectory2, "romfs/bin/b.bin", [2]);
 
@@ -392,44 +390,44 @@ public sealed class SwShModMergerWorkflowServiceTests
             ["romfs/bin/b.bin"],
             []);
 
-        Assert.False(stage.Preview.CanApply);
-        Assert.Equal("empty", stage.Preview.Status);
-        Assert.Empty(stage.Preview.Files);
-        Assert.Contains(
-            stage.Diagnostics,
-            diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Warning
-                && diagnostic.Message.Contains("Files missing from one side were ignored", StringComparison.Ordinal));
+        Assert.True(stage.Preview.CanApply);
+        Assert.Equal("ready", stage.Preview.Status);
+        Assert.Equal(2, stage.Preview.Files.Count);
+        AssertPlainSummary(FindFile(stage.Preview, "romfs/bin/a.bin"), "singleSource", "Only Mod Directory 1 contains this file", "copy");
+        AssertPlainSummary(FindFile(stage.Preview, "romfs/bin/b.bin"), "singleSource", "Only Mod Directory 2 contains this file", "copy");
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Warning);
     }
 
     [Fact]
-    public void ApplyIgnoresOneSidedSelectionsAndWritesMatchedSelections()
+    public void ApplyCopiesOneSidedSelectionsFromBothDirectoriesAndWritesMatchedSelections()
     {
         using var temp = TemporarySwShProject.Create();
         var modDirectory1 = CreateModDirectory(temp, "mod-1");
         var modDirectory2 = CreateModDirectory(temp, "mod-2");
         temp.WriteBaseRomFsFile("bin/test.bin", [0, 0, 0]);
-        temp.WriteBaseRomFsFile("bin/dir1-only.bin", [0]);
         WriteFile(modDirectory1, TestPath, [1, 0, 0]);
         WriteFile(modDirectory2, TestPath, [0, 0, 2]);
         WriteFile(modDirectory1, "romfs/bin/dir1-only.bin", [9]);
+        WriteFile(modDirectory2, "romfs/bin/dir2-only.bin", [8, 8]);
 
         var result = new SwShModMergerWorkflowService().Apply(
             temp.Paths,
             modDirectory1,
             modDirectory2,
             [TestPath, "romfs/bin/dir1-only.bin"],
-            [TestPath],
+            [TestPath, "romfs/bin/dir2-only.bin"],
             []);
 
         Assert.True(result.Preview.CanApply);
         Assert.Equal("ready", result.Preview.Status);
-        Assert.Equal([TestPath], result.WrittenFiles);
+        Assert.Equal(
+            ["romfs/bin/dir1-only.bin", "romfs/bin/dir2-only.bin", TestPath],
+            result.WrittenFiles);
         Assert.Equal([1, 0, 2], ReadOutputFile(temp, TestPath));
-        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "dir1-only.bin")));
-        Assert.Contains(
-            result.Diagnostics,
-            diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Warning
-                && diagnostic.Message.Contains("Files missing from one side were ignored", StringComparison.Ordinal));
+        Assert.Equal([9], ReadOutputFile(temp, "romfs/bin/dir1-only.bin"));
+        Assert.Equal([8, 8], ReadOutputFile(temp, "romfs/bin/dir2-only.bin"));
+        AssertPlainSummary(FindFile(result.Preview, "romfs/bin/dir1-only.bin"), "singleSource", "Only Mod Directory 1 contains this file", "copy");
+        AssertPlainSummary(FindFile(result.Preview, "romfs/bin/dir2-only.bin"), "singleSource", "Only Mod Directory 2 contains this file", "copy");
     }
 
     [Theory]

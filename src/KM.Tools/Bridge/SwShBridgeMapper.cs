@@ -7,6 +7,7 @@ using KM.Api.CatchCap;
 using KM.Api.DynamaxAdventures;
 using KM.Api.Encounters;
 using KM.Api.ExeFs;
+using KM.Api.FashionUnlock;
 using KM.Api.Flagwork;
 using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
@@ -37,6 +38,7 @@ using KM.SwSh.CatchCap;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Encounters;
 using KM.SwSh.ExeFs;
+using KM.SwSh.FashionUnlock;
 using KM.SwSh.Flagwork;
 using KM.SwSh.Gifts;
 using KM.SwSh.GymUniformRemoval;
@@ -338,6 +340,33 @@ public static class SwShBridgeMapper
 
         return new StageTypeChartResponse(
             ToTypeChartWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadFashionUnlockWorkflowResponse ToDto(SwShFashionUnlockWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadFashionUnlockWorkflowResponse(ToFashionUnlockWorkflowDto(workflow));
+    }
+
+    public static StageFashionUnlockInstallResponse ToDto(SwShFashionUnlockEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageFashionUnlockInstallResponse(
+            ToFashionUnlockWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageFashionUnlockUninstallResponse ToFashionUnlockUninstallDto(SwShFashionUnlockEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageFashionUnlockUninstallResponse(
+            ToFashionUnlockWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1334,7 +1363,26 @@ public static class SwShBridgeMapper
             new TypeChartWorkflowStatsDto(
                 workflow.Stats.SourceFileCount,
                 workflow.Stats.OutputFileCount,
-                workflow.Stats.ChartCellCount),
+            workflow.Stats.ChartCellCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static FashionUnlockWorkflowDto ToFashionUnlockWorkflowDto(SwShFashionUnlockWorkflow workflow)
+    {
+        return new FashionUnlockWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.BuildId,
+            workflow.DirectGetterOffsetHex,
+            workflow.MappedGetterOffsetHex,
+            workflow.StubKind,
+            ToProjectGameDto(workflow.DetectedGame),
+            workflow.ReservedRegions.Select(ToDto).ToArray(),
+            ToDto(workflow.Provenance),
+            new FashionUnlockWorkflowStatsDto(
+                workflow.Stats.ReservedMainTextRegionCount,
+                workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -2517,9 +2565,28 @@ public static class SwShBridgeMapper
             region.Rule);
     }
 
+    private static FashionUnlockReservedRegionDto ToDto(SwShFashionUnlockReservedRegion region)
+    {
+        return new FashionUnlockReservedRegionDto(
+            region.RegionId,
+            region.Label,
+            region.OffsetLabel,
+            region.StartOffset,
+            region.Length,
+            region.Rule);
+    }
+
     private static GymUniformRemovalProvenanceDto ToDto(SwShGymUniformRemovalProvenance provenance)
     {
         return new GymUniformRemovalProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static FashionUnlockProvenanceDto ToDto(SwShFashionUnlockProvenance provenance)
+    {
+        return new FashionUnlockProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

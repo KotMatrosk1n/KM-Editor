@@ -35,6 +35,7 @@ internal static class SwShExeFsReservedRegionLedger
 {
     public const string OwnerBagHook = "Bag Hook";
     public const string OwnerCatchCap = "Catch Cap";
+    public const string OwnerFashionUnlock = "Fashion Unlock";
     public const string OwnerGymUniformRemoval = "Gym Uniform Removal";
     public const string OwnerHyperTraining = "Hyper Training";
     public const string OwnerIvScreen = "IV Screen";
@@ -225,6 +226,11 @@ internal static class SwShExeFsReservedRegionLedger
         new(OwnerHyperTraining, "hyper-training-shield-detail-check", ExeFsMainPath, "main.text", 0x00F9E4F0, 0x08, "Hyper Training Shield selected-detail compare and branch", "do-not-overwrite"),
 
         new(OwnerTypeChart, "type-chart-swsh", ExeFsMainPath, "main.ro", 0x00743600, 0x144, "Sword/Shield type-effectiveness table", "payload-only"),
+
+        new(OwnerFashionUnlock, "fashion-unlock-sword-direct-owned-getter", ExeFsMainPath, "main.text", 0x0143A2B0, 0x08, "Fashion Unlock Sword direct ownership getter", "do-not-overwrite"),
+        new(OwnerFashionUnlock, "fashion-unlock-sword-mapped-owned-getter", ExeFsMainPath, "main.text", 0x0143A300, 0x08, "Fashion Unlock Sword mapped ownership getter", "do-not-overwrite"),
+        new(OwnerFashionUnlock, "fashion-unlock-shield-direct-owned-getter", ExeFsMainPath, "main.text", 0x0143A2E0, 0x08, "Fashion Unlock Shield direct ownership getter", "do-not-overwrite"),
+        new(OwnerFashionUnlock, "fashion-unlock-shield-mapped-owned-getter", ExeFsMainPath, "main.text", 0x0143A330, 0x08, "Fashion Unlock Shield mapped ownership getter", "do-not-overwrite"),
 
         new(OwnerRoyalCandy, "royal-candy-ui-check-a", ExeFsMainPath, "main.text", 0x00747988, 0x08, "Royal Candy medicine UI route", "do-not-overwrite"),
         new(OwnerRoyalCandy, "royal-candy-ui-check-b", ExeFsMainPath, "main.text", 0x00747D44, 0x08, "Royal Candy alternate medicine UI route", "do-not-overwrite"),

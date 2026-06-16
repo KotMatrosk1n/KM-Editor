@@ -6,6 +6,7 @@ using KM.Formats.SwSh;
 using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
 using KM.SwSh.ExeFs;
+using KM.SwSh.FashionUnlock;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.IvScreen;
@@ -66,6 +67,7 @@ public sealed class SwShHookReservationTests
         var bagHook = new SwShBagHookWorkflowService().Load(project);
         var catchCap = new SwShCatchCapWorkflowService().Load(project);
         var gymUniformRemoval = new SwShGymUniformRemovalWorkflowService().Load(project);
+        var fashionUnlock = new SwShFashionUnlockWorkflowService().Load(project);
         var ivScreen = new SwShIvScreenWorkflowService().Load(project);
         var royalCandy = new SwShRoyalCandyWorkflowService().Load(project);
         var startingItems = new SwShStartingItemsWorkflowService().Load(project);
@@ -86,6 +88,12 @@ public sealed class SwShHookReservationTests
         Assert.Equal("available", gymUniformRemoval.InstallStatus);
         Assert.Equal("main.text+0x01472630", gymUniformRemoval.PatchOffsetHex);
         Assert.Contains(gymUniformRemoval.ReservedRegions, region => region.RegionId == "gym-uniform-removal-shield-handler");
+
+        Assert.Equal(SwShWorkflowAvailability.Available, fashionUnlock.Summary.Availability);
+        Assert.Equal("available", fashionUnlock.InstallStatus);
+        Assert.Equal("main.text+0x0143A2E0", fashionUnlock.DirectGetterOffsetHex);
+        Assert.Equal("main.text+0x0143A330", fashionUnlock.MappedGetterOffsetHex);
+        Assert.Contains(fashionUnlock.ReservedRegions, region => region.RegionId == "fashion-unlock-shield-direct-owned-getter");
 
         Assert.Equal(SwShWorkflowAvailability.Available, ivScreen.Summary.Availability);
         Assert.Equal("available", ivScreen.InstallStatus);
@@ -118,6 +126,39 @@ public sealed class SwShHookReservationTests
         Assert.Equal(0x00743600, region.StartOffset);
         Assert.Equal(0x144, region.Length);
         Assert.Equal("ro+0x743600..0x743743", region.OffsetLabel);
+    }
+
+    [Fact]
+    public void FashionUnlockReservesSwordAndShieldOwnershipGetterRanges()
+    {
+        var regions = SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerFashionUnlock);
+
+        Assert.Collection(
+            regions.OrderBy(region => region.StartOffset).ToArray(),
+            region =>
+            {
+                Assert.Equal("fashion-unlock-sword-direct-owned-getter", region.FeatureId);
+                Assert.Equal(0x0143A2B0, region.StartOffset);
+                Assert.Equal(0x08, region.Length);
+            },
+            region =>
+            {
+                Assert.Equal("fashion-unlock-shield-direct-owned-getter", region.FeatureId);
+                Assert.Equal(0x0143A2E0, region.StartOffset);
+                Assert.Equal(0x08, region.Length);
+            },
+            region =>
+            {
+                Assert.Equal("fashion-unlock-sword-mapped-owned-getter", region.FeatureId);
+                Assert.Equal(0x0143A300, region.StartOffset);
+                Assert.Equal(0x08, region.Length);
+            },
+            region =>
+            {
+                Assert.Equal("fashion-unlock-shield-mapped-owned-getter", region.FeatureId);
+                Assert.Equal(0x0143A330, region.StartOffset);
+                Assert.Equal(0x08, region.Length);
+            });
     }
 
     [Fact]
@@ -280,6 +321,79 @@ public sealed class SwShHookReservationTests
         Assert.Equal(SwShNsoFile.ComputeHash(restoredNso.Text.DecompressedData), restoredNso.Text.Hash);
         Assert.Equal(baseText, restoredNso.Text.DecompressedData);
         Assert.Equal(SwShGymUniformRemovalInstallKind.NotInstalled, SwShGymUniformRemovalMainPatcher.Analyze(restoredMain).Kind);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void FashionUnlockPatchesOnlyOwnedGetterBytesAndRestoresFromBase(ProjectGame game)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var patchedMain = SwShFashionUnlockMainPatcher.Apply(baseMain, game);
+        var baseNso = SwShNsoFile.Parse(baseMain);
+        var patchedNso = SwShNsoFile.Parse(patchedMain);
+        var baseText = baseNso.Text.DecompressedData;
+        var patchedText = patchedNso.Text.DecompressedData;
+        var directOffset = FashionUnlockDirectGetterOffset(game);
+        var mappedOffset = FashionUnlockMappedGetterOffset(game);
+
+        Assert.Equal(SwShNsoFile.ComputeHash(patchedText), patchedNso.Text.Hash);
+        Assert.Equal(0x52800020u, ReadInstruction(patchedText, directOffset));
+        Assert.Equal(0xD65F03C0u, ReadInstruction(patchedText, directOffset + 4));
+        Assert.Equal(0x52800020u, ReadInstruction(patchedText, mappedOffset));
+        Assert.Equal(0xD65F03C0u, ReadInstruction(patchedText, mappedOffset + 4));
+        Assert.All(
+            ChangedTextOffsets(baseText, patchedText),
+            changedOffset => Assert.True(
+                IsFashionUnlockOwnedOffset(game, changedOffset),
+                $"Fashion Unlock changed unexpected .text offset 0x{changedOffset:X8}."));
+
+        var currentNso = SwShNsoFile.Parse(patchedMain);
+        var currentText = currentNso.Text.DecompressedData.ToArray();
+        var otherEditOffset = mappedOffset + 0x80;
+        WriteInstruction(currentText, otherEditOffset, 0xD503201F);
+        var currentWithOtherEdit = currentNso.Write(textDecompressedData: currentText);
+        var restoredMain = SwShFashionUnlockMainPatcher.RestoreFromBase(currentWithOtherEdit, baseMain, game);
+        var restoredNso = SwShNsoFile.Parse(restoredMain);
+        var restoredText = restoredNso.Text.DecompressedData;
+
+        Assert.Equal(SwShNsoFile.ComputeHash(restoredText), restoredNso.Text.Hash);
+        Assert.Equal(baseText.AsSpan(directOffset, SwShFashionUnlockMainPatcher.PatchLength).ToArray(), restoredText.AsSpan(directOffset, SwShFashionUnlockMainPatcher.PatchLength).ToArray());
+        Assert.Equal(baseText.AsSpan(mappedOffset, SwShFashionUnlockMainPatcher.PatchLength).ToArray(), restoredText.AsSpan(mappedOffset, SwShFashionUnlockMainPatcher.PatchLength).ToArray());
+        Assert.Equal(0xD503201Fu, ReadInstruction(restoredText, otherEditOffset));
+        Assert.Equal(SwShFashionUnlockInstallKind.NotInstalled, SwShFashionUnlockMainPatcher.Analyze(restoredMain, game).Kind);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword, ProjectGame.Shield)]
+    [InlineData(ProjectGame.Shield, ProjectGame.Sword)]
+    public void FashionUnlockBlocksMainBuildIdThatDoesNotMatchSelectedGame(
+        ProjectGame selectedGame,
+        ProjectGame actualMainGame)
+    {
+        var mismatchedMain = CreateSharedHookNso(actualMainGame);
+        var directAnalysis = SwShFashionUnlockMainPatcher.Analyze(mismatchedMain, selectedGame);
+        Assert.Equal(SwShFashionUnlockInstallKind.GameMismatch, directAnalysis.Kind);
+        Assert.Throws<InvalidDataException>(() => SwShFashionUnlockMainPatcher.Apply(mismatchedMain, selectedGame));
+
+        using var temp = CreateHookProject(selectedGame);
+        temp.WriteBaseExeFsFile("main", mismatchedMain);
+        var paths = temp.Paths with { SelectedGame = selectedGame };
+        var project = new ProjectWorkspaceService().Open(paths);
+        var workflow = new SwShFashionUnlockWorkflowService().Load(project);
+
+        Assert.Equal("blocked", workflow.InstallStatus);
+        Assert.Contains(
+            workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Sword and Shield use separate verified patch layouts", StringComparison.Ordinal));
+
+        var stage = new SwShFashionUnlockEditSessionService().StageInstall(paths, session: null);
+        Assert.Empty(stage.Session.PendingEdits);
+        Assert.Contains(
+            stage.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Sword and Shield use separate verified patch layouts", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -703,6 +817,44 @@ public sealed class SwShHookReservationTests
         ApplyGymUniformRemovalCleanup(paths);
 
         Assert.False(File.Exists(OutputPath(paths, SwShGymUniformRemovalMainPatcher.IpsRelativePath(game))));
+        Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void FashionUnlockCleanupPreservesOtherGeneratedMainEdits(ProjectGame game)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        ApplyFashionUnlock(paths);
+
+        var outputMainPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        var mainWithOtherEdit = SwShNsoFile.Parse(File.ReadAllBytes(outputMainPath));
+        var textWithOtherEdit = mainWithOtherEdit.Text.DecompressedData.ToArray();
+        var otherEditOffset = FashionUnlockMappedGetterOffset(game) + 0x80;
+        WriteInstruction(textWithOtherEdit, otherEditOffset, 0xD503201F);
+        File.WriteAllBytes(outputMainPath, mainWithOtherEdit.Write(textDecompressedData: textWithOtherEdit));
+
+        ApplyFashionUnlockCleanup(paths);
+
+        Assert.True(File.Exists(outputMainPath));
+        var restoredText = SwShNsoFile.Parse(File.ReadAllBytes(outputMainPath)).Text.DecompressedData;
+        Assert.Equal(SwShFashionUnlockInstallKind.NotInstalled, SwShFashionUnlockMainPatcher.Analyze(File.ReadAllBytes(outputMainPath), game).Kind);
+        Assert.Equal(0xD503201Fu, ReadInstruction(restoredText, otherEditOffset));
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void FashionUnlockCleanupRemovesExeFsOutputWhenNoOtherMainEditRemains(ProjectGame game)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        ApplyFashionUnlock(paths);
+
+        ApplyFashionUnlockCleanup(paths);
+
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath)));
     }
 
@@ -1277,6 +1429,32 @@ public sealed class SwShHookReservationTests
         Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
     }
 
+    private static void ApplyFashionUnlock(ProjectPaths paths)
+    {
+        var service = new SwShFashionUnlockEditSessionService();
+        var stage = service.StageInstall(paths, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    private static void ApplyFashionUnlockCleanup(ProjectPaths paths)
+    {
+        var service = new SwShFashionUnlockEditSessionService();
+        var stage = service.StageUninstall(paths, session: null);
+        Assert.DoesNotContain(stage.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+
+        var plan = service.CreateChangePlan(paths, stage.Session);
+        Assert.True(plan.CanApply);
+
+        var apply = service.ApplyChangePlan(paths, stage.Session, plan);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
     private static void ApplyHyperTrainingMain(ProjectPaths paths, int minimumLevel)
     {
         var targetPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath);
@@ -1432,6 +1610,7 @@ public sealed class SwShHookReservationTests
         WriteCatchCapVanillaAnchors(text, game);
         WriteIvScreenVanillaAnchors(text, game);
         WriteGymUniformRemovalVanillaAnchors(text);
+        WriteFashionUnlockVanillaAnchors(text);
         WriteHyperTrainingVanillaAnchors(text, game);
         return CreateNso(text, [0x10], [0x20], BuildIdForGame(game));
     }
@@ -1585,6 +1764,21 @@ public sealed class SwShHookReservationTests
         }
     }
 
+    private static void WriteFashionUnlockVanillaAnchors(byte[] text)
+    {
+        foreach (var (directOffset, mappedOffset) in new[]
+        {
+            (SwShFashionUnlockMainPatcher.SwordDirectGetterOffset, SwShFashionUnlockMainPatcher.SwordMappedGetterOffset),
+            (SwShFashionUnlockMainPatcher.ShieldDirectGetterOffset, SwShFashionUnlockMainPatcher.ShieldMappedGetterOffset),
+        })
+        {
+            WriteInstruction(text, directOffset, 0xAA0003E8);
+            WriteInstruction(text, directOffset + 4, 0x2A1F03E0);
+            WriteInstruction(text, mappedOffset, 0xD10603FF);
+            WriteInstruction(text, mappedOffset + 4, 0xA9145FFC);
+        }
+    }
+
     private static void WriteIvScreenCallSiteAnchors(byte[] text, ProjectGame game = ProjectGame.Sword)
     {
         var shift = game == ProjectGame.Shield ? 0x30 : 0;
@@ -1710,6 +1904,28 @@ public sealed class SwShHookReservationTests
         return game == ProjectGame.Shield
             ? SwShGymUniformRemovalMainPatcher.ShieldPatchOffset
             : SwShGymUniformRemovalMainPatcher.SwordPatchOffset;
+    }
+
+    private static int FashionUnlockDirectGetterOffset(ProjectGame game)
+    {
+        return game == ProjectGame.Shield
+            ? SwShFashionUnlockMainPatcher.ShieldDirectGetterOffset
+            : SwShFashionUnlockMainPatcher.SwordDirectGetterOffset;
+    }
+
+    private static int FashionUnlockMappedGetterOffset(ProjectGame game)
+    {
+        return game == ProjectGame.Shield
+            ? SwShFashionUnlockMainPatcher.ShieldMappedGetterOffset
+            : SwShFashionUnlockMainPatcher.SwordMappedGetterOffset;
+    }
+
+    private static bool IsFashionUnlockOwnedOffset(ProjectGame game, int offset)
+    {
+        var directOffset = FashionUnlockDirectGetterOffset(game);
+        var mappedOffset = FashionUnlockMappedGetterOffset(game);
+        return offset >= directOffset && offset < directOffset + SwShFashionUnlockMainPatcher.PatchLength
+            || offset >= mappedOffset && offset < mappedOffset + SwShFashionUnlockMainPatcher.PatchLength;
     }
 
     private static int[] ChangedTextOffsets(byte[] before, byte[] after)
