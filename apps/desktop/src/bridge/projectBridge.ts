@@ -260,6 +260,14 @@ import {
   validateEditSessionResponseSchema,
   validateProjectResponseSchema
 } from './contracts';
+import {
+  type LoadFairyGymBoostsWorkflowRequest,
+  type LoadFairyGymBoostsWorkflowResponse,
+  type StageFairyGymBoostsRequest,
+  type StageFairyGymBoostsResponse,
+  loadFairyGymBoostsWorkflowResponseSchema,
+  stageFairyGymBoostsResponseSchema
+} from './fairyGymBoostsContracts';
 
 export type ProjectBridge = {
   applyChangePlan: (request: ApplyChangePlanRequest) => Promise<ApplyChangePlanResponse>;
@@ -356,6 +364,12 @@ export type ProjectBridge = {
   stageTypeChart: (
     request: StageTypeChartRequest
   ) => Promise<StageTypeChartResponse>;
+  loadFairyGymBoostsWorkflow: (
+    request: LoadFairyGymBoostsWorkflowRequest
+  ) => Promise<LoadFairyGymBoostsWorkflowResponse>;
+  stageFairyGymBoosts: (
+    request: StageFairyGymBoostsRequest
+  ) => Promise<StageFairyGymBoostsResponse>;
   loadFashionUnlockWorkflow: (
     request: LoadFashionUnlockWorkflowRequest
   ) => Promise<LoadFashionUnlockWorkflowResponse>;
@@ -597,6 +611,20 @@ export function createProjectBridge(
         kmCommandNames.stageTypeChart,
         request,
         stageTypeChartResponseSchema
+      ),
+    loadFairyGymBoostsWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadFairyGymBoostsWorkflow,
+        request,
+        loadFairyGymBoostsWorkflowResponseSchema
+      ),
+    stageFairyGymBoosts: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageFairyGymBoosts,
+        request,
+        stageFairyGymBoostsResponseSchema
       ),
     loadFashionUnlockWorkflow: (request) =>
       sendProjectBridgeRequest(

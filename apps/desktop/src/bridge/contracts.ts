@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-
 import { z, type ZodTypeAny } from 'zod';
 
 export const kmCommandNameValues = [
@@ -53,7 +52,7 @@ export const kmCommandNameValues = [
   'hyperTraining.load',
   'hyperTraining.stage',
   'typeChart.load',
-  'typeChart.stage',
+  'typeChart.stage', 'fairyGymBoosts.load', 'fairyGymBoosts.stage',
   'fashionUnlock.load',
   'fashionUnlock.install.stage',
   'fashionUnlock.uninstall.stage',
@@ -143,6 +142,7 @@ export const kmCommandNames = {
   stageHyperTraining: 'hyperTraining.stage',
   loadTypeChartWorkflow: 'typeChart.load',
   stageTypeChart: 'typeChart.stage',
+  loadFairyGymBoostsWorkflow: 'fairyGymBoosts.load', stageFairyGymBoosts: 'fairyGymBoosts.stage',
   loadFashionUnlockWorkflow: 'fashionUnlock.load',
   stageFashionUnlockInstall: 'fashionUnlock.install.stage',
   stageFashionUnlockUninstall: 'fashionUnlock.uninstall.stage',

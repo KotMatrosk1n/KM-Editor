@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-
 import {
   type BagHookWorkflow,
   type BehaviorWorkflow,
@@ -44,7 +43,7 @@ import {
 } from '../bridge/contracts';
 import { type ProjectBridge } from '../bridge/projectBridge';
 import { type DesktopServices, type NativeUpdate } from '../desktopServices';
-
+import { createFairyGymBoostsWorkflowFixture } from './fairyGymBoostsTestFixtures';
 export function createNativeUpdate(overrides: Partial<NativeUpdate> = {}): NativeUpdate {
   return {
     close: async () => undefined,
@@ -53,7 +52,6 @@ export function createNativeUpdate(overrides: Partial<NativeUpdate> = {}): Nativ
     ...overrides
   };
 }
-
 export function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): DesktopServices {
   return {
     checkForNativeUpdate: async () => null,
@@ -69,10 +67,8 @@ export function createMockDesktopServices(overrides: Partial<DesktopServices> = 
     ...overrides
   };
 }
-
 export function createHealthForValidatedPaths(
-  baseRomFsPath: string,
-  baseExeFsPath: string,
+  baseRomFsPath: string, baseExeFsPath: string,
   outputRootPath: string,
   saveFilePath: string | null
 ): ProjectHealth {
@@ -119,7 +115,6 @@ export function createHealthForValidatedPaths(
     state: 'editableReady'
   };
 }
-
 function createItemDetailGroups(metadata = createItemMetadata()) {
   const pouchLabel = metadata.pouch === 4 ? 'Items (4)' : 'Medicine (0)';
   const healLabel =
@@ -128,7 +123,6 @@ function createItemDetailGroups(metadata = createItemMetadata()) {
       : metadata.healAmount === 255
       ? 'Full HP'
       : `${metadata.healAmount} HP`;
-
   return [
     {
       details: [
@@ -3543,6 +3537,7 @@ export function createMockProjectBridge(
       typeIndex
     }))
   };
+  const { fairyGymBoostsWorkflow, fairyGymBoostsWorkflowSummary } = createFairyGymBoostsWorkflowFixture(canEdit);
   const fashionUnlockWorkflowSummary: WorkflowSummary = { availability: canEdit ? 'available' : 'readOnly', description: 'Unlocks fashion ownership checks without editing the save file.', diagnostics: [], id: 'fashionUnlock', label: 'Fashion Unlock' };
   const fashionUnlockWorkflow: FashionUnlockWorkflow = {
     buildId: 'A3B75BCD3311385AEED67FBEEB79CBB7BF02F471',
@@ -4508,6 +4503,7 @@ export function createMockProjectBridge(
           catchCapWorkflowSummary,
           hyperTrainingWorkflowSummary,
           typeChartWorkflowSummary,
+          fairyGymBoostsWorkflowSummary,
           fashionUnlockWorkflowSummary,
           gymUniformRemovalWorkflowSummary,
           ivScreenWorkflowSummary,
@@ -4722,10 +4718,7 @@ export function createMockProjectBridge(
           }
         }
       }),
-    loadTypeChartWorkflow: () =>
-      Promise.resolve({
-        workflow: typeChartWorkflow
-      }),
+    loadTypeChartWorkflow: () => Promise.resolve({ workflow: typeChartWorkflow }),
     stageTypeChart: (request) =>
       Promise.resolve({
         diagnostics: [
@@ -4764,10 +4757,14 @@ export function createMockProjectBridge(
           }))
         }
       }),
-    loadFashionUnlockWorkflow: () =>
+    loadFairyGymBoostsWorkflow: () => Promise.resolve({ workflow: fairyGymBoostsWorkflow }),
+    stageFairyGymBoosts: (request) =>
       Promise.resolve({
-        workflow: fashionUnlockWorkflow
+        diagnostics: [{ message: 'Fairy Gym boost outcomes are staged for change-plan review.', severity: 'info' }],
+        session: { hasPendingChanges: true, pendingEdits: [{ domain: 'workflow.fairyGymBoosts', field: 'boostSelections', newValue: request.selections.map((selection) => `${selection.boostId}:${selection.effectId}:${selection.resultKind}`).join(';'), recordId: 'fairy-gym-boosts', sources: [{ layer: 'base', relativePath: 'romfs/bin/battle/waza/sequence/bk143.bseq' }], summary: 'Stage Fairy Gym boost outcomes.' }], sessionId: request.session?.sessionId ?? 'session-fairy-gym-boosts' },
+        workflow: fairyGymBoostsWorkflow
       }),
+    loadFashionUnlockWorkflow: () => Promise.resolve({ workflow: fashionUnlockWorkflow }),
     stageFashionUnlockInstall: (request) =>
       Promise.resolve({
         diagnostics: [{ message: 'Fashion Unlock install is staged for change-plan review.', severity: 'info' }],
