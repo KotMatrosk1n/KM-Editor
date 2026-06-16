@@ -103,68 +103,77 @@ internal static class SwShDynamaxAdventureTestFixtures
         return record;
     }
 
-    public static byte[] CreateCompatibleMain()
+    public static byte[] CreateCompatibleMain(int commandValidatorOffsetDelta = 0, string? buildId = null)
     {
         var archive = CreateArchive();
-        var text = new byte[SwShDynamaxAdventuresMainPatcher.DaiGigantamaxMismatchBranchOffset + sizeof(uint)];
+        var text = new byte[SwShDynamaxAdventuresMainPatcher.DaiGigantamaxMismatchBranchOffset
+            + commandValidatorOffsetDelta
+            + sizeof(uint)];
         var ro = new byte[SwShDynamaxAdventuresMainPatcher.SummaryOffset
             + (archive.Entries.Count * SwShDynamaxAdventuresMainPatcher.SummaryEntrySize)];
 
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalSpeciesPresentMismatchBranchOffset, 0x1400001C);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalSpeciesMissingMismatchBranchOffset, 0x540002E1);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalFormPresentMismatchBranchOffset, 0x1400000A);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalFormMissingMismatchBranchOffset, 0x540000A1);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalGigantamaxMismatchBranchOffset, 0x35000068);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestSpeciesPresentMismatchBranchOffset, 0x1400001C);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestSpeciesMissingMismatchBranchOffset, 0x540002E1);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestFormPresentMismatchBranchOffset, 0x1400000A);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestFormMissingMismatchBranchOffset, 0x540000A1);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestGigantamaxMismatchBranchOffset, 0x35000068);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiSpeciesPresentMismatchBranchOffset, 0x1400001C);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiSpeciesMissingMismatchBranchOffset, 0x540002E1);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiFormPresentMismatchBranchOffset, 0x1400000A);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiFormMissingMismatchBranchOffset, 0x540000A1);
-        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiGigantamaxMismatchBranchOffset, 0x35000068);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalSpeciesPresentMismatchBranchOffset + commandValidatorOffsetDelta, 0x1400001C);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalSpeciesMissingMismatchBranchOffset + commandValidatorOffsetDelta, 0x540002E1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalFormPresentMismatchBranchOffset + commandValidatorOffsetDelta, 0x1400000A);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalFormMissingMismatchBranchOffset + commandValidatorOffsetDelta, 0x540000A1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalGigantamaxMismatchBranchOffset + commandValidatorOffsetDelta, 0x35000068);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestSpeciesPresentMismatchBranchOffset + commandValidatorOffsetDelta, 0x1400001C);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestSpeciesMissingMismatchBranchOffset + commandValidatorOffsetDelta, 0x540002E1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestFormPresentMismatchBranchOffset + commandValidatorOffsetDelta, 0x1400000A);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestFormMissingMismatchBranchOffset + commandValidatorOffsetDelta, 0x540000A1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.NestGigantamaxMismatchBranchOffset + commandValidatorOffsetDelta, 0x35000068);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiSpeciesPresentMismatchBranchOffset + commandValidatorOffsetDelta, 0x1400001C);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiSpeciesMissingMismatchBranchOffset + commandValidatorOffsetDelta, 0x540002E1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiFormPresentMismatchBranchOffset + commandValidatorOffsetDelta, 0x1400000A);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiFormMissingMismatchBranchOffset + commandValidatorOffsetDelta, 0x540000A1);
+        WriteInstruction(text, SwShDynamaxAdventuresMainPatcher.DaiGigantamaxMismatchBranchOffset + commandValidatorOffsetDelta, 0x35000068);
         SwShDynamaxAdventuresMainPatcher.WriteSummary(ro, archive.Entries);
 
-        return CreateNso(text, ro, []);
+        return CreateNso(text, ro, [], buildId);
     }
 
-    public static byte[] CreateBossTargetCompatibleMain()
+    public static byte[] CreateBossTargetCompatibleMain(int callSiteOffsetDelta = 0, string? buildId = null)
     {
-        var text = new byte[SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset + sizeof(uint)];
+        var text = new byte[SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset
+            + callSiteOffsetDelta
+            + sizeof(uint)];
         var ro = new byte[] { 1, 2, 3, 4 };
         var data = new byte[] { 5, 6, 7, 8 };
 
         WriteInstruction(
             text,
-            SwShDynamaxAdventuresBossTargetPatcher.CallSiteAOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteAOffset + callSiteOffsetDelta,
             SwShDynamaxAdventuresBossTargetPatcher.CallSiteAVanillaInstruction);
         WriteInstruction(
             text,
-            SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset + callSiteOffsetDelta,
             SwShDynamaxAdventuresBossTargetPatcher.CallSiteBVanillaInstruction);
 
-        return CreateNso(text, ro, data);
+        return CreateNso(text, ro, data, buildId);
     }
 
-    public static byte[] CreateBossTargetAndSummaryCompatibleMain(int entryCount)
+    public static byte[] CreateBossTargetAndSummaryCompatibleMain(
+        int entryCount,
+        int callSiteOffsetDelta = 0,
+        string? buildId = null)
     {
-        var text = new byte[SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset + sizeof(uint)];
+        var text = new byte[SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset
+            + callSiteOffsetDelta
+            + sizeof(uint)];
         var ro = new byte[SwShDynamaxAdventuresMainPatcher.SummaryOffset
             + (entryCount * SwShDynamaxAdventuresMainPatcher.SummaryEntrySize)];
         var data = new byte[] { 5, 6, 7, 8 };
 
         WriteInstruction(
             text,
-            SwShDynamaxAdventuresBossTargetPatcher.CallSiteAOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteAOffset + callSiteOffsetDelta,
             SwShDynamaxAdventuresBossTargetPatcher.CallSiteAVanillaInstruction);
         WriteInstruction(
             text,
-            SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset,
+            SwShDynamaxAdventuresBossTargetPatcher.CallSiteBOffset + callSiteOffsetDelta,
             SwShDynamaxAdventuresBossTargetPatcher.CallSiteBVanillaInstruction);
 
-        return CreateNso(text, ro, data);
+        return CreateNso(text, ro, data, buildId);
     }
 
     private static byte[] CreateTextTable(int highestIndex, params (int index, string value)[] entries)
@@ -186,7 +195,7 @@ internal static class SwShDynamaxAdventureTestFixtures
         BinaryPrimitives.WriteUInt32LittleEndian(text.AsSpan(offset, sizeof(uint)), instruction);
     }
 
-    private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data)
+    private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data, string? buildId = null)
     {
         var textOffset = SwShNsoFile.HeaderSize;
         var roOffset = Align(textOffset + text.Length, 0x10);
@@ -198,7 +207,14 @@ internal static class SwShDynamaxAdventureTestFixtures
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
         WriteSegmentHeader(output, 0x30, dataOffset, text.Length + ro.Length, data.Length);
-        output.AsSpan(0x40, 0x20).Fill(0xAB);
+        if (buildId is null)
+        {
+            output.AsSpan(0x40, 0x20).Fill(0xAB);
+        }
+        else
+        {
+            Convert.FromHexString(buildId).CopyTo(output.AsSpan(0x40, 0x20));
+        }
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x68), data.Length);
