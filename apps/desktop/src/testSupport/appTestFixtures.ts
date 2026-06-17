@@ -1421,8 +1421,7 @@ export function createMockProjectBridge(
             natureLabel: 'Jolly (+Spe/-Sp.Atk)',
             shiny: true,
             slot: 1,
-            species: 'Grookey',
-            speciesId: 810
+            species: 'Grookey', speciesId: 810, teraType: null, teraTypeLabel: null
           }
         ],
         trainerClass: 'Pokemon Trainer',

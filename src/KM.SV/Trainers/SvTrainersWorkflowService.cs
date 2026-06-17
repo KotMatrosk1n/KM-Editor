@@ -7,35 +7,118 @@ using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
 using KM.SV.Data;
 using KM.SV.Workflows;
+using System.Globalization;
 
 namespace KM.SV.Trainers;
 
 internal sealed class SvTrainersWorkflowService
 {
+    private const string WorkflowLabel = "Trainers";
+    private const string WorkflowDescription = "Edit Scarlet/Violet trainer data and trainer Pokemon.";
+    internal const string TeraTypeField = "teraType";
+
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BooleanOptions =
     [
         new(0, "No"),
         new(1, "Yes"),
     ];
 
-    private static readonly IReadOnlyList<SwShTrainerEditableField> EditableFields =
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BattleTypeOptions =
     [
-        CreateField(SwShTrainersWorkflowService.BattleTypeField, "Battle type", 0, int.MaxValue),
+        new(0, "1v1"),
+        new(1, "2v2"),
+    ];
+
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> GenderOptions =
+    [
+        new(0, "Random"),
+        new(1, "Male"),
+        new(2, "Female"),
+    ];
+
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> AbilityModeOptions =
+    [
+        new(0, "Random 1/2"),
+        new(1, "Random 1/2/Hidden"),
+        new(2, "Ability 1"),
+        new(3, "Ability 2"),
+        new(4, "Hidden Ability"),
+    ];
+
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> NatureOptions =
+    [
+        new(0, "Default"),
+        new(1, "Hardy"),
+        new(2, "Lonely"),
+        new(3, "Brave"),
+        new(4, "Adamant"),
+        new(5, "Naughty"),
+        new(6, "Bold"),
+        new(7, "Docile"),
+        new(8, "Relaxed"),
+        new(9, "Impish"),
+        new(10, "Lax"),
+        new(11, "Timid"),
+        new(12, "Hasty"),
+        new(13, "Serious"),
+        new(14, "Jolly"),
+        new(15, "Naive"),
+        new(16, "Modest"),
+        new(17, "Mild"),
+        new(18, "Quiet"),
+        new(19, "Bashful"),
+        new(20, "Rash"),
+        new(21, "Calm"),
+        new(22, "Gentle"),
+        new(23, "Sassy"),
+        new(24, "Careful"),
+        new(25, "Quirky"),
+    ];
+
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> ShinyModeOptions =
+    [
+        new(0, "Default"),
+        new(1, "Forced shiny"),
+    ];
+
+    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> TeraTypeOptions =
+    [
+        new((int)global::GemType.DEFAULT, "Default"),
+        new((int)global::GemType.RANDOM, "Random"),
+        new((int)global::GemType.NORMAL, "Normal"),
+        new((int)global::GemType.KAKUTOU, "Fighting"),
+        new((int)global::GemType.HIKOU, "Flying"),
+        new((int)global::GemType.DOKU, "Poison"),
+        new((int)global::GemType.JIMEN, "Ground"),
+        new((int)global::GemType.IWA, "Rock"),
+        new((int)global::GemType.MUSHI, "Bug"),
+        new((int)global::GemType.GHOST, "Ghost"),
+        new((int)global::GemType.HAGANE, "Steel"),
+        new((int)global::GemType.HONOO, "Fire"),
+        new((int)global::GemType.MIZU, "Water"),
+        new((int)global::GemType.KUSA, "Grass"),
+        new((int)global::GemType.DENKI, "Electric"),
+        new((int)global::GemType.ESPER, "Psychic"),
+        new((int)global::GemType.KOORI, "Ice"),
+        new((int)global::GemType.DRAGON, "Dragon"),
+        new((int)global::GemType.AKU, "Dark"),
+        new((int)global::GemType.FAIRY, "Fairy"),
+        new((int)global::GemType.NIJI, "Stellar"),
+    ];
+
+    private static readonly IReadOnlyList<SwShTrainerEditableField> BaseEditableFields =
+    [
+        CreateField(SwShTrainersWorkflowService.BattleTypeField, "Battle type", 0, 1, BattleTypeOptions),
         CreateField(SwShTrainersWorkflowService.MoneyField, "Money rate", sbyte.MinValue, sbyte.MaxValue),
         CreateField(SwShTrainersWorkflowService.AiFlagsField, "AI flags", 0, byte.MaxValue),
         CreateField("isStrong", "Strong trainer", 0, 1, BooleanOptions, "boolean"),
         CreateField("changeGem", "Change Tera type", 0, 1, BooleanOptions, "boolean"),
-        CreateField(SwShTrainersWorkflowService.SpeciesIdField, "Species", 0, ushort.MaxValue),
         CreateField(SwShTrainersWorkflowService.FormField, "Form", short.MinValue, short.MaxValue),
         CreateField(SwShTrainersWorkflowService.LevelField, "Level", 0, 100),
-        CreateField(SwShTrainersWorkflowService.HeldItemIdField, "Held item", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.Move1IdField, "Move 1", 0, ushort.MaxValue),
-        CreateField(SwShTrainersWorkflowService.Move2IdField, "Move 2", 0, ushort.MaxValue),
-        CreateField(SwShTrainersWorkflowService.Move3IdField, "Move 3", 0, ushort.MaxValue),
-        CreateField(SwShTrainersWorkflowService.Move4IdField, "Move 4", 0, ushort.MaxValue),
-        CreateField(SwShTrainersWorkflowService.GenderField, "Gender", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.AbilityField, "Ability mode", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.NatureField, "Nature", 0, int.MaxValue),
+        CreateField(SwShTrainersWorkflowService.GenderField, "Gender", 0, 2, GenderOptions),
+        CreateField(SwShTrainersWorkflowService.AbilityField, "Ability mode", 0, 4, AbilityModeOptions),
+        CreateField(SwShTrainersWorkflowService.NatureField, "Nature", 0, 25, NatureOptions),
+        CreateField(TeraTypeField, "Tera type", 0, 101, TeraTypeOptions),
         CreateField(SwShTrainersWorkflowService.EvHpField, "HP EV", 0, int.MaxValue),
         CreateField(SwShTrainersWorkflowService.EvAttackField, "Attack EV", 0, int.MaxValue),
         CreateField(SwShTrainersWorkflowService.EvDefenseField, "Defense EV", 0, int.MaxValue),
@@ -48,8 +131,7 @@ internal sealed class SvTrainersWorkflowService
         CreateField(SwShTrainersWorkflowService.IvSpecialAttackField, "Sp. Atk IV", 0, int.MaxValue),
         CreateField(SwShTrainersWorkflowService.IvSpecialDefenseField, "Sp. Def IV", 0, int.MaxValue),
         CreateField(SwShTrainersWorkflowService.IvSpeedField, "Speed IV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.ShinyField, "Shiny mode", 0, int.MaxValue),
-        CreateField("teraType", "Tera type", 0, int.MaxValue),
+        CreateField(SwShTrainersWorkflowService.ShinyField, "Shiny mode", 0, 1, ShinyModeOptions),
     ];
 
     private readonly SvWorkflowFileSource fileSource;
@@ -59,18 +141,31 @@ internal sealed class SvTrainersWorkflowService
         this.fileSource = fileSource ?? new SvWorkflowFileSource();
     }
 
+    public SwShWorkflowSummary CreateSummary(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        return SvWorkflowSupport.CreateSummary(
+            project,
+            SwShWorkflowIds.Trainers,
+            WorkflowLabel,
+            WorkflowDescription);
+    }
+
     public SwShTrainersWorkflow Load(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
         var diagnostics = new List<ValidationDiagnostic>();
         SvWorkflowFile? source = null;
+        var labels = SvTextLabelLookup.None();
         var trainers = Array.Empty<SwShTrainerRecord>();
 
         try
         {
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.TrainerDataArray);
-            trainers = LoadRecords(source).ToArray();
+            trainers = LoadRecords(source, labels).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -82,14 +177,14 @@ internal sealed class SvTrainersWorkflowService
         var summary = SvWorkflowSupport.CreateSummary(
             project,
             SwShWorkflowIds.Trainers,
-            "Trainers",
-            "Edit Scarlet/Violet trainer data and trainer Pokemon.",
+            WorkflowLabel,
+            WorkflowDescription,
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new SwShTrainersWorkflow(
             summary,
             trainers,
-            EditableFields,
+            CreateEditableFields(labels),
             new SwShTrainersWorkflowStats(
                 trainers.Length,
                 trainers.Sum(trainer => trainer.Team.Count),
@@ -97,7 +192,7 @@ internal sealed class SvTrainersWorkflowService
             diagnostics);
     }
 
-    private static IEnumerable<SwShTrainerRecord> LoadRecords(SvWorkflowFile source)
+    private static IEnumerable<SwShTrainerRecord> LoadRecords(SvWorkflowFile source, SvTextLabelLookup labels)
     {
         var table = global::trainer.TrdataMainArray.GetRootAsTrdataMainArray(new ByteBuffer(source.Bytes));
         for (var index = 0; index < table.ValuesLength; index++)
@@ -108,17 +203,21 @@ internal sealed class SvTrainersWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, trainer.Value, source);
+            yield return ToRecord(index, trainer.Value, source, labels);
         }
     }
 
-    private static SwShTrainerRecord ToRecord(int trainerId, global::trainer.TrdataMain trainer, SvWorkflowFile source)
+    private static SwShTrainerRecord ToRecord(
+        int trainerId,
+        global::trainer.TrdataMain trainer,
+        SvWorkflowFile source,
+        SvTextLabelLookup labels)
     {
         var aiFlags = PackAiFlags(trainer);
-        var team = ReadTeam(trainer).ToArray();
+        var team = ReadTeam(trainer, labels).ToArray();
         var aiStates = CreateAiStates(trainer);
-        var className = string.IsNullOrWhiteSpace(trainer.TrainerType) ? "Trainer" : trainer.TrainerType;
-        var name = string.IsNullOrWhiteSpace(trainer.TrNameLabel) ? trainer.Trid ?? $"Trainer {trainerId}" : trainer.TrNameLabel;
+        var className = labels.TrainerType(trainer.TrainerType);
+        var name = labels.TrainerName(trainer.TrNameLabel, trainerId);
 
         return new SwShTrainerRecord(
             trainerId,
@@ -127,7 +226,7 @@ internal sealed class SvTrainersWorkflowService
             className,
             Location: trainer.Trid ?? string.Empty,
             (int)trainer.BattleType,
-            SvLabels.EnumName(trainer.BattleType),
+            FormatBattleType(trainer.BattleType),
             ItemIds: [],
             Items: [],
             aiFlags,
@@ -152,7 +251,9 @@ internal sealed class SvTrainersWorkflowService
                 ClassFileState: null));
     }
 
-    private static IEnumerable<SwShTrainerPokemonRecord> ReadTeam(global::trainer.TrdataMain trainer)
+    private static IEnumerable<SwShTrainerPokemonRecord> ReadTeam(
+        global::trainer.TrdataMain trainer,
+        SvTextLabelLookup labels)
     {
         var slots = new[]
         {
@@ -172,11 +273,14 @@ internal sealed class SvTrainersWorkflowService
                 continue;
             }
 
-            yield return ToPokemon(index, pokemon.Value);
+            yield return ToPokemon(index, pokemon.Value, labels);
         }
     }
 
-    private static SwShTrainerPokemonRecord ToPokemon(int slot, global::PokeDataBattle pokemon)
+    private static SwShTrainerPokemonRecord ToPokemon(
+        int slot,
+        global::PokeDataBattle pokemon,
+        SvTextLabelLookup labels)
     {
         var speciesId = (int)pokemon.DevId;
         var itemId = (int)pokemon.Item;
@@ -186,19 +290,19 @@ internal sealed class SvTrainersWorkflowService
         var record = new SwShTrainerPokemonRecord(
             slot,
             speciesId,
-            SvLabels.Pokemon(speciesId),
+            labels.Pokemon(speciesId),
             pokemon.FormId,
             pokemon.Level,
             itemId,
-            itemId > 0 ? SvLabels.Item(itemId) : null,
+            itemId > 0 ? labels.Item(itemId) : null,
             moveIds,
-            moveIds.Select(SvLabels.Move).ToArray(),
+            moveIds.Select(labels.Move).ToArray(),
             (int)pokemon.Sex,
-            SvLabels.EnumName(pokemon.Sex),
+            FormatGender(pokemon.Sex),
             (int)pokemon.Tokusei,
-            SvLabels.EnumName(pokemon.Tokusei),
+            FormatAbilityMode(pokemon.Tokusei),
             (int)pokemon.Seikaku,
-            SvLabels.EnumName(pokemon.Seikaku),
+            FormatNature(pokemon.Seikaku),
             new SwShTrainerPokemonStatsRecord(
                 evs?.Hp ?? 0,
                 evs?.Atk ?? 0,
@@ -216,16 +320,11 @@ internal sealed class SvTrainersWorkflowService
                 ivs?.SpDef ?? 0,
                 ivs?.Agi ?? 0),
             pokemon.RareType != global::RareType.DEFAULT,
-            CanDynamax: true)
+            CanDynamax: true,
+            TeraType: (int)pokemon.GemType,
+            TeraTypeLabel: FormatTeraType(pokemon.GemType))
         {
-            AbilityOptions =
-            [
-                new(0, "Random 1/2"),
-                new(1, "Random 1/2/Hidden"),
-                new(2, "Ability 1"),
-                new(3, "Ability 2"),
-                new(4, "Hidden Ability"),
-            ],
+            AbilityOptions = AbilityModeOptions,
         };
 
         return record;
@@ -280,6 +379,65 @@ internal sealed class SvTrainersWorkflowService
             .ToArray();
     }
 
+    private static IReadOnlyList<SwShTrainerEditableField> CreateEditableFields(SvTextLabelLookup labels)
+    {
+        var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
+        var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
+        var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
+        var fields = new List<SwShTrainerEditableField>();
+
+        foreach (var field in BaseEditableFields)
+        {
+            if (field.Field == SwShTrainersWorkflowService.FormField)
+            {
+                fields.Add(CreateField(SwShTrainersWorkflowService.SpeciesIdField, "Species", 0, MaximumOptionValue(speciesOptions, ushort.MaxValue), speciesOptions));
+            }
+
+            fields.Add(field);
+
+            if (field.Field == SwShTrainersWorkflowService.LevelField)
+            {
+                fields.Add(CreateField(SwShTrainersWorkflowService.HeldItemIdField, "Held item", 0, MaximumOptionValue(itemOptions, int.MaxValue), itemOptions));
+                fields.Add(CreateField(SwShTrainersWorkflowService.Move1IdField, "Move 1", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
+                fields.Add(CreateField(SwShTrainersWorkflowService.Move2IdField, "Move 2", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
+                fields.Add(CreateField(SwShTrainersWorkflowService.Move3IdField, "Move 3", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
+                fields.Add(CreateField(SwShTrainersWorkflowService.Move4IdField, "Move 4", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
+            }
+        }
+
+        return fields;
+    }
+
+    private static IReadOnlyList<SwShTrainerEditableFieldOption> CreateIndexedOptions(
+        int count,
+        Func<int, string> resolveName,
+        bool includeNone)
+    {
+        var firstValue = includeNone ? 0 : 1;
+        if (count <= firstValue)
+        {
+            return includeNone ? [new(0, "0 None")] : Array.Empty<SwShTrainerEditableFieldOption>();
+        }
+
+        return Enumerable
+            .Range(firstValue, count - firstValue)
+            .Select(value =>
+            {
+                var label = value == 0 ? "None" : resolveName(value);
+                return new SwShTrainerEditableFieldOption(
+                    value,
+                    $"{value.ToString(CultureInfo.InvariantCulture)} {label}");
+            })
+            .ToArray();
+    }
+
+    private static int MaximumOptionValue(
+        IReadOnlyList<SwShTrainerEditableFieldOption> options,
+        int fallback)
+    {
+        return options.Count == 0 ? fallback : options.Max(option => option.Value);
+    }
+
     private static SwShTrainerEditableField CreateField(
         string field,
         string label,
@@ -295,5 +453,51 @@ internal sealed class SvTrainersWorkflowService
             minimumValue,
             maximumValue,
             options ?? Array.Empty<SwShTrainerEditableFieldOption>());
+    }
+
+    internal static string FormatBattleType(global::trainer.BattleType value)
+    {
+        return value switch
+        {
+            global::trainer.BattleType._1vs1 => "1v1",
+            global::trainer.BattleType._2vs2 => "2v2",
+            _ => SvLabels.EnumName(value),
+        };
+    }
+
+    internal static string FormatGender(global::SexType value)
+    {
+        return value switch
+        {
+            global::SexType.DEFAULT => "Random",
+            global::SexType.MALE => "Male",
+            global::SexType.FEMALE => "Female",
+            _ => SvLabels.EnumName(value),
+        };
+    }
+
+    internal static string FormatAbilityMode(global::TokuseiType value)
+    {
+        return value switch
+        {
+            global::TokuseiType.RANDOM_12 => "Random 1/2",
+            global::TokuseiType.RANDOM_123 => "Random 1/2/Hidden",
+            global::TokuseiType.SET_1 => "Ability 1",
+            global::TokuseiType.SET_2 => "Ability 2",
+            global::TokuseiType.SET_3 => "Hidden Ability",
+            _ => SvLabels.EnumName(value),
+        };
+    }
+
+    internal static string FormatNature(global::SeikakuType value)
+    {
+        return NatureOptions.FirstOrDefault(option => option.Value == (int)value)?.Label
+            ?? SvLabels.EnumName(value);
+    }
+
+    internal static string FormatTeraType(global::GemType value)
+    {
+        return TeraTypeOptions.FirstOrDefault(option => option.Value == (int)value)?.Label
+            ?? SvLabels.EnumName(value);
     }
 }

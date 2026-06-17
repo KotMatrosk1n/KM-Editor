@@ -219,14 +219,14 @@ describe('App', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pokemon Sword' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pokemon Shield' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Pokemon Scarlet' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Pokemon Violet' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pokemon Scarlet' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pokemon Violet' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Project Setup' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Pokemon Shield' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon Scarlet' }));
 
     expect(screen.getByRole('heading', { name: 'Project Setup' })).toBeInTheDocument();
-    expect(screen.getByText('Pokemon Shield Editor')).toBeInTheDocument();
+    expect(screen.getByText('Pokemon Scarlet Editor')).toBeInTheDocument();
     expect(window.localStorage.getItem('km-editor.project-path-draft.v1') ?? '').not.toContain(
       'selectedGame'
     );
@@ -370,6 +370,77 @@ describe('App', () => {
       'Gym Uniform Removal',
       'Dynamax Adventures'
     ]);
+  });
+
+  it('shows only the enabled Scarlet/Violet regular editors and tools', async () => {
+    const user = userEvent.setup();
+    const createWorkflowSummary = (id: string, label: string): WorkflowSummary => ({
+      availability: 'available',
+      description: `${label} S/V test workflow.`,
+      diagnostics: [],
+      id,
+      label
+    });
+    const listWorkflows = vi.fn(async () => ({
+      workflows: [
+        createWorkflowSummary('items', 'Items'),
+        createWorkflowSummary('pokemon', 'Pokemon Data'),
+        createWorkflowSummary('trainers', 'Trainers'),
+        createWorkflowSummary('encounters', 'Wild Encounters'),
+        createWorkflowSummary('modMerger', 'S/V Mod Merger')
+      ]
+    }));
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        selectedGame: 'scarlet'
+      }
+    });
+
+    render(<App bridge={createMockProjectBridge({ listWorkflows }, true)} />);
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await waitFor(() => expect(listWorkflows).toHaveBeenCalledTimes(1));
+
+    const navigation = screen.getByRole('navigation', { name: 'Workspace' });
+    const topLevelLabels = within(navigation)
+      .getAllByRole('button')
+      .filter((button) => !button.classList.contains('nav-child-button'))
+      .map((button) => button.textContent);
+
+    expect(topLevelLabels).toEqual([
+      'Project Setup',
+      'Editors',
+      'Encounters & Pokemon Sources',
+      'Tools',
+      'Changes',
+      'Settings'
+    ]);
+
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    expect(within(navigation).getByRole('button', { name: 'Pokemon' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Trainers' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Items' })).toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Moves' })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Placement' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    expect(
+      within(navigation).getByRole('button', { name: 'Wild Encounters' })
+    ).toBeInTheDocument();
+    expect(
+      within(navigation).queryByRole('button', { name: 'Raid Battles' })
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tools' }));
+    expect(within(navigation).getByRole('button', { name: 'Mod Merger' })).toBeInTheDocument();
+    expect(
+      within(navigation).queryByRole('button', { name: 'Spreadsheet Import' })
+    ).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Randomizer' })).not.toBeInTheDocument();
   });
 
   it('resets Type Chart draft values to vanilla before staging', async () => {

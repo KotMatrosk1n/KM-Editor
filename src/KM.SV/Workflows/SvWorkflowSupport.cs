@@ -39,4 +39,15 @@ internal static class SvWorkflowSupport
             Field: field,
             Expected: expected);
     }
+
+    public static ValidationDiagnostic Warning(string message, string? file = null, string? field = null, string? expected = null)
+    {
+        return new ValidationDiagnostic(
+            DiagnosticSeverity.Warning,
+            message,
+            file,
+            Domain: "sv.editor",
+            Field: field,
+            Expected: expected);
+    }
 }

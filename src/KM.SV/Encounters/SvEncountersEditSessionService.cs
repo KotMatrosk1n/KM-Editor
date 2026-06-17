@@ -492,8 +492,6 @@ internal sealed class SvEncountersEditSessionService
 
         public static EncounterRow From(global::EncountPokeData row)
         {
-            var location = string.IsNullOrWhiteSpace(row.LocationName) ? "location" : row.LocationName;
-            var area = string.IsNullOrWhiteSpace(row.Area) ? "area" : row.Area;
             return new EncounterRow
             {
                 Devid = row.Devid,
@@ -526,7 +524,7 @@ internal sealed class SvEncountersEditSessionService
                 PokeVoiceClassification = row.PokeVoiceClassification,
                 Versiontable = row.Versiontable is { } version ? VersionTableRow.From(version) : null,
                 BringItem = row.BringItem is { } bringItem ? BringItemRow.From(bringItem) : null,
-                GroupKey = $"{location}:{area}",
+                GroupKey = SvEncounterGrouping.CreateGroupKey(row),
             };
         }
 

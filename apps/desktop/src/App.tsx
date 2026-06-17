@@ -57,6 +57,7 @@ import {
 } from 'lucide-react';
 import { type ReactVirtualizerOptions, useVirtualizer } from '@tanstack/react-virtual';
 import { listen } from '@tauri-apps/api/event';
+import { formatSvEncounterFacetValue } from './svEncounterLabels';
 import {
   type ReactNode,
   Component,
@@ -356,7 +357,7 @@ const gameDefinitions = {
   }
 >;
 
-const visibleGameSelectionGames = ['sword', 'shield'] as const satisfies readonly ProjectGame[];
+const visibleGameSelectionGames = ['sword', 'shield', 'scarlet', 'violet'] as const satisfies readonly ProjectGame[];
 
 const sections: Array<{
   id: WorkbenchSection;
@@ -851,6 +852,7 @@ const natureStatLabels = {
 } as const;
 const shinyFieldName = 'shiny';
 const canDynamaxFieldName = 'canDynamax';
+const trainerTeraTypeFieldName = 'teraType';
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
 const trainerDataFieldNames = [
   trainerClassIdFieldName,
@@ -875,6 +877,7 @@ const trainerPokemonFieldNames = [
   canGigantamaxFieldName,
   ...ivFieldNames,
   shinyFieldName,
+  trainerTeraTypeFieldName,
   canDynamaxFieldName
 ] as const;
 const giftSpeciesFieldName = 'species';
@@ -8228,8 +8231,12 @@ function SelectedPokemonPanel({
     ? learnsetDraftsByPokemonId[pokemon.personalId.toString()] ?? {}
     : {};
   const pokemonSpeciesOptions = useMemo(
-    () => editableFields.find((field) => field.field === 'hatchedSpecies')?.options ?? [],
-    [editableFields]
+    () => {
+      const fieldOptions =
+        editableFields.find((field) => field.field === 'hatchedSpecies')?.options ?? [];
+      return fieldOptions.length > 0 ? fieldOptions : createPokemonSpeciesOptions(pokemonRecords);
+    },
+    [editableFields, pokemonRecords]
   );
   const pokemonSpeciesLabels = useMemo(
     () => createPokemonSpeciesLabelMap(pokemonSpeciesOptions, pokemonRecords),
@@ -10676,7 +10683,7 @@ function SelectedTrainerPanel({
       ),
     [editableFields]
   );
-  const contextualPokemonFields = useMemo(
+  const defaultContextualPokemonFields = useMemo(
     () =>
       pokemonFields.map((field) => {
         const options = getContextualFieldOptions(
@@ -10706,11 +10713,11 @@ function SelectedTrainerPanel({
   const pokemonDraftDefaults = useMemo(
     () =>
       selectedPokemon
-        ? createTrainerDrafts(contextualPokemonFields, (field) =>
+        ? createTrainerDrafts(defaultContextualPokemonFields, (field) =>
             getEditablePokemonFieldValue(selectedPokemon, field)
           )
         : {},
-    [contextualPokemonFields, selectedPokemon]
+    [defaultContextualPokemonFields, selectedPokemon]
   );
   const selectedPokemonDraftKey =
     trainer && selectedPokemon ? `${trainer.trainerId}:${selectedPokemon.slot}` : null;
@@ -10720,6 +10727,29 @@ function SelectedTrainerPanel({
   const pokemonDrafts = selectedPokemonDraftKey
     ? pokemonDraftsByTrainerSlot[selectedPokemonDraftKey] ?? pokemonDraftDefaults
     : {};
+  const selectedPokemonFormOptionContext = useMemo(
+    () =>
+      selectedPokemon
+        ? createDraftSpeciesFormOptionContext(
+            defaultContextualPokemonFields.find(
+              (field) => field.field === speciesIdFieldName
+            ) ?? null,
+            pokemonDrafts[speciesIdFieldName],
+            selectedPokemon.species,
+            selectedPokemon.speciesId,
+            selectedPokemon.abilityOptions
+          )
+        : undefined,
+    [defaultContextualPokemonFields, pokemonDrafts, selectedPokemon]
+  );
+  const contextualPokemonFields = useMemo(
+    () =>
+      pokemonFields.map((field) => {
+        const options = getContextualFieldOptions(field, selectedPokemonFormOptionContext);
+        return options === field.options ? field : { ...field, options };
+      }),
+    [pokemonFields, selectedPokemonFormOptionContext]
+  );
   const projectedTrainerHighestLevel = useMemo(
     () => getProjectedTrainerHighestLevel(trainer, selectedSlot, pokemonDrafts),
     [pokemonDrafts, selectedSlot, trainer]
@@ -11116,11 +11146,7 @@ function SelectedTrainerPanel({
                               draftState={draftState}
                               draftValue={draftValue}
                               field={field}
-                              formOptionContext={{
-                                abilityOptions: selectedPokemon.abilityOptions,
-                                species: selectedPokemon.species,
-                                speciesId: selectedPokemon.speciesId
-                              }}
+                              formOptionContext={selectedPokemonFormOptionContext}
                               key={field.field}
                               labelAdornment={getNatureStatAdornment(
                                 field.field,
@@ -11649,6 +11675,7 @@ function sortTrainerPokemonFieldGroup(group: {
       genderFieldName,
       abilityFieldName,
       natureFieldName,
+      trainerTeraTypeFieldName,
       canDynamaxFieldName,
       dynamaxLevelFieldName,
       canGigantamaxFieldName,
@@ -11782,6 +11809,7 @@ function getTrainerPokemonFieldGroup(field: TrainerEditableField) {
     field.field === dynamaxLevelFieldName ||
     field.field === canGigantamaxFieldName ||
     field.field === shinyFieldName ||
+    field.field === trainerTeraTypeFieldName ||
     field.field === canDynamaxFieldName
   ) {
     return 'Traits';
@@ -17166,19 +17194,22 @@ function EncountersSection({
     selectedTable?.slots.find((slot) => slot.slot === selectedSlot) ??
     selectedTable?.slots[0] ??
     null;
+  const selectedTableIsScarletViolet = selectedTable
+    ? isScarletVioletEncounterTable(selectedTable)
+    : false;
   const areaTabs = useMemo(
     () =>
-      selectedTable && workflow
+      selectedTable && workflow && !selectedTableIsScarletViolet
         ? buildEncounterAreaTabs(selectedTable, workflow.tables)
         : [],
-    [selectedTable, workflow]
+    [selectedTable, selectedTableIsScarletViolet, workflow]
   );
   const conditionTabs = useMemo(
     () =>
-      selectedTable && workflow
+      selectedTable && workflow && !selectedTableIsScarletViolet
         ? buildEncounterConditionTabs(selectedTable, workflow.tables)
         : [],
-    [selectedTable, workflow]
+    [selectedTable, selectedTableIsScarletViolet, workflow]
   );
   const canEditEncounters = workflow?.summary.availability === 'available';
   const pendingEncounterTableIds = getPendingEncounterTableIds(editSession);
@@ -17339,7 +17370,7 @@ function SelectedEncounterPanel({
   >({});
   const [areaCopyRequest, setAreaCopyRequest] = useState<EncounterAreaCopyRequest | null>(null);
   const cancelActiveEditSession = useCancelActiveEditSession();
-  const encounterFields = useMemo(
+  const defaultEncounterFields = useMemo(
     () =>
       editableFields.map((field) =>
         toNumericEditableControlField(
@@ -17354,19 +17385,15 @@ function SelectedEncounterPanel({
       ),
     [editableFields, encounterSlot?.species, encounterSlot?.speciesId]
   );
-  const encounterFieldGroups = useMemo(
-    () => groupNumericEditableFields(encounterFields, getEncounterEditableFieldGroup),
-    [encounterFields]
-  );
   const encounterDraftDefaults = useMemo(
     () =>
       encounterSlot
-        ? createTrainerDrafts(encounterFields, (field) =>
+        ? createTrainerDrafts(defaultEncounterFields, (field) =>
             getEditableEncounterFieldValue(encounterSlot, field)
           )
         : {},
     [
-      encounterFields,
+      defaultEncounterFields,
       encounterSlot?.form,
       encounterSlot?.levelMax,
       encounterSlot?.levelMin,
@@ -17381,6 +17408,34 @@ function SelectedEncounterPanel({
   const drafts = encounterDraftKey
     ? draftsBySlotKey[encounterDraftKey] ?? encounterDraftDefaults
     : {};
+  const encounterFormOptionContext = useMemo(
+    () =>
+      encounterSlot
+        ? createDraftSpeciesFormOptionContext(
+            defaultEncounterFields.find(
+              (field) => field.field === encounterSpeciesFieldName
+            ) ?? null,
+            drafts[encounterSpeciesFieldName],
+            encounterSlot.species,
+            encounterSlot.speciesId
+          )
+        : undefined,
+    [defaultEncounterFields, drafts, encounterSlot]
+  );
+  const encounterFields = useMemo(
+    () =>
+      editableFields.map((field) =>
+        toNumericEditableControlField(
+          field,
+          encounterSlot ? getContextualFieldOptions(field, encounterFormOptionContext) : undefined
+        )
+      ),
+    [editableFields, encounterFormOptionContext, encounterSlot]
+  );
+  const encounterFieldGroups = useMemo(
+    () => groupNumericEditableFields(encounterFields, getEncounterEditableFieldGroup),
+    [encounterFields]
+  );
   const encounterDraftSummary = useMemo(
     () =>
       getTrainerDraftSummary(
@@ -17440,6 +17495,8 @@ function SelectedEncounterPanel({
       : preparedAreaCopyRequest === null
       ? 'No matching destination conditions or slots are available to copy.'
       : undefined;
+  const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
+  const svEncounterFacets = table ? parseSvEncounterFacets(table) : null;
 
   useEffect(() => {
     if (!encounterDraftKey) {
@@ -17467,7 +17524,11 @@ function SelectedEncounterPanel({
             </div>
             <div>
               <dt>Table</dt>
-              <dd>{table.tableId}</dd>
+              <dd>
+                {svEncounterFacets
+                  ? formatSvEncounterTableSummary(svEncounterFacets)
+                  : table.tableId}
+              </dd>
             </div>
             <div>
               <dt>Archive member</dt>
@@ -17487,8 +17548,16 @@ function SelectedEncounterPanel({
             </div>
           </dl>
 
+          {isSvEncounterTable ? (
+            <SvEncounterFacetNavigator
+              onSelectTable={onSelectTable}
+              table={table}
+              tables={tables}
+            />
+          ) : null}
+
           <div className="encounter-edit-form">
-            {areaTabs.length > 0 ? (
+            {!isSvEncounterTable && areaTabs.length > 0 ? (
               <div
                 className="encounter-area-tabs"
                 role="tablist"
@@ -17521,7 +17590,7 @@ function SelectedEncounterPanel({
               </div>
             ) : null}
 
-            {conditionTabs.length > 0 ? (
+            {!isSvEncounterTable && conditionTabs.length > 0 ? (
               <div
                 className="encounter-condition-tabs"
                 role="tablist"
@@ -17554,7 +17623,7 @@ function SelectedEncounterPanel({
               </div>
             ) : null}
 
-            {areaCopyTargetArea ? (
+            {!isSvEncounterTable && areaCopyTargetArea ? (
               <div className="encounter-area-copy-actions">
                 <button
                   className="secondary-button"
@@ -17669,10 +17738,7 @@ function SelectedEncounterPanel({
                               draftState={draftState}
                               draftValue={draftValue}
                               field={field}
-                              formOptionContext={{
-                                species: encounterSlot.species,
-                                speciesId: encounterSlot.speciesId
-                              }}
+                              formOptionContext={encounterFormOptionContext}
                               idPrefix="encounter-field"
                               key={field.field}
                               onChange={(value) => {
@@ -17813,6 +17879,71 @@ function SelectedEncounterPanel({
         <p className="empty-copy">No encounter table selected.</p>
       )}
     </aside>
+  );
+}
+
+function SvEncounterFacetNavigator({
+  onSelectTable,
+  table,
+  tables
+}: {
+  onSelectTable: (tableId: string | null) => void;
+  table: EncounterTableRecord;
+  tables: EncounterTableRecord[];
+}) {
+  const facets = parseSvEncounterFacets(table);
+  const controls = useMemo(() => buildSvEncounterFacetControls(table, tables), [table, tables]);
+
+  if (!facets) {
+    return null;
+  }
+
+  return (
+    <section className="sv-encounter-navigator" aria-label="Scarlet/Violet encounter filters">
+      <div className="sv-encounter-facet-grid">
+        {[
+          ['Version', facets.version],
+          ['Area', facets.area],
+          ['Terrain', facets.terrain],
+          ['Time', facets.time],
+          ['Biome', facets.biome],
+          ['Flag', facets.flag],
+          ['Height', facets.height],
+          ['Outbreak', facets.outbreak]
+        ].map(([label, value]) => (
+          <div className="sv-encounter-facet" key={label}>
+            <span>{label}</span>
+            <strong>{formatSvEncounterFacetValue(value)}</strong>
+          </div>
+        ))}
+      </div>
+
+      {controls.length > 0 ? (
+        <div className="sv-encounter-selector-grid">
+          {controls.map((control) => (
+            <label className="path-field sv-encounter-selector" key={control.key}>
+              <span>{control.label}</span>
+              <select
+                aria-label={control.label}
+                onChange={(event) => {
+                  const tableId = event.target.value;
+                  if (tableId.length > 0 && tableId !== table.tableId) {
+                    onSelectTable(tableId);
+                  }
+                }}
+                value={table.tableId}
+              >
+                {control.choices.map((choice) => (
+                  <option key={`${control.key}:${choice.value}`} value={choice.tableId}>
+                    {choice.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -24824,6 +24955,13 @@ function createPokemonSpeciesLabelMap(
   return labels;
 }
 
+function createPokemonSpeciesOptions(pokemonRecords: PokemonRecord[]): PokemonEditableFieldOption[] {
+  const labels = createPokemonSpeciesLabelMap([], pokemonRecords);
+  return [...labels.entries()]
+    .sort((left, right) => left[0] - right[0])
+    .map(([value, label]) => ({ label, value }));
+}
+
 function createEvolutionFormOptionContext(
   speciesId: number | null,
   speciesLabels: ReadonlyMap<number, string>
@@ -24836,6 +24974,31 @@ function createEvolutionFormOptionContext(
   const species = getReferenceSpriteName(speciesLabel);
   return {
     species: species || speciesLabel,
+    speciesId
+  };
+}
+
+function createDraftSpeciesFormOptionContext(
+  speciesField: EditableFieldWithOptions | null | undefined,
+  draftValue: string | undefined,
+  fallbackSpecies: string,
+  fallbackSpeciesId: number,
+  abilityOptions?: EditableFieldOption[]
+): SpeciesFormOptionContext {
+  const options = speciesField?.options ?? [];
+  const parsedSpeciesId =
+    draftValue && draftValue.trim().length > 0
+      ? parseEditableIntegerDraft(draftValue, options)
+      : fallbackSpeciesId;
+  const speciesId = parsedSpeciesId ?? fallbackSpeciesId;
+  const speciesLabel =
+    options.find((option) => option.value === speciesId)?.label ??
+    `${speciesId.toString().padStart(3, '0')} ${fallbackSpecies}`;
+  const species = getReferenceSpriteName(speciesLabel) || fallbackSpecies;
+
+  return {
+    abilityOptions,
+    species,
     speciesId
   };
 }
@@ -25427,6 +25590,15 @@ function buildEncounterTableRows(
   tables: EncounterTableRecord[],
   selectedTable: EncounterTableRecord | null
 ): EncounterTableListRow[] {
+  if (tables.some(isScarletVioletEncounterTable)) {
+    return tables.map((table) => ({
+      areaLabel: formatSvEncounterTableListDetails(table),
+      table,
+      tableIds: [table.tableId],
+      zoneKey: getEncounterTableZoneKey(table)
+    }));
+  }
+
   const tablesByZoneKey = new Map<string, EncounterTableRecord[]>();
 
   for (const table of tables) {
@@ -25599,12 +25771,193 @@ function sortEncounterAreaLabels(labels: string[]) {
 }
 
 function getEncounterTableGroupKey(table: EncounterTableRecord) {
+  if (isScarletVioletEncounterTable(table)) {
+    return table.tableId;
+  }
+
   const parts = table.tableId.split(':');
   return parts.length >= 5 ? parts.slice(0, 4).join(':') : null;
 }
 
 function getEncounterTableZoneKey(table: EncounterTableRecord) {
+  if (isScarletVioletEncounterTable(table)) {
+    return `sv:${table.tableId}`;
+  }
+
   return [table.gameVersion, table.location].join(':');
+}
+
+function isScarletVioletEncounterTable(table: EncounterTableRecord) {
+  return (
+    table.tableId.includes('|') ||
+    table.provenance.sourceFile.includes('world/data/encount') ||
+    table.gameVersion.includes('Scarlet') ||
+    table.gameVersion.includes('Violet')
+  );
+}
+
+function parseSvEncounterFacets(table: EncounterTableRecord | null): SvEncounterFacets | null {
+  if (!table || !isScarletVioletEncounterTable(table)) {
+    return null;
+  }
+
+  const parts = table.tableId.split('|');
+  if (parts.length < 11) {
+    return {
+      area: table.area,
+      band: 'Any',
+      biome: table.slots[0]?.weather ?? 'Any',
+      flag: 'no-flag',
+      height: 'Any',
+      location: table.location,
+      outbreak: '0',
+      terrain: table.encounterType,
+      time: table.slots[0]?.timeOfDay ?? 'Any',
+      version: table.gameVersion,
+      voice: 'voice:any'
+    };
+  }
+
+  return {
+    location: parts[0] || table.location,
+    area: parts[1] || table.area,
+    version: parts[2] || table.gameVersion,
+    terrain: parts[3] || table.encounterType,
+    time: parts[4] || (table.slots[0]?.timeOfDay ?? 'Any'),
+    biome: parts[5] || (table.slots[0]?.weather ?? 'Any'),
+    flag: parts[6] || 'no-flag',
+    height: parts[7] || 'Any',
+    band: parts[8] || 'Any',
+    outbreak: parts[9] || '0',
+    voice: parts[10] || 'voice:any'
+  };
+}
+
+function buildSvEncounterFacetControls(
+  selectedTable: EncounterTableRecord,
+  tables: EncounterTableRecord[]
+): SvEncounterFacetControl[] {
+  const selectedFacets = parseSvEncounterFacets(selectedTable);
+  if (!selectedFacets) {
+    return [];
+  }
+
+  const candidates = tables
+    .map((table) => ({ facets: parseSvEncounterFacets(table), table }))
+    .filter((candidate): candidate is { facets: SvEncounterFacets; table: EncounterTableRecord } =>
+      candidate.facets !== null && candidate.facets.location === selectedFacets.location
+    );
+  const definitions: Array<{ key: SvEncounterFacetKey; label: string }> = [
+    { key: 'area', label: 'Area' },
+    { key: 'version', label: 'Version' },
+    { key: 'terrain', label: 'Terrain' },
+    { key: 'time', label: 'Time' },
+    { key: 'biome', label: 'Biome' },
+    { key: 'flag', label: 'Flag' },
+    { key: 'height', label: 'Height' },
+    { key: 'band', label: 'Band' },
+    { key: 'outbreak', label: 'Outbreak' },
+    { key: 'voice', label: 'Voice' }
+  ];
+
+  return definitions
+    .map((definition) => {
+      const choicesByValue = new Map<
+        string,
+        { label: string; score: number; tableId: string; value: string }
+      >();
+
+      for (const candidate of candidates) {
+        const value = candidate.facets[definition.key];
+        const score = scoreSvEncounterFacetMatch(selectedFacets, candidate.facets, definition.key);
+        const current = choicesByValue.get(value);
+        if (!current || score > current.score) {
+          choicesByValue.set(value, {
+            label: formatSvEncounterFacetValue(value),
+            score,
+            tableId: candidate.table.tableId,
+            value
+          });
+        }
+      }
+
+      choicesByValue.set(selectedFacets[definition.key], {
+        label: formatSvEncounterFacetValue(selectedFacets[definition.key]),
+        score: Number.MAX_SAFE_INTEGER,
+        tableId: selectedTable.tableId,
+        value: selectedFacets[definition.key]
+      });
+
+      const choices = [...choicesByValue.values()]
+        .sort((left, right) =>
+          left.value === selectedFacets[definition.key]
+            ? -1
+            : right.value === selectedFacets[definition.key]
+              ? 1
+              : left.label.localeCompare(right.label)
+        )
+        .map(({ label, tableId, value }) => ({ label, tableId, value }));
+
+      return {
+        choices,
+        currentValue: selectedFacets[definition.key],
+        key: definition.key,
+        label: definition.label
+      };
+    })
+    .filter((control) => control.choices.length > 1 && control.choices.some((choice) => choice.tableId === selectedTable.tableId));
+}
+
+function scoreSvEncounterFacetMatch(
+  selected: SvEncounterFacets,
+  candidate: SvEncounterFacets,
+  ignoredKey: SvEncounterFacetKey
+) {
+  const weights: Array<[SvEncounterFacetKey, number]> = [
+    ['area', 4],
+    ['version', 3],
+    ['terrain', 3],
+    ['time', 2],
+    ['biome', 2],
+    ['flag', 1],
+    ['height', 1],
+    ['band', 1],
+    ['outbreak', 1],
+    ['voice', 1]
+  ];
+
+  return weights.reduce(
+    (total, [key, weight]) =>
+      key === ignoredKey || selected[key] !== candidate[key] ? total : total + weight,
+    0
+  );
+}
+
+function formatSvEncounterTableSummary(facets: SvEncounterFacets) {
+  return [
+    formatSvEncounterFacetValue(facets.version),
+    formatSvEncounterFacetValue(facets.terrain),
+    formatSvEncounterFacetValue(facets.time),
+    formatSvEncounterFacetValue(facets.biome)
+  ]
+    .filter((part, index, parts) => part.length > 0 && parts.indexOf(part) === index)
+    .join(' / ');
+}
+
+function formatSvEncounterTableListDetails(table: EncounterTableRecord) {
+  const facets = parseSvEncounterFacets(table);
+  if (!facets) {
+    return table.area;
+  }
+
+  return [
+    formatSvEncounterFacetValue(facets.area),
+    formatSvEncounterFacetValue(facets.terrain),
+    formatSvEncounterFacetValue(facets.time),
+    formatSvEncounterFacetValue(facets.biome)
+  ]
+    .filter((part, index, parts) => part.length > 0 && parts.indexOf(part) === index)
+    .join(' / ');
 }
 
 function filterEncounterTables(tables: EncounterTableRecord[], searchText: string) {
@@ -26301,6 +26654,8 @@ function getEditablePokemonFieldValue(pokemon: TrainerPokemonRecord, field: stri
       return pokemon.ivs.speed;
     case shinyFieldName:
       return pokemon.shiny ? 1 : 0;
+    case trainerTeraTypeFieldName:
+      return pokemon.teraType;
     case canDynamaxFieldName:
       return pokemon.canDynamax ? 1 : 0;
     default:
@@ -27046,6 +27401,27 @@ type EncounterAreaCopyRequest = {
   targetArea: string;
   targetTableId: string;
   updates: EncounterSlotFieldUpdate[];
+};
+
+type SvEncounterFacetKey =
+  | 'area'
+  | 'version'
+  | 'terrain'
+  | 'time'
+  | 'biome'
+  | 'flag'
+  | 'height'
+  | 'band'
+  | 'outbreak'
+  | 'voice';
+
+type SvEncounterFacets = Record<'location' | SvEncounterFacetKey, string>;
+
+type SvEncounterFacetControl = {
+  choices: Array<{ label: string; tableId: string; value: string }>;
+  currentValue: string;
+  key: SvEncounterFacetKey;
+  label: string;
 };
 
 type SaveProgressState = {
@@ -29136,6 +29512,132 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [0, 'Calyrex'],
     [1, 'Ice Rider'],
     [2, 'Shadow Rider']
+  ]),
+  createFormLabelDefinition(58, ['growlithe'], [[1, 'Hisuian']], 'Kantonian'),
+  createFormLabelDefinition(59, ['arcanine'], [[1, 'Hisuian']], 'Kantonian'),
+  createFormLabelDefinition(100, ['voltorb'], [[1, 'Hisuian']], 'Kantonian'),
+  createFormLabelDefinition(101, ['electrode'], [[1, 'Hisuian']], 'Kantonian'),
+  createFormLabelDefinition(128, ['tauros'], [
+    [1, 'Paldean Combat Breed'],
+    [2, 'Paldean Blaze Breed'],
+    [3, 'Paldean Aqua Breed']
+  ], 'Kantonian'),
+  createFormLabelDefinition(157, ['typhlosion'], [[1, 'Hisuian']], 'Johtonian'),
+  createFormLabelDefinition(194, ['wooper'], [[1, 'Paldean']], 'Johtonian'),
+  createFormLabelDefinition(211, ['qwilfish'], [[1, 'Hisuian']], 'Johtonian'),
+  createFormLabelDefinition(215, ['sneasel'], [[1, 'Hisuian']], 'Johtonian'),
+  createFormLabelDefinition(503, ['samurott'], [[1, 'Hisuian']], 'Unovan'),
+  createFormLabelDefinition(549, ['lilligant'], [[1, 'Hisuian']], 'Unovan'),
+  createFormLabelDefinition(550, ['basculin'], [
+    [0, 'Red-Striped'],
+    [1, 'Blue-Striped'],
+    [2, 'White-Striped']
+  ]),
+  createFormLabelDefinition(570, ['zorua'], [[1, 'Hisuian']], 'Unovan'),
+  createFormLabelDefinition(571, ['zoroark'], [[1, 'Hisuian']], 'Unovan'),
+  createFormLabelDefinition(628, ['braviary'], [[1, 'Hisuian']], 'Unovan'),
+  createFormLabelDefinition(705, ['sliggoo'], [[1, 'Hisuian']], 'Kalosian'),
+  createFormLabelDefinition(706, ['goodra'], [[1, 'Hisuian']], 'Kalosian'),
+  createFormLabelDefinition(713, ['avalugg'], [[1, 'Hisuian']], 'Kalosian'),
+  createFormLabelDefinition(724, ['decidueye'], [[1, 'Hisuian']], 'Alolan'),
+  createFormLabelDefinition(741, ['oricorio'], [
+    [0, 'Baile Style'],
+    [1, 'Pom-Pom Style'],
+    [2, "Pa'u Style"],
+    [3, 'Sensu Style']
+  ]),
+  createFormLabelDefinition(774, ['minior'], [
+    [0, 'Red Meteor'],
+    [1, 'Orange Meteor'],
+    [2, 'Yellow Meteor'],
+    [3, 'Green Meteor'],
+    [4, 'Blue Meteor'],
+    [5, 'Indigo Meteor'],
+    [6, 'Violet Meteor'],
+    [7, 'Red Core'],
+    [8, 'Orange Core'],
+    [9, 'Yellow Core'],
+    [10, 'Green Core'],
+    [11, 'Blue Core'],
+    [12, 'Indigo Core'],
+    [13, 'Violet Core']
+  ]),
+  createFormLabelDefinition(901, ['ursaluna'], [[1, 'Bloodmoon']], 'Standard'),
+  createFormLabelDefinition(902, ['basculegion'], [
+    [0, 'Male'],
+    [1, 'Female']
+  ]),
+  createFormLabelDefinition(905, ['enamorus'], [
+    [0, 'Incarnate Forme'],
+    [1, 'Therian Forme']
+  ]),
+  createFormLabelDefinition(916, ['oinkologne'], [
+    [0, 'Male'],
+    [1, 'Female']
+  ]),
+  createFormLabelDefinition(917, ['dudunsparce'], [
+    [0, 'Two-Segment Form'],
+    [1, 'Three-Segment Form']
+  ]),
+  createFormLabelDefinition(934, ['palafin'], [
+    [0, 'Zero Form'],
+    [1, 'Hero Form']
+  ]),
+  createFormLabelDefinition(946, ['maushold'], [
+    [0, 'Family of Four'],
+    [1, 'Family of Three']
+  ]),
+  createFormLabelDefinition(952, ['tatsugiri'], [
+    [0, 'Curly Form'],
+    [1, 'Droopy Form'],
+    [2, 'Stretchy Form']
+  ]),
+  createFormLabelDefinition(960, ['squawkabilly'], [
+    [0, 'Green Plumage'],
+    [1, 'Blue Plumage'],
+    [2, 'Yellow Plumage'],
+    [3, 'White Plumage']
+  ]),
+  createFormLabelDefinition(976, ['gimmighoul'], [
+    [0, 'Chest Form'],
+    [1, 'Roaming Form']
+  ]),
+  createFormLabelDefinition(998, ['koraidon'], [
+    [0, 'Apex Build'],
+    [1, 'Limited Build'],
+    [2, 'Sprinting Build'],
+    [3, 'Swimming Build'],
+    [4, 'Gliding Build']
+  ]),
+  createFormLabelDefinition(999, ['miraidon'], [
+    [0, 'Ultimate Mode'],
+    [1, 'Low-Power Mode'],
+    [2, 'Drive Mode'],
+    [3, 'Aquatic Mode'],
+    [4, 'Glide Mode']
+  ]),
+  createFormLabelDefinition(1011, ['ogerpon'], [
+    [0, 'Teal Mask'],
+    [1, 'Wellspring Mask'],
+    [2, 'Hearthflame Mask'],
+    [3, 'Cornerstone Mask'],
+    [4, 'Teal Mask Terastallized'],
+    [5, 'Wellspring Mask Terastallized'],
+    [6, 'Hearthflame Mask Terastallized'],
+    [7, 'Cornerstone Mask Terastallized']
+  ]),
+  createFormLabelDefinition(1021, ['terapagos'], [
+    [0, 'Normal Form'],
+    [1, 'Terastal Form'],
+    [2, 'Stellar Form']
+  ]),
+  createFormLabelDefinition(1024, ['poltchageist'], [
+    [0, 'Counterfeit Form'],
+    [1, 'Artisan Form']
+  ]),
+  createFormLabelDefinition(1025, ['sinistcha'], [
+    [0, 'Unremarkable Form'],
+    [1, 'Masterpiece Form']
   ])
 ];
 

@@ -12,25 +12,41 @@ namespace KM.SV.Items;
 
 internal sealed class SvItemsWorkflowService
 {
+    private const string WorkflowLabel = "Items";
+    private const string WorkflowDescription = "Edit Scarlet/Violet item data and TM move assignments.";
+
+    private static readonly IReadOnlyList<SwShItemEditableFieldOption> BooleanOptions =
+    [
+        new(0, "No"),
+        new(1, "Yes"),
+    ];
+
+    private static readonly IReadOnlyList<SwShItemEditableFieldOption> FieldPocketOptions =
+        CreateEnumOptions<global::FieldPocket>("FPOCKET_");
+
+    private static readonly IReadOnlyList<SwShItemEditableFieldOption> FieldFunctionOptions =
+        CreateEnumOptions<global::FieldFunctionType>("FIELDFUNC_");
+
+    private static readonly IReadOnlyList<SwShItemEditableFieldOption> ItemTypeOptions =
+        CreateEnumOptions<global::ItemType>("ITEMTYPE_");
+
+    private static readonly IReadOnlyList<SwShItemEditableFieldOption> ItemGroupOptions =
+        CreateEnumOptions<global::ItemGroup>("ITEMGROUP_");
+
     private static readonly IReadOnlyList<SwShItemEditableField> EditableFields =
     [
         CreateField(SwShItemsWorkflowService.BuyPriceField, "Buy price", 0, 999_999),
         CreateField(SwShItemsWorkflowService.WattsPriceField, "BP price", 0, 999_999),
-        CreateField(SwShItemsWorkflowService.PouchField, "Field pocket", 0, int.MaxValue),
+        CreateField(SwShItemsWorkflowService.PouchField, "Field pocket", 0, int.MaxValue, FieldPocketOptions),
         CreateField(SwShItemsWorkflowService.FlingPowerField, "Throw power", 0, int.MaxValue),
-        CreateField(SwShItemsWorkflowService.FieldUseTypeField, "Field function", 0, int.MaxValue),
+        CreateField(SwShItemsWorkflowService.FieldUseTypeField, "Field function", 0, int.MaxValue, FieldFunctionOptions),
         CreateField(SwShItemsWorkflowService.CanUseOnPokemonField, "Can use on Pokemon", 0, 1, BooleanOptions, "boolean"),
-        CreateField(SwShItemsWorkflowService.ItemTypeField, "Item type", 0, int.MaxValue),
+        CreateField(SwShItemsWorkflowService.ItemTypeField, "Item type", 0, int.MaxValue, ItemTypeOptions),
         CreateField(SwShItemsWorkflowService.SortIndexField, "Sort index", 0, int.MaxValue),
-        CreateField(SwShItemsWorkflowService.GroupTypeField, "Item group", 0, int.MaxValue),
+        CreateField(SwShItemsWorkflowService.GroupTypeField, "Item group", 0, int.MaxValue, ItemGroupOptions),
         CreateField(SwShItemsWorkflowService.GroupIndexField, "Group ID", 0, int.MaxValue),
-        CreateField(SwShItemsWorkflowService.AttackBoostField, "Attack boost", int.MinValue, int.MaxValue),
-        CreateField(SwShItemsWorkflowService.DefenseBoostField, "Defense boost", int.MinValue, int.MaxValue),
-        CreateField(SwShItemsWorkflowService.SpecialAttackBoostField, "Sp. Atk boost", int.MinValue, int.MaxValue),
-        CreateField(SwShItemsWorkflowService.SpecialDefenseBoostField, "Sp. Def boost", int.MinValue, int.MaxValue),
-        CreateField(SwShItemsWorkflowService.SpeedBoostField, "Speed boost", int.MinValue, int.MaxValue),
-        CreateField(SwShItemsWorkflowService.AccuracyBoostField, "Accuracy boost", int.MinValue, int.MaxValue),
-        CreateField(SwShItemsWorkflowService.CriticalHitBoostField, "Critical boost", int.MinValue, int.MaxValue),
+        // The shared Items panel treats SwSh boost fields as packed nibbles, while S/V stores them separately.
+        // Keep those fields locked until S/V gets dedicated controls for the raw work values.
         CreateField(SwShItemsWorkflowService.EvHpField, "HP EV", int.MinValue, int.MaxValue),
         CreateField(SwShItemsWorkflowService.EvAttackField, "Attack EV", int.MinValue, int.MaxValue),
         CreateField(SwShItemsWorkflowService.EvDefenseField, "Defense EV", int.MinValue, int.MaxValue),
@@ -45,17 +61,22 @@ internal sealed class SvItemsWorkflowService
         CreateField(SwShItemsWorkflowService.MachineMoveIdField, "TM move", 0, ushort.MaxValue),
     ];
 
-    private static readonly IReadOnlyList<SwShItemEditableFieldOption> BooleanOptions =
-    [
-        new(0, "No"),
-        new(1, "Yes"),
-    ];
-
     private readonly SvWorkflowFileSource fileSource;
 
     public SvItemsWorkflowService(SvWorkflowFileSource? fileSource = null)
     {
         this.fileSource = fileSource ?? new SvWorkflowFileSource();
+    }
+
+    public SwShWorkflowSummary CreateSummary(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        return SvWorkflowSupport.CreateSummary(
+            project,
+            SwShWorkflowIds.Items,
+            WorkflowLabel,
+            WorkflowDescription);
     }
 
     public SwShItemsWorkflow Load(OpenedProject project)
@@ -65,11 +86,13 @@ internal sealed class SvItemsWorkflowService
         var diagnostics = new List<ValidationDiagnostic>();
         SvWorkflowFile? source = null;
         var items = Array.Empty<SwShItemRecord>();
+        var labels = SvTextLabelLookup.None();
 
         try
         {
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.ItemDataArray);
-            items = LoadRecords(source).ToArray();
+            items = LoadRecords(source, labels).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -81,19 +104,19 @@ internal sealed class SvItemsWorkflowService
         var summary = SvWorkflowSupport.CreateSummary(
             project,
             SwShWorkflowIds.Items,
-            "Items",
-            "Edit Scarlet/Violet item data and TM move assignments.",
+            WorkflowLabel,
+            WorkflowDescription,
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new SwShItemsWorkflow(
             summary,
             items,
-            EditableFields,
+            CreateEditableFields(labels),
             new SwShItemsWorkflowStats(items.Length, source is null ? 0 : 1),
             diagnostics);
     }
 
-    private static IEnumerable<SwShItemRecord> LoadRecords(SvWorkflowFile source)
+    private static IEnumerable<SwShItemRecord> LoadRecords(SvWorkflowFile source, SvTextLabelLookup labels)
     {
         var table = global::ItemDataArray.GetRootAsItemDataArray(new ByteBuffer(source.Bytes));
         for (var index = 0; index < table.ValuesLength; index++)
@@ -104,11 +127,11 @@ internal sealed class SvItemsWorkflowService
                 continue;
             }
 
-            yield return ToRecord(item.Value, source);
+            yield return ToRecord(item.Value, source, labels);
         }
     }
 
-    private static SwShItemRecord ToRecord(global::ItemData item, SvWorkflowFile source)
+    private static SwShItemRecord ToRecord(global::ItemData item, SvWorkflowFile source, SvTextLabelLookup labels)
     {
         var machineMoveId = (int)item.MachineWaza;
         var metadata = new SwShItemMetadata(
@@ -143,7 +166,7 @@ internal sealed class SvItemsWorkflowService
             item.WorkFriendly3,
             MachineSlot: machineMoveId > 0 ? item.GroupID : null,
             MachineMoveId: machineMoveId > 0 ? machineMoveId : null,
-            MachineMoveName: machineMoveId > 0 ? SvLabels.Move(machineMoveId) : null);
+            MachineMoveName: machineMoveId > 0 ? labels.Move(machineMoveId) : null);
 
         var detailGroups = new[]
         {
@@ -161,7 +184,7 @@ internal sealed class SvItemsWorkflowService
 
         return new SwShItemRecord(
             item.Id,
-            SvLabels.Item(item.Id),
+            labels.Item(item.Id),
             SvLabels.EnumName(item.FieldPocket, "FPOCKET_"),
             item.Price,
             item.Price / 2,
@@ -188,5 +211,54 @@ internal sealed class SvItemsWorkflowService
             minimumValue,
             maximumValue,
             options ?? Array.Empty<SwShItemEditableFieldOption>());
+    }
+
+    private static IReadOnlyList<SwShItemEditableField> CreateEditableFields(SvTextLabelLookup labels)
+    {
+        var tmMoveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
+        return EditableFields
+            .Select(field => field.Field == SwShItemsWorkflowService.MachineMoveIdField
+                ? field with
+                {
+                    MaximumValue = tmMoveOptions.Count > 0 ? tmMoveOptions.Max(option => option.Value) : field.MaximumValue,
+                    Options = tmMoveOptions,
+                }
+                : field)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SwShItemEditableFieldOption> CreateEnumOptions<TEnum>(string prefix)
+        where TEnum : struct, Enum
+    {
+        return Enum
+            .GetValues<TEnum>()
+            .Select(value => new SwShItemEditableFieldOption(
+                Convert.ToInt32(value),
+                SvLabels.EnumName(value, prefix)))
+            .OrderBy(option => option.Value)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SwShItemEditableFieldOption> CreateIndexedOptions(
+        int count,
+        Func<int, string> resolveName,
+        bool includeNone)
+    {
+        var firstValue = includeNone ? 0 : 1;
+        if (count <= firstValue)
+        {
+            return includeNone ? [new(0, "0 None")] : [];
+        }
+
+        return Enumerable
+            .Range(firstValue, count - firstValue)
+            .Select(value =>
+            {
+                var label = value == 0 ? "None" : resolveName(value);
+                return new SwShItemEditableFieldOption(
+                    value,
+                    $"{value.ToString(System.Globalization.CultureInfo.InvariantCulture)} {label}");
+            })
+            .ToArray();
     }
 }

@@ -37,6 +37,11 @@ internal static class SvLabels
         return value ? "Yes" : "No";
     }
 
+    public static string FormatRawNameForLookup(string raw)
+    {
+        return FormatRawName(raw, string.Empty);
+    }
+
     private static string FormatEnumValue(Type enumType, int value, string prefix, string fallback)
     {
         var raw = Enum.ToObject(enumType, value).ToString();

@@ -1648,6 +1648,28 @@ describe('bridge contracts', () => {
       }).success
     ).toBe(true);
 
+    const svPokemonWorkflow = {
+      ...pokemonWorkflow,
+      pokemon: [
+        {
+          ...pokemonWorkflow.pokemon[0],
+          baseExperience: -12,
+          personal: {
+            ...pokemonWorkflow.pokemon[0].personal,
+            baseExperience: -12
+          }
+        }
+      ]
+    };
+
+    expect(
+      pokemonResponseSchema.safeParse({
+        payload: {
+          workflow: svPokemonWorkflow
+        }
+      }).success
+    ).toBe(true);
+
     expect(
       movesRequestSchema.safeParse({
         command: kmCommandNames.loadMovesWorkflow,

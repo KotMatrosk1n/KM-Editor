@@ -8,4 +8,14 @@ public static class SvDataPaths
     public const string ItemDataArray = "world/data/item/itemdata/itemdata_array.bin";
     public const string TrainerDataArray = "world/data/trainer/trdata/trdata_array.bin";
     public const string WildEncounterArray = "world/data/encount/pokedata/pokedata/pokedata_array.bin";
+    public const string EnglishItemNames = "message/dat/English/common/itemname.dat";
+    public const string EnglishMoveNames = "message/dat/English/common/wazaname.dat";
+    public const string EnglishPokemonNames = "message/dat/English/common/monsname.dat";
+    public const string EnglishAbilityNames = "message/dat/English/common/tokusei.dat";
+    public const string EnglishPlaceNames = "message/dat/English/common/place_name.dat";
+    public const string EnglishPlaceNameKeys = "message/dat/English/common/place_name.tbl";
+    public const string EnglishTrainerNames = "message/dat/English/common/trname.dat";
+    public const string EnglishTrainerNameKeys = "message/dat/English/common/trname.tbl";
+    public const string EnglishTrainerTypes = "message/dat/English/common/trtype.dat";
+    public const string EnglishTrainerTypeKeys = "message/dat/English/common/trtype.tbl";
 }

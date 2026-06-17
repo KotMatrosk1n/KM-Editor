@@ -12,7 +12,10 @@ namespace KM.SV.Encounters;
 
 internal sealed class SvEncountersWorkflowService
 {
-    private static readonly IReadOnlyList<SwShEncounterEditableField> EditableFields =
+    private const string WorkflowLabel = "Wild Encounters";
+    private const string WorkflowDescription = "Edit Scarlet/Violet wild encounter rows.";
+
+    private static readonly IReadOnlyList<SwShEncounterEditableField> BaseEditableFields =
     [
         new(SwShEncountersWorkflowService.SpeciesIdField, "Species", "integer", 0, ushort.MaxValue),
         new(SwShEncountersWorkflowService.FormField, "Form", "integer", sbyte.MinValue, sbyte.MaxValue),
@@ -28,6 +31,17 @@ internal sealed class SvEncountersWorkflowService
         this.fileSource = fileSource ?? new SvWorkflowFileSource();
     }
 
+    public SwShWorkflowSummary CreateSummary(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        return SvWorkflowSupport.CreateSummary(
+            project,
+            SwShWorkflowIds.Encounters,
+            WorkflowLabel,
+            WorkflowDescription);
+    }
+
     public SwShEncountersWorkflow Load(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -35,11 +49,13 @@ internal sealed class SvEncountersWorkflowService
         var diagnostics = new List<ValidationDiagnostic>();
         SvWorkflowFile? source = null;
         var tables = Array.Empty<SwShEncounterTableRecord>();
+        var labels = SvTextLabelLookup.None();
 
         try
         {
+            labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.WildEncounterArray);
-            tables = LoadTables(source).ToArray();
+            tables = LoadTables(source, labels).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -51,14 +67,14 @@ internal sealed class SvEncountersWorkflowService
         var summary = SvWorkflowSupport.CreateSummary(
             project,
             SwShWorkflowIds.Encounters,
-            "Wild Encounters",
-            "Edit Scarlet/Violet wild encounter rows.",
+            WorkflowLabel,
+            WorkflowDescription,
             diagnostics.Count == 0 ? null : diagnostics);
 
         return new SwShEncountersWorkflow(
             summary,
             tables,
-            EditableFields,
+            CreateEditableFields(labels),
             new SwShEncountersWorkflowStats(
                 tables.Length,
                 tables.Sum(table => table.Slots.Count),
@@ -66,7 +82,9 @@ internal sealed class SvEncountersWorkflowService
             diagnostics);
     }
 
-    private static IEnumerable<SwShEncounterTableRecord> LoadTables(SvWorkflowFile source)
+    private static IEnumerable<SwShEncounterTableRecord> LoadTables(
+        SvWorkflowFile source,
+        SvTextLabelLookup labels)
     {
         var table = global::EncountPokeDataArray.GetRootAsEncountPokeDataArray(new ByteBuffer(source.Bytes));
         var rows = new List<(int Index, global::EncountPokeData Data)>();
@@ -79,135 +97,77 @@ internal sealed class SvEncountersWorkflowService
             }
         }
 
-        foreach (var group in rows.GroupBy(row => CreateGroupKey(row.Data), StringComparer.Ordinal))
+        foreach (var group in rows.GroupBy(row => SvEncounterGrouping.CreateGroupKey(row.Data), StringComparer.Ordinal))
         {
             var first = group.First().Data;
             var slots = group
-                .Select((row, slotIndex) => ToSlot(slotIndex, row.Data))
+                .Select((row, slotIndex) => ToSlot(slotIndex, row.Data, labels))
                 .ToArray();
 
             yield return new SwShEncounterTableRecord(
                 group.Key,
-                string.IsNullOrWhiteSpace(first.LocationName) ? "Unknown Location" : first.LocationName,
-                string.IsNullOrWhiteSpace(first.Area) ? "Unknown Area" : first.Area,
-                FormatEncounterType(first),
-                FormatVersions(first.Versiontable),
+                SvEncounterGrouping.FormatLocation(first, labels),
+                SvEncounterGrouping.FormatDisplayArea(first, labels),
+                SvEncounterGrouping.FormatEncounterType(first),
+                SvEncounterGrouping.FormatVersions(first.Versiontable),
                 source.RelativePath,
                 slots,
                 new SwShEncounterProvenance(source.RelativePath, source.SourceLayer, source.FileState));
         }
     }
 
-    private static SwShEncounterSlotRecord ToSlot(int slot, global::EncountPokeData row)
+    private static SwShEncounterSlotRecord ToSlot(
+        int slot,
+        global::EncountPokeData row,
+        SvTextLabelLookup labels)
     {
         var speciesId = (int)row.Devid;
         return new SwShEncounterSlotRecord(
             slot,
             speciesId,
-            SvLabels.Pokemon(speciesId),
+            labels.Pokemon(speciesId),
             row.Formno,
             row.Minlevel,
             row.Maxlevel,
             row.Lotvalue,
-            FormatTimes(row.Timetable),
-            FormatBiomes(row));
+            SvEncounterGrouping.FormatTimes(row.Timetable),
+            SvEncounterGrouping.FormatBiomes(row));
     }
 
-    private static string CreateGroupKey(global::EncountPokeData row)
+    private static IReadOnlyList<SwShEncounterEditableField> CreateEditableFields(SvTextLabelLookup labels)
     {
-        var location = string.IsNullOrWhiteSpace(row.LocationName) ? "location" : row.LocationName;
-        var area = string.IsNullOrWhiteSpace(row.Area) ? "area" : row.Area;
-        return $"{location}:{area}";
-    }
-
-    private static string FormatEncounterType(global::EncountPokeData row)
-    {
-        var enable = row.Enabletable;
-        if (enable is null)
-        {
-            return "Wild";
-        }
-
-        var parts = new List<string>();
-        if (enable.Value.Land)
-        {
-            parts.Add("Land");
-        }
-
-        if (enable.Value.UpWater)
-        {
-            parts.Add("Water");
-        }
-
-        if (enable.Value.Underwater)
-        {
-            parts.Add("Underwater");
-        }
-
-        if (enable.Value.Air1 || enable.Value.Air2)
-        {
-            parts.Add("Air");
-        }
-
-        return parts.Count == 0 ? "Wild" : string.Join(", ", parts);
-    }
-
-    private static string FormatTimes(global::TimeTable? table)
-    {
-        if (table is null)
-        {
-            return "Any";
-        }
-
-        var parts = new List<string>();
-        if (table.Value.Morning)
-        {
-            parts.Add("Morning");
-        }
-
-        if (table.Value.Noon)
-        {
-            parts.Add("Noon");
-        }
-
-        if (table.Value.Evening)
-        {
-            parts.Add("Evening");
-        }
-
-        if (table.Value.Night)
-        {
-            parts.Add("Night");
-        }
-
-        return parts.Count == 0 ? "Any" : string.Join(", ", parts);
-    }
-
-    private static string FormatVersions(global::VersionTable? table)
-    {
-        if (table is null || (table.Value.A && table.Value.B) || (!table.Value.A && !table.Value.B))
-        {
-            return "Scarlet/Violet";
-        }
-
-        return table.Value.A ? "Scarlet" : "Violet";
-    }
-
-    private static string FormatBiomes(global::EncountPokeData row)
-    {
-        var biomes = new[]
-        {
-            (row.Biome1, row.Lotvalue1),
-            (row.Biome2, row.Lotvalue2),
-            (row.Biome3, row.Lotvalue3),
-            (row.Biome4, row.Lotvalue4),
-        };
-
-        var parts = biomes
-            .Where(biome => biome.Item1 != global::Biome.NONE || biome.Item2 != 0)
-            .Select(biome => $"{SvLabels.EnumName(biome.Item1)} {biome.Item2}")
+        var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
+        return BaseEditableFields
+            .Select(field => field.Field == SwShEncountersWorkflowService.SpeciesIdField
+                ? field with
+                {
+                    MaximumValue = speciesOptions.Count > 0 ? speciesOptions.Max(option => option.Value) : field.MaximumValue,
+                    Options = speciesOptions,
+                }
+                : field)
             .ToArray();
+    }
 
-        return parts.Length == 0 ? "Any" : string.Join(", ", parts);
+    private static IReadOnlyList<SwShEncounterEditableFieldOption> CreateIndexedOptions(
+        int count,
+        Func<int, string> resolveName,
+        bool includeNone)
+    {
+        var firstValue = includeNone ? 0 : 1;
+        if (count <= firstValue)
+        {
+            return includeNone ? [new(0, "0 None")] : [];
+        }
+
+        return Enumerable
+            .Range(firstValue, count - firstValue)
+            .Select(value =>
+            {
+                var label = value == 0 ? "None" : resolveName(value);
+                return new SwShEncounterEditableFieldOption(
+                    value,
+                    $"{value.ToString(System.Globalization.CultureInfo.InvariantCulture)} {label}");
+            })
+            .ToArray();
     }
 }

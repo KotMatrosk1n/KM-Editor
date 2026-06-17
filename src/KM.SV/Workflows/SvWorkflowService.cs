@@ -53,7 +53,14 @@ public sealed class SvWorkflowService
         }
 
         var project = projectWorkspaceService.Open(paths);
-        return new SwShWorkflowList([modMergerWorkflowService.CreateSummary(project)]);
+        return new SwShWorkflowList(
+        [
+            itemsWorkflowService.CreateSummary(project),
+            pokemonWorkflowService.CreateSummary(project),
+            trainersWorkflowService.CreateSummary(project),
+            encountersWorkflowService.CreateSummary(project),
+            modMergerWorkflowService.CreateSummary(project),
+        ]);
     }
 
     public SwShItemsWorkflow LoadItems(ProjectPaths paths)

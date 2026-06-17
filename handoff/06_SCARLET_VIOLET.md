@@ -1,0 +1,295 @@
+# Scarlet / Violet Backbone
+
+Use this file before resuming Scarlet/Violet support work.
+
+Current branch:
+
+- PR #155 `Add initial Scarlet and Violet compatibility` was merged on 2026-06-15.
+- PR #158 `Organize Scarlet and Violet services` was merged on 2026-06-15.
+- Local checkout was switched back to `master` after merge.
+- Scarlet/Violet now appear in the desktop game-selection UI.
+- Pokemon Data, Items, Trainers, and Wild Encounters now appear for Scarlet/Violet projects.
+- S/V editor fields are intentionally conservative: only mapped fields are advertised as editable, while SwSh-only or not-yet-confirmed fields stay absent from the editable field list or disabled by existing UI guards.
+
+Current implementation state:
+
+- `ProjectGame` and API DTOs include `Scarlet` and `Violet`.
+- Project validation recognizes:
+  - Scarlet title ID `0x0100A3D008C5C000`.
+  - Violet title ID `0x01008F6008C5E000`.
+- Scarlet/Violet validation requires Trinity archive files under base RomFS:
+  - `arc/data.trpfd`
+  - `arc/data.trpfs`
+- The file graph adds known S/V virtual RomFS paths when a Trinity archive is present.
+- The current known S/V message tables include English `monsname`, `itemname`, `wazaname`, `tokusei`, `trname`, and `trtype` `.dat/.tbl` paths.
+- `SwShWorkflowService` returns no Sw/Sh workflows for Scarlet/Violet projects so existing Sw/Sh editors do not receive S/V game values.
+- `KM.Formats.SV` has:
+  - `SvTrinityPathHasher` using the Game Freak FNV basis `0xCBF29CE484222645`.
+  - `SvBundledOodle` and `SvOodleLibrary` for bundled Oodle 8 loading/decompression.
+  - `SvTrinityArchive` for reading `arc/data.trpfd` / `arc/data.trpfs`, resolving virtual path hashes, and decompressing packed files through bundled Oodle.
+  - `SvTrinityDescriptorPatcher` for generating a LayeredFS-ready `romfs/arc/data.trpfd` by removing hashes for loose files currently present under the output `romfs`.
+  - Generated FlatBuffer readers/writers for the currently targeted S/V game data files.
+- `Google.FlatBuffers` is added to `KM.Formats` and `KM.SV`.
+- `tests/KM.Formats.Tests` also references `Google.FlatBuffers` for synthetic S/V archive fixtures.
+- `KM.SV` is a separate project for S/V workflow/edit support and is referenced by `KM.Tools` and integration tests.
+- `KM.SV` is organized with nested folders/namespaces: `Data`, `Workflows`, `Pokemon`, `Items`, `Trainers`, `Encounters`, and `ModMerger`.
+- New S/V editors should get their own domain folder and nested namespace when they become real workflow/editor code. For example, future S/V raid work should live under `src/KM.SV/Raids` with `KM.SV.Raids`, and future S/V trades should live under `src/KM.SV/Trades` with `KM.SV.Trades`.
+- Keep shared S/V plumbing in `Workflows` or `Data` only when it is genuinely cross-domain. Avoid adding new loose workflow files at the `src/KM.SV` project root.
+- `SvWorkflowFileSource` reads layered loose output first, then loose base files, then the Trinity archive; applies write loose LayeredFS files under `romfs/...` and patches `romfs/arc/data.trpfd`.
+- `KM.SV` references `SharpCompress` for archive intake in S/V Mod Merger.
+- Desktop form-label resolution now includes S/V internal species IDs for Hisuian and Gen 9 forms such as Tauros breeds, Oinkologne, Dudunsparce, Palafin, Maushold, Squawkabilly, Tatsugiri, Gimmighoul, Koraidon/Miraidon ride forms, Ogerpon masks, Terapagos forms, Poltchageist, and Sinistcha. These are keyed to S/V `DevID` values, not NatDex values.
+
+Implemented S/V editor backend support:
+
+- Pokemon Data:
+  - Loads `avalon/data/personal_array.bin`.
+  - Loads English species, move, and ability labels from `message/dat/English/common/monsname.dat`, `wazaname.dat`, and `tokusei.dat`.
+  - `ExpAddend` is signed in S/V; the desktop bridge allows negative `baseExperience` values so records such as Slaking, Archen, and Archeops do not crash the Pokemon editor.
+  - Hidden/non-present personal table rows are filtered from the visible workflow so duplicate placeholder forms such as `Dex: Not present` entries do not crowd the normal Pokemon editor.
+  - Editable personal fields now use S/V-owned dropdown maps for types, abilities, gender ratios, EXP growth, egg groups, colors, and present-in-game flags instead of raw numeric inputs.
+  - Evolution method options now include named S/V condition IDs through `61`, including 1000-step evolutions, Finizen/Union Circle, Maushold form split, Gholdengo coins, Kingambit leader wins, Rage Fist uses, Dudunsparce Hyper Drill split, Basculegion recoil split, and the species-specific regional/Hisuian evolution rule.
+  - Evolution argument options map known item, move, species, type, and fixed S/V value arguments where the condition kind is understood. The Gen 9 fixed-value cases currently name 1000-step evolutions, Gholdengo coins, Kingambit leader wins, Rage Fist uses, Basculegion recoil damage, and the condition 61 species-specific regional/Hisuian rules.
+  - Supports personal scalar fields, evolutions, learnsets, and current compatibility-vector removal/toggle behavior.
+  - Applies by writing loose `romfs/avalon/data/personal_array.bin` and patched `romfs/arc/data.trpfd`.
+- Items:
+  - Loads `world/data/item/itemdata/itemdata_array.bin`.
+  - Loads English item and TM/move labels from `message/dat/English/common/itemname.dat` and `wazaname.dat`.
+  - Editable item fields now use S/V generated enum dropdowns for field pocket, field function, item type, and item group. TM move assignment uses the S/V English move table.
+  - Supports item prices, pouch/type/sort/group fields, field function fields, Pokemon-use flag, EV/heal/PP/friendship fields, and TM move assignment.
+  - S/V battle boost/work fields are intentionally not exposed yet because the shared Items panel interprets SwSh boost fields as packed nibbles while S/V stores them as separate FlatBuffer values.
+  - Applies by writing loose `romfs/world/data/item/itemdata/itemdata_array.bin` and patched `romfs/arc/data.trpfd`.
+- Trainers:
+  - Loads `world/data/trainer/trdata/trdata_array.bin`.
+  - Loads English trainer names/classes from `message/dat/English/common/trname.dat/.tbl` and `trtype.dat/.tbl`.
+  - Trainer Pokemon species, held items, and moves use the same S/V English label lookup as the Pokemon and Items workflows.
+  - The S/V trainer editable field list now supplies dropdown/search options for species, held item, moves, gender, ability mode, nature, battle type, shiny mode, and Tera type instead of raw numeric inputs.
+  - Trainer Pokemon form dropdowns use the currently drafted species value, so changing species updates contextual form options before saving.
+  - Supports trainer battle type, money rate, AI flags, S/V flags, and existing trainer Pokemon slot fields including species/form/level/item/moves/EVs/IVs/shiny/Tera type.
+  - Trainer Pokemon records carry nullable `TeraType` / `TeraTypeLabel` through the shared trainer DTO. SwSh records default those fields to null, and S/V only shows the field because `KM.SV` advertises `teraType` in its editable field list.
+  - Applies by writing loose `romfs/world/data/trainer/trdata/trdata_array.bin` and patched `romfs/arc/data.trpfd`.
+- Wild Encounters:
+  - Loads `world/data/encount/pokedata/pokedata/pokedata_array.bin`.
+  - Loads English place labels from `message/dat/English/common/place_name.dat/.tbl` and resolves numeric S/V area ids (`1`-`27`) to the corresponding in-game Paldea place names (`a_w01` through `a_w27`).
+  - Location display now falls back from explicit `LocationName` keys to area-id labels, so real Scarlet tables no longer display as `Unknown Location` when the encounter row only stores numeric area lists.
+  - Known internal location aliases are mapped for `loc_desert_east/west`, `loc_lake_east/south`, `loc_snowymountain_01`, `a_d1108`, Area Zero field/cave ids, and `subarea_area18forest`. `a_d1202` is labeled as `Glaseado Cave (a_d1202)` until a better official subarea name is confirmed.
+  - Biome display corrects known generated enum rough edges such as `OSEAN` -> `Ocean`, `CAVE_WATER` -> `Cave Water`, and `DENKI_ISHI` -> `Electric Stone`.
+  - S/V grouping now uses S/V encounter dimensions instead of SwSh-style `location:area` only: location, area, version table, land/water/air flags, time table, biome/lot values, flags, height, band/outbreak, and voice classification. This keeps unrelated rows from collapsing into one giant table.
+  - The shared desktop Wild Encounters panel now has an S/V-specific rendering path: S/V tables are listed individually instead of collapsing into one huge location row, and the selected encounter uses compact facet selectors for version/area/terrain/time/biome/flags rather than the SwSh Symbol/Hidden/weather tab wall.
+  - A deeper S/V-native encounter screen remains future work, especially for add/remove workflows and any still-unconfirmed subarea aliases.
+  - Wild species editing uses S/V English species dropdown options, and the form dropdown uses the currently drafted species value.
+  - Supports species, form, probability/lot value, minimum level, and maximum level.
+  - Applies by writing loose `romfs/world/data/encount/pokedata/pokedata/pokedata_array.bin` and patched `romfs/arc/data.trpfd`.
+- Bridge routing:
+  - `items.load`, `pokemon.load`, `trainers.load`, and `encounters.load` route to `KM.SV` when the selected game is Scarlet/Violet.
+  - The corresponding update commands and shared edit-session validate/plan/apply commands route to `KM.SV` for S/V projects.
+  - `workflow.list` returns `items`, `pokemon`, `trainers`, `encounters`, and `modMerger` for S/V projects.
+
+Implemented S/V Mod Merger support:
+
+- Desktop tool name: `S/V Mod Merger`.
+- UI exposure:
+  - Available only after selecting Scarlet or Violet in the game-selection UI.
+  - If an internal S/V project is loaded, workflow navigation filters to S/V-supported workflows: Pokemon Data, Items, Trainers, Wild Encounters, and S/V Mod Merger.
+  - Allows adding folder or archive mod sources.
+  - Allows enabling/disabling, moving up/down, and removing individual mod sources.
+- Source handling:
+  - Folder sources may point to the mod root, a `romfs` folder, or a folder containing a nested `romfs`.
+  - Archive sources are read through `SharpCompress`; zip and rar are intended supported formats.
+  - Archive entries with a nested `romfs` segment are normalized to `romfs/...`.
+  - Direct archive paths are treated as RomFS paths unless they are obvious non-RomFS roots such as `exefs`, `atmosphere`, `contents`, `sdcard`, or `switch`.
+  - `info.toml` and common package metadata are skipped.
+  - Source `romfs/arc/data.trpfd` is skipped because KM writes a patched descriptor after the merge.
+- Merge behavior:
+  - A file from one enabled source is copied as-is.
+  - Identical files from multiple sources collapse to one output.
+  - Differing same-length files are smart-merged against vanilla bytes when byte edits do not overlap with different values.
+  - If vanilla bytes cannot be read, lengths differ, or overlapping edits conflict, the later enabled source in the mod order wins.
+  - Moving a mod down increases its fallback priority because later enabled sources overwrite earlier sources when smart merge is not possible.
+- Apply behavior:
+  - Writes loose LayeredFS files under the selected Output Root.
+  - Writes patched `romfs/arc/data.trpfd`.
+  - Tracks merger-owned outputs in `.km/sv-mod-merger-manifest.json`.
+  - Cleans previous merger-owned outputs only when the current file hash matches the manifest, leaving externally changed files in place with a warning.
+
+Oodle packaging decision:
+
+- Oodle 8 is bundled into this branch under:
+  - `apps/desktop/src-tauri/resources/oodle/win-x64/oo2core_8_win64.dll`
+- Tauri config includes the DLL as a package resource.
+- The Rust shell passes the bundled resource path to the .NET sidecar using `KM_EDITOR_BUNDLED_OODLE_PATH`.
+- Do not add user-facing Oodle path settings.
+
+Local S/V research mirrors:
+
+- `Martmists-GH/SV-Script-RE` has a full local clone at `.scratch/SV-Script-RE`.
+  - Clone is intentionally under ignored scratch space, not vendored into KM.
+  - Current inspected commit: `1f843bd2517c707fbb47491dad58856eaa2c2cc7` from 2024-10-29, `a few more crcs and back to work on cleaning up files`.
+  - The clone is not shallow.
+  - No license file was present when inspected, so treat it as reference-only unless explicit permission or a license is added. Do not copy code, decompiled script, or generated stubs into KM.
+  - Useful files/folders:
+    - `main.dumped.lua`: full dumped S/V Lua script reference.
+    - `split/`: raw split class chunks for comparison against cleaned versions.
+    - `decompiled/`: cleaned Lua class files with comments and recovered names.
+    - `native/`: Lua type/API stubs for native/game systems such as `pml_pokepara_PokemonParam`, `pml_PokeParty`, `pml_personal_PersonalSystem`, Pokemon object factories, item APIs, encounter managers, and related runtime systems.
+    - `data/lua_names.h`: encoded-to-decoded Lua class/name mapping.
+    - `tools/test_hash.py`: reference for S/V Lua name hashing helpers using CRC32 and 64-bit FNV.
+  - Use this repo to understand how game scripts consume or validate data, identify runtime class/function names, and cross-check behavior for Pokemon, item, trainer, encounter, shop, raid, and field systems.
+  - It is not a replacement for gftool/Trinity/RomFS file-format research, FlatBuffer schemas, or KM's own parsers/writers.
+  - It may become more important for future event/script/runtime or ExeFS/Lua-bypass work, but it is not needed as a dependency for the current regular editor output path.
+
+Important research notes:
+
+- S/V ordinary mods should write loose LayeredFS files and update `data.trpfd`; avoid rebuilding `data.trpfs` for normal editor workflows.
+- Current KM implementation patches `data.trpfd` in the lean runtime-facing style: overridden file hashes are removed from the active descriptor vectors. It does not add gftool's optional unused-file recovery metadata.
+- High-priority virtual paths:
+  - `avalon/data/personal_array.bin`
+  - `avalon/data/waza_array.bin`
+  - `avalon/data/tokusei_array.bin`
+  - `world/data/item/itemdata/itemdata_array.bin`
+  - `world/data/trainer/trdata/trdata_array.bin`
+  - `world/data/encount/pokedata/pokedata/pokedata_array.bin`
+  - `world/data/raid/raid_enemy_01/raid_enemy_01_array.bin` through `raid_enemy_06`
+  - `world/data/event/eventTradeList/eventTradeList_array.bin`
+  - `world/data/event/eventTradePokemon/eventTradePokemon_array.bin`
+
+Validation so far:
+
+- `dotnet test tests\KM.Core.Tests\KM.Core.Tests.csproj --no-restore --filter "ProjectValidatorTests|ProjectFileGraphBuilderTests" --logger "console;verbosity=minimal"` passed: 14/14.
+- `dotnet test tests\KM.Formats.Tests\KM.Formats.Tests.csproj --no-restore --filter "SvTrinityPathHasherTests" --logger "console;verbosity=minimal"` passed: 4/4.
+- `dotnet test tests\KM.Formats.Tests\KM.Formats.Tests.csproj --no-restore --filter "SvTrinity" --logger "console;verbosity=minimal"` passed: 8/8.
+  - Covers known path hashes, separator normalization, nested `romfs` root resolution, two-file uncompressed Trinity archive reads, missing virtual paths, truncated `data.trpfs` header rejection, descriptor hash removal for loose output files, and malformed descriptor vector rejection.
+- `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "BridgeJsonTests" --logger "console;verbosity=minimal"` passed: 4/4.
+- `dotnet build KM.Editor.slnx --no-restore --nologo` passed.
+- `pnpm --filter @km-editor/desktop typecheck` passed.
+- Real Scarlet local smoke against the vanilla dump loaded:
+  - Pokemon Data: 1424 records, 0 diagnostics.
+  - Items: 1148 records, 0 diagnostics.
+  - Trainers: 756 records, 0 diagnostics.
+  - Wild Encounters: 132 tables, 0 diagnostics.
+- Previous real Scarlet local apply smoke with a temp output root wrote one loose file for each targeted editor before descriptor patching was added:
+  - Items buy price edit.
+  - Pokemon personal HP edit.
+  - Pokemon learnset edit.
+  - Pokemon evolution edit.
+  - Trainer Pokemon level edit.
+  - Wild encounter minimum level edit.
+- `dotnet build src\KM.Tools\KM.Tools.csproj --no-restore --nologo` passed. Current warning set is existing generated S/V lowercase type-name warnings plus SwSh Placement nullable warnings.
+- `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "ScarletVioletBridgeTests" --logger "console;verbosity=minimal"` passed: 2/2.
+- `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "ScarletVioletBridgeTests|BridgeJsonTests" --logger "console;verbosity=minimal"` passed: 8/8.
+  - The S/V editor bridge tests run against both Scarlet and Violet title IDs using synthetic loose S/V FlatBuffer files and a valid synthetic Trinity descriptor.
+  - Each S/V apply now verifies a two-file write plan/result: edited loose data plus `romfs/arc/data.trpfd`.
+- `dotnet test tests\KM.Core.Tests\KM.Core.Tests.csproj --no-restore --filter "ProjectValidatorTests|ProjectFileGraphBuilderTests" --logger "console;verbosity=minimal"` passed: 14/14.
+- S/V Mod Merger validation:
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --filter "SvModMergerWorkflowServiceTests|ScarletVioletProjectExposesOnlyTheModMergerWorkflow" --logger "console;verbosity=minimal"` passed: 5/5 on the old hidden-editor gate.
+  - Covers smart merge of non-overlapping edits, priority fallback from mod order, nested zip `romfs` normalization, descriptor patching, and the old S/V workflow-list exposure of only `modMerger`.
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --logger "console;verbosity=minimal"` passed: 81/81.
+  - `dotnet test tests\KM.SwSh.Tests\KM.SwSh.Tests.csproj --logger "console;verbosity=minimal"` passed: 378/378.
+  - `dotnet test tests\KM.Core.Tests\KM.Core.Tests.csproj --logger "console;verbosity=minimal"` passed: 27/27.
+  - `dotnet test tests\KM.Formats.Tests\KM.Formats.Tests.csproj --logger "console;verbosity=minimal"` passed: 69/69.
+  - `npm --prefix apps/desktop run test:run -- src/App.test.tsx --testTimeout=30000` passed: 90/90.
+  - `npm --prefix apps/desktop run build` passed with the existing Vite large-chunk warning.
+  - `dotnet build KM.Editor.slnx --nologo` passed.
+  - The desktop game-selection test verifies Pokemon Scarlet and Pokemon Violet buttons are rendered.
+- S/V game-selection local build/open validation on 2026-06-17:
+  - `npm --prefix apps/desktop run test:run -- src/App.test.tsx --testTimeout=30000` passed: 86/86 after enabling Scarlet/Violet in the startup game selection.
+  - `pnpm --filter @km-editor/desktop typecheck` passed.
+  - No-installer local exe build passed through the Visual Studio Build Tools environment with a fresh Cargo target and `pnpm --dir apps/desktop exec tauri build --ci --no-bundle`.
+  - Existing generated S/V lowercase type-name warnings and existing Vite large-chunk warning appeared.
+  - Fresh executable launched from the temp target; observed process `km-editor-desktop` PID `49400`.
+- S/V basic editor view exposure validation on 2026-06-17:
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "ScarletVioletBridgeTests|SvModMergerWorkflowServiceTests" --logger "console;verbosity=minimal"` passed: 7/7.
+  - `npm --prefix apps/desktop run test:run -- src/App.test.tsx -t "Scarlet/Violet|game before showing|workflow categories" --testTimeout=30000` passed: 3/87.
+  - `pnpm --filter @km-editor/desktop typecheck` passed.
+  - `npm --prefix apps/desktop run test:run -- src/App.test.tsx --testTimeout=30000` passed: 87/87.
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --logger "console;verbosity=minimal"` passed: 91/91.
+  - `dotnet build src\KM.Tools\KM.Tools.csproj --no-restore --nologo` passed.
+  - The SwSh workflow-list integration assertion was updated to include the already-existing `shinyRate` workflow before `typeChart`; this fixed a stale full-suite expectation without changing SwSh workflow code.
+  - No-installer local exe build passed through Visual Studio Build Tools with a fresh Cargo target and `pnpm --dir apps/desktop exec tauri build --ci --no-bundle`.
+  - Fresh executable launched from the temp target; observed process `km-editor-desktop` PID `18492`.
+- `git diff --check` passed with only expected line-ending normalization warnings.
+- `cargo check` is blocked in the current shell by missing VS Build Tools environment variables/includes. Use the Build Tools command pattern from `handoff/03_BUILD_AND_VALIDATION.md` for Tauri verification.
+- Real Scarlet 4.0.0 local smoke against updated `C:\Scarlet` dump passed on 2026-06-16:
+  - Correct project paths are `C:\Scarlet\romfs` for Base RomFS and `C:\Scarlet\exefs` for Base ExeFS.
+  - Selecting parent `C:\Scarlet` as Base RomFS is blocked by overlap safety because ExeFS is nested under it.
+  - Project health: `EditableReady`.
+  - Workflow list: `modMerger` only.
+  - Pokemon Data: 1424 records, 979 present, 581 evolutions, 20192 learnset moves, 0 errors.
+  - Items: 1148 records, 0 errors.
+  - Trainers: 756 trainers, 1740 trainer Pokemon, 0 errors.
+  - Wild Encounters: 132 tables, 449 slots, 0 errors.
+  - Temp-output apply smoke passed for Items buy price, Pokemon HP, Trainer Pokemon level, and Wild Encounter minimum level; each wrote the edited loose `romfs/...` file plus patched `romfs/arc/data.trpfd`.
+  - `DLCromfs` currently contains only `keyfile.dat`; `logo` contains only boot/logo media, so neither affects the preliminary editor data paths yet.
+- Real Scarlet 4.0.0 local read smoke after enabling basic editor views passed on 2026-06-17:
+  - Workflow list: `items`, `pokemon`, `trainers`, `encounters`, `modMerger`.
+  - Pokemon Data: 1424 total, 979 present, 581 evolutions, 20192 learnset moves, 35 editable fields, 0 errors.
+  - Items: 1148 records, 22 editable fields, 0 errors.
+  - Trainers: 756 trainers, 1740 trainer Pokemon, 30 editable fields, 0 errors.
+  - Wild Encounters: 132 tables, 449 slots, 5 editable fields, 0 errors.
+- S/V label and encounter grouping validation on 2026-06-17:
+  - `dotnet build src\KM.SV\KM.SV.csproj --no-restore --nologo` passed.
+  - `dotnet build src\KM.Tools\KM.Tools.csproj --no-restore --nologo` passed.
+  - Real Scarlet bridge smoke through `KM.Tools bridge-once` passed with:
+    - Workflow list: `items`, `pokemon`, `trainers`, `encounters`, `modMerger`.
+    - Pokemon Data: 1424 records, Bulbasaur/Overgrow/Tackle labels resolved, negative `baseExperience` examples parsed without bridge failure.
+    - Items: first records resolve to English names such as `Master Ball`, `Ultra Ball`, `Great Ball`, and `Poke Ball`.
+    - Trainers: first named trainers resolve to English names such as `Ruben`, `Iker`, `Alejandro`, and `Lucia`; trainer class field resolves through `trainerClass` (for example `Cleaning`).
+    - Trainer Pokemon species resolve to English names, e.g. Gulpin/Pikachu.
+    - Wild Encounters: 440 grouped tables, 449 slots, 0 errors after S/V-dimensional grouping.
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "FullyQualifiedName~ScarletVioletBridgeTests" --nologo` passed: 6/6.
+  - `npm --prefix apps/desktop run test:run -- src/bridge/contracts.test.ts --testTimeout=30000` passed: 7/7.
+  - `npm --prefix apps/desktop run test:run -- src/App.test.tsx --testTimeout=30000` passed: 87/87.
+  - `pnpm --filter @km-editor/desktop typecheck` passed.
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --nologo` passed: 93/93.
+  - No-installer local exe build passed through Visual Studio Build Tools with fresh Cargo target `km-editor-tauri-target-sv-labels-20260617-085229` and `pnpm --dir apps/desktop exec tauri build --ci --no-bundle`.
+  - Fresh executable launched from the temp target; observed process `km-editor-desktop` PID `12272`.
+- S/V first UI cleanup validation on 2026-06-17:
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter ScarletVioletBridgeTests` passed: 6/6.
+  - `dotnet test tests\KM.SwSh.Tests\KM.SwSh.Tests.csproj --no-restore --filter Trainers` passed: 20/20.
+  - `pnpm --filter @km-editor/desktop typecheck` passed.
+  - `npm --prefix apps/desktop run test:run -- src/App.test.tsx --testTimeout=30000` passed: 87/87.
+  - `npm --prefix apps/desktop run build` passed with the existing Vite large-chunk warning.
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore` passed: 93/93.
+  - Synthetic S/V bridge coverage now asserts hidden personal row filtering and trainer dropdown options for species, held items, moves, gender, ability, nature, and shiny mode.
+  - Real Scarlet bridge smoke through `KM.Tools bridge-once` with bundled Oodle env var passed:
+    - Pokemon Data: 979 visible records, 979 present, 0 diagnostics. This confirms hidden/non-present personal rows are filtered out of the visible editor.
+    - Items: 1148 records, first item resolves as `Master Ball`, 0 diagnostics.
+    - Trainers: 756 trainers, 1740 trainer Pokemon, 29 editable fields, 0 diagnostics.
+    - Trainer dropdown option counts: 1026 species, 2558 held items, 920 moves, 3 gender options, 5 ability mode options, 26 nature options, and 2 shiny mode options.
+    - Wild Encounters: 440 grouped tables, 449 slots, 0 diagnostics.
+- S/V trainer Tera type validation on 2026-06-17:
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter ScarletVioletBridgeTests` passed: 6/6.
+  - `dotnet test tests\KM.SwSh.Tests\KM.SwSh.Tests.csproj --no-restore --filter Trainers` passed: 20/20.
+  - `pnpm --filter @km-editor/desktop typecheck` passed.
+  - `npm --prefix apps/desktop run test:run -- src/App.test.tsx --testTimeout=30000` passed: 87/87.
+  - `npm --prefix apps/desktop run test:run -- src/bridge/contracts.test.ts --testTimeout=30000` passed: 7/7.
+  - `npm --prefix apps/desktop run build` passed with the existing Vite large-chunk warning.
+  - Synthetic S/V bridge coverage now asserts current Tera type labels/options and writes `GemType.FAIRY` through `teraType`.
+  - Real Scarlet bridge smoke through `KM.Tools bridge-once` with bundled Oodle env var passed:
+    - Trainers: 756 trainers, 1740 trainer Pokemon, 30 editable fields, 0 diagnostics.
+    - Tera field: label `Tera type`, 21 named options, current first loaded value `Default`, and option coverage includes `Fairy` and `Stellar`.
+- S/V dropdown/form mapping validation on 2026-06-17:
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter ScarletVioletBridgeTests` passed: 6/6.
+  - `pnpm --filter @km-editor/desktop typecheck` passed.
+  - `dotnet test tests\KM.SwSh.Tests\KM.SwSh.Tests.csproj --no-restore --filter "Pokemon|Items|Trainers|Encounters"` passed: 148/148.
+  - `npm --prefix apps/desktop run test:run -- src/App.test.tsx --testTimeout=30000` passed: 87/87.
+  - `npm --prefix apps/desktop run build` passed with the existing Vite large-chunk warning.
+  - Synthetic S/V bridge coverage now asserts dropdown labels/options for Pokemon personal fields, item enum/TM fields, trainer references/Tera, and wild species.
+  - Real Scarlet bridge smoke through `KM.Tools bridge-once` passed:
+    - Pokemon Data: 979 visible records, 0 diagnostics, 18 type options, 311 ability options, 62 named evolution condition options.
+    - S/V evolution condition sample coverage: `50 Walk 1000 Steps`, `51 Level Up In Union Circle`, `52/53 Maushold Family Of Four/Three`, `54 Collect Gimmighoul Coins`, `55 Defeat Three Leader Bisharp`, `56 Use Rage Fist 20 Times`, `57/58 Hyper Drill Dudunsparce split`, `59/60 Basculegion recoil split`, and `61 Species-Specific Regional Evolution`.
+    - S/V fixed-value evolution arguments are labeled in the method option dropdowns for 1000 steps, 999 coins, leader wins, Rage Fist uses, recoil damage, and condition 61 regional/Hisuian routing.
+    - Items: 1148 records, 0 diagnostics, 12 field pocket options, 920 TM/move options.
+    - Trainers: 756 trainers, 0 diagnostics, 1026 species options, 21 Tera options.
+    - Wild Encounters: 440 grouped tables, 0 diagnostics, 1026 species options, 0 displayed `Unknown` locations, 0 displayed raw internal location strings.
+    - Wild sample labels include `South Province (Area Two) + 3 areas`, `Biome-Based Habitat`, `Area Zero`, and `North Province (Area One)`.
+
+Next steps:
+
+- Add targeted unit tests inside a future `KM.SV.Tests` project if S/V domain services grow beyond bridge-level coverage.
+- Keep improving S/V Wild Encounters toward a native editor: better filter combinations, slot add/remove behavior, and clearer handling of outbreak/band/voice dimensions.
+- Add an Oodle smoke test only if the test environment intentionally supports the bundled DLL.
+- Add a real rar fixture or local archive smoke if we want format-specific RAR coverage beyond SharpCompress-backed intake.
+- Expand Pokemon compatibility support beyond current vector-preserving/removal behavior if the UI needs arbitrary insert/add workflows.
+- Re-run real Scarlet local apply smoke with descriptor patching after choosing a repeatable smoke harness; current descriptor patch coverage is synthetic.
+- Add Violet local smoke validation after a vanilla Violet dump is available.
+- Continue with the next S/V editors only after the current visible basic-editor backbone remains green.
