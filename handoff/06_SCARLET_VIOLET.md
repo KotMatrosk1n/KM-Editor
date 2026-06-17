@@ -282,6 +282,30 @@ Validation so far:
     - Trainers: 756 trainers, 0 diagnostics, 1026 species options, 21 Tera options.
     - Wild Encounters: 440 grouped tables, 0 diagnostics, 1026 species options, 0 displayed `Unknown` locations, 0 displayed raw internal location strings.
     - Wild sample labels include `South Province (Area Two) + 3 areas`, `Biome-Based Habitat`, `Area Zero`, and `North Province (Area One)`.
+- S/V editor field cleanup validation on 2026-06-17:
+  - Pokemon Data:
+    - S/V personal data stores `ExpAddend`, not final Base EXP.
+    - Final Base EXP is `ceil(BST * (1 + 3 * EvoStage) / 20) + ExpAddend`; KM now displays final `Base EXP` and writes the required signed addend behind the scenes.
+    - `Evolution Stage` is now constrained to the observed formula range `0..3` in the editor instead of exposing the raw byte range.
+    - The Remove/Restore EXP Yield buttons now work for S/V by writing final Base EXP `0` or restoring vanilla final Base EXP from the base personal table.
+    - The Remove/Restore EV Yield buttons now work for S/V by zeroing or restoring the six EV-yield stats from the base personal table.
+  - Pokemon form display:
+    - The desktop Pokemon table and selected summary now use the existing form-aware display helper so rows such as Basculegion forms do not appear as indistinguishable duplicate species names.
+  - Trainers:
+    - S/V trainer Pokemon move slots now stay four-wide (`Move 1` through `Move 4`) and preserve empty slots as `0 None`.
+    - S/V trainer Pokemon ability mode options now include resolved ability names for fixed slots, for example `Overgrow (Ability 1)`, while random modes remain random.
+    - Nature labels now include SwSh-style stat effects, for example `Adamant (+Atk, -Sp. Atk)`.
+  - Items:
+    - `Can use on Pokemon` now reflects party-use field functions instead of `SetToPoke`, which made Balls display as usable on Pokemon.
+    - Exact S/V field behavior still belongs in `Field function`; toggling `Can use on Pokemon` only clears field use or assigns a recover-style function when no function exists.
+  - Wild Encounters:
+    - Wild tables are filtered by selected game: Scarlet hides Violet-only rows, Violet hides Scarlet-only rows, and both-version rows remain visible for both.
+    - S/V encounter facet/selector controls are horizontally oriented with overflow instead of a tall vertical stack.
+  - Validation:
+    - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter ScarletVioletBridgeTests --logger "console;verbosity=minimal"` passed: 10/10.
+    - `npm --prefix apps\desktop run test:run -- src\App.test.tsx --testTimeout=30000` passed: 87/87.
+    - `dotnet test tests\KM.SwSh.Tests\KM.SwSh.Tests.csproj --no-restore --filter "FullyQualifiedName~Pokemon|FullyQualifiedName~Trainers|FullyQualifiedName~Items|FullyQualifiedName~Encounters" --logger "console;verbosity=minimal"` passed: 148/148.
+    - Full `KM.SwSh.Tests` was attempted twice and timed out without reporting a failure; the focused SwSh editor subset above completed successfully.
 
 Next steps:
 

@@ -125,6 +125,7 @@ public sealed class ScarletVioletBridgeTests
         var bulbasaur = pokemon.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1);
         Assert.Equal("Bulbasaur", bulbasaur.Name);
         Assert.Equal("Overgrow", bulbasaur.Abilities.Ability1Label);
+        Assert.Equal(16, bulbasaur.BaseExperience);
         Assert.Equal("Tackle", Assert.Single(bulbasaur.Learnset).MoveName);
 
         var pokemonFields = pokemon.Payload.Workflow.EditableFields;
@@ -140,6 +141,9 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(
             pokemonFields.Single(field => field.Field == "expGrowth").Options,
             option => option.Value == 3 && option.Label == "Medium Slow");
+        Assert.Contains(
+            pokemonFields.Single(field => field.Field == "evolutionStage").Options,
+            option => option.Value == 3 && option.Label.Contains("Final", StringComparison.Ordinal));
         Assert.Contains(
             pokemonFields.Single(field => field.Field == "eggGroup1").Options,
             option => option.Value == 7 && option.Label == "Grass");
@@ -169,6 +173,7 @@ public sealed class ScarletVioletBridgeTests
             "request-sv-item-labels");
         AssertSuccess(items);
         Assert.Equal("Master Ball", Assert.Single(items.Payload!.Workflow.Items).Name);
+        Assert.False(Assert.Single(items.Payload.Workflow.Items).Metadata.CanUseOnPokemon);
         var itemFields = items.Payload.Workflow.EditableFields;
         Assert.Contains(
             itemFields.Single(field => field.Field == "pouch").Options,
@@ -197,10 +202,13 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal("Pokemon Trainer", trainer.TrainerClass);
         var trainerPokemon = Assert.Single(trainer.Team);
         Assert.Equal("Bulbasaur", trainerPokemon.Species);
-        Assert.Equal("Tackle", Assert.Single(trainerPokemon.Moves));
+        Assert.Equal(new[] { "Tackle", "None", "None", "None" }, trainerPokemon.Moves);
         Assert.Equal("Random", trainerPokemon.GenderLabel);
         Assert.Equal("Random 1/2", trainerPokemon.AbilityLabel);
         Assert.Equal("Default", trainerPokemon.NatureLabel);
+        Assert.Contains(
+            trainerPokemon.AbilityOptions,
+            option => option.Value == (int)global::TokuseiType.SET_1 && option.Label == "Overgrow (Ability 1)");
         Assert.Equal((int)global::GemType.NORMAL, trainerPokemon.TeraType);
         Assert.Equal("Normal", trainerPokemon.TeraTypeLabel);
 
@@ -222,7 +230,7 @@ public sealed class ScarletVioletBridgeTests
             option => option.Value == 4 && option.Label == "Hidden Ability");
         Assert.Contains(
             trainerFields.Single(field => field.Field == "nature").Options,
-            option => option.Value == 4 && option.Label == "Adamant");
+            option => option.Value == 4 && option.Label == "Adamant (+Atk, -Sp. Atk)");
         Assert.Contains(
             trainerFields.Single(field => field.Field == "shiny").Options,
             option => option.Value == 1 && option.Label == "Forced shiny");
@@ -245,6 +253,65 @@ public sealed class ScarletVioletBridgeTests
         var encounterTable = Assert.Single(encounters.Payload.Workflow.Tables);
         Assert.Equal("South Province (Area Two), South Province (Area Four)", encounterTable.Location);
         Assert.Equal("South Province (Area Two), South Province (Area Four)", encounterTable.Area);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletPokemonBaseExperienceAndYieldButtonsUsePersonalTableSemantics(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        temp.WriteBaseRomFsFile(SvDataPaths.PersonalArray, CreatePersonalArray());
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var baseExpSession = UpdatePokemonField(dispatcher, paths, personalId: 1, field: "baseExperience", value: "64");
+        Apply(dispatcher, paths, baseExpSession);
+        Assert.Equal(48, ReadPersonal(temp, personalId: 1).ExpAddend);
+
+        var removeExpSession = UpdatePokemonField(dispatcher, paths, personalId: 0, field: "expYieldAll", value: "remove");
+        Apply(dispatcher, paths, removeExpSession);
+        Assert.Equal(-16, ReadPersonal(temp, personalId: 1).ExpAddend);
+
+        var restoreExpSession = UpdatePokemonField(dispatcher, paths, personalId: 0, field: "expYieldAll", value: "restore");
+        Apply(dispatcher, paths, restoreExpSession);
+        Assert.Equal(0, ReadPersonal(temp, personalId: 1).ExpAddend);
+
+        var removeEvSession = UpdatePokemonField(dispatcher, paths, personalId: 0, field: "evYieldAll", value: "remove");
+        Apply(dispatcher, paths, removeEvSession);
+        Assert.Equal(0, ReadPersonal(temp, personalId: 1).EvYield!.Value.Spa);
+
+        var restoreEvSession = UpdatePokemonField(dispatcher, paths, personalId: 0, field: "evYieldAll", value: "restore");
+        Apply(dispatcher, paths, restoreEvSession);
+        Assert.Equal(1, ReadPersonal(temp, personalId: 1).EvYield!.Value.Spa);
+    }
+
+    [Theory]
+    [InlineData(ProjectGameDto.Scarlet, ScarletTitleId, "Scarlet", "Violet")]
+    [InlineData(ProjectGameDto.Violet, VioletTitleId, "Violet", "Scarlet")]
+    public void ScarletVioletWildEncountersHideOppositeVersionTables(
+        ProjectGameDto game,
+        ulong titleId,
+        string expectedVersion,
+        string hiddenVersion)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        WriteSvOutput(temp, SvDataPaths.WildEncounterArray, CreateVersionedEncounterArray());
+        var paths = temp.Paths with { SelectedGame = game };
+
+        var encounters = Dispatch<LoadEncountersWorkflowResponse>(
+            new ProjectBridgeDispatcher(),
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-sv-versioned-encounters");
+
+        AssertSuccess(encounters);
+        Assert.Contains(encounters.Payload!.Workflow.Tables, table => table.GameVersion == "Scarlet/Violet");
+        Assert.Contains(encounters.Payload.Workflow.Tables, table => table.GameVersion == expectedVersion);
+        Assert.DoesNotContain(encounters.Payload.Workflow.Tables, table => table.GameVersion == hiddenVersion);
     }
 
     private static TemporaryBridgeProject CreateScarletVioletProject(ulong titleId)
@@ -641,26 +708,52 @@ public sealed class ScarletVioletBridgeTests
     private static byte[] CreateEncounterArray()
     {
         var builder = new FlatBufferBuilder(2048);
-        var area = builder.CreateString("4,5");
-        var time = global::TimeTable.CreateTimeTable(builder, morning: true, noon: true, evening: true, night: true);
-        var version = global::VersionTable.CreateVersionTable(builder, A: true, B: true);
-
-        global::EncountPokeData.StartEncountPokeData(builder);
-        global::EncountPokeData.AddVersiontable(builder, version);
-        global::EncountPokeData.AddTimetable(builder, time);
-        global::EncountPokeData.AddArea(builder, area);
-        global::EncountPokeData.AddLotvalue(builder, 40);
-        global::EncountPokeData.AddMaxlevel(builder, 12);
-        global::EncountPokeData.AddMinlevel(builder, 5);
-        global::EncountPokeData.AddDevid(builder, (global::pml.common.DevID)1);
-        global::EncountPokeData.AddEnabletable(builder, global::EnableTable.CreateEnableTable(builder, true, false, false, false, false));
-        global::EncountPokeData.AddBringItem(builder, global::BringItem.CreateBringItem(builder, (global::ItemID)0, BringRate: 0));
-        var encounter = global::EncountPokeData.EndEncountPokeData(builder);
+        var encounter = CreateEncounter(builder, areaText: "4,5", species: 1, minLevel: 5, maxLevel: 12, lotValue: 40, scarlet: true, violet: true);
 
         var vector = global::EncountPokeDataArray.CreateValuesVector(builder, [encounter]);
         var root = global::EncountPokeDataArray.CreateEncountPokeDataArray(builder, vector);
         global::EncountPokeDataArray.FinishEncountPokeDataArrayBuffer(builder, root);
         return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateVersionedEncounterArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var both = CreateEncounter(builder, areaText: "4,5", species: 1, minLevel: 5, maxLevel: 12, lotValue: 40, scarlet: true, violet: true);
+        var scarlet = CreateEncounter(builder, areaText: "4,5", species: 1, minLevel: 6, maxLevel: 13, lotValue: 30, scarlet: true, violet: false);
+        var violet = CreateEncounter(builder, areaText: "4,5", species: 1, minLevel: 7, maxLevel: 14, lotValue: 20, scarlet: false, violet: true);
+
+        var vector = global::EncountPokeDataArray.CreateValuesVector(builder, [both, scarlet, violet]);
+        var root = global::EncountPokeDataArray.CreateEncountPokeDataArray(builder, vector);
+        global::EncountPokeDataArray.FinishEncountPokeDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static Offset<global::EncountPokeData> CreateEncounter(
+        FlatBufferBuilder builder,
+        string areaText,
+        ushort species,
+        short minLevel,
+        short maxLevel,
+        short lotValue,
+        bool scarlet,
+        bool violet)
+    {
+        var area = builder.CreateString(areaText);
+        var time = global::TimeTable.CreateTimeTable(builder, morning: true, noon: true, evening: true, night: true);
+        var version = global::VersionTable.CreateVersionTable(builder, A: scarlet, B: violet);
+
+        global::EncountPokeData.StartEncountPokeData(builder);
+        global::EncountPokeData.AddVersiontable(builder, version);
+        global::EncountPokeData.AddTimetable(builder, time);
+        global::EncountPokeData.AddArea(builder, area);
+        global::EncountPokeData.AddLotvalue(builder, lotValue);
+        global::EncountPokeData.AddMaxlevel(builder, maxLevel);
+        global::EncountPokeData.AddMinlevel(builder, minLevel);
+        global::EncountPokeData.AddDevid(builder, (global::pml.common.DevID)species);
+        global::EncountPokeData.AddEnabletable(builder, global::EnableTable.CreateEnableTable(builder, true, false, false, false, false));
+        global::EncountPokeData.AddBringItem(builder, global::BringItem.CreateBringItem(builder, (global::ItemID)0, BringRate: 0));
+        return global::EncountPokeData.EndEncountPokeData(builder);
     }
 
     private static void WriteSvOutput(TemporaryBridgeProject temp, string relativePath, byte[] contents)

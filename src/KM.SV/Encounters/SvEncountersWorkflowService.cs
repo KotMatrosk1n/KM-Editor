@@ -55,7 +55,7 @@ internal sealed class SvEncountersWorkflowService
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.WildEncounterArray);
-            tables = LoadTables(source, labels).ToArray();
+            tables = LoadTables(source, labels, project.Paths.SelectedGame).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -84,14 +84,15 @@ internal sealed class SvEncountersWorkflowService
 
     private static IEnumerable<SwShEncounterTableRecord> LoadTables(
         SvWorkflowFile source,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        ProjectGame? selectedGame)
     {
         var table = global::EncountPokeDataArray.GetRootAsEncountPokeDataArray(new ByteBuffer(source.Bytes));
         var rows = new List<(int Index, global::EncountPokeData Data)>();
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var row = table.Values(index);
-            if (row is not null)
+            if (row is not null && IsAvailableForSelectedGame(row.Value.Versiontable, selectedGame))
             {
                 rows.Add((index, row.Value));
             }
@@ -114,6 +115,21 @@ internal sealed class SvEncountersWorkflowService
                 slots,
                 new SwShEncounterProvenance(source.RelativePath, source.SourceLayer, source.FileState));
         }
+    }
+
+    private static bool IsAvailableForSelectedGame(global::VersionTable? version, ProjectGame? selectedGame)
+    {
+        if (selectedGame is not ProjectGame.Scarlet and not ProjectGame.Violet)
+        {
+            return true;
+        }
+
+        if (version is null || (version.Value.A && version.Value.B) || (!version.Value.A && !version.Value.B))
+        {
+            return true;
+        }
+
+        return selectedGame == ProjectGame.Scarlet ? version.Value.A : version.Value.B;
     }
 
     private static SwShEncounterSlotRecord ToSlot(
