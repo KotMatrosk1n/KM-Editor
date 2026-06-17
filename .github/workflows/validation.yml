@@ -1,0 +1,81 @@
+name: Validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+  schedule:
+    - cron: "17 9 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  fast:
+    name: Fast validation
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+
+      - name: Set up pnpm
+        shell: pwsh
+        run: npm install --global pnpm@11.5.2
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install dependencies
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore backend dependencies
+        shell: pwsh
+        run: dotnet restore .\KM.Editor.slnx
+
+      - name: Run fast validation
+        shell: pwsh
+        run: pnpm test:fast
+
+  full:
+    name: Full validation
+    runs-on: windows-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+
+      - name: Set up pnpm
+        shell: pwsh
+        run: npm install --global pnpm@11.5.2
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install dependencies
+        shell: pwsh
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore backend dependencies
+        shell: pwsh
+        run: dotnet restore .\KM.Editor.slnx
+
+      - name: Run full validation
+        shell: pwsh
+        run: pnpm test:full
