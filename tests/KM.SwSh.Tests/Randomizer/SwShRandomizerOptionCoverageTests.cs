@@ -28,6 +28,7 @@ public sealed class SwShRandomizerOptionCoverageTests
 {
     private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
     private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
+    private static readonly int[] ProtectedBoxLegendarySpeciesIds = [888, 889, 890];
 
     [Fact]
     public void PreviewCreatesEditsForEverySelectableRandomizerOption()
@@ -138,6 +139,41 @@ public sealed class SwShRandomizerOptionCoverageTests
                     .Count(value => value == 0),
                 0,
                 1));
+    }
+
+    [Fact]
+    public void PreviewDoesNotRandomizeProtectedBoxLegendarySpecies()
+    {
+        using var temp = CreateRandomizerProject();
+        WritePokemonDataWithProtectedBoxLegendaries(temp);
+        WriteWildAndRaidData(temp, protectedFirstSlotSpeciesId: 888);
+        WriteProtectedStaticEncounterData(temp);
+        WriteProtectedGiftData(temp);
+        var service = new SwShRandomizerService();
+
+        var preview = service.Preview(temp.Paths, CreateConfig(AllRandomizerOptions()));
+        var edits = AllEdits(preview).ToArray();
+
+        AssertNoErrors(preview);
+        Assert.DoesNotContain(edits, edit => edit.Domain == "workflow.pokemon" && edit.RecordId is "888" or "889" or "890" or "891");
+        Assert.DoesNotContain(
+            edits,
+            edit => edit.Domain == "workflow.pokemon"
+                && edit.RecordId == "1"
+                && edit.Field.StartsWith("evolution:upsert:", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            edits,
+            edit => edit.Domain == "workflow.encounters"
+                && edit.RecordId.EndsWith("#0", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            edits,
+            edit => edit.Domain == SwShStaticEncountersWorkflowService.StaticEncountersEditDomain
+                && edit.RecordId == SwShStaticEncountersWorkflowService.CreateEncounterRecordId(0));
+        Assert.DoesNotContain(
+            edits,
+            edit => edit.Domain == SwShGiftPokemonWorkflowService.GiftPokemonEditDomain
+                && edit.RecordId == SwShGiftPokemonWorkflowService.CreateGiftRecordId(0));
+        Assert.DoesNotContain(edits, WritesProtectedBoxLegendarySpecies);
     }
 
     [Fact]
@@ -455,6 +491,47 @@ public sealed class SwShRandomizerOptionCoverageTests
             SwShPokemonWorkflowServiceTests.CreateEvolutionFile((4, 0, 3, 0, 32)));
     }
 
+    private static void WritePokemonDataWithProtectedBoxLegendaries(TemporarySwShProject temp)
+    {
+        var records = Enumerable.Range(0, 892)
+            .Select(_ => SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord())
+            .ToArray();
+        records[1] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hp: 45, hatchedSpecies: 1);
+        records[2] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hp: 60, hatchedSpecies: 2);
+        records[3] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hp: 80, hatchedSpecies: 3);
+        records[888] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(
+            hp: 92,
+            hatchedSpecies: 888,
+            formStatsIndex: 891,
+            formCount: 2);
+        records[889] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hp: 92, hatchedSpecies: 889);
+        records[890] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hp: 140, hatchedSpecies: 890);
+        records[891] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(
+            hp: 92,
+            hatchedSpecies: 888,
+            localFormIndex: 1,
+            form: 1);
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            SwShPokemonWorkflowServiceTests.CreatePersonalTable(records));
+
+        var learnsets = Enumerable.Range(0, records.Length)
+            .Select(_ => Array.Empty<(ushort MoveId, ushort Level)>())
+            .ToArray();
+        learnsets[1] = [(33, 1), (45, 3)];
+        learnsets[2] = [(33, 1), (45, 3)];
+        learnsets[3] = [(33, 1)];
+        temp.WriteBaseRomFsFile(
+            "bin/pml/waza_oboe/wazaoboe_total.bin",
+            SwShPokemonWorkflowServiceTests.CreateLearnsetTable(learnsets));
+        temp.WriteBaseRomFsFile(
+            "bin/pml/evolution/evo_001.bin",
+            SwShPokemonWorkflowServiceTests.CreateEvolutionFile((4, 0, 888, 1, 16)));
+        temp.WriteBaseRomFsFile(
+            "bin/pml/evolution/evo_002.bin",
+            SwShPokemonWorkflowServiceTests.CreateEvolutionFile((4, 0, 3, 0, 32)));
+    }
+
     private static void WriteMoveData(TemporarySwShProject temp)
     {
         foreach (var moveId in Enumerable.Range(1, 30).Concat([49, 82]))
@@ -490,14 +567,17 @@ public sealed class SwShRandomizerOptionCoverageTests
                 "Fairy"));
     }
 
-    private static void WriteWildAndRaidData(TemporarySwShProject temp, ProjectGame game = ProjectGame.Sword)
+    private static void WriteWildAndRaidData(
+        TemporarySwShProject temp,
+        ProjectGame game = ProjectGame.Sword,
+        int? protectedFirstSlotSpeciesId = null)
     {
         var symbolMember = game == ProjectGame.Shield ? "encount_symbol_t.bin" : "encount_symbol_k.bin";
         var hiddenMember = game == ProjectGame.Shield ? "encount_t.bin" : "encount_k.bin";
         var pack = SwShGfPackFile.Create(
         [
-            new SwShGfPackNamedFile(symbolMember, CreateTenSlotEncounterArchive().Write()),
-            new SwShGfPackNamedFile(hiddenMember, CreateTenSlotEncounterArchive(speciesOffset: 2).Write()),
+            new SwShGfPackNamedFile(symbolMember, CreateTenSlotEncounterArchive(protectedFirstSlotSpeciesId: protectedFirstSlotSpeciesId).Write()),
+            new SwShGfPackNamedFile(hiddenMember, CreateTenSlotEncounterArchive(speciesOffset: 2, protectedFirstSlotSpeciesId: protectedFirstSlotSpeciesId).Write()),
             new SwShGfPackNamedFile("nest_hole_drop_rewards.bin", SwShRaidRewardTestFixtures.CreateDropArchive().Write()),
             new SwShGfPackNamedFile("nest_hole_bonus_rewards.bin", SwShRaidRewardTestFixtures.CreateBonusArchive().Write()),
         ]);
@@ -505,16 +585,21 @@ public sealed class SwShRandomizerOptionCoverageTests
         temp.WriteBaseRomFsFile("bin/archive/field/resident/data_table.gfpak", pack.Write());
     }
 
-    private static SwShWildEncounterArchive CreateTenSlotEncounterArchive(int speciesOffset = 0)
+    private static SwShWildEncounterArchive CreateTenSlotEncounterArchive(
+        int speciesOffset = 0,
+        int? protectedFirstSlotSpeciesId = null)
     {
         return SwShEncounterTestFixtures.CreateArchive(
             speciesOffset: speciesOffset,
             subTables: Enumerable.Range(0, 11)
-                .Select(index => CreateTenSlotSubTable(index, speciesOffset))
+                .Select(index => CreateTenSlotSubTable(index, speciesOffset, protectedFirstSlotSpeciesId))
                 .ToArray());
     }
 
-    private static SwShWildEncounterSubTable CreateTenSlotSubTable(int index, int speciesOffset)
+    private static SwShWildEncounterSubTable CreateTenSlotSubTable(
+        int index,
+        int speciesOffset,
+        int? protectedFirstSlotSpeciesId)
     {
         int[] probabilities = [19, 17, 15, 13, 11, 9, 7, 5, 3, 1];
         return new SwShWildEncounterSubTable(
@@ -523,9 +608,121 @@ public sealed class SwShRandomizerOptionCoverageTests
             probabilities
                 .Select((probability, slotIndex) => new SwShWildEncounterSlot(
                     (byte)probability,
-                    1 + speciesOffset + slotIndex,
+                    slotIndex == 0 && protectedFirstSlotSpeciesId.HasValue
+                        ? protectedFirstSlotSpeciesId.Value
+                        : 1 + speciesOffset + slotIndex,
                     (byte)(slotIndex % 2)))
                 .ToArray());
+    }
+
+    private static void WriteProtectedStaticEncounterData(TemporarySwShProject temp)
+    {
+        temp.WriteBaseRomFsFile(
+            SwShStaticEncountersWorkflowService.StaticEncounterDataPath["romfs/".Length..],
+            new SwShStaticEncounterArchive(
+            [
+                new SwShStaticEncounterRecord(
+                    0,
+                    0,
+                    0,
+                    new SwShStaticEncounterStats(0, 0, 0, 0, 0, 0),
+                    0,
+                    0,
+                    0,
+                    0x0102030405060708,
+                    0,
+                    true,
+                    0,
+                    70,
+                    0,
+                    889,
+                    1,
+                    0,
+                    0,
+                    new SwShStaticEncounterStats(-1, -1, -1, -1, -1, -1),
+                    0,
+                    [0, 0, 0, 0]),
+                new SwShStaticEncounterRecord(
+                    1,
+                    0,
+                    0,
+                    new SwShStaticEncounterStats(0, 0, 0, 0, 0, 0),
+                    0,
+                    0,
+                    0,
+                    0x1111111111111111,
+                    0,
+                    false,
+                    0,
+                    25,
+                    0,
+                    25,
+                    0,
+                    0,
+                    0,
+                    new SwShStaticEncounterStats(-1, -1, -1, -1, -1, -1),
+                    0,
+                    [0, 0, 0, 0]),
+            ]).Write());
+    }
+
+    private static void WriteProtectedGiftData(TemporarySwShProject temp)
+    {
+        temp.WriteBaseRomFsFile(
+            SwShGiftPokemonWorkflowService.GiftPokemonDataPath["romfs/".Length..],
+            new SwShGiftPokemonArchive(
+            [
+                new KM.Formats.SwSh.SwShGiftPokemonRecord(
+                    0,
+                    0,
+                    1,
+                    0,
+                    4,
+                    0,
+                    0,
+                    true,
+                    0,
+                    70,
+                    890,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    new SwShGiftPokemonIvs(-1, -1, -1, -1, -1, -1),
+                    0,
+                    0),
+                new KM.Formats.SwSh.SwShGiftPokemonRecord(
+                    1,
+                    0,
+                    0,
+                    0,
+                    4,
+                    0,
+                    0,
+                    false,
+                    0,
+                    1,
+                    133,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    new SwShGiftPokemonIvs(-1, -1, -1, -1, -1, -1),
+                    0,
+                    0),
+            ]).Write());
     }
 
     private static void WriteMessageTables(TemporarySwShProject temp)
@@ -639,6 +836,28 @@ public sealed class SwShRandomizerOptionCoverageTests
     {
         return edit.Domain == "workflow.pokemon"
             && edit.Field.StartsWith($"compatibility:{groupId}:", StringComparison.Ordinal);
+    }
+
+    private static bool WritesProtectedBoxLegendarySpecies(SwShRandomizerPreviewEdit edit)
+    {
+        if (edit.Field is SwShEncountersWorkflowService.SpeciesIdField
+            or SwShStaticEncountersWorkflowService.SpeciesField
+            or SwShGiftPokemonWorkflowService.SpeciesField)
+        {
+            return int.TryParse(edit.NewValue, out var speciesId)
+                && ProtectedBoxLegendarySpeciesIds.Contains(speciesId);
+        }
+
+        if (edit.Domain == "workflow.pokemon"
+            && edit.Field.StartsWith("evolution:upsert:", StringComparison.Ordinal))
+        {
+            var parts = edit.NewValue.Split(':');
+            return parts.Length >= 3
+                && int.TryParse(parts[2], out var speciesId)
+                && ProtectedBoxLegendarySpeciesIds.Contains(speciesId);
+        }
+
+        return false;
     }
 
     private static int ParseLearnsetMove(SwShRandomizerPreviewEdit edit)
