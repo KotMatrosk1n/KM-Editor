@@ -42,6 +42,7 @@ internal static class SwShExeFsReservedRegionLedger
     public const string OwnerPokemonSummaryRuntime = "Pokemon Summary Runtime";
     public const string OwnerRoyalCandy = "Royal Candy";
     public const string OwnerRoyalCandyStoryLimits = "Royal Candy with Story Limits";
+    public const string OwnerShinyRate = "Shiny Rate";
     public const string OwnerStartingItems = "Starting Items";
     public const string OwnerTypeChart = "Type Chart";
 
@@ -224,6 +225,9 @@ internal static class SwShExeFsReservedRegionLedger
         new(OwnerHyperTraining, "hyper-training-shield-eligibility-check", ExeFsMainPath, "main.text", 0x00F9A344, 0x08, "Hyper Training Shield picker eligibility compare and branch", "do-not-overwrite"),
         new(OwnerHyperTraining, "hyper-training-shield-gray-out-check", ExeFsMainPath, "main.text", 0x00F9A364, 0x08, "Hyper Training Shield picker gray-out compare and branch", "do-not-overwrite"),
         new(OwnerHyperTraining, "hyper-training-shield-detail-check", ExeFsMainPath, "main.text", 0x00F9E4F0, 0x08, "Hyper Training Shield selected-detail compare and branch", "do-not-overwrite"),
+
+        new(OwnerShinyRate, "shiny-rate-sword-reroll-loop-control", ExeFsMainPath, "main.text", 0x00D31488, 0x08, "Shiny Rate Sword reroll compare and break branch", "do-not-overwrite"),
+        new(OwnerShinyRate, "shiny-rate-shield-reroll-loop-control", ExeFsMainPath, "main.text", 0x00D314B8, 0x08, "Shiny Rate Shield reroll compare and break branch", "do-not-overwrite"),
 
         new(OwnerTypeChart, "type-chart-swsh", ExeFsMainPath, "main.ro", 0x00743600, 0x144, "Sword/Shield type-effectiveness table", "payload-only"),
 

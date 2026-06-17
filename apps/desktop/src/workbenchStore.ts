@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-
 import { create } from 'zustand';
 import {
   type ApiDiagnostic,
@@ -41,7 +40,7 @@ import {
   type WorkflowSummary
 } from './bridge/contracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
-
+import { type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 export type WorkbenchSection =
   | 'health'
   | 'workflows'
@@ -66,6 +65,7 @@ export type WorkbenchSection =
   | 'bagHook'
   | 'catchCap'
   | 'hyperTraining'
+  | 'shinyRate'
   | 'typeChart'
   | 'fairyGymBoosts'
   | 'fashionUnlock'
@@ -79,7 +79,6 @@ export type WorkbenchSection =
   | 'randomizer'
   | 'changes'
   | 'settings';
-
 export type ProjectPathDraft = {
   baseExeFsPath: string;
   baseRomFsPath: string;
@@ -87,20 +86,16 @@ export type ProjectPathDraft = {
   saveFilePath: string;
   selectedGame: ProjectGame | null;
 };
-
 export type ProjectPathFieldName = Exclude<keyof ProjectPathDraft, 'selectedGame'>;
 type ProjectPathDraftValues = Pick<ProjectPathDraft, ProjectPathFieldName>;
 type ValidatedProjectPathCache = Partial<Record<ProjectGame, ProjectPathDraftValues>>;
-
 const projectPathDraftStorageKey = 'km-editor.project-path-draft.v1';
 const validatedProjectPathCacheStorageKey = 'km-editor.validated-project-path-cache.v1';
-
 export type OpenProjectState = {
   fileGraph: ProjectFileGraph;
   health: ProjectHealth;
   projectId: string;
 };
-
 type WorkbenchState = {
   activeSection: WorkbenchSection;
   applyResult: ApplyResult | null;
@@ -113,6 +108,7 @@ type WorkbenchState = {
   encountersWorkflow: EncountersWorkflow | null;
   catchCapWorkflow: CatchCapWorkflow | null;
   hyperTrainingWorkflow: HyperTrainingWorkflow | null;
+  shinyRateWorkflow: ShinyRateWorkflow | null;
   typeChartWorkflow: TypeChartWorkflow | null;
   fairyGymBoostsWorkflow: FairyGymBoostsWorkflow | null;
   fashionUnlockWorkflow: FashionUnlockWorkflow | null;
@@ -202,6 +198,7 @@ type WorkbenchState = {
   setEncountersWorkflow: (encountersWorkflow: EncountersWorkflow) => void;
   setCatchCapWorkflow: (catchCapWorkflow: CatchCapWorkflow) => void;
   setHyperTrainingWorkflow: (hyperTrainingWorkflow: HyperTrainingWorkflow) => void;
+  setShinyRateWorkflow: (shinyRateWorkflow: ShinyRateWorkflow) => void;
   setTypeChartWorkflow: (typeChartWorkflow: TypeChartWorkflow) => void;
   setFairyGymBoostsWorkflow: (fairyGymBoostsWorkflow: FairyGymBoostsWorkflow) => void;
   setFashionUnlockWorkflow: (fashionUnlockWorkflow: FashionUnlockWorkflow) => void;
@@ -293,14 +290,12 @@ type WorkbenchState = {
   rememberValidatedProjectPaths: (draftPaths: ProjectPathDraft) => void;
   setSelectedGame: (selectedGame: ProjectGame) => void;
 };
-
 function resolveWorkflowLoadSection(
   activeSection: WorkbenchSection,
   workflowSection: WorkbenchSection
 ) {
   return activeSection === 'workflows' ? workflowSection : activeSection;
 }
-
 function resolveSelectedPokemonPersonalId(
   pokemonWorkflow: PokemonWorkflow,
   currentSelectedPokemonPersonalId: number | null
@@ -315,7 +310,6 @@ function resolveSelectedPokemonPersonalId(
             !isPlaceholderPokemonRecord(pokemon)
         )
       : null;
-
   return (
     currentSelection?.personalId ??
     pokemonWorkflow.pokemon.find((pokemon) => !isPlaceholderPokemonRecord(pokemon))?.personalId ??
@@ -340,6 +334,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     encountersWorkflow: null,
     catchCapWorkflow: null,
     hyperTrainingWorkflow: null,
+    shinyRateWorkflow: null,
     typeChartWorkflow: null,
     fairyGymBoostsWorkflow: null,
     fashionUnlockWorkflow: null,
@@ -433,6 +428,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   encountersWorkflow: null,
   catchCapWorkflow: null,
   hyperTrainingWorkflow: null,
+  shinyRateWorkflow: null,
   typeChartWorkflow: null,
   fairyGymBoostsWorkflow: null,
   fashionUnlockWorkflow: null,
@@ -698,6 +694,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       encountersWorkflow: null,
       catchCapWorkflow: null,
       hyperTrainingWorkflow: null,
+      shinyRateWorkflow: null,
       typeChartWorkflow: null,
       fairyGymBoostsWorkflow: null,
       fashionUnlockWorkflow: null,
@@ -1022,6 +1019,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({
       activeSection: resolveWorkflowLoadSection(state.activeSection, 'hyperTraining'),
       hyperTrainingWorkflow
+    })),
+  setShinyRateWorkflow: (shinyRateWorkflow) =>
+    set((state) => ({
+      activeSection: resolveWorkflowLoadSection(state.activeSection, 'shinyRate'),
+      shinyRateWorkflow
     })),
   setTypeChartWorkflow: (typeChartWorkflow) =>
     set((state) => ({

@@ -41,6 +41,7 @@ import {
   Shield,
   ShieldCheck,
   Shuffle,
+  Sparkle,
   Sparkles,
   Swords,
   Store,
@@ -183,8 +184,7 @@ import {
   type TrainerEditableField,
   type TrainerPokemonRecord,
   type TrainerRecord,
-  type TrainersWorkflow,
-  type WorkflowSummary
+  type TrainersWorkflow
 } from './bridge/contracts';
 import {
   ProjectBridgeError,
@@ -223,10 +223,15 @@ import {
   type FairyGymBoostSelection,
   type FairyGymBoostsWorkflow
 } from './bridge/fairyGymBoostsContracts';
+import { type ShinyRateMode, type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 import { FairyGymBoostsSection } from './features/fairy-gym-boosts/FairyGymBoostsSection';
 import { FashionUnlockSection } from './features/fashion-unlock/FashionUnlockSection';
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
-import { workflowDefinitions } from './features/workflows/workflowDefinitions';
+import {
+  ShinyRateSection,
+  formatShinyRatePendingValue
+} from './features/shiny-rate/ShinyRateSection';
+import { WorkflowsSection } from './features/workflows/WorkflowsSection';
 import {
   TypeChartSection,
   decodeTypeChartPendingValues,
@@ -489,6 +494,11 @@ const sections: Array<{
     icon: Dumbbell
   },
   {
+    id: 'shinyRate',
+    label: 'Shiny Rate',
+    icon: Sparkle
+  },
+  {
     id: 'typeChart',
     label: 'Type Chart',
     icon: Table2
@@ -599,6 +609,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'catchCap',
       'ivScreen',
       'hyperTraining',
+      'shinyRate',
       'typeChart',
       'fairyGymBoosts',
       'fashionUnlock',
@@ -1307,6 +1318,7 @@ export function App({
   const setEncountersWorkflow = useWorkbenchStore((state) => state.setEncountersWorkflow);
   const catchCapWorkflow = useWorkbenchStore((state) => state.catchCapWorkflow);
   const hyperTrainingWorkflow = useWorkbenchStore((state) => state.hyperTrainingWorkflow);
+  const shinyRateWorkflow = useWorkbenchStore((state) => state.shinyRateWorkflow);
   const typeChartWorkflow = useWorkbenchStore((state) => state.typeChartWorkflow);
   const fairyGymBoostsWorkflow = useWorkbenchStore(
     (state) => state.fairyGymBoostsWorkflow
@@ -1321,6 +1333,7 @@ export function App({
   const setHyperTrainingWorkflow = useWorkbenchStore(
     (state) => state.setHyperTrainingWorkflow
   );
+  const setShinyRateWorkflow = useWorkbenchStore((state) => state.setShinyRateWorkflow);
   const setTypeChartWorkflow = useWorkbenchStore((state) => state.setTypeChartWorkflow);
   const setFairyGymBoostsWorkflow = useWorkbenchStore(
     (state) => state.setFairyGymBoostsWorkflow
@@ -1532,6 +1545,8 @@ export function App({
   const [isCatchCapStaging, setIsCatchCapStaging] = useState(false);
   const [isHyperTrainingLoading, setIsHyperTrainingLoading] = useState(false);
   const [isHyperTrainingStaging, setIsHyperTrainingStaging] = useState(false);
+  const [isShinyRateLoading, setIsShinyRateLoading] = useState(false);
+  const [isShinyRateStaging, setIsShinyRateStaging] = useState(false);
   const [isTypeChartLoading, setIsTypeChartLoading] = useState(false);
   const [isTypeChartStaging, setIsTypeChartStaging] = useState(false);
   const [isFairyGymBoostsLoading, setIsFairyGymBoostsLoading] = useState(false);
@@ -1709,6 +1724,7 @@ export function App({
       bagHookWorkflow: null,
       catchCapWorkflow: null,
       hyperTrainingWorkflow: null,
+      shinyRateWorkflow: null,
       typeChartWorkflow: null,
       fairyGymBoostsWorkflow: null,
       fashionUnlockWorkflow: null,
@@ -2772,6 +2788,45 @@ export function App({
     }
   };
 
+  const handleOpenShinyRateWorkflow = async () => {
+    setIsShinyRateLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadShinyRateWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setShinyRateWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsShinyRateLoading(false);
+    }
+  };
+
+  const handleStageShinyRate = async (mode: ShinyRateMode, rollCount: number | null) => {
+    setIsShinyRateStaging(true);
+    prepareScopedEditorPanelAction('shinyRate');
+
+    try {
+      const response = await bridge.stageShinyRate({
+        mode,
+        paths: toProjectPaths(draftPaths),
+        rollCount,
+        session: editSession
+      });
+      setShinyRateWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setScopedEditorPanelDiagnostics('shinyRate', response.diagnostics);
+      registerEditorDraftDirty('shinyRate', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsShinyRateStaging(false);
+    }
+  };
+
   const handleOpenTypeChartWorkflow = async () => {
     setIsTypeChartLoading(true);
     setBridgeDiagnostics([]);
@@ -3319,6 +3374,12 @@ export function App({
           void handleOpenHyperTrainingWorkflow();
         }
         break;
+      case 'shinyRate':
+        if (!shinyRateWorkflow && !isShinyRateLoading) {
+          markLazyLoadStarted();
+          void handleOpenShinyRateWorkflow();
+        }
+        break;
       case 'typeChart':
         if (!typeChartWorkflow && !isTypeChartLoading) {
           markLazyLoadStarted();
@@ -3407,6 +3468,7 @@ export function App({
     isGymUniformRemovalLoading,
     isHyperTrainingLoading,
     isIvScreenLoading,
+    isShinyRateLoading,
     isMovesLoading,
     isPlacementLoading,
     isPokemonLoading,
@@ -3433,6 +3495,7 @@ export function App({
     rentalPokemonWorkflow,
     royalCandyWorkflow,
     shopsWorkflow,
+    shinyRateWorkflow,
     startingItemsWorkflow,
     spreadsheetImportWorkflow,
     staticEncountersWorkflow,
@@ -5875,6 +5938,14 @@ const resetModMergerPlan = () => {
         }
       );
     }
+    if (shinyRateWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadShinyRateWorkflow({ paths });
+          setShinyRateWorkflow(response.workflow);
+        }
+      );
+    }
     if (typeChartWorkflow) {
       reloadTasks.push(
         async () => {
@@ -6290,6 +6361,7 @@ const resetModMergerPlan = () => {
               isBagHookLoading={isBagHookLoading}
               isCatchCapLoading={isCatchCapLoading}
               isHyperTrainingLoading={isHyperTrainingLoading}
+              isShinyRateLoading={isShinyRateLoading}
               isFairyGymBoostsLoading={isFairyGymBoostsLoading}
               isFashionUnlockLoading={isFashionUnlockLoading}
               isGymUniformRemovalLoading={isGymUniformRemovalLoading}
@@ -6310,6 +6382,7 @@ const resetModMergerPlan = () => {
               onOpenBagHookWorkflow={handleOpenBagHookWorkflow}
               onOpenCatchCapWorkflow={handleOpenCatchCapWorkflow}
               onOpenHyperTrainingWorkflow={handleOpenHyperTrainingWorkflow}
+              onOpenShinyRateWorkflow={handleOpenShinyRateWorkflow}
               onOpenFairyGymBoostsWorkflow={handleOpenFairyGymBoostsWorkflow}
               onOpenFashionUnlockWorkflow={handleOpenFashionUnlockWorkflow}
               onOpenGymUniformRemovalWorkflow={handleOpenGymUniformRemovalWorkflow}
@@ -6755,6 +6828,24 @@ const resetModMergerPlan = () => {
               />
             )
           ) : null}
+          {activeSection === 'shinyRate' ? (
+            isShinyRateLoading && !shinyRateWorkflow ? (
+              <WorkflowLoadingPanel label="Shiny Rate" />
+            ) : (
+              <ShinyRateSection
+                editSession={getEditSessionForSection('shinyRate')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isShinyRateStaging}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('shinyRate')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('shinyRate')}
+                onDirtyChange={(isDirty) => registerEditorDraftDirty('shinyRate', isDirty)}
+                onStageRate={handleStageShinyRate}
+                panelOutput={getScopedEditorPanelOutput('shinyRate')}
+                workflow={shinyRateWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'typeChart' ? (
             isTypeChartLoading && !typeChartWorkflow ? (
               <WorkflowLoadingPanel label="Type Chart" />
@@ -7023,6 +7114,7 @@ const resetModMergerPlan = () => {
                 startingItemsWorkflow,
                 staticEncountersWorkflow,
                 textWorkflow,
+                shinyRateWorkflow,
                 typeChartWorkflow,
                 tradePokemonWorkflow,
                 trainersWorkflow
@@ -7351,614 +7443,6 @@ function HealthSection({
       <PathStatusSection health={health} />
       <DiagnosticsSection diagnostics={[...bridgeDiagnostics, ...(health?.diagnostics ?? [])]} />
     </>
-  );
-}
-
-function WorkflowsSection({
-  health,
-  isEncountersLoading,
-  isExeFsPatchLoading,
-  isItemsLoading,
-  isMovesLoading,
-  isPokemonLoading,
-  isShopsLoading,
-  isTextLoading,
-  isTrainersLoading,
-  isRaidBattlesLoading,
-  isRaidRewardsLoading,
-  isRaidBonusRewardsLoading,
-  isPlacementLoading,
-  isBehaviorLoading,
-  isFlagworkSaveLoading,
-  isGiftPokemonLoading,
-  isTradePokemonLoading,
-  isStaticEncountersLoading,
-  isRentalPokemonLoading,
-  isDynamaxAdventuresLoading,
-  isBagHookLoading,
-  isCatchCapLoading,
-  isHyperTrainingLoading,
-  isFairyGymBoostsLoading,
-  isFashionUnlockLoading,
-  isGymUniformRemovalLoading,
-  isIvScreenLoading,
-  isRoyalCandyLoading,
-  isStartingItemsLoading,
-  isSpreadsheetImportLoading,
-  isModMergerLoading,
-  onOpenEncountersWorkflow,
-  onOpenExeFsPatchWorkflow,
-  onOpenFlagworkSaveWorkflow,
-  onOpenGiftPokemonWorkflow,
-  onOpenTradePokemonWorkflow,
-  onOpenStaticEncountersWorkflow,
-  onOpenRentalPokemonWorkflow,
-  onOpenDynamaxAdventuresWorkflow,
-  onOpenBagHookWorkflow,
-  onOpenCatchCapWorkflow,
-  onOpenHyperTrainingWorkflow,
-  onOpenFairyGymBoostsWorkflow,
-  onOpenFashionUnlockWorkflow,
-  onOpenGymUniformRemovalWorkflow,
-  onOpenIvScreenWorkflow,
-  onOpenItemsWorkflow,
-  onOpenMovesWorkflow,
-  onOpenPokemonWorkflow,
-  onOpenPlacementWorkflow,
-  onOpenBehaviorWorkflow,
-  onOpenRaidBattlesWorkflow,
-  onOpenRaidRewardsWorkflow,
-  onOpenRaidBonusRewardsWorkflow,
-  onOpenRoyalCandyWorkflow,
-  onOpenStartingItemsWorkflow,
-  onOpenShopsWorkflow,
-  onOpenSpreadsheetImportWorkflow,
-  onOpenModMergerWorkflow,
-  onOpenTextWorkflow,
-  onOpenTrainersWorkflow,
-  pendingEditCount,
-  workflows
-}: {
-  health: ProjectHealth | null;
-  isEncountersLoading: boolean;
-  isExeFsPatchLoading: boolean;
-  isItemsLoading: boolean;
-  isMovesLoading: boolean;
-  isPokemonLoading: boolean;
-  isShopsLoading: boolean;
-  isTextLoading: boolean;
-  isTrainersLoading: boolean;
-  isRaidBattlesLoading: boolean;
-  isRaidRewardsLoading: boolean;
-  isRaidBonusRewardsLoading: boolean;
-  isPlacementLoading: boolean;
-  isBehaviorLoading: boolean;
-  isFlagworkSaveLoading: boolean;
-  isGiftPokemonLoading: boolean;
-  isTradePokemonLoading: boolean;
-  isStaticEncountersLoading: boolean;
-  isRentalPokemonLoading: boolean;
-  isDynamaxAdventuresLoading: boolean;
-  isBagHookLoading: boolean;
-  isCatchCapLoading: boolean;
-  isHyperTrainingLoading: boolean;
-  isFairyGymBoostsLoading: boolean;
-  isFashionUnlockLoading: boolean;
-  isGymUniformRemovalLoading: boolean;
-  isIvScreenLoading: boolean;
-  isRoyalCandyLoading: boolean;
-  isStartingItemsLoading: boolean;
-  isSpreadsheetImportLoading: boolean;
-  isModMergerLoading: boolean;
-  onOpenEncountersWorkflow: () => void;
-  onOpenExeFsPatchWorkflow: () => void;
-  onOpenFlagworkSaveWorkflow: () => void;
-  onOpenGiftPokemonWorkflow: () => void;
-  onOpenTradePokemonWorkflow: () => void;
-  onOpenStaticEncountersWorkflow: () => void;
-  onOpenRentalPokemonWorkflow: () => void;
-  onOpenDynamaxAdventuresWorkflow: () => void;
-  onOpenBagHookWorkflow: () => void;
-  onOpenCatchCapWorkflow: () => void;
-  onOpenHyperTrainingWorkflow: () => void;
-  onOpenFairyGymBoostsWorkflow: () => void;
-  onOpenFashionUnlockWorkflow: () => void;
-  onOpenGymUniformRemovalWorkflow: () => void;
-  onOpenIvScreenWorkflow: () => void;
-  onOpenItemsWorkflow: () => void;
-  onOpenMovesWorkflow: () => void;
-  onOpenPokemonWorkflow: () => void;
-  onOpenPlacementWorkflow: () => void;
-  onOpenBehaviorWorkflow: () => void;
-  onOpenRaidBattlesWorkflow: () => void;
-  onOpenRaidRewardsWorkflow: () => void;
-  onOpenRaidBonusRewardsWorkflow: () => void;
-  onOpenRoyalCandyWorkflow: () => void;
-  onOpenStartingItemsWorkflow: () => void;
-  onOpenShopsWorkflow: () => void;
-  onOpenSpreadsheetImportWorkflow: () => void;
-  onOpenModMergerWorkflow: () => void;
-  onOpenTextWorkflow: () => void;
-  onOpenTrainersWorkflow: () => void;
-  pendingEditCount: number;
-  workflows: WorkflowSummary[];
-}) {
-  const visibleWorkflowDefinitions = workflowDefinitions.filter((definition) =>
-    workflows.some((workflow) => workflow.id === definition.id)
-  );
-
-  if (!health?.canOpenEditableWorkflows) {
-    return (
-      <section aria-labelledby="workflows-heading" className="panel wide-panel">
-        <div className="panel-heading">
-          <ListChecks aria-hidden="true" size={18} />
-          <h2 id="workflows-heading">Workflow List</h2>
-        </div>
-        <p className="empty-copy">
-          Validate Base RomFS, Base ExeFS, and Output Root before opening editors.
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <section aria-labelledby="workflows-heading" className="panel wide-panel">
-      <div className="panel-heading">
-        <ListChecks aria-hidden="true" size={18} />
-        <h2 id="workflows-heading">Workflow List</h2>
-      </div>
-
-      <div className="workflow-list">
-        {visibleWorkflowDefinitions.map((definition) => {
-          const workflow = workflows.find((candidate) => candidate.id === definition.id);
-          const workflowState = getWorkflowState(health, workflow);
-          const Icon = definition.icon;
-          const isItemsWorkflow = definition.id === 'items';
-          const isPokemonWorkflow = definition.id === 'pokemon';
-          const isMovesWorkflow = definition.id === 'moves';
-          const isTextWorkflow = definition.id === 'text';
-          const isTrainersWorkflow = definition.id === 'trainers';
-          const isGiftPokemonWorkflow = definition.id === 'giftPokemon';
-          const isTradePokemonWorkflow = definition.id === 'tradePokemon';
-          const isStaticEncountersWorkflow = definition.id === 'staticEncounters';
-          const isRentalPokemonWorkflow = definition.id === 'rentalPokemon';
-          const isDynamaxAdventuresWorkflow = definition.id === 'dynamaxAdventures';
-          const isShopsWorkflow = definition.id === 'shops';
-          const isEncountersWorkflow = definition.id === 'encounters';
-          const isRaidBattlesWorkflow = definition.id === 'raidBattles';
-          const isRaidRewardsWorkflow = definition.id === 'raidRewards';
-          const isRaidBonusRewardsWorkflow = definition.id === 'raidBonusRewards';
-          const isPlacementWorkflow = definition.id === 'placement';
-          const isBehaviorWorkflow = definition.id === 'behavior';
-          const isFlagworkSaveWorkflow = definition.id === 'flagworkSave';
-          const isBagHookWorkflow = definition.id === 'bagHook';
-          const isCatchCapWorkflow = definition.id === 'catchCap';
-          const isHyperTrainingWorkflow = definition.id === 'hyperTraining';
-          const isFairyGymBoostsWorkflow = definition.id === 'fairyGymBoosts';
-          const isFashionUnlockWorkflow = definition.id === 'fashionUnlock';
-          const isGymUniformRemovalWorkflow = definition.id === 'gymUniformRemoval';
-          const isIvScreenWorkflow = definition.id === 'ivScreen';
-          const isExeFsPatchWorkflow = definition.id === 'exefsPatches';
-          const isRoyalCandyWorkflow = definition.id === 'royalCandy';
-          const isStartingItemsWorkflow = definition.id === 'startingItems';
-          const isSpreadsheetImportWorkflow = definition.id === 'spreadsheetImport';
-          const isModMergerWorkflow = definition.id === 'modMerger';
-          const canOpenItems = isItemsWorkflow && workflowState.availability !== 'disabled';
-          const canOpenPokemon = isPokemonWorkflow && workflowState.availability !== 'disabled';
-          const canOpenMoves = isMovesWorkflow && workflowState.availability !== 'disabled';
-          const canOpenText = isTextWorkflow && workflowState.availability !== 'disabled';
-          const canOpenTrainers = isTrainersWorkflow && workflowState.availability !== 'disabled';
-          const canOpenGiftPokemon =
-            isGiftPokemonWorkflow && workflowState.availability !== 'disabled';
-          const canOpenTradePokemon =
-            isTradePokemonWorkflow && workflowState.availability !== 'disabled';
-          const canOpenStaticEncounters =
-            isStaticEncountersWorkflow && workflowState.availability !== 'disabled';
-          const canOpenRentalPokemon =
-            isRentalPokemonWorkflow && workflowState.availability !== 'disabled';
-          const canOpenDynamaxAdventures =
-            isDynamaxAdventuresWorkflow && workflowState.availability !== 'disabled';
-          const canOpenShops = isShopsWorkflow && workflowState.availability !== 'disabled';
-          const canOpenEncounters =
-            isEncountersWorkflow && workflowState.availability !== 'disabled';
-          const canOpenRaidBattles =
-            isRaidBattlesWorkflow && workflowState.availability !== 'disabled';
-          const canOpenRaidRewards =
-            isRaidRewardsWorkflow && workflowState.availability !== 'disabled';
-          const canOpenRaidBonusRewards =
-            isRaidBonusRewardsWorkflow && workflowState.availability !== 'disabled';
-          const canOpenPlacement =
-            isPlacementWorkflow && workflowState.availability !== 'disabled';
-          const canOpenBehavior =
-            isBehaviorWorkflow && workflowState.availability !== 'disabled';
-          const canOpenFlagworkSave =
-            isFlagworkSaveWorkflow && workflowState.availability !== 'disabled';
-          const canOpenBagHook =
-            isBagHookWorkflow && workflowState.availability !== 'disabled';
-          const canOpenCatchCap =
-            isCatchCapWorkflow && workflowState.availability !== 'disabled';
-          const canOpenHyperTraining =
-            isHyperTrainingWorkflow && workflowState.availability !== 'disabled';
-          const canOpenFairyGymBoosts =
-            isFairyGymBoostsWorkflow && workflowState.availability !== 'disabled';
-          const canOpenFashionUnlock =
-            isFashionUnlockWorkflow && workflowState.availability !== 'disabled';
-          const canOpenGymUniformRemoval =
-            isGymUniformRemovalWorkflow && workflowState.availability !== 'disabled';
-          const canOpenIvScreen =
-            isIvScreenWorkflow && workflowState.availability !== 'disabled';
-          const canOpenExeFsPatch =
-            isExeFsPatchWorkflow && workflowState.availability !== 'disabled';
-          const canOpenRoyalCandy =
-            isRoyalCandyWorkflow && workflowState.availability !== 'disabled';
-          const canOpenStartingItems =
-            isStartingItemsWorkflow && workflowState.availability !== 'disabled';
-          const canOpenSpreadsheetImport =
-            isSpreadsheetImportWorkflow && workflowState.availability !== 'disabled';
-          const canOpenModMerger =
-            isModMergerWorkflow && workflowState.availability !== 'disabled';
-
-          return (
-            <article className="workflow-row" key={definition.id}>
-              <div>
-                <h3>{workflow?.label ?? definition.label}</h3>
-                <p>{workflow?.description ?? definition.description}</p>
-                {isItemsWorkflow ? (
-                  <span className="inline-metric">Pending changes: {pendingEditCount}</span>
-                ) : null}
-              </div>
-              <div className="workflow-actions">
-                <span className={`status-pill ${workflowState.statusClass}`}>
-                  {workflowState.label}
-                </span>
-                {isItemsWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenItems || isItemsLoading}
-                    onClick={onOpenItemsWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isItemsLoading ? 'Loading' : 'Open Items'}</span>
-                  </button>
-                ) : null}
-                {isPokemonWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenPokemon || isPokemonLoading}
-                    onClick={onOpenPokemonWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isPokemonLoading ? 'Loading' : 'Open Pokemon'}</span>
-                  </button>
-                ) : null}
-                {isMovesWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenMoves || isMovesLoading}
-                    onClick={onOpenMovesWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isMovesLoading ? 'Loading' : 'Open Moves'}</span>
-                  </button>
-                ) : null}
-                {isTextWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenText || isTextLoading}
-                    onClick={onOpenTextWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isTextLoading ? 'Loading' : 'Open Text'}</span>
-                  </button>
-                ) : null}
-                {isTrainersWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenTrainers || isTrainersLoading}
-                    onClick={onOpenTrainersWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isTrainersLoading ? 'Loading' : 'Open Trainers'}</span>
-                  </button>
-                ) : null}
-                {isGiftPokemonWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenGiftPokemon || isGiftPokemonLoading}
-                    onClick={onOpenGiftPokemonWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isGiftPokemonLoading ? 'Loading' : 'Open Gifts'}</span>
-                  </button>
-                ) : null}
-                {isTradePokemonWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenTradePokemon || isTradePokemonLoading}
-                    onClick={onOpenTradePokemonWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isTradePokemonLoading ? 'Loading' : 'Open Trades'}</span>
-                  </button>
-                ) : null}
-                {isStaticEncountersWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenStaticEncounters || isStaticEncountersLoading}
-                    onClick={onOpenStaticEncountersWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>
-                      {isStaticEncountersLoading ? 'Loading' : 'Open Static Encounters'}
-                    </span>
-                  </button>
-                ) : null}
-                {isRentalPokemonWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenRentalPokemon || isRentalPokemonLoading}
-                    onClick={onOpenRentalPokemonWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isRentalPokemonLoading ? 'Loading' : 'Open Rentals'}</span>
-                  </button>
-                ) : null}
-                {isDynamaxAdventuresWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenDynamaxAdventures || isDynamaxAdventuresLoading}
-                    onClick={onOpenDynamaxAdventuresWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>
-                      {isDynamaxAdventuresLoading ? 'Loading' : 'Open Adventures'}
-                    </span>
-                  </button>
-                ) : null}
-                {isShopsWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenShops || isShopsLoading}
-                    onClick={onOpenShopsWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isShopsLoading ? 'Loading' : 'Open Shops'}</span>
-                  </button>
-                ) : null}
-                {isEncountersWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenEncounters || isEncountersLoading}
-                    onClick={onOpenEncountersWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isEncountersLoading ? 'Loading' : 'Open Wild Encounters'}</span>
-                  </button>
-                ) : null}
-                {isRaidBattlesWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenRaidBattles || isRaidBattlesLoading}
-                    onClick={onOpenRaidBattlesWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isRaidBattlesLoading ? 'Loading' : 'Open Raid Battles'}</span>
-                  </button>
-                ) : null}
-                {isRaidRewardsWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenRaidRewards || isRaidRewardsLoading}
-                    onClick={onOpenRaidRewardsWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isRaidRewardsLoading ? 'Loading' : 'Open Raid Rewards'}</span>
-                  </button>
-                ) : null}
-                {isRaidBonusRewardsWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenRaidBonusRewards || isRaidBonusRewardsLoading}
-                    onClick={onOpenRaidBonusRewardsWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>
-                      {isRaidBonusRewardsLoading ? 'Loading' : 'Open Raid Bonus Rewards'}
-                    </span>
-                  </button>
-                ) : null}
-                {isPlacementWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenPlacement || isPlacementLoading}
-                    onClick={onOpenPlacementWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isPlacementLoading ? 'Loading' : 'Open Placement'}</span>
-                  </button>
-                ) : null}
-                {isBehaviorWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenBehavior || isBehaviorLoading}
-                    onClick={onOpenBehaviorWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isBehaviorLoading ? 'Loading' : 'Open Behavior'}</span>
-                  </button>
-                ) : null}
-                {isFlagworkSaveWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenFlagworkSave || isFlagworkSaveLoading}
-                    onClick={onOpenFlagworkSaveWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isFlagworkSaveLoading ? 'Loading' : 'Open Flagwork'}</span>
-                  </button>
-                ) : null}
-                {isBagHookWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenBagHook || isBagHookLoading}
-                    onClick={onOpenBagHookWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isBagHookLoading ? 'Loading' : 'Open Bag Hook'}</span>
-                  </button>
-                ) : null}
-                {isCatchCapWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenCatchCap || isCatchCapLoading}
-                    onClick={onOpenCatchCapWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isCatchCapLoading ? 'Loading' : 'Open Catch Cap'}</span>
-                  </button>
-                ) : null}
-                {isHyperTrainingWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenHyperTraining || isHyperTrainingLoading}
-                    onClick={onOpenHyperTrainingWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>
-                      {isHyperTrainingLoading ? 'Loading' : 'Open Hyper Training'}
-                    </span>
-                  </button>
-                ) : null}
-                {isFairyGymBoostsWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenFairyGymBoosts || isFairyGymBoostsLoading}
-                    onClick={onOpenFairyGymBoostsWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>
-                      {isFairyGymBoostsLoading ? 'Loading' : 'Open Fairy Gym Boosts'}
-                    </span>
-                  </button>
-                ) : null}
-                {isFashionUnlockWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenFashionUnlock || isFashionUnlockLoading}
-                    onClick={onOpenFashionUnlockWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isFashionUnlockLoading ? 'Loading' : 'Open Fashion Unlock'}</span>
-                  </button>
-                ) : null}
-                {isGymUniformRemovalWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenGymUniformRemoval || isGymUniformRemovalLoading}
-                    onClick={onOpenGymUniformRemovalWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>
-                      {isGymUniformRemovalLoading ? 'Loading' : 'Open Gym Uniform'}
-                    </span>
-                  </button>
-                ) : null}
-                {isIvScreenWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenIvScreen || isIvScreenLoading}
-                    onClick={onOpenIvScreenWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isIvScreenLoading ? 'Loading' : 'Open IV Screen'}</span>
-                  </button>
-                ) : null}
-                {isExeFsPatchWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenExeFsPatch || isExeFsPatchLoading}
-                    onClick={onOpenExeFsPatchWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isExeFsPatchLoading ? 'Loading' : 'Open ExeFS'}</span>
-                  </button>
-                ) : null}
-                {isRoyalCandyWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenRoyalCandy || isRoyalCandyLoading}
-                    onClick={onOpenRoyalCandyWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isRoyalCandyLoading ? 'Loading' : 'Open Candy'}</span>
-                  </button>
-                ) : null}
-                {isStartingItemsWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenStartingItems || isStartingItemsLoading}
-                    onClick={onOpenStartingItemsWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isStartingItemsLoading ? 'Loading' : 'Open Starting Items'}</span>
-                  </button>
-                ) : null}
-                {isSpreadsheetImportWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenSpreadsheetImport || isSpreadsheetImportLoading}
-                    onClick={onOpenSpreadsheetImportWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isSpreadsheetImportLoading ? 'Loading' : 'Open Import'}</span>
-                  </button>
-                ) : null}
-                {isModMergerWorkflow ? (
-                  <button
-                    className="secondary-button compact-button"
-                    disabled={!canOpenModMerger || isModMergerLoading}
-                    onClick={onOpenModMergerWorkflow}
-                    type="button"
-                  >
-                    <Icon aria-hidden="true" size={16} />
-                    <span>{isModMergerLoading ? 'Loading' : 'Open Merger'}</span>
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 
@@ -12496,6 +11980,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.gymUniformRemoval': 'Gym Uniform Removal',
     'workflow.behavior': 'Behavior',
     'workflow.hyperTraining': 'Hyper Training',
+    'workflow.shinyRate': 'Shiny Rate',
     'workflow.items': 'Items',
     'workflow.ivScreen': 'IV Screen',
     'workflow.moves': 'Moves',
@@ -12733,6 +12218,13 @@ function getPendingEditDisplayDetails(
         fieldLabel: edit.field === 'minimumLevel' ? 'Minimum level' : undefined,
         newValueLabel: formatHyperTrainingPendingValue(edit.newValue),
         recordLabel: 'Battle Tower NPC'
+      });
+    case 'workflow.shinyRate':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'rate' ? 'Rate' : undefined,
+        newValueLabel: formatShinyRatePendingValue(edit.newValue),
+        recordLabel: 'Shiny reroll loop'
       });
     case 'workflow.typeChart':
       return createPendingEditDisplayDetails(edit, {
@@ -24306,6 +23798,7 @@ type PendingEditContext = {
   giftPokemonWorkflow: GiftPokemonWorkflow | null;
   behaviorWorkflow: BehaviorWorkflow | null;
   hyperTrainingWorkflow: HyperTrainingWorkflow | null;
+  shinyRateWorkflow: ShinyRateWorkflow | null;
   itemsWorkflow: ItemsWorkflow | null;
   ivScreenWorkflow: IvScreenWorkflow | null;
   movesWorkflow: MovesWorkflow | null;
@@ -29051,30 +28544,6 @@ function formatSharedItemIds(item: ItemRecord) {
   return item.sharedItemIds.join(', ');
 }
 
-function getWorkflowState(health: ProjectHealth | null, workflow: WorkflowSummary | undefined) {
-  if (!health?.canOpenEditableWorkflows) {
-    return {
-      availability: 'disabled',
-      label: 'Disabled',
-      statusClass: 'status-blocked'
-    } as const;
-  }
-
-  if (workflow) {
-    return {
-      availability: workflow.availability,
-      label: workflowAvailabilityLabels[workflow.availability],
-      statusClass: workflowAvailabilityClassNames[workflow.availability]
-    } as const;
-  }
-
-  return {
-    availability: 'readOnly',
-    label: 'Read-only',
-    statusClass: 'status-warning'
-  } as const;
-}
-
 function getExeFsStatusClassName(status: string) {
   switch (status.toLocaleLowerCase()) {
     case 'pass':
@@ -29961,18 +29430,6 @@ function formatMoveActiveFlags(move: MoveRecord) {
     .map((flag) => flag.label)
     .join(', ');
 }
-
-const workflowAvailabilityLabels = {
-  available: 'Editable',
-  disabled: 'Disabled',
-  readOnly: 'View Only'
-} as const;
-
-const workflowAvailabilityClassNames = {
-  available: 'status-ready',
-  disabled: 'status-blocked',
-  readOnly: 'status-warning'
-} as const;
 
 function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][number]['layer']) {
   return {

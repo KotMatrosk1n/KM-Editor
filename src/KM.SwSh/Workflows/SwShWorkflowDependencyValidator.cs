@@ -17,6 +17,7 @@ using KM.SwSh.Raids;
 using KM.SwSh.Rentals;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Shops;
+using KM.SwSh.ShinyRate;
 using KM.SwSh.StaticEncounters;
 using KM.SwSh.Text;
 using KM.SwSh.TypeChart;
@@ -182,6 +183,10 @@ internal static class SwShWorkflowDependencyValidator
             SwShWorkflowIds.TypeChart =>
             [
                 File("Type Chart ExeFS main", SwShTypeChartWorkflowService.ExeFsMainPath),
+            ],
+            SwShWorkflowIds.ShinyRate =>
+            [
+                File("Shiny Rate ExeFS main", SwShShinyRateWorkflowService.ExeFsMainPath),
             ],
             SwShWorkflowIds.RoyalCandy =>
             [

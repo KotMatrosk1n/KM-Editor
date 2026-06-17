@@ -26,6 +26,7 @@ using KM.Api.Randomizer;
 using KM.Api.Rentals;
 using KM.Api.RoyalCandy;
 using KM.Api.Shops;
+using KM.Api.ShinyRate;
 using KM.Api.SpreadsheetImport;
 using KM.Api.StartingItems;
 using KM.Api.StaticEncounters;
@@ -60,6 +61,7 @@ using KM.SwSh.Randomizer;
 using KM.SwSh.Rentals;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Shops;
+using KM.SwSh.ShinyRate;
 using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.StartingItems;
 using KM.SwSh.StaticEncounters;
@@ -86,6 +88,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShBagHookEditSessionService bagHookEditSessionService;
     private readonly SwShCatchCapEditSessionService catchCapEditSessionService;
     private readonly SwShHyperTrainingEditSessionService hyperTrainingEditSessionService;
+    private readonly SwShShinyRateEditSessionService shinyRateEditSessionService;
     private readonly SwShFashionUnlockEditSessionService fashionUnlockEditSessionService;
     private readonly SwShFairyGymBoostsEditSessionService fairyGymBoostsEditSessionService;
     private readonly SwShGymUniformRemovalEditSessionService gymUniformRemovalEditSessionService;
@@ -123,6 +126,7 @@ public sealed class ProjectBridgeDispatcher
         SwShBagHookEditSessionService? bagHookEditSessionService = null,
         SwShCatchCapEditSessionService? catchCapEditSessionService = null,
         SwShHyperTrainingEditSessionService? hyperTrainingEditSessionService = null,
+        SwShShinyRateEditSessionService? shinyRateEditSessionService = null,
         SwShFashionUnlockEditSessionService? fashionUnlockEditSessionService = null,
         SwShFairyGymBoostsEditSessionService? fairyGymBoostsEditSessionService = null,
         SwShGymUniformRemovalEditSessionService? gymUniformRemovalEditSessionService = null,
@@ -159,6 +163,7 @@ public sealed class ProjectBridgeDispatcher
         this.bagHookEditSessionService = bagHookEditSessionService ?? new SwShBagHookEditSessionService(this.projectWorkspaceService);
         this.catchCapEditSessionService = catchCapEditSessionService ?? new SwShCatchCapEditSessionService(this.projectWorkspaceService);
         this.hyperTrainingEditSessionService = hyperTrainingEditSessionService ?? new SwShHyperTrainingEditSessionService(this.projectWorkspaceService);
+        this.shinyRateEditSessionService = shinyRateEditSessionService ?? new SwShShinyRateEditSessionService(this.projectWorkspaceService);
         this.fashionUnlockEditSessionService = fashionUnlockEditSessionService ?? new SwShFashionUnlockEditSessionService(this.projectWorkspaceService);
         this.fairyGymBoostsEditSessionService = fairyGymBoostsEditSessionService ?? new SwShFairyGymBoostsEditSessionService(this.projectWorkspaceService);
         this.gymUniformRemovalEditSessionService = gymUniformRemovalEditSessionService ?? new SwShGymUniformRemovalEditSessionService(this.projectWorkspaceService);
@@ -256,6 +261,8 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.StageCatchCapUninstall => DispatchStageCatchCapUninstall(requestJson),
                 KmCommandNames.LoadHyperTrainingWorkflow => DispatchLoadHyperTrainingWorkflow(requestJson),
                 KmCommandNames.StageHyperTraining => DispatchStageHyperTraining(requestJson),
+                KmCommandNames.LoadShinyRateWorkflow => DispatchLoadShinyRateWorkflow(requestJson),
+                KmCommandNames.StageShinyRate => DispatchStageShinyRate(requestJson),
                 KmCommandNames.LoadTypeChartWorkflow => DispatchLoadTypeChartWorkflow(requestJson),
                 KmCommandNames.StageTypeChart => DispatchStageTypeChart(requestJson),
                 KmCommandNames.LoadFairyGymBoostsWorkflow => DispatchLoadFairyGymBoostsWorkflow(requestJson),
@@ -1076,6 +1083,31 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadShinyRateWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadShinyRateWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadShinyRate(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageShinyRate(string requestJson)
+    {
+        var request = DeserializeRequest<StageShinyRateRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = shinyRateEditSessionService.StageRate(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.Mode,
+            request.Payload.RollCount,
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadTypeChartWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadTypeChartWorkflowRequest>(requestJson);
@@ -1509,6 +1541,7 @@ public sealed class ProjectBridgeDispatcher
                 EditSessionDomain.BagHook => bagHookEditSessionService.Validate(paths, session),
                 EditSessionDomain.CatchCap => catchCapEditSessionService.Validate(paths, session),
                 EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.Validate(paths, session),
+                EditSessionDomain.ShinyRate => shinyRateEditSessionService.Validate(paths, session),
                 EditSessionDomain.TypeChart => typeChartEditSessionService.Validate(paths, session),
                 EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.Validate(paths, session),
                 EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.Validate(paths, session),
@@ -1554,6 +1587,7 @@ public sealed class ProjectBridgeDispatcher
                 EditSessionDomain.BagHook => bagHookEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.CatchCap => catchCapEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.ShinyRate => shinyRateEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.TypeChart => typeChartEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.CreateChangePlan(paths, session),
@@ -1600,6 +1634,7 @@ public sealed class ProjectBridgeDispatcher
                 EditSessionDomain.BagHook => bagHookEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.CatchCap => catchCapEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.ShinyRate => shinyRateEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.TypeChart => typeChartEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.ApplyChangePlan(paths, session, changePlan),
@@ -1652,6 +1687,7 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.bagHook"] => EditSessionDomain.BagHook,
             ["workflow.catchCap"] => EditSessionDomain.CatchCap,
             ["workflow.hyperTraining"] => EditSessionDomain.HyperTraining,
+            ["workflow.shinyRate"] => EditSessionDomain.ShinyRate,
             ["workflow.typeChart"] => EditSessionDomain.TypeChart,
             ["workflow.fairyGymBoosts"] => EditSessionDomain.FairyGymBoosts,
             ["workflow.fashionUnlock"] => EditSessionDomain.FashionUnlock,
@@ -1885,6 +1921,7 @@ public sealed class ProjectBridgeDispatcher
         BagHook,
         CatchCap,
         HyperTraining,
+        ShinyRate,
         TypeChart,
         FairyGymBoosts,
         FashionUnlock,

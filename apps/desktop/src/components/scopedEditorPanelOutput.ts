@@ -16,6 +16,7 @@ export const scopedEditorPanelSectionIds = new Set<WorkbenchSection>([
   'catchCap',
   'ivScreen',
   'hyperTraining',
+  'shinyRate',
   'typeChart',
   'fairyGymBoosts',
   'fashionUnlock',

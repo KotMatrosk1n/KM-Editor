@@ -60,6 +60,8 @@ public static class KmCommandNames
     public const string StageCatchCapUninstall = "catchCap.uninstall.stage";
     public const string LoadHyperTrainingWorkflow = "hyperTraining.load";
     public const string StageHyperTraining = "hyperTraining.stage";
+    public const string LoadShinyRateWorkflow = "shinyRate.load";
+    public const string StageShinyRate = "shinyRate.stage";
     public const string LoadTypeChartWorkflow = "typeChart.load";
     public const string StageTypeChart = "typeChart.stage";
     public const string LoadFairyGymBoostsWorkflow = "fairyGymBoosts.load";

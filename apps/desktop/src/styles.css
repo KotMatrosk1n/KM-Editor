@@ -2968,6 +2968,173 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.shiny-rate-editor {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.shiny-rate-current {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.55fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.shiny-rate-current div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px;
+  background: #111a2c;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.shiny-rate-current span,
+.shiny-rate-custom label > span:first-child {
+  color: #aeb8ca;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.shiny-rate-current strong {
+  min-width: 0;
+  color: #f4f7fb;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.shiny-rate-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(154px, 1fr));
+  gap: 10px;
+}
+
+.shiny-rate-preset {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-height: 108px;
+  min-width: 0;
+  padding: 14px;
+  background: #10192b;
+  border: 1px solid #2a3750;
+  border-radius: 8px;
+  color: #f4f7fb;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.shiny-rate-preset:hover:not(:disabled),
+.shiny-rate-preset:focus-visible {
+  background: #132035;
+  border-color: #f4ce45;
+  transform: translateY(-1px);
+}
+
+.shiny-rate-preset.selected {
+  border-color: #55c0ff;
+  box-shadow: inset 0 0 0 1px rgba(85, 192, 255, 0.45);
+}
+
+.shiny-rate-preset:disabled {
+  color: #778399;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.shiny-rate-preset span {
+  min-width: 0;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.shiny-rate-preset strong {
+  color: #f4ce45;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.shiny-rate-preset small {
+  color: #aeb8ca;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.shiny-rate-custom {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  background: #111a2c;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.shiny-rate-custom label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.shiny-rate-fraction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #f4f7fb;
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.shiny-rate-fraction input {
+  width: 128px;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  background: #0d1525;
+  border: 1px solid #334462;
+  border-radius: 6px;
+  color: #f4f7fb;
+  font: inherit;
+}
+
+.shiny-rate-fraction input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.shiny-rate-custom-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.shiny-rate-custom-result span {
+  min-width: min(100%, 260px);
+  color: #dbe5f4;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .type-chart-editor {
   display: grid;
   justify-items: center;
@@ -5072,7 +5239,9 @@ input {
   .mod-merger-directory-grid,
   .mod-merger-mode-group,
   .mod-merger-file-lists,
-  .mod-merger-conflict-values {
+  .mod-merger-conflict-values,
+  .shiny-rate-current,
+  .shiny-rate-custom {
     grid-template-columns: 1fr;
   }
 
@@ -5160,6 +5329,8 @@ input {
   .royal-candy-layout,
   .fairy-gym-trainer-tabs,
   .fairy-gym-source-grid,
+  .shiny-rate-current,
+  .shiny-rate-custom,
   .change-plan-list li,
   .change-plan-status {
     grid-template-columns: 1fr;

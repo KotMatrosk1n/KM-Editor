@@ -44,6 +44,7 @@ import {
 import { type ProjectBridge } from '../bridge/projectBridge';
 import { type DesktopServices, type NativeUpdate } from '../desktopServices';
 import { createFairyGymBoostsWorkflowFixture } from './fairyGymBoostsTestFixtures';
+import { createShinyRateWorkflowFixture, createStageShinyRateFixtureResponse } from './shinyRateTestFixtures';
 export function createNativeUpdate(overrides: Partial<NativeUpdate> = {}): NativeUpdate {
   return {
     close: async () => undefined,
@@ -156,7 +157,6 @@ function createItemDetailGroups(metadata = createItemMetadata()) {
     }
   ];
 }
-
 function createItemMetadata(): ItemRecord['metadata'] {
   return {
     boost0: 0,
@@ -193,7 +193,6 @@ function createItemMetadata(): ItemRecord['metadata'] {
     useFlags2: 0
   };
 }
-
 export function createMockProjectBridge(
   overrides: Partial<ProjectBridge> = {},
   canEdit = true
@@ -3473,6 +3472,7 @@ export function createMockProjectBridge(
     },
     summary: hyperTrainingWorkflowSummary
   };
+  const { shinyRateWorkflow, shinyRateWorkflowSummary } = createShinyRateWorkflowFixture(canEdit);
   const typeChartWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
     description: 'Advanced editor for the Sword/Shield type-effectiveness table in exefs/main.',
@@ -3927,7 +3927,6 @@ export function createMockProjectBridge(
       )
     ].sort((left, right) => left.relativePath.localeCompare(right.relativePath));
     const diagnostics: ModMergerPreview['diagnostics'] = [];
-
     return {
       canApply: selectedFiles.length > 0,
       conflictFileCount: 0,
@@ -3980,7 +3979,6 @@ export function createMockProjectBridge(
     const enabledSources = modSources.filter((source) => source.isEnabled);
     const sourceName =
       enabledSources.at(-1)?.path.split(/[\\/]/).pop()?.replace(/\.(zip|rar)$/i, '') ?? '';
-
     return {
       canApply: enabledSources.length > 0,
       conflictFileCount: 0,
@@ -4007,7 +4005,6 @@ export function createMockProjectBridge(
       unresolvedConflictCount: 0
     };
   };
-
   let currentGiftPokemonWorkflow = giftPokemonWorkflow;
   let currentTradePokemonWorkflow = tradePokemonWorkflow;
   const createDynamaxAdventurePlanWrites = (session: EditSession): ChangePlan['writes'] => {
@@ -4030,7 +4027,6 @@ export function createMockProjectBridge(
           'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
       }
     ];
-
     return requiresMainPatch
       ? [
           ...writes,
@@ -4094,7 +4090,6 @@ export function createMockProjectBridge(
     typePrimary: true,
     typeSecondary: true
   };
-
   return {
     applyChangePlan: (request) =>
       Promise.resolve({
@@ -4375,6 +4370,8 @@ export function createMockProjectBridge(
                                 'romfs/bin/message/English/script/sub_event_007.dat'
                             }
                           ]
+                        : request.session.pendingEdits[0]?.domain === 'workflow.shinyRate'
+                        ? [{ reason: 'Apply Shiny Rate reroll-loop control bytes to exefs/main.', replacesExistingOutput: false, sources: [{ layer: 'base', relativePath: 'exefs/main' }], targetRelativePath: 'exefs/main' }]
                         : request.session.pendingEdits[0]?.domain === 'workflow.fashionUnlock'
                         ? [
                             {
@@ -4502,6 +4499,7 @@ export function createMockProjectBridge(
           bagHookWorkflowSummary,
           catchCapWorkflowSummary,
           hyperTrainingWorkflowSummary,
+          shinyRateWorkflowSummary,
           typeChartWorkflowSummary,
           fairyGymBoostsWorkflowSummary,
           fashionUnlockWorkflowSummary,
@@ -4718,6 +4716,8 @@ export function createMockProjectBridge(
           }
         }
       }),
+    loadShinyRateWorkflow: () => Promise.resolve({ workflow: shinyRateWorkflow }),
+    stageShinyRate: (request) => Promise.resolve(createStageShinyRateFixtureResponse(request, shinyRateWorkflow)),
     loadTypeChartWorkflow: () => Promise.resolve({ workflow: typeChartWorkflow }),
     stageTypeChart: (request) =>
       Promise.resolve({
