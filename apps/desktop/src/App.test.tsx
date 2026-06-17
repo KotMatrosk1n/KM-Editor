@@ -2200,7 +2200,7 @@ describe('App', () => {
           ability: 0, abilityLabel: 'Ability 1', abilityOptions: [], adventureIndex: 101,
           ballItem: 'Poke Ball', ballItemId: 4, bossTargetOptions: [],
           bossTargetSpecies: 'Pikachu', bossTargetSpeciesId: 25, entryIndex: 1, form: 0,
-          gigantamaxLabel: 'Normal', gigantamaxState: 1, guaranteedPerfectIvs: 2,
+          gigantamaxLabel: 'Normal', gigantamaxOptions: [{ label: 'Normal', value: 1 }], gigantamaxState: 1, guaranteedPerfectIvs: 2,
           isEditable: true,
           isSingleCapture: false, isStoryProgressGated: false,
           ivs: { attack: -1, defense: -1, hp: -2, specialAttack: -1, specialDefense: -1, speed: -1 },
@@ -2215,7 +2215,7 @@ describe('App', () => {
           ability: 0, abilityLabel: 'Ability 1', abilityOptions: [], adventureIndex: 1003,
           ballItem: 'Poke Ball', ballItemId: 4, bossTargetOptions: [{ adventureIndex: 1004, entryIndex: 227, form: 0, isStoryProgressGated: false, label: 'Adventure 1004: Mewtwo', species: 'Mewtwo', speciesId: 150, version: 0, versionLabel: 'Both' }],
           bossTargetSpecies: 'Articuno', bossTargetSpeciesId: 144, entryIndex: 226, form: 0,
-          gigantamaxLabel: 'Normal', gigantamaxState: 1, guaranteedPerfectIvs: 5,
+          gigantamaxLabel: 'Normal', gigantamaxOptions: [{ label: 'Normal', value: 1 }], gigantamaxState: 1, guaranteedPerfectIvs: 5,
           isEditable: false,
           isSingleCapture: true, isStoryProgressGated: false,
           ivs: { attack: -1, defense: -1, hp: -5, specialAttack: -1, specialDefense: -1, speed: -1 },
@@ -2240,10 +2240,131 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Dynamax Adventures' })).toBeInTheDocument();
     expect(screen.getAllByText('001 / 101 - Pikachu').length).toBeGreaterThan(0);
     expect(screen.queryByText('Adventure 1003: Articuno Lv. 70')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
-    expect(await screen.findByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stage Install' })).toBeDisabled();
     expect(screen.getByLabelText('Species')).not.toBeDisabled();
     expect(screen.queryByLabelText('Boss target species')).not.toBeInTheDocument();
+  });
+
+  it('refreshes Dynamax Adventures defaults after selecting a replacement species', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const previewDynamaxAdventureDefaults = vi.fn(
+      (request: Parameters<ProjectBridge['previewDynamaxAdventureDefaults']>[0]) =>
+        Promise.resolve({
+          abilityOptions: [{ label: 'Ability 1 - Flame Body', value: 0 }],
+          changes: [
+            { field: 'form', value: '0' },
+            { field: 'ability', value: '0' },
+            { field: 'gigantamaxState', value: '1' },
+            { field: 'move0Id', value: '85' },
+            { field: 'move1Id', value: '10' },
+            { field: 'move2Id', value: '2' },
+            { field: 'move3Id', value: '1' }
+          ],
+          diagnostics: [],
+          gigantamaxOptions: [{ label: 'Normal', value: 1 }],
+          moveOptions: [{ label: '085 Thunderbolt', value: 85 }]
+        })
+    );
+    const user = userEvent.setup();
+    render(<App bridge={{ ...baseBridge, previewDynamaxAdventureDefaults }} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Dynamax Adventures' }));
+    await user.click(await screen.findByRole('button', { name: 'Show Species options' }));
+    await user.click(screen.getByRole('option', { name: '467 Magmortar' }));
+
+    await waitFor(() =>
+      expect(previewDynamaxAdventureDefaults).toHaveBeenCalledWith(
+        expect.objectContaining({ entryIndex: 0, form: 0, level: 65, species: 467 })
+      )
+    );
+    expect(screen.getByLabelText('Ability roll')).toHaveDisplayValue('Ability 1 - Flame Body');
+    expect(screen.getByLabelText('Gigantamax state')).toHaveDisplayValue('Normal');
+    expect(screen.getByLabelText('Gigantamax state')).toBeDisabled();
+    expect(screen.getByText('Selected Pokemon does not have a Gigantamax form.')).toBeInTheDocument();
+  });
+
+  it('reviews and applies staged Dynamax Adventures edits from the editor panel', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const createChangePlan = vi.fn(
+      async (request: Parameters<ProjectBridge['createChangePlan']>[0]) => {
+        const response = await baseBridge.createChangePlan(request);
+
+        return {
+          changePlan: {
+            ...response.changePlan,
+            diagnostics: [
+              {
+                message: 'Dynamax Adventures review stays in the editor panel.',
+                severity: 'info' as const
+              }
+            ]
+          }
+        };
+      }
+    );
+    const applyChangePlan = vi.fn(baseBridge.applyChangePlan);
+    const user = userEvent.setup();
+    render(<App bridge={{ ...baseBridge, applyChangePlan, createChangePlan }} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Dynamax Adventures' }));
+    expect(
+      screen.getByText(/Stage and apply one Pokemon at a time/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Ability choices may be limited by the selected row's table layout/i)
+    ).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Show Species options' }));
+    await user.click(screen.getByRole('option', { name: '467 Magmortar' }));
+
+    const stageInstall = screen.getByRole('button', { name: 'Stage Install' });
+    await waitFor(() => expect(stageInstall).toBeEnabled());
+    await user.click(stageInstall);
+
+    const review = screen.getByRole('button', { name: 'Review' });
+    await waitFor(() => expect(review).toBeEnabled());
+    await user.click(review);
+
+    await waitFor(() => expect(createChangePlan).toHaveBeenCalled());
+    expect(
+      screen.getByText('Dynamax Adventures review stays in the editor panel.')
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+    expect(
+      screen.queryByText('Dynamax Adventures review stays in the editor panel.')
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Dynamax Adventures' }));
+    const apply = screen.getByRole('button', { name: 'Apply' });
+    await waitFor(() => expect(apply).toBeEnabled());
+    await user.click(apply);
+
+    await waitFor(() => expect(applyChangePlan).toHaveBeenCalled());
+    expect(applyChangePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changePlan: expect.objectContaining({
+          writes: expect.arrayContaining([
+            expect.objectContaining({
+              targetRelativePath: 'romfs/bin/appli/chika/data_table/underground_exploration_poke.bin'
+            })
+          ])
+        }),
+        session: expect.objectContaining({
+          pendingEdits: expect.arrayContaining([
+            expect.objectContaining({ domain: 'workflow.dynamaxAdventures' })
+          ])
+        })
+      })
+    );
   });
 
   it.each([
@@ -3415,27 +3536,23 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Bag Hook' }));
     await user.click(await screen.findByRole('button', { name: 'Stage Install' }));
 
+    expect(await screen.findByText('Bag Hook V2 install is staged for change-plan review.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Changes' }));
+    expect(screen.queryByText('Bag Hook V2 install is staged for change-plan review.')).not.toBeInTheDocument();
 
-    expect(
-      await screen.findByText('Stage Bag Hook install: 20 disabled startup item grant slots.')
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Stage Bag Hook install: 20 disabled startup item grant slots.')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
+    await user.click(screen.getByRole('button', { name: 'Bag Hook' }));
+    await user.click(screen.getByRole('button', { name: 'Review' }));
+    expect(await screen.findByText('Change plan preview contains 1 target file.')).toBeInTheDocument();
 
-    expect(
-      await screen.findByText('Pending Bag Hook install is valid for change-plan review.')
-    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
 
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect((await screen.findAllByText('romfs/bin/script/amx/main_event_0020.amx')).length).toBeGreaterThan(0);
 
-    expect(
-      (await screen.findAllByText('romfs/bin/script/amx/main_event_0020.amx')).length
-    ).toBeGreaterThan(0);
-
-    expect(
-      await screen.findByText('Installed Bag Hook V2 to the configured LayeredFS output root.')
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Installed Bag Hook V2 to the configured LayeredFS output root.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+    expect(screen.queryByText('Installed Bag Hook V2 to the configured LayeredFS output root.')).not.toBeInTheDocument();
   });
 
   it('stages Bag Hook uninstall for review', async () => {
@@ -3472,7 +3589,9 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Stage Uninstall' }));
 
     await waitFor(() => expect(stageBagHookUninstall).toHaveBeenCalled());
+    expect(await screen.findByText('Bag Hook V2 uninstall is staged for change-plan review.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Changes' }));
+    expect(screen.queryByText('Bag Hook V2 uninstall is staged for change-plan review.')).not.toBeInTheDocument();
 
     expect(
       await screen.findByText(
@@ -3521,18 +3640,35 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Stage Caps' }));
 
     await waitFor(() => expect(stageCatchCap).toHaveBeenCalled());
+    expect(await screen.findByText('Catch Cap Editor values are staged for change-plan review.')).toBeInTheDocument();
     expect(stageCatchCap).toHaveBeenCalledWith(
       expect.objectContaining({
         caps: expect.arrayContaining([{ badgeCount: 8, levelCap: 100 }])
       })
     );
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+    expect(screen.queryByText('Catch Cap Editor values are staged for change-plan review.')).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        'Stage Catch Cap Editor values for badge counts 0-7 and the display/runtime hook; eight badges remains Lv.100.'
+      )
+    ).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: 'Catch Cap' }));
     await user.click(screen.getByRole('button', { name: 'Review' }));
 
     await waitFor(() => expect(createChangePlan).toHaveBeenCalled());
+    expect(await screen.findByText('Change plan preview contains 1 target file.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+    expect(screen.queryByText('Change plan preview contains 1 target file.')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Catch Cap' }));
     await user.click(screen.getByRole('button', { name: 'Apply' }));
 
     await waitFor(() => expect(applyChangePlan).toHaveBeenCalled());
+    expect(await screen.findByText('Applied Catch Cap Editor changes to the configured LayeredFS output root.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+    expect(screen.queryByText('Applied Catch Cap Editor changes to the configured LayeredFS output root.')).not.toBeInTheDocument();
     expect(applyChangePlan).toHaveBeenCalledWith(
       expect.objectContaining({
         changePlan: expect.objectContaining({

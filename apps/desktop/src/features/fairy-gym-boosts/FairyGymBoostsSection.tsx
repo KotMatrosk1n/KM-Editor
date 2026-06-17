@@ -2,17 +2,18 @@
 
 import { ClipboardCheck, RotateCcw, Save, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  type ChangePlan,
-  type EditSession
-} from '../../bridge/contracts';
+import { type EditSession } from '../../bridge/contracts';
 import {
   type FairyGymBoostRecord,
   type FairyGymBoostResultKind,
   type FairyGymBoostSelection,
   type FairyGymBoostsWorkflow
 } from '../../bridge/fairyGymBoostsContracts';
-import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
+import {
+  Metric,
+  WorkflowPanelOutputSections,
+  type WorkflowPanelOutput
+} from '../../components/workflowPanels';
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
 type FairyGymOutcomeOption = {
@@ -40,7 +41,6 @@ const outcomeOptions: FairyGymOutcomeOption[] = [
 type FairyGymDrafts = Record<string, FairyGymBoostSelection>;
 
 export function FairyGymBoostsSection({
-  changePlan,
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
@@ -49,9 +49,9 @@ export function FairyGymBoostsSection({
   onCreateChangePlan,
   onDirtyChange,
   onStageBoosts,
+  panelOutput,
   workflow
 }: {
-  changePlan: ChangePlan | null;
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
@@ -60,6 +60,7 @@ export function FairyGymBoostsSection({
   onCreateChangePlan: () => void;
   onDirtyChange: (isDirty: boolean) => void;
   onStageBoosts: (selections: FairyGymBoostSelection[]) => void;
+  panelOutput: WorkflowPanelOutput;
   workflow: FairyGymBoostsWorkflow | null;
 }) {
   const sortedTrainers = useMemo(
@@ -131,9 +132,9 @@ export function FairyGymBoostsSection({
   const canApplyPlan =
     hasStagedChange &&
     !isDirty &&
-    changePlan !== null &&
-    changePlan.canApply &&
-    changePlan.writes.length > 0 &&
+    panelOutput.changePlan !== null &&
+    panelOutput.changePlan.canApply &&
+    panelOutput.changePlan.writes.length > 0 &&
     !isChangePlanApplying;
 
   useEffect(() => {
@@ -256,7 +257,10 @@ export function FairyGymBoostsSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      <WorkflowPanelOutputSections
+        output={panelOutput}
+        workflowDiagnostics={workflow?.diagnostics ?? []}
+      />
     </>
   );
 }

@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { ClipboardCheck, Save, Shirt, Trash2, Wrench } from 'lucide-react';
-import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
 import {
-  type ChangePlan,
+  Metric,
+  WorkflowPanelOutputSections,
+  type WorkflowPanelOutput
+} from '../../components/workflowPanels';
+import {
   type EditSession,
   type FashionUnlockWorkflow,
   type ProjectGame
@@ -11,7 +14,6 @@ import {
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
 export function FashionUnlockSection({
-  changePlan,
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
@@ -20,9 +22,9 @@ export function FashionUnlockSection({
   onCreateChangePlan,
   onStageInstall,
   onStageUninstall,
+  panelOutput,
   workflow
 }: {
-  changePlan: ChangePlan | null;
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
@@ -31,6 +33,7 @@ export function FashionUnlockSection({
   onCreateChangePlan: () => void;
   onStageInstall: () => void;
   onStageUninstall: () => void;
+  panelOutput: WorkflowPanelOutput;
   workflow: FashionUnlockWorkflow | null;
 }) {
   const stagedEdit = editSession?.pendingEdits.find((edit) => edit.domain === 'workflow.fashionUnlock');
@@ -41,7 +44,11 @@ export function FashionUnlockSection({
   const canStageUninstall = workflow?.summary.availability === 'available' && workflow.installStatus === 'installed';
   const canReviewPlan = hasStagedChange && !isChangePlanCreating;
   const canApplyPlan =
-    hasStagedChange && changePlan !== null && changePlan.canApply && changePlan.writes.length > 0 && !isChangePlanApplying;
+    hasStagedChange &&
+    panelOutput.changePlan !== null &&
+    panelOutput.changePlan.canApply &&
+    panelOutput.changePlan.writes.length > 0 &&
+    !isChangePlanApplying;
   const installLabel = workflow?.installStatus === 'installed' ? 'Stage Reinstall' : 'Stage Install';
 
   return (
@@ -150,7 +157,10 @@ export function FashionUnlockSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      <WorkflowPanelOutputSections
+        output={panelOutput}
+        workflowDiagnostics={workflow?.diagnostics ?? []}
+      />
     </>
   );
 }

@@ -91,6 +91,141 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             diagnostics);
     }
 
+    public SwShDynamaxAdventureDefaultPreview PreviewDefaults(
+        ProjectPaths paths,
+        EditSession? session,
+        int entryIndex,
+        int species,
+        int form,
+        int level)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        var workflow = dynamaxAdventuresWorkflowService.Load(project);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!CanEditDynamaxAdventures(project, workflow, diagnostics))
+        {
+            return new SwShDynamaxAdventureDefaultPreview([], [], [], [], diagnostics);
+        }
+
+        var effectiveWorkflow = RefreshDynamicEncounterOptions(
+            project,
+            OverlayPendingEdits(workflow, session?.PendingEdits ?? []));
+        var encounter = effectiveWorkflow.Encounters.FirstOrDefault(candidate => candidate.EntryIndex == entryIndex);
+        if (encounter is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Dynamax Adventure entry index {entryIndex.ToString(CultureInfo.InvariantCulture)} is not present in the loaded workflow.",
+                field: "entryIndex",
+                expected: "Existing Dynamax Adventure record"));
+            return new SwShDynamaxAdventureDefaultPreview([], [], [], [], diagnostics);
+        }
+
+        if (!encounter.IsEditable)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{encounter.Label} is hidden from the safe Dynamax Adventures editor because this row class is not live-proven safe.",
+                field: "entryIndex",
+                expected: "A visible ordinary normal-route Dynamax Adventures row"));
+            return new SwShDynamaxAdventureDefaultPreview([], [], [], [], diagnostics);
+        }
+
+        ValidateDefaultPreviewTarget(
+            effectiveWorkflow,
+            encounter,
+            species,
+            form,
+            level,
+            diagnostics);
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new SwShDynamaxAdventureDefaultPreview([], [], [], [], diagnostics);
+        }
+
+        var usableMoveIds = SwShMoveAvailability.LoadUsableMoveIds(project);
+        var personalRecords = LoadPersonalRecords(project);
+        var learnsetRecords = LoadLearnsetRecords(project);
+        var abilityOptions = SwShDynamaxAdventuresWorkflowService.FilterAbilityOptionsForLayout(
+            CreateAbilityOptions(
+                SwShPokemonAbilityOptionResolver.Load(project),
+                species,
+                form),
+            encounter.AbilityOptions);
+        var gigantamaxOptions = SwShDynamaxAdventuresWorkflowService.CreateGigantamaxOptions(
+            species,
+            currentState: 1);
+        var targetPersonal = SwShDynamaxAdventureSafetyRules.ResolvePersonalRecord(
+            species,
+            form,
+            personalRecords);
+        if (usableMoveIds.Count == 0 || personalRecords.Count == 0 || learnsetRecords.Count == 0 || targetPersonal is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Dynamax Adventures could not build a legal default moveset because move, personal, or learnset data is unavailable.",
+                field: SwShDynamaxAdventuresWorkflowService.Move0Field,
+                expected: "Readable Sword/Shield move, personal, and learnset data"));
+            return new SwShDynamaxAdventureDefaultPreview([], abilityOptions, gigantamaxOptions, [], diagnostics);
+        }
+
+        var targetEncounter = encounter with
+        {
+            SpeciesId = species,
+            Species = GetOptionLabel(
+                effectiveWorkflow,
+                SwShDynamaxAdventuresWorkflowService.SpeciesField,
+                species,
+                "Species"),
+            Form = form,
+            Level = level,
+            Ability = 0,
+            GigantamaxState = 1,
+            Moves = [],
+        };
+        var moveOptions = CreateMoveOptions(
+            effectiveWorkflow,
+            targetEncounter,
+            usableMoveIds,
+            personalRecords,
+            learnsetRecords);
+        var targetLearnset = (uint)targetPersonal.PersonalId < (uint)learnsetRecords.Count
+            ? learnsetRecords[targetPersonal.PersonalId]
+            : null;
+        var defaultMoveIds = CreateDefaultMoveIds(
+            moveOptions,
+            targetLearnset,
+            usableMoveIds,
+            level);
+        if (defaultMoveIds.Count < 4)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{targetEncounter.Species} has fewer than four legal usable moves at level {level.ToString(CultureInfo.InvariantCulture)}.",
+                field: SwShDynamaxAdventuresWorkflowService.Move0Field,
+                expected: "At least four compatible usable moves"));
+            return new SwShDynamaxAdventureDefaultPreview([], abilityOptions, gigantamaxOptions, moveOptions, diagnostics);
+        }
+
+        var changes = new List<SwShDynamaxAdventureDefaultField>
+        {
+            new(SwShDynamaxAdventuresWorkflowService.FormField, form.ToString(CultureInfo.InvariantCulture)),
+            new(SwShDynamaxAdventuresWorkflowService.AbilityField, "0"),
+            new(SwShDynamaxAdventuresWorkflowService.GigantamaxStateField, "1"),
+        };
+        for (var slot = 0; slot < 4; slot++)
+        {
+            changes.Add(new SwShDynamaxAdventureDefaultField(
+                GetMoveField(slot),
+                defaultMoveIds[slot].ToString(CultureInfo.InvariantCulture)));
+        }
+
+        return new SwShDynamaxAdventureDefaultPreview(changes, abilityOptions, gigantamaxOptions, moveOptions, diagnostics);
+    }
+
     public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
@@ -181,13 +316,13 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         }
 
         var tableRestoresVanilla = applyState.HasTableEdits && applyState.MatchesBaseArchive;
-        if (applyState.HasTableEdits && !tableRestoresVanilla && !applyState.SourceLengthMatchesBase)
+        if (applyState.HasTableEdits && !tableRestoresVanilla && !applyState.SourceLayoutMatchesBase)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Dynamax Adventures source table layout differs from the vanilla table. Restore the generated Adventure table before making new Pokemon edits.",
+                "Dynamax Adventures source table byte layout differs from the vanilla table. Restore the Adventure table from a clean dump before making new Pokemon edits.",
                 file: source.GraphEntry.RelativePath,
-                expected: "Vanilla-length Dynamax Adventures table or a restore-to-vanilla change"));
+                expected: "Vanilla byte layout, prior KM in-place edits, or a restore-to-vanilla change"));
             return new ChangePlan(session.Id, [], diagnostics);
         }
 
@@ -325,7 +460,7 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            var output = archive.WriteEdits(edits);
+            var output = archive.WriteEditsPreservingLayout(edits);
             var finalArchive = SwShDynamaxAdventureArchive.Parse(output);
             var baseArchive = TryLoadBaseDynamaxAdventureArchive(paths);
             var tableRestoresVanilla = edits.Length > 0
@@ -656,6 +791,94 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         return form == 0
             || form == encounter.Form
             || form == encounter.VanillaPokemon?.Form;
+    }
+
+    private static void ValidateDefaultPreviewTarget(
+        SwShDynamaxAdventuresWorkflow workflow,
+        SwShDynamaxAdventureEntry encounter,
+        int species,
+        int form,
+        int level,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!CanStageSafeNormalSpeciesValue(encounter, species, workflow.SafeNormalSpeciesOptions))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{encounter.Label} cannot use species {species.ToString(CultureInfo.InvariantCulture)} in the safe Dynamax Adventures editor.",
+                field: SwShDynamaxAdventuresWorkflowService.SpeciesField,
+                expected: "A species from the safe non-duplicate normal-route replacement list"));
+        }
+
+        if (!CanStageSafeNormalFormValue(encounter, form))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{encounter.Label} cannot use form {form.ToString(CultureInfo.InvariantCulture)} in the safe Dynamax Adventures editor.",
+                field: SwShDynamaxAdventuresWorkflowService.FormField,
+                expected: "Form 0 or the row's original vanilla form"));
+        }
+
+        if (CreatesDuplicateNormalSpeciesForm(workflow.Encounters, encounter, species, form))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{encounter.Label} cannot use duplicate normal-route species/form {species.ToString(CultureInfo.InvariantCulture)}/{form.ToString(CultureInfo.InvariantCulture)}.",
+                field: SwShDynamaxAdventuresWorkflowService.SpeciesField,
+                expected: "Unique species/form identities inside the normal Dynamax Adventures pool"));
+        }
+
+        if (level is < 1 or > 100)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"{encounter.Label} cannot preview a default moveset at level {level.ToString(CultureInfo.InvariantCulture)}.",
+                field: SwShDynamaxAdventuresWorkflowService.LevelField,
+                expected: "Level 1 through 100"));
+        }
+    }
+
+    private static IReadOnlyList<int> CreateDefaultMoveIds(
+        IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> moveOptions,
+        SwShPokemonLearnsetRecord? learnset,
+        IReadOnlySet<int> usableMoveIds,
+        int level)
+    {
+        var legalMoveIds = moveOptions
+            .Select(option => option.Value)
+            .Where(moveId => moveId > 0)
+            .ToHashSet();
+        var selectedMoveIds = new List<int>();
+
+        if (learnset is not null)
+        {
+            foreach (var move in learnset.Moves
+                .Where(move =>
+                    move.MoveId > 0
+                    && move.Level <= level
+                    && usableMoveIds.Contains(move.MoveId)
+                    && legalMoveIds.Contains(move.MoveId))
+                .OrderByDescending(move => move.Level)
+                .ThenByDescending(move => move.Slot))
+            {
+                AddDefaultMoveId(selectedMoveIds, move.MoveId);
+            }
+        }
+
+        foreach (var option in moveOptions.Where(option => option.Value > 0))
+        {
+            AddDefaultMoveId(selectedMoveIds, option.Value);
+        }
+
+        return selectedMoveIds.Take(4).ToArray();
+    }
+
+    private static void AddDefaultMoveId(ICollection<int> selectedMoveIds, int moveId)
+    {
+        if (!selectedMoveIds.Contains(moveId))
+        {
+            selectedMoveIds.Add(moveId);
+        }
     }
 
     private static bool CreatesDuplicateNormalSpeciesForm(
@@ -1350,10 +1573,13 @@ public sealed class SwShDynamaxAdventuresEditSessionService
         IReadOnlyList<SwShPersonalRecord> personalRecords,
         IReadOnlyList<SwShPokemonLearnsetRecord> learnsetRecords)
     {
-        var abilityOptions = CreateAbilityOptions(abilityResolver, encounter.SpeciesId, encounter.Form);
+        var allAbilityOptions = CreateAbilityOptions(abilityResolver, encounter.SpeciesId, encounter.Form);
+        var abilityOptions = SwShDynamaxAdventuresWorkflowService.FilterAbilityOptionsForLayout(
+            allAbilityOptions,
+            encounter.AbilityOptions);
         return encounter with
         {
-            AbilityLabel = abilityOptions.FirstOrDefault(option => option.Value == encounter.Ability)?.Label
+            AbilityLabel = allAbilityOptions.FirstOrDefault(option => option.Value == encounter.Ability)?.Label
                 ?? GetOptionLabel(workflow, SwShDynamaxAdventuresWorkflowService.AbilityField, encounter.Ability, "Ability roll"),
             AbilityOptions = abilityOptions,
             MoveOptions = CreateMoveOptions(workflow, encounter, usableMoveIds, personalRecords, learnsetRecords),
@@ -1648,12 +1874,19 @@ public sealed class SwShDynamaxAdventuresEditSessionService
                 return null;
             }
 
-            var output = archive.WriteEdits(edits);
+            var output = archive.WriteEditsPreservingLayout(edits);
             var finalArchive = SwShDynamaxAdventureArchive.Parse(output);
             var baseBytes = TryLoadBaseDynamaxAdventureBytes(paths);
             var baseArchive = baseBytes is null
                 ? null
                 : SwShDynamaxAdventureArchive.Parse(baseBytes);
+            var sourceLayoutMatchesBase = baseBytes is null
+                || baseArchive is not null
+                    && SwShDynamaxAdventuresWorkflowService.IsDynamaxAdventureTableLayoutCompatible(
+                        baseArchive,
+                        baseBytes,
+                        archive,
+                        sourceBytes);
             var bossTargetRemap = CreateBossTargetRemap(archive, session, diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
@@ -1663,9 +1896,17 @@ public sealed class SwShDynamaxAdventuresEditSessionService
             return new DynamaxAdventureApplyState(
                 finalArchive,
                 baseArchive is not null && ArchiveRecordsEqual(finalArchive, baseArchive),
-                baseBytes is null || sourceBytes.Length == baseBytes.Length,
+                sourceLayoutMatchesBase,
                 HasTableEdits: edits.Length > 0,
                 bossTargetRemap);
+        }
+        catch (InvalidDataException exception) when (exception.Message.Contains("omitted FlatBuffer default", StringComparison.Ordinal))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Dynamax Adventures change would require rebuilding the table byte layout: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "A field already stored in the source table, or the existing default value"));
         }
         catch (InvalidDataException exception)
         {
@@ -2008,7 +2249,7 @@ public sealed class SwShDynamaxAdventuresEditSessionService
     private sealed record DynamaxAdventureApplyState(
         SwShDynamaxAdventureArchive FinalArchive,
         bool MatchesBaseArchive,
-        bool SourceLengthMatchesBase,
+        bool SourceLayoutMatchesBase,
         bool HasTableEdits,
         BossTargetRemap? BossTargetRemap);
 

@@ -27,7 +27,7 @@ export const kmCommandNameValues = [
   'rentalPokemon.load',
   'rentalPokemon.field.update',
   'dynamaxAdventures.load',
-  'dynamaxAdventures.field.update', 'dynamaxAdventures.seed.plan', 'dynamaxAdventures.seed.search', 'dynamaxAdventures.seed.save.set',
+  'dynamaxAdventures.field.update', 'dynamaxAdventures.defaults.preview', 'dynamaxAdventures.seed.plan', 'dynamaxAdventures.seed.search', 'dynamaxAdventures.seed.save.set',
   'shops.load',
   'shops.inventory.update',
   'encounters.load',
@@ -116,7 +116,7 @@ export const kmCommandNames = {
   loadRentalPokemonWorkflow: 'rentalPokemon.load',
   updateRentalPokemonField: 'rentalPokemon.field.update',
   loadDynamaxAdventuresWorkflow: 'dynamaxAdventures.load',
-  updateDynamaxAdventureField: 'dynamaxAdventures.field.update', planDynamaxAdventureSeed: 'dynamaxAdventures.seed.plan', searchDynamaxAdventureSeed: 'dynamaxAdventures.seed.search', setDynamaxAdventureSaveSeed: 'dynamaxAdventures.seed.save.set',
+  updateDynamaxAdventureField: 'dynamaxAdventures.field.update', previewDynamaxAdventureDefaults: 'dynamaxAdventures.defaults.preview', planDynamaxAdventureSeed: 'dynamaxAdventures.seed.plan', searchDynamaxAdventureSeed: 'dynamaxAdventures.seed.search', setDynamaxAdventureSaveSeed: 'dynamaxAdventures.seed.save.set',
   loadShopsWorkflow: 'shops.load',
   updateShopInventoryItem: 'shops.inventory.update',
   loadEncountersWorkflow: 'encounters.load',
@@ -413,6 +413,8 @@ export const applyChangePlanRequestSchema = z.strictObject({
   paths: projectPathsSchema,
   session: editSessionSchema
 });
+
+export const previewDynamaxAdventureDefaultsRequestSchema = z.strictObject({ entryIndex: z.number().int().nonnegative(), form: z.number().int().nonnegative(), level: z.number().int().positive(), paths: projectPathsSchema, session: editSessionSchema.nullable(), species: z.number().int().nonnegative() });
 
 export const previewSpreadsheetImportRequestSchema = z.strictObject({
   paths: projectPathsSchema,
@@ -1531,6 +1533,8 @@ export const dynamaxAdventureEditableFieldOptionSchema = z.strictObject({
   value: z.number().int()
 });
 
+export const dynamaxAdventureDefaultFieldSchema = z.strictObject({ field: z.string(), value: z.string() });
+
 export const dynamaxAdventureEditableFieldSchema = z.strictObject({
   field: z.string(),
   label: z.string(),
@@ -1578,6 +1582,7 @@ export const dynamaxAdventureRecordSchema = z.strictObject({
   entryIndex: z.number().int().nonnegative(),
   form: z.number().int().nonnegative(),
   gigantamaxLabel: z.string(),
+  gigantamaxOptions: z.array(dynamaxAdventureEditableFieldOptionSchema).default([]),
   gigantamaxState: z.number().int().nonnegative(),
   guaranteedPerfectIvs: z.number().int().nonnegative(), isEditable: z.boolean().default(true),
   isSingleCapture: z.boolean(),
@@ -1615,6 +1620,8 @@ export const dynamaxAdventuresWorkflowSchema = z.strictObject({ diagnostics: z.a
 export const loadDynamaxAdventuresWorkflowResponseSchema = z.strictObject({
   workflow: dynamaxAdventuresWorkflowSchema
 });
+
+export const previewDynamaxAdventureDefaultsResponseSchema = z.strictObject({ abilityOptions: z.array(dynamaxAdventureEditableFieldOptionSchema), changes: z.array(dynamaxAdventureDefaultFieldSchema), diagnostics: z.array(apiDiagnosticSchema), gigantamaxOptions: z.array(dynamaxAdventureEditableFieldOptionSchema), moveOptions: z.array(dynamaxAdventureEditableFieldOptionSchema) });
 
 export const dynamaxAdventureSeedTemplateSchema = z.strictObject({ form: z.number().int().nonnegative(), isBoss: z.boolean(), row: z.number().int().nonnegative(), species: z.number().int().nonnegative() });
 export const dynamaxAdventureSeedRowPositionSchema = z.strictObject({ kind: z.enum(['rental', 'encounter']), row: z.number().int().nonnegative(), slot: z.number().int().nonnegative() });
@@ -3041,19 +3048,9 @@ export const updateRentalPokemonFieldResponseSchema = z.strictObject({
   workflow: rentalPokemonWorkflowSchema
 });
 
-export const updateDynamaxAdventureFieldRequestSchema = z.strictObject({
-  entryIndex: z.number().int().nonnegative(),
-  field: z.string(),
-  paths: projectPathsSchema,
-  session: editSessionSchema.nullable(),
-  value: z.string()
-});
+export const updateDynamaxAdventureFieldRequestSchema = z.strictObject({ entryIndex: z.number().int().nonnegative(), field: z.string(), paths: projectPathsSchema, session: editSessionSchema.nullable(), value: z.string() });
 
-export const updateDynamaxAdventureFieldResponseSchema = z.strictObject({
-  diagnostics: z.array(apiDiagnosticSchema),
-  session: editSessionSchema,
-  workflow: dynamaxAdventuresWorkflowSchema
-});
+export const updateDynamaxAdventureFieldResponseSchema = z.strictObject({ diagnostics: z.array(apiDiagnosticSchema), session: editSessionSchema, workflow: dynamaxAdventuresWorkflowSchema });
 
 export const updateShopInventoryItemRequestSchema = z.strictObject({
   field: z.string(),
@@ -3441,12 +3438,10 @@ export type LoadRentalPokemonWorkflowRequest = z.infer<
 export type LoadRentalPokemonWorkflowResponse = z.infer<
   typeof loadRentalPokemonWorkflowResponseSchema
 >;
-export type LoadDynamaxAdventuresWorkflowRequest = z.infer<
-  typeof loadDynamaxAdventuresWorkflowRequestSchema
->;
-export type LoadDynamaxAdventuresWorkflowResponse = z.infer<
-  typeof loadDynamaxAdventuresWorkflowResponseSchema
->;
+export type LoadDynamaxAdventuresWorkflowRequest = z.infer<typeof loadDynamaxAdventuresWorkflowRequestSchema>;
+export type LoadDynamaxAdventuresWorkflowResponse = z.infer<typeof loadDynamaxAdventuresWorkflowResponseSchema>;
+export type PreviewDynamaxAdventureDefaultsRequest = z.infer<typeof previewDynamaxAdventureDefaultsRequestSchema>;
+export type PreviewDynamaxAdventureDefaultsResponse = z.infer<typeof previewDynamaxAdventureDefaultsResponseSchema>;
 export type PlanDynamaxAdventureSeedRequest = z.infer<typeof planDynamaxAdventureSeedRequestSchema>; export type PlanDynamaxAdventureSeedResponse = z.infer<typeof planDynamaxAdventureSeedResponseSchema>;
 export type SearchDynamaxAdventureSeedRequest = z.infer<typeof searchDynamaxAdventureSeedRequestSchema>; export type SearchDynamaxAdventureSeedResponse = z.infer<typeof searchDynamaxAdventureSeedResponseSchema>;
 export type SetDynamaxAdventureSaveSeedRequest = z.infer<typeof setDynamaxAdventureSaveSeedRequestSchema>; export type SetDynamaxAdventureSaveSeedResponse = z.infer<typeof setDynamaxAdventureSaveSeedResponseSchema>;
@@ -3674,12 +3669,8 @@ export type UpdateRentalPokemonFieldRequest = z.infer<
 export type UpdateRentalPokemonFieldResponse = z.infer<
   typeof updateRentalPokemonFieldResponseSchema
 >;
-export type UpdateDynamaxAdventureFieldRequest = z.infer<
-  typeof updateDynamaxAdventureFieldRequestSchema
->;
-export type UpdateDynamaxAdventureFieldResponse = z.infer<
-  typeof updateDynamaxAdventureFieldResponseSchema
->;
+export type UpdateDynamaxAdventureFieldRequest = z.infer<typeof updateDynamaxAdventureFieldRequestSchema>;
+export type UpdateDynamaxAdventureFieldResponse = z.infer<typeof updateDynamaxAdventureFieldResponseSchema>;
 export type UpdateShopInventoryItemRequest = z.infer<
   typeof updateShopInventoryItemRequestSchema
 >;

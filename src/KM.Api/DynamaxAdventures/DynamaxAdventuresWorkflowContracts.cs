@@ -16,6 +16,14 @@ public sealed record UpdateDynamaxAdventureFieldRequest(
     string Field,
     string Value);
 
+public sealed record PreviewDynamaxAdventureDefaultsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    int EntryIndex,
+    int Species,
+    int Form,
+    int Level);
+
 public sealed record PlanDynamaxAdventureSeedRequest(
     ProjectPathsDto Paths,
     string Seed,
@@ -113,6 +121,9 @@ public sealed record DynamaxAdventureRecordDto(
     public IReadOnlyList<DynamaxAdventureEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<DynamaxAdventureEditableFieldOptionDto>();
 
+    public IReadOnlyList<DynamaxAdventureEditableFieldOptionDto> GigantamaxOptions { get; init; } =
+        Array.Empty<DynamaxAdventureEditableFieldOptionDto>();
+
     public IReadOnlyList<DynamaxAdventureEditableFieldOptionDto> MoveOptions { get; init; } =
         Array.Empty<DynamaxAdventureEditableFieldOptionDto>();
 
@@ -133,6 +144,10 @@ public sealed record DynamaxAdventureEditableFieldDto(
 public sealed record DynamaxAdventureEditableFieldOptionDto(
     int Value,
     string Label);
+
+public sealed record DynamaxAdventureDefaultFieldDto(
+    string Field,
+    string Value);
 
 public sealed record DynamaxAdventureSeedTemplateDto(
     int Row,
@@ -196,6 +211,13 @@ public sealed record PlanDynamaxAdventureSeedResponse(DynamaxAdventureSeedPlanDt
 public sealed record SearchDynamaxAdventureSeedResponse(DynamaxAdventureSeedSearchDto Search);
 
 public sealed record SetDynamaxAdventureSaveSeedResponse(DynamaxAdventureSaveSeedDto Result);
+
+public sealed record PreviewDynamaxAdventureDefaultsResponse(
+    IReadOnlyList<DynamaxAdventureDefaultFieldDto> Changes,
+    IReadOnlyList<DynamaxAdventureEditableFieldOptionDto> AbilityOptions,
+    IReadOnlyList<DynamaxAdventureEditableFieldOptionDto> GigantamaxOptions,
+    IReadOnlyList<DynamaxAdventureEditableFieldOptionDto> MoveOptions,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
 
 public sealed record UpdateDynamaxAdventureFieldResponse(
     DynamaxAdventuresWorkflowDto Workflow,

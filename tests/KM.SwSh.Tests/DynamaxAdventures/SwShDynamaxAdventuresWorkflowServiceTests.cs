@@ -117,7 +117,29 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         Assert.NotNull(workflow.Encounters[0].VanillaPokemon);
         Assert.Contains(workflow.Diagnostics, diagnostic =>
             diagnostic.Severity == DiagnosticSeverity.Warning
-            && diagnostic.Message.Contains("source table layout differs", StringComparison.Ordinal));
+            && diagnostic.Message.Contains("source table byte layout differs", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LoadWarnsWhenLayeredDynamaxAdventureTableByteLayoutDiffersAtSameLength()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var table = SwShDynamaxAdventureTestFixtures.CreateArchive().Write();
+        SwShDynamaxAdventureTestFixtures.ClearTableField(table, entryIndex: 1, fieldIndex: 19);
+        temp.WriteOutputFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath,
+            table);
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+
+        Assert.Equal(2, workflow.Encounters.Count);
+        Assert.Equal(0, workflow.Encounters[1].Ability);
+        Assert.Equal(ReadBaseDynamaxAdventureTableLength(temp), table.Length);
+        Assert.Contains(workflow.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Warning
+            && diagnostic.Message.Contains("source table byte layout differs", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -137,6 +159,24 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         Assert.Contains(workflow.EditableFields, field => field.Field == SwShDynamaxAdventuresWorkflowService.Move1Field);
         Assert.Contains(workflow.EditableFields, field => field.Field == SwShDynamaxAdventuresWorkflowService.Move2Field);
         Assert.Contains(workflow.EditableFields, field => field.Field == SwShDynamaxAdventuresWorkflowService.Move3Field);
+    }
+
+    [Fact]
+    public void LoadHidesAbilityOptionsThatWouldRequireDynamaxAdventureTableRebuild()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var table = SwShDynamaxAdventureTestFixtures.CreateArchive().Write();
+        SwShDynamaxAdventureTestFixtures.ClearTableField(table, entryIndex: 1, fieldIndex: 19);
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            table);
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShDynamaxAdventuresWorkflowService().Load(project);
+
+        Assert.Equal(new[] { 0, 1, 2 }, workflow.Encounters[0].AbilityOptions.Select(option => option.Value));
+        Assert.Equal(new[] { 0 }, workflow.Encounters[1].AbilityOptions.Select(option => option.Value));
     }
 
     [Fact]
@@ -428,6 +468,16 @@ public sealed class SwShDynamaxAdventuresWorkflowServiceTests
         }
 
         return SwShGameTextFile.Write(lines);
+    }
+
+    private static long ReadBaseDynamaxAdventureTableLength(TemporarySwShProject temp)
+    {
+        var path = Path.Combine(
+            temp.BaseRomFsPath,
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..]
+                .Replace('/', Path.DirectorySeparatorChar));
+
+        return new FileInfo(path).Length;
     }
 
     private static void WriteMoveData(TemporarySwShProject temp, params (int MoveId, bool CanUseMove)[] moves)

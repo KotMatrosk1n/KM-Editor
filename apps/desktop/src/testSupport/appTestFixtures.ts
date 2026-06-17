@@ -2635,7 +2635,7 @@ export function createMockProjectBridge(
         bossTargetOptions: [],
         entryIndex: 0,
         form: 0,
-        gigantamaxLabel: 'Normal',
+        gigantamaxLabel: 'Normal', gigantamaxOptions: [{ label: 'Normal', value: 1 }],
         gigantamaxState: 1,
         guaranteedPerfectIvs: 5, isEditable: true,
         isSingleCapture: true,
@@ -5549,10 +5549,13 @@ export function createMockProjectBridge(
       Promise.resolve({
         workflow: rentalPokemonWorkflow
       }),
-    loadDynamaxAdventuresWorkflow: () =>
-      Promise.resolve({
-        workflow: dynamaxAdventuresWorkflow
-      }),
+    loadDynamaxAdventuresWorkflow: () => Promise.resolve({ workflow: dynamaxAdventuresWorkflow }),
+    previewDynamaxAdventureDefaults: (request) => Promise.resolve({
+      abilityOptions: [{ label: 'Ability 1', value: 0 }, { label: 'Ability 2', value: 1 }, { label: 'Hidden Ability', value: 2 }],
+      changes: [{ field: 'form', value: request.form.toString() }, { field: 'ability', value: '0' }, { field: 'gigantamaxState', value: '1' }, { field: 'move0Id', value: '1' }, { field: 'move1Id', value: '2' }, { field: 'move2Id', value: '3' }, { field: 'move3Id', value: '4' }],
+      diagnostics: [], gigantamaxOptions: [{ label: 'Normal', value: 1 }],
+      moveOptions: dynamaxAdventuresWorkflow.encounters.find((encounter) => encounter.entryIndex === request.entryIndex)?.moveOptions ?? []
+    }),
     planDynamaxAdventureSeed: (request) => Promise.resolve({
       plan: { diagnostics: [], encounters: dynamaxAdventuresWorkflow.encounters.slice(0, 2).map((encounter) => ({ form: encounter.form, isBoss: false, row: encounter.entryIndex, species: encounter.speciesId })), npcCount: request.npcCount, rentals: dynamaxAdventuresWorkflow.encounters.slice(0, 1).map((encounter) => ({ form: encounter.form, isBoss: false, row: encounter.entryIndex, species: encounter.speciesId })), requiredRowPositions: request.requiredRows.map((row) => ({ kind: 'encounter' as const, row, slot: 0 })), seed: request.seed }
     }), searchDynamaxAdventureSeed: (request) => Promise.resolve({ search: { diagnostics: [], limit: request.limit, maxResults: request.maxResults, npcCount: request.npcCount, results: request.maxResults > 0 ? [{ positions: request.requiredRows.map((row) => ({ kind: 'encounter' as const, row, slot: 0 })), seed: request.startSeed }] : [], startSeed: request.startSeed } }), setDynamaxAdventureSaveSeed: (request) => Promise.resolve({ result: { backupFilePath: null, checksumsValid: true, diagnostics: [], newSeed: request.seed, oldSeed: request.seed, saveFilePath: request.paths.saveFilePath, wasChanged: false } }),

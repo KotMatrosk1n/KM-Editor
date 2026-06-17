@@ -206,6 +206,94 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.Contains(encounter.MoveOptions, option => option.Value == 85);
     }
 
+    [Fact]
+    public void PreviewDefaultsReturnsSafeTraitsAndLegalMovesForSpecies()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp);
+        WriteMoveData(temp, (1, true), (2, true), (10, true), (85, true));
+        WriteLearnsetData(temp, recordCount: 200, (133, [(1, 1), (2, 5), (10, 20), (85, 50)]));
+        var service = new SwShDynamaxAdventuresEditSessionService();
+
+        var preview = service.PreviewDefaults(
+            temp.Paths,
+            session: null,
+            entryIndex: 1,
+            species: 133,
+            form: 0,
+            level: 60);
+
+        Assert.DoesNotContain(preview.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        Assert.Equal("0", preview.Changes.Single(change => change.Field == SwShDynamaxAdventuresWorkflowService.FormField).Value);
+        Assert.Equal("0", preview.Changes.Single(change => change.Field == SwShDynamaxAdventuresWorkflowService.AbilityField).Value);
+        Assert.Equal("1", preview.Changes.Single(change => change.Field == SwShDynamaxAdventuresWorkflowService.GigantamaxStateField).Value);
+        Assert.Equal("85", preview.Changes.Single(change => change.Field == SwShDynamaxAdventuresWorkflowService.Move0Field).Value);
+        Assert.Equal("10", preview.Changes.Single(change => change.Field == SwShDynamaxAdventuresWorkflowService.Move1Field).Value);
+        Assert.Equal("2", preview.Changes.Single(change => change.Field == SwShDynamaxAdventuresWorkflowService.Move2Field).Value);
+        Assert.Equal("1", preview.Changes.Single(change => change.Field == SwShDynamaxAdventuresWorkflowService.Move3Field).Value);
+        Assert.Equal(new[] { 0, 1, 2 }, preview.AbilityOptions.Select(option => option.Value));
+        Assert.Equal(new[] { 1, 2 }, preview.GigantamaxOptions.Select(option => option.Value));
+        Assert.Contains(preview.MoveOptions, option => option.Value == 85);
+    }
+
+    [Fact]
+    public void PreviewDefaultsHidesAbilityOptionsThatWouldRequireDynamaxAdventureTableRebuild()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var table = SwShDynamaxAdventureTestFixtures.CreateArchive().Write();
+        SwShDynamaxAdventureTestFixtures.ClearTableField(table, entryIndex: 1, fieldIndex: 19);
+        temp.WriteBaseRomFsFile(
+            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
+            table);
+        SwShDynamaxAdventureTestFixtures.WriteBasePersonalData(temp);
+        WriteMoveData(temp, (1, true), (2, true), (10, true), (85, true));
+        WriteLearnsetData(temp, recordCount: 200, (133, [(1, 1), (2, 5), (10, 20), (85, 50)]));
+        var service = new SwShDynamaxAdventuresEditSessionService();
+
+        var preview = service.PreviewDefaults(
+            temp.Paths,
+            session: null,
+            entryIndex: 1,
+            species: 133,
+            form: 0,
+            level: 60);
+
+        Assert.DoesNotContain(preview.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        Assert.Equal(new[] { 0 }, preview.AbilityOptions.Select(option => option.Value));
+    }
+
+    [Fact]
+    public void PreviewDefaultsOmitsGigantamaxOptionForNonGigantamaxSpecies()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateSpeciesNameTable(467, (25, "Pikachu"), (133, "Eevee"), (467, "Magmortar")));
+        WritePersonalData(
+            temp,
+            count: 468,
+            presentSpecies: new HashSet<int> { 25, 133, 467 },
+            hatchedSpeciesOverrides: new Dictionary<int, int> { [467] = 240 });
+        WriteMoveData(temp, (1, true), (2, true), (10, true), (85, true));
+        WriteLearnsetData(temp, recordCount: 468, (467, [(1, 1), (2, 5), (10, 20), (85, 50)]));
+        var service = new SwShDynamaxAdventuresEditSessionService();
+
+        var preview = service.PreviewDefaults(
+            temp.Paths,
+            session: null,
+            entryIndex: 1,
+            species: 467,
+            form: 0,
+            level: 60);
+
+        Assert.DoesNotContain(preview.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        Assert.Equal(new[] { 1 }, preview.GigantamaxOptions.Select(option => option.Value));
+        Assert.Equal("1", preview.Changes.Single(change => change.Field == SwShDynamaxAdventuresWorkflowService.GigantamaxStateField).Value);
+    }
+
     [Theory]
     [InlineData("144")]
     [InlineData("150")]
@@ -1144,7 +1232,28 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.False(plan.CanApply);
         Assert.Contains(plan.Diagnostics, diagnostic =>
             diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
-            && diagnostic.Message.Contains("source table layout differs", StringComparison.Ordinal));
+            && diagnostic.Message.Contains("source table byte layout differs", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CreateChangePlanRejectsNonRestoreFromSameLengthDynamaxAdventureLayoutMismatch()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
+        var table = SwShDynamaxAdventureTestFixtures.CreateArchive().Write();
+        SwShDynamaxAdventureTestFixtures.ClearTableField(table, entryIndex: 1, fieldIndex: 19);
+        temp.WriteOutputFile(SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath, table);
+        var service = new SwShDynamaxAdventuresEditSessionService();
+
+        var update = service.UpdateField(temp.Paths, null, 1, SwShDynamaxAdventuresWorkflowService.Move0Field, "85");
+
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+
+        Assert.False(plan.CanApply);
+        Assert.Equal(ReadBaseDynamaxAdventureTableLength(temp), table.Length);
+        Assert.Contains(plan.Diagnostics, diagnostic =>
+            diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("source table byte layout differs", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1174,12 +1283,12 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
     }
 
     [Fact]
-    public void CreateChangePlanRejectsNonDefaultEditToOmittedDynamaxAdventureField()
+    public void CreateChangePlanRejectsAbilityEditThatRequiresDynamaxAdventureTableRebuild()
     {
         using var temp = TemporarySwShProject.Create();
         SwShDynamaxAdventureTestFixtures.WriteBaseDynamaxAdventures(temp);
         var table = SwShDynamaxAdventureTestFixtures.CreateArchive().Write();
-        ClearTableField(table, entryIndex: 1, fieldIndex: 19);
+        SwShDynamaxAdventureTestFixtures.ClearTableField(table, entryIndex: 1, fieldIndex: 19);
         temp.WriteBaseRomFsFile(
             SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath["romfs/".Length..],
             table);
@@ -1192,10 +1301,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.False(plan.CanApply);
         Assert.Contains(plan.Diagnostics, diagnostic =>
             diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error
-            && diagnostic.Message.Contains("omitted FlatBuffer default", StringComparison.Ordinal));
-        Assert.False(File.Exists(Path.Combine(
-            temp.OutputRootPath,
-            SwShDynamaxAdventuresWorkflowService.DynamaxAdventureDataPath.Replace('/', Path.DirectorySeparatorChar))));
+            && diagnostic.Message.Contains("rebuilding the table byte layout", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1441,38 +1547,18 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         return new FileInfo(path).Length;
     }
 
-    private static void ClearTableField(byte[] data, int entryIndex, int fieldIndex)
+    private static byte[] CreateSpeciesNameTable(int highestIndex, params (int Index, string Value)[] entries)
     {
-        var tableOffset = ReadEntryTableOffset(data, entryIndex);
-        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(tableOffset, sizeof(int)));
-        var fieldEntryOffset = sizeof(ushort) * 2 + (fieldIndex * sizeof(ushort));
-        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(vtableOffset + fieldEntryOffset, sizeof(ushort)), 0);
-    }
+        var lines = Enumerable.Range(0, highestIndex + 1)
+            .Select(_ => new SwShGameTextLine(string.Empty, Flags: 0))
+            .ToArray();
 
-    private static int ReadEntryTableOffset(ReadOnlySpan<byte> data, int entryIndex)
-    {
-        var rootTableOffset = ReadUOffset(data, offset: 0);
-        var vectorFieldOffset = ReadTableFieldOffset(data, rootTableOffset, fieldIndex: 0);
-        var vectorOffset = ReadUOffset(data, rootTableOffset + vectorFieldOffset);
-        var elementOffset = vectorOffset + sizeof(uint) + (entryIndex * sizeof(uint));
+        foreach (var (index, value) in entries)
+        {
+            lines[index] = new SwShGameTextLine(value, Flags: 0);
+        }
 
-        return ReadUOffset(data, elementOffset);
-    }
-
-    private static int ReadTableFieldOffset(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex)
-    {
-        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.Slice(tableOffset, sizeof(int)));
-        var fieldEntryOffset = sizeof(ushort) * 2 + (fieldIndex * sizeof(ushort));
-        var vtableLength = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableOffset, sizeof(ushort)));
-
-        return fieldEntryOffset + sizeof(ushort) <= vtableLength
-            ? BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableOffset + fieldEntryOffset, sizeof(ushort)))
-            : 0;
-    }
-
-    private static int ReadUOffset(ReadOnlySpan<byte> data, int offset)
-    {
-        return checked(offset + (int)BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, sizeof(uint))));
+        return SwShGameTextFile.Write(lines);
     }
 
     private static void WriteMoveData(TemporarySwShProject temp, params (int MoveId, bool CanUseMove)[] moves)

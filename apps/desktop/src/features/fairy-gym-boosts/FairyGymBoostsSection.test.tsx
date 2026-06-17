@@ -15,7 +15,6 @@ it('edits per-answer outcomes and stages guarded Fairy Gym boost selections', as
 
   render(
     <FairyGymBoostsSection
-      changePlan={null}
       editSession={null}
       isChangePlanApplying={false}
       isChangePlanCreating={false}
@@ -24,6 +23,7 @@ it('edits per-answer outcomes and stages guarded Fairy Gym boost selections', as
       onCreateChangePlan={vi.fn()}
       onDirtyChange={onDirtyChange}
       onStageBoosts={onStageBoosts}
+      panelOutput={{ actionDiagnostics: [], applyResult: null, changePlan: null }}
       workflow={fairyGymBoostsWorkflow}
     />
   );
@@ -92,7 +92,6 @@ it('restores Fairy Gym drafts to vanilla answer outcomes', async () => {
 
   render(
     <FairyGymBoostsSection
-      changePlan={null}
       editSession={null}
       isChangePlanApplying={false}
       isChangePlanCreating={false}
@@ -101,6 +100,7 @@ it('restores Fairy Gym drafts to vanilla answer outcomes', async () => {
       onCreateChangePlan={vi.fn()}
       onDirtyChange={vi.fn()}
       onStageBoosts={onStageBoosts}
+      panelOutput={{ actionDiagnostics: [], applyResult: null, changePlan: null }}
       workflow={fairyGymBoostsWorkflow}
     />
   );
