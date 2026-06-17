@@ -163,6 +163,7 @@ public sealed class ProjectBridgeDispatcherTests
                 "bagHook",
                 "catchCap",
                 "hyperTraining",
+                "shinyRate",
                 "typeChart",
                 "fairyGymBoosts",
                 "fashionUnlock",
