@@ -30,6 +30,9 @@ public sealed class SwShRandomizerService
     private const string RandomizerManifestRelativePath = ".km-editor/randomizer-manifest.json";
     private const int RoyalCandyItemId = 1128;
     private const int PokemonTypeShapeChangeChancePercent = 30;
+    private const int ZacianSpeciesId = 888;
+    private const int ZamazentaSpeciesId = 889;
+    private const int EternatusSpeciesId = 890;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -644,6 +647,11 @@ public sealed class SwShRandomizerService
                 for (var slotIndex = 0; slotIndex < activeSlots.Length; slotIndex++)
                 {
                     var slot = activeSlots[slotIndex];
+                    if (IsProtectedBoxLegendarySpecies(slot.SpeciesId))
+                    {
+                        continue;
+                    }
+
                     var target = targets[slotIndex];
                     var recordId = SwShEncountersWorkflowService.CreateSlotRecordId(table.TableId, slot.Slot);
                     var source = Source(table.Provenance);
@@ -671,7 +679,7 @@ public sealed class SwShRandomizerService
                         source));
                 }
 
-                foreach (var extraSlot in slots.Skip(10).Where(slot => slot.Weight != 0))
+                foreach (var extraSlot in slots.Skip(10).Where(slot => slot.Weight != 0 && !IsProtectedBoxLegendarySpecies(slot.SpeciesId)))
                 {
                     edits.Add(CreateEdit(
                         EncountersEditDomain,
@@ -720,7 +728,7 @@ public sealed class SwShRandomizerService
 
         foreach (var encounter in workflow.Encounters.OrderBy(encounter => encounter.EncounterIndex))
         {
-            if (encounter.SpeciesId <= 0)
+            if (encounter.SpeciesId <= 0 || IsProtectedBoxLegendarySpecies(encounter.SpeciesId))
             {
                 continue;
             }
@@ -790,7 +798,7 @@ public sealed class SwShRandomizerService
 
         foreach (var gift in workflow.Gifts.OrderBy(gift => gift.GiftIndex))
         {
-            if (gift.SpeciesId <= 0)
+            if (gift.SpeciesId <= 0 || IsProtectedBoxLegendarySpecies(gift.SpeciesId))
             {
                 continue;
             }
@@ -1410,7 +1418,7 @@ public sealed class SwShRandomizerService
 
             foreach (var evolution in record.Evolutions.OrderBy(evolution => evolution.Slot))
             {
-                if (evolution.Method <= 0)
+                if (evolution.Method <= 0 || IsProtectedBoxLegendarySpecies(evolution.Species))
                 {
                     continue;
                 }
@@ -1938,13 +1946,16 @@ public sealed class SwShRandomizerService
 
     private static bool IsEditablePokemon(SwShPokemonRecord record)
     {
-        return record.PersonalId > 0 && record.SpeciesId > 0;
+        return record.PersonalId > 0
+            && record.SpeciesId > 0
+            && !IsProtectedBoxLegendarySpecies(record.SpeciesId);
     }
 
     private static bool IsLegalPokemonTarget(SwShPokemonRecord record)
     {
         return record.PersonalId > 0
             && record.SpeciesId > 0
+            && !IsProtectedBoxLegendarySpecies(record.SpeciesId)
             && record.Personal.IsPresentInGame
             && record.Personal.HasSpriteForm
             && record.DexPresence.IsPresentInGame;
@@ -1954,9 +1965,15 @@ public sealed class SwShRandomizerService
     {
         return record.PersonalId > 0
             && record.SpeciesId > 0
+            && !IsProtectedBoxLegendarySpecies(record.SpeciesId)
             && record.Personal.IsPresentInGame
             && record.DexPresence.IsPresentInGame
             && record.BaseStats.Total > 0;
+    }
+
+    private static bool IsProtectedBoxLegendarySpecies(int speciesId)
+    {
+        return speciesId is ZacianSpeciesId or ZamazentaSpeciesId or EternatusSpeciesId;
     }
 
     private static bool IsMaxMove(SwShMoveRecord move)
