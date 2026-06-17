@@ -604,6 +604,108 @@ public sealed class SwShHookReservationTests
     }
 
     [Theory]
+    [InlineData(ProjectGame.Sword, 0x014114C0, 0x01410F00)]
+    [InlineData(ProjectGame.Shield, 0x014114F0, 0x01410F30)]
+    public void RoyalCandyStoryLimitsUsesGameSpecificProgressAccessors(
+        ProjectGame game,
+        int expectedWorkGetOffset,
+        int expectedFlagGetOffset)
+    {
+        var patched = SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+            CreateSharedHookNso(game),
+            [
+                new SwShRoyalCandyStoryLevelCap(
+                    35,
+                    0x123456789ABCDEF0UL,
+                    "Work milestone",
+                    SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast,
+                    WorkMinimum: 530),
+                new SwShRoyalCandyStoryLevelCap(
+                    20,
+                    0x0FEDCBA987654321UL,
+                    "Flag milestone"),
+            ],
+            game);
+        var text = SwShNsoFile.Parse(patched).Text.DecompressedData;
+
+        var accessorTargets = ReadRoyalCandyStoryAccessorTargets(text, expectedCount: 2);
+
+        Assert.Equal([expectedWorkGetOffset, expectedFlagGetOffset], accessorTargets);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void RoyalCandyPatchesSharedAllowedConsumableRoute(ProjectGame game, string workflowId)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var patched = workflowId == RoyalCandyStoryLimitsWorkflowId
+            ? SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+                baseMain,
+                [
+                    new SwShRoyalCandyStoryLevelCap(
+                        35,
+                        0x123456789ABCDEF0UL,
+                        "Flag milestone"),
+                ],
+                game)
+            : SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(baseMain, game);
+        var text = SwShNsoFile.Parse(patched).Text.DecompressedData;
+
+        const int branchOffset = 0x007DDA90;
+        var branchInstruction = ReadInstruction(text, branchOffset);
+        Assert.Equal(0x54000000u, branchInstruction & 0xFF000010u);
+        Assert.Equal((uint)Arm64Condition.HI, branchInstruction & 0xFu);
+
+        var caveOffset = DecodeConditionalBranchTarget(branchInstruction, branchOffset);
+        Assert.Equal(EncodeCmpImmediate(8, 1128 - 0x12), ReadInstruction(text, caveOffset));
+        Assert.Equal(EncodeConditionalBranch(caveOffset + 4, 0x007DDA48, Arm64Condition.EQ), ReadInstruction(text, caveOffset + 4));
+        Assert.Equal(EncodeBranch(caveOffset + 8, 0x007DDAF8), ReadInstruction(text, caveOffset + 8));
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void RoyalCandyPatchesVirtualInventoryHelpers(ProjectGame game, string workflowId)
+    {
+        var baseMain = CreateSharedHookNso(game);
+        var patched = workflowId == RoyalCandyStoryLimitsWorkflowId
+            ? SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
+                baseMain,
+                [
+                    new SwShRoyalCandyStoryLevelCap(
+                        35,
+                        0x123456789ABCDEF0UL,
+                        "Flag milestone"),
+                ],
+                game)
+            : SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(baseMain, game);
+        var text = SwShNsoFile.Parse(patched).Text.DecompressedData;
+        var ownershipOffset = game == ProjectGame.Shield ? 0x01420F20 : 0x01420EF0;
+        var countOffset = game == ProjectGame.Shield ? 0x014210C0 : 0x01421090;
+
+        AssertRoyalCandyVirtualInventoryHelper(text, ownershipOffset, 0xF81D0FF5, 1);
+        AssertRoyalCandyVirtualInventoryHelper(text, countOffset, 0xA9BE4FF4, 999);
+    }
+
+    [Theory]
+    [MemberData(nameof(RoyalCandyVariantsByGame))]
+    public void RoyalCandyCanRefreshInstalledWorkflowWithoutDroppingOtherMainHooks(ProjectGame game, string workflowId)
+    {
+        using var temp = CreateHookProject(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        InstallEmptyBagHook(paths);
+        ApplyCatchCap(paths);
+        ApplyIvScreen(paths);
+        ApplyRoyalCandy(paths, workflowId);
+
+        ApplyRoyalCandy(paths, workflowId);
+
+        var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
+        Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
+        Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
+        Assert.Equal(ExpectedRoyalCandySignature(workflowId), SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
+    }
+
+    [Theory]
     [MemberData(nameof(RoyalCandyVariantsByGame))]
     public void RoyalCandyCleanupPreservesBagHookStartingItemsCatchCapAndIvScreen(ProjectGame game, string workflowId)
     {
@@ -669,6 +771,7 @@ public sealed class SwShHookReservationTests
         Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath)));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname.dat")));
+        Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname_plural.dat")));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/iteminfo.dat")));
 
         var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
@@ -692,6 +795,7 @@ public sealed class SwShHookReservationTests
         Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath)));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname.dat")));
+        Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname_plural.dat")));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/iteminfo.dat")));
 
         var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
@@ -888,6 +992,7 @@ public sealed class SwShHookReservationTests
         Assert.True(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ItemPath)));
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.ShopDataPath)));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname.dat")));
+        Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/itemname_plural.dat")));
         Assert.False(File.Exists(OutputPath(paths, "romfs/bin/message/English/common/iteminfo.dat")));
     }
 
@@ -930,11 +1035,13 @@ public sealed class SwShHookReservationTests
         InstallEmptyBagHook(paths);
         ApplyRoyalCandy(paths, workflowId);
         WriteLayeredTextEdit(paths, "romfs/bin/message/English/common/itemname.dat", 10, "User-edited item name");
+        WriteLayeredTextEdit(paths, "romfs/bin/message/English/common/itemname_plural.dat", 10, "User-edited item plural name");
         WriteLayeredTextEdit(paths, "romfs/bin/message/English/common/iteminfo.dat", 10, "User-edited item info");
 
         ApplyRoyalCandyCleanup(paths);
 
         AssertRestoredRoyalCandyTextRow(paths, "romfs/bin/message/English/common/itemname.dat", 10, "User-edited item name");
+        AssertRestoredRoyalCandyTextRow(paths, "romfs/bin/message/English/common/itemname_plural.dat", 10, "User-edited item plural name");
         AssertRestoredRoyalCandyTextRow(paths, "romfs/bin/message/English/common/iteminfo.dat", 10, "User-edited item info");
     }
 
@@ -947,12 +1054,14 @@ public sealed class SwShHookReservationTests
         InstallEmptyBagHook(paths);
         ApplyRoyalCandy(paths, workflowId);
         WriteLayeredTextEdit(paths, "romfs/bin/message/English/common/itemname.dat", 10, "User-edited item name");
+        WriteLayeredTextEdit(paths, "romfs/bin/message/English/common/itemname_plural.dat", 10, "User-edited item plural name");
         WriteLayeredTextEdit(paths, "romfs/bin/message/English/common/iteminfo.dat", 10, "User-edited item info");
 
         ApplyBagHookCleanup(paths);
 
         Assert.False(File.Exists(OutputPath(paths, SwShRoyalCandyWorkflowService.BagEventScriptPath)));
         AssertRestoredRoyalCandyTextRow(paths, "romfs/bin/message/English/common/itemname.dat", 10, "User-edited item name");
+        AssertRestoredRoyalCandyTextRow(paths, "romfs/bin/message/English/common/itemname_plural.dat", 10, "User-edited item plural name");
         AssertRestoredRoyalCandyTextRow(paths, "romfs/bin/message/English/common/iteminfo.dat", 10, "User-edited item info");
     }
 
@@ -1665,6 +1774,11 @@ public sealed class SwShHookReservationTests
         WriteInstruction(text, 0x007BAF38, 0x6B36231F);
         WriteInstruction(text, 0x007BAF3C, 0x1A963316);
         WriteInstruction(text, 0x007DDA8C, EncodeCmpImmediate(8, 0x32));
+        WriteInstruction(text, 0x007DDA90, EncodeConditionalBranch(0x007DDA90, 0x007DDAF8, Arm64Condition.HI));
+        WriteInstruction(text, 0x01420EF0, 0xF81D0FF5);
+        WriteInstruction(text, 0x01421090, 0xA9BE4FF4);
+        WriteInstruction(text, 0x01420F20, 0xF81D0FF5);
+        WriteInstruction(text, 0x014210C0, 0xA9BE4FF4);
     }
 
     private static void WriteCatchCapVanillaAnchors(byte[] text, ProjectGame game = ProjectGame.Sword)
@@ -1928,12 +2042,78 @@ public sealed class SwShHookReservationTests
             || offset >= mappedOffset && offset < mappedOffset + SwShFashionUnlockMainPatcher.PatchLength;
     }
 
+    private static void AssertRoyalCandyVirtualInventoryHelper(
+        byte[] text,
+        int hookOffset,
+        uint expectedFirstInstruction,
+        int expectedReturnValue)
+    {
+        var dispatchOffset = DecodeBranchTarget(ReadInstruction(text, hookOffset), hookOffset);
+        var returnOffset = DecodeConditionalBranchTarget(ReadInstruction(text, dispatchOffset + 4), dispatchOffset + 4);
+        var vanillaOffset = DecodeBranchTarget(ReadInstruction(text, dispatchOffset + 8), dispatchOffset + 8);
+
+        Assert.Equal(EncodeCmpImmediate(1, 1128), ReadInstruction(text, dispatchOffset));
+        Assert.Equal(EncodeConditionalBranch(dispatchOffset + 4, returnOffset, Arm64Condition.EQ), ReadInstruction(text, dispatchOffset + 4));
+        Assert.Equal(EncodeBranch(dispatchOffset + 8, vanillaOffset), ReadInstruction(text, dispatchOffset + 8));
+        Assert.Equal(EncodeMovzImmediate32(0, expectedReturnValue), ReadInstruction(text, returnOffset));
+        Assert.Equal(0xD65F03C0u, ReadInstruction(text, returnOffset + 4));
+        Assert.Equal(expectedFirstInstruction, ReadInstruction(text, vanillaOffset));
+        Assert.Equal(EncodeBranch(vanillaOffset + 4, hookOffset + 4), ReadInstruction(text, vanillaOffset + 4));
+    }
+
     private static int[] ChangedTextOffsets(byte[] before, byte[] after)
     {
         Assert.Equal(before.Length, after.Length);
         return Enumerable.Range(0, before.Length)
             .Where(index => before[index] != after[index])
             .ToArray();
+    }
+
+    private static int[] ReadRoyalCandyStoryAccessorTargets(byte[] text, int expectedCount)
+    {
+        var targets = new List<int>(expectedCount);
+        var offset = ResolveRoyalCandyStoryHelperOffset(text);
+        var visited = new HashSet<int>();
+        while (targets.Count < expectedCount && visited.Add(offset))
+        {
+            var loadTableOffset = DecodeBranchTarget(ReadInstruction(text, offset + 8), offset + 8);
+            var hashLowOffset = DecodeBranchTarget(ReadInstruction(text, loadTableOffset + 8), loadTableOffset + 8);
+            var hashHighOffset = DecodeBranchTarget(ReadInstruction(text, hashLowOffset + 8), hashLowOffset + 8);
+            var callOffset = DecodeBranchTarget(ReadInstruction(text, hashHighOffset + 8), hashHighOffset + 8);
+            targets.Add(DecodeBranchTarget(ReadInstruction(text, callOffset + 4), callOffset + 4));
+
+            var restoreOffset = DecodeBranchTarget(ReadInstruction(text, callOffset + 8), callOffset + 8);
+            var decisionOffset = DecodeBranchTarget(ReadInstruction(text, restoreOffset + 4), restoreOffset + 4);
+            var decisionInstruction = ReadInstruction(text, decisionOffset);
+            var nextBranchOffset = IsCompareAndBranchNonZero32(decisionInstruction)
+                ? decisionOffset + 4
+                : decisionOffset + 8;
+            offset = DecodeBranchTarget(ReadInstruction(text, nextBranchOffset), nextBranchOffset);
+        }
+
+        return targets.ToArray();
+    }
+
+    private static int ResolveRoyalCandyStoryHelperOffset(byte[] text)
+    {
+        const int storyUseGateBranchOffset = 0x007BB208;
+        var itemCheckOffset = DecodeConditionalBranchTarget(
+            ReadInstruction(text, storyUseGateBranchOffset),
+            storyUseGateBranchOffset);
+        var firstLogicOffset = DecodeBranchTarget(
+            ReadInstruction(text, itemCheckOffset + 8),
+            itemCheckOffset + 8);
+        var secondLogicOffset = DecodeBranchTarget(
+            ReadInstruction(text, firstLogicOffset + 8),
+            firstLogicOffset + 8);
+        return DecodeBranchTarget(
+            ReadInstruction(text, secondLogicOffset + 4),
+            secondLogicOffset + 4);
+    }
+
+    private static bool IsCompareAndBranchNonZero32(uint instruction)
+    {
+        return (instruction & 0xFF000000u) == 0x35000000u;
     }
 
     private static uint EncodeCmpImmediate(int register, int immediate)
@@ -1946,6 +2126,13 @@ public sealed class SwShHookReservationTests
         var delta = targetOffset - sourceOffset;
         var imm19 = delta >> 2;
         return (uint)(0x54000000 | ((imm19 & 0x7FFFF) << 5) | ((int)condition & 0xF));
+    }
+
+    private static uint EncodeBranch(int sourceOffset, int targetOffset)
+    {
+        var delta = targetOffset - sourceOffset;
+        var imm26 = delta >> 2;
+        return 0x14000000u | (uint)(imm26 & 0x03FFFFFF);
     }
 
     private static uint EncodeBranchLink(int sourceOffset, int targetOffset)
@@ -1964,6 +2151,17 @@ public sealed class SwShHookReservationTests
         }
 
         return sourceOffset + (imm26 << 2);
+    }
+
+    private static int DecodeConditionalBranchTarget(uint instruction, int sourceOffset)
+    {
+        var imm19 = (int)((instruction >> 5) & 0x7FFFF);
+        if ((imm19 & 0x40000) != 0)
+        {
+            imm19 |= unchecked((int)0xFFF80000);
+        }
+
+        return sourceOffset + (imm19 << 2);
     }
 
     private static int ShiftIvOffset(int offset, int shift)
@@ -2308,6 +2506,7 @@ public sealed class SwShHookReservationTests
     {
         EQ = 0,
         NE = 1,
+        HI = 8,
         LS = 9,
     }
 

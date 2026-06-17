@@ -17,6 +17,16 @@ namespace KM.SwSh.Tests.RoyalCandy;
 
 public sealed class SwShRoyalCandyWorkflowServiceTests
 {
+    private static readonly string[] ExpectedRoyalCandyItemNameTextPaths =
+    [
+        "romfs/bin/message/English/common/itemname.dat",
+        "romfs/bin/message/English/common/itemname_acc.dat",
+        "romfs/bin/message/English/common/itemname_acc_classified.dat",
+        "romfs/bin/message/English/common/itemname_classified.dat",
+        "romfs/bin/message/English/common/itemname_plural.dat",
+        "romfs/bin/message/English/common/itemname_plural_classified.dat",
+    ];
+
     [Fact]
     public void LoadBuildsRealPreflightFromProjectFiles()
     {
@@ -56,7 +66,13 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         Assert.Contains(workflow.Checks, check => check.CheckId.EndsWith(":game-flavor", StringComparison.Ordinal) && check.Message.Contains("Pokemon Sword", StringComparison.Ordinal));
         Assert.Contains(workflow.Checks, check => check.CheckId.Contains("patch-code-cave", StringComparison.Ordinal) && check.Status == "Pass");
         Assert.Contains(workflow.Outputs, output => output.WorkflowId == unlimited.WorkflowId && output.RelativePath == SwShRoyalCandyWorkflowService.ItemPath);
-        Assert.Contains(workflow.Outputs, output => output.WorkflowId == unlimited.WorkflowId && output.RelativePath == "romfs/bin/message/English/common/itemname.dat");
+        var itemNameOutputs = workflow.Outputs
+            .Where(output => output.WorkflowId == unlimited.WorkflowId
+                && output.RelativePath.Contains("/itemname", StringComparison.OrdinalIgnoreCase))
+            .Select(output => output.RelativePath)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(ExpectedRoyalCandyItemNameTextPaths, itemNameOutputs);
         Assert.Contains(workflow.Outputs, output => output.WorkflowId == unlimited.WorkflowId && output.RelativePath == SwShRoyalCandyWorkflowService.ExeFsMainPath);
         Assert.Equal(3, workflow.Stats.TotalWorkflowCount);
         Assert.True(workflow.Stats.TotalCheckCount >= 40);
@@ -242,7 +258,12 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
             SwShRoyalCandyWorkflowService.BagEventScriptPath["romfs/".Length..],
             CreateRoyalCandyBagEventScript());
         temp.WriteBaseRomFsFile("bin/message/English/common/iteminfo.dat", [0x09]);
+        temp.WriteBaseRomFsFile("bin/message/English/common/itemname_acc_classified.dat", [0x0A]);
+        temp.WriteBaseRomFsFile("bin/message/English/common/itemname_acc.dat", [0x0B]);
+        temp.WriteBaseRomFsFile("bin/message/English/common/itemname_classified.dat", [0x0C]);
         temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", [0x0A]);
+        temp.WriteBaseRomFsFile("bin/message/English/common/itemname_plural_classified.dat", [0x0D]);
+        temp.WriteBaseRomFsFile("bin/message/English/common/itemname_plural.dat", [0x0E]);
         temp.WriteBaseExeFsFile("main", CreateCompatibleNso());
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
         InstallEmptyBagHook(temp);
@@ -301,7 +322,7 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
 
     private static byte[] CreateCompatibleText()
     {
-        var text = new byte[0x007DDA90];
+        var text = new byte[0x01421100];
         WriteInstruction(text, 0x00747988, EncodeCmpImmediate(28, 50));
         WriteInstruction(text, 0x0074798C, EncodeConditionalBranch(0x0074798C, 0x00747A80, Arm64Condition.NE));
         WriteInstruction(text, 0x00747D44, EncodeCmpImmediate(9, 50));
@@ -338,6 +359,9 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         WriteInstruction(text, 0x007BAF38, 0x6B36231F);
         WriteInstruction(text, 0x007BAF3C, 0x1A963316);
         WriteInstruction(text, 0x007DDA8C, EncodeCmpImmediate(8, 0x32));
+        WriteInstruction(text, 0x007DDA90, EncodeConditionalBranch(0x007DDA90, 0x007DDAF8, Arm64Condition.HI));
+        WriteInstruction(text, 0x01420EF0, 0xF81D0FF5);
+        WriteInstruction(text, 0x01421090, 0xA9BE4FF4);
         return text;
     }
 
@@ -522,5 +546,6 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
     {
         EQ = 0,
         NE = 1,
+        HI = 8,
     }
 }

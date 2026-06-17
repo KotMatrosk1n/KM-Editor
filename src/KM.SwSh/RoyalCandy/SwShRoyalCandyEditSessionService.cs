@@ -25,6 +25,7 @@ public sealed class SwShRoyalCandyEditSessionService
     private const string UninstallWorkflowId = "royal-candy-uninstall";
     private const int RoyalCandyItemId = SwShBagHookAmxPatcher.RoyalCandyItemId;
     private const string RoyalCandyName = "Royal Candy";
+    private const string RoyalCandyPluralName = "Royal Candies";
     private const string UnlimitedDescription = "A candy packed with strange energy. It can be used repeatedly by compatible Pokemon.";
     private const string StoryLimitsDescription = "A candy packed with strange energy. Its full power follows the current story limit.";
 
@@ -321,12 +322,14 @@ public sealed class SwShRoyalCandyEditSessionService
                 return false;
             }
 
-            if (selectedWorkflow.Status != "available" && selectedWorkflow.Status != "warning")
+            if (selectedWorkflow.Status != "available"
+                && selectedWorkflow.Status != "warning"
+                && selectedWorkflow.Status != "installed")
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
                     $"Royal Candy workflow '{selectedWorkflow.Name}' is not ready to stage.",
-                    expected: "Available or warning workflow status"));
+                    expected: "Available, warning, or installed workflow status"));
                 return false;
             }
 
@@ -807,9 +810,7 @@ public sealed class SwShRoyalCandyEditSessionService
             }
 
             var lines = textFile.Lines.ToArray();
-            var replacement = relativePath.EndsWith("/itemname.dat", StringComparison.OrdinalIgnoreCase)
-                ? RoyalCandyName
-                : GetRoyalCandyDescription(selectedWorkflow.WorkflowId);
+            var replacement = GetRoyalCandyTextReplacement(relativePath, selectedWorkflow.WorkflowId);
             lines[RoyalCandyItemId] = lines[RoyalCandyItemId] with { Text = replacement };
             return SwShGameTextFile.Write(lines);
         }
@@ -828,6 +829,12 @@ public sealed class SwShRoyalCandyEditSessionService
 
         if (string.Equals(relativePath, SwShRoyalCandyWorkflowService.ExeFsMainPath, StringComparison.OrdinalIgnoreCase))
         {
+            var sourceBytes = ReadExeFsMainSourceBytes(project, source, diagnostics);
+            if (sourceBytes is null)
+            {
+                return null;
+            }
+
             if (UsesStoryLimits(selectedWorkflow))
             {
                 var storyLevelCaps = CreateStoryLevelCapPatches(selectedWorkflow, levelCaps, diagnostics);
@@ -837,13 +844,13 @@ public sealed class SwShRoyalCandyEditSessionService
                 }
 
                 return SwShExeFsRoyalCandyMainPatcher.ApplyStoryLimitsPatch(
-                    File.ReadAllBytes(source.AbsolutePath),
+                    sourceBytes,
                     storyLevelCaps,
                     project.Paths.SelectedGame);
             }
 
             return SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(
-                File.ReadAllBytes(source.AbsolutePath),
+                sourceBytes,
                 project.Paths.SelectedGame);
         }
 
@@ -853,6 +860,42 @@ public sealed class SwShRoyalCandyEditSessionService
             file: relativePath,
             expected: "Concrete Royal Candy apply target"));
         return null;
+    }
+
+    private static byte[]? ReadExeFsMainSourceBytes(
+        OpenedProject project,
+        WorkflowFileSource source,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
+        if (source.GraphEntry.LayeredFile is null)
+        {
+            return sourceBytes;
+        }
+
+        var signature = SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(
+            sourceBytes,
+            project.Paths.SelectedGame);
+        if (signature.Kind is not (SwShRoyalCandyExeFsSignatureKind.Unlimited or SwShRoyalCandyExeFsSignatureKind.StoryLimits))
+        {
+            return sourceBytes;
+        }
+
+        var basePath = ResolveBaseSourcePath(project.Paths, SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        if (basePath is null || !File.Exists(basePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Royal Candy ExeFS reapply requires base exefs/main so KM can refresh only its own owned bytes.",
+                file: SwShRoyalCandyWorkflowService.ExeFsMainPath,
+                expected: "Readable base exefs/main"));
+            return null;
+        }
+
+        return SwShExeFsRoyalCandyMainPatcher.RestoreFromBase(
+            sourceBytes,
+            File.ReadAllBytes(basePath),
+            project.Paths.SelectedGame);
     }
 
     private static string? ResolveOutputPath(
@@ -1067,9 +1110,11 @@ public sealed class SwShRoyalCandyEditSessionService
 
     private static bool IsRoyalCandyTextValue(string relativePath, string value)
     {
-        if (relativePath.EndsWith("/itemname.dat", StringComparison.OrdinalIgnoreCase))
+        if (TryGetMessageCommonFileName(relativePath, out var fileName)
+            && fileName.StartsWith("itemname", StringComparison.OrdinalIgnoreCase))
         {
-            return string.Equals(value, RoyalCandyName, StringComparison.Ordinal);
+            return string.Equals(value, RoyalCandyName, StringComparison.Ordinal)
+                || string.Equals(value, RoyalCandyPluralName, StringComparison.Ordinal);
         }
 
         return string.Equals(value, UnlimitedDescription, StringComparison.Ordinal)
@@ -1182,9 +1227,12 @@ public sealed class SwShRoyalCandyEditSessionService
 
     private static bool IsItemTextOutput(string relativePath)
     {
-        return relativePath.StartsWith("romfs/bin/message/", StringComparison.OrdinalIgnoreCase)
-            && (relativePath.EndsWith("/itemname.dat", StringComparison.OrdinalIgnoreCase)
-                || relativePath.EndsWith("/iteminfo.dat", StringComparison.OrdinalIgnoreCase));
+        return TryGetMessageCommonFileName(relativePath, out var fileName)
+            && (string.Equals(fileName, "iteminfo.dat", StringComparison.OrdinalIgnoreCase)
+                // Match the original Royal Candy builder: every itemname*.dat table is owned text,
+                // including classified plural tables used by the in-bag quantity prompt.
+                || (fileName.StartsWith("itemname", StringComparison.OrdinalIgnoreCase)
+                    && fileName.EndsWith(".dat", StringComparison.OrdinalIgnoreCase)));
     }
 
     private static IReadOnlyList<SwShShopInventoryEdit> CreateRoyalCandyShopRemovalEdits(
@@ -1378,6 +1426,37 @@ public sealed class SwShRoyalCandyEditSessionService
         return string.Equals(workflowId, StoryLimitsWorkflowId, StringComparison.Ordinal)
             ? StoryLimitsDescription
             : UnlimitedDescription;
+    }
+
+    private static string GetRoyalCandyTextReplacement(string relativePath, string workflowId)
+    {
+        if (TryGetMessageCommonFileName(relativePath, out var fileName)
+            && fileName.StartsWith("itemname", StringComparison.OrdinalIgnoreCase))
+        {
+            // The working reference uses plural by filename, not by exact table name.
+            return fileName.Contains("plural", StringComparison.OrdinalIgnoreCase)
+                ? RoyalCandyPluralName
+                : RoyalCandyName;
+        }
+
+        return GetRoyalCandyDescription(workflowId);
+    }
+
+    private static bool TryGetMessageCommonFileName(string relativePath, out string fileName)
+    {
+        fileName = string.Empty;
+        var parts = relativePath.Split('/');
+        if (parts.Length != 6
+            || !string.Equals(parts[0], "romfs", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(parts[1], "bin", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(parts[2], "message", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(parts[4], "common", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        fileName = parts[5];
+        return true;
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

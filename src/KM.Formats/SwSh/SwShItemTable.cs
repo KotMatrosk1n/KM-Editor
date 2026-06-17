@@ -621,6 +621,13 @@ public sealed class SwShItemTable
         var maxRowIndex = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(MaxRowIndexOffset));
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(maxRowIndex, ushort.MaxValue);
 
+        if (targetRecord.SharedItemIds.Count == 1 && IsRoyalCandyRowShape(targetRecord, templateRecord))
+        {
+            var refreshed = data.ToArray();
+            WriteRoyalCandyRowShape(refreshed, RowsStart + (targetRecord.RawRowIndex * RowSize), templateRecord);
+            return refreshed;
+        }
+
         var result = new byte[data.Length + RowSize];
         data.CopyTo(result.AsSpan());
 
@@ -641,6 +648,25 @@ public sealed class SwShItemTable
         WriteRoyalCandyRowShape(result, appendedRowOffset, templateRecord);
 
         return result;
+    }
+
+    private static bool IsRoyalCandyRowShape(SwShItemTableRecord record, SwShItemTableRecord templateRecord)
+    {
+        return record.BuyPrice == 1
+            && record.WattsPrice == 0
+            && record.AlternatePrice == templateRecord.AlternatePrice
+            && record.Pouch == SwShItemPouch.KeyItems
+            && record.PouchFlags == templateRecord.PouchFlags
+            && record.FlingPower == templateRecord.FlingPower
+            && record.FieldUseType == templateRecord.FieldUseType
+            && record.FieldFlags == templateRecord.FieldFlags
+            && record.CanUseOnPokemon
+            && record.ItemType == 9
+            && record.SortIndex == templateRecord.SortIndex
+            && record.ItemSprite == templateRecord.ItemSprite
+            && record.GroupType == 0
+            && record.GroupIndex == 0
+            && (record.Boost0 & 0x04) == 0x04;
     }
 
     private static void WriteRoyalCandyRowShape(byte[] data, int rowOffset, SwShItemTableRecord templateRecord)
