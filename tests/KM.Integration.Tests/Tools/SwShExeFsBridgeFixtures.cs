@@ -60,6 +60,9 @@ internal static class SwShExeFsBridgeFixtures
         WriteInstruction(text, 0x007BAF3C, 0x1A963316);
         WriteInstruction(text, 0x007B1F20, 0x2A0003E2);
         WriteInstruction(text, 0x007DDA8C, EncodeCmpImmediate(8, 0x32));
+        WriteInstruction(text, 0x007DDA90, EncodeConditionalBranch(0x007DDA90, 0x007DDAF8, Arm64Condition.HI));
+        WriteInstruction(text, 0x01420EF0, 0xF81D0FF5);
+        WriteInstruction(text, 0x01421090, 0xA9BE4FF4);
         WriteInstruction(text, 0x0137F634, 0x94001F27);
         WriteInstruction(text, 0x0138F268, 0x9400023E);
         WriteInstruction(text, 0x013872D0, 0xD103C3FF);
@@ -283,6 +286,7 @@ internal static class SwShExeFsBridgeFixtures
     {
         EQ = 0,
         NE = 1,
+        HI = 8,
     }
 
     private sealed record RareCandyUiCheck(

@@ -125,14 +125,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
         var editArray = edits.ToArray();
         if (sourceData is not null && sourceEntryTableOffsets is not null)
         {
-            try
-            {
-                return WriteEditsInPlace(editArray);
-            }
-            catch (InvalidDataException exception) when (IsOmittedFlatBufferDefaultWriteFailure(exception))
-            {
-                return WriteEditsByRebuilding(editArray);
-            }
+            return WriteEditsInPlace(editArray);
         }
 
         return WriteEditsByRebuilding(editArray);

@@ -250,7 +250,11 @@ internal static class SwShExeFsReservedRegionLedger
         new(OwnerRoyalCandy, "royal-candy-exp-upper-bound-a", ExeFsMainPath, "main.text", 0x007BC1BC, 0x04, "Exp Candy fixed amount upper-bound A", "do-not-overwrite"),
         new(OwnerRoyalCandy, "royal-candy-exp-upper-bound-b", ExeFsMainPath, "main.text", 0x007BC1C4, 0x04, "Exp Candy fixed amount upper-bound B", "do-not-overwrite"),
         new(OwnerRoyalCandy, "royal-candy-infinite-use", ExeFsMainPath, "main.text", 0x007B1F20, 0x04, "Royal Candy infinite-use consume quantity move", "do-not-overwrite"),
-        new(OwnerRoyalCandy, "royal-candy-consumable-upper-bound", ExeFsMainPath, "main.text", 0x007DDA8C, 0x04, "Allowed consumable upper bound", "do-not-overwrite"),
+        new(OwnerRoyalCandy, "royal-candy-consumable-upper-bound", ExeFsMainPath, "main.text", 0x007DDA8C, 0x08, "Allowed consumable upper-bound route", "do-not-overwrite"),
+        new(OwnerRoyalCandy, "royal-candy-sword-virtual-ownership", ExeFsMainPath, "main.text", 0x01420EF0, 0x04, "Royal Candy Sword virtual ownership helper hook", "do-not-overwrite"),
+        new(OwnerRoyalCandy, "royal-candy-sword-virtual-count", ExeFsMainPath, "main.text", 0x01421090, 0x04, "Royal Candy Sword virtual count helper hook", "do-not-overwrite"),
+        new(OwnerRoyalCandy, "royal-candy-shield-virtual-ownership", ExeFsMainPath, "main.text", 0x01420F20, 0x04, "Royal Candy Shield virtual ownership helper hook", "do-not-overwrite"),
+        new(OwnerRoyalCandy, "royal-candy-shield-virtual-count", ExeFsMainPath, "main.text", 0x014210C0, 0x04, "Royal Candy Shield virtual count helper hook", "do-not-overwrite"),
 
         new(OwnerRoyalCandyStoryLimits, "royal-candy-story-use-gate", ExeFsMainPath, "main.text", 0x007BB208, 0x04, "Royal Candy story-cap use gate branch", "do-not-overwrite"),
         new(OwnerRoyalCandyStoryLimits, "royal-candy-story-quantity", ExeFsMainPath, "main.text", 0x007BB3C4, 0x04, "Royal Candy story-cap quantity branch", "do-not-overwrite"),

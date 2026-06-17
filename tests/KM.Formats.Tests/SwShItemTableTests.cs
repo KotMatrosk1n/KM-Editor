@@ -124,6 +124,22 @@ public sealed class SwShItemTableTests
         Assert.Equal(9, output[originalTargetOffset + 0x16]);
     }
 
+    [Fact]
+    public void WriteRoyalCandyRowRefreshesExistingRoyalCandyRow()
+    {
+        var data = CreateRoyalCandyItemTable();
+        var firstOutput = SwShItemTable.Parse(data).WriteRoyalCandyRow(templateItemId: 50, targetItemId: 1128);
+        var firstTable = SwShItemTable.Parse(firstOutput);
+
+        var secondOutput = firstTable.WriteRoyalCandyRow(templateItemId: 50, targetItemId: 1128);
+        var secondTable = SwShItemTable.Parse(secondOutput);
+
+        Assert.Equal(firstOutput.Length, secondOutput.Length);
+        Assert.Equal(firstTable.Records[1128].RawRowIndex, secondTable.Records[1128].RawRowIndex);
+        Assert.Equal(SwShItemPouch.KeyItems, secondTable.Records[1128].Pouch);
+        Assert.Equal(9, secondTable.Records[1128].ItemType);
+    }
+
     private static byte[] CreateItemTable(bool includeMachineTable = false)
     {
         const int headerSize = 0x44;

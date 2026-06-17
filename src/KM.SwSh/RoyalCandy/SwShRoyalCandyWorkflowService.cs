@@ -33,6 +33,7 @@ public sealed class SwShRoyalCandyWorkflowService
     private const string UnlimitedRoyalCandyName = "Unlimited Royal Candy";
     private const string StoryLimitsRoyalCandyName = "Royal Candy with Story Limits";
     private const string AppliedRoyalCandyName = "Royal Candy";
+    private const string AppliedRoyalCandyPluralName = "Royal Candies";
     private const string RemoveRoyalCandyName = "Remove Royal Candy";
     private const string UnlimitedRoyalCandyDescription = "A candy packed with strange energy. It can be used repeatedly by compatible Pokemon.";
     private const string StoryLimitsRoyalCandyDescription = "A candy packed with strange energy. Its full power follows the current story limit.";
@@ -1288,6 +1289,7 @@ public sealed class SwShRoyalCandyWorkflowService
             if (fileName.StartsWith("itemname", StringComparison.OrdinalIgnoreCase))
             {
                 return string.Equals(value, AppliedRoyalCandyName, StringComparison.Ordinal)
+                    || string.Equals(value, AppliedRoyalCandyPluralName, StringComparison.Ordinal)
                     || string.Equals(value, UnlimitedRoyalCandyName, StringComparison.Ordinal)
                     || string.Equals(value, StoryLimitsRoyalCandyName, StringComparison.Ordinal);
             }

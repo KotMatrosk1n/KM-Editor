@@ -79,6 +79,21 @@ internal static class SwShPerformanceFixtureProject
             "bin/message/English/common/itemname.dat",
             SwShItemTestFixtures.CreateItemNames(CreateIndexedNames("Item", ItemCount)));
         temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname_classified.dat",
+            SwShItemTestFixtures.CreateItemNames(CreateIndexedNames("Item", ItemCount)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname_acc.dat",
+            SwShItemTestFixtures.CreateItemNames(CreateIndexedNames("Item", ItemCount)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname_acc_classified.dat",
+            SwShItemTestFixtures.CreateItemNames(CreateIndexedNames("Item", ItemCount)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname_plural.dat",
+            SwShItemTestFixtures.CreateItemNames(CreateIndexedNames("Items", ItemCount)));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname_plural_classified.dat",
+            SwShItemTestFixtures.CreateItemNames(CreateIndexedNames("Items", ItemCount)));
+        temp.WriteBaseRomFsFile(
             "bin/message/English/common/iteminfo.dat",
             CreateTextTable(Enumerable.Range(0, ItemCount)
                 .Select(index => $"Synthetic item info {index}")
@@ -707,7 +722,7 @@ internal static class SwShPerformanceFixtureProject
 
     private static byte[] CreateCompatibleText()
     {
-        var text = new byte[0x007DDA90];
+        var text = new byte[0x01421094];
         WriteInstruction(text, 0x00747988, EncodeCmpImmediate(28, 50));
         WriteInstruction(text, 0x00747D44, EncodeCmpImmediate(9, 50));
         WriteInstruction(text, 0x0074BA24, EncodeCmpImmediate(26, 50));
@@ -727,6 +742,9 @@ internal static class SwShPerformanceFixtureProject
         WriteInstruction(text, 0x007BC1C4, EncodeCmpImmediate(9, 4));
         WriteInstruction(text, 0x007B1F20, 0x2A0003E2);
         WriteInstruction(text, 0x007DDA8C, EncodeCmpImmediate(8, 0x32));
+        WriteInstruction(text, 0x007DDA90, 0x54000348);
+        WriteInstruction(text, 0x01420EF0, 0xF81D0FF5);
+        WriteInstruction(text, 0x01421090, 0xA9BE4FF4);
         return text;
     }
 

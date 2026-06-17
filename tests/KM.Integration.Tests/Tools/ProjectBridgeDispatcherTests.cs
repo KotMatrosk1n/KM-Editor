@@ -2433,6 +2433,21 @@ public sealed class ProjectBridgeDispatcherTests
             write => write.TargetRelativePath == "romfs/bin/message/English/common/itemname.dat");
         Assert.Contains(
             planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == "romfs/bin/message/English/common/itemname_classified.dat");
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == "romfs/bin/message/English/common/itemname_acc.dat");
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == "romfs/bin/message/English/common/itemname_acc_classified.dat");
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == "romfs/bin/message/English/common/itemname_plural.dat");
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
+            write => write.TargetRelativePath == "romfs/bin/message/English/common/itemname_plural_classified.dat");
+        Assert.Contains(
+            planResponse.Payload.ChangePlan.Writes,
             write => write.TargetRelativePath == "romfs/bin/message/English/common/iteminfo.dat");
         Assert.Contains(
             planResponse.Payload.ChangePlan.Writes,
@@ -2481,15 +2496,12 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.True(royalCandy.CanUseOnPokemon);
         Assert.Equal(9, royalCandy.ItemType);
 
-        var outputNames = SwShGameTextFile.Parse(File.ReadAllBytes(Path.Combine(
-            temp.OutputRootPath,
-            "romfs",
-            "bin",
-            "message",
-            "English",
-            "common",
-            "itemname.dat")));
-        Assert.Equal("Royal Candy", outputNames.Lines[1128].Text);
+        AssertRoyalCandyTextRow(temp, "itemname.dat", "Royal Candy");
+        AssertRoyalCandyTextRow(temp, "itemname_classified.dat", "Royal Candy");
+        AssertRoyalCandyTextRow(temp, "itemname_acc.dat", "Royal Candy");
+        AssertRoyalCandyTextRow(temp, "itemname_acc_classified.dat", "Royal Candy");
+        AssertRoyalCandyTextRow(temp, "itemname_plural.dat", "Royal Candies");
+        AssertRoyalCandyTextRow(temp, "itemname_plural_classified.dat", "Royal Candies");
 
         var outputInfo = SwShGameTextFile.Parse(File.ReadAllBytes(Path.Combine(
             temp.OutputRootPath,
@@ -3798,6 +3810,21 @@ public sealed class ProjectBridgeDispatcherTests
             "bin/message/English/common/itemname.dat",
             CreateRoyalCandyTextTable(itemId => itemId == 50 ? "Rare Candy" : $"Item {itemId}"));
         temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname_classified.dat",
+            CreateRoyalCandyTextTable(itemId => itemId == 50 ? "Rare Candy" : $"Classified Item {itemId}"));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname_acc.dat",
+            CreateRoyalCandyTextTable(itemId => itemId == 50 ? "Rare Candy" : $"Accessible Item {itemId}"));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname_acc_classified.dat",
+            CreateRoyalCandyTextTable(itemId => itemId == 50 ? "Rare Candy" : $"Accessible Classified Item {itemId}"));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname_plural.dat",
+            CreateRoyalCandyTextTable(itemId => itemId == 50 ? "Rare Candies" : $"Items {itemId}"));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/itemname_plural_classified.dat",
+            CreateRoyalCandyTextTable(itemId => itemId == 50 ? "Rare Candies" : $"Classified Items {itemId}"));
+        temp.WriteBaseRomFsFile(
             "bin/message/English/common/iteminfo.dat",
             CreateRoyalCandyTextTable(itemId => itemId == 50 ? "A candy that raises level." : $"Info {itemId}"));
         temp.WriteBaseExeFsFile("main", SwShExeFsBridgeFixtures.CreateCompatibleNso());
@@ -3957,6 +3984,19 @@ public sealed class ProjectBridgeDispatcherTests
             Enumerable.Range(0, 1129)
                 .Select(itemId => new SwShGameTextLine(getLine(itemId), Flags: 0))
                 .ToArray());
+    }
+
+    private static void AssertRoyalCandyTextRow(TemporaryBridgeProject temp, string fileName, string expectedText)
+    {
+        var outputText = SwShGameTextFile.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "message",
+            "English",
+            "common",
+            fileName)));
+        Assert.Equal(expectedText, outputText.Lines[1128].Text);
     }
 
     private static byte[] CreateRoyalCandyBagEventScript()

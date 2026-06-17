@@ -15,6 +15,7 @@ internal static class SwShRoyalCandyCleanup
 {
     private const int RoyalCandyItemId = 1128;
     private const string AppliedRoyalCandyName = "Royal Candy";
+    private const string AppliedRoyalCandyPluralName = "Royal Candies";
     private const string UnlimitedRoyalCandyName = "Unlimited Royal Candy";
     private const string StoryLimitsRoyalCandyName = "Royal Candy with Story Limits";
     private const string UnlimitedDescription = "A candy packed with strange energy. It can be used repeatedly by compatible Pokemon.";
@@ -256,6 +257,7 @@ internal static class SwShRoyalCandyCleanup
             && fileName.StartsWith("itemname", StringComparison.OrdinalIgnoreCase))
         {
             return string.Equals(value, AppliedRoyalCandyName, StringComparison.Ordinal)
+                || string.Equals(value, AppliedRoyalCandyPluralName, StringComparison.Ordinal)
                 || string.Equals(value, UnlimitedRoyalCandyName, StringComparison.Ordinal)
                 || string.Equals(value, StoryLimitsRoyalCandyName, StringComparison.Ordinal);
         }

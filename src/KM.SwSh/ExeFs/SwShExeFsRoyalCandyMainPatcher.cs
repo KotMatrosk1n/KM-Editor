@@ -51,13 +51,27 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     private const int StoryQuantityMaxCompareOffset = 0x007BB3C0;
     private const int QuantityMoveOffset = 0x007B1F20;
     private const int StoryInventoryClampSelectOffset = 0x007BAF3C;
+    private const int AllowedConsumableCompareOffset = 0x007DDA8C;
+    private const int AllowedConsumableBranchOffset = AllowedConsumableCompareOffset + 4;
+    private const int AllowedConsumablePassOffset = 0x007DDA48;
+    private const int AllowedConsumableFailOffset = 0x007DDAF8;
     private const int FlagGetOffset = 0x01410F00;
     private const int WorkGetOffset = 0x014114C0;
+    private const int ShieldFlagGetOffset = 0x01410F30;
+    private const int ShieldWorkGetOffset = 0x014114F0;
+    private const int ItemOwnershipFunctionOffset = 0x01420EF0;
+    private const int ItemCountFunctionOffset = 0x01421090;
+    private const int ShieldItemOwnershipFunctionOffset = 0x01420F20;
+    private const int ShieldItemCountFunctionOffset = 0x014210C0;
     private const string SwordBuildId = "A3B75BCD3311385AEED67FBEEB79CBB7BF02F471";
     private const string ShieldBuildId = "A16802625E7826BF83B6F9708E475B912A9AB7DF";
     private const uint ExpectedQuantityMove = 0x2A0003E2; // MOV w2, w0
     private const uint ExpectedQuantityClampSelect = 0x1A963316;
+    private const uint ExpectedItemOwnershipFirstInstruction = 0xF81D0FF5;
+    private const uint ExpectedItemCountFirstInstruction = 0xA9BE4FF4;
     private const uint NopInstruction = 0xD503201F;
+    private const int RoyalCandyAllowedConsumableAdjustedItemId = RoyalCandyItemId - 0x12;
+    private const int RoyalCandyVirtualInventoryCount = 999;
 
     private static readonly HashSet<int> ExternalBranchLinkTargets =
     [
@@ -65,7 +79,29 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         0x007C8330,
         FlagGetOffset,
         WorkGetOffset,
+        ShieldFlagGetOffset,
+        ShieldWorkGetOffset,
+        ItemOwnershipFunctionOffset,
+        ItemCountFunctionOffset,
+        ShieldItemOwnershipFunctionOffset,
+        ShieldItemCountFunctionOffset,
     ];
+
+    private static readonly RoyalCandyPatchLayout SwordPatchLayout = new(
+        FlagworkGlobalAddress: 0x02610798,
+        FlagworkObjectOffset: 0x1B8,
+        FlagGetOffset,
+        WorkGetOffset,
+        ItemOwnershipFunctionOffset,
+        ItemCountFunctionOffset);
+
+    private static readonly RoyalCandyPatchLayout ShieldPatchLayout = new(
+        FlagworkGlobalAddress: 0x02610798,
+        FlagworkObjectOffset: 0x1B8,
+        ShieldFlagGetOffset,
+        ShieldWorkGetOffset,
+        ShieldItemOwnershipFunctionOffset,
+        ShieldItemCountFunctionOffset);
 
     private static readonly IReadOnlyList<SwShExeFsReservedRegion> MainTextReservations =
         SwShExeFsReservedRegionLedger.MainTextRegionsForOwners(
@@ -157,13 +193,14 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
         var nso = SwShNsoFile.Parse(mainBytes);
         ValidateSelectedGame(nso.BuildId, expectedGame);
+        var layout = ResolvePatchLayout(nso.BuildId, expectedGame);
         var text = nso.Text.DecompressedData;
         if (!TryResolveStoryCapHelperOffset(text, out var helperOffset))
         {
             return Array.Empty<SwShRoyalCandyInstalledStoryLevelCap>();
         }
 
-        return ReadStoryCapLadder(text, helperOffset);
+        return ReadStoryCapLadder(text, helperOffset, layout);
     }
 
     public static byte[] ApplyBasePatch(byte[] mainBytes, ProjectGame? expectedGame = null)
@@ -172,9 +209,12 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
         var nso = SwShNsoFile.Parse(mainBytes);
         ValidateSelectedGame(nso.BuildId, expectedGame);
+        var layout = ResolvePatchLayout(nso.BuildId, expectedGame);
         var text = nso.Text.DecompressedData.ToArray();
 
         PatchExpCandyFixedAmountBypass(text);
+        PatchRoyalCandyAllowedConsumableRoute(text);
+        PatchRoyalCandyVirtualInventory(text, layout);
         PatchInfiniteRoyalCandyUse(text);
         PatchRoyalCandyUiRoute(text);
 
@@ -196,11 +236,14 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
         var nso = SwShNsoFile.Parse(mainBytes);
         ValidateSelectedGame(nso.BuildId, expectedGame);
+        var layout = ResolvePatchLayout(nso.BuildId, expectedGame);
         var text = nso.Text.DecompressedData.ToArray();
 
         PatchExpCandyFixedAmountBypass(text);
+        PatchRoyalCandyAllowedConsumableRoute(text);
+        PatchRoyalCandyVirtualInventory(text, layout);
         PatchInfiniteRoyalCandyUse(text);
-        PatchStoryCapLadder(text, levelCaps);
+        PatchStoryCapLadder(text, levelCaps, layout);
         PatchRoyalCandyUiRoute(text, skipStoryLimitHooks: true);
 
         return nso.Write(textDecompressedData: text);
@@ -225,7 +268,8 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             throw new InvalidDataException("Royal Candy ExeFS restore requires current and base main NSO files with matching .text sizes.");
         }
 
-        ClearReachableRoyalCandyCaves(currentText, baseText);
+        var layout = ResolvePatchLayout(currentNso.BuildId, expectedGame);
+        ClearReachableRoyalCandyCaves(currentText, baseText, layout);
         foreach (var region in SwShExeFsReservedRegionLedger.MainTextRegionsForOwners(
             SwShExeFsReservedRegionLedger.OwnerRoyalCandy,
             SwShExeFsReservedRegionLedger.OwnerRoyalCandyStoryLimits))
@@ -285,6 +329,13 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         }
 
         return null;
+    }
+
+    private static RoyalCandyPatchLayout ResolvePatchLayout(byte[] buildId, ProjectGame? expectedGame)
+    {
+        return (DetectGame(buildId) ?? expectedGame) == ProjectGame.Shield
+            ? ShieldPatchLayout
+            : SwordPatchLayout;
     }
 
     private static string FormatBuildId(byte[] buildId)
@@ -401,14 +452,87 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         WriteInstruction(text, caveOffset + 8, EncodeBranch(caveOffset + 8, resumeOffset));
     }
 
+    private static void PatchRoyalCandyAllowedConsumableRoute(byte[] text)
+    {
+        ExpectInstruction(
+            text,
+            AllowedConsumableCompareOffset,
+            EncodeCmpImmediate(register: 8, immediate: RareCandyItemId),
+            "allowed consumable upper-bound compare");
+        ExpectInstruction(
+            text,
+            AllowedConsumableBranchOffset,
+            EncodeConditionalBranch(AllowedConsumableBranchOffset, AllowedConsumableFailOffset, Arm64Condition.HI),
+            "allowed consumable upper-bound failure branch");
+
+        var caveOffset = FindCodeCave(text, 0x0C, "Royal Candy allowed-consumable route");
+        WriteInstruction(text, AllowedConsumableBranchOffset, EncodeConditionalBranch(AllowedConsumableBranchOffset, caveOffset, Arm64Condition.HI));
+        WriteInstruction(text, caveOffset, EncodeCmpImmediate(register: 8, immediate: RoyalCandyAllowedConsumableAdjustedItemId));
+        WriteInstruction(text, caveOffset + 4, EncodeConditionalBranch(caveOffset + 4, AllowedConsumablePassOffset, Arm64Condition.EQ));
+        WriteInstruction(text, caveOffset + 8, EncodeBranch(caveOffset + 8, AllowedConsumableFailOffset));
+    }
+
+    private static void PatchRoyalCandyVirtualInventory(byte[] text, RoyalCandyPatchLayout layout)
+    {
+        PatchRoyalCandyVirtualInventoryOwnership(text, layout.ItemOwnershipFunctionOffset);
+        PatchRoyalCandyVirtualInventoryCount(text, layout.ItemCountFunctionOffset);
+    }
+
+    private static void PatchRoyalCandyVirtualInventoryOwnership(byte[] text, int functionOffset)
+    {
+        const int itemRegister = 1;
+        var resumeOffset = functionOffset + 4;
+
+        ExpectInstruction(text, functionOffset, ExpectedItemOwnershipFirstInstruction, "item-ownership helper first instruction");
+
+        var dispatchCaveOffset = AllocateCodeCave(text, 0x0C, "Royal Candy virtual ownership dispatch");
+        var returnCaveOffset = AllocateCodeCave(text, 0x0C, "Royal Candy virtual ownership return");
+        var vanillaCaveOffset = AllocateCodeCave(text, 0x0C, "Royal Candy virtual ownership vanilla path");
+
+        WriteInstruction(text, functionOffset, EncodeBranch(functionOffset, dispatchCaveOffset));
+        WriteInstruction(text, dispatchCaveOffset, EncodeCmpImmediate(itemRegister, RoyalCandyItemId));
+        WriteInstruction(text, dispatchCaveOffset + 4, EncodeConditionalBranch(dispatchCaveOffset + 4, returnCaveOffset, Arm64Condition.EQ));
+        WriteInstruction(text, dispatchCaveOffset + 8, EncodeBranch(dispatchCaveOffset + 8, vanillaCaveOffset));
+        WriteInstruction(text, returnCaveOffset, EncodeMovzImmediate32(0, 1));
+        WriteInstruction(text, returnCaveOffset + 4, EncodeRet());
+        WriteInstruction(text, returnCaveOffset + 8, EncodeNop());
+        WriteInstruction(text, vanillaCaveOffset, ExpectedItemOwnershipFirstInstruction);
+        WriteInstruction(text, vanillaCaveOffset + 4, EncodeBranch(vanillaCaveOffset + 4, resumeOffset));
+        WriteInstruction(text, vanillaCaveOffset + 8, EncodeNop());
+    }
+
+    private static void PatchRoyalCandyVirtualInventoryCount(byte[] text, int functionOffset)
+    {
+        const int itemRegister = 1;
+        var resumeOffset = functionOffset + 4;
+
+        ExpectInstruction(text, functionOffset, ExpectedItemCountFirstInstruction, "item-count helper first instruction");
+
+        var dispatchCaveOffset = AllocateCodeCave(text, 0x0C, "Royal Candy virtual count dispatch");
+        var returnCaveOffset = AllocateCodeCave(text, 0x0C, "Royal Candy virtual count return");
+        var vanillaCaveOffset = AllocateCodeCave(text, 0x0C, "Royal Candy virtual count vanilla path");
+
+        WriteInstruction(text, functionOffset, EncodeBranch(functionOffset, dispatchCaveOffset));
+        WriteInstruction(text, dispatchCaveOffset, EncodeCmpImmediate(itemRegister, RoyalCandyItemId));
+        WriteInstruction(text, dispatchCaveOffset + 4, EncodeConditionalBranch(dispatchCaveOffset + 4, returnCaveOffset, Arm64Condition.EQ));
+        WriteInstruction(text, dispatchCaveOffset + 8, EncodeBranch(dispatchCaveOffset + 8, vanillaCaveOffset));
+        WriteInstruction(text, returnCaveOffset, EncodeMovzImmediate32(0, RoyalCandyVirtualInventoryCount));
+        WriteInstruction(text, returnCaveOffset + 4, EncodeRet());
+        WriteInstruction(text, returnCaveOffset + 8, EncodeNop());
+        WriteInstruction(text, vanillaCaveOffset, ExpectedItemCountFirstInstruction);
+        WriteInstruction(text, vanillaCaveOffset + 4, EncodeBranch(vanillaCaveOffset + 4, resumeOffset));
+        WriteInstruction(text, vanillaCaveOffset + 8, EncodeNop());
+    }
+
     private static void PatchStoryCapLadder(
         byte[] text,
-        IReadOnlyList<SwShRoyalCandyStoryLevelCap> levelCaps)
+        IReadOnlyList<SwShRoyalCandyStoryLevelCap> levelCaps,
+        RoyalCandyPatchLayout layout)
     {
         var milestones = levelCaps
             .OrderByDescending(levelCap => levelCap.LevelCap)
             .ToArray();
-        var capHelperOffset = WriteStoryCapHelper(text, milestones, StoryDefaultLevelCap);
+        var capHelperOffset = WriteStoryCapHelper(text, milestones, StoryDefaultLevelCap, layout);
         PatchUseGateDynamicCap(text, capHelperOffset);
         PatchQuantityMaxDynamicCap(text, capHelperOffset);
         PatchQuantityInventoryClampBypass(text);
@@ -417,11 +541,9 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     private static int WriteStoryCapHelper(
         byte[] text,
         IReadOnlyList<SwShRoyalCandyStoryLevelCap> milestones,
-        int defaultCap)
+        int defaultCap,
+        RoyalCandyPatchLayout layout)
     {
-        const int flagworkGlobalAddress = 0x02610798;
-        const int flagworkObjectOffset = 0x1B8;
-
         var checks = milestones.Select((milestone, index) => new
         {
             Milestone = milestone,
@@ -438,10 +560,10 @@ internal static class SwShExeFsRoyalCandyMainPatcher
                 current.Chunks,
                 current.Milestone,
                 nextOffset,
-                flagworkGlobalAddress,
-                flagworkObjectOffset,
-                FlagGetOffset,
-                WorkGetOffset);
+                layout.FlagworkGlobalAddress,
+                layout.FlagworkObjectOffset,
+                layout.FlagGetOffset,
+                layout.WorkGetOffset);
         }
 
         WriteInstruction(text, defaultReturn, EncodeMovzImmediate32(0, defaultCap));
@@ -934,7 +1056,8 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
     private static IReadOnlyList<SwShRoyalCandyInstalledStoryLevelCap> ReadStoryCapLadder(
         ReadOnlySpan<byte> text,
-        int helperOffset)
+        int helperOffset,
+        RoyalCandyPatchLayout layout)
     {
         var records = new List<SwShRoyalCandyInstalledStoryLevelCap>();
         var visited = new HashSet<int>();
@@ -946,7 +1069,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
                 break;
             }
 
-            if (!TryReadStoryCapCheck(text, offset, out var record, out var nextOffset))
+            if (!TryReadStoryCapCheck(text, offset, layout, out var record, out var nextOffset))
             {
                 break;
             }
@@ -961,6 +1084,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     private static bool TryReadStoryCapCheck(
         ReadOnlySpan<byte> text,
         int loadGlobalOffset,
+        RoyalCandyPatchLayout layout,
         out SwShRoyalCandyInstalledStoryLevelCap record,
         out int nextOffset)
     {
@@ -1000,8 +1124,8 @@ internal static class SwShExeFsRoyalCandyMainPatcher
 
         var progressKind = accessorOffset switch
         {
-            FlagGetOffset => SwShRoyalCandyStoryLevelCapProgressKind.Flag,
-            WorkGetOffset => SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast,
+            var offset when offset == layout.FlagGetOffset => SwShRoyalCandyStoryLevelCapProgressKind.Flag,
+            var offset when offset == layout.WorkGetOffset => SwShRoyalCandyStoryLevelCapProgressKind.WorkAtLeast,
             _ => (SwShRoyalCandyStoryLevelCapProgressKind?)null,
         };
         if (progressKind is null)
@@ -1080,7 +1204,10 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         return (instruction & 0xFC000000u) == 0x14000000u;
     }
 
-    private static void ClearReachableRoyalCandyCaves(byte[] currentText, ReadOnlySpan<byte> baseText)
+    private static void ClearReachableRoyalCandyCaves(
+        byte[] currentText,
+        ReadOnlySpan<byte> baseText,
+        RoyalCandyPatchLayout layout)
     {
         var seeds = new List<int>();
         foreach (var check in UiRouteChecks)
@@ -1112,6 +1239,25 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             seeds.Add(quantityMoveTarget);
         }
 
+        if (TryReadInstruction(currentText, AllowedConsumableBranchOffset, out var allowedConsumableBranch)
+            && IsConditionalBranch(allowedConsumableBranch, Arm64Condition.HI)
+            && allowedConsumableBranch != EncodeConditionalBranch(AllowedConsumableBranchOffset, AllowedConsumableFailOffset, Arm64Condition.HI)
+            && TryDecodeConditionalBranchTarget(allowedConsumableBranch, AllowedConsumableBranchOffset, out var allowedConsumableTarget))
+        {
+            seeds.Add(allowedConsumableTarget);
+        }
+
+        AddVirtualInventoryHookSeed(
+            currentText,
+            layout.ItemOwnershipFunctionOffset,
+            ExpectedItemOwnershipFirstInstruction,
+            seeds);
+        AddVirtualInventoryHookSeed(
+            currentText,
+            layout.ItemCountFunctionOffset,
+            ExpectedItemCountFirstInstruction,
+            seeds);
+
         if (TryReadInstruction(currentText, StoryInventoryClampSelectOffset, out var storyClampSelect)
             && IsUnconditionalBranch(storyClampSelect)
             && TryDecodeBranchTarget(storyClampSelect, StoryInventoryClampSelectOffset, out var storyClampTarget))
@@ -1120,6 +1266,21 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         }
 
         ClearReachableCodeCaves(currentText, baseText, seeds);
+    }
+
+    private static void AddVirtualInventoryHookSeed(
+        ReadOnlySpan<byte> currentText,
+        int hookOffset,
+        uint expectedFirstInstruction,
+        ICollection<int> seeds)
+    {
+        if (TryReadInstruction(currentText, hookOffset, out var instruction)
+            && instruction != expectedFirstInstruction
+            && IsUnconditionalBranch(instruction)
+            && TryDecodeBranchTarget(instruction, hookOffset, out var target))
+        {
+            seeds.Add(target);
+        }
     }
 
     private static void ClearReachableCodeCaves(byte[] currentText, ReadOnlySpan<byte> baseText, IEnumerable<int> seeds)
@@ -1556,6 +1717,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         EQ = 0,
         NE = 1,
         HS = 2,
+        HI = 8,
         LT = 11,
         GT = 12,
     }
@@ -1583,4 +1745,12 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         int ReturnCap);
 
     private sealed record ZeroRun(int Offset, int Length);
+
+    private sealed record RoyalCandyPatchLayout(
+        int FlagworkGlobalAddress,
+        int FlagworkObjectOffset,
+        int FlagGetOffset,
+        int WorkGetOffset,
+        int ItemOwnershipFunctionOffset,
+        int ItemCountFunctionOffset);
 }
