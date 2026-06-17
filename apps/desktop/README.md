@@ -29,6 +29,8 @@ pnpm dev
 pnpm typecheck
 pnpm build
 pnpm test:run
+pnpm test:changed
+pnpm test:fast
 pnpm test:workflow
 pnpm sidecar:publish
 pnpm tauri:dev
@@ -36,6 +38,10 @@ pnpm tauri:build
 ```
 
 The workflow test command runs Playwright against the Vite desktop shell and starts the dev server automatically when needed.
+
+Use `pnpm test:changed` for the normal local loop when the change is focused. Use `pnpm test:fast` when you want a broader smoke pass without paying for every App and backend regression. Use `pnpm test:full` before broad merges, releases, or risky shared changes.
+
+Keep detailed feature behavior in focused tests when possible. `App.test.tsx` should stay biased toward app shell wiring, navigation, and one representative flow for each major editor surface.
 
 Tauri dev and build commands publish `src/KM.Tools` as a self-contained sidecar before launching or packaging the desktop app. To refresh only the sidecar, run `pnpm sidecar:publish`; the generated executable is staged under `apps/desktop/src-tauri/binaries/` and is intentionally not committed.
 

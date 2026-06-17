@@ -24,6 +24,7 @@ using Xunit;
 
 namespace KM.SwSh.Tests.Performance;
 
+[Trait("Kind", "Slow")]
 public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
 {
     [Fact]
