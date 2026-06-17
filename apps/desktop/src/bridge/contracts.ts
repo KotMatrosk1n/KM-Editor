@@ -721,7 +721,7 @@ export const pokemonPersonalDetailsSchema = z.strictObject({
   ability1: z.number().int().nonnegative().optional(),
   ability2: z.number().int().nonnegative().optional(),
   armorDexIndex: z.number().int().nonnegative().optional(),
-  baseExperience: z.number().int().nonnegative().optional(),
+  baseExperience: z.number().int().optional(),
   baseFriendship: z.number().int().nonnegative(),
   canNotDynamax: z.boolean(),
   catchRate: z.number().int().nonnegative(),
@@ -819,7 +819,7 @@ export const pokemonEvolutionMethodOptionSchema = z.strictObject({
 
 export const pokemonRecordSchema = z.strictObject({
   abilities: pokemonAbilitySetSchema,
-  baseExperience: z.number().int().nonnegative(),
+  baseExperience: z.number().int(),
   baseStats: pokemonBaseStatsSchema,
   catchRate: z.number().int().nonnegative(),
   compatibility: z.array(pokemonCompatibilityGroupSchema),
@@ -1100,7 +1100,9 @@ export const trainerPokemonRecordSchema = z.strictObject({
   shiny: z.boolean(),
   slot: z.number().int().nonnegative(),
   speciesId: z.number().int().nonnegative(),
-  species: z.string()
+  species: z.string(),
+  teraType: z.number().int().nonnegative().nullable().default(null),
+  teraTypeLabel: z.string().nullable().default(null)
 });
 
 export const trainerAiFlagStateSchema = z.strictObject({

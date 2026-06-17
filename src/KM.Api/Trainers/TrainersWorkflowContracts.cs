@@ -41,7 +41,9 @@ public sealed record TrainerPokemonRecordDto(
     bool CanGigantamax,
     TrainerPokemonStatsDto Ivs,
     bool Shiny,
-    bool CanDynamax)
+    bool CanDynamax,
+    int? TeraType = null,
+    string? TeraTypeLabel = null)
 {
     public IReadOnlyList<TrainerEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<TrainerEditableFieldOptionDto>();

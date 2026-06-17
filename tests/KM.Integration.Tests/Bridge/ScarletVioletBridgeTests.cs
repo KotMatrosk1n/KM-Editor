@@ -14,6 +14,7 @@ using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.SV.Data;
 using KM.Integration.Tests.Tools;
+using KM.Formats.SwSh;
 using KM.Tools.Bridge;
 using Xunit;
 
@@ -58,8 +59,18 @@ public sealed class ScarletVioletBridgeTests
         var trainersSession = UpdateTrainer(dispatcher, paths, trainerId: 0, slot: 0, field: "level", value: "12");
         Apply(dispatcher, paths, trainersSession);
         Assert.Equal(12, ReadTrainerPokemonLevel(temp, trainerId: 0, slot: 0));
+        var teraSession = UpdateTrainer(dispatcher, paths, trainerId: 0, slot: 0, field: "teraType", value: ((int)global::GemType.FAIRY).ToString());
+        Apply(dispatcher, paths, teraSession);
+        Assert.Equal(global::GemType.FAIRY, ReadTrainerPokemonTeraType(temp, trainerId: 0, slot: 0));
 
-        var encountersSession = UpdateEncounter(dispatcher, paths, tableId: "test-location:test-area", slot: 0, field: "levelMin", value: "9");
+        var encountersWorkflow = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-sv-encounters-load");
+        AssertSuccess(encountersWorkflow);
+        var encounterTableId = Assert.Single(encountersWorkflow.Payload!.Workflow.Tables).TableId;
+        var encountersSession = UpdateEncounter(dispatcher, paths, encounterTableId, slot: 0, field: "levelMin", value: "9");
         Apply(dispatcher, paths, encountersSession);
         Assert.Equal(9, ReadEncounterMinLevel(temp, index: 0));
         AssertDescriptorMarksLayeredOutputs(temp);
@@ -67,7 +78,7 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
-    public void ScarletVioletProjectExposesOnlyTheModMergerWorkflow(
+    public void ScarletVioletProjectExposesBasicEditorWorkflows(
         ProjectGameDto game,
         ulong titleId)
     {
@@ -83,9 +94,157 @@ public sealed class ScarletVioletBridgeTests
 
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
-        var workflow = Assert.Single(response.Payload.Workflows);
-        Assert.Equal("modMerger", workflow.Id);
-        Assert.Equal("S/V Mod Merger", workflow.Label);
+        Assert.Equal(
+            ["items", "pokemon", "trainers", "encounters", "modMerger"],
+            response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trainers");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Wild Encounters");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "S/V Mod Merger");
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletProjectLoadsEnglishMessageLabels(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var pokemon = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-sv-pokemon-labels");
+        AssertSuccess(pokemon);
+        Assert.DoesNotContain(pokemon.Payload!.Workflow.Pokemon, row => row.PersonalId == 0);
+        var bulbasaur = pokemon.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1);
+        Assert.Equal("Bulbasaur", bulbasaur.Name);
+        Assert.Equal("Overgrow", bulbasaur.Abilities.Ability1Label);
+        Assert.Equal("Tackle", Assert.Single(bulbasaur.Learnset).MoveName);
+
+        var pokemonFields = pokemon.Payload.Workflow.EditableFields;
+        Assert.Contains(
+            pokemonFields.Single(field => field.Field == "type1").Options,
+            option => option.Value == 11 && option.Label == "Grass");
+        Assert.Contains(
+            pokemonFields.Single(field => field.Field == "ability1").Options,
+            option => option.Value == 65 && option.Label.Contains("Overgrow", StringComparison.Ordinal));
+        Assert.Contains(
+            pokemonFields.Single(field => field.Field == "genderRatio").Options,
+            option => option.Value == 31 && option.Label.Contains("87.5% male", StringComparison.Ordinal));
+        Assert.Contains(
+            pokemonFields.Single(field => field.Field == "expGrowth").Options,
+            option => option.Value == 3 && option.Label == "Medium Slow");
+        Assert.Contains(
+            pokemonFields.Single(field => field.Field == "eggGroup1").Options,
+            option => option.Value == 7 && option.Label == "Grass");
+        Assert.Contains(
+            pokemonFields.Single(field => field.Field == "color").Options,
+            option => option.Value == 5 && option.Label == "Brown");
+        var levelUpEvolution = pokemon.Payload.Workflow.EvolutionMethodOptions.Single(option => option.Value == 4);
+        Assert.Equal("level", levelUpEvolution.ArgumentKind);
+        Assert.Contains("Level Up", levelUpEvolution.Label, StringComparison.Ordinal);
+        Assert.Contains(
+            pokemon.Payload.Workflow.EvolutionMethodOptions,
+            option => option.Value == 50 && option.Label.Contains("Walk 1000 Steps", StringComparison.Ordinal));
+        Assert.Contains(
+            pokemon.Payload.Workflow.EvolutionMethodOptions.Single(option => option.Value == 50).ArgumentOptions,
+            option => option.Value == 1000 && option.Label.Contains("1000 steps", StringComparison.Ordinal));
+        Assert.Contains(
+            pokemon.Payload.Workflow.EvolutionMethodOptions.Single(option => option.Value == 54).ArgumentOptions,
+            option => option.Value == 999 && option.Label.Contains("999 coins", StringComparison.Ordinal));
+        Assert.Contains(
+            pokemon.Payload.Workflow.EvolutionMethodOptions.Single(option => option.Value == 61).ArgumentOptions,
+            option => option.Value == 1 && option.Label.Contains("Hisuian Sliggoo", StringComparison.Ordinal));
+
+        var items = Dispatch<LoadItemsWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(paths),
+            "request-sv-item-labels");
+        AssertSuccess(items);
+        Assert.Equal("Master Ball", Assert.Single(items.Payload!.Workflow.Items).Name);
+        var itemFields = items.Payload.Workflow.EditableFields;
+        Assert.Contains(
+            itemFields.Single(field => field.Field == "pouch").Options,
+            option => option.Value == (int)global::FieldPocket.FPOCKET_BALL && option.Label == "Ball");
+        Assert.Contains(
+            itemFields.Single(field => field.Field == "fieldUseType").Options,
+            option => option.Value == (int)global::FieldFunctionType.FIELDFUNC_WAZA && option.Label == "Waza");
+        Assert.Contains(
+            itemFields.Single(field => field.Field == "itemType").Options,
+            option => option.Value == (int)global::ItemType.ITEMTYPE_BALL && option.Label == "Ball");
+        Assert.Contains(
+            itemFields.Single(field => field.Field == "groupType").Options,
+            option => option.Value == (int)global::ItemGroup.ITEMGROUP_BALL && option.Label == "Ball");
+        Assert.Contains(
+            itemFields.Single(field => field.Field == "machineMoveId").Options,
+            option => option.Value == 33 && option.Label.Contains("Tackle", StringComparison.Ordinal));
+
+        var trainers = Dispatch<LoadTrainersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTrainersWorkflow,
+            new LoadTrainersWorkflowRequest(paths),
+            "request-sv-trainer-labels");
+        AssertSuccess(trainers);
+        var trainer = Assert.Single(trainers.Payload!.Workflow.Trainers);
+        Assert.Equal("Test Trainer", trainer.Name);
+        Assert.Equal("Pokemon Trainer", trainer.TrainerClass);
+        var trainerPokemon = Assert.Single(trainer.Team);
+        Assert.Equal("Bulbasaur", trainerPokemon.Species);
+        Assert.Equal("Tackle", Assert.Single(trainerPokemon.Moves));
+        Assert.Equal("Random", trainerPokemon.GenderLabel);
+        Assert.Equal("Random 1/2", trainerPokemon.AbilityLabel);
+        Assert.Equal("Default", trainerPokemon.NatureLabel);
+        Assert.Equal((int)global::GemType.NORMAL, trainerPokemon.TeraType);
+        Assert.Equal("Normal", trainerPokemon.TeraTypeLabel);
+
+        var trainerFields = trainers.Payload.Workflow.EditableFields;
+        Assert.Contains(
+            trainerFields.Single(field => field.Field == "speciesId").Options,
+            option => option.Value == 1 && option.Label.Contains("Bulbasaur", StringComparison.Ordinal));
+        Assert.Contains(
+            trainerFields.Single(field => field.Field == "heldItemId").Options,
+            option => option.Value == 1 && option.Label.Contains("Master Ball", StringComparison.Ordinal));
+        Assert.Contains(
+            trainerFields.Single(field => field.Field == "move1Id").Options,
+            option => option.Value == 33 && option.Label.Contains("Tackle", StringComparison.Ordinal));
+        Assert.Contains(
+            trainerFields.Single(field => field.Field == "gender").Options,
+            option => option.Value == 1 && option.Label == "Male");
+        Assert.Contains(
+            trainerFields.Single(field => field.Field == "ability").Options,
+            option => option.Value == 4 && option.Label == "Hidden Ability");
+        Assert.Contains(
+            trainerFields.Single(field => field.Field == "nature").Options,
+            option => option.Value == 4 && option.Label == "Adamant");
+        Assert.Contains(
+            trainerFields.Single(field => field.Field == "shiny").Options,
+            option => option.Value == 1 && option.Label == "Forced shiny");
+        Assert.Contains(
+            trainerFields.Single(field => field.Field == "teraType").Options,
+            option => option.Value == (int)global::GemType.FAIRY && option.Label == "Fairy");
+        Assert.Contains(
+            trainerFields.Single(field => field.Field == "teraType").Options,
+            option => option.Value == (int)global::GemType.NIJI && option.Label == "Stellar");
+
+        var encounters = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-sv-encounter-labels");
+        AssertSuccess(encounters);
+        Assert.Contains(
+            encounters.Payload!.Workflow.EditableFields.Single(field => field.Field == "speciesId").Options,
+            option => option.Value == 1 && option.Label.Contains("Bulbasaur", StringComparison.Ordinal));
+        var encounterTable = Assert.Single(encounters.Payload.Workflow.Tables);
+        Assert.Equal("South Province (Area Two), South Province (Area Four)", encounterTable.Location);
+        Assert.Equal("South Province (Area Two), South Province (Area Four)", encounterTable.Area);
     }
 
     private static TemporaryBridgeProject CreateScarletVioletProject(ulong titleId)
@@ -111,6 +270,20 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(temp, SvDataPaths.PersonalArray, CreatePersonalArray());
         WriteSvOutput(temp, SvDataPaths.TrainerDataArray, CreateTrainerDataArray());
         WriteSvOutput(temp, SvDataPaths.WildEncounterArray, CreateEncounterArray());
+        temp.WriteBaseRomFsFile(SvDataPaths.EnglishPokemonNames, CreateTextTable(3, (1, "Bulbasaur"), (2, "Ivysaur")));
+        temp.WriteBaseRomFsFile(SvDataPaths.EnglishItemNames, CreateTextTable(2, (1, "Master Ball")));
+        temp.WriteBaseRomFsFile(SvDataPaths.EnglishMoveNames, CreateTextTable(46, (33, "Tackle"), (45, "Growl")));
+        temp.WriteBaseRomFsFile(SvDataPaths.EnglishAbilityNames, CreateTextTable(66, (34, "Chlorophyll"), (65, "Overgrow")));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishPlaceNames,
+            CreateTextTable(2, (0, "South Province (Area Two)"), (1, "South Province (Area Four)")));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishPlaceNameKeys,
+            CreateKeyTable("PLACENAME_a_w04_01", "PLACENAME_a_w05_01"));
+        temp.WriteBaseRomFsFile(SvDataPaths.EnglishTrainerNames, CreateTextTable(1, (0, "Test Trainer")));
+        temp.WriteBaseRomFsFile(SvDataPaths.EnglishTrainerNameKeys, CreateKeyTable("TRNAME_TEST"));
+        temp.WriteBaseRomFsFile(SvDataPaths.EnglishTrainerTypes, CreateTextTable(1, (0, "Pokemon Trainer")));
+        temp.WriteBaseRomFsFile(SvDataPaths.EnglishTrainerTypeKeys, CreateKeyTable("MSG_TRTYPE_TEST"));
     }
 
     private static EditSessionDto UpdateItem(
@@ -307,6 +480,16 @@ public sealed class ScarletVioletBridgeTests
 
     private static int ReadTrainerPokemonLevel(TemporaryBridgeProject temp, int trainerId, int slot)
     {
+        return ReadTrainerPokemon(temp, trainerId, slot).Level;
+    }
+
+    private static global::GemType ReadTrainerPokemonTeraType(TemporaryBridgeProject temp, int trainerId, int slot)
+    {
+        return ReadTrainerPokemon(temp, trainerId, slot).GemType;
+    }
+
+    private static global::PokeDataBattle ReadTrainerPokemon(TemporaryBridgeProject temp, int trainerId, int slot)
+    {
         var table = global::trainer.TrdataMainArray.GetRootAsTrdataMainArray(
             new ByteBuffer(ReadSvOutput(temp, SvDataPaths.TrainerDataArray)));
         var trainer = table.Values(trainerId);
@@ -322,7 +505,7 @@ public sealed class ScarletVioletBridgeTests
             _ => null,
         };
         Assert.NotNull(pokemon);
-        return pokemon.Value.Level;
+        return pokemon.Value;
     }
 
     private static int ReadEncounterMinLevel(TemporaryBridgeProject temp, int index)
@@ -435,11 +618,12 @@ public sealed class ScarletVioletBridgeTests
             devId: (global::pml.common.DevID)1,
             level: 5,
             waza1Offset: move,
+            gemType: global::GemType.NORMAL,
             talentValueOffset: ivs,
             effortValueOffset: evs);
         var trainerId = builder.CreateString("tr_0000");
-        var trainerName = builder.CreateString("Test Trainer");
-        var trainerType = builder.CreateString("Pokemon Trainer");
+        var trainerName = builder.CreateString("TRNAME_TEST");
+        var trainerType = builder.CreateString("MSG_TRTYPE_TEST");
         var trainer = global::trainer.TrdataMain.CreateTrdataMain(
             builder,
             tridOffset: trainerId,
@@ -457,15 +641,13 @@ public sealed class ScarletVioletBridgeTests
     private static byte[] CreateEncounterArray()
     {
         var builder = new FlatBufferBuilder(2048);
-        var area = builder.CreateString("test-area");
-        var location = builder.CreateString("test-location");
+        var area = builder.CreateString("4,5");
         var time = global::TimeTable.CreateTimeTable(builder, morning: true, noon: true, evening: true, night: true);
         var version = global::VersionTable.CreateVersionTable(builder, A: true, B: true);
 
         global::EncountPokeData.StartEncountPokeData(builder);
         global::EncountPokeData.AddVersiontable(builder, version);
         global::EncountPokeData.AddTimetable(builder, time);
-        global::EncountPokeData.AddLocationName(builder, location);
         global::EncountPokeData.AddArea(builder, area);
         global::EncountPokeData.AddLotvalue(builder, 40);
         global::EncountPokeData.AddMaxlevel(builder, 12);
@@ -499,6 +681,28 @@ public sealed class ScarletVioletBridgeTests
         var data = new byte[0x298];
         BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(0x290, 8), titleId);
         return data;
+    }
+
+    private static byte[] CreateTextTable(int count, params (int Index, string Text)[] entries)
+    {
+        var lines = Enumerable
+            .Range(0, count)
+            .Select(_ => new SwShGameTextLine(string.Empty, Flags: 0))
+            .ToArray();
+
+        foreach (var entry in entries)
+        {
+            lines[entry.Index] = new SwShGameTextLine(entry.Text, Flags: 0);
+        }
+
+        return SwShGameTextFile.Write(lines);
+    }
+
+    private static byte[] CreateKeyTable(params string[] keys)
+    {
+        return new SwShAhtbFile(
+            keys.Select((key, index) => new SwShAhtbEntry((ulong)index, key)).ToArray())
+            .Write();
     }
 
     private static byte[] CreateTrinityDescriptor(IReadOnlyList<string> virtualPaths)

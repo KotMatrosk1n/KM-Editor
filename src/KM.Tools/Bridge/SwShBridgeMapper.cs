@@ -2137,7 +2137,9 @@ public static class SwShBridgeMapper
             pokemon.CanGigantamax,
             ToDto(pokemon.Ivs),
             pokemon.Shiny,
-            pokemon.CanDynamax)
+            pokemon.CanDynamax,
+            pokemon.TeraType,
+            pokemon.TeraTypeLabel)
         {
             AbilityOptions = pokemon.AbilityOptions.Select(ToDto).ToArray(),
         };

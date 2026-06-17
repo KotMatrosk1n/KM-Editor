@@ -17,7 +17,6 @@ internal sealed class SvTrainersEditSessionService
 {
     private const string IsStrongField = "isStrong";
     private const string ChangeGemField = "changeGem";
-    private const string TeraTypeField = "teraType";
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SvWorkflowFileSource fileSource;
@@ -408,7 +407,7 @@ internal sealed class SvTrainersEditSessionService
             SwShTrainersWorkflowService.BattleTypeField => trainer with
             {
                 BattleTypeValue = value,
-                BattleType = ((global::trainer.BattleType)value).ToString(),
+                BattleType = SvTrainersWorkflowService.FormatBattleType((global::trainer.BattleType)value),
             },
             SwShTrainersWorkflowService.MoneyField => trainer with { Money = value },
             SwShTrainersWorkflowService.AiFlagsField => trainer with
@@ -450,9 +449,10 @@ internal sealed class SvTrainersEditSessionService
             SwShTrainersWorkflowService.Move2IdField => OverlayMove(pokemon, 1, value),
             SwShTrainersWorkflowService.Move3IdField => OverlayMove(pokemon, 2, value),
             SwShTrainersWorkflowService.Move4IdField => OverlayMove(pokemon, 3, value),
-            SwShTrainersWorkflowService.GenderField => pokemon with { Gender = value, GenderLabel = ((global::SexType)value).ToString() },
-            SwShTrainersWorkflowService.AbilityField => pokemon with { Ability = value, AbilityLabel = ((global::TokuseiType)value).ToString() },
-            SwShTrainersWorkflowService.NatureField => pokemon with { Nature = value, NatureLabel = ((global::SeikakuType)value).ToString() },
+            SwShTrainersWorkflowService.GenderField => pokemon with { Gender = value, GenderLabel = SvTrainersWorkflowService.FormatGender((global::SexType)value) },
+            SwShTrainersWorkflowService.AbilityField => pokemon with { Ability = value, AbilityLabel = SvTrainersWorkflowService.FormatAbilityMode((global::TokuseiType)value) },
+            SwShTrainersWorkflowService.NatureField => pokemon with { Nature = value, NatureLabel = SvTrainersWorkflowService.FormatNature((global::SeikakuType)value) },
+            SvTrainersWorkflowService.TeraTypeField => pokemon with { TeraType = value, TeraTypeLabel = SvTrainersWorkflowService.FormatTeraType((global::GemType)value) },
             SwShTrainersWorkflowService.EvHpField => pokemon with { Evs = pokemon.Evs with { HP = value } },
             SwShTrainersWorkflowService.EvAttackField => pokemon with { Evs = pokemon.Evs with { Attack = value } },
             SwShTrainersWorkflowService.EvDefenseField => pokemon with { Evs = pokemon.Evs with { Defense = value } },
@@ -661,7 +661,7 @@ internal sealed class SvTrainersEditSessionService
             case SwShTrainersWorkflowService.ShinyField:
                 row.RareType = value == 0 ? global::RareType.DEFAULT : global::RareType.RARE;
                 break;
-            case TeraTypeField:
+            case SvTrainersWorkflowService.TeraTypeField:
                 row.GemType = (global::GemType)value;
                 break;
         }
@@ -720,7 +720,7 @@ internal sealed class SvTrainersEditSessionService
             SwShTrainersWorkflowService.IvSpecialDefenseField or
             SwShTrainersWorkflowService.IvSpeedField or
             SwShTrainersWorkflowService.ShinyField or
-            TeraTypeField;
+            SvTrainersWorkflowService.TeraTypeField;
     }
 
     private static string CreateTeamRecordId(int trainerId, int slot)
