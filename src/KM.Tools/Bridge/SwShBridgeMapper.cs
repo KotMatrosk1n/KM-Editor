@@ -25,6 +25,7 @@ using KM.Api.Shops;
 using KM.Api.Raids;
 using KM.Api.RoyalCandy;
 using KM.Api.StartingItems;
+using KM.Api.ShinyRate;
 using KM.Api.StaticEncounters;
 using KM.Api.Text;
 using KM.Api.SpreadsheetImport;
@@ -55,6 +56,7 @@ using KM.SwSh.Shops;
 using KM.SwSh.Raids;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.StartingItems;
+using KM.SwSh.ShinyRate;
 using KM.SwSh.StaticEncounters;
 using KM.SwSh.Text;
 using KM.SwSh.SpreadsheetImport;
@@ -366,6 +368,23 @@ public static class SwShBridgeMapper
 
         return new StageHyperTrainingResponse(
             ToHyperTrainingWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadShinyRateWorkflowResponse ToDto(SwShShinyRateWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadShinyRateWorkflowResponse(ToShinyRateWorkflowDto(workflow));
+    }
+
+    public static StageShinyRateResponse ToDto(SwShShinyRateEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageShinyRateResponse(
+            ToShinyRateWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1488,6 +1507,27 @@ public static class SwShBridgeMapper
             new HyperTrainingWorkflowStatsDto(
                 workflow.Stats.SourceFileCount,
             workflow.Stats.OutputFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ShinyRateWorkflowDto ToShinyRateWorkflowDto(SwShShinyRateWorkflow workflow)
+    {
+        return new ShinyRateWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.BuildId,
+            workflow.FunctionOffsetHex,
+            workflow.CompareOffsetHex,
+            workflow.BreakOffsetHex,
+            ToProjectGameDto(workflow.DetectedGame),
+            workflow.Source is null ? null : ToDto(workflow.Source),
+            ToDto(workflow.RateRule),
+            workflow.Presets.Select(ToDto).ToArray(),
+            new ShinyRateWorkflowStatsDto(
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.OutputFileCount,
+                workflow.Stats.PresetCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -2651,6 +2691,54 @@ public static class SwShBridgeMapper
     private static HyperTrainingProvenanceDto ToDto(SwShHyperTrainingProvenance provenance)
     {
         return new HyperTrainingProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static ShinyRateSourceRecordDto ToDto(SwShShinyRateSourceRecord source)
+    {
+        return new ShinyRateSourceRecordDto(
+            source.SourceId,
+            source.Label,
+            source.RelativePath,
+            source.Status,
+            ToDto(source.Provenance));
+    }
+
+    private static ShinyRateRuleDto ToDto(SwShShinyRateRule rule)
+    {
+        return new ShinyRateRuleDto(
+            rule.Mode,
+            rule.RollCount,
+            rule.MinimumRollCount,
+            rule.MaximumRollCount,
+            rule.MinimumCustomDenominator,
+            rule.MaximumCustomDenominator,
+            rule.OddsDenominator,
+            rule.ChancePercent,
+            rule.OddsLabel,
+            rule.PercentLabel,
+            rule.RuntimeSummary);
+    }
+
+    private static ShinyRatePresetDto ToDto(SwShShinyRatePreset preset)
+    {
+        return new ShinyRatePresetDto(
+            preset.PresetId,
+            preset.Label,
+            preset.Mode,
+            preset.RollCount,
+            preset.TargetDenominator,
+            preset.IsEnabled,
+            preset.OddsLabel,
+            preset.PercentLabel,
+            preset.Description);
+    }
+
+    private static ShinyRateProvenanceDto ToDto(SwShShinyRateProvenance provenance)
+    {
+        return new ShinyRateProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

@@ -23,6 +23,7 @@ using KM.SwSh.Raids;
 using KM.SwSh.Rentals;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.Shops;
+using KM.SwSh.ShinyRate;
 using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.StartingItems;
 using KM.SwSh.StaticEncounters;
@@ -47,6 +48,7 @@ public sealed class SwShWorkflowService
     private readonly SwShGymUniformRemovalWorkflowService gymUniformRemovalWorkflowService;
     private readonly SwShFashionUnlockWorkflowService fashionUnlockWorkflowService;
     private readonly SwShIvScreenWorkflowService ivScreenWorkflowService;
+    private readonly SwShShinyRateWorkflowService shinyRateWorkflowService;
     private readonly SwShTypeChartWorkflowService typeChartWorkflowService;
     private readonly SwShFlagworkSaveWorkflowService flagworkSaveWorkflowService;
     private readonly SwShGiftPokemonWorkflowService giftPokemonWorkflowService;
@@ -94,6 +96,7 @@ public sealed class SwShWorkflowService
         SwShGymUniformRemovalWorkflowService? gymUniformRemovalWorkflowService = null,
         SwShFashionUnlockWorkflowService? fashionUnlockWorkflowService = null,
         SwShIvScreenWorkflowService? ivScreenWorkflowService = null,
+        SwShShinyRateWorkflowService? shinyRateWorkflowService = null,
         SwShTypeChartWorkflowService? typeChartWorkflowService = null,
         SwShRoyalCandyWorkflowService? royalCandyWorkflowService = null,
         SwShStartingItemsWorkflowService? startingItemsWorkflowService = null,
@@ -115,6 +118,7 @@ public sealed class SwShWorkflowService
         this.gymUniformRemovalWorkflowService = gymUniformRemovalWorkflowService ?? new SwShGymUniformRemovalWorkflowService();
         this.fashionUnlockWorkflowService = fashionUnlockWorkflowService ?? new SwShFashionUnlockWorkflowService();
         this.ivScreenWorkflowService = ivScreenWorkflowService ?? new SwShIvScreenWorkflowService();
+        this.shinyRateWorkflowService = shinyRateWorkflowService ?? new SwShShinyRateWorkflowService();
         this.typeChartWorkflowService = typeChartWorkflowService ?? new SwShTypeChartWorkflowService();
         this.flagworkSaveWorkflowService = flagworkSaveWorkflowService ?? new SwShFlagworkSaveWorkflowService();
         this.giftPokemonWorkflowService = giftPokemonWorkflowService ?? new SwShGiftPokemonWorkflowService();
@@ -169,6 +173,7 @@ public sealed class SwShWorkflowService
             bagHookWorkflowService.CreateSummary(project),
             catchCapWorkflowService.CreateSummary(project),
             hyperTrainingWorkflowService.CreateSummary(project),
+            shinyRateWorkflowService.CreateSummary(project),
             typeChartWorkflowService.CreateSummary(project),
             fairyGymBoostsWorkflowService.CreateSummary(project),
             fashionUnlockWorkflowService.CreateSummary(project),
@@ -400,6 +405,15 @@ public sealed class SwShWorkflowService
         var project = projectWorkspaceService.Open(paths);
 
         return typeChartWorkflowService.Load(project);
+    }
+
+    public SwShShinyRateWorkflow LoadShinyRate(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+
+        return shinyRateWorkflowService.Load(project);
     }
 
     public SwShFairyGymBoostsWorkflow LoadFairyGymBoosts(ProjectPaths paths)

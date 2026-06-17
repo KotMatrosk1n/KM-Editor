@@ -22,6 +22,7 @@ import {
   Shield,
   ShieldCheck,
   Shirt,
+  Sparkle,
   Sparkles,
   Store,
   Table2,
@@ -175,6 +176,13 @@ export const workflowDefinitions: Array<{
     description:
       'Advanced editor for the Battle Tower Hyper Training NPC minimum level cutoff, matching English dialogue, and picker cutoff checks.',
     icon: Dumbbell
+  },
+  {
+    id: 'shinyRate',
+    label: 'Shiny Rate',
+    description:
+      'Advanced editor for the Sword/Shield shiny reroll count in exefs/main.',
+    icon: Sparkle
   },
   {
     id: 'typeChart',

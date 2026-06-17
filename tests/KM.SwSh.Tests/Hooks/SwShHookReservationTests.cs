@@ -162,6 +162,29 @@ public sealed class SwShHookReservationTests
     }
 
     [Fact]
+    public void ShinyRateReservesSwordAndShieldRerollLoopControlRanges()
+    {
+        var regions = SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerShinyRate);
+
+        Assert.Collection(
+            regions.OrderBy(region => region.StartOffset).ToArray(),
+            region =>
+            {
+                Assert.Equal("shiny-rate-sword-reroll-loop-control", region.FeatureId);
+                Assert.Equal(0x00D31488, region.StartOffset);
+                Assert.Equal(0x08, region.Length);
+                Assert.Equal("text+0xD31488..0xD3148F", region.OffsetLabel);
+            },
+            region =>
+            {
+                Assert.Equal("shiny-rate-shield-reroll-loop-control", region.FeatureId);
+                Assert.Equal(0x00D314B8, region.StartOffset);
+                Assert.Equal(0x08, region.Length);
+                Assert.Equal("text+0xD314B8..0xD314BF", region.OffsetLabel);
+            });
+    }
+
+    [Fact]
     public void ReservedMainRegionsDoNotOverlapBetweenFeatureFamiliesInSameSegment()
     {
         var regions = SwShExeFsReservedRegionLedger.Regions

@@ -271,6 +271,14 @@ import {
   loadFairyGymBoostsWorkflowResponseSchema,
   stageFairyGymBoostsResponseSchema
 } from './fairyGymBoostsContracts';
+import {
+  type LoadShinyRateWorkflowRequest,
+  type LoadShinyRateWorkflowResponse,
+  type StageShinyRateRequest,
+  type StageShinyRateResponse,
+  loadShinyRateWorkflowResponseSchema,
+  stageShinyRateResponseSchema
+} from './shinyRateContracts';
 
 export type ProjectBridge = {
   applyChangePlan: (request: ApplyChangePlanRequest) => Promise<ApplyChangePlanResponse>;
@@ -364,6 +372,12 @@ export type ProjectBridge = {
   stageHyperTraining: (
     request: StageHyperTrainingRequest
   ) => Promise<StageHyperTrainingResponse>;
+  loadShinyRateWorkflow: (
+    request: LoadShinyRateWorkflowRequest
+  ) => Promise<LoadShinyRateWorkflowResponse>;
+  stageShinyRate: (
+    request: StageShinyRateRequest
+  ) => Promise<StageShinyRateResponse>;
   loadTypeChartWorkflow: (
     request: LoadTypeChartWorkflowRequest
   ) => Promise<LoadTypeChartWorkflowResponse>;
@@ -603,6 +617,20 @@ export function createProjectBridge(
         kmCommandNames.stageHyperTraining,
         request,
         stageHyperTrainingResponseSchema
+      ),
+    loadShinyRateWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadShinyRateWorkflow,
+        request,
+        loadShinyRateWorkflowResponseSchema
+      ),
+    stageShinyRate: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageShinyRate,
+        request,
+        stageShinyRateResponseSchema
       ),
     loadTypeChartWorkflow: (request) =>
       sendProjectBridgeRequest(
