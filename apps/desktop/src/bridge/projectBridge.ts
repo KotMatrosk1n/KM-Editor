@@ -40,6 +40,8 @@ import {
   type LoadRentalPokemonWorkflowResponse,
   type LoadDynamaxAdventuresWorkflowRequest,
   type LoadDynamaxAdventuresWorkflowResponse,
+  type PreviewDynamaxAdventureDefaultsRequest,
+  type PreviewDynamaxAdventureDefaultsResponse,
   type PlanDynamaxAdventureSeedRequest,
   type PlanDynamaxAdventureSeedResponse,
   type SearchDynamaxAdventureSeedRequest,
@@ -193,6 +195,7 @@ import {
   loadStaticEncountersWorkflowResponseSchema,
   loadRentalPokemonWorkflowResponseSchema,
   loadDynamaxAdventuresWorkflowResponseSchema,
+  previewDynamaxAdventureDefaultsResponseSchema,
   planDynamaxAdventureSeedResponseSchema,
   searchDynamaxAdventureSeedResponseSchema,
   setDynamaxAdventureSaveSeedResponseSchema,
@@ -298,6 +301,9 @@ export type ProjectBridge = {
   loadDynamaxAdventuresWorkflow: (
     request: LoadDynamaxAdventuresWorkflowRequest
   ) => Promise<LoadDynamaxAdventuresWorkflowResponse>;
+  previewDynamaxAdventureDefaults: (
+    request: PreviewDynamaxAdventureDefaultsRequest
+  ) => Promise<PreviewDynamaxAdventureDefaultsResponse>;
   planDynamaxAdventureSeed: (
     request: PlanDynamaxAdventureSeedRequest
   ) => Promise<PlanDynamaxAdventureSeedResponse>;
@@ -744,6 +750,13 @@ export function createProjectBridge(
         kmCommandNames.loadDynamaxAdventuresWorkflow,
         request,
         loadDynamaxAdventuresWorkflowResponseSchema
+      ),
+    previewDynamaxAdventureDefaults: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.previewDynamaxAdventureDefaults,
+        request,
+        previewDynamaxAdventureDefaultsResponseSchema
       ),
     planDynamaxAdventureSeed: (request) =>
       sendProjectBridgeRequest(

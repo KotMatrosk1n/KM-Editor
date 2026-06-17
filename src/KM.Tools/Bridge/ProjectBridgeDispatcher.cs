@@ -229,6 +229,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateRentalPokemonField => DispatchUpdateRentalPokemonField(requestJson),
                 KmCommandNames.LoadDynamaxAdventuresWorkflow => DispatchLoadDynamaxAdventuresWorkflow(requestJson),
                 KmCommandNames.UpdateDynamaxAdventureField => DispatchUpdateDynamaxAdventureField(requestJson),
+                KmCommandNames.PreviewDynamaxAdventureDefaults => DispatchPreviewDynamaxAdventureDefaults(requestJson),
                 KmCommandNames.PlanDynamaxAdventureSeed => DispatchPlanDynamaxAdventureSeed(requestJson),
                 KmCommandNames.SearchDynamaxAdventureSeed => DispatchSearchDynamaxAdventureSeed(requestJson),
                 KmCommandNames.SetDynamaxAdventureSaveSeed => DispatchSetDynamaxAdventureSaveSeed(requestJson),
@@ -682,6 +683,24 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.Field,
             request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchPreviewDynamaxAdventureDefaults(string requestJson)
+    {
+        var request = DeserializeRequest<PreviewDynamaxAdventureDefaultsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var preview = dynamaxAdventuresEditSessionService.PreviewDefaults(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            request.Payload.EntryIndex,
+            request.Payload.Species,
+            request.Payload.Form,
+            request.Payload.Level);
+        var response = SwShBridgeMapper.ToDto(preview);
 
         return SerializeSuccess(response, request.RequestId);
     }

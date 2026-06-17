@@ -54,10 +54,7 @@ import {
   Zap,
   type LucideIcon
 } from 'lucide-react';
-import {
-  type ReactVirtualizerOptions,
-  useVirtualizer
-} from '@tanstack/react-virtual';
+import { type ReactVirtualizerOptions, useVirtualizer } from '@tanstack/react-virtual';
 import { listen } from '@tauri-apps/api/event';
 import {
   type ReactNode,
@@ -130,6 +127,7 @@ import {
   type PokemonLearnsetMove,
   type PokemonRecord,
   type PokemonWorkflow,
+  type PreviewDynamaxAdventureDefaultsResponse,
   type PlacedObjectRecord,
   type PlacementEditableField,
   type PlacementWorkflow,
@@ -212,7 +210,15 @@ import {
 } from './workbenchStore';
 import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
-import { ApplyResultSection, DiagnosticsSection, Metric } from './components/workflowPanels';
+import {
+  ApplyResultSection,
+  ChangePlanSection,
+  DiagnosticsSection,
+  Metric,
+  WorkflowPanelOutputSections,
+  type WorkflowPanelOutput
+} from './components/workflowPanels';
+import { scopedEditorPanelSectionIds, useScopedEditorPanelOutput } from './components/scopedEditorPanelOutput';
 import {
   type FairyGymBoostSelection,
   type FairyGymBoostsWorkflow
@@ -1589,6 +1595,14 @@ export function App({
     null
   );
   const [appliedChangePlan, setAppliedChangePlan] = useState<ChangePlan | null>(null);
+  const [dynamaxAdventurePanelDiagnostics, setDynamaxAdventurePanelDiagnostics] =
+    useState<ApiDiagnostic[]>([]);
+  const [dynamaxAdventureChangePlan, setDynamaxAdventureChangePlan] =
+    useState<ChangePlan | null>(null);
+  const [dynamaxAdventureChangePlanSessionSignature, setDynamaxAdventureChangePlanSessionSignature] =
+    useState<string | null>(null);
+  const [dynamaxAdventureApplyResult, setDynamaxAdventureApplyResult] =
+    useState<ApplyResult | null>(null);
   const [saveProgress, setSaveProgress] = useState<SaveProgressState | null>(null);
   const [exitPrompt, setExitPrompt] = useState<ExitPromptState | null>(null);
   const [dependencyWarning, setDependencyWarning] = useState<DependencyWarningState | null>(null);
@@ -1612,6 +1626,12 @@ export function App({
     () => getEditSessionSignature(editSession),
     [editSession]
   );
+  const {
+    clearScopedEditorPanelState,
+    getScopedEditorPanelOutput,
+    setScopedEditorPanelDiagnostics,
+    setScopedEditorPanelStates
+  } = useScopedEditorPanelOutput(currentEditSessionSignature);
   const isEditSessionValidated =
     currentEditSessionSignature !== null &&
     currentEditSessionSignature === validatedEditSessionSignature;
@@ -1620,6 +1640,13 @@ export function App({
     currentEditSessionSignature !== null &&
     currentEditSessionSignature === changePlanSessionSignature;
   const visibleChangePlan = isChangePlanCurrent ? changePlan : appliedChangePlan;
+  const isDynamaxAdventureChangePlanCurrent =
+    dynamaxAdventureChangePlan !== null &&
+    currentEditSessionSignature !== null &&
+    currentEditSessionSignature === dynamaxAdventureChangePlanSessionSignature;
+  const visibleDynamaxAdventureChangePlan = isDynamaxAdventureChangePlanCurrent
+    ? dynamaxAdventureChangePlan
+    : null;
   const canSaveValidatedChanges =
     pendingEditCount > 0 &&
     isEditSessionValidated &&
@@ -1661,6 +1688,22 @@ export function App({
     []
   );
 
+  const clearDynamaxAdventurePanelState = useCallback(() => {
+    setDynamaxAdventurePanelDiagnostics([]);
+    setDynamaxAdventureChangePlan(null);
+    setDynamaxAdventureChangePlanSessionSignature(null);
+    setDynamaxAdventureApplyResult(null);
+  }, []);
+
+  const prepareScopedEditorPanelAction = (section: WorkbenchSection) => {
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+    setAppliedChangePlan(null);
+    clearScopedEditorPanelState(section);
+  };
+
   const clearLoadedWorkflowData = useCallback(() => {
     useWorkbenchStore.setState({
       bagHookWorkflow: null,
@@ -1701,7 +1744,9 @@ export function App({
     setSvModSources([]);
     setLazyLoadedWorkflowSections(new Set());
     setEditorDraftDirtySections(new Set());
-  }, []);
+    clearScopedEditorPanelState();
+    clearDynamaxAdventurePanelState();
+  }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState]);
 
   const clearPendingEditState = useCallback(() => {
     editSessionRef.current = null;
@@ -1713,8 +1758,10 @@ export function App({
     setValidatedEditSessionSignature(null);
     setChangePlanSessionSignature(null);
     setAppliedChangePlan(null);
+    clearScopedEditorPanelState();
+    clearDynamaxAdventurePanelState();
     setEditorDraftDirtySections(new Set());
-  }, [setApplyResult, setChangePlan, setEditSession, setEditValidationDiagnostics]);
+  }, [clearDynamaxAdventurePanelState, clearScopedEditorPanelState, setApplyResult, setChangePlan, setEditSession, setEditValidationDiagnostics]);
 
   const requestCancelEditSession = useCallback(
     (onDiscard?: () => void) => {
@@ -2442,6 +2489,7 @@ export function App({
   const handleOpenDynamaxAdventuresWorkflow = async () => {
     setIsDynamaxAdventuresLoading(true);
     setBridgeDiagnostics([]);
+    clearDynamaxAdventurePanelState();
 
     try {
       const response = await bridge.loadDynamaxAdventuresWorkflow({
@@ -2589,10 +2637,7 @@ export function App({
 
   const handleStageBagHookInstall = async () => {
     setIsBagHookStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('bagHook');
 
     try {
       const response = await bridge.stageBagHookInstall({
@@ -2602,7 +2647,7 @@ export function App({
       setBagHookWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('bagHook', response.diagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -2612,10 +2657,7 @@ export function App({
 
   const handleStageBagHookUninstall = async () => {
     setIsBagHookStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('bagHook');
 
     try {
       const response = await bridge.stageBagHookUninstall({
@@ -2625,7 +2667,7 @@ export function App({
       setBagHookWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('bagHook', response.diagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -2651,10 +2693,7 @@ export function App({
 
   const handleStageCatchCap = async (caps: CatchCapSelection[]) => {
     setIsCatchCapStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('catchCap');
 
     try {
       const response = await bridge.stageCatchCap({
@@ -2665,7 +2704,7 @@ export function App({
       setCatchCapWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('catchCap', response.diagnostics);
       registerEditorDraftDirty('catchCap', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2676,10 +2715,7 @@ export function App({
 
   const handleStageCatchCapUninstall = async () => {
     setIsCatchCapStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('catchCap');
 
     try {
       const response = await bridge.stageCatchCapUninstall({
@@ -2689,7 +2725,7 @@ export function App({
       setCatchCapWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('catchCap', response.diagnostics);
       registerEditorDraftDirty('catchCap', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2716,10 +2752,7 @@ export function App({
 
   const handleStageHyperTraining = async (minimumLevel: number) => {
     setIsHyperTrainingStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('hyperTraining');
 
     try {
       const response = await bridge.stageHyperTraining({
@@ -2730,7 +2763,7 @@ export function App({
       setHyperTrainingWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('hyperTraining', response.diagnostics);
       registerEditorDraftDirty('hyperTraining', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2757,10 +2790,7 @@ export function App({
 
   const handleStageTypeChart = async (values: TypeChartEffectivenessValue[]) => {
     setIsTypeChartStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('typeChart');
 
     try {
       const response = await bridge.stageTypeChart({
@@ -2771,7 +2801,7 @@ export function App({
       setTypeChartWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('typeChart', response.diagnostics);
       registerEditorDraftDirty('typeChart', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2798,10 +2828,7 @@ export function App({
 
   const handleStageFairyGymBoosts = async (selections: FairyGymBoostSelection[]) => {
     setIsFairyGymBoostsStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('fairyGymBoosts');
 
     try {
       const response = await bridge.stageFairyGymBoosts({
@@ -2812,7 +2839,7 @@ export function App({
       setFairyGymBoostsWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('fairyGymBoosts', response.diagnostics);
       registerEditorDraftDirty('fairyGymBoosts', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2839,10 +2866,7 @@ export function App({
 
   const handleStageFashionUnlockInstall = async () => {
     setIsFashionUnlockStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('fashionUnlock');
 
     try {
       const response = await bridge.stageFashionUnlockInstall({
@@ -2852,7 +2876,7 @@ export function App({
       setFashionUnlockWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('fashionUnlock', response.diagnostics);
       registerEditorDraftDirty('fashionUnlock', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2863,10 +2887,7 @@ export function App({
 
   const handleStageFashionUnlockUninstall = async () => {
     setIsFashionUnlockStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('fashionUnlock');
 
     try {
       const response = await bridge.stageFashionUnlockUninstall({
@@ -2876,7 +2897,7 @@ export function App({
       setFashionUnlockWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('fashionUnlock', response.diagnostics);
       registerEditorDraftDirty('fashionUnlock', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2903,10 +2924,7 @@ export function App({
 
   const handleStageGymUniformRemovalInstall = async () => {
     setIsGymUniformRemovalStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('gymUniformRemoval');
 
     try {
       const response = await bridge.stageGymUniformRemovalInstall({
@@ -2916,7 +2934,7 @@ export function App({
       setGymUniformRemovalWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('gymUniformRemoval', response.diagnostics);
       registerEditorDraftDirty('gymUniformRemoval', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2927,10 +2945,7 @@ export function App({
 
   const handleStageGymUniformRemovalUninstall = async () => {
     setIsGymUniformRemovalStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('gymUniformRemoval');
 
     try {
       const response = await bridge.stageGymUniformRemovalUninstall({
@@ -2940,7 +2955,7 @@ export function App({
       setGymUniformRemovalWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('gymUniformRemoval', response.diagnostics);
       registerEditorDraftDirty('gymUniformRemoval', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2967,10 +2982,7 @@ export function App({
 
   const handleStageIvScreenInstall = async () => {
     setIsIvScreenStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('ivScreen');
 
     try {
       const response = await bridge.stageIvScreenInstall({
@@ -2980,7 +2992,7 @@ export function App({
       setIvScreenWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('ivScreen', response.diagnostics);
       registerEditorDraftDirty('ivScreen', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2991,10 +3003,7 @@ export function App({
 
   const handleStageIvScreenUninstall = async () => {
     setIsIvScreenStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('ivScreen');
 
     try {
       const response = await bridge.stageIvScreenUninstall({
@@ -3004,7 +3013,7 @@ export function App({
       setIvScreenWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('ivScreen', response.diagnostics);
       registerEditorDraftDirty('ivScreen', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -3035,6 +3044,7 @@ export function App({
     setEditValidationDiagnostics([]);
     setChangePlan(null);
     setApplyResult(null);
+    setAppliedChangePlan(null);
 
     try {
       const response = await bridge.stageExeFsPatch({
@@ -3080,10 +3090,7 @@ export function App({
     }
 
     setIsRoyalCandyStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('royalCandy');
 
     try {
       const response = await bridge.stageRoyalCandyWorkflow({
@@ -3095,7 +3102,7 @@ export function App({
       setRoyalCandyWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('royalCandy', response.diagnostics);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -3127,10 +3134,7 @@ export function App({
     }
 
     setIsStartingItemsStaging(true);
-    setBridgeDiagnostics([]);
-    setEditValidationDiagnostics([]);
-    setChangePlan(null);
-    setApplyResult(null);
+    prepareScopedEditorPanelAction('startingItems');
 
     try {
       const response = await bridge.stageStartingItems({
@@ -3141,7 +3145,7 @@ export function App({
       setStartingItemsWorkflow(response.workflow);
       setEditSession(response.session);
       setEditSessionSection(activeSectionIsEditor ? activeSection : null);
-      setEditValidationDiagnostics(response.diagnostics);
+      setScopedEditorPanelDiagnostics('startingItems', response.diagnostics);
       registerEditorDraftDirty('startingItems', false);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -4779,72 +4783,88 @@ const resetModMergerPlan = () => {
     }
   };
 
-  const handleUpdateDynamaxAdventureField = async (
+  const handlePreviewDynamaxAdventureDefaults = async (
     entryIndex: number,
-    field: string,
-    value: string
-  ) => {
-    setIsDynamaxAdventureUpdating(true);
+    species: number,
+    form: number,
+    level: number
+  ): Promise<PreviewDynamaxAdventureDefaultsResponse | null> => {
     setBridgeDiagnostics([]);
+    setDynamaxAdventurePanelDiagnostics([]);
     setEditValidationDiagnostics([]);
 
     try {
-      const response = await bridge.updateDynamaxAdventureField({
+      const response = await bridge.previewDynamaxAdventureDefaults({
         entryIndex,
-        field,
+        form,
+        level,
         paths: toProjectPaths(draftPaths),
         session: editSession,
-        value
+        species
       });
-      setDynamaxAdventuresWorkflow(response.workflow);
-      setEditSession(response.session);
-      setEditValidationDiagnostics(response.diagnostics);
-      setChangePlan(null);
-      setChangePlanSessionSignature(null);
-      setAppliedChangePlan(null);
-      setValidatedEditSessionSignature(null);
+      setDynamaxAdventurePanelDiagnostics(response.diagnostics);
+      return response;
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
-    } finally {
-      setIsDynamaxAdventureUpdating(false);
+      return null;
     }
   };
 
   const handleUpdateDynamaxAdventureFields = async (
     entryIndex: number,
     changes: Array<{ field: string; value: string }>
+  ) => handleUpdateDynamaxAdventureEntryChanges([{ entryIndex, changes }]);
+
+  const handleUpdateDynamaxAdventureEntryChanges = async (
+    groups: DynamaxAdventureEntryChangeGroup[]
   ) => {
-    if (changes.length === 0) {
+    const activeGroups = groups
+      .map((group) => ({
+        ...group,
+        changes: group.changes.filter((change) => change.field.length > 0)
+      }))
+      .filter((group) => group.changes.length > 0);
+
+    if (activeGroups.length === 0) {
       return false;
     }
 
     setIsDynamaxAdventureUpdating(true);
     setBridgeDiagnostics([]);
     setEditValidationDiagnostics([]);
+    setDynamaxAdventurePanelDiagnostics([]);
+    setDynamaxAdventureChangePlan(null);
+    setDynamaxAdventureChangePlanSessionSignature(null);
+    setDynamaxAdventureApplyResult(null);
+    setChangePlan(null);
+    setApplyResult(null);
 
     try {
       let nextSession = editSession;
       let nextWorkflow = dynamaxAdventuresWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateDynamaxAdventureField({
-          entryIndex,
-          field: change.field,
-          paths: toProjectPaths(draftPaths),
-          session: nextSession,
-          value: change.value
-        });
-        nextSession = response.session;
-        nextWorkflow = response.workflow;
-        nextDiagnostics = response.diagnostics;
+      for (const group of activeGroups) {
+        for (const change of group.changes) {
+          const response = await bridge.updateDynamaxAdventureField({
+            entryIndex: group.entryIndex,
+            field: change.field,
+            paths: toProjectPaths(draftPaths),
+            session: nextSession,
+            value: change.value
+          });
+          nextSession = response.session;
+          nextWorkflow = response.workflow;
+          nextDiagnostics = response.diagnostics;
+        }
       }
 
       if (nextWorkflow) {
         setDynamaxAdventuresWorkflow(nextWorkflow);
       }
       setEditSession(nextSession);
-      setEditValidationDiagnostics(nextDiagnostics);
+      setEditSessionSection(nextSession?.pendingEdits.length ? 'dynamaxAdventures' : null);
+      setDynamaxAdventurePanelDiagnostics(nextDiagnostics);
       setChangePlan(null);
       setChangePlanSessionSignature(null);
       setAppliedChangePlan(null);
@@ -4855,6 +4875,103 @@ const resetModMergerPlan = () => {
       return false;
     } finally {
       setIsDynamaxAdventureUpdating(false);
+    }
+  };
+
+  const handleValidateDynamaxAdventureEditSession = async () => {
+    if (!editSession) {
+      return;
+    }
+
+    setIsSessionValidating(true);
+    setIsChangePlanCreating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setDynamaxAdventurePanelDiagnostics([]);
+    setDynamaxAdventureChangePlan(null);
+    setDynamaxAdventureChangePlanSessionSignature(null);
+    setDynamaxAdventureApplyResult(null);
+    setChangePlan(null);
+    setApplyResult(null);
+    setValidatedEditSessionSignature(null);
+    setChangePlanSessionSignature(null);
+    setAppliedChangePlan(null);
+
+    try {
+      const response = await bridge.validateEditSession({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      const nextSessionSignature = getEditSessionSignature(response.session);
+      setEditSession(response.session);
+      setEditSessionSection(
+        response.session.pendingEdits.length > 0 ? 'dynamaxAdventures' : null
+      );
+      setDynamaxAdventurePanelDiagnostics(response.diagnostics);
+
+      if (!response.isValid || nextSessionSignature === null) {
+        return;
+      }
+
+      const planResponse = await bridge.createChangePlan({
+        paths: toProjectPaths(draftPaths),
+        session: response.session
+      });
+      setDynamaxAdventureChangePlan(planResponse.changePlan);
+      setDynamaxAdventureChangePlanSessionSignature(nextSessionSignature);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsSessionValidating(false);
+      setIsChangePlanCreating(false);
+    }
+  };
+
+  const handleApplyDynamaxAdventureChangePlan = async () => {
+    if (!editSession || !visibleDynamaxAdventureChangePlan) {
+      return;
+    }
+
+    setIsChangePlanApplying(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setDynamaxAdventurePanelDiagnostics([]);
+    setDynamaxAdventureApplyResult(null);
+    setApplyResult(null);
+    setAppliedChangePlan(null);
+
+    try {
+      const paths = toProjectPaths(draftPaths);
+      const response = await bridge.applyChangePlan({
+        changePlan: visibleDynamaxAdventureChangePlan,
+        paths,
+        session: editSession
+      });
+      const hasApplyErrors = response.applyResult.diagnostics.some(
+        (diagnostic) => diagnostic.severity === 'error'
+      );
+
+      if (!hasApplyErrors) {
+        setEditSession(null);
+        setEditSessionSection(null);
+        setDynamaxAdventureChangePlan(null);
+        setDynamaxAdventureChangePlanSessionSignature(null);
+        setDynamaxAdventurePanelDiagnostics([]);
+        setChangePlan(null);
+        setValidatedEditSessionSignature(null);
+        setChangePlanSessionSignature(null);
+        setAppliedChangePlan(null);
+      }
+
+      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        await refreshLoadedWorkflowsAfterApply(paths);
+      }
+
+      setDynamaxAdventureApplyResult(response.applyResult);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsChangePlanApplying(false);
     }
   };
 
@@ -5465,6 +5582,49 @@ const resetModMergerPlan = () => {
     }
   };
 
+  const handleCreateScopedEditorChangePlan = async (section: WorkbenchSection) => {
+    if (!editSession || !scopedEditorPanelSectionIds.has(section)) {
+      return;
+    }
+
+    setIsChangePlanCreating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setChangePlan(null);
+    setApplyResult(null);
+    setAppliedChangePlan(null);
+    clearDynamaxAdventurePanelState();
+    setScopedEditorPanelStates((currentStates) => ({
+      ...currentStates,
+      [section]: {
+        actionDiagnostics: currentStates[section]?.actionDiagnostics ?? [],
+        applyResult: null,
+        changePlan: null,
+        changePlanSessionSignature: null
+      }
+    }));
+
+    try {
+      const response = await bridge.createChangePlan({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setScopedEditorPanelStates((currentStates) => ({
+        ...currentStates,
+        [section]: {
+          actionDiagnostics: currentStates[section]?.actionDiagnostics ?? [],
+          applyResult: null,
+          changePlan: response.changePlan,
+          changePlanSessionSignature: getEditSessionSignature(editSession)
+        }
+      }));
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsChangePlanCreating(false);
+    }
+  };
+
   const handleSaveValidatedChanges = async () => {
     if (!editSession || !visibleChangePlan || !canSaveValidatedChanges) {
       return;
@@ -5825,6 +5985,75 @@ const resetModMergerPlan = () => {
         await refreshLoadedWorkflowsAfterApply(paths);
       }
       setApplyResult(response.applyResult);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsChangePlanApplying(false);
+    }
+  };
+
+  const handleApplyScopedEditorChangePlan = async (section: WorkbenchSection) => {
+    const panelOutput = getScopedEditorPanelOutput(section);
+    if (!editSession || !panelOutput.changePlan || !scopedEditorPanelSectionIds.has(section)) {
+      return;
+    }
+
+    setIsChangePlanApplying(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+    setApplyResult(null);
+    setAppliedChangePlan(null);
+    setScopedEditorPanelStates((currentStates) => ({
+      ...currentStates,
+      [section]: {
+        actionDiagnostics: currentStates[section]?.actionDiagnostics ?? [],
+        applyResult: null,
+        changePlan: currentStates[section]?.changePlan ?? null,
+        changePlanSessionSignature: currentStates[section]?.changePlanSessionSignature ?? null
+      }
+    }));
+
+    try {
+      const paths = toProjectPaths(draftPaths);
+      const response = await bridge.applyChangePlan({
+        changePlan: panelOutput.changePlan,
+        paths,
+        session: editSession
+      });
+      const hasApplyErrors = response.applyResult.diagnostics.some(
+        (diagnostic) => diagnostic.severity === 'error'
+      );
+
+      if (!hasApplyErrors) {
+        setEditSession(null);
+        setEditSessionSection(null);
+        setChangePlan(null);
+        setValidatedEditSessionSignature(null);
+        setChangePlanSessionSignature(null);
+        setScopedEditorPanelStates((currentStates) => ({
+          ...currentStates,
+          [section]: {
+            actionDiagnostics: [],
+            applyResult: response.applyResult,
+            changePlan: null,
+            changePlanSessionSignature: null
+          }
+        }));
+      } else {
+        setScopedEditorPanelStates((currentStates) => ({
+          ...currentStates,
+          [section]: {
+            actionDiagnostics: currentStates[section]?.actionDiagnostics ?? [],
+            applyResult: response.applyResult,
+            changePlan: currentStates[section]?.changePlan ?? null,
+            changePlanSessionSignature: currentStates[section]?.changePlanSessionSignature ?? null
+          }
+        }));
+      }
+
+      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        await refreshLoadedWorkflowsAfterApply(paths);
+      }
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
@@ -6284,18 +6513,19 @@ const resetModMergerPlan = () => {
               <WorkflowLoadingPanel label="Dynamax Adventures" />
             ) : (
               <DynamaxAdventuresSection
-                changePlan={isChangePlanCurrent ? changePlan : null}
+                actionDiagnostics={dynamaxAdventurePanelDiagnostics}
+                applyResult={dynamaxAdventureApplyResult}
+                changePlan={visibleDynamaxAdventureChangePlan}
                 editSession={getEditSessionForSection('dynamaxAdventures')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isDynamaxAdventureUpdating={isDynamaxAdventureUpdating}
-                isEditStarting={isEditStarting}
-                onApplyChangePlan={handleApplyChangePlan}
-                onCreateChangePlan={handleCreateChangePlan}
+                onApplyChangePlan={handleApplyDynamaxAdventureChangePlan}
+                onCreateChangePlan={handleValidateDynamaxAdventureEditSession}
+                onPreviewDynamaxAdventureDefaults={handlePreviewDynamaxAdventureDefaults}
                 onSearchChange={setDynamaxAdventureSearchText}
                 onSelectAdventure={setSelectedDynamaxAdventureEntryIndex}
-                onStartEditSession={handleStartEditSession}
-                onUpdateDynamaxAdventureField={handleUpdateDynamaxAdventureField}
+                onUpdateDynamaxAdventureEntryChanges={handleUpdateDynamaxAdventureEntryChanges}
                 onUpdateDynamaxAdventureFields={handleUpdateDynamaxAdventureFields}
                 searchText={dynamaxAdventureSearchText}
                 selectedEntryIndex={selectedDynamaxAdventureEntryIndex}
@@ -6469,16 +6699,16 @@ const resetModMergerPlan = () => {
               <WorkflowLoadingPanel label="Bag Hook" />
             ) : (
               <BagHookSection
-                changePlan={changePlan}
                 editSession={getEditSessionForSection('bagHook')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isStaging={isBagHookStaging}
-                onApplyChangePlan={handleApplyChangePlan}
-                onCreateChangePlan={handleCreateChangePlan}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('bagHook')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('bagHook')}
                 onSelectSlot={setSelectedBagHookSlot}
                 onStageInstall={handleStageBagHookInstall}
                 onStageUninstall={handleStageBagHookUninstall}
+                panelOutput={getScopedEditorPanelOutput('bagHook')}
                 selectedSlot={selectedBagHookSlot}
                 workflow={bagHookWorkflow}
               />
@@ -6489,17 +6719,17 @@ const resetModMergerPlan = () => {
               <WorkflowLoadingPanel label="Catch Cap Editor" />
             ) : (
               <CatchCapSection
-                changePlan={changePlan}
                 editSession={getEditSessionForSection('catchCap')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isStaging={isCatchCapStaging}
-                onApplyChangePlan={handleApplyChangePlan}
-                onCreateChangePlan={handleCreateChangePlan}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('catchCap')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('catchCap')}
                 onDirtyChange={(isDirty) => registerEditorDraftDirty('catchCap', isDirty)}
                 onSelectCap={setSelectedCatchCapBadgeCount}
                 onStageCaps={handleStageCatchCap}
                 onStageUninstall={handleStageCatchCapUninstall}
+                panelOutput={getScopedEditorPanelOutput('catchCap')}
                 selectedBadgeCount={selectedCatchCapBadgeCount}
                 workflow={catchCapWorkflow}
               />
@@ -6510,17 +6740,17 @@ const resetModMergerPlan = () => {
               <WorkflowLoadingPanel label="Hyper Training" />
             ) : (
               <HyperTrainingSection
-                changePlan={changePlan}
                 editSession={getEditSessionForSection('hyperTraining')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isStaging={isHyperTrainingStaging}
-                onApplyChangePlan={handleApplyChangePlan}
-                onCreateChangePlan={handleCreateChangePlan}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('hyperTraining')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('hyperTraining')}
                 onDirtyChange={(isDirty) =>
                   registerEditorDraftDirty('hyperTraining', isDirty)
                 }
                 onStageMinimumLevel={handleStageHyperTraining}
+                panelOutput={getScopedEditorPanelOutput('hyperTraining')}
                 workflow={hyperTrainingWorkflow}
               />
             )
@@ -6530,15 +6760,15 @@ const resetModMergerPlan = () => {
               <WorkflowLoadingPanel label="Type Chart" />
             ) : (
               <TypeChartSection
-                changePlan={changePlan}
                 editSession={getEditSessionForSection('typeChart')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isStaging={isTypeChartStaging}
-                onApplyChangePlan={handleApplyChangePlan}
-                onCreateChangePlan={handleCreateChangePlan}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('typeChart')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('typeChart')}
                 onDirtyChange={(isDirty) => registerEditorDraftDirty('typeChart', isDirty)}
                 onStageChart={handleStageTypeChart}
+                panelOutput={getScopedEditorPanelOutput('typeChart')}
                 workflow={typeChartWorkflow}
               />
             )
@@ -6548,17 +6778,17 @@ const resetModMergerPlan = () => {
               <WorkflowLoadingPanel label="Fairy Gym Boosts" />
             ) : (
               <FairyGymBoostsSection
-                changePlan={changePlan}
                 editSession={getEditSessionForSection('fairyGymBoosts')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isStaging={isFairyGymBoostsStaging}
-                onApplyChangePlan={handleApplyChangePlan}
-                onCreateChangePlan={handleCreateChangePlan}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('fairyGymBoosts')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('fairyGymBoosts')}
                 onDirtyChange={(isDirty) =>
                   registerEditorDraftDirty('fairyGymBoosts', isDirty)
                 }
                 onStageBoosts={handleStageFairyGymBoosts}
+                panelOutput={getScopedEditorPanelOutput('fairyGymBoosts')}
                 workflow={fairyGymBoostsWorkflow}
               />
             )
@@ -6568,15 +6798,15 @@ const resetModMergerPlan = () => {
               <WorkflowLoadingPanel label="Fashion Unlock" />
             ) : (
               <FashionUnlockSection
-                changePlan={changePlan}
                 editSession={getEditSessionForSection('fashionUnlock')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isStaging={isFashionUnlockStaging}
-                onApplyChangePlan={handleApplyChangePlan}
-                onCreateChangePlan={handleCreateChangePlan}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('fashionUnlock')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('fashionUnlock')}
                 onStageInstall={handleStageFashionUnlockInstall}
                 onStageUninstall={handleStageFashionUnlockUninstall}
+                panelOutput={getScopedEditorPanelOutput('fashionUnlock')}
                 workflow={fashionUnlockWorkflow}
               />
             )
@@ -6586,15 +6816,15 @@ const resetModMergerPlan = () => {
               <WorkflowLoadingPanel label="Gym Uniform Removal" />
             ) : (
               <GymUniformRemovalSection
-                changePlan={changePlan}
                 editSession={getEditSessionForSection('gymUniformRemoval')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isStaging={isGymUniformRemovalStaging}
-                onApplyChangePlan={handleApplyChangePlan}
-                onCreateChangePlan={handleCreateChangePlan}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('gymUniformRemoval')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('gymUniformRemoval')}
                 onStageInstall={handleStageGymUniformRemovalInstall}
                 onStageUninstall={handleStageGymUniformRemovalUninstall}
+                panelOutput={getScopedEditorPanelOutput('gymUniformRemoval')}
                 workflow={gymUniformRemovalWorkflow}
               />
             )
@@ -6604,15 +6834,15 @@ const resetModMergerPlan = () => {
               <WorkflowLoadingPanel label="IV Screen" />
             ) : (
               <IvScreenSection
-                changePlan={changePlan}
                 editSession={getEditSessionForSection('ivScreen')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isStaging={isIvScreenStaging}
-                onApplyChangePlan={handleApplyChangePlan}
-                onCreateChangePlan={handleCreateChangePlan}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('ivScreen')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('ivScreen')}
                 onStageInstall={handleStageIvScreenInstall}
                 onStageUninstall={handleStageIvScreenUninstall}
+                panelOutput={getScopedEditorPanelOutput('ivScreen')}
                 workflow={ivScreenWorkflow}
               />
             )
@@ -6639,17 +6869,17 @@ const resetModMergerPlan = () => {
               <WorkflowLoadingPanel label="Royal Candy Workflows" />
             ) : (
               <RoyalCandySection
-                changePlan={changePlan}
                 editSession={getEditSessionForSection('royalCandy')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isStaging={isRoyalCandyStaging}
-                onApplyChangePlan={handleApplyChangePlan}
-                onCreateChangePlan={handleCreateChangePlan}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('royalCandy')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('royalCandy')}
                 onSearchChange={setRoyalCandySearchText}
                 onSelectCheck={setSelectedRoyalCandyCheckId}
                 onSelectWorkflow={setSelectedRoyalCandyWorkflowId}
                 onStageWorkflow={handleStageRoyalCandyWorkflow}
+                panelOutput={getScopedEditorPanelOutput('royalCandy')}
                 searchText={royalCandySearchText}
                 selectedCheckId={selectedRoyalCandyCheckId}
                 selectedWorkflowId={selectedRoyalCandyWorkflowId}
@@ -6662,18 +6892,18 @@ const resetModMergerPlan = () => {
               <WorkflowLoadingPanel label="Starting Items" />
             ) : (
               <StartingItemsSection
-                changePlan={changePlan}
                 editSession={getEditSessionForSection('startingItems')}
                 isChangePlanApplying={isChangePlanApplying}
                 isChangePlanCreating={isChangePlanCreating}
                 isStaging={isStartingItemsStaging}
-                onApplyChangePlan={handleApplyChangePlan}
-                onCreateChangePlan={handleCreateChangePlan}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('startingItems')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('startingItems')}
                 onDirtyChange={(isDirty) =>
                   registerEditorDraftDirty('startingItems', isDirty)
                 }
                 onSelectSlot={setSelectedStartingItemSlot}
                 onStageGrants={handleStageStartingItems}
+                panelOutput={getScopedEditorPanelOutput('startingItems')}
                 selectedSlot={selectedStartingItemSlot}
                 workflow={startingItemsWorkflow}
               />
@@ -11524,6 +11754,8 @@ type TrainerDraftChange = {
   label: string;
   value: string;
 };
+type DynamaxAdventureEntryChangeGroup = { entryIndex: number; changes: Array<{ field: string; value: string }> };
+type DynamaxAdventureDraftFieldOptions = Record<string, EditableFieldOption[]>;
 
 type DraftStateContext = {
   clampIvStats?: boolean;
@@ -11679,9 +11911,33 @@ function withPokemonInstanceIvPresetOptions<T extends NumericEditableField>(fiel
   };
 }
 
-function withDynamaxAdventureSpeciesOptions<T extends NumericEditableField>(field: T, encounter: DynamaxAdventureRecord | null, safeNormalSpeciesOptions: EditableFieldOption[]): T {
-  if (encounter !== null && encounter.moveOptions.length > 0 && staticEncounterMoveFieldNames.includes(field.field as (typeof staticEncounterMoveFieldNames)[number])) {
+function withDynamaxAdventureSpeciesOptions<T extends NumericEditableField>(
+  field: T,
+  encounter: DynamaxAdventureRecord | null,
+  safeNormalSpeciesOptions: EditableFieldOption[],
+  fieldOptions: DynamaxAdventureDraftFieldOptions
+): T {
+  const overrideOptions = fieldOptions[field.field];
+  if (overrideOptions?.length) {
+    return { ...field, options: overrideOptions };
+  }
+
+  if (
+    encounter !== null &&
+    encounter.moveOptions.length > 0 &&
+    staticEncounterMoveFieldNames.includes(
+      field.field as (typeof staticEncounterMoveFieldNames)[number]
+    )
+  ) {
     return { ...field, options: encounter.moveOptions };
+  }
+
+  if (field.field === abilityFieldName && encounter !== null && encounter.abilityOptions.length > 0) {
+    return { ...field, options: encounter.abilityOptions };
+  }
+
+  if (field.field === dynamaxAdventureGigantamaxStateFieldName && encounter !== null) {
+    return { ...field, options: encounter.gigantamaxOptions };
   }
 
   if (field.field !== giftSpeciesFieldName || encounter === null) {
@@ -13402,6 +13658,17 @@ function getItemFieldDisabledReason(fieldName: string) {
   return null;
 }
 
+function getDynamaxAdventureFieldDisabledReason(field: NumericEditableField) {
+  if (
+    field.field === dynamaxAdventureGigantamaxStateFieldName &&
+    !field.options.some((option) => option.value === 2)
+  ) {
+    return 'Selected Pokemon does not have a Gigantamax form.';
+  }
+
+  return null;
+}
+
 function GiftPokemonDraftField({
   currentValue,
   disabled,
@@ -15065,39 +15332,38 @@ function RentalPokemonFieldInput({
 }
 
 function DynamaxAdventuresSection({
+  actionDiagnostics,
+  applyResult,
   changePlan,
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
   isDynamaxAdventureUpdating,
-  isEditStarting,
   onApplyChangePlan,
   onCreateChangePlan,
+  onPreviewDynamaxAdventureDefaults,
   onSearchChange,
   onSelectAdventure,
-  onStartEditSession,
-  onUpdateDynamaxAdventureField,
+  onUpdateDynamaxAdventureEntryChanges,
   onUpdateDynamaxAdventureFields,
   searchText,
   selectedEntryIndex,
   workflow
 }: {
+  actionDiagnostics: ApiDiagnostic[];
+  applyResult: ApplyResult | null;
   changePlan: ChangePlan | null;
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
   isDynamaxAdventureUpdating: boolean;
-  isEditStarting: boolean;
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
+  onPreviewDynamaxAdventureDefaults: (entryIndex: number, species: number, form: number, level: number) => Promise<PreviewDynamaxAdventureDefaultsResponse | null>;
   onSearchChange: (searchText: string) => void;
   onSelectAdventure: (entryIndex: number | null) => void;
-  onStartEditSession: () => void;
-  onUpdateDynamaxAdventureField: (entryIndex: number, field: string, value: string) => void;
-  onUpdateDynamaxAdventureFields: (
-    entryIndex: number,
-    changes: Array<{ field: string; value: string }>
-  ) => Promise<boolean>;
+  onUpdateDynamaxAdventureEntryChanges: (groups: DynamaxAdventureEntryChangeGroup[]) => Promise<boolean>;
+  onUpdateDynamaxAdventureFields: (entryIndex: number, changes: Array<{ field: string; value: string }>) => Promise<boolean>;
   searchText: string;
   selectedEntryIndex: number | null;
   workflow: DynamaxAdventuresWorkflow | null;
@@ -15120,6 +15386,12 @@ function DynamaxAdventuresSection({
     () => getPendingDynamaxAdventureIndexes(editSession),
     [editSession]
   );
+  const combinedDiagnostics = [
+    ...(workflow?.diagnostics ?? []),
+    ...actionDiagnostics,
+    ...(changePlan?.diagnostics ?? []),
+    ...(applyResult?.diagnostics ?? [])
+  ];
 
   return (
     <>
@@ -15220,11 +15492,11 @@ function DynamaxAdventuresSection({
               isChangePlanApplying={isChangePlanApplying}
               isChangePlanCreating={isChangePlanCreating}
               isDynamaxAdventureUpdating={isDynamaxAdventureUpdating}
-              isEditStarting={isEditStarting}
+              encounters={editableEncounters}
               onApplyChangePlan={onApplyChangePlan}
               onCreateChangePlan={onCreateChangePlan}
-              onStartEditSession={onStartEditSession}
-              onUpdateDynamaxAdventureField={onUpdateDynamaxAdventureField}
+              onPreviewDynamaxAdventureDefaults={onPreviewDynamaxAdventureDefaults}
+              onUpdateDynamaxAdventureEntryChanges={onUpdateDynamaxAdventureEntryChanges}
               onUpdateDynamaxAdventureFields={onUpdateDynamaxAdventureFields}
               safeNormalSpeciesOptions={workflow.safeNormalSpeciesOptions}
             />
@@ -15236,7 +15508,9 @@ function DynamaxAdventuresSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      {changePlan ? <ChangePlanSection changePlan={changePlan} /> : null}
+      {applyResult ? <ApplyResultSection applyResult={applyResult} /> : null}
+      <DiagnosticsSection diagnostics={combinedDiagnostics} />
     </>
   );
 }
@@ -15247,14 +15521,14 @@ function SelectedDynamaxAdventurePanel({
   editSession,
   editableFields,
   encounter,
+  encounters,
   isChangePlanApplying,
   isChangePlanCreating,
   isDynamaxAdventureUpdating,
-  isEditStarting,
   onApplyChangePlan,
   onCreateChangePlan,
-  onStartEditSession,
-  onUpdateDynamaxAdventureField,
+  onPreviewDynamaxAdventureDefaults,
+  onUpdateDynamaxAdventureEntryChanges,
   onUpdateDynamaxAdventureFields,
   safeNormalSpeciesOptions
 }: {
@@ -15263,24 +15537,29 @@ function SelectedDynamaxAdventurePanel({
   editSession: EditSession | null;
   editableFields: DynamaxAdventureEditableField[];
   encounter: DynamaxAdventureRecord | null;
+  encounters: DynamaxAdventureRecord[];
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
   isDynamaxAdventureUpdating: boolean;
-  isEditStarting: boolean;
   onApplyChangePlan: () => void;
   onCreateChangePlan: () => void;
-  onStartEditSession: () => void;
-  onUpdateDynamaxAdventureField: (entryIndex: number, field: string, value: string) => void;
-  onUpdateDynamaxAdventureFields: (
-    entryIndex: number,
-    changes: Array<{ field: string; value: string }>
-  ) => Promise<boolean>;
+  onPreviewDynamaxAdventureDefaults: (entryIndex: number, species: number, form: number, level: number) => Promise<PreviewDynamaxAdventureDefaultsResponse | null>;
+  onUpdateDynamaxAdventureEntryChanges: (groups: DynamaxAdventureEntryChangeGroup[]) => Promise<boolean>;
+  onUpdateDynamaxAdventureFields: (entryIndex: number, changes: Array<{ field: string; value: string }>) => Promise<boolean>;
   safeNormalSpeciesOptions: EditableFieldOption[];
 }) {
   const [draftsByEntryIndex, setDraftsByEntryIndex] = useState<
     Record<string, Record<string, string>>
   >({});
-  const cancelActiveEditSession = useCancelActiveEditSession();
+  const [draftFieldOptionsByEntryIndex, setDraftFieldOptionsByEntryIndex] = useState<
+    Record<string, DynamaxAdventureDraftFieldOptions>
+  >({});
+  const encounterDraftKey = encounter?.entryIndex.toString() ?? null;
+  const adventureFieldOptions =
+    encounter && encounterDraftKey
+      ? draftFieldOptionsByEntryIndex[encounterDraftKey] ?? {}
+      : {};
+  const adventureAbilityOptions = adventureFieldOptions[abilityFieldName] ?? encounter?.abilityOptions ?? [];
   const adventureFields = useMemo(
     () =>
       editableFields
@@ -15289,8 +15568,8 @@ function SelectedDynamaxAdventurePanel({
             field.field as (typeof dynamaxAdventureFieldNames)[number]
           )
         )
-        .map((field) => withDynamaxAdventureSpeciesOptions(withPokemonInstanceIvPresetOptions(field), encounter, safeNormalSpeciesOptions)),
-    [editableFields, encounter, safeNormalSpeciesOptions]
+        .map((field) => withDynamaxAdventureSpeciesOptions(withPokemonInstanceIvPresetOptions(field), encounter, safeNormalSpeciesOptions, adventureFieldOptions)),
+    [editableFields, encounter, safeNormalSpeciesOptions, adventureFieldOptions]
   );
   const adventureFieldGroups = useMemo(
     () => groupNumericEditableFields(adventureFields, getPokemonInstanceFieldGroup),
@@ -15324,7 +15603,6 @@ function SelectedDynamaxAdventurePanel({
   );
   const canSaveAdventureDrafts =
     encounter !== null &&
-    editSession !== null &&
     canEditDynamaxAdventures &&
     !isDynamaxAdventureUpdating &&
     adventureDraftSummary.changedFields.length > 0 &&
@@ -15348,13 +15626,19 @@ function SelectedDynamaxAdventurePanel({
     () => (encounter ? getDynamaxAdventureVanillaRestoreChanges(encounter) : []),
     [encounter]
   );
+  const vanillaRestoreGroups = useMemo(
+    () =>
+      encounters
+        .map((candidate) => ({ entryIndex: candidate.entryIndex, changes: getDynamaxAdventureVanillaRestoreChanges(candidate) }))
+        .filter((group) => group.changes.length > 0),
+    [encounters]
+  );
   const canRestoreVanilla =
-    encounter !== null &&
     canEditDynamaxAdventures &&
     !isDynamaxAdventureUpdating &&
     !isChangePlanCreating &&
     !isChangePlanApplying &&
-    vanillaRestoreChanges.length > 0;
+    (vanillaRestoreChanges.length > 0 || vanillaRestoreGroups.length > 0);
 
   useEffect(() => {
     if (!encounter) {
@@ -15365,6 +15649,83 @@ function SelectedDynamaxAdventurePanel({
       pruneFieldDraftRecord(currentDrafts, encounter.entryIndex, adventureDraftDefaults)
     );
   }, [adventureDraftDefaults, encounter]);
+
+  useEffect(() => {
+    if (encounter) {
+      setDraftFieldOptionsByEntryIndex((currentOptions) =>
+        deleteFieldDraftRecord(currentOptions, encounter.entryIndex)
+      );
+    }
+  }, [encounter]);
+
+  const handleAdventureDraftChange = (field: NumericEditableField, value: string) => {
+    if (!encounter) {
+      return;
+    }
+
+    const nextDrafts = { ...drafts, [field.field]: value };
+
+    if (field.field !== giftSpeciesFieldName) {
+      setDraftsByEntryIndex((currentDrafts) =>
+        setFieldDraftRecord(currentDrafts, encounter.entryIndex, nextDrafts, adventureDraftDefaults)
+      );
+      return;
+    }
+
+    const parsedSpecies = parseEditableIntegerDraft(value, field.options);
+    const levelField = adventureFields.find((candidate) => candidate.field === levelFieldName);
+    const currentLevelDraft = drafts[levelFieldName] ?? encounter.level.toString();
+    const parsedLevel = parseEditableIntegerDraft(currentLevelDraft, levelField?.options);
+    const previewLevel = parsedLevel ?? encounter.level;
+    const baseDrafts = { ...nextDrafts, [abilityFieldName]: '0', [formFieldName]: '0', [dynamaxAdventureGigantamaxStateFieldName]: '1' };
+
+    setDraftFieldOptionsByEntryIndex((currentOptions) =>
+      deleteFieldDraftRecord(currentOptions, encounter.entryIndex)
+    );
+    setDraftsByEntryIndex((currentDrafts) =>
+      setFieldDraftRecord(currentDrafts, encounter.entryIndex, baseDrafts, adventureDraftDefaults)
+    );
+
+    if (parsedSpecies === null || !Number.isInteger(previewLevel)) {
+      return;
+    }
+
+    void onPreviewDynamaxAdventureDefaults(encounter.entryIndex, parsedSpecies, 0, previewLevel).then((response) => {
+      if (!response || response.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
+        return;
+      }
+
+      setDraftFieldOptionsByEntryIndex((currentOptions) => ({
+        ...currentOptions,
+        [encounter.entryIndex.toString()]: {
+          [abilityFieldName]: response.abilityOptions,
+          [dynamaxAdventureGigantamaxStateFieldName]: response.gigantamaxOptions,
+          [staticEncounterMoveFieldNames[0]]: response.moveOptions,
+          [staticEncounterMoveFieldNames[1]]: response.moveOptions,
+          [staticEncounterMoveFieldNames[2]]: response.moveOptions,
+          [staticEncounterMoveFieldNames[3]]: response.moveOptions
+        }
+      }));
+      setDraftsByEntryIndex((currentDrafts) => {
+        const currentEncounterDrafts = currentDrafts[encounter.entryIndex.toString()] ?? adventureDraftDefaults;
+        if ((currentEncounterDrafts[giftSpeciesFieldName] ?? '') !== value) {
+          return currentDrafts;
+        }
+
+        const previewDrafts = { ...currentEncounterDrafts };
+        for (const change of response.changes) {
+          previewDrafts[change.field] = change.value;
+        }
+
+        return setFieldDraftRecord(
+          currentDrafts,
+          encounter.entryIndex,
+          previewDrafts,
+          adventureDraftDefaults
+        );
+      });
+    });
+  };
 
   return (
     <aside aria-label="Selected Dynamax Adventure provenance" className="trainer-inspector">
@@ -15421,6 +15782,13 @@ function SelectedDynamaxAdventurePanel({
           </dl>
 
           <div className="trainer-edit-form">
+            <div className="dynamax-adventure-integrity-notice" role="note">
+              <AlertTriangle aria-hidden="true" size={16} />
+              <div>
+                <p>Stage and apply one Pokemon at a time. This keeps the Dynamax Adventures table aligned with the selected row, preserves table integrity, and helps prevent save freezes or returns to lobby.</p>
+                <p>Ability choices may be limited by the selected row's table layout. Missing slots are hidden when they cannot be written safely, even if that Pokemon can normally have the ability.</p>
+              </div>
+            </div>
             <div className="editable-field-groups">
               {adventureFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
@@ -15437,6 +15805,7 @@ function SelectedDynamaxAdventurePanel({
                           adventureFields,
                           drafts
                         ) ??
+                        getDynamaxAdventureFieldDisabledReason(field) ??
                         undefined;
                       const draftValue = drafts[field.field] ?? '';
                       const draftState = getTrainerFieldDraftState(
@@ -15454,13 +15823,19 @@ function SelectedDynamaxAdventurePanel({
                             getEditableDynamaxAdventureFieldValue(encounter, fieldName)
                         }
                       );
+                      const draftedSpeciesId =
+                        parseEditableIntegerDraft(
+                          drafts[giftSpeciesFieldName] ?? encounter.speciesId.toString(),
+                          adventureFields.find(
+                            (candidate) => candidate.field === giftSpeciesFieldName
+                          )?.options
+                        ) ?? encounter.speciesId;
 
                       return (
                         <GiftPokemonDraftField
                           currentValue={currentValue}
                           disabled={
                             !canEditDynamaxAdventures ||
-                            editSession === null ||
                             isDynamaxAdventureUpdating
                           }
                           disabledReason={disabledReason}
@@ -15468,25 +15843,12 @@ function SelectedDynamaxAdventurePanel({
                           draftValue={draftValue}
                           field={field}
                           formOptionContext={{
-                            abilityOptions: encounter.abilityOptions,
+                            abilityOptions: adventureAbilityOptions,
                             species: encounter.species,
-                            speciesId: encounter.speciesId
+                            speciesId: draftedSpeciesId
                           }}
                           key={field.field}
-                          onChange={(value) => {
-                            const nextDrafts = {
-                              ...drafts,
-                              [field.field]: value
-                            };
-                            setDraftsByEntryIndex((currentDrafts) =>
-                              setFieldDraftRecord(
-                                currentDrafts,
-                                encounter.entryIndex,
-                                nextDrafts,
-                                adventureDraftDefaults
-                              )
-                            );
-                          }}
+                          onChange={(value) => handleAdventureDraftChange(field, value)}
                         />
                       );
                     })}
@@ -15494,124 +15856,77 @@ function SelectedDynamaxAdventurePanel({
                 </fieldset>
               ))}
             </div>
-            {editSession ? (
-              <div className="draft-action-row">
-                <button
-                  className="primary-button"
-                  disabled={!canSaveAdventureDrafts}
-                  onClick={async () => {
-                    const didSave = await onUpdateDynamaxAdventureFields(
-                      encounter.entryIndex,
-                      adventureDraftSummary.changedFields.map((change) => ({
-                        field: change.field,
-                        value: change.value
-                      }))
+            <div className="draft-action-row">
+              <button
+                className="primary-button"
+                disabled={!canSaveAdventureDrafts}
+                onClick={async () => {
+                  const didSave = await onUpdateDynamaxAdventureFields(
+                    encounter.entryIndex,
+                    adventureDraftSummary.changedFields.map((change) => ({ field: change.field, value: change.value }))
+                  );
+                  if (didSave) {
+                    setDraftsByEntryIndex((currentDrafts) =>
+                      deleteFieldDraftRecord(currentDrafts, encounter.entryIndex)
                     );
-                    if (didSave) {
-                      setDraftsByEntryIndex((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, encounter.entryIndex)
-                      );
-                    }
-                  }}
-                  type="button"
-                >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isDynamaxAdventureUpdating ? 'Saving' : 'Save Adventure'}</span>
-                </button>
-                <button
-                  className="danger-button"
-                  disabled={
-                    isDynamaxAdventureUpdating
+                    setDraftFieldOptionsByEntryIndex((currentOptions) =>
+                      deleteFieldDraftRecord(currentOptions, encounter.entryIndex)
+                    );
                   }
-                  onClick={() => cancelActiveEditSession(() => setDraftsByEntryIndex({}))}
-                  type="button"
-                >
-                  <X aria-hidden="true" size={16} />
-                  <span>Cancel</span>
-                </button>
-                <button
-                  className="secondary-button"
-                  disabled={!canReviewPlan}
-                  onClick={onCreateChangePlan}
-                  type="button"
-                >
-                  <ClipboardCheck aria-hidden="true" size={16} />
-                  <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
-                </button>
-                <button
-                  className="primary-button"
-                  disabled={!canApplyPlan}
-                  onClick={onApplyChangePlan}
-                  type="button"
-                >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
-                </button>
-                <button
-                  className="purple-button"
-                  disabled={!canRestoreVanilla}
-                  onClick={async () => {
-                    if (!encounter) {
-                      return;
-                    }
+                }}
+                type="button"
+              >
+                <Wrench aria-hidden="true" size={16} />
+                <span>{isDynamaxAdventureUpdating ? 'Staging' : 'Stage Install'}</span>
+              </button>
+              <button
+                className="danger-button"
+                disabled={
+                  !canEditDynamaxAdventures || isDynamaxAdventureUpdating || isChangePlanCreating || isChangePlanApplying ||
+                  (!canRestoreVanilla &&
+                    adventureDraftSummary.changedFields.length === 0 &&
+                    adventureDraftSummary.invalidFields.length === 0)
+                }
+                onClick={async () => {
+                  if (vanillaRestoreGroups.length === 0) {
+                    setDraftsByEntryIndex({});
+                    setDraftFieldOptionsByEntryIndex({});
+                    return;
+                  }
 
-                    const didSave = await onUpdateDynamaxAdventureFields(
-                      encounter.entryIndex,
-                      vanillaRestoreChanges
-                    );
-                    if (didSave) {
-                      setDraftsByEntryIndex((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, encounter.entryIndex)
-                      );
-                    }
-                  }}
-                  type="button"
-                >
-                  <RotateCcw aria-hidden="true" size={16} />
-                  <span>Restore Vanilla Pokemon</span>
-                </button>
-                <span className="draft-action-summary">
-                  {formatDraftSummary(adventureDraftSummary)}
-                </span>
-              </div>
-            ) : null}
-
-            {!editSession ? (
-              <div className="draft-action-row">
-                <button
-                  className="secondary-button"
-                  disabled={!canEditDynamaxAdventures || isEditStarting}
-                  onClick={onStartEditSession}
-                  type="button"
-                >
-                  <Pencil aria-hidden="true" size={16} />
-                  <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
-                </button>
-                <button
-                  className="purple-button"
-                  disabled={!canRestoreVanilla}
-                  onClick={async () => {
-                    if (!encounter) {
-                      return;
-                    }
-
-                    const didSave = await onUpdateDynamaxAdventureFields(
-                      encounter.entryIndex,
-                      vanillaRestoreChanges
-                    );
-                    if (didSave) {
-                      setDraftsByEntryIndex((currentDrafts) =>
-                        deleteFieldDraftRecord(currentDrafts, encounter.entryIndex)
-                      );
-                    }
-                  }}
-                  type="button"
-                >
-                  <RotateCcw aria-hidden="true" size={16} />
-                  <span>Restore Vanilla Pokemon</span>
-                </button>
-              </div>
-            ) : null}
+                  const didSave = await onUpdateDynamaxAdventureEntryChanges(vanillaRestoreGroups);
+                  if (didSave) {
+                    setDraftsByEntryIndex({});
+                    setDraftFieldOptionsByEntryIndex({});
+                  }
+                }}
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={16} />
+                <span>Stage Uninstall</span>
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!canReviewPlan}
+                onClick={onCreateChangePlan}
+                type="button"
+              >
+                <ClipboardCheck aria-hidden="true" size={16} />
+                <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+              </button>
+              <button
+                className="primary-button"
+                disabled={!canApplyPlan}
+                onClick={onApplyChangePlan}
+                type="button"
+              >
+                <Save aria-hidden="true" size={16} />
+                <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+              </button>
+              <span className="draft-action-summary">
+                {formatDraftSummary(adventureDraftSummary)}
+              </span>
+            </div>
           </div>
         </>
       ) : (
@@ -20348,7 +20663,6 @@ function SelectedFlagworkSavePanel({
 }
 
 function BagHookSection({
-  changePlan,
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
@@ -20358,10 +20672,10 @@ function BagHookSection({
   onSelectSlot,
   onStageInstall,
   onStageUninstall,
+  panelOutput,
   selectedSlot,
   workflow
 }: {
-  changePlan: ChangePlan | null;
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
@@ -20371,6 +20685,7 @@ function BagHookSection({
   onSelectSlot: (slot: number | null) => void;
   onStageInstall: () => void;
   onStageUninstall: () => void;
+  panelOutput: WorkflowPanelOutput;
   selectedSlot: number | null;
   workflow: BagHookWorkflow | null;
 }) {
@@ -20391,9 +20706,9 @@ function BagHookSection({
   const canReviewPlan = (isInstallStaged || isUninstallStaged) && !isChangePlanCreating;
   const canApplyPlan =
     (isInstallStaged || isUninstallStaged) &&
-    changePlan !== null &&
-    changePlan.canApply &&
-    changePlan.writes.length > 0 &&
+    panelOutput.changePlan !== null &&
+    panelOutput.changePlan.canApply &&
+    panelOutput.changePlan.writes.length > 0 &&
     !isChangePlanApplying;
 
   useEffect(() => {
@@ -20598,13 +20913,15 @@ function BagHookSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      <WorkflowPanelOutputSections
+        output={panelOutput}
+        workflowDiagnostics={workflow?.diagnostics ?? []}
+      />
     </>
   );
 }
 
 function IvScreenSection({
-  changePlan,
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
@@ -20613,9 +20930,9 @@ function IvScreenSection({
   onCreateChangePlan,
   onStageInstall,
   onStageUninstall,
+  panelOutput,
   workflow
 }: {
-  changePlan: ChangePlan | null;
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
@@ -20624,6 +20941,7 @@ function IvScreenSection({
   onCreateChangePlan: () => void;
   onStageInstall: () => void;
   onStageUninstall: () => void;
+  panelOutput: WorkflowPanelOutput;
   workflow: IvScreenWorkflow | null;
 }) {
   const stagedIvScreenEdit = editSession?.pendingEdits.find(
@@ -20641,9 +20959,9 @@ function IvScreenSection({
   const canReviewPlan = hasStagedChange && !isChangePlanCreating;
   const canApplyPlan =
     hasStagedChange &&
-    changePlan !== null &&
-    changePlan.canApply &&
-    changePlan.writes.length > 0 &&
+    panelOutput.changePlan !== null &&
+    panelOutput.changePlan.canApply &&
+    panelOutput.changePlan.writes.length > 0 &&
     !isChangePlanApplying;
   const installLabel = workflow?.installStatus === 'installed' ? 'Stage Reinstall' : 'Stage Install';
 
@@ -20794,13 +21112,15 @@ function IvScreenSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      <WorkflowPanelOutputSections
+        output={panelOutput}
+        workflowDiagnostics={workflow?.diagnostics ?? []}
+      />
     </>
   );
 }
 
 function HyperTrainingSection({
-  changePlan,
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
@@ -20809,9 +21129,9 @@ function HyperTrainingSection({
   onCreateChangePlan,
   onDirtyChange,
   onStageMinimumLevel,
+  panelOutput,
   workflow
 }: {
-  changePlan: ChangePlan | null;
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
@@ -20820,6 +21140,7 @@ function HyperTrainingSection({
   onCreateChangePlan: () => void;
   onDirtyChange: (isDirty: boolean) => void;
   onStageMinimumLevel: (minimumLevel: number) => void;
+  panelOutput: WorkflowPanelOutput;
   workflow: HyperTrainingWorkflow | null;
 }) {
   const minimumAllowed = workflow?.levelRule.minimumAllowedLevel ?? 1;
@@ -20862,9 +21183,9 @@ function HyperTrainingSection({
   const canReviewPlan = hasStagedChange && !isChangePlanCreating;
   const canApplyPlan =
     hasStagedChange &&
-    changePlan !== null &&
-    changePlan.canApply &&
-    changePlan.writes.length > 0 &&
+    panelOutput.changePlan !== null &&
+    panelOutput.changePlan.canApply &&
+    panelOutput.changePlan.writes.length > 0 &&
     !isChangePlanApplying;
   const sliderValue =
     normalizedMinimumLevel ?? clampHyperTrainingLevel(currentMinimumLevel, minimumAllowed, maximumAllowed);
@@ -21057,7 +21378,10 @@ function HyperTrainingSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      <WorkflowPanelOutputSections
+        output={panelOutput}
+        workflowDiagnostics={workflow?.diagnostics ?? []}
+      />
     </>
   );
 }
@@ -21104,7 +21428,6 @@ function formatHyperTrainingSourceStatus(status: string) {
 }
 
 function GymUniformRemovalSection({
-  changePlan,
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
@@ -21113,9 +21436,9 @@ function GymUniformRemovalSection({
   onCreateChangePlan,
   onStageInstall,
   onStageUninstall,
+  panelOutput,
   workflow
 }: {
-  changePlan: ChangePlan | null;
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
@@ -21124,6 +21447,7 @@ function GymUniformRemovalSection({
   onCreateChangePlan: () => void;
   onStageInstall: () => void;
   onStageUninstall: () => void;
+  panelOutput: WorkflowPanelOutput;
   workflow: GymUniformRemovalWorkflow | null;
 }) {
   const stagedGymUniformRemovalEdit = editSession?.pendingEdits.find(
@@ -21143,9 +21467,9 @@ function GymUniformRemovalSection({
   const canReviewPlan = hasStagedChange && !isChangePlanCreating;
   const canApplyPlan =
     hasStagedChange &&
-    changePlan !== null &&
-    changePlan.canApply &&
-    changePlan.writes.length > 0 &&
+    panelOutput.changePlan !== null &&
+    panelOutput.changePlan.canApply &&
+    panelOutput.changePlan.writes.length > 0 &&
     !isChangePlanApplying;
   const installLabel =
     workflow?.installStatus === 'installed' ? 'Stage Reinstall' : 'Stage Install';
@@ -21327,13 +21651,15 @@ function GymUniformRemovalSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      <WorkflowPanelOutputSections
+        output={panelOutput}
+        workflowDiagnostics={workflow?.diagnostics ?? []}
+      />
     </>
   );
 }
 
 function CatchCapSection({
-  changePlan,
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
@@ -21344,10 +21670,10 @@ function CatchCapSection({
   onSelectCap,
   onStageCaps,
   onStageUninstall,
+  panelOutput,
   selectedBadgeCount,
   workflow
 }: {
-  changePlan: ChangePlan | null;
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
@@ -21358,6 +21684,7 @@ function CatchCapSection({
   onSelectCap: (badgeCount: number | null) => void;
   onStageCaps: (caps: CatchCapSelection[]) => void;
   onStageUninstall: () => void;
+  panelOutput: WorkflowPanelOutput;
   selectedBadgeCount: number | null;
   workflow: CatchCapWorkflow | null;
 }) {
@@ -21429,9 +21756,9 @@ function CatchCapSection({
   const canReviewPlan = hasStagedCatchCapChange && !isChangePlanCreating;
   const canApplyPlan =
     hasStagedCatchCapChange &&
-    changePlan !== null &&
-    changePlan.canApply &&
-    changePlan.writes.length > 0 &&
+    panelOutput.changePlan !== null &&
+    panelOutput.changePlan.canApply &&
+    panelOutput.changePlan.writes.length > 0 &&
     !isChangePlanApplying;
 
   useEffect(() => {
@@ -21671,7 +21998,10 @@ function CatchCapSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      <WorkflowPanelOutputSections
+        output={panelOutput}
+        workflowDiagnostics={workflow?.diagnostics ?? []}
+      />
     </>
   );
 }
@@ -21963,7 +22293,6 @@ function SelectedExeFsPatchPanel({
 }
 
 function RoyalCandySection({
-  changePlan,
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
@@ -21974,12 +22303,12 @@ function RoyalCandySection({
   onSelectCheck,
   onSelectWorkflow,
   onStageWorkflow,
+  panelOutput,
   searchText,
   selectedCheckId,
   selectedWorkflowId,
   workflow
 }: {
-  changePlan: ChangePlan | null;
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
@@ -21990,6 +22319,7 @@ function RoyalCandySection({
   onSelectCheck: (checkId: string | null) => void;
   onSelectWorkflow: (workflowId: string | null) => void;
   onStageWorkflow: (workflowId: string, levelCaps?: RoyalCandyLevelCapSelection[]) => void;
+  panelOutput: WorkflowPanelOutput;
   searchText: string;
   selectedCheckId: string | null;
   selectedWorkflowId: string | null;
@@ -22122,7 +22452,7 @@ function RoyalCandySection({
                 getRoyalCandyDependencyWarning(workflow, selectedWorkflow.workflowId) !== null
               }
               check={selectedCheck}
-              changePlan={changePlan}
+              changePlan={panelOutput.changePlan}
               editSession={editSession}
               isChangePlanApplying={isChangePlanApplying}
               isChangePlanCreating={isChangePlanCreating}
@@ -22202,7 +22532,10 @@ function RoyalCandySection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={visibleDiagnostics} />
+      <WorkflowPanelOutputSections
+        output={panelOutput}
+        workflowDiagnostics={visibleDiagnostics}
+      />
     </>
   );
 }
@@ -22546,7 +22879,6 @@ function SelectedRoyalCandyPanel({
 }
 
 function StartingItemsSection({
-  changePlan,
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
@@ -22556,10 +22888,10 @@ function StartingItemsSection({
   onDirtyChange,
   onSelectSlot,
   onStageGrants,
+  panelOutput,
   selectedSlot,
   workflow
 }: {
-  changePlan: ChangePlan | null;
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
@@ -22569,6 +22901,7 @@ function StartingItemsSection({
   onDirtyChange: (isDirty: boolean) => void;
   onSelectSlot: (slot: number | null) => void;
   onStageGrants: (grants: StartingItemGrantSelection[]) => void;
+  panelOutput: WorkflowPanelOutput;
   selectedSlot: number | null;
   workflow: StartingItemsWorkflow | null;
 }) {
@@ -22666,9 +22999,9 @@ function StartingItemsSection({
   const canReviewPlan = isStartingItemsStaged && !isChangePlanCreating;
   const canApplyPlan =
     isStartingItemsStaged &&
-    changePlan !== null &&
-    changePlan.canApply &&
-    changePlan.writes.length > 0 &&
+    panelOutput.changePlan !== null &&
+    panelOutput.changePlan.canApply &&
+    panelOutput.changePlan.writes.length > 0 &&
     !isChangePlanApplying;
 
   useEffect(() => {
@@ -22949,7 +23282,10 @@ function StartingItemsSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      <WorkflowPanelOutputSections
+        output={panelOutput}
+        workflowDiagnostics={workflow?.diagnostics ?? []}
+      />
     </>
   );
 }
@@ -24205,55 +24541,6 @@ function ChangesSection({
       {applyResult ? <ApplyResultSection applyResult={applyResult} /> : null}
       <DiagnosticsSection diagnostics={combinedDiagnostics} />
     </>
-  );
-}
-
-function ChangePlanSection({
-  changePlan
-}: {
-  changePlan: ChangePlan;
-}) {
-  return (
-    <section aria-labelledby="change-plan-heading" className="panel wide-panel">
-      <div className="panel-heading">
-        <ClipboardCheck aria-hidden="true" size={18} />
-        <h2 id="change-plan-heading">Output Plan</h2>
-      </div>
-
-      <div className="change-plan-status">
-        <Metric label="Plan status" value={changePlan.canApply ? 'Ready' : 'Needs fixes'} />
-        <Metric label="Session" value={changePlan.sessionId} />
-      </div>
-
-      {changePlan.writes.length > 0 ? (
-        <ul className="change-plan-list">
-          {changePlan.writes.map((write) => (
-            <li key={write.targetRelativePath}>
-              <div>
-                <strong>{write.targetRelativePath}</strong>
-                <span>{write.reason}</span>
-              </div>
-              <dl>
-                <div>
-                  <dt>Output state</dt>
-                  <dd>{write.replacesExistingOutput ? 'Replaces output file' : 'Creates output file'}</dd>
-                </div>
-                <div>
-                  <dt>Sources</dt>
-                  <dd>
-                    {write.sources
-                      .map((source) => `${formatProjectFileLayer(source.layer)} ${source.relativePath}`)
-                      .join(', ')}
-                  </dd>
-                </div>
-              </dl>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="empty-copy">No target files in this plan.</p>
-      )}
-    </section>
   );
 }
 

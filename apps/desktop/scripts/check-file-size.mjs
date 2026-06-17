@@ -8,8 +8,8 @@ const rootPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const srcPath = path.join(rootPath, 'src');
 const defaultMaxLines = 1250;
 const fileLineBudgets = new Map([
-  ['src/App.tsx', 30100],
-  ['src/App.test.tsx', 4550],
+  ['src/App.tsx', 30350],
+  ['src/App.test.tsx', 4690],
   ['src/bridge/contracts.ts', 3700],
   ['src/bridge/contracts.test.ts', 3650],
   ['src/bridge/projectBridge.test.ts', 2875],

@@ -95,6 +95,9 @@ public sealed record SwShDynamaxAdventureEntry(
     public IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> AbilityOptions { get; init; } =
         Array.Empty<SwShDynamaxAdventureEditableFieldOption>();
 
+    public IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> GigantamaxOptions { get; init; } =
+        Array.Empty<SwShDynamaxAdventureEditableFieldOption>();
+
     public IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> MoveOptions { get; init; } =
         Array.Empty<SwShDynamaxAdventureEditableFieldOption>();
 

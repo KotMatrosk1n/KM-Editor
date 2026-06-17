@@ -164,6 +164,7 @@ public sealed class ProjectBridgeDispatcherTests
                 "catchCap",
                 "hyperTraining",
                 "typeChart",
+                "fairyGymBoosts",
                 "fashionUnlock",
                 "gymUniformRemoval",
                 "ivScreen",

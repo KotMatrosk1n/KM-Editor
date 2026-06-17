@@ -1441,6 +1441,34 @@ h2 {
   align-items: center;
 }
 
+.dynamax-adventure-integrity-notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  color: var(--color-text);
+  background: rgb(214 168 66 / 8%);
+  border: 1px solid rgb(214 168 66 / 45%);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.dynamax-adventure-integrity-notice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--color-gold);
+}
+
+.dynamax-adventure-integrity-notice p {
+  margin: 0;
+}
+
+.dynamax-adventure-integrity-notice p + p {
+  margin-top: 6px;
+}
+
 .item-edit-form > .secondary-button,
 .item-edit-form > .draft-action-row,
 .text-edit-form > .secondary-button,

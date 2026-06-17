@@ -221,6 +221,18 @@ public static class SwShBridgeMapper
                 result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray()));
     }
 
+    public static PreviewDynamaxAdventureDefaultsResponse ToDto(SwShDynamaxAdventureDefaultPreview preview)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+
+        return new PreviewDynamaxAdventureDefaultsResponse(
+            preview.Changes.Select(ToDto).ToArray(),
+            preview.AbilityOptions.Select(ToDto).ToArray(),
+            preview.GigantamaxOptions.Select(ToDto).ToArray(),
+            preview.MoveOptions.Select(ToDto).ToArray(),
+            preview.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadEncountersWorkflowResponse ToDto(SwShEncountersWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -1171,6 +1183,7 @@ public static class SwShBridgeMapper
                 ProjectBridgeMapper.ToDto(encounter.Provenance.FileState)))
         {
             AbilityOptions = encounter.AbilityOptions.Select(ToDto).ToArray(),
+            GigantamaxOptions = encounter.GigantamaxOptions.Select(ToDto).ToArray(),
             MoveOptions = encounter.MoveOptions.Select(ToDto).ToArray(),
             BossTargetOptions = encounter.BossTargetOptions.Select(ToDto).ToArray(),
             VanillaPokemon = encounter.VanillaPokemon is null
@@ -1245,6 +1258,11 @@ public static class SwShBridgeMapper
     private static DynamaxAdventureEditableFieldOptionDto ToDto(SwShDynamaxAdventureEditableFieldOption option)
     {
         return new DynamaxAdventureEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static DynamaxAdventureDefaultFieldDto ToDto(SwShDynamaxAdventureDefaultField field)
+    {
+        return new DynamaxAdventureDefaultFieldDto(field.Field, field.Value);
     }
 
     private static DynamaxAdventureSeedPlanDto ToDynamaxAdventureSeedPlanDto(

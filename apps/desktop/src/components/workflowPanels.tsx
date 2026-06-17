@@ -1,8 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { Activity, CheckCircle } from 'lucide-react';
-import { type ApiDiagnostic, type ApplyResult } from '../bridge/contracts';
+import { Activity, CheckCircle, ClipboardCheck } from 'lucide-react';
+import { type ApiDiagnostic, type ApplyResult, type ChangePlan } from '../bridge/contracts';
 import { formatDiagnosticMessage } from '../diagnostics';
+
+export type WorkflowPanelOutput = {
+  actionDiagnostics: ApiDiagnostic[];
+  applyResult: ApplyResult | null;
+  changePlan: ChangePlan | null;
+};
 
 export function Metric({ label, value }: { label: string; value: string }) {
   return (
@@ -34,6 +40,81 @@ export function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }
         </ul>
       ) : (
         <p className="empty-copy">No files were written.</p>
+      )}
+    </section>
+  );
+}
+
+export function WorkflowPanelOutputSections({
+  output,
+  scrollAfterEntries,
+  workflowDiagnostics
+}: {
+  output: WorkflowPanelOutput;
+  scrollAfterEntries?: number;
+  workflowDiagnostics: ApiDiagnostic[];
+}) {
+  const combinedDiagnostics = [
+    ...workflowDiagnostics,
+    ...output.actionDiagnostics,
+    ...(output.changePlan?.diagnostics ?? []),
+    ...(output.applyResult?.diagnostics ?? [])
+  ];
+
+  return (
+    <>
+      {output.changePlan ? <ChangePlanSection changePlan={output.changePlan} /> : null}
+      {output.applyResult ? <ApplyResultSection applyResult={output.applyResult} /> : null}
+      <DiagnosticsSection
+        diagnostics={combinedDiagnostics}
+        scrollAfterEntries={scrollAfterEntries}
+      />
+    </>
+  );
+}
+
+export function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
+  return (
+    <section aria-labelledby="change-plan-heading" className="panel wide-panel">
+      <div className="panel-heading">
+        <ClipboardCheck aria-hidden="true" size={18} />
+        <h2 id="change-plan-heading">Output Plan</h2>
+      </div>
+
+      <div className="change-plan-status">
+        <Metric label="Plan status" value={changePlan.canApply ? 'Ready' : 'Needs fixes'} />
+        <Metric label="Session" value={changePlan.sessionId} />
+      </div>
+
+      {changePlan.writes.length > 0 ? (
+        <ul className="change-plan-list">
+          {changePlan.writes.map((write) => (
+            <li key={write.targetRelativePath}>
+              <div>
+                <strong>{write.targetRelativePath}</strong>
+                <span>{write.reason}</span>
+              </div>
+              <dl>
+                <div>
+                  <dt>Output state</dt>
+                  <dd>
+                    {write.replacesExistingOutput ? 'Replaces output file' : 'Creates output file'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Sources</dt>
+                  <dd>
+                    {write.sources
+                      .map((source) => `${formatProjectFileLayer(source.layer)} ${source.relativePath}`)
+                      .join(', ')}
+                  </dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="empty-copy">No target files in this plan.</p>
       )}
     </section>
   );
@@ -72,6 +153,15 @@ export function DiagnosticsSection({
       )}
     </section>
   );
+}
+
+function formatProjectFileLayer(layer: ChangePlan['writes'][number]['sources'][number]['layer']) {
+  return {
+    base: 'Base',
+    generated: 'Generated',
+    layered: 'LayeredFS',
+    pending: 'Pending'
+  }[layer];
 }
 
 function formatDiagnosticSeverity(severity: ApiDiagnostic['severity']) {

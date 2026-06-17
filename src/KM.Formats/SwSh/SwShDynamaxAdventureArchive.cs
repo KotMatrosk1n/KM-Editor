@@ -81,6 +81,8 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
     public const int MaximumVersion = 2;
     public const int MaximumShinyRoll = 2;
 
+    private const string OmittedFlatBufferDefaultMessageFragment = "omitted FlatBuffer default";
+
     private readonly byte[]? sourceData;
     private readonly int[]? sourceEntryTableOffsets;
 
@@ -123,9 +125,51 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
         var editArray = edits.ToArray();
         if (sourceData is not null && sourceEntryTableOffsets is not null)
         {
-            return WriteEditsInPlace(editArray);
+            try
+            {
+                return WriteEditsInPlace(editArray);
+            }
+            catch (InvalidDataException exception) when (IsOmittedFlatBufferDefaultWriteFailure(exception))
+            {
+                return WriteEditsByRebuilding(editArray);
+            }
         }
 
+        return WriteEditsByRebuilding(editArray);
+    }
+
+    public byte[] WriteEditsPreservingLayout(IEnumerable<SwShDynamaxAdventureEdit> edits)
+    {
+        ArgumentNullException.ThrowIfNull(edits);
+
+        if (sourceData is null || sourceEntryTableOffsets is null)
+        {
+            throw new InvalidDataException("Dynamax Adventure edits require a parsed source table so the existing FlatBuffer layout can be preserved.");
+        }
+
+        return WriteEditsInPlace(edits.ToArray());
+    }
+
+    public bool CanWriteEditPreservingLayout(SwShDynamaxAdventureEdit edit)
+    {
+        if (sourceData is null || sourceEntryTableOffsets is null)
+        {
+            throw new InvalidDataException("Dynamax Adventure edits require a parsed source table so the existing FlatBuffer layout can be preserved.");
+        }
+
+        try
+        {
+            WriteEditsInPlace([edit]);
+            return true;
+        }
+        catch (InvalidDataException exception) when (IsOmittedFlatBufferDefaultWriteFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private byte[] WriteEditsByRebuilding(IReadOnlyList<SwShDynamaxAdventureEdit> edits)
+    {
         var entries = Entries
             .Select(entry => entry with
             {
@@ -134,12 +178,19 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
             })
             .ToArray();
 
-        foreach (var edit in editArray)
+        foreach (var edit in edits)
         {
             ApplyEdit(entries, edit);
         }
 
         return new SwShDynamaxAdventureArchive(entries).Write();
+    }
+
+    private static bool IsOmittedFlatBufferDefaultWriteFailure(InvalidDataException exception)
+    {
+        return exception.Message.Contains(
+            OmittedFlatBufferDefaultMessageFragment,
+            StringComparison.Ordinal);
     }
 
     public byte[] WriteRowCopies(IEnumerable<SwShDynamaxAdventureRowCopy> copies)
@@ -726,7 +777,7 @@ public sealed record SwShDynamaxAdventureArchive(IReadOnlyList<SwShDynamaxAdvent
         }
 
         throw new InvalidDataException(
-            $"Dynamax Adventure field '{fieldName}' is stored as an omitted FlatBuffer default in this record and cannot be changed without rebuilding the table layout.");
+            $"Dynamax Adventure field '{fieldName}' is stored as an {OmittedFlatBufferDefaultMessageFragment} in this record and cannot be changed without rebuilding the table layout.");
     }
 
     private static void EnsureRange(ReadOnlySpan<byte> data, int offset, int count)

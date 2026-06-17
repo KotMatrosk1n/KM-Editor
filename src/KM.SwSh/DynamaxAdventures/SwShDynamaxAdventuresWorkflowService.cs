@@ -9,6 +9,7 @@ using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Security.Cryptography;
 
 namespace KM.SwSh.DynamaxAdventures;
 
@@ -42,6 +43,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
     private const string MessageRootPath = "romfs/bin/message";
     private const string PreferredLanguage = "English";
+    private const string KnownUnsafeRebuiltVanillaTableSha256 = "5DD898C9DB0BE5CB28119779D886496C7467108AA3C4FC810CE5EA3EC5358E73";
 
     private static readonly IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> AbilityOptions =
     [
@@ -234,13 +236,18 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             var sourceBytes = File.ReadAllBytes(source.AbsolutePath);
             var archive = SwShDynamaxAdventureArchive.Parse(sourceBytes);
             var vanillaArchive = LoadVanillaArchive(project, diagnostics);
-            if (vanillaArchive is not null && sourceBytes.Length != vanillaArchive.Length)
+            if (vanillaArchive is not null
+                && !IsDynamaxAdventureTableLayoutCompatible(
+                    vanillaArchive.Archive,
+                    vanillaArchive.Data,
+                    archive,
+                    sourceBytes))
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
-                    "Dynamax Adventures source table layout differs from the vanilla table. Restore the generated Adventure table before making new Pokemon edits.",
+                    "Dynamax Adventures source table byte layout differs from the vanilla table. Restore the Adventure table from a clean dump before making new Pokemon edits.",
                     file: source.GraphEntry.RelativePath,
-                    expected: "Vanilla-length Dynamax Adventures table"));
+                    expected: "Vanilla byte layout or prior KM in-place Dynamax Adventures edits"));
             }
 
             var provenance = CreateProvenance(source.GraphEntry);
@@ -251,6 +258,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             var encounters = archive.Entries
                 .Select(entry => ToEncounterEntry(
                     entry,
+                    archive,
                     archive.Entries,
                     lookupTables,
                     provenance,
@@ -306,6 +314,25 @@ public sealed class SwShDynamaxAdventuresWorkflowService
     internal static bool IsGigantamaxCapableSpecies(int speciesId)
     {
         return GigantamaxCapableSpecies.Contains(speciesId);
+    }
+
+    internal static IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> CreateGigantamaxOptions(
+        int speciesId,
+        int currentState)
+    {
+        var options = new List<SwShDynamaxAdventureEditableFieldOption>();
+        if (currentState == 0)
+        {
+            options.Add(new SwShDynamaxAdventureEditableFieldOption(0, "Unknown"));
+        }
+
+        options.Add(new SwShDynamaxAdventureEditableFieldOption(1, "Normal"));
+        if (IsGigantamaxCapableSpecies(speciesId) || currentState == SwShDynamaxAdventureArchive.MaximumGigantamaxState)
+        {
+            options.Add(new SwShDynamaxAdventureEditableFieldOption(2, "Gigantamax"));
+        }
+
+        return options;
     }
 
     internal static string CreateEncounterRecordId(int entryIndex)
@@ -492,6 +519,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
     private static SwShDynamaxAdventureEntry ToEncounterEntry(
         SwShDynamaxAdventureRecord entry,
+        SwShDynamaxAdventureArchive archive,
         IReadOnlyList<SwShDynamaxAdventureRecord> entries,
         DynamaxAdventureLookupTables lookupTables,
         SwShDynamaxAdventureProvenance provenance,
@@ -546,7 +574,8 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             FormatIvSummary(entry.Ivs, guaranteedPerfectIvs),
             provenance)
         {
-            AbilityOptions = CreateAbilityOptions(lookupTables, entry.Species, entry.Form),
+            AbilityOptions = CreateLayoutSafeAbilityOptions(lookupTables, archive, entry),
+            GigantamaxOptions = CreateGigantamaxOptions(entry.Species, entry.GigantamaxState),
             MoveOptions = CreateMoveOptions(lookupTables, entry, vanillaEntry),
             BossTargetOptions = CreateBossTargetOptions(entry, entries, lookupTables),
             BossTargetSpeciesId = activeBossTargetSpeciesId ?? entry.Species,
@@ -890,6 +919,36 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             .ToArray();
     }
 
+    internal static IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> FilterAbilityOptionsForLayout(
+        IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> options,
+        IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> layoutSafeOptions)
+    {
+        if (options.Count == 0 || layoutSafeOptions.Count == 0)
+        {
+            return [];
+        }
+
+        var safeValues = layoutSafeOptions
+            .Select(option => option.Value)
+            .ToHashSet();
+        return options
+            .Where(option => safeValues.Contains(option.Value))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SwShDynamaxAdventureEditableFieldOption> CreateLayoutSafeAbilityOptions(
+        DynamaxAdventureLookupTables lookupTables,
+        SwShDynamaxAdventureArchive archive,
+        SwShDynamaxAdventureRecord entry)
+    {
+        return CreateAbilityOptions(lookupTables, entry.Species, entry.Form)
+            .Where(option => archive.CanWriteEditPreservingLayout(new SwShDynamaxAdventureEdit(
+                entry.EntryIndex,
+                SwShDynamaxAdventureField.Ability,
+                option.Value)))
+            .ToArray();
+    }
+
     private static string GetAbilityOptionLabel(
         DynamaxAdventureLookupTables lookupTables,
         int speciesId,
@@ -934,7 +993,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             var data = File.ReadAllBytes(sourcePath);
             return new VanillaDynamaxAdventureTable(
                 SwShDynamaxAdventureArchive.Parse(data),
-                data.Length);
+                data);
         }
         catch (InvalidDataException exception)
         {
@@ -1168,6 +1227,130 @@ public sealed class SwShDynamaxAdventuresWorkflowService
             Expected: expected);
     }
 
+    internal static bool IsDynamaxAdventureTableLayoutCompatible(
+        SwShDynamaxAdventureArchive baseArchive,
+        byte[] baseData,
+        SwShDynamaxAdventureArchive sourceArchive,
+        byte[] sourceData)
+    {
+        ArgumentNullException.ThrowIfNull(baseArchive);
+        ArgumentNullException.ThrowIfNull(baseData);
+        ArgumentNullException.ThrowIfNull(sourceArchive);
+        ArgumentNullException.ThrowIfNull(sourceData);
+
+        if (HasKnownUnsafeDynamaxAdventureTableLayout(baseData)
+            || HasKnownUnsafeDynamaxAdventureTableLayout(sourceData))
+        {
+            return false;
+        }
+
+        if (sourceData.SequenceEqual(baseData))
+        {
+            return true;
+        }
+
+        if (sourceData.Length != baseData.Length)
+        {
+            return false;
+        }
+
+        if (!TryCreateLayoutPreservingEdits(baseArchive, sourceArchive, out var edits))
+        {
+            return false;
+        }
+
+        try
+        {
+            return baseArchive
+                .WriteEditsPreservingLayout(edits)
+                .SequenceEqual(sourceData);
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasKnownUnsafeDynamaxAdventureTableLayout(byte[] data)
+    {
+        return string.Equals(
+            Convert.ToHexString(SHA256.HashData(data)),
+            KnownUnsafeRebuiltVanillaTableSha256,
+            StringComparison.Ordinal);
+    }
+
+    private static bool TryCreateLayoutPreservingEdits(
+        SwShDynamaxAdventureArchive baseArchive,
+        SwShDynamaxAdventureArchive sourceArchive,
+        out IReadOnlyList<SwShDynamaxAdventureEdit> edits)
+    {
+        var pending = new List<SwShDynamaxAdventureEdit>();
+        edits = pending;
+
+        if (baseArchive.Entries.Count != sourceArchive.Entries.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < baseArchive.Entries.Count; index++)
+        {
+            var left = baseArchive.Entries[index];
+            var right = sourceArchive.Entries[index];
+            if (left.EntryIndex != right.EntryIndex
+                || left.SingleCaptureFlagBlock != right.SingleCaptureFlagBlock
+                || left.Field02 != right.Field02
+                || left.AdventureIndex != right.AdventureIndex
+                || left.UiMessageId != right.UiMessageId)
+            {
+                return false;
+            }
+
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.IsSingleCapture, left.IsSingleCapture ? 1 : 0, right.IsSingleCapture ? 1 : 0);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.Form, left.Form, right.Form);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.GigantamaxState, left.GigantamaxState, right.GigantamaxState);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.BallItemId, left.BallItemId, right.BallItemId);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.Level, left.Level, right.Level);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.Species, left.Species, right.Species);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.OtGender, left.OtGender, right.OtGender);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.Version, left.Version, right.Version);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.ShinyRoll, left.ShinyRoll, right.ShinyRoll);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.IvSpeed, left.Ivs.Speed, right.Ivs.Speed);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.IvAttack, left.Ivs.Attack, right.Ivs.Attack);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.IvDefense, left.Ivs.Defense, right.Ivs.Defense);
+            AddEditIfChanged(
+                pending,
+                right,
+                SwShDynamaxAdventureField.GuaranteedPerfectIvs,
+                SwShDynamaxAdventureArchive.GetGuaranteedPerfectIvCount(left.Ivs),
+                SwShDynamaxAdventureArchive.GetGuaranteedPerfectIvCount(right.Ivs));
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.IvSpecialAttack, left.Ivs.SpecialAttack, right.Ivs.SpecialAttack);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.IvSpecialDefense, left.Ivs.SpecialDefense, right.Ivs.SpecialDefense);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.Ability, left.Ability, right.Ability);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.IsStoryProgressGated, left.IsStoryProgressGated ? 1 : 0, right.IsStoryProgressGated ? 1 : 0);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.Move0, left.Moves[0], right.Moves[0]);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.Move1, left.Moves[1], right.Moves[1]);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.Move2, left.Moves[2], right.Moves[2]);
+            AddEditIfChanged(pending, right, SwShDynamaxAdventureField.Move3, left.Moves[3], right.Moves[3]);
+        }
+
+        return true;
+    }
+
+    private static void AddEditIfChanged(
+        ICollection<SwShDynamaxAdventureEdit> edits,
+        SwShDynamaxAdventureRecord sourceRecord,
+        SwShDynamaxAdventureField field,
+        int currentValue,
+        int sourceValue)
+    {
+        if (currentValue == sourceValue)
+        {
+            return;
+        }
+
+        edits.Add(new SwShDynamaxAdventureEdit(sourceRecord.EntryIndex, field, sourceValue));
+    }
+
     private sealed record DynamaxAdventureLookupTables(
         IReadOnlyList<string> SpeciesNames,
         IReadOnlySet<int> PresentSpeciesIds,
@@ -1181,7 +1364,7 @@ public sealed class SwShDynamaxAdventuresWorkflowService
 
     private sealed record VanillaDynamaxAdventureTable(
         SwShDynamaxAdventureArchive Archive,
-        int Length);
+        byte[] Data);
 
     internal sealed record WorkflowFileSource(
         ProjectFileGraphEntry GraphEntry,

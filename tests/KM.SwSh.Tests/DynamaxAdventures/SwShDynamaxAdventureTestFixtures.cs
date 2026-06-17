@@ -103,6 +103,40 @@ internal static class SwShDynamaxAdventureTestFixtures
         return record;
     }
 
+    public static void ClearTableField(byte[] data, int entryIndex, int fieldIndex)
+    {
+        var tableOffset = ReadEntryTableOffset(data, entryIndex);
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(tableOffset, sizeof(int)));
+        var fieldEntryOffset = sizeof(ushort) * 2 + (fieldIndex * sizeof(ushort));
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(vtableOffset + fieldEntryOffset, sizeof(ushort)), 0);
+    }
+
+    private static int ReadEntryTableOffset(ReadOnlySpan<byte> data, int entryIndex)
+    {
+        var rootTableOffset = ReadUOffset(data, offset: 0);
+        var vectorFieldOffset = ReadTableFieldOffset(data, rootTableOffset, fieldIndex: 0);
+        var vectorOffset = ReadUOffset(data, rootTableOffset + vectorFieldOffset);
+        var elementOffset = vectorOffset + sizeof(uint) + (entryIndex * sizeof(uint));
+
+        return ReadUOffset(data, elementOffset);
+    }
+
+    private static int ReadTableFieldOffset(ReadOnlySpan<byte> data, int tableOffset, int fieldIndex)
+    {
+        var vtableOffset = tableOffset - BinaryPrimitives.ReadInt32LittleEndian(data.Slice(tableOffset, sizeof(int)));
+        var fieldEntryOffset = sizeof(ushort) * 2 + (fieldIndex * sizeof(ushort));
+        var vtableLength = BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableOffset, sizeof(ushort)));
+
+        return fieldEntryOffset + sizeof(ushort) <= vtableLength
+            ? BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(vtableOffset + fieldEntryOffset, sizeof(ushort)))
+            : 0;
+    }
+
+    private static int ReadUOffset(ReadOnlySpan<byte> data, int offset)
+    {
+        return checked(offset + (int)BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(offset, sizeof(uint))));
+    }
+
     public static byte[] CreateCompatibleMain(int commandValidatorOffsetDelta = 0, string? buildId = null)
     {
         var archive = CreateArchive();

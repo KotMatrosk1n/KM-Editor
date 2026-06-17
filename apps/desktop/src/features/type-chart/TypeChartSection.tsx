@@ -3,12 +3,15 @@
 import { ClipboardCheck, RotateCcw, Save, Swords } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
-  type ChangePlan,
   type EditSession,
   type TypeChartSourceRecord,
   type TypeChartWorkflow
 } from '../../bridge/contracts';
-import { DiagnosticsSection, Metric } from '../../components/workflowPanels';
+import {
+  Metric,
+  WorkflowPanelOutputSections,
+  type WorkflowPanelOutput
+} from '../../components/workflowPanels';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
@@ -26,7 +29,6 @@ const typeChartEffectivenessOptions: Array<{
 ];
 
 export function TypeChartSection({
-  changePlan,
   editSession,
   isChangePlanApplying,
   isChangePlanCreating,
@@ -35,9 +37,9 @@ export function TypeChartSection({
   onCreateChangePlan,
   onDirtyChange,
   onStageChart,
+  panelOutput,
   workflow
 }: {
-  changePlan: ChangePlan | null;
   editSession: EditSession | null;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
@@ -46,6 +48,7 @@ export function TypeChartSection({
   onCreateChangePlan: () => void;
   onDirtyChange: (isDirty: boolean) => void;
   onStageChart: (values: TypeChartEffectivenessValue[]) => void;
+  panelOutput: WorkflowPanelOutput;
   workflow: TypeChartWorkflow | null;
 }) {
   const workflowValues = useMemo(() => getTypeChartWorkflowValues(workflow), [workflow]);
@@ -82,9 +85,9 @@ export function TypeChartSection({
   const canApplyPlan =
     hasStagedChange &&
     !isDirty &&
-    changePlan !== null &&
-    changePlan.canApply &&
-    changePlan.writes.length > 0 &&
+    panelOutput.changePlan !== null &&
+    panelOutput.changePlan.canApply &&
+    panelOutput.changePlan.writes.length > 0 &&
     !isChangePlanApplying;
 
   useEffect(() => {
@@ -225,7 +228,10 @@ export function TypeChartSection({
         )}
       </section>
 
-      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+      <WorkflowPanelOutputSections
+        output={panelOutput}
+        workflowDiagnostics={workflow?.diagnostics ?? []}
+      />
     </>
   );
 }
