@@ -24,6 +24,21 @@ internal sealed class SvPokemonEditSessionService
     private const string MoveUpAction = "moveUp";
     private const string MoveDownAction = "moveDown";
     private const string MoveToAction = "moveTo";
+    private const string GlobalRecordId = "all";
+    private const string GlobalEvYieldField = "evYieldAll";
+    private const string GlobalExpYieldField = "expYieldAll";
+    private const string RemoveYieldValue = "remove";
+    private const string RestoreYieldValue = "restore";
+
+    private static readonly HashSet<string> EvYieldFields =
+    [
+        SwShPokemonWorkflowService.EVYieldHPField,
+        SwShPokemonWorkflowService.EVYieldAttackField,
+        SwShPokemonWorkflowService.EVYieldDefenseField,
+        SwShPokemonWorkflowService.EVYieldSpecialAttackField,
+        SwShPokemonWorkflowService.EVYieldSpecialDefenseField,
+        SwShPokemonWorkflowService.EVYieldSpeedField,
+    ];
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SvWorkflowFileSource fileSource;
@@ -66,6 +81,21 @@ internal sealed class SvPokemonEditSessionService
             return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
+        if (IsGlobalYieldField(field))
+        {
+            var globalPendingEdit = CreateGlobalYieldPendingEdit(field, value, diagnostics);
+            if (globalPendingEdit is null)
+            {
+                return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            }
+
+            var globalUpdatedSession = ReplacePendingPokemonEdit(currentSession, globalPendingEdit);
+            return new SwShPokemonEditResult(
+                OverlayPendingEdits(loadedWorkflow, globalUpdatedSession.PendingEdits),
+                globalUpdatedSession,
+                diagnostics);
+        }
+
         var pokemon = workflow.Pokemon.FirstOrDefault(candidate => candidate.PersonalId == personalId);
         if (pokemon is null)
         {
@@ -84,7 +114,7 @@ internal sealed class SvPokemonEditSessionService
             return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
-        var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        var updatedSession = ReplacePendingPokemonEdit(currentSession, pendingEdit);
         return new SwShPokemonEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
@@ -312,9 +342,12 @@ internal sealed class SvPokemonEditSessionService
             var project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, SvDataPaths.PersonalArray);
             var rows = ReadRows(source.Bytes);
+            var baseRows = NeedsBaseRows(session.PendingEdits)
+                ? ReadRows(fileSource.ReadBase(project, SvDataPaths.PersonalArray).Bytes)
+                : rows;
             foreach (var edit in session.PendingEdits)
             {
-                ApplyEdit(rows, edit, diagnostics);
+                ApplyEdit(rows, baseRows, edit, diagnostics);
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -410,6 +443,15 @@ internal sealed class SvPokemonEditSessionService
             return null;
         }
 
+        if (string.Equals(normalizedField, SwShPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal))
+        {
+            ValidateBaseExperienceValue(pokemon, parsed.Value, diagnostics);
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                return null;
+            }
+        }
+
         var displayValue = valueKind == "boolean"
             ? parsed.Value == 0 ? "disabled" : "enabled"
             : parsed.Value.ToString(CultureInfo.InvariantCulture);
@@ -420,6 +462,81 @@ internal sealed class SvPokemonEditSessionService
             pokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
             normalizedField,
             parsed.Value.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private static PendingEdit? CreateGlobalYieldPendingEdit(
+        string field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var normalizedField = field.Trim();
+        var normalizedValue = value.Trim();
+        if (!IsGlobalYieldField(normalizedField))
+        {
+            diagnostics.Add(CreateUnsupportedFieldDiagnostic(normalizedField));
+            return null;
+        }
+
+        if (!IsGlobalYieldAction(normalizedValue))
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pokemon yield action '{normalizedValue}' is not supported.",
+                SvEditSessionSupport.PokemonDomain,
+                field: normalizedField,
+                expected: "remove or restore"));
+            return null;
+        }
+
+        var target = string.Equals(normalizedField, GlobalEvYieldField, StringComparison.Ordinal)
+            ? "EV yield"
+            : "EXP yield";
+        var action = string.Equals(normalizedValue, RemoveYieldValue, StringComparison.Ordinal)
+            ? "Remove"
+            : "Restore";
+
+        return SvEditSessionSupport.CreatePendingEdit(
+            SvEditSessionSupport.PokemonDomain,
+            $"{action} all Pokemon {target}.",
+            new ProjectFileReference(ProjectFileLayer.Base, $"romfs/{SvDataPaths.PersonalArray}"),
+            GlobalRecordId,
+            normalizedField,
+            normalizedValue);
+    }
+
+    private static void ValidateGlobalYieldEdit(
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!IsGlobalYieldAction(edit.NewValue))
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon yield edit uses an invalid action.",
+                SvEditSessionSupport.PokemonDomain,
+                field: edit.Field,
+                expected: "remove or restore"));
+        }
+    }
+
+    private static void ValidateBaseExperienceValue(
+        SwShPokemonRecord pokemon,
+        int baseExperience,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!SvPokemonExperience.TryCalculateExpAddend(
+                pokemon.BaseStats.Total,
+                pokemon.EvolutionStage,
+                baseExperience,
+                out _))
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Base EXP cannot be represented by Scarlet/Violet's stored EXP addend for this Pokemon's current stats and evolution stage.",
+                SvEditSessionSupport.PokemonDomain,
+                field: SwShPokemonWorkflowService.BaseExperienceField,
+                expected: "Base EXP that maps to a signed 16-bit S/V addend"));
+        }
     }
 
     private static void ValidatePendingEdit(
@@ -434,6 +551,12 @@ internal sealed class SvPokemonEditSessionService
                 $"Pending edit domain '{edit.Domain}' is not supported by Scarlet/Violet Pokemon Data.",
                 SvEditSessionSupport.PokemonDomain,
                 expected: SvEditSessionSupport.PokemonDomain));
+            return;
+        }
+
+        if (IsGlobalYieldEdit(edit))
+        {
+            ValidateGlobalYieldEdit(edit, diagnostics);
             return;
         }
 
@@ -506,13 +629,17 @@ internal sealed class SvPokemonEditSessionService
             return;
         }
 
-        _ = SvEditSessionSupport.TryParseInt(
+        var parsed = SvEditSessionSupport.TryParseInt(
             edit.NewValue,
             editableField.MinimumValue,
             editableField.MaximumValue,
             edit.Field,
             SvEditSessionSupport.PokemonDomain,
             diagnostics);
+        if (parsed is not null && string.Equals(edit.Field, SwShPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal))
+        {
+            ValidateBaseExperienceValue(pokemon, parsed.Value, diagnostics);
+        }
     }
 
     private static SwShPokemonWorkflow OverlayPendingEdits(SwShPokemonWorkflow workflow, IEnumerable<PendingEdit> edits)
@@ -526,10 +653,59 @@ internal sealed class SvPokemonEditSessionService
         return updatedWorkflow;
     }
 
+    private static EditSession ReplacePendingPokemonEdit(EditSession session, PendingEdit pendingEdit)
+    {
+        var pendingEdits = session.PendingEdits
+            .Where(edit => !ShouldReplacePendingEdit(edit, pendingEdit))
+            .Append(pendingEdit)
+            .ToArray();
+
+        return session with { PendingEdits = pendingEdits };
+    }
+
+    private static bool ShouldReplacePendingEdit(PendingEdit candidate, PendingEdit pendingEdit)
+    {
+        if (!string.Equals(candidate.Domain, pendingEdit.Domain, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (IsGlobalYieldEdit(pendingEdit))
+        {
+            return IsGlobalYieldEdit(candidate)
+                || string.Equals(candidate.Field, SwShPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal)
+                || EvYieldFields.Contains(candidate.Field ?? string.Empty);
+        }
+
+        if (string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
+            && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (IsGlobalYieldEdit(candidate)
+            && (string.Equals(pendingEdit.Field, SwShPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal)
+                || EvYieldFields.Contains(pendingEdit.Field ?? string.Empty)))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     private static SwShPokemonWorkflow OverlayPendingEdit(SwShPokemonWorkflow workflow, PendingEdit edit)
     {
-        if (!string.Equals(edit.Domain, SvEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
-            || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
+        if (!string.Equals(edit.Domain, SvEditSessionSupport.PokemonDomain, StringComparison.Ordinal))
+        {
+            return workflow;
+        }
+
+        if (IsGlobalYieldEdit(edit))
+        {
+            return OverlayGlobalYieldEdit(workflow, edit);
+        }
+
+        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
         {
             return workflow;
         }
@@ -646,6 +822,42 @@ internal sealed class SvPokemonEditSessionService
             SwShPokemonWorkflowService.ArmorDexIndexField => personal with { ArmorDexIndex = value },
             SwShPokemonWorkflowService.CrownDexIndexField => personal with { CrownDexIndex = value },
             _ => personal,
+        };
+    }
+
+    private static SwShPokemonWorkflow OverlayGlobalYieldEdit(SwShPokemonWorkflow workflow, PendingEdit edit)
+    {
+        if (!string.Equals(edit.NewValue, RemoveYieldValue, StringComparison.Ordinal))
+        {
+            return workflow;
+        }
+
+        return workflow with
+        {
+            Pokemon = workflow.Pokemon
+                .Select(pokemon => edit.Field switch
+                {
+                    GlobalEvYieldField => OverlayAllEvYields(pokemon, 0),
+                    GlobalExpYieldField => OverlayPersonalField(workflow, pokemon, SwShPokemonWorkflowService.BaseExperienceField, 0),
+                    _ => pokemon,
+                })
+                .ToArray(),
+        };
+    }
+
+    private static SwShPokemonRecord OverlayAllEvYields(SwShPokemonRecord pokemon, int value)
+    {
+        return pokemon with
+        {
+            Personal = pokemon.Personal with
+            {
+                EVYieldHP = value,
+                EVYieldAttack = value,
+                EVYieldDefense = value,
+                EVYieldSpecialAttack = value,
+                EVYieldSpecialDefense = value,
+                EVYieldSpeed = value,
+            },
         };
     }
 
@@ -770,17 +982,34 @@ internal sealed class SvPokemonEditSessionService
 
     private static void ApplyEdit(
         IReadOnlyList<PersonalRow> rows,
+        IReadOnlyList<PersonalRow> baseRows,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        if (!string.Equals(edit.Domain, SvEditSessionSupport.PokemonDomain, StringComparison.Ordinal)
-            || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
+        if (!string.Equals(edit.Domain, SvEditSessionSupport.PokemonDomain, StringComparison.Ordinal))
         {
             diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Pending Pokemon Data edit is not valid for apply.",
                 SvEditSessionSupport.PokemonDomain,
                 expected: "Valid Pokemon Data edit"));
+            return;
+        }
+
+        if (IsGlobalYieldEdit(edit))
+        {
+            ApplyGlobalYieldEdit(rows, baseRows, edit, diagnostics);
+            return;
+        }
+
+        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var personalId))
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon Data edit targets an invalid personal record.",
+                SvEditSessionSupport.PokemonDomain,
+                field: "personalId",
+                expected: "Existing Pokemon personal record"));
             return;
         }
 
@@ -832,6 +1061,58 @@ internal sealed class SvPokemonEditSessionService
         }
 
         ApplyPersonalField(row, edit.Field, value);
+    }
+
+    private static void ApplyGlobalYieldEdit(
+        IReadOnlyList<PersonalRow> rows,
+        IReadOnlyList<PersonalRow> baseRows,
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (!IsGlobalYieldAction(edit.NewValue))
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending Pokemon yield edit uses an invalid action.",
+                SvEditSessionSupport.PokemonDomain,
+                field: edit.Field,
+                expected: "remove or restore"));
+            return;
+        }
+
+        for (var index = 0; index < rows.Count; index++)
+        {
+            var row = rows[index];
+            if (!row.IsPresent)
+            {
+                continue;
+            }
+
+            var baseRow = index < baseRows.Count ? baseRows[index] : null;
+            switch (edit.Field)
+            {
+                case GlobalEvYieldField when string.Equals(edit.NewValue, RemoveYieldValue, StringComparison.Ordinal):
+                    row.EvYield = StatInfoRow.Zero;
+                    break;
+                case GlobalEvYieldField:
+                    row.EvYield = baseRow?.EvYield ?? StatInfoRow.Zero;
+                    break;
+                case GlobalExpYieldField when string.Equals(edit.NewValue, RemoveYieldValue, StringComparison.Ordinal):
+                    ApplyBaseExperience(row, 0);
+                    break;
+                case GlobalExpYieldField:
+                    if (baseRow is not null)
+                    {
+                        var restoredBaseExperience = SvPokemonExperience.CalculateBaseExperience(
+                            CalculateBaseStatTotal(baseRow.BaseStats),
+                            baseRow.EvoStage,
+                            baseRow.ExpAddend);
+                        ApplyBaseExperience(row, restoredBaseExperience);
+                    }
+
+                    break;
+            }
+        }
     }
 
     private static void ApplyPersonalField(PersonalRow row, string? field, int value)
@@ -914,7 +1195,7 @@ internal sealed class SvPokemonEditSessionService
                 row.EggGroup2 = checked((byte)value);
                 break;
             case SwShPokemonWorkflowService.BaseExperienceField:
-                row.ExpAddend = checked((short)value);
+                ApplyBaseExperience(row, value);
                 break;
             case SwShPokemonWorkflowService.FormField:
                 row.Species = (row.Species ?? SpeciesInfoRow.Zero) with { Form = checked((ushort)value) };
@@ -1371,6 +1652,50 @@ internal sealed class SvPokemonEditSessionService
     private static int RecalculateTotal(SwShPokemonBaseStats stats)
     {
         return stats.HP + stats.Attack + stats.Defense + stats.SpecialAttack + stats.SpecialDefense + stats.Speed;
+    }
+
+    private static int CalculateBaseStatTotal(StatInfoRow? stats)
+    {
+        return stats is null ? 0 : stats.Hp + stats.Atk + stats.Def + stats.Spa + stats.Spd + stats.Spe;
+    }
+
+    private static void ApplyBaseExperience(PersonalRow row, int baseExperience)
+    {
+        if (!SvPokemonExperience.TryCalculateExpAddend(
+                CalculateBaseStatTotal(row.BaseStats),
+                row.EvoStage,
+                baseExperience,
+                out var expAddend))
+        {
+            throw new InvalidDataException(
+                $"Base EXP {baseExperience.ToString(CultureInfo.InvariantCulture)} cannot be represented by Scarlet/Violet's EXP addend.");
+        }
+
+        row.ExpAddend = expAddend;
+    }
+
+    private static bool IsGlobalYieldField(string? field)
+    {
+        return string.Equals(field?.Trim(), GlobalEvYieldField, StringComparison.Ordinal)
+            || string.Equals(field?.Trim(), GlobalExpYieldField, StringComparison.Ordinal);
+    }
+
+    private static bool IsGlobalYieldEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.RecordId, GlobalRecordId, StringComparison.Ordinal)
+            && IsGlobalYieldField(edit.Field);
+    }
+
+    private static bool IsGlobalYieldAction(string? value)
+    {
+        return string.Equals(value, RemoveYieldValue, StringComparison.Ordinal)
+            || string.Equals(value, RestoreYieldValue, StringComparison.Ordinal);
+    }
+
+    private static bool NeedsBaseRows(IEnumerable<PendingEdit> edits)
+    {
+        return edits.Any(edit => IsGlobalYieldEdit(edit)
+            && string.Equals(edit.NewValue, RestoreYieldValue, StringComparison.Ordinal));
     }
 
     private static string FormatType(int type)

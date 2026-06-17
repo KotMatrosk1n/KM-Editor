@@ -326,8 +326,26 @@ internal sealed class SvItemsEditSessionService
             SwShItemsWorkflowService.WattsPriceField => item with { WattsPrice = value },
             SwShItemsWorkflowService.PouchField => item with { Metadata = metadata with { Pouch = value } },
             SwShItemsWorkflowService.FlingPowerField => item with { Metadata = metadata with { FlingPower = value } },
-            SwShItemsWorkflowService.FieldUseTypeField => item with { Metadata = metadata with { FieldUseType = value } },
-            SwShItemsWorkflowService.CanUseOnPokemonField => item with { Metadata = metadata with { CanUseOnPokemon = value != 0 } },
+            SwShItemsWorkflowService.FieldUseTypeField => item with
+            {
+                Metadata = metadata with
+                {
+                    FieldUseType = value,
+                    CanUseOnPokemon = SvItemsWorkflowService.CanUseOnPokemon((global::FieldFunctionType)value),
+                },
+            },
+            SwShItemsWorkflowService.CanUseOnPokemonField => item with
+            {
+                Metadata = metadata with
+                {
+                    CanUseOnPokemon = value != 0,
+                    FieldUseType = value == 0
+                        ? (int)global::FieldFunctionType.FIELDFUNC_NONE
+                        : metadata.FieldUseType == (int)global::FieldFunctionType.FIELDFUNC_NONE
+                            ? (int)global::FieldFunctionType.FIELDFUNC_RECOVER
+                            : metadata.FieldUseType,
+                },
+            },
             SwShItemsWorkflowService.ItemTypeField => item with { Metadata = metadata with { ItemType = value } },
             SwShItemsWorkflowService.SortIndexField => item with { Metadata = metadata with { SortIndex = value } },
             SwShItemsWorkflowService.GroupTypeField => item with { Metadata = metadata with { GroupType = value } },
@@ -414,7 +432,11 @@ internal sealed class SvItemsEditSessionService
                 row.FieldFunctionType = (global::FieldFunctionType)value;
                 break;
             case SwShItemsWorkflowService.CanUseOnPokemonField:
-                row.SetToPoke = value != 0;
+                row.FieldFunctionType = value == 0
+                    ? global::FieldFunctionType.FIELDFUNC_NONE
+                    : row.FieldFunctionType == global::FieldFunctionType.FIELDFUNC_NONE
+                        ? global::FieldFunctionType.FIELDFUNC_RECOVER
+                        : row.FieldFunctionType;
                 break;
             case SwShItemsWorkflowService.ItemTypeField:
                 row.ItemType = (global::ItemType)value;

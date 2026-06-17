@@ -140,7 +140,7 @@ internal sealed class SvItemsWorkflowService
             item.ThrowPower,
             (int)item.FieldFunctionType,
             FieldFlags: 0,
-            item.SetToPoke,
+            CanUseOnPokemon(item.FieldFunctionType),
             (int)item.ItemType,
             item.SortNum,
             item.Id,
@@ -237,6 +237,17 @@ internal sealed class SvItemsWorkflowService
                 SvLabels.EnumName(value, prefix)))
             .OrderBy(option => option.Value)
             .ToArray();
+    }
+
+    internal static bool CanUseOnPokemon(global::FieldFunctionType functionType)
+    {
+        return functionType is
+            global::FieldFunctionType.FIELDFUNC_RECOVER or
+            global::FieldFunctionType.FIELDFUNC_WAZA or
+            global::FieldFunctionType.FIELDFUNC_EVOLUTION or
+            global::FieldFunctionType.FIELDFUNC_VIDRO or
+            global::FieldFunctionType.FIELDFUNC_KINOMI or
+            global::FieldFunctionType.FIELDFUNC_FORM_CHANGE;
     }
 
     private static IReadOnlyList<SwShItemEditableFieldOption> CreateIndexedOptions(

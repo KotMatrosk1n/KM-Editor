@@ -8027,22 +8027,30 @@ function PokemonSection({
                   <VirtualTableBody
                     getKey={(record) => record.personalId}
                     items={filteredPokemon}
-                    renderRow={(record) => (
-                      <button
-                        className={`items-row ${
-                          selectedPokemon?.personalId === record.personalId
-                            ? 'items-row-selected'
-                            : ''
-                        } ${pendingPokemonIds.has(record.personalId) ? 'moves-row-pending' : ''}`}
-                        onClick={() => onSelectPokemon(record.personalId)}
-                        role="row"
-                        type="button"
-                      >
-                        <span role="cell">{record.personalId}</span>
-                        <span role="cell">{record.name}</span>
-                        <span role="cell">{formatPokemonTypes(record)}</span>
-                      </button>
-                    )}
+                    renderRow={(record) => {
+                      const pokemonLabel = formatSpeciesFormLabel(
+                        record.name,
+                        record.form,
+                        record.speciesId
+                      );
+
+                      return (
+                        <button
+                          className={`items-row ${
+                            selectedPokemon?.personalId === record.personalId
+                              ? 'items-row-selected'
+                              : ''
+                          } ${pendingPokemonIds.has(record.personalId) ? 'moves-row-pending' : ''}`}
+                          onClick={() => onSelectPokemon(record.personalId)}
+                          role="row"
+                          type="button"
+                        >
+                          <span role="cell">{record.personalId}</span>
+                          <span role="cell">{pokemonLabel}</span>
+                          <span role="cell">{formatPokemonTypes(record)}</span>
+                        </button>
+                      );
+                    }}
                   />
                 </div>
               }
@@ -8095,6 +8103,7 @@ function SelectedPokemonSummaryCard({
   variant?: 'context' | 'detailed';
 }) {
   const isContext = variant === 'context';
+  const pokemonLabel = formatSpeciesFormLabel(pokemon.name, pokemon.form, pokemon.speciesId);
 
   return (
     <div
@@ -8102,9 +8111,9 @@ function SelectedPokemonSummaryCard({
         isContext ? 'pokemon-summary-card-context' : 'pokemon-summary-card-detailed'
       }`}
     >
-      <PokemonSprite className="pokemon-summary-sprite" name={pokemon.name} />
+      <PokemonSprite className="pokemon-summary-sprite" name={pokemonLabel} />
       <div className="pokemon-summary-main">
-        <strong>{pokemon.name}</strong>
+        <strong>{pokemonLabel}</strong>
         <span>
           {pokemon.speciesId} / {pokemon.formLabel}
         </span>

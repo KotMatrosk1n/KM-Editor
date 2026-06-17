@@ -48,31 +48,31 @@ internal sealed class SvTrainersWorkflowService
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> NatureOptions =
     [
         new(0, "Default"),
-        new(1, "Hardy"),
-        new(2, "Lonely"),
-        new(3, "Brave"),
-        new(4, "Adamant"),
-        new(5, "Naughty"),
-        new(6, "Bold"),
-        new(7, "Docile"),
-        new(8, "Relaxed"),
-        new(9, "Impish"),
-        new(10, "Lax"),
-        new(11, "Timid"),
-        new(12, "Hasty"),
-        new(13, "Serious"),
-        new(14, "Jolly"),
-        new(15, "Naive"),
-        new(16, "Modest"),
-        new(17, "Mild"),
-        new(18, "Quiet"),
-        new(19, "Bashful"),
-        new(20, "Rash"),
-        new(21, "Calm"),
-        new(22, "Gentle"),
-        new(23, "Sassy"),
-        new(24, "Careful"),
-        new(25, "Quirky"),
+        new(1, "Hardy (neutral)"),
+        new(2, "Lonely (+Atk, -Def)"),
+        new(3, "Brave (+Atk, -Spe)"),
+        new(4, "Adamant (+Atk, -Sp. Atk)"),
+        new(5, "Naughty (+Atk, -Sp. Def)"),
+        new(6, "Bold (+Def, -Atk)"),
+        new(7, "Docile (neutral)"),
+        new(8, "Relaxed (+Def, -Spe)"),
+        new(9, "Impish (+Def, -Sp. Atk)"),
+        new(10, "Lax (+Def, -Sp. Def)"),
+        new(11, "Timid (+Spe, -Atk)"),
+        new(12, "Hasty (+Spe, -Def)"),
+        new(13, "Serious (neutral)"),
+        new(14, "Jolly (+Spe, -Sp. Atk)"),
+        new(15, "Naive (+Spe, -Sp. Def)"),
+        new(16, "Modest (+Sp. Atk, -Atk)"),
+        new(17, "Mild (+Sp. Atk, -Def)"),
+        new(18, "Quiet (+Sp. Atk, -Spe)"),
+        new(19, "Bashful (neutral)"),
+        new(20, "Rash (+Sp. Atk, -Sp. Def)"),
+        new(21, "Calm (+Sp. Def, -Atk)"),
+        new(22, "Gentle (+Sp. Def, -Def)"),
+        new(23, "Sassy (+Sp. Def, -Spe)"),
+        new(24, "Careful (+Sp. Def, -Sp. Atk)"),
+        new(25, "Quirky (neutral)"),
     ];
 
     private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> ShinyModeOptions =
@@ -164,8 +164,9 @@ internal sealed class SvTrainersWorkflowService
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            var abilityResolver = SvTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, SvDataPaths.TrainerDataArray);
-            trainers = LoadRecords(source, labels).ToArray();
+            trainers = LoadRecords(source, labels, abilityResolver).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -192,7 +193,10 @@ internal sealed class SvTrainersWorkflowService
             diagnostics);
     }
 
-    private static IEnumerable<SwShTrainerRecord> LoadRecords(SvWorkflowFile source, SvTextLabelLookup labels)
+    private static IEnumerable<SwShTrainerRecord> LoadRecords(
+        SvWorkflowFile source,
+        SvTextLabelLookup labels,
+        SvTrainerAbilityResolver abilityResolver)
     {
         var table = global::trainer.TrdataMainArray.GetRootAsTrdataMainArray(new ByteBuffer(source.Bytes));
         for (var index = 0; index < table.ValuesLength; index++)
@@ -203,7 +207,7 @@ internal sealed class SvTrainersWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, trainer.Value, source, labels);
+            yield return ToRecord(index, trainer.Value, source, labels, abilityResolver);
         }
     }
 
@@ -211,10 +215,11 @@ internal sealed class SvTrainersWorkflowService
         int trainerId,
         global::trainer.TrdataMain trainer,
         SvWorkflowFile source,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        SvTrainerAbilityResolver abilityResolver)
     {
         var aiFlags = PackAiFlags(trainer);
-        var team = ReadTeam(trainer, labels).ToArray();
+        var team = ReadTeam(trainer, labels, abilityResolver).ToArray();
         var aiStates = CreateAiStates(trainer);
         var className = labels.TrainerType(trainer.TrainerType);
         var name = labels.TrainerName(trainer.TrNameLabel, trainerId);
@@ -253,7 +258,8 @@ internal sealed class SvTrainersWorkflowService
 
     private static IEnumerable<SwShTrainerPokemonRecord> ReadTeam(
         global::trainer.TrdataMain trainer,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        SvTrainerAbilityResolver abilityResolver)
     {
         var slots = new[]
         {
@@ -273,18 +279,21 @@ internal sealed class SvTrainersWorkflowService
                 continue;
             }
 
-            yield return ToPokemon(index, pokemon.Value, labels);
+            yield return ToPokemon(index, pokemon.Value, labels, abilityResolver);
         }
     }
 
     private static SwShTrainerPokemonRecord ToPokemon(
         int slot,
         global::PokeDataBattle pokemon,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        SvTrainerAbilityResolver abilityResolver)
     {
         var speciesId = (int)pokemon.DevId;
         var itemId = (int)pokemon.Item;
         var moveIds = ReadMoves(pokemon);
+        var abilities = abilityResolver.Resolve(speciesId, pokemon.FormId);
+        var abilityOptions = CreateAbilityModeOptions(abilities);
         var evs = pokemon.EffortValue;
         var ivs = pokemon.TalentValue;
         var record = new SwShTrainerPokemonRecord(
@@ -296,11 +305,11 @@ internal sealed class SvTrainersWorkflowService
             itemId,
             itemId > 0 ? labels.Item(itemId) : null,
             moveIds,
-            moveIds.Select(labels.Move).ToArray(),
+            moveIds.Select(move => move == 0 ? "None" : labels.Move(move)).ToArray(),
             (int)pokemon.Sex,
             FormatGender(pokemon.Sex),
             (int)pokemon.Tokusei,
-            FormatAbilityMode(pokemon.Tokusei),
+            FormatAbilityMode(pokemon.Tokusei, abilities),
             (int)pokemon.Seikaku,
             FormatNature(pokemon.Seikaku),
             new SwShTrainerPokemonStatsRecord(
@@ -324,7 +333,7 @@ internal sealed class SvTrainersWorkflowService
             TeraType: (int)pokemon.GemType,
             TeraTypeLabel: FormatTeraType(pokemon.GemType))
         {
-            AbilityOptions = AbilityModeOptions,
+            AbilityOptions = abilityOptions,
         };
 
         return record;
@@ -332,20 +341,18 @@ internal sealed class SvTrainersWorkflowService
 
     private static IReadOnlyList<int> ReadMoves(global::PokeDataBattle pokemon)
     {
-        var moves = new List<int>();
-        AddMove(moves, pokemon.Waza1);
-        AddMove(moves, pokemon.Waza2);
-        AddMove(moves, pokemon.Waza3);
-        AddMove(moves, pokemon.Waza4);
-        return moves;
+        return
+        [
+            ReadMoveId(pokemon.Waza1),
+            ReadMoveId(pokemon.Waza2),
+            ReadMoveId(pokemon.Waza3),
+            ReadMoveId(pokemon.Waza4),
+        ];
     }
 
-    private static void AddMove(List<int> moves, global::WazaSet? move)
+    private static int ReadMoveId(global::WazaSet? move)
     {
-        if (move is not null && (int)move.Value.WazaId > 0)
-        {
-            moves.Add((int)move.Value.WazaId);
-        }
+        return move is null ? 0 : (int)move.Value.WazaId;
     }
 
     private static int PackAiFlags(global::trainer.TrdataMain trainer)
@@ -478,15 +485,30 @@ internal sealed class SvTrainersWorkflowService
 
     internal static string FormatAbilityMode(global::TokuseiType value)
     {
-        return value switch
-        {
-            global::TokuseiType.RANDOM_12 => "Random 1/2",
-            global::TokuseiType.RANDOM_123 => "Random 1/2/Hidden",
-            global::TokuseiType.SET_1 => "Ability 1",
-            global::TokuseiType.SET_2 => "Ability 2",
-            global::TokuseiType.SET_3 => "Hidden Ability",
-            _ => SvLabels.EnumName(value),
-        };
+        return FormatAbilityMode(value, SvTrainerAbilitySet.Empty);
+    }
+
+    private static string FormatAbilityMode(global::TokuseiType value, SvTrainerAbilitySet abilities)
+    {
+        return CreateAbilityModeOptions(abilities).FirstOrDefault(option => option.Value == (int)value)?.Label
+            ?? SvLabels.EnumName(value);
+    }
+
+    private static IReadOnlyList<SwShTrainerEditableFieldOption> CreateAbilityModeOptions(SvTrainerAbilitySet abilities)
+    {
+        return
+        [
+            new((int)global::TokuseiType.RANDOM_12, "Random 1/2"),
+            new((int)global::TokuseiType.RANDOM_123, "Random 1/2/Hidden"),
+            new((int)global::TokuseiType.SET_1, FormatAbilitySlot(abilities.Ability1, "Ability 1")),
+            new((int)global::TokuseiType.SET_2, FormatAbilitySlot(abilities.Ability2, "Ability 2")),
+            new((int)global::TokuseiType.SET_3, FormatAbilitySlot(abilities.HiddenAbility, "Hidden Ability")),
+        ];
+    }
+
+    private static string FormatAbilitySlot(string ability, string slot)
+    {
+        return string.Equals(ability, slot, StringComparison.Ordinal) ? slot : $"{ability} ({slot})";
     }
 
     internal static string FormatNature(global::SeikakuType value)
@@ -499,5 +521,79 @@ internal sealed class SvTrainersWorkflowService
     {
         return TeraTypeOptions.FirstOrDefault(option => option.Value == (int)value)?.Label
             ?? SvLabels.EnumName(value);
+    }
+
+    private sealed class SvTrainerAbilityResolver
+    {
+        private readonly IReadOnlyDictionary<string, SvTrainerAbilitySet> abilitiesBySpeciesForm;
+
+        private SvTrainerAbilityResolver(IReadOnlyDictionary<string, SvTrainerAbilitySet> abilitiesBySpeciesForm)
+        {
+            this.abilitiesBySpeciesForm = abilitiesBySpeciesForm;
+        }
+
+        public static SvTrainerAbilityResolver Empty { get; } = new(
+            new Dictionary<string, SvTrainerAbilitySet>(StringComparer.Ordinal));
+
+        public static SvTrainerAbilityResolver Load(
+            OpenedProject project,
+            SvWorkflowFileSource fileSource,
+            SvTextLabelLookup labels,
+            ICollection<ValidationDiagnostic> diagnostics)
+        {
+            try
+            {
+                var source = fileSource.Read(project, SvDataPaths.PersonalArray);
+                var table = global::personal_table.GetRootAspersonal_table(new ByteBuffer(source.Bytes));
+                var lookup = new Dictionary<string, SvTrainerAbilitySet>(StringComparer.Ordinal);
+                for (var index = 0; index < table.EntryLength; index++)
+                {
+                    var row = table.Entry(index);
+                    if (row?.Species is not { } species || !row.Value.IsPresent)
+                    {
+                        continue;
+                    }
+
+                    var key = CreateKey(species.Species, species.Form);
+                    lookup.TryAdd(
+                        key,
+                        new SvTrainerAbilitySet(
+                            labels.Ability(row.Value.Ability1),
+                            labels.Ability(row.Value.Ability2),
+                            labels.Ability(row.Value.AbilityHidden)));
+                }
+
+                return new SvTrainerAbilityResolver(lookup);
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            {
+                diagnostics.Add(SvWorkflowSupport.Warning(
+                    $"Trainer ability names could not be resolved from Pokemon Data: {exception.Message}",
+                    $"romfs/{SvDataPaths.PersonalArray}"));
+                return Empty;
+            }
+        }
+
+        public SvTrainerAbilitySet Resolve(int species, int form)
+        {
+            return abilitiesBySpeciesForm.TryGetValue(CreateKey(species, form), out var exact)
+                ? exact
+                : abilitiesBySpeciesForm.TryGetValue(CreateKey(species, 0), out var baseForm)
+                    ? baseForm
+                    : SvTrainerAbilitySet.Empty;
+        }
+
+        private static string CreateKey(int species, int form)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{species}:{form}");
+        }
+    }
+
+    private sealed record SvTrainerAbilitySet(
+        string Ability1,
+        string Ability2,
+        string HiddenAbility)
+    {
+        public static SvTrainerAbilitySet Empty { get; } = new("Ability 1", "Ability 2", "Hidden Ability");
     }
 }

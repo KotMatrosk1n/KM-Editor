@@ -45,7 +45,7 @@ internal sealed class SvPokemonWorkflowService
         CreateField(SwShPokemonWorkflowService.Ability2Field, "Ability 2", "Abilities", 0, ushort.MaxValue),
         CreateField(SwShPokemonWorkflowService.HiddenAbilityField, "Hidden Ability", "Abilities", 0, ushort.MaxValue),
         CreateField(SwShPokemonWorkflowService.CatchRateField, "Catch Rate", "Identity", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.EvolutionStageField, "Evolution Stage", "Identity", 0, byte.MaxValue),
+        CreateField(SwShPokemonWorkflowService.EvolutionStageField, "Evolution Stage", "Identity", 0, 3),
         CreateField(SwShPokemonWorkflowService.EVYieldHPField, "HP EV Yield", "EV Yield", 0, byte.MaxValue),
         CreateField(SwShPokemonWorkflowService.EVYieldAttackField, "Attack EV Yield", "EV Yield", 0, byte.MaxValue),
         CreateField(SwShPokemonWorkflowService.EVYieldDefenseField, "Defense EV Yield", "EV Yield", 0, byte.MaxValue),
@@ -58,7 +58,7 @@ internal sealed class SvPokemonWorkflowService
         CreateField(SwShPokemonWorkflowService.ExpGrowthField, "EXP Growth", "Identity", 0, byte.MaxValue),
         CreateField(SwShPokemonWorkflowService.EggGroup1Field, "Egg Group 1", "Breeding", 0, byte.MaxValue),
         CreateField(SwShPokemonWorkflowService.EggGroup2Field, "Egg Group 2", "Breeding", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.BaseExperienceField, "Base EXP Addend", "Identity", short.MinValue, short.MaxValue),
+        CreateField(SwShPokemonWorkflowService.BaseExperienceField, "Base EXP", "Identity", 0, ushort.MaxValue),
         CreateField(SwShPokemonWorkflowService.FormField, "Form", "Forms/Dex", 0, ushort.MaxValue),
         CreateField(SwShPokemonWorkflowService.ModelIdField, "Model ID", "Forms/Dex", 0, ushort.MaxValue),
         CreateField(SwShPokemonWorkflowService.ColorField, "Color", "Forms/Dex", 0, byte.MaxValue),
@@ -118,6 +118,13 @@ internal sealed class SvPokemonWorkflowService
             (3, "Medium Slow"),
             (4, "Fast"),
             (5, "Slow"));
+
+    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> EvolutionStageOptions =
+        CreateOptionList(
+            (0, "Single-stage or unevolved"),
+            (1, "First evolution"),
+            (2, "Second evolution"),
+            (3, "Final or special stage"));
 
     private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> ColorOptions =
         CreateOptionList(
@@ -329,6 +336,7 @@ internal sealed class SvPokemonWorkflowService
         var blueberryDexIndex = blueberryDexData?.Index ?? 0;
 
         var total = hp + attack + defense + specialAttack + specialDefense + speed;
+        var baseExperience = SvPokemonExperience.CalculateBaseExperience(total, entry.EvoStage, entry.ExpAddend);
         var stats = new SwShPokemonBaseStats(
             hp,
             attack,
@@ -375,7 +383,7 @@ internal sealed class SvPokemonWorkflowService
             color,
             entry.IsPresent,
             HasSpriteForm: false,
-            entry.ExpAddend,
+            baseExperience,
             height,
             weight,
             model,
@@ -404,7 +412,7 @@ internal sealed class SvPokemonWorkflowService
             entry.EvoStage,
             genderRatio,
             FormatGender(genderRatio),
-            entry.ExpAddend,
+            baseExperience,
             height,
             weight,
             ReadEvolutions(entry, labels),
@@ -561,6 +569,7 @@ internal sealed class SvPokemonWorkflowService
                         or SwShPokemonWorkflowService.HiddenAbilityField => abilityOptions,
                     SwShPokemonWorkflowService.GenderRatioField => GenderRatioOptions,
                     SwShPokemonWorkflowService.ExpGrowthField => ExpGrowthOptions,
+                    SwShPokemonWorkflowService.EvolutionStageField => EvolutionStageOptions,
                     SwShPokemonWorkflowService.EggGroup1Field or SwShPokemonWorkflowService.EggGroup2Field => EggGroupOptions,
                     SwShPokemonWorkflowService.ColorField => ColorOptions,
                     _ => field.Options,

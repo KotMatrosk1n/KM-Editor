@@ -63,6 +63,43 @@ internal sealed class SvWorkflowFileSource
         throw new FileNotFoundException($"Scarlet/Violet file '{relativePath}' could not be resolved.");
     }
 
+    public SvWorkflowFile ReadBase(OpenedProject project, string virtualRomFsPath)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
+
+        var normalizedVirtualPath = NormalizeVirtualPath(virtualRomFsPath);
+        var relativePath = ToRelativePath(normalizedVirtualPath);
+        var entry = FindEntry(project, relativePath);
+
+        if (!string.IsNullOrWhiteSpace(project.Paths.BaseRomFsPath))
+        {
+            var looseBasePath = CombineGraphPath(project.Paths.BaseRomFsPath, normalizedVirtualPath);
+            if (File.Exists(looseBasePath))
+            {
+                return new SvWorkflowFile(
+                    normalizedVirtualPath,
+                    relativePath,
+                    File.ReadAllBytes(looseBasePath),
+                    ProjectFileLayer.Base,
+                    entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
+            }
+
+            using var archive = SvTrinityArchive.Open(project.Paths.BaseRomFsPath);
+            if (archive.TryReadFile(normalizedVirtualPath, out var archiveBytes))
+            {
+                return new SvWorkflowFile(
+                    normalizedVirtualPath,
+                    relativePath,
+                    archiveBytes,
+                    ProjectFileLayer.Base,
+                    entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
+            }
+        }
+
+        throw new FileNotFoundException($"Scarlet/Violet base file '{relativePath}' could not be resolved.");
+    }
+
     public static ProjectFileReference CreateReference(SvWorkflowFile file)
     {
         ArgumentNullException.ThrowIfNull(file);
