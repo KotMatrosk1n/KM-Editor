@@ -62,6 +62,22 @@ public sealed class SwShShinyRateWorkflowTests
         Assert.Contains("will not patch this file", analysis.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void PresetDefinitionsIncludeAlwaysShiny()
+    {
+        var preset = Assert.Single(
+            SwShShinyRateWorkflowService.PresetDefinitions,
+            candidate => candidate.PresetId == "always");
+
+        Assert.Equal("Always Shiny", preset.Label);
+        Assert.Equal("always", preset.Mode);
+        Assert.Null(preset.RollCount);
+        Assert.Equal(1, preset.TargetDenominator);
+        Assert.True(preset.IsEnabled);
+        Assert.Equal("1/1", preset.OddsLabel);
+        Assert.Equal("100.000%", preset.PercentLabel);
+    }
+
     [Theory]
     [InlineData(ProjectGame.Sword)]
     [InlineData(ProjectGame.Shield)]

@@ -24,6 +24,7 @@ public sealed class SwShShinyRateWorkflowService
         CreateFixedPreset("shinyCharm", "Shiny Charm", rollCount: 3, targetDenominator: 1366),
         CreateFixedPreset("masuda", "Masuda", rollCount: 6, targetDenominator: 683),
         CreateFixedPreset("masudaCharm", "Masuda + Shiny Charm", rollCount: 8, targetDenominator: 512),
+        CreateAlwaysPreset(),
     ];
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -301,6 +302,20 @@ public sealed class SwShShinyRateWorkflowService
             string.Create(CultureInfo.InvariantCulture, $"Writes {rollCount} PID rolls."));
     }
 
+    private static SwShShinyRatePreset CreateAlwaysPreset()
+    {
+        return new SwShShinyRatePreset(
+            "always",
+            "Always Shiny",
+            "always",
+            RollCount: null,
+            TargetDenominator: 1,
+            IsEnabled: true,
+            "1/1",
+            FormatPercent(1),
+            "Forces random shiny checks to resolve as shiny.");
+    }
+
     private static SwShShinyRatePreset CreateDisabledPreset(
         string presetId,
         string label,
@@ -329,7 +344,7 @@ public sealed class SwShShinyRateWorkflowService
 
     internal static string FormatPercent(double chance)
     {
-        return string.Create(CultureInfo.InvariantCulture, $"{chance:P3}");
+        return string.Create(CultureInfo.InvariantCulture, $"{chance * 100:0.000}%");
     }
 
     private static ValidationDiagnostic CreateDiagnostic(

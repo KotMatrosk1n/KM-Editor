@@ -52,7 +52,18 @@ export function createShinyRateWorkflowFixture(canEdit: boolean): {
       ),
       preset('shinyCharm', 'Shiny Charm', 'fixed', 3, 1366, true, '1/1,366', '0.073%', 'Writes 3 PID rolls.'),
       preset('masuda', 'Masuda', 'fixed', 6, 683, true, '1/683', '0.146%', 'Writes 6 PID rolls.'),
-      preset('masudaCharm', 'Masuda + Shiny Charm', 'fixed', 8, 512, true, '1/512', '0.195%', 'Writes 8 PID rolls.')
+      preset('masudaCharm', 'Masuda + Shiny Charm', 'fixed', 8, 512, true, '1/512', '0.195%', 'Writes 8 PID rolls.'),
+      preset(
+        'always',
+        'Always Shiny',
+        'always',
+        null,
+        1,
+        true,
+        '1/1',
+        '100.000%',
+        'Forces random shiny checks to resolve as shiny.'
+      )
     ],
     rateRule: {
       chancePercent: 0.024,
@@ -80,7 +91,7 @@ export function createShinyRateWorkflowFixture(canEdit: boolean): {
     },
     stats: {
       outputFileCount: 1,
-      presetCount: 5,
+      presetCount: 6,
       sourceFileCount: 1
     },
     summary: shinyRateWorkflowSummary
