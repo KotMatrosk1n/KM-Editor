@@ -11,6 +11,7 @@ using KM.SwSh.Placement;
 using KM.SwSh.Raids;
 using KM.SwSh.Rentals;
 using KM.SwSh.RoyalCandy;
+using KM.SwSh.ShinyRate;
 using KM.SwSh.Shops;
 using KM.SwSh.SpreadsheetImport;
 using KM.SwSh.StaticEncounters;
@@ -40,7 +41,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
             "The synthetic baseline must include enough files to exercise project graph enumeration.");
 
         var workflowList = Record(measurements, "workflows.list", () => workflowService.List(temp.Paths));
-        Assert.Equal(30, workflowList.Workflows.Count);
+        Assert.Equal(31, workflowList.Workflows.Count);
 
         var items = Record(measurements, "items.load", () => workflowService.LoadItems(temp.Paths));
         var pokemon = Record(measurements, "pokemon.load", () => workflowService.LoadPokemon(temp.Paths));
@@ -65,6 +66,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var catchCap = Record(measurements, "catchCap.load", () => workflowService.LoadCatchCap(temp.Paths));
         var ivScreen = Record(measurements, "ivScreen.load", () => workflowService.LoadIvScreen(temp.Paths));
         var gymUniformRemoval = Record(measurements, "gymUniformRemoval.load", () => workflowService.LoadGymUniformRemoval(temp.Paths));
+        var shinyRate = Record(measurements, "shinyRate.load", () => workflowService.LoadShinyRate(temp.Paths));
         var typeChart = Record(measurements, "typeChart.load", () => workflowService.LoadTypeChart(temp.Paths));
         var fairyGymBoosts = Record(measurements, "fairyGymBoosts.load", () => workflowService.LoadFairyGymBoosts(temp.Paths));
         var fashionUnlock = Record(measurements, "fashionUnlock.load", () => workflowService.LoadFashionUnlock(temp.Paths));
@@ -101,6 +103,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         Assert.Equal(9, catchCap.Stats.TotalCapCount);
         Assert.True(ivScreen.Stats.ReservedMainTextRegionCount > 0);
         Assert.True(gymUniformRemoval.Stats.ReservedMainTextRegionCount > 0);
+        Assert.Equal(SwShShinyRateWorkflowService.PresetDefinitions.Count, shinyRate.Stats.PresetCount);
         Assert.Equal(SwShTypeChartMainPatcher.ChartLength, typeChart.Stats.ChartCellCount);
         Assert.Equal(4, fairyGymBoosts.Stats.TrainerCount);
         Assert.True(fashionUnlock.Summary.Availability != SwShWorkflowAvailability.Disabled);
