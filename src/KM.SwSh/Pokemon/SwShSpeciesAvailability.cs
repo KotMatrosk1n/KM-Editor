@@ -49,10 +49,14 @@ internal static class SwShSpeciesAvailability
                 continue;
             }
 
-            var speciesId = record.HatchedSpecies > 0 ? record.HatchedSpecies : record.PersonalId;
-            if (speciesId > 0)
+            if (record.PersonalId > 0)
             {
-                speciesIds.Add(speciesId);
+                speciesIds.Add(record.PersonalId);
+            }
+
+            if (record.HatchedSpecies > 0)
+            {
+                speciesIds.Add(record.HatchedSpecies);
             }
         }
 

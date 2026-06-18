@@ -5,6 +5,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.Tests.Items;
+using KM.SwSh.Tests.Pokemon;
 using KM.SwSh.Trainers;
 using KM.SwSh.Workflows;
 using Xunit;
@@ -195,6 +196,37 @@ public sealed class SwShTrainersWorkflowServiceTests
                 && diagnostic.Message.Contains("declares 2 Pokemon", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void LoadKeepsSpeciesOptionsForTrainerPokemonWhoseHatchedSpeciesPointsAtBase()
+    {
+        using var temp = TemporarySwShProject.Create();
+        WriteTrainerFixture(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/trainer/trainer_poke/trainer_010.bin",
+            CreateTrainerTeam((speciesId: 745, level: 75, heldItemId: 0, moves: new[] { 709, 446, 444, 583 })));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateTextTable(745, (744, "Rockruff"), (745, "Lycanroc")));
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            CreateTextTable(709, (444, "Stone Edge"), (446, "Stealth Rock"), (583, "Play Rough"), (709, "Accelerock")));
+        temp.WriteBaseRomFsFile(
+            "bin/pml/personal/personal_total.bin",
+            CreatePersonalTable(
+                746,
+                (744, hatchedSpecies: 744),
+                (745, hatchedSpecies: 744)));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShTrainersWorkflowService().Load(project);
+
+        var speciesField = workflow.EditableFields.Single(field =>
+            field.Field == SwShTrainersWorkflowService.SpeciesIdField);
+        Assert.Contains(speciesField.Options, option => option.Value == 745 && option.Label == "745 Lycanroc");
+        Assert.Equal("Lycanroc", Assert.Single(workflow.Trainers).Team.Single().Species);
+    }
+
     internal static void WriteTrainerFixture(TemporarySwShProject temp)
     {
         temp.WriteBaseRomFsFile(
@@ -219,6 +251,23 @@ public sealed class SwShTrainersWorkflowServiceTests
         temp.WriteBaseRomFsFile("bin/message/English/common/monsname.dat", CreateTextTable(821, (810, "Grookey"), (821, "Rookidee")));
         temp.WriteBaseRomFsFile("bin/message/English/common/itemname.dat", CreateTextTable(2, (1, "Potion"), (2, "Antidote")));
         temp.WriteBaseRomFsFile("bin/message/English/common/wazaname.dat", CreateTextTable(3, (1, "Scratch"), (2, "Growl"), (3, "Peck")));
+    }
+
+    internal static byte[] CreatePersonalTable(
+        int recordCount,
+        params (int personalId, int hatchedSpecies)[] presentRecords)
+    {
+        var records = Enumerable.Range(0, recordCount)
+            .Select(_ => SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord())
+            .ToArray();
+
+        foreach (var record in presentRecords)
+        {
+            records[record.personalId] = SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(
+                hatchedSpecies: record.hatchedSpecies);
+        }
+
+        return SwShPokemonWorkflowServiceTests.CreatePersonalTable(records);
     }
 
     internal static byte[] CreateTrainerData(

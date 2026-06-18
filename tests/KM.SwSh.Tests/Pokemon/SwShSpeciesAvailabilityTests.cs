@@ -26,7 +26,26 @@ public sealed class SwShSpeciesAvailabilityTests
                 SwShPokemonWorkflowServiceTests.CreatePersonalTable(records)).Records);
 
         Assert.Contains(52, presentSpeciesIds);
+        Assert.Contains(53, presentSpeciesIds);
         Assert.DoesNotContain(16, presentSpeciesIds);
+    }
+
+    [Fact]
+    public void CreatePresentSpeciesIdsKeepsEvolvedSpeciesWhenHatchedSpeciesPointsAtBase()
+    {
+        var records = new[]
+        {
+            SwShPokemonWorkflowServiceTests.CreateEmptyPersonalRecord(),
+            SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 1),
+            SwShPokemonWorkflowServiceTests.CreateBulbasaurPersonalRecord(hatchedSpecies: 1),
+        };
+
+        var presentSpeciesIds = SwShSpeciesAvailability.CreatePresentSpeciesIds(
+            KM.Formats.SwSh.SwShPersonalTable.Parse(
+                SwShPokemonWorkflowServiceTests.CreatePersonalTable(records)).Records);
+
+        Assert.Contains(1, presentSpeciesIds);
+        Assert.Contains(2, presentSpeciesIds);
     }
 
     [Fact]

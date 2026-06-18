@@ -8100,6 +8100,15 @@ function PokemonSection({
           </div>
         </div>
 
+        {workflow && selectedPokemon ? (
+          <div className="pokemon-diagnostics-row">
+            <DiagnosticsSection diagnostics={workflow.diagnostics} />
+            <SelectedPokemonSummaryCard pokemon={selectedPokemon} variant="context" />
+          </div>
+        ) : (
+          <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+        )}
+
         {workflow ? (
           <div className="items-layout pokemon-layout">
             <SelectedPokemonPanel
@@ -8167,14 +8176,6 @@ function PokemonSection({
         )}
       </section>
 
-      {workflow && selectedPokemon ? (
-        <div className="pokemon-diagnostics-row">
-          <DiagnosticsSection diagnostics={workflow.diagnostics} />
-          <SelectedPokemonSummaryCard pokemon={selectedPokemon} variant="context" />
-        </div>
-      ) : (
-        <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
-      )}
       {expYieldConfirmation ? (
         <PokemonYieldConfirmationModal
           action={expYieldConfirmation}
