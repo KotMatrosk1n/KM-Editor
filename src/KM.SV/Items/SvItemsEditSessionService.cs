@@ -213,6 +213,11 @@ internal sealed class SvItemsEditSessionService
             return null;
         }
 
+        if (!CanEditMachineMove(item, editableField, diagnostics))
+        {
+            return null;
+        }
+
         var parsedValue = SvEditSessionSupport.TryParseInt(
             value,
             editableField.MinimumValue,
@@ -249,8 +254,19 @@ internal sealed class SvItemsEditSessionService
             return;
         }
 
-        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
-            || workflow.Items.All(item => item.ItemId != itemId))
+        if (!int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId))
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending item edit targets a record that is not loaded.",
+                SvEditSessionSupport.ItemsDomain,
+                field: "itemId",
+                expected: "Existing item record"));
+            return;
+        }
+
+        var item = workflow.Items.FirstOrDefault(candidate => candidate.ItemId == itemId);
+        if (item is null)
         {
             diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Error,
@@ -274,6 +290,11 @@ internal sealed class SvItemsEditSessionService
             return;
         }
 
+        if (!CanEditMachineMove(item, editableField, diagnostics))
+        {
+            return;
+        }
+
         _ = SvEditSessionSupport.TryParseInt(
             edit.NewValue,
             editableField.MinimumValue,
@@ -281,6 +302,30 @@ internal sealed class SvItemsEditSessionService
             edit.Field,
             SvEditSessionSupport.ItemsDomain,
             diagnostics);
+    }
+
+    private static bool CanEditMachineMove(
+        SvItemRecord selectedItem,
+        SvItemEditableField itemField,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (itemField.Field != SvItemsWorkflowService.MachineMoveIdField)
+        {
+            return true;
+        }
+
+        if (selectedItem.Metadata.MachineSlot is not null)
+        {
+            return true;
+        }
+
+        diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            "TM move can only be edited on Scarlet/Violet TM item records.",
+            SvEditSessionSupport.ItemsDomain,
+            field: SvItemsWorkflowService.MachineMoveIdField,
+            expected: "Item with an S/V TM group and machine move"));
+        return false;
     }
 
     private static SvItemsWorkflow OverlayPendingEdits(SvItemsWorkflow workflow, IEnumerable<PendingEdit> edits)

@@ -351,6 +351,40 @@ Validation so far:
     - `git diff --check -- src\KM.SV\Encounters\SvEncounterGrouping.cs src\KM.SV\Encounters\SvEncountersWorkflowService.cs src\KM.SV\Trainers\SvTrainerMoveResolver.cs src\KM.SV\Trainers\SvTrainersWorkflowService.cs src\KM.SV\Trainers\SvTrainersEditSessionService.cs apps\desktop\src\App.tsx apps\desktop\src\styles.css` passed with only standard line-ending warnings.
     - Full `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "ScarletVioletBridgeTests"` and normal `dotnet build src\KM.SV\KM.SV.csproj --no-restore --nologo` are currently blocked before S/V validation by unrelated SwSh `NpcItemGift` compile errors in `KM.SwSh`.
     - `pnpm --filter @km-editor/desktop typecheck` and `npm --prefix apps\desktop run build` are currently blocked by unrelated `npcItemGift` command/type errors in the desktop bridge contracts.
+- S/V Pokemon compatibility, trainer semantics, item TM handling, and wild lot-weight checkpoint on 2026-06-17:
+  - Pokemon Data:
+    - S/V TM compatibility now builds from the Items workflow's actual TM catalog in `world/data/item/itemdata/itemdata_array.bin`.
+    - The visible TM list uses real S/V TM item order and labels, for example `TM001 Take Down`, instead of treating every move in the personal `TmMoves` vector as the full TM universe.
+    - Personal TM compatibility edits now add or remove move IDs from `TmMoves` while preserving sorted vector output.
+    - Empty Egg Moves and Reminder Moves groups are not shown for records with no moves in those vectors.
+    - Remove/Restore EXP Yield and Remove/Restore EV Yield can now be staged together; global EXP-yield edits only replace Base EXP/global EXP edits, and global EV-yield edits only replace EV/global EV edits.
+    - Real Scarlet 4.0.0 bridge smoke showed 979 visible personal records and 733 unique species, matching the current public all-DLC availability count. 141 visible personal records, representing 92 unique species, are not in Paldea/Kitakami/Blueberry dexes, so do not filter only by regional dex flags; they include transfer or non-dex available forms such as Alolan Raichu, regional forms, legendaries, and late DLC species.
+    - No additional Pokemon were removed in this pass. The current filter remains the S/V personal table `IsPresent` flag.
+  - Items:
+    - `Group ID` now has dropdown options built from loaded item groups, with TM rows labeled by actual TM number and move, for example `1 TM001 Take Down`.
+    - `TM move` remains a move dropdown for actual TM items but is disabled in the desktop panel and rejected by the backend for non-TM item records.
+    - Real Scarlet 4.0.0 bridge smoke showed 1148 item records and 230 TM item records.
+  - Trainers:
+    - `Nature` value `0` is labeled `Default (game behavior)`.
+    - `Tera type` value `0` is labeled `Default (no override)`; `Random` remains a separate explicit option.
+    - `RareType.NO_RARE` is no longer displayed as forced shiny. The visible forced shiny boolean now only reflects `RareType.RARE`.
+    - Trainer move fallback now resolves level-up moves whenever all four explicit move slots are empty, regardless of `WazaType`, which fixed local rows that displayed all four moves as `None`.
+    - Real Scarlet 4.0.0 bridge smoke showed 756 trainers, no unresolved trainer Pokemon move sets after fallback, zero forced-shiny trainer Pokemon in the loaded Scarlet data, and this party-size distribution: 357 one-Pokemon trainers, 172 two-Pokemon, 68 three-Pokemon, 48 four-Pokemon, 23 five-Pokemon, and 88 six-Pokemon.
+  - Wild Encounters:
+    - S/V `Lotvalue` is now treated and labeled as a relative lot weight, not a percentage that must sum to 100.
+    - The selected encounter header now says `Total lot weight` for S/V; SwSh still uses `Total chance`.
+    - S/V slot cards show `lot N`; selected slot details show `Lot weight` plus its approximate share inside the currently selected filter group.
+    - S/V displays all slots in the selected table instead of truncating to ten. SwSh keeps the existing ten-slot display behavior.
+    - One-slot S/V tables now display a compact note that only one row matches the exact selected area/terrain/time/biome/flag filter, so users know to change facets to inspect adjacent rows.
+    - Real Scarlet 4.0.0 bridge smoke with Scarlet selected showed 292 encounter tables after version filtering, 214 one-slot tables, and table lot-weight totals ranging from 1 to 477. These totals are expected S/V data, not validation errors.
+  - Availability research:
+    - Nintendo's DLC support page says The Hidden Treasure of Area Zero adds two areas and over 230 familiar Pokemon not previously in Scarlet/Violet.
+    - Game8's current S/V count page lists 733 of 1025 Pokemon available after DLC, with some available only by Pokemon HOME transfer. This matches the local unique-species count from the 4.0.0 Scarlet personal table.
+  - Validation:
+    - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "ScarletVioletBridgeTests" --logger "console;verbosity=minimal"` passed: 10/10.
+    - `pnpm --filter @km-editor/desktop typecheck` passed.
+    - `npm --prefix apps/desktop run test:run -- src/App.test.tsx --testTimeout=30000` passed: 87/87 after rerunning with a larger tool timeout.
+    - `dotnet test tests\KM.SwSh.Tests\KM.SwSh.Tests.csproj --no-restore --filter "FullyQualifiedName~Pokemon|FullyQualifiedName~Trainers|FullyQualifiedName~Items|FullyQualifiedName~Encounters" --logger "console;verbosity=minimal"` passed: 148/148.
 
 Next steps:
 
@@ -358,7 +392,7 @@ Next steps:
 - Keep improving S/V Wild Encounters toward a native editor: better filter combinations, slot add/remove behavior, and clearer handling of outbreak/band/voice dimensions.
 - Add an Oodle smoke test only if the test environment intentionally supports the bundled DLL.
 - Add a real rar fixture or local archive smoke if we want format-specific RAR coverage beyond SharpCompress-backed intake.
-- Expand Pokemon compatibility support beyond current vector-preserving/removal behavior if the UI needs arbitrary insert/add workflows.
+- Expand non-TM Pokemon compatibility support beyond current vector-preserving/removal behavior if the UI needs arbitrary insert/add workflows for Egg Moves or Reminder Moves.
 - Re-run real Scarlet local apply smoke with descriptor patching after choosing a repeatable smoke harness; current descriptor patch coverage is synthetic.
 - Add Violet local smoke validation after a vanilla Violet dump is available.
 - Continue with the next S/V editors only after the current visible basic-editor backbone remains green.

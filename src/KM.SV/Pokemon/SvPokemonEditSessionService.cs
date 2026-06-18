@@ -672,9 +672,11 @@ internal sealed class SvPokemonEditSessionService
 
         if (IsGlobalYieldEdit(pendingEdit))
         {
-            return IsGlobalYieldEdit(candidate)
-                || string.Equals(candidate.Field, SvPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal)
-                || EvYieldFields.Contains(candidate.Field ?? string.Empty);
+            return IsSameGlobalYieldTarget(candidate, pendingEdit)
+                || (IsGlobalExpYieldEdit(pendingEdit)
+                    && string.Equals(candidate.Field, SvPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal))
+                || (IsGlobalEvYieldEdit(pendingEdit)
+                    && EvYieldFields.Contains(candidate.Field ?? string.Empty));
         }
 
         if (string.Equals(candidate.RecordId, pendingEdit.RecordId, StringComparison.Ordinal)
@@ -683,9 +685,13 @@ internal sealed class SvPokemonEditSessionService
             return true;
         }
 
-        if (IsGlobalYieldEdit(candidate)
-            && (string.Equals(pendingEdit.Field, SvPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal)
-                || EvYieldFields.Contains(pendingEdit.Field ?? string.Empty)))
+        if (IsGlobalExpYieldEdit(candidate)
+            && string.Equals(pendingEdit.Field, SvPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (IsGlobalEvYieldEdit(candidate) && EvYieldFields.Contains(pendingEdit.Field ?? string.Empty))
         {
             return true;
         }
@@ -1310,9 +1316,21 @@ internal sealed class SvPokemonEditSessionService
 
     private static void ApplyCompatibilityEdit(PersonalRow row, string groupId, int slot, bool enabled)
     {
+        if (string.Equals(groupId, "tm", StringComparison.Ordinal))
+        {
+            var move = checked((ushort)slot);
+            row.TmMoves.RemoveAll(candidate => candidate == move);
+            if (enabled)
+            {
+                row.TmMoves.Add(move);
+                row.TmMoves.Sort();
+            }
+
+            return;
+        }
+
         var moves = groupId switch
         {
-            "tm" => row.TmMoves,
             "egg" => row.EggMoves,
             "reminder" => row.ReminderMoves,
             _ => null,
@@ -1684,6 +1702,24 @@ internal sealed class SvPokemonEditSessionService
     {
         return string.Equals(edit.RecordId, GlobalRecordId, StringComparison.Ordinal)
             && IsGlobalYieldField(edit.Field);
+    }
+
+    private static bool IsGlobalEvYieldEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.RecordId, GlobalRecordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, GlobalEvYieldField, StringComparison.Ordinal);
+    }
+
+    private static bool IsGlobalExpYieldEdit(PendingEdit edit)
+    {
+        return string.Equals(edit.RecordId, GlobalRecordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, GlobalExpYieldField, StringComparison.Ordinal);
+    }
+
+    private static bool IsSameGlobalYieldTarget(PendingEdit candidate, PendingEdit pendingEdit)
+    {
+        return IsGlobalYieldEdit(candidate)
+            && string.Equals(candidate.Field, pendingEdit.Field, StringComparison.Ordinal);
     }
 
     private static bool IsGlobalYieldAction(string? value)

@@ -5,6 +5,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.SV.Data;
 using KM.SV.Workflows;
+using System.Globalization;
 
 namespace KM.SV.Items;
 
@@ -122,11 +123,13 @@ internal sealed class SvItemsWorkflowService
         SvWorkflowFile? source = null;
         var items = Array.Empty<SvItemRecord>();
         var labels = SvTextLabelLookup.None();
+        var tmCatalog = Array.Empty<SvTechnicalMachineMove>();
 
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.ItemDataArray);
+            tmCatalog = SvTechnicalMachineCatalog.Read(source.Bytes, labels).ToArray();
             items = LoadRecords(source, labels).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
@@ -146,7 +149,7 @@ internal sealed class SvItemsWorkflowService
         return new SvItemsWorkflow(
             summary,
             items,
-            CreateEditableFields(labels),
+            CreateEditableFields(labels, items, tmCatalog),
             new SvItemsWorkflowStats(items.Length, source is null ? 0 : 1),
             diagnostics);
     }
@@ -199,7 +202,7 @@ internal sealed class SvItemsWorkflowService
             item.WorkFriendly1,
             item.WorkFriendly2,
             item.WorkFriendly3,
-            MachineSlot: machineMoveId > 0 ? item.GroupID : null,
+            MachineSlot: SvTechnicalMachineCatalog.IsTechnicalMachine(item) && machineMoveId > 0 ? item.GroupID : null,
             MachineMoveId: machineMoveId > 0 ? machineMoveId : null,
             MachineMoveName: machineMoveId > 0 ? labels.Move(machineMoveId) : null);
 
@@ -248,17 +251,73 @@ internal sealed class SvItemsWorkflowService
             options ?? Array.Empty<SvItemEditableFieldOption>());
     }
 
-    private static IReadOnlyList<SvItemEditableField> CreateEditableFields(SvTextLabelLookup labels)
+    private static IReadOnlyList<SvItemEditableField> CreateEditableFields(
+        SvTextLabelLookup labels,
+        IReadOnlyList<SvItemRecord> items,
+        IReadOnlyList<SvTechnicalMachineMove> tmCatalog)
     {
         var tmMoveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
+        var groupIndexOptions = CreateGroupIndexOptions(items, tmCatalog);
         return EditableFields
-            .Select(field => field.Field == SvItemsWorkflowService.MachineMoveIdField
-                ? field with
+            .Select(field => field.Field switch
+            {
+                SvItemsWorkflowService.MachineMoveIdField => field with
                 {
                     MaximumValue = tmMoveOptions.Count > 0 ? tmMoveOptions.Max(option => option.Value) : field.MaximumValue,
                     Options = tmMoveOptions,
-                }
-                : field)
+                },
+                SvItemsWorkflowService.GroupIndexField => field with
+                {
+                    MaximumValue = groupIndexOptions.Count > 0 ? groupIndexOptions.Max(option => option.Value) : field.MaximumValue,
+                    Options = groupIndexOptions,
+                },
+                _ => field,
+            })
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SvItemEditableFieldOption> CreateGroupIndexOptions(
+        IReadOnlyList<SvItemRecord> items,
+        IReadOnlyList<SvTechnicalMachineMove> tmCatalog)
+    {
+        var options = new Dictionary<int, string>
+        {
+            [0] = "0 None",
+        };
+
+        foreach (var tm in tmCatalog)
+        {
+            options.TryAdd(tm.Slot, $"{tm.Slot.ToString(CultureInfo.InvariantCulture)} {tm.Label}");
+        }
+
+        foreach (var group in items
+            .Where(item => item.Metadata.GroupIndex > 0)
+            .GroupBy(item => item.Metadata.GroupIndex)
+            .OrderBy(group => group.Key))
+        {
+            if (options.ContainsKey(group.Key))
+            {
+                continue;
+            }
+
+            var categories = group
+                .Select(item => item.Category)
+                .Where(category => !string.IsNullOrWhiteSpace(category))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(2)
+                .ToArray();
+            var labelSuffix = categories.Length switch
+            {
+                0 => "Group",
+                1 => $"{categories[0]} group",
+                _ => "Mixed group",
+            };
+            options[group.Key] = $"{group.Key.ToString(CultureInfo.InvariantCulture)} {labelSuffix}";
+        }
+
+        return options
+            .OrderBy(option => option.Key)
+            .Select(option => new SvItemEditableFieldOption(option.Key, option.Value))
             .ToArray();
     }
 
