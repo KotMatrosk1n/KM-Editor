@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: GPL-3.0-only
+
+using KM.Core.Diagnostics;
+using KM.Core.Editing;
+
+namespace KM.SV.Workflows;
+
+public static class SvWorkflowIds
+{
+    public const string Items = "items";
+    public const string Pokemon = "pokemon";
+    public const string Trainers = "trainers";
+    public const string Encounters = "encounters";
+    public const string ModMerger = "modMerger";
+}
+
+public enum SvWorkflowAvailability
+{
+    Disabled,
+    ReadOnly,
+    Available,
+}
+
+public sealed record SvWorkflowSummary(
+    string Id,
+    string Label,
+    string Description,
+    SvWorkflowAvailability Availability,
+    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+public sealed record SvWorkflowList(IReadOnlyList<SvWorkflowSummary> Workflows);
+
+public sealed record SvEditSessionValidation(
+    EditSession Session,
+    bool IsValid,
+    IReadOnlyList<ValidationDiagnostic> Diagnostics);

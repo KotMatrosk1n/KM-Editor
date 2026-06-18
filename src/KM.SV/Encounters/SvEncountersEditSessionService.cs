@@ -5,8 +5,8 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
-using KM.SwSh.Encounters;
-using KM.SwSh.Items;
+using KM.SV.Encounters;
+using KM.SV.Items;
 using KM.SV.Data;
 using KM.SV.Workflows;
 using System.Globalization;
@@ -29,7 +29,7 @@ internal sealed class SvEncountersEditSessionService
         this.encountersWorkflowService = encountersWorkflowService ?? new SvEncountersWorkflowService(this.fileSource);
     }
 
-    public SwShEncountersEditResult UpdateSlotField(
+    public SvEncountersEditResult UpdateSlotField(
         ProjectPaths paths,
         EditSession? session,
         string tableId,
@@ -55,7 +55,7 @@ internal sealed class SvEncountersEditSessionService
                 SvEditSessionSupport.EncountersDomain,
                 diagnostics))
         {
-            return new SwShEncountersEditResult(workflow, currentSession, diagnostics);
+            return new SvEncountersEditResult(workflow, currentSession, diagnostics);
         }
 
         var table = workflow.Tables.FirstOrDefault(candidate => candidate.TableId == tableId);
@@ -68,23 +68,23 @@ internal sealed class SvEncountersEditSessionService
                 SvEditSessionSupport.EncountersDomain,
                 field: "slot",
                 expected: "Existing encounter table slot"));
-            return new SwShEncountersEditResult(workflow, currentSession, diagnostics);
+            return new SvEncountersEditResult(workflow, currentSession, diagnostics);
         }
 
         var pendingEdit = CreatePendingEdit(workflow, table, slotRecord, field, value, diagnostics);
         if (pendingEdit is null)
         {
-            return new SwShEncountersEditResult(workflow, currentSession, diagnostics);
+            return new SvEncountersEditResult(workflow, currentSession, diagnostics);
         }
 
         var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
-        return new SwShEncountersEditResult(
+        return new SvEncountersEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
             diagnostics);
     }
 
-    public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
+    public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
@@ -113,7 +113,7 @@ internal sealed class SvEncountersEditSessionService
                 SvEditSessionSupport.EncountersDomain));
         }
 
-        return new SwShEditSessionValidation(
+        return new SvEditSessionValidation(
             session,
             diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error),
             diagnostics);
@@ -197,9 +197,9 @@ internal sealed class SvEncountersEditSessionService
     }
 
     private static PendingEdit? CreatePendingEdit(
-        SwShEncountersWorkflow workflow,
-        SwShEncounterTableRecord table,
-        SwShEncounterSlotRecord slot,
+        SvEncountersWorkflow workflow,
+        SvEncounterTableRecord table,
+        SvEncounterSlotRecord slot,
         string field,
         string value,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -235,7 +235,7 @@ internal sealed class SvEncountersEditSessionService
     }
 
     private static void ValidatePendingEdit(
-        SwShEncountersWorkflow workflow,
+        SvEncountersWorkflow workflow,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -278,7 +278,7 @@ internal sealed class SvEncountersEditSessionService
             diagnostics);
     }
 
-    private static SwShEncountersWorkflow OverlayPendingEdits(SwShEncountersWorkflow workflow, IEnumerable<PendingEdit> edits)
+    private static SvEncountersWorkflow OverlayPendingEdits(SvEncountersWorkflow workflow, IEnumerable<PendingEdit> edits)
     {
         var updatedWorkflow = workflow;
         foreach (var edit in edits)
@@ -289,7 +289,7 @@ internal sealed class SvEncountersEditSessionService
         return updatedWorkflow;
     }
 
-    private static SwShEncountersWorkflow OverlayPendingEdit(SwShEncountersWorkflow workflow, PendingEdit edit)
+    private static SvEncountersWorkflow OverlayPendingEdit(SvEncountersWorkflow workflow, PendingEdit edit)
     {
         if (!string.Equals(edit.Domain, SvEditSessionSupport.EncountersDomain, StringComparison.Ordinal)
             || !TryParseSlotRecordId(edit.RecordId, out var tableId, out var slot)
@@ -313,19 +313,19 @@ internal sealed class SvEncountersEditSessionService
         };
     }
 
-    private static SwShEncounterSlotRecord OverlaySlot(SwShEncounterSlotRecord slot, string? field, int value)
+    private static SvEncounterSlotRecord OverlaySlot(SvEncounterSlotRecord slot, string? field, int value)
     {
         return field switch
         {
-            SwShEncountersWorkflowService.SpeciesIdField => slot with
+            SvEncountersWorkflowService.SpeciesIdField => slot with
             {
                 SpeciesId = value,
                 Species = value == 0 ? "Empty" : SvLabels.Pokemon(value),
             },
-            SwShEncountersWorkflowService.FormField => slot with { Form = value },
-            SwShEncountersWorkflowService.ProbabilityField => slot with { Weight = value },
-            SwShEncountersWorkflowService.LevelMinField => slot with { LevelMin = value },
-            SwShEncountersWorkflowService.LevelMaxField => slot with { LevelMax = value },
+            SvEncountersWorkflowService.FormField => slot with { Form = value },
+            SvEncountersWorkflowService.ProbabilityField => slot with { Weight = value },
+            SvEncountersWorkflowService.LevelMinField => slot with { LevelMin = value },
+            SvEncountersWorkflowService.LevelMaxField => slot with { LevelMax = value },
             _ => slot,
         };
     }
@@ -363,19 +363,19 @@ internal sealed class SvEncountersEditSessionService
 
         switch (edit.Field)
         {
-            case SwShEncountersWorkflowService.SpeciesIdField:
+            case SvEncountersWorkflowService.SpeciesIdField:
                 row.Devid = (global::pml.common.DevID)checked((ushort)value);
                 break;
-            case SwShEncountersWorkflowService.FormField:
+            case SvEncountersWorkflowService.FormField:
                 row.Formno = checked((sbyte)value);
                 break;
-            case SwShEncountersWorkflowService.ProbabilityField:
+            case SvEncountersWorkflowService.ProbabilityField:
                 row.Lotvalue = checked((short)value);
                 break;
-            case SwShEncountersWorkflowService.LevelMinField:
+            case SvEncountersWorkflowService.LevelMinField:
                 row.Minlevel = checked((short)value);
                 break;
-            case SwShEncountersWorkflowService.LevelMaxField:
+            case SvEncountersWorkflowService.LevelMaxField:
                 row.Maxlevel = checked((short)value);
                 break;
         }
@@ -438,19 +438,19 @@ internal sealed class SvEncountersEditSessionService
             expected: "speciesId, form, probability, levelMin, or levelMax");
     }
 
-    private static string CreateSummary(SwShEncounterTableRecord table, SwShEncounterSlotRecord slot, string field, int value)
+    private static string CreateSummary(SvEncounterTableRecord table, SvEncounterSlotRecord slot, string field, int value)
     {
         return field switch
         {
-            SwShEncountersWorkflowService.SpeciesIdField =>
+            SvEncountersWorkflowService.SpeciesIdField =>
                 $"Set {table.GameVersion} {table.Area} {table.Location} {table.EncounterType} slot {slot.Slot} species ID to {value}.",
-            SwShEncountersWorkflowService.FormField =>
+            SvEncountersWorkflowService.FormField =>
                 $"Set {table.GameVersion} {table.Area} {table.Location} {table.EncounterType} slot {slot.Slot} form to {value}.",
-            SwShEncountersWorkflowService.ProbabilityField =>
+            SvEncountersWorkflowService.ProbabilityField =>
                 $"Set {table.GameVersion} {table.Area} {table.Location} {table.EncounterType} slot {slot.Slot} lot weight to {value}.",
-            SwShEncountersWorkflowService.LevelMinField =>
+            SvEncountersWorkflowService.LevelMinField =>
                 $"Set {table.GameVersion} {table.Area} {table.Location} slot {slot.Slot} minimum level to {value}.",
-            SwShEncountersWorkflowService.LevelMaxField =>
+            SvEncountersWorkflowService.LevelMaxField =>
                 $"Set {table.GameVersion} {table.Area} {table.Location} slot {slot.Slot} maximum level to {value}.",
             _ => $"Set {table.Location} encounter {field} to {value}.",
         };

@@ -5,8 +5,6 @@ using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
-using KM.SwSh.Pokemon;
-using KM.SwSh.Workflows;
 using KM.SV.Data;
 using KM.SV.Workflows;
 
@@ -24,53 +22,103 @@ internal sealed class SvPokemonWorkflowService
     private const string EvolutionArgumentKindSpecies = "species";
     private const string EvolutionArgumentKindValue = "value";
     private const string EvolutionArgumentKindType = "type";
+    public const string HPField = "hp";
+    public const string AttackField = "attack";
+    public const string DefenseField = "defense";
+    public const string SpecialAttackField = "specialAttack";
+    public const string SpecialDefenseField = "specialDefense";
+    public const string SpeedField = "speed";
+    public const string Type1Field = "type1";
+    public const string Type2Field = "type2";
+    public const string CatchRateField = "catchRate";
+    public const string EvolutionStageField = "evolutionStage";
+    public const string EVYieldHPField = "evYieldHP";
+    public const string EVYieldAttackField = "evYieldAttack";
+    public const string EVYieldDefenseField = "evYieldDefense";
+    public const string EVYieldSpecialAttackField = "evYieldSpecialAttack";
+    public const string EVYieldSpecialDefenseField = "evYieldSpecialDefense";
+    public const string EVYieldSpeedField = "evYieldSpeed";
+    public const string HeldItem1Field = "heldItem1";
+    public const string HeldItem2Field = "heldItem2";
+    public const string HeldItem3Field = "heldItem3";
+    public const string GenderRatioField = "genderRatio";
+    public const string HatchCyclesField = "hatchCycles";
+    public const string BaseFriendshipField = "baseFriendship";
+    public const string ExpGrowthField = "expGrowth";
+    public const string EggGroup1Field = "eggGroup1";
+    public const string EggGroup2Field = "eggGroup2";
+    public const string Ability1Field = "ability1";
+    public const string Ability2Field = "ability2";
+    public const string HiddenAbilityField = "hiddenAbility";
+    public const string FormStatsIndexField = "formStatsIndex";
+    public const string FormCountField = "formCount";
+    public const string ColorField = "color";
+    public const string IsPresentInGameField = "isPresentInGame";
+    public const string HasSpriteFormField = "hasSpriteForm";
+    public const string BaseExperienceField = "baseExperience";
+    public const string HeightField = "height";
+    public const string WeightField = "weight";
+    public const string ModelIdField = "modelId";
+    public const string HatchedSpeciesField = "hatchedSpecies";
+    public const string LocalFormIndexField = "localFormIndex";
+    public const string IsRegionalFormField = "isRegionalForm";
+    public const string CanNotDynamaxField = "canNotDynamax";
+    public const string RegionalDexIndexField = "regionalDexIndex";
+    public const string FormField = "form";
+    public const string ArmorDexIndexField = "armorDexIndex";
+    public const string CrownDexIndexField = "crownDexIndex";
+    public const string CompatibilityFieldPrefix = "compatibility";
+    public const string TechnicalMachineCompatibilityGroupId = "tm";
+    public const string TechnicalRecordCompatibilityGroupId = "tr";
+    public const string TypeTutorCompatibilityGroupId = "typeTutor";
+    public const string ArmorTutorCompatibilityGroupId = "armorTutor";
 
-    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> BooleanOptions =
+    private static readonly IReadOnlyList<SvPokemonEditableFieldOption> BooleanOptions =
     [
         new(0, "No"),
         new(1, "Yes"),
     ];
 
-    private static readonly IReadOnlyList<SwShPokemonEditableField> BaseEditableFields =
+    private static readonly IReadOnlyList<SvPokemonEditableField> BaseEditableFields =
     [
-        CreateField(SwShPokemonWorkflowService.HPField, "HP", "Base Stats", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.AttackField, "Attack", "Base Stats", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.DefenseField, "Defense", "Base Stats", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.SpecialAttackField, "Sp. Atk", "Base Stats", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.SpecialDefenseField, "Sp. Def", "Base Stats", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.SpeedField, "Speed", "Base Stats", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.Type1Field, "Type 1", "Traits", 0, 17),
-        CreateField(SwShPokemonWorkflowService.Type2Field, "Type 2", "Traits", 0, 17),
-        CreateField(SwShPokemonWorkflowService.Ability1Field, "Ability 1", "Abilities", 0, ushort.MaxValue),
-        CreateField(SwShPokemonWorkflowService.Ability2Field, "Ability 2", "Abilities", 0, ushort.MaxValue),
-        CreateField(SwShPokemonWorkflowService.HiddenAbilityField, "Hidden Ability", "Abilities", 0, ushort.MaxValue),
-        CreateField(SwShPokemonWorkflowService.CatchRateField, "Catch Rate", "Identity", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.EvolutionStageField, "Evolution Stage", "Identity", 0, 3),
-        CreateField(SwShPokemonWorkflowService.EVYieldHPField, "HP EV Yield", "EV Yield", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.EVYieldAttackField, "Attack EV Yield", "EV Yield", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.EVYieldDefenseField, "Defense EV Yield", "EV Yield", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.EVYieldSpecialAttackField, "Sp. Atk EV Yield", "EV Yield", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.EVYieldSpecialDefenseField, "Sp. Def EV Yield", "EV Yield", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.EVYieldSpeedField, "Speed EV Yield", "EV Yield", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.GenderRatioField, "Gender Ratio", "Identity", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.HatchCyclesField, "Hatch Cycles", "Identity", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.BaseFriendshipField, "Base Friendship", "Identity", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.ExpGrowthField, "EXP Growth", "Identity", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.EggGroup1Field, "Egg Group 1", "Breeding", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.EggGroup2Field, "Egg Group 2", "Breeding", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.BaseExperienceField, "Base EXP", "Identity", 0, ushort.MaxValue),
-        CreateField(SwShPokemonWorkflowService.FormField, "Form", "Forms/Dex", 0, ushort.MaxValue),
-        CreateField(SwShPokemonWorkflowService.ModelIdField, "Model ID", "Forms/Dex", 0, ushort.MaxValue),
-        CreateField(SwShPokemonWorkflowService.ColorField, "Color", "Forms/Dex", 0, byte.MaxValue),
-        CreateField(SwShPokemonWorkflowService.HeightField, "Height", "Forms/Dex", 0, ushort.MaxValue),
-        CreateField(SwShPokemonWorkflowService.WeightField, "Weight", "Forms/Dex", 0, ushort.MaxValue),
-        CreateField(SwShPokemonWorkflowService.IsPresentInGameField, "Present In Game", "Flags", 0, 1, BooleanOptions),
-        CreateField(SwShPokemonWorkflowService.RegionalDexIndexField, "Paldea Dex", "Forms/Dex", 0, ushort.MaxValue),
-        CreateField(SwShPokemonWorkflowService.ArmorDexIndexField, "Kitakami Dex", "Forms/Dex", 0, ushort.MaxValue),
-        CreateField(SwShPokemonWorkflowService.CrownDexIndexField, "Blueberry Dex", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(SvPokemonWorkflowService.HPField, "HP", "Base Stats", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.AttackField, "Attack", "Base Stats", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.DefenseField, "Defense", "Base Stats", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.SpecialAttackField, "Sp. Atk", "Base Stats", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.SpecialDefenseField, "Sp. Def", "Base Stats", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.SpeedField, "Speed", "Base Stats", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.Type1Field, "Type 1", "Traits", 0, 17),
+        CreateField(SvPokemonWorkflowService.Type2Field, "Type 2", "Traits", 0, 17),
+        CreateField(SvPokemonWorkflowService.Ability1Field, "Ability 1", "Abilities", 0, ushort.MaxValue),
+        CreateField(SvPokemonWorkflowService.Ability2Field, "Ability 2", "Abilities", 0, ushort.MaxValue),
+        CreateField(SvPokemonWorkflowService.HiddenAbilityField, "Hidden Ability", "Abilities", 0, ushort.MaxValue),
+        CreateField(SvPokemonWorkflowService.CatchRateField, "Catch Rate", "Identity", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.EvolutionStageField, "Evolution Stage", "Identity", 0, 3),
+        CreateField(SvPokemonWorkflowService.EVYieldHPField, "HP EV Yield", "EV Yield", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.EVYieldAttackField, "Attack EV Yield", "EV Yield", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.EVYieldDefenseField, "Defense EV Yield", "EV Yield", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.EVYieldSpecialAttackField, "Sp. Atk EV Yield", "EV Yield", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.EVYieldSpecialDefenseField, "Sp. Def EV Yield", "EV Yield", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.EVYieldSpeedField, "Speed EV Yield", "EV Yield", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.GenderRatioField, "Gender Ratio", "Identity", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.HatchCyclesField, "Hatch Cycles", "Identity", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.BaseFriendshipField, "Base Friendship", "Identity", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.ExpGrowthField, "EXP Growth", "Identity", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.EggGroup1Field, "Egg Group 1", "Breeding", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.EggGroup2Field, "Egg Group 2", "Breeding", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.BaseExperienceField, "Base EXP", "Identity", 0, ushort.MaxValue),
+        CreateField(SvPokemonWorkflowService.FormField, "Form", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(SvPokemonWorkflowService.ModelIdField, "Model ID", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(SvPokemonWorkflowService.ColorField, "Color", "Forms/Dex", 0, byte.MaxValue),
+        CreateField(SvPokemonWorkflowService.HeightField, "Height", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(SvPokemonWorkflowService.WeightField, "Weight", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(SvPokemonWorkflowService.IsPresentInGameField, "Present In Game", "Flags", 0, 1, BooleanOptions),
+        CreateField(SvPokemonWorkflowService.RegionalDexIndexField, "Paldea Dex", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(SvPokemonWorkflowService.ArmorDexIndexField, "Kitakami Dex", "Forms/Dex", 0, ushort.MaxValue),
+        CreateField(SvPokemonWorkflowService.CrownDexIndexField, "Blueberry Dex", "Forms/Dex", 0, ushort.MaxValue),
     ];
 
-    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> TypeOptions =
+    private static readonly IReadOnlyList<SvPokemonEditableFieldOption> TypeOptions =
         CreateOptionList(
             (0, "Normal"),
             (1, "Fighting"),
@@ -91,7 +139,7 @@ internal sealed class SvPokemonWorkflowService
             (16, "Dark"),
             (17, "Fairy"));
 
-    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> EggGroupOptions =
+    private static readonly IReadOnlyList<SvPokemonEditableFieldOption> EggGroupOptions =
         CreateOptionList(
             (0, "None"),
             (1, "Monster"),
@@ -110,7 +158,7 @@ internal sealed class SvPokemonWorkflowService
             (14, "Dragon"),
             (15, "Undiscovered"));
 
-    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> ExpGrowthOptions =
+    private static readonly IReadOnlyList<SvPokemonEditableFieldOption> ExpGrowthOptions =
         CreateOptionList(
             (0, "Medium Fast"),
             (1, "Erratic"),
@@ -119,14 +167,14 @@ internal sealed class SvPokemonWorkflowService
             (4, "Fast"),
             (5, "Slow"));
 
-    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> EvolutionStageOptions =
+    private static readonly IReadOnlyList<SvPokemonEditableFieldOption> EvolutionStageOptions =
         CreateOptionList(
             (0, "Single-stage or unevolved"),
             (1, "First evolution"),
             (2, "Second evolution"),
             (3, "Final or special stage"));
 
-    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> ColorOptions =
+    private static readonly IReadOnlyList<SvPokemonEditableFieldOption> ColorOptions =
         CreateOptionList(
             (0, "Red"),
             (1, "Blue"),
@@ -139,13 +187,13 @@ internal sealed class SvPokemonWorkflowService
             (8, "White"),
             (9, "Pink"));
 
-    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> GenderRatioOptions =
+    private static readonly IReadOnlyList<SvPokemonEditableFieldOption> GenderRatioOptions =
         CreateGenderRatioOptions();
 
-    private static readonly IReadOnlyList<SwShPokemonEditableFieldOption> ByteArgumentOptions =
+    private static readonly IReadOnlyList<SvPokemonEditableFieldOption> ByteArgumentOptions =
         Enumerable
             .Range(0, 256)
-            .Select(value => new SwShPokemonEditableFieldOption(
+            .Select(value => new SvPokemonEditableFieldOption(
                 value,
                 value.ToString(CultureInfo.InvariantCulture)))
             .ToArray();
@@ -223,25 +271,25 @@ internal sealed class SvPokemonWorkflowService
         this.fileSource = fileSource ?? new SvWorkflowFileSource();
     }
 
-    public SwShWorkflowSummary CreateSummary(OpenedProject project)
+    public SvWorkflowSummary CreateSummary(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
         return SvWorkflowSupport.CreateSummary(
             project,
-            SwShWorkflowIds.Pokemon,
+            SvWorkflowIds.Pokemon,
             WorkflowLabel,
             WorkflowDescription);
     }
 
-    public SwShPokemonWorkflow Load(OpenedProject project)
+    public SvPokemonWorkflow Load(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
         var diagnostics = new List<ValidationDiagnostic>();
         SvWorkflowFile? source = null;
         var labels = SvTextLabelLookup.None();
-        var pokemon = Array.Empty<SwShPokemonRecord>();
+        var pokemon = Array.Empty<SvPokemonRecord>();
 
         try
         {
@@ -258,19 +306,19 @@ internal sealed class SvPokemonWorkflowService
 
         var summary = SvWorkflowSupport.CreateSummary(
             project,
-            SwShWorkflowIds.Pokemon,
+            SvWorkflowIds.Pokemon,
             WorkflowLabel,
             WorkflowDescription,
             diagnostics.Count == 0 ? null : diagnostics);
 
-        var stats = new SwShPokemonWorkflowStats(
+        var stats = new SvPokemonWorkflowStats(
             pokemon.Length,
             pokemon.Count(record => record.DexPresence.IsPresentInGame),
             pokemon.Sum(record => record.Evolutions.Count),
             pokemon.Sum(record => record.Learnset.Count),
             source is null ? 0 : 1);
 
-        return new SwShPokemonWorkflow(
+        return new SvPokemonWorkflow(
             summary,
             pokemon,
             stats,
@@ -280,7 +328,7 @@ internal sealed class SvPokemonWorkflowService
             diagnostics);
     }
 
-    private static IEnumerable<SwShPokemonRecord> LoadRecords(SvWorkflowFile source, SvTextLabelLookup labels)
+    private static IEnumerable<SvPokemonRecord> LoadRecords(SvWorkflowFile source, SvTextLabelLookup labels)
     {
         var table = global::personal_table.GetRootAspersonal_table(new ByteBuffer(source.Bytes));
         for (var index = 0; index < table.EntryLength; index++)
@@ -295,7 +343,7 @@ internal sealed class SvPokemonWorkflowService
         }
     }
 
-    private static SwShPokemonRecord ToRecord(
+    private static SvPokemonRecord ToRecord(
         int personalId,
         global::personal entry,
         SvWorkflowFile source,
@@ -337,7 +385,7 @@ internal sealed class SvPokemonWorkflowService
 
         var total = hp + attack + defense + specialAttack + specialDefense + speed;
         var baseExperience = SvPokemonExperience.CalculateBaseExperience(total, entry.EvoStage, entry.ExpAddend);
-        var stats = new SwShPokemonBaseStats(
+        var stats = new SvPokemonBaseStats(
             hp,
             attack,
             defense,
@@ -345,20 +393,20 @@ internal sealed class SvPokemonWorkflowService
             specialDefense,
             speed,
             total);
-        var abilities = new SwShPokemonAbilitySet(
+        var abilities = new SvPokemonAbilitySet(
             entry.Ability1,
             labels.Ability(entry.Ability1),
             entry.Ability2,
             labels.Ability(entry.Ability2),
             entry.AbilityHidden,
             labels.Ability(entry.AbilityHidden));
-        var dexPresence = new SwShPokemonDexPresence(
+        var dexPresence = new SvPokemonDexPresence(
             entry.IsPresent,
             paldeaDexIndex > 0 || kitakamiDexIndex > 0 || blueberryDexIndex > 0,
             paldeaDexIndex,
             kitakamiDexIndex,
             blueberryDexIndex);
-        var details = new SwShPokemonPersonalDetails(
+        var details = new SvPokemonPersonalDetails(
             entry.Type1,
             entry.Type2,
             entry.CatchRate,
@@ -396,7 +444,7 @@ internal sealed class SvPokemonWorkflowService
             kitakamiDexIndex,
             blueberryDexIndex);
 
-        return new SwShPokemonRecord(
+        return new SvPokemonRecord(
             personalId,
             speciesId,
             form,
@@ -418,14 +466,14 @@ internal sealed class SvPokemonWorkflowService
             ReadEvolutions(entry, labels),
             ReadLearnset(entry, labels),
             ReadCompatibility(entry, labels),
-            new SwShPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+            new SvPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState));
     }
 
-    private static IReadOnlyList<SwShPokemonEvolutionRecord> ReadEvolutions(
+    private static IReadOnlyList<SvPokemonEvolutionRecord> ReadEvolutions(
         global::personal entry,
         SvTextLabelLookup labels)
     {
-        var evolutions = new List<SwShPokemonEvolutionRecord>();
+        var evolutions = new List<SvPokemonEvolutionRecord>();
         for (var index = 0; index < entry.EvolutionsLength; index++)
         {
             var evolution = entry.Evolutions(index);
@@ -435,7 +483,7 @@ internal sealed class SvPokemonWorkflowService
             }
 
             var method = GetEvolutionMethodDefinition(evolution.Value.Condition);
-            evolutions.Add(new SwShPokemonEvolutionRecord(
+            evolutions.Add(new SvPokemonEvolutionRecord(
                 index,
                 evolution.Value.Condition,
                 evolution.Value.Parameter,
@@ -454,11 +502,11 @@ internal sealed class SvPokemonWorkflowService
         return evolutions;
     }
 
-    private static IReadOnlyList<SwShPokemonLearnsetMove> ReadLearnset(
+    private static IReadOnlyList<SvPokemonLearnsetMove> ReadLearnset(
         global::personal entry,
         SvTextLabelLookup labels)
     {
-        var moves = new List<SwShPokemonLearnsetMove>();
+        var moves = new List<SvPokemonLearnsetMove>();
         for (var index = 0; index < entry.LevelupMovesLength; index++)
         {
             var learnedMove = entry.LevelupMoves(index);
@@ -467,7 +515,7 @@ internal sealed class SvPokemonWorkflowService
                 continue;
             }
 
-            moves.Add(new SwShPokemonLearnsetMove(
+            moves.Add(new SvPokemonLearnsetMove(
                 index,
                 learnedMove.Value.Move,
                 labels.Move(learnedMove.Value.Move),
@@ -477,7 +525,7 @@ internal sealed class SvPokemonWorkflowService
         return moves;
     }
 
-    private static IReadOnlyList<SwShPokemonCompatibilityGroup> ReadCompatibility(
+    private static IReadOnlyList<SvPokemonCompatibilityGroup> ReadCompatibility(
         global::personal entry,
         SvTextLabelLookup labels)
     {
@@ -489,14 +537,14 @@ internal sealed class SvPokemonWorkflowService
         ];
     }
 
-    private static SwShPokemonCompatibilityGroup CreateCompatibilityGroup(
+    private static SvPokemonCompatibilityGroup CreateCompatibilityGroup(
         string id,
         string label,
         IReadOnlyList<ushort> moves,
         SvTextLabelLookup labels)
     {
         var entries = moves
-            .Select((move, index) => new SwShPokemonCompatibilityEntry(
+            .Select((move, index) => new SvPokemonCompatibilityEntry(
                 index,
                 move,
                 labels.Move(move),
@@ -504,11 +552,11 @@ internal sealed class SvPokemonWorkflowService
                 CanLearn: true))
             .ToArray();
 
-        return new SwShPokemonCompatibilityGroup(id, label, entries.Length, entries);
+        return new SvPokemonCompatibilityGroup(id, label, entries.Length, entries);
     }
 
-    private static IReadOnlyList<SwShPokemonEvolutionMethodOption> CreateEvolutionOptions(
-        IReadOnlyList<SwShPokemonRecord> pokemon,
+    private static IReadOnlyList<SvPokemonEvolutionMethodOption> CreateEvolutionOptions(
+        IReadOnlyList<SvPokemonRecord> pokemon,
         SvTextLabelLookup labels)
     {
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
@@ -525,7 +573,7 @@ internal sealed class SvPokemonWorkflowService
             .Select(value =>
             {
                 var definition = GetEvolutionMethodDefinition(value);
-                return new SwShPokemonEvolutionMethodOption(
+                return new SvPokemonEvolutionMethodOption(
                     value,
                     $"{value.ToString("000", CultureInfo.InvariantCulture)} {definition.Name}",
                     definition.ArgumentKind,
@@ -535,8 +583,8 @@ internal sealed class SvPokemonWorkflowService
             .ToArray();
     }
 
-    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateMoveOptions(
-        IReadOnlyList<SwShPokemonRecord> pokemon,
+    private static IReadOnlyList<SvPokemonEditableFieldOption> CreateMoveOptions(
+        IReadOnlyList<SvPokemonRecord> pokemon,
         SvTextLabelLookup labels)
     {
         if (labels.MoveNameCount > 1)
@@ -550,11 +598,11 @@ internal sealed class SvPokemonWorkflowService
             .Where(move => move > 0)
             .Distinct()
             .OrderBy(move => move)
-            .Select(move => new SwShPokemonEditableFieldOption(move, labels.Move(move)))
+            .Select(move => new SvPokemonEditableFieldOption(move, labels.Move(move)))
             .ToArray();
     }
 
-    private static IReadOnlyList<SwShPokemonEditableField> CreateEditableFields(SvTextLabelLookup labels)
+    private static IReadOnlyList<SvPokemonEditableField> CreateEditableFields(SvTextLabelLookup labels)
     {
         var abilityOptions = CreateIndexedOptions(labels.AbilityNameCount, labels.Ability, includeNone: true);
 
@@ -563,15 +611,15 @@ internal sealed class SvPokemonWorkflowService
             {
                 var options = field.Field switch
                 {
-                    SwShPokemonWorkflowService.Type1Field or SwShPokemonWorkflowService.Type2Field => TypeOptions,
-                    SwShPokemonWorkflowService.Ability1Field
-                        or SwShPokemonWorkflowService.Ability2Field
-                        or SwShPokemonWorkflowService.HiddenAbilityField => abilityOptions,
-                    SwShPokemonWorkflowService.GenderRatioField => GenderRatioOptions,
-                    SwShPokemonWorkflowService.ExpGrowthField => ExpGrowthOptions,
-                    SwShPokemonWorkflowService.EvolutionStageField => EvolutionStageOptions,
-                    SwShPokemonWorkflowService.EggGroup1Field or SwShPokemonWorkflowService.EggGroup2Field => EggGroupOptions,
-                    SwShPokemonWorkflowService.ColorField => ColorOptions,
+                    SvPokemonWorkflowService.Type1Field or SvPokemonWorkflowService.Type2Field => TypeOptions,
+                    SvPokemonWorkflowService.Ability1Field
+                        or SvPokemonWorkflowService.Ability2Field
+                        or SvPokemonWorkflowService.HiddenAbilityField => abilityOptions,
+                    SvPokemonWorkflowService.GenderRatioField => GenderRatioOptions,
+                    SvPokemonWorkflowService.ExpGrowthField => ExpGrowthOptions,
+                    SvPokemonWorkflowService.EvolutionStageField => EvolutionStageOptions,
+                    SvPokemonWorkflowService.EggGroup1Field or SvPokemonWorkflowService.EggGroup2Field => EggGroupOptions,
+                    SvPokemonWorkflowService.ColorField => ColorOptions,
                     _ => field.Options,
                 };
 
@@ -586,11 +634,11 @@ internal sealed class SvPokemonWorkflowService
             .ToArray();
     }
 
-    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateEvolutionArgumentOptions(
+    private static IReadOnlyList<SvPokemonEditableFieldOption> CreateEvolutionArgumentOptions(
         EvolutionMethodDefinition method,
-        IReadOnlyList<SwShPokemonEditableFieldOption> itemOptions,
-        IReadOnlyList<SwShPokemonEditableFieldOption> moveOptions,
-        IReadOnlyList<SwShPokemonEditableFieldOption> speciesOptions)
+        IReadOnlyList<SvPokemonEditableFieldOption> itemOptions,
+        IReadOnlyList<SvPokemonEditableFieldOption> moveOptions,
+        IReadOnlyList<SvPokemonEditableFieldOption> speciesOptions)
     {
         return method.ArgumentKind switch
         {
@@ -603,7 +651,7 @@ internal sealed class SvPokemonWorkflowService
         };
     }
 
-    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateEvolutionValueArgumentOptions(
+    private static IReadOnlyList<SvPokemonEditableFieldOption> CreateEvolutionValueArgumentOptions(
         EvolutionMethodDefinition method)
     {
         return method.Value switch
@@ -657,7 +705,7 @@ internal sealed class SvPokemonWorkflowService
             ?? new EvolutionMethodDefinition(value, $"Condition {value}", EvolutionArgumentKindValue, "Parameter");
     }
 
-    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateIndexedOptions(
+    private static IReadOnlyList<SvPokemonEditableFieldOption> CreateIndexedOptions(
         int count,
         Func<int, string> resolveName,
         bool includeNone)
@@ -673,22 +721,22 @@ internal sealed class SvPokemonWorkflowService
             .Select(value =>
             {
                 var label = value == 0 ? "None" : resolveName(value);
-                return new SwShPokemonEditableFieldOption(
+                return new SvPokemonEditableFieldOption(
                     value,
                     $"{value.ToString(CultureInfo.InvariantCulture)} {label}");
             })
             .ToArray();
     }
 
-    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateOptionList(
+    private static IReadOnlyList<SvPokemonEditableFieldOption> CreateOptionList(
         params (int Value, string Label)[] options)
     {
         return options
-            .Select(option => new SwShPokemonEditableFieldOption(option.Value, option.Label))
+            .Select(option => new SvPokemonEditableFieldOption(option.Value, option.Label))
             .ToArray();
     }
 
-    private static IReadOnlyList<SwShPokemonEditableFieldOption> CreateGenderRatioOptions()
+    private static IReadOnlyList<SvPokemonEditableFieldOption> CreateGenderRatioOptions()
     {
         return
         [
@@ -703,22 +751,22 @@ internal sealed class SvPokemonWorkflowService
         ];
     }
 
-    private static SwShPokemonEditableField CreateField(
+    private static SvPokemonEditableField CreateField(
         string field,
         string label,
         string group,
         int minimumValue,
         int maximumValue,
-        IReadOnlyList<SwShPokemonEditableFieldOption>? options = null)
+        IReadOnlyList<SvPokemonEditableFieldOption>? options = null)
     {
-        return new SwShPokemonEditableField(
+        return new SvPokemonEditableField(
             field,
             label,
             group,
             "integer",
             minimumValue,
             maximumValue,
-            options ?? Array.Empty<SwShPokemonEditableFieldOption>());
+            options ?? Array.Empty<SvPokemonEditableFieldOption>());
     }
 
     private static string FormatType(int type)

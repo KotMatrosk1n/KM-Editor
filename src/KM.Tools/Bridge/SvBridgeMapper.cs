@@ -1,14 +1,128 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Api.Editing;
+using KM.Api.Encounters;
+using KM.Api.Items;
 using KM.Api.ModMerger;
+using KM.Api.Pokemon;
+using KM.Api.Trainers;
 using KM.Api.Workflows;
-using KM.SwSh.Workflows;
+using KM.SV.Encounters;
+using KM.SV.Items;
 using KM.SV.ModMerger;
+using KM.SV.Pokemon;
+using KM.SV.Trainers;
+using KM.SV.Workflows;
 
 namespace KM.Tools.Bridge;
 
 public static class SvBridgeMapper
 {
+    public static ListWorkflowsResponse ToDto(SvWorkflowList workflowList)
+    {
+        ArgumentNullException.ThrowIfNull(workflowList);
+
+        return new ListWorkflowsResponse(workflowList.Workflows.Select(ToDto).ToArray());
+    }
+
+    public static LoadItemsWorkflowResponse ToDto(SvItemsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadItemsWorkflowResponse(ToItemsWorkflowDto(workflow));
+    }
+
+    public static UpdateItemFieldResponse ToDto(SvItemsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateItemFieldResponse(
+            ToItemsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadPokemonWorkflowResponse ToDto(SvPokemonWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadPokemonWorkflowResponse(ToPokemonWorkflowDto(workflow));
+    }
+
+    public static UpdatePokemonFieldResponse ToDto(SvPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonFieldResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdatePokemonLearnsetResponse ToDtoLearnsetUpdate(SvPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonLearnsetResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdatePokemonEvolutionResponse ToDtoEvolutionUpdate(SvPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonEvolutionResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadTrainersWorkflowResponse ToDto(SvTrainersWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow));
+    }
+
+    public static UpdateTrainerFieldResponse ToDto(SvTrainersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTrainerFieldResponse(
+            ToTrainersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadEncountersWorkflowResponse ToDto(SvEncountersWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadEncountersWorkflowResponse(ToEncountersWorkflowDto(workflow));
+    }
+
+    public static UpdateEncounterSlotFieldResponse ToDto(SvEncountersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateEncounterSlotFieldResponse(
+            ToEncountersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static ValidateEditSessionResponse ToDto(SvEditSessionValidation validation)
+    {
+        ArgumentNullException.ThrowIfNull(validation);
+
+        return new ValidateEditSessionResponse(
+            EditSessionBridgeMapper.ToDto(validation.Session),
+            validation.IsValid,
+            validation.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadSvModMergerWorkflowResponse ToDto(SvModMergerWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -37,6 +151,61 @@ public static class SvBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    private static ItemsWorkflowDto ToItemsWorkflowDto(SvItemsWorkflow workflow)
+    {
+        return new ItemsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Items.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new ItemsWorkflowStatsDto(
+                workflow.Stats.TotalItemCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static PokemonWorkflowDto ToPokemonWorkflowDto(SvPokemonWorkflow workflow)
+    {
+        return new PokemonWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Pokemon.Select(ToDto).ToArray(),
+            new PokemonWorkflowStatsDto(
+                workflow.Stats.TotalPokemonCount,
+                workflow.Stats.PresentPokemonCount,
+                workflow.Stats.TotalEvolutionCount,
+                workflow.Stats.TotalLearnsetMoveCount,
+                workflow.Stats.SourceFileCount),
+            workflow.EvolutionMethodOptions.Select(ToDto).ToArray(),
+            workflow.LearnsetMoveOptions.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TrainersWorkflowDto ToTrainersWorkflowDto(SvTrainersWorkflow workflow)
+    {
+        return new TrainersWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Trainers.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new TrainersWorkflowStatsDto(
+                workflow.Stats.TotalTrainerCount,
+                workflow.Stats.TotalPokemonCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static EncountersWorkflowDto ToEncountersWorkflowDto(SvEncountersWorkflow workflow)
+    {
+        return new EncountersWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Tables.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new EncountersWorkflowStatsDto(
+                workflow.Stats.TotalTableCount,
+                workflow.Stats.TotalSlotCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     private static SvModMergerWorkflowDto ToWorkflowDto(SvModMergerWorkflow workflow)
     {
         return new SvModMergerWorkflowDto(
@@ -50,6 +219,396 @@ public static class SvBridgeMapper
                 workflow.Stats.OutputFileCount,
                 workflow.Stats.OverrideCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static WorkflowSummaryDto ToDto(SvWorkflowSummary summary)
+    {
+        return new WorkflowSummaryDto(
+            summary.Id,
+            summary.Label,
+            summary.Description,
+            ToDto(summary.Availability),
+            summary.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ItemRecordDto ToDto(SvItemRecord item)
+    {
+        return new ItemRecordDto(
+            item.ItemId,
+            item.Name,
+            item.Category,
+            item.BuyPrice,
+            item.SellPrice,
+            item.WattsPrice,
+            item.AlternatePrice,
+            new ItemMetadataDto(
+                item.Metadata.Pouch,
+                item.Metadata.PouchFlags,
+                item.Metadata.FlingPower,
+                item.Metadata.FieldUseType,
+                item.Metadata.FieldFlags,
+                item.Metadata.CanUseOnPokemon,
+                item.Metadata.ItemType,
+                item.Metadata.SortIndex,
+                item.Metadata.ItemSprite,
+                item.Metadata.GroupType,
+                item.Metadata.GroupIndex,
+                item.Metadata.CureStatusFlags,
+                item.Metadata.Boost0,
+                item.Metadata.Boost1,
+                item.Metadata.Boost2,
+                item.Metadata.Boost3,
+                item.Metadata.UseFlags1,
+                item.Metadata.UseFlags2,
+                item.Metadata.EvHp,
+                item.Metadata.EvAttack,
+                item.Metadata.EvDefense,
+                item.Metadata.EvSpeed,
+                item.Metadata.EvSpecialAttack,
+                item.Metadata.EvSpecialDefense,
+                item.Metadata.HealAmount,
+                item.Metadata.PpGain,
+                item.Metadata.FriendshipGain1,
+                item.Metadata.FriendshipGain2,
+                item.Metadata.FriendshipGain3,
+                item.Metadata.MachineSlot,
+                item.Metadata.MachineMoveId,
+                item.Metadata.MachineMoveName),
+            item.SharedItemIds,
+            item.DetailGroups.Select(ToDto).ToArray(),
+            new ItemProvenanceDto(
+                item.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(item.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(item.Provenance.FileState)));
+    }
+
+    private static ItemDetailGroupDto ToDto(SvItemDetailGroup group)
+    {
+        return new ItemDetailGroupDto(
+            group.Label,
+            group.Details.Select(ToDto).ToArray());
+    }
+
+    private static ItemDetailDto ToDto(SvItemDetail detail)
+    {
+        return new ItemDetailDto(detail.Label, detail.Value);
+    }
+
+    private static ItemEditableFieldDto ToDto(SvItemEditableField field)
+    {
+        return new ItemEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(option => new ItemEditableFieldOptionDto(option.Value, option.Label)).ToArray());
+    }
+
+    private static PokemonRecordDto ToDto(SvPokemonRecord pokemon)
+    {
+        return new PokemonRecordDto(
+            pokemon.PersonalId,
+            pokemon.SpeciesId,
+            pokemon.Form,
+            pokemon.Name,
+            pokemon.FormLabel,
+            pokemon.Type1,
+            pokemon.Type2,
+            new PokemonBaseStatsDto(
+                pokemon.BaseStats.HP,
+                pokemon.BaseStats.Attack,
+                pokemon.BaseStats.Defense,
+                pokemon.BaseStats.SpecialAttack,
+                pokemon.BaseStats.SpecialDefense,
+                pokemon.BaseStats.Speed,
+                pokemon.BaseStats.Total),
+            new PokemonAbilitySetDto(
+                pokemon.Abilities.Ability1,
+                pokemon.Abilities.Ability1Label,
+                pokemon.Abilities.Ability2,
+                pokemon.Abilities.Ability2Label,
+                pokemon.Abilities.HiddenAbility,
+                pokemon.Abilities.HiddenAbilityLabel),
+            new PokemonDexPresenceDto(
+                pokemon.DexPresence.IsPresentInGame,
+                pokemon.DexPresence.IsInAnyDex,
+                pokemon.DexPresence.RegionalDexIndex,
+                pokemon.DexPresence.ArmorDexIndex,
+                pokemon.DexPresence.CrownDexIndex),
+            new PokemonPersonalDetailsDto(
+                pokemon.Personal.Type1,
+                pokemon.Personal.Type2,
+                pokemon.Personal.CatchRate,
+                pokemon.Personal.EvolutionStage,
+                pokemon.Personal.EVYieldHP,
+                pokemon.Personal.EVYieldAttack,
+                pokemon.Personal.EVYieldDefense,
+                pokemon.Personal.EVYieldSpecialAttack,
+                pokemon.Personal.EVYieldSpecialDefense,
+                pokemon.Personal.EVYieldSpeed,
+                pokemon.Personal.HeldItem1,
+                pokemon.Personal.HeldItem2,
+                pokemon.Personal.HeldItem3,
+                pokemon.Personal.GenderRatio,
+                pokemon.Personal.HatchCycles,
+                pokemon.Personal.BaseFriendship,
+                pokemon.Personal.ExpGrowth,
+                pokemon.Personal.EggGroup1,
+                pokemon.Personal.EggGroup2,
+                pokemon.Personal.FormStatsIndex,
+                pokemon.Personal.FormCount,
+                pokemon.Personal.Color,
+                pokemon.Personal.IsPresentInGame,
+                pokemon.Personal.HasSpriteForm,
+                pokemon.Personal.ModelId,
+                pokemon.Personal.HatchedSpecies,
+                pokemon.Personal.LocalFormIndex,
+                pokemon.Personal.IsRegionalForm,
+                pokemon.Personal.CanNotDynamax,
+                pokemon.Personal.Form),
+            pokemon.CatchRate,
+            pokemon.EvolutionStage,
+            pokemon.GenderRatio,
+            pokemon.GenderRatioLabel,
+            pokemon.BaseExperience,
+            pokemon.Height,
+            pokemon.Weight,
+            pokemon.Evolutions.Select(ToDto).ToArray(),
+            pokemon.Learnset.Select(ToDto).ToArray(),
+            pokemon.Compatibility.Select(ToDto).ToArray(),
+            new PokemonProvenanceDto(
+                pokemon.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(pokemon.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(pokemon.Provenance.FileState)));
+    }
+
+    private static PokemonEditableFieldDto ToDto(SvPokemonEditableField field)
+    {
+        return new PokemonEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.Group,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static PokemonEditableFieldOptionDto ToDto(SvPokemonEditableFieldOption option)
+    {
+        return new PokemonEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static PokemonEvolutionRecordDto ToDto(SvPokemonEvolutionRecord evolution)
+    {
+        return new PokemonEvolutionRecordDto(
+            evolution.Slot,
+            evolution.Method,
+            evolution.Argument,
+            evolution.Species,
+            evolution.Form,
+            evolution.Level,
+            evolution.MethodName,
+            evolution.ArgumentKind,
+            evolution.ArgumentLabel,
+            evolution.ArgumentValue);
+    }
+
+    private static PokemonEvolutionMethodOptionDto ToDto(SvPokemonEvolutionMethodOption option)
+    {
+        return new PokemonEvolutionMethodOptionDto(
+            option.Value,
+            option.Label,
+            option.ArgumentKind,
+            option.ArgumentLabel,
+            option.ArgumentOptions.Select(ToDto).ToArray());
+    }
+
+    private static PokemonLearnsetMoveDto ToDto(SvPokemonLearnsetMove learnsetMove)
+    {
+        return new PokemonLearnsetMoveDto(
+            learnsetMove.Slot,
+            learnsetMove.MoveId,
+            learnsetMove.MoveName,
+            learnsetMove.Level);
+    }
+
+    private static PokemonCompatibilityGroupDto ToDto(SvPokemonCompatibilityGroup group)
+    {
+        return new PokemonCompatibilityGroupDto(
+            group.GroupId,
+            group.Label,
+            group.EnabledCount,
+            group.Entries.Select(ToDto).ToArray());
+    }
+
+    private static PokemonCompatibilityEntryDto ToDto(SvPokemonCompatibilityEntry entry)
+    {
+        return new PokemonCompatibilityEntryDto(
+            entry.Slot,
+            entry.MoveId,
+            entry.MoveName,
+            entry.Label,
+            entry.CanLearn);
+    }
+
+    private static TrainerRecordDto ToDto(SvTrainerRecord trainer)
+    {
+        return new TrainerRecordDto(
+            trainer.TrainerId,
+            trainer.Name,
+            trainer.TrainerClassId,
+            trainer.TrainerClass,
+            trainer.Location,
+            trainer.BattleTypeValue,
+            trainer.BattleType,
+            trainer.ItemIds,
+            trainer.Items,
+            trainer.AiFlags,
+            trainer.AiFlagStates.Select(ToDto).ToArray(),
+            trainer.Heal,
+            trainer.Money,
+            trainer.Gift,
+            trainer.ClassBallId,
+            trainer.ClassBall,
+            trainer.CanEditClassBall,
+            trainer.ClassBallScope,
+            trainer.Team.Select(ToDto).ToArray(),
+            ToDto(trainer.Provenance));
+    }
+
+    private static TrainerPokemonRecordDto ToDto(SvTrainerPokemonRecord pokemon)
+    {
+        return new TrainerPokemonRecordDto(
+            pokemon.Slot,
+            pokemon.SpeciesId,
+            pokemon.Species,
+            pokemon.Form,
+            pokemon.Level,
+            pokemon.HeldItemId,
+            pokemon.HeldItem,
+            pokemon.MoveIds,
+            pokemon.Moves,
+            pokemon.Gender,
+            pokemon.GenderLabel,
+            pokemon.Ability,
+            pokemon.AbilityLabel,
+            pokemon.Nature,
+            pokemon.NatureLabel,
+            ToDto(pokemon.Evs),
+            pokemon.DynamaxLevel,
+            pokemon.CanGigantamax,
+            ToDto(pokemon.Ivs),
+            pokemon.Shiny,
+            pokemon.CanDynamax,
+            pokemon.TeraType,
+            pokemon.TeraTypeLabel)
+        {
+            AbilityOptions = pokemon.AbilityOptions.Select(ToDto).ToArray(),
+        };
+    }
+
+    private static TrainerAiFlagStateDto ToDto(SvTrainerAiFlagState flag)
+    {
+        return new TrainerAiFlagStateDto(
+            flag.Bit,
+            flag.Mask,
+            flag.Label,
+            flag.Description,
+            flag.Enabled);
+    }
+
+    private static TrainerPokemonStatsDto ToDto(SvTrainerPokemonStatsRecord stats)
+    {
+        return new TrainerPokemonStatsDto(
+            stats.HP,
+            stats.Attack,
+            stats.Defense,
+            stats.SpecialAttack,
+            stats.SpecialDefense,
+            stats.Speed);
+    }
+
+    private static TrainerEditableFieldDto ToDto(SvTrainerEditableField field)
+    {
+        return new TrainerEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static TrainerEditableFieldOptionDto ToDto(SvTrainerEditableFieldOption option)
+    {
+        return new TrainerEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static TrainerProvenanceDto ToDto(SvTrainerProvenance provenance)
+    {
+        return new TrainerProvenanceDto(
+            provenance.SourceFile,
+            provenance.TeamSourceFile,
+            provenance.ClassSourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.TeamSourceLayer),
+            provenance.ClassSourceLayer is null ? null : ProjectBridgeMapper.ToDto(provenance.ClassSourceLayer.Value),
+            ProjectBridgeMapper.ToDto(provenance.FileState),
+            ProjectBridgeMapper.ToDto(provenance.TeamFileState),
+            provenance.ClassFileState is null ? null : ProjectBridgeMapper.ToDto(provenance.ClassFileState.Value));
+    }
+
+    private static EncounterTableRecordDto ToDto(SvEncounterTableRecord table)
+    {
+        return new EncounterTableRecordDto(
+            table.TableId,
+            table.Location,
+            table.Area,
+            table.EncounterType,
+            table.GameVersion,
+            table.ArchiveMember,
+            table.Slots.Select(ToDto).ToArray(),
+            ToDto(table.Provenance));
+    }
+
+    private static EncounterSlotRecordDto ToDto(SvEncounterSlotRecord slot)
+    {
+        return new EncounterSlotRecordDto(
+            slot.Slot,
+            slot.SpeciesId,
+            slot.Species,
+            slot.Form,
+            slot.LevelMin,
+            slot.LevelMax,
+            slot.Weight,
+            slot.TimeOfDay,
+            slot.Weather);
+    }
+
+    private static EncounterEditableFieldDto ToDto(SvEncounterEditableField field)
+    {
+        return new EncounterEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static EncounterEditableFieldOptionDto ToDto(SvEncounterEditableFieldOption option)
+    {
+        return new EncounterEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static EncounterProvenanceDto ToDto(SvEncounterProvenance provenance)
+    {
+        return new EncounterProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
     }
 
     private static SvModMergerSourceRecordDto ToDto(SvModMergerSourceRecord source)
@@ -93,23 +652,13 @@ public static class SvBridgeMapper
             file.OverrideCount);
     }
 
-    private static WorkflowSummaryDto ToDto(SwShWorkflowSummary summary)
-    {
-        return new WorkflowSummaryDto(
-            summary.Id,
-            summary.Label,
-            summary.Description,
-            ToDto(summary.Availability),
-            summary.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
-    }
-
-    private static WorkflowAvailabilityDto ToDto(SwShWorkflowAvailability availability)
+    private static WorkflowAvailabilityDto ToDto(SvWorkflowAvailability availability)
     {
         return availability switch
         {
-            SwShWorkflowAvailability.Disabled => WorkflowAvailabilityDto.Disabled,
-            SwShWorkflowAvailability.ReadOnly => WorkflowAvailabilityDto.ReadOnly,
-            SwShWorkflowAvailability.Available => WorkflowAvailabilityDto.Available,
+            SvWorkflowAvailability.Disabled => WorkflowAvailabilityDto.Disabled,
+            SvWorkflowAvailability.ReadOnly => WorkflowAvailabilityDto.ReadOnly,
+            SvWorkflowAvailability.Available => WorkflowAvailabilityDto.Available,
             _ => throw new ArgumentOutOfRangeException(nameof(availability), availability, null),
         };
     }

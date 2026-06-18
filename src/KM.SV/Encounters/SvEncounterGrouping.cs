@@ -31,12 +31,8 @@ internal static class SvEncounterGrouping
             FormatVersions(row.Versiontable),
             FormatEncounterType(row),
             FormatTimes(row.Timetable),
-            FormatBiomes(row),
-            Normalize(row.FlagName, "no-flag"),
-            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"height:{row.Minheight}-{row.Maxheight}"),
-            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"band:{row.Bandrate}:{row.Bandtype}:{(int)row.Bandpoke}:{row.BandFormno}"),
-            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"outbreak:{row.OutbreakLotvalue}"),
-            Normalize(row.PokeVoiceClassification, "voice:any"));
+            FormatBiomeNames(row),
+            Normalize(row.FlagName, "no-flag"));
     }
 
     public static string FormatLocation(global::EncountPokeData row, SvTextLabelLookup labels)
@@ -74,7 +70,7 @@ internal static class SvEncounterGrouping
             {
                 FormatEncounterType(row),
                 FormatTimes(row.Timetable),
-                FormatBiomes(row),
+                FormatBiomeNames(row),
             }
             .Where(part => !string.IsNullOrWhiteSpace(part) && part != "Any")
             .ToArray();
@@ -171,6 +167,95 @@ internal static class SvEncounterGrouping
             .ToArray();
 
         return parts.Length == 0 ? "Any" : string.Join(", ", parts);
+    }
+
+    public static string FormatSlotContext(global::EncountPokeData row, SvTextLabelLookup labels)
+    {
+        var parts = new List<string>
+        {
+            $"Biome weights: {FormatBiomes(row)}",
+            string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"Height: {row.Minheight}-{row.Maxheight}"),
+            $"Band group: {FormatBand(row, labels)}",
+            $"Voice class: {FormatVoice(row.PokeVoiceClassification)}",
+        };
+
+        if (row.OutbreakLotvalue != 0)
+        {
+            parts.Add(string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"Outbreak weight: {row.OutbreakLotvalue}"));
+        }
+
+        return string.Join(" / ", parts);
+    }
+
+    private static string FormatBiomeNames(global::EncountPokeData row)
+    {
+        var biomes = new[]
+        {
+            row.Biome1,
+            row.Biome2,
+            row.Biome3,
+            row.Biome4,
+        };
+
+        var parts = biomes
+            .Where(biome => biome != global::Biome.NONE)
+            .Select(FormatBiome)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return parts.Length == 0 ? "Any" : string.Join(", ", parts);
+    }
+
+    private static string FormatBand(global::EncountPokeData row, SvTextLabelLookup labels)
+    {
+        if (row.Bandrate == 0
+            && row.Bandtype == global::bandtype.NONE
+            && row.Bandpoke == global::pml.common.DevID.DEV_NULL
+            && row.BandFormno == 0)
+        {
+            return "No linked group spawn";
+        }
+
+        var parts = new List<string>
+        {
+            row.Bandtype == global::bandtype.NONE
+                ? "Linked group"
+                : $"{SvLabels.EnumName(row.Bandtype)} group",
+            string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"rate {row.Bandrate}"),
+        };
+
+        var bandSpecies = (int)row.Bandpoke;
+        if (bandSpecies > 0)
+        {
+            parts.Add(labels.Pokemon(bandSpecies));
+        }
+
+        if (row.BandFormno != 0)
+        {
+            parts.Add(string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"form {row.BandFormno}"));
+        }
+
+        if (row.BandSex != global::SexType.DEFAULT)
+        {
+            parts.Add(SvLabels.EnumName(row.BandSex));
+        }
+
+        return string.Join(", ", parts);
+    }
+
+    private static string FormatVoice(string? voice)
+    {
+        return string.IsNullOrWhiteSpace(voice)
+            ? "Not set"
+            : voice.Replace('_', ' ').Trim();
     }
 
     private static IReadOnlyList<string> FormatAreaTokens(string? area, SvTextLabelLookup labels)

@@ -5,8 +5,8 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
-using KM.SwSh.Items;
-using KM.SwSh.Trainers;
+using KM.SV.Items;
+using KM.SV.Trainers;
 using KM.SV.Data;
 using KM.SV.Workflows;
 using System.Globalization;
@@ -32,7 +32,7 @@ internal sealed class SvTrainersEditSessionService
         this.trainersWorkflowService = trainersWorkflowService ?? new SvTrainersWorkflowService(this.fileSource);
     }
 
-    public SwShTrainersEditResult UpdateField(
+    public SvTrainersEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,
         int trainerId,
@@ -57,7 +57,7 @@ internal sealed class SvTrainersEditSessionService
                 SvEditSessionSupport.TrainersDomain,
                 diagnostics))
         {
-            return new SwShTrainersEditResult(workflow, currentSession, diagnostics);
+            return new SvTrainersEditResult(workflow, currentSession, diagnostics);
         }
 
         var trainer = workflow.Trainers.FirstOrDefault(candidate => candidate.TrainerId == trainerId);
@@ -69,23 +69,23 @@ internal sealed class SvTrainersEditSessionService
                 SvEditSessionSupport.TrainersDomain,
                 field: "trainerId",
                 expected: "Existing trainer record"));
-            return new SwShTrainersEditResult(workflow, currentSession, diagnostics);
+            return new SvTrainersEditResult(workflow, currentSession, diagnostics);
         }
 
         var pendingEdit = CreatePendingEdit(workflow, trainer, slot, field, value, diagnostics);
         if (pendingEdit is null)
         {
-            return new SwShTrainersEditResult(workflow, currentSession, diagnostics);
+            return new SvTrainersEditResult(workflow, currentSession, diagnostics);
         }
 
         var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
-        return new SwShTrainersEditResult(
+        return new SvTrainersEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
             diagnostics);
     }
 
-    public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
+    public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
@@ -114,7 +114,7 @@ internal sealed class SvTrainersEditSessionService
                 SvEditSessionSupport.TrainersDomain));
         }
 
-        return new SwShEditSessionValidation(
+        return new SvEditSessionValidation(
             session,
             diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error),
             diagnostics);
@@ -165,10 +165,11 @@ internal sealed class SvTrainersEditSessionService
         {
             var project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, SvDataPaths.TrainerDataArray);
+            var moveResolver = SvTrainerMoveResolver.Load(project, fileSource, diagnostics);
             var rows = ReadRows(source.Bytes);
             foreach (var edit in session.PendingEdits)
             {
-                ApplyEdit(rows, edit, diagnostics);
+                ApplyEdit(rows, edit, moveResolver, diagnostics);
             }
 
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -198,8 +199,8 @@ internal sealed class SvTrainersEditSessionService
     }
 
     private static PendingEdit? CreatePendingEdit(
-        SwShTrainersWorkflow workflow,
-        SwShTrainerRecord trainer,
+        SvTrainersWorkflow workflow,
+        SvTrainerRecord trainer,
         int? slot,
         string field,
         string value,
@@ -270,7 +271,7 @@ internal sealed class SvTrainersEditSessionService
     }
 
     private static void ValidatePendingEdit(
-        SwShTrainersWorkflow workflow,
+        SvTrainersWorkflow workflow,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -292,7 +293,7 @@ internal sealed class SvTrainersEditSessionService
             return;
         }
 
-        SwShTrainerRecord? trainer;
+        SvTrainerRecord? trainer;
         if (IsPokemonField(edit.Field))
         {
             if (!TryParseTeamRecordId(edit.RecordId, out var trainerId, out var slot))
@@ -353,7 +354,7 @@ internal sealed class SvTrainersEditSessionService
             diagnostics);
     }
 
-    private static SwShTrainersWorkflow OverlayPendingEdits(SwShTrainersWorkflow workflow, IEnumerable<PendingEdit> edits)
+    private static SvTrainersWorkflow OverlayPendingEdits(SvTrainersWorkflow workflow, IEnumerable<PendingEdit> edits)
     {
         var updatedWorkflow = workflow;
         foreach (var edit in edits)
@@ -364,7 +365,7 @@ internal sealed class SvTrainersEditSessionService
         return updatedWorkflow;
     }
 
-    private static SwShTrainersWorkflow OverlayPendingEdit(SwShTrainersWorkflow workflow, PendingEdit edit)
+    private static SvTrainersWorkflow OverlayPendingEdit(SvTrainersWorkflow workflow, PendingEdit edit)
     {
         if (!string.Equals(edit.Domain, SvEditSessionSupport.TrainersDomain, StringComparison.Ordinal)
             || !int.TryParse(edit.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var value))
@@ -400,17 +401,17 @@ internal sealed class SvTrainersEditSessionService
         };
     }
 
-    private static SwShTrainerRecord OverlayTrainer(SwShTrainerRecord trainer, string? field, int value)
+    private static SvTrainerRecord OverlayTrainer(SvTrainerRecord trainer, string? field, int value)
     {
         return field switch
         {
-            SwShTrainersWorkflowService.BattleTypeField => trainer with
+            SvTrainersWorkflowService.BattleTypeField => trainer with
             {
                 BattleTypeValue = value,
                 BattleType = SvTrainersWorkflowService.FormatBattleType((global::trainer.BattleType)value),
             },
-            SwShTrainersWorkflowService.MoneyField => trainer with { Money = value },
-            SwShTrainersWorkflowService.AiFlagsField => trainer with
+            SvTrainersWorkflowService.MoneyField => trainer with { Money = value },
+            SvTrainersWorkflowService.AiFlagsField => trainer with
             {
                 AiFlags = value,
                 AiFlagStates = CreateAiStates(value),
@@ -419,7 +420,7 @@ internal sealed class SvTrainersEditSessionService
         };
     }
 
-    private static SwShTrainerRecord OverlayTrainerPokemon(SwShTrainerRecord trainer, int slot, string? field, int value)
+    private static SvTrainerRecord OverlayTrainerPokemon(SvTrainerRecord trainer, int slot, string? field, int value)
     {
         return trainer with
         {
@@ -429,48 +430,48 @@ internal sealed class SvTrainersEditSessionService
         };
     }
 
-    private static SwShTrainerPokemonRecord OverlayPokemon(SwShTrainerPokemonRecord pokemon, string? field, int value)
+    private static SvTrainerPokemonRecord OverlayPokemon(SvTrainerPokemonRecord pokemon, string? field, int value)
     {
         return field switch
         {
-            SwShTrainersWorkflowService.SpeciesIdField => pokemon with
+            SvTrainersWorkflowService.SpeciesIdField => pokemon with
             {
                 SpeciesId = value,
                 Species = value == 0 ? "None" : SvLabels.Pokemon(value),
             },
-            SwShTrainersWorkflowService.FormField => pokemon with { Form = value },
-            SwShTrainersWorkflowService.LevelField => pokemon with { Level = value },
-            SwShTrainersWorkflowService.HeldItemIdField => pokemon with
+            SvTrainersWorkflowService.FormField => pokemon with { Form = value },
+            SvTrainersWorkflowService.LevelField => pokemon with { Level = value },
+            SvTrainersWorkflowService.HeldItemIdField => pokemon with
             {
                 HeldItemId = value,
                 HeldItem = value > 0 ? SvLabels.Item(value) : null,
             },
-            SwShTrainersWorkflowService.Move1IdField => OverlayMove(pokemon, 0, value),
-            SwShTrainersWorkflowService.Move2IdField => OverlayMove(pokemon, 1, value),
-            SwShTrainersWorkflowService.Move3IdField => OverlayMove(pokemon, 2, value),
-            SwShTrainersWorkflowService.Move4IdField => OverlayMove(pokemon, 3, value),
-            SwShTrainersWorkflowService.GenderField => pokemon with { Gender = value, GenderLabel = SvTrainersWorkflowService.FormatGender((global::SexType)value) },
-            SwShTrainersWorkflowService.AbilityField => pokemon with { Ability = value, AbilityLabel = SvTrainersWorkflowService.FormatAbilityMode((global::TokuseiType)value) },
-            SwShTrainersWorkflowService.NatureField => pokemon with { Nature = value, NatureLabel = SvTrainersWorkflowService.FormatNature((global::SeikakuType)value) },
+            SvTrainersWorkflowService.Move1IdField => OverlayMove(pokemon, 0, value),
+            SvTrainersWorkflowService.Move2IdField => OverlayMove(pokemon, 1, value),
+            SvTrainersWorkflowService.Move3IdField => OverlayMove(pokemon, 2, value),
+            SvTrainersWorkflowService.Move4IdField => OverlayMove(pokemon, 3, value),
+            SvTrainersWorkflowService.GenderField => pokemon with { Gender = value, GenderLabel = SvTrainersWorkflowService.FormatGender((global::SexType)value) },
+            SvTrainersWorkflowService.AbilityField => pokemon with { Ability = value, AbilityLabel = SvTrainersWorkflowService.FormatAbilityMode((global::TokuseiType)value) },
+            SvTrainersWorkflowService.NatureField => pokemon with { Nature = value, NatureLabel = SvTrainersWorkflowService.FormatNature((global::SeikakuType)value) },
             SvTrainersWorkflowService.TeraTypeField => pokemon with { TeraType = value, TeraTypeLabel = SvTrainersWorkflowService.FormatTeraType((global::GemType)value) },
-            SwShTrainersWorkflowService.EvHpField => pokemon with { Evs = pokemon.Evs with { HP = value } },
-            SwShTrainersWorkflowService.EvAttackField => pokemon with { Evs = pokemon.Evs with { Attack = value } },
-            SwShTrainersWorkflowService.EvDefenseField => pokemon with { Evs = pokemon.Evs with { Defense = value } },
-            SwShTrainersWorkflowService.EvSpecialAttackField => pokemon with { Evs = pokemon.Evs with { SpecialAttack = value } },
-            SwShTrainersWorkflowService.EvSpecialDefenseField => pokemon with { Evs = pokemon.Evs with { SpecialDefense = value } },
-            SwShTrainersWorkflowService.EvSpeedField => pokemon with { Evs = pokemon.Evs with { Speed = value } },
-            SwShTrainersWorkflowService.IvHpField => pokemon with { Ivs = pokemon.Ivs with { HP = value } },
-            SwShTrainersWorkflowService.IvAttackField => pokemon with { Ivs = pokemon.Ivs with { Attack = value } },
-            SwShTrainersWorkflowService.IvDefenseField => pokemon with { Ivs = pokemon.Ivs with { Defense = value } },
-            SwShTrainersWorkflowService.IvSpecialAttackField => pokemon with { Ivs = pokemon.Ivs with { SpecialAttack = value } },
-            SwShTrainersWorkflowService.IvSpecialDefenseField => pokemon with { Ivs = pokemon.Ivs with { SpecialDefense = value } },
-            SwShTrainersWorkflowService.IvSpeedField => pokemon with { Ivs = pokemon.Ivs with { Speed = value } },
-            SwShTrainersWorkflowService.ShinyField => pokemon with { Shiny = value != 0 },
+            SvTrainersWorkflowService.EvHpField => pokemon with { Evs = pokemon.Evs with { HP = value } },
+            SvTrainersWorkflowService.EvAttackField => pokemon with { Evs = pokemon.Evs with { Attack = value } },
+            SvTrainersWorkflowService.EvDefenseField => pokemon with { Evs = pokemon.Evs with { Defense = value } },
+            SvTrainersWorkflowService.EvSpecialAttackField => pokemon with { Evs = pokemon.Evs with { SpecialAttack = value } },
+            SvTrainersWorkflowService.EvSpecialDefenseField => pokemon with { Evs = pokemon.Evs with { SpecialDefense = value } },
+            SvTrainersWorkflowService.EvSpeedField => pokemon with { Evs = pokemon.Evs with { Speed = value } },
+            SvTrainersWorkflowService.IvHpField => pokemon with { Ivs = pokemon.Ivs with { HP = value } },
+            SvTrainersWorkflowService.IvAttackField => pokemon with { Ivs = pokemon.Ivs with { Attack = value } },
+            SvTrainersWorkflowService.IvDefenseField => pokemon with { Ivs = pokemon.Ivs with { Defense = value } },
+            SvTrainersWorkflowService.IvSpecialAttackField => pokemon with { Ivs = pokemon.Ivs with { SpecialAttack = value } },
+            SvTrainersWorkflowService.IvSpecialDefenseField => pokemon with { Ivs = pokemon.Ivs with { SpecialDefense = value } },
+            SvTrainersWorkflowService.IvSpeedField => pokemon with { Ivs = pokemon.Ivs with { Speed = value } },
+            SvTrainersWorkflowService.ShinyField => pokemon with { Shiny = value != 0 },
             _ => pokemon,
         };
     }
 
-    private static SwShTrainerPokemonRecord OverlayMove(SwShTrainerPokemonRecord pokemon, int moveIndex, int value)
+    private static SvTrainerPokemonRecord OverlayMove(SvTrainerPokemonRecord pokemon, int moveIndex, int value)
     {
         var moveIds = pokemon.MoveIds.ToList();
         var moves = pokemon.Moves.ToList();
@@ -493,6 +494,7 @@ internal sealed class SvTrainersEditSessionService
     private static void ApplyEdit(
         IReadOnlyList<TrainerRow> rows,
         PendingEdit edit,
+        SvTrainerMoveResolver moveResolver,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!string.Equals(edit.Domain, SvEditSessionSupport.TrainersDomain, StringComparison.Ordinal)
@@ -533,7 +535,7 @@ internal sealed class SvTrainersEditSessionService
                 return;
             }
 
-            ApplyPokemonField(pokemon, edit.Field, value);
+            ApplyPokemonField(pokemon, edit.Field, value, moveResolver);
             return;
         }
 
@@ -567,13 +569,13 @@ internal sealed class SvTrainersEditSessionService
     {
         switch (field)
         {
-            case SwShTrainersWorkflowService.BattleTypeField:
+            case SvTrainersWorkflowService.BattleTypeField:
                 row.BattleType = (global::trainer.BattleType)value;
                 break;
-            case SwShTrainersWorkflowService.MoneyField:
+            case SvTrainersWorkflowService.MoneyField:
                 row.MoneyRate = checked((sbyte)value);
                 break;
-            case SwShTrainersWorkflowService.AiFlagsField:
+            case SvTrainersWorkflowService.AiFlagsField:
                 row.SetAiFlags(value);
                 break;
             case IsStrongField:
@@ -585,80 +587,84 @@ internal sealed class SvTrainersEditSessionService
         }
     }
 
-    private static void ApplyPokemonField(PokemonRow row, string? field, int value)
+    private static void ApplyPokemonField(
+        PokemonRow row,
+        string? field,
+        int value,
+        SvTrainerMoveResolver moveResolver)
     {
         switch (field)
         {
-            case SwShTrainersWorkflowService.SpeciesIdField:
+            case SvTrainersWorkflowService.SpeciesIdField:
                 row.DevId = (global::pml.common.DevID)checked((ushort)value);
                 break;
-            case SwShTrainersWorkflowService.FormField:
+            case SvTrainersWorkflowService.FormField:
                 row.FormId = checked((short)value);
                 break;
-            case SwShTrainersWorkflowService.LevelField:
+            case SvTrainersWorkflowService.LevelField:
                 row.Level = value;
                 break;
-            case SwShTrainersWorkflowService.HeldItemIdField:
+            case SvTrainersWorkflowService.HeldItemIdField:
                 row.Item = (global::ItemID)value;
                 break;
-            case SwShTrainersWorkflowService.Move1IdField:
-                row.SetMove(0, value);
+            case SvTrainersWorkflowService.Move1IdField:
+                row.SetMove(0, value, moveResolver);
                 break;
-            case SwShTrainersWorkflowService.Move2IdField:
-                row.SetMove(1, value);
+            case SvTrainersWorkflowService.Move2IdField:
+                row.SetMove(1, value, moveResolver);
                 break;
-            case SwShTrainersWorkflowService.Move3IdField:
-                row.SetMove(2, value);
+            case SvTrainersWorkflowService.Move3IdField:
+                row.SetMove(2, value, moveResolver);
                 break;
-            case SwShTrainersWorkflowService.Move4IdField:
-                row.SetMove(3, value);
+            case SvTrainersWorkflowService.Move4IdField:
+                row.SetMove(3, value, moveResolver);
                 break;
-            case SwShTrainersWorkflowService.GenderField:
+            case SvTrainersWorkflowService.GenderField:
                 row.Sex = (global::SexType)value;
                 break;
-            case SwShTrainersWorkflowService.AbilityField:
+            case SvTrainersWorkflowService.AbilityField:
                 row.Tokusei = (global::TokuseiType)value;
                 break;
-            case SwShTrainersWorkflowService.NatureField:
+            case SvTrainersWorkflowService.NatureField:
                 row.Seikaku = (global::SeikakuType)value;
                 break;
-            case SwShTrainersWorkflowService.EvHpField:
+            case SvTrainersWorkflowService.EvHpField:
                 row.EffortValue = (row.EffortValue ?? ParamSetRow.Zero) with { Hp = value };
                 break;
-            case SwShTrainersWorkflowService.EvAttackField:
+            case SvTrainersWorkflowService.EvAttackField:
                 row.EffortValue = (row.EffortValue ?? ParamSetRow.Zero) with { Atk = value };
                 break;
-            case SwShTrainersWorkflowService.EvDefenseField:
+            case SvTrainersWorkflowService.EvDefenseField:
                 row.EffortValue = (row.EffortValue ?? ParamSetRow.Zero) with { Def = value };
                 break;
-            case SwShTrainersWorkflowService.EvSpecialAttackField:
+            case SvTrainersWorkflowService.EvSpecialAttackField:
                 row.EffortValue = (row.EffortValue ?? ParamSetRow.Zero) with { SpAtk = value };
                 break;
-            case SwShTrainersWorkflowService.EvSpecialDefenseField:
+            case SvTrainersWorkflowService.EvSpecialDefenseField:
                 row.EffortValue = (row.EffortValue ?? ParamSetRow.Zero) with { SpDef = value };
                 break;
-            case SwShTrainersWorkflowService.EvSpeedField:
+            case SvTrainersWorkflowService.EvSpeedField:
                 row.EffortValue = (row.EffortValue ?? ParamSetRow.Zero) with { Agi = value };
                 break;
-            case SwShTrainersWorkflowService.IvHpField:
+            case SvTrainersWorkflowService.IvHpField:
                 row.TalentValue = (row.TalentValue ?? ParamSetRow.Zero) with { Hp = value };
                 break;
-            case SwShTrainersWorkflowService.IvAttackField:
+            case SvTrainersWorkflowService.IvAttackField:
                 row.TalentValue = (row.TalentValue ?? ParamSetRow.Zero) with { Atk = value };
                 break;
-            case SwShTrainersWorkflowService.IvDefenseField:
+            case SvTrainersWorkflowService.IvDefenseField:
                 row.TalentValue = (row.TalentValue ?? ParamSetRow.Zero) with { Def = value };
                 break;
-            case SwShTrainersWorkflowService.IvSpecialAttackField:
+            case SvTrainersWorkflowService.IvSpecialAttackField:
                 row.TalentValue = (row.TalentValue ?? ParamSetRow.Zero) with { SpAtk = value };
                 break;
-            case SwShTrainersWorkflowService.IvSpecialDefenseField:
+            case SvTrainersWorkflowService.IvSpecialDefenseField:
                 row.TalentValue = (row.TalentValue ?? ParamSetRow.Zero) with { SpDef = value };
                 break;
-            case SwShTrainersWorkflowService.IvSpeedField:
+            case SvTrainersWorkflowService.IvSpeedField:
                 row.TalentValue = (row.TalentValue ?? ParamSetRow.Zero) with { Agi = value };
                 break;
-            case SwShTrainersWorkflowService.ShinyField:
+            case SvTrainersWorkflowService.ShinyField:
                 row.RareType = value == 0 ? global::RareType.DEFAULT : global::RareType.RARE;
                 break;
             case SvTrainersWorkflowService.TeraTypeField:
@@ -696,30 +702,30 @@ internal sealed class SvTrainersEditSessionService
     private static bool IsPokemonField(string? field)
     {
         return field is
-            SwShTrainersWorkflowService.SpeciesIdField or
-            SwShTrainersWorkflowService.FormField or
-            SwShTrainersWorkflowService.LevelField or
-            SwShTrainersWorkflowService.HeldItemIdField or
-            SwShTrainersWorkflowService.Move1IdField or
-            SwShTrainersWorkflowService.Move2IdField or
-            SwShTrainersWorkflowService.Move3IdField or
-            SwShTrainersWorkflowService.Move4IdField or
-            SwShTrainersWorkflowService.GenderField or
-            SwShTrainersWorkflowService.AbilityField or
-            SwShTrainersWorkflowService.NatureField or
-            SwShTrainersWorkflowService.EvHpField or
-            SwShTrainersWorkflowService.EvAttackField or
-            SwShTrainersWorkflowService.EvDefenseField or
-            SwShTrainersWorkflowService.EvSpecialAttackField or
-            SwShTrainersWorkflowService.EvSpecialDefenseField or
-            SwShTrainersWorkflowService.EvSpeedField or
-            SwShTrainersWorkflowService.IvHpField or
-            SwShTrainersWorkflowService.IvAttackField or
-            SwShTrainersWorkflowService.IvDefenseField or
-            SwShTrainersWorkflowService.IvSpecialAttackField or
-            SwShTrainersWorkflowService.IvSpecialDefenseField or
-            SwShTrainersWorkflowService.IvSpeedField or
-            SwShTrainersWorkflowService.ShinyField or
+            SvTrainersWorkflowService.SpeciesIdField or
+            SvTrainersWorkflowService.FormField or
+            SvTrainersWorkflowService.LevelField or
+            SvTrainersWorkflowService.HeldItemIdField or
+            SvTrainersWorkflowService.Move1IdField or
+            SvTrainersWorkflowService.Move2IdField or
+            SvTrainersWorkflowService.Move3IdField or
+            SvTrainersWorkflowService.Move4IdField or
+            SvTrainersWorkflowService.GenderField or
+            SvTrainersWorkflowService.AbilityField or
+            SvTrainersWorkflowService.NatureField or
+            SvTrainersWorkflowService.EvHpField or
+            SvTrainersWorkflowService.EvAttackField or
+            SvTrainersWorkflowService.EvDefenseField or
+            SvTrainersWorkflowService.EvSpecialAttackField or
+            SvTrainersWorkflowService.EvSpecialDefenseField or
+            SvTrainersWorkflowService.EvSpeedField or
+            SvTrainersWorkflowService.IvHpField or
+            SvTrainersWorkflowService.IvAttackField or
+            SvTrainersWorkflowService.IvDefenseField or
+            SvTrainersWorkflowService.IvSpecialAttackField or
+            SvTrainersWorkflowService.IvSpecialDefenseField or
+            SvTrainersWorkflowService.IvSpeedField or
+            SvTrainersWorkflowService.ShinyField or
             SvTrainersWorkflowService.TeraTypeField;
     }
 
@@ -751,7 +757,7 @@ internal sealed class SvTrainersEditSessionService
             expected: "Supported S/V trainer or trainer Pokemon field");
     }
 
-    private static IReadOnlyList<SwShTrainerAiFlagState> CreateAiStates(int flags)
+    private static IReadOnlyList<SvTrainerAiFlagState> CreateAiStates(int flags)
     {
         var definitions = new[]
         {
@@ -769,7 +775,7 @@ internal sealed class SvTrainersEditSessionService
             .Select(definition =>
             {
                 var mask = 1 << definition.Item1;
-                return new SwShTrainerAiFlagState(
+                return new SvTrainerAiFlagState(
                     definition.Item1,
                     mask,
                     definition.Item2,
@@ -903,7 +909,7 @@ internal sealed class SvTrainersEditSessionService
         public global::ItemID Item { get; set; }
         public int Level { get; set; }
         public global::BallType BallId { get; init; }
-        public global::WazaType WazaType { get; init; }
+        public global::WazaType WazaType { get; set; }
         public WazaSetRow?[] Waza { get; } = new WazaSetRow?[4];
         public global::GemType GemType { get; set; }
         public global::SeikakuType Seikaku { get; set; }
@@ -946,8 +952,28 @@ internal sealed class SvTrainersEditSessionService
             return result;
         }
 
-        public void SetMove(int index, int moveId)
+        public void SetMove(int index, int moveId, SvTrainerMoveResolver moveResolver)
         {
+            if (WazaType == global::WazaType.DEFAULT)
+            {
+                var currentMoves = Waza
+                    .Select(waza => waza is null ? 0 : (int)waza.WazaId)
+                    .ToArray();
+                var defaultMoves = currentMoves.Any(move => move != 0)
+                    ? currentMoves
+                    : moveResolver.Resolve((int)DevId, FormId, Level);
+
+                for (var defaultIndex = 0; defaultIndex < Waza.Length; defaultIndex++)
+                {
+                    var defaultMove = defaultMoves.ElementAtOrDefault(defaultIndex);
+                    Waza[defaultIndex] = defaultMove == 0
+                        ? null
+                        : new WazaSetRow((global::pml.common.WazaID)checked((ushort)defaultMove), 0);
+                }
+
+                WazaType = global::WazaType.MANUAL;
+            }
+
             Waza[index] = moveId == 0
                 ? null
                 : (Waza[index] ?? new WazaSetRow((global::pml.common.WazaID)0, 0)) with

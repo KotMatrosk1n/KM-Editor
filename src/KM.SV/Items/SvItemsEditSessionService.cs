@@ -5,7 +5,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
-using KM.SwSh.Items;
+using KM.SV.Items;
 using KM.SV.Data;
 using KM.SV.Workflows;
 using System.Globalization;
@@ -28,7 +28,7 @@ internal sealed class SvItemsEditSessionService
         this.itemsWorkflowService = itemsWorkflowService ?? new SvItemsWorkflowService(this.fileSource);
     }
 
-    public SwShItemsEditResult UpdateField(
+    public SvItemsEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,
         int itemId,
@@ -52,7 +52,7 @@ internal sealed class SvItemsEditSessionService
                 SvEditSessionSupport.ItemsDomain,
                 diagnostics))
         {
-            return new SwShItemsEditResult(workflow, currentSession, diagnostics);
+            return new SvItemsEditResult(workflow, currentSession, diagnostics);
         }
 
         var item = workflow.Items.FirstOrDefault(candidate => candidate.ItemId == itemId);
@@ -64,23 +64,23 @@ internal sealed class SvItemsEditSessionService
                 SvEditSessionSupport.ItemsDomain,
                 field: "itemId",
                 expected: "Existing item record"));
-            return new SwShItemsEditResult(workflow, currentSession, diagnostics);
+            return new SvItemsEditResult(workflow, currentSession, diagnostics);
         }
 
         var pendingEdit = CreatePendingEdit(workflow, item, field, value, diagnostics);
         if (pendingEdit is null)
         {
-            return new SwShItemsEditResult(workflow, currentSession, diagnostics);
+            return new SvItemsEditResult(workflow, currentSession, diagnostics);
         }
 
         var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
-        return new SwShItemsEditResult(
+        return new SvItemsEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
             diagnostics);
     }
 
-    public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
+    public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
@@ -109,7 +109,7 @@ internal sealed class SvItemsEditSessionService
                 SvEditSessionSupport.ItemsDomain));
         }
 
-        return new SwShEditSessionValidation(
+        return new SvEditSessionValidation(
             session,
             diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error),
             diagnostics);
@@ -193,8 +193,8 @@ internal sealed class SvItemsEditSessionService
     }
 
     private static PendingEdit? CreatePendingEdit(
-        SwShItemsWorkflow workflow,
-        SwShItemRecord item,
+        SvItemsWorkflow workflow,
+        SvItemRecord item,
         string field,
         string value,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -235,7 +235,7 @@ internal sealed class SvItemsEditSessionService
     }
 
     private static void ValidatePendingEdit(
-        SwShItemsWorkflow workflow,
+        SvItemsWorkflow workflow,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -283,7 +283,7 @@ internal sealed class SvItemsEditSessionService
             diagnostics);
     }
 
-    private static SwShItemsWorkflow OverlayPendingEdits(SwShItemsWorkflow workflow, IEnumerable<PendingEdit> edits)
+    private static SvItemsWorkflow OverlayPendingEdits(SvItemsWorkflow workflow, IEnumerable<PendingEdit> edits)
     {
         var updatedWorkflow = workflow;
         foreach (var edit in edits)
@@ -294,7 +294,7 @@ internal sealed class SvItemsEditSessionService
         return updatedWorkflow;
     }
 
-    private static SwShItemsWorkflow OverlayPendingEdit(SwShItemsWorkflow workflow, PendingEdit edit)
+    private static SvItemsWorkflow OverlayPendingEdit(SvItemsWorkflow workflow, PendingEdit edit)
     {
         if (!string.Equals(edit.Domain, SvEditSessionSupport.ItemsDomain, StringComparison.Ordinal)
             || !int.TryParse(edit.RecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
@@ -317,16 +317,16 @@ internal sealed class SvItemsEditSessionService
         };
     }
 
-    private static SwShItemRecord OverlayItem(SwShItemRecord item, string? field, int value)
+    private static SvItemRecord OverlayItem(SvItemRecord item, string? field, int value)
     {
         var metadata = item.Metadata;
         return field switch
         {
-            SwShItemsWorkflowService.BuyPriceField => item with { BuyPrice = value, SellPrice = value / 2 },
-            SwShItemsWorkflowService.WattsPriceField => item with { WattsPrice = value },
-            SwShItemsWorkflowService.PouchField => item with { Metadata = metadata with { Pouch = value } },
-            SwShItemsWorkflowService.FlingPowerField => item with { Metadata = metadata with { FlingPower = value } },
-            SwShItemsWorkflowService.FieldUseTypeField => item with
+            SvItemsWorkflowService.BuyPriceField => item with { BuyPrice = value, SellPrice = value / 2 },
+            SvItemsWorkflowService.WattsPriceField => item with { WattsPrice = value },
+            SvItemsWorkflowService.PouchField => item with { Metadata = metadata with { Pouch = value } },
+            SvItemsWorkflowService.FlingPowerField => item with { Metadata = metadata with { FlingPower = value } },
+            SvItemsWorkflowService.FieldUseTypeField => item with
             {
                 Metadata = metadata with
                 {
@@ -334,7 +334,7 @@ internal sealed class SvItemsEditSessionService
                     CanUseOnPokemon = SvItemsWorkflowService.CanUseOnPokemon((global::FieldFunctionType)value),
                 },
             },
-            SwShItemsWorkflowService.CanUseOnPokemonField => item with
+            SvItemsWorkflowService.CanUseOnPokemonField => item with
             {
                 Metadata = metadata with
                 {
@@ -346,29 +346,29 @@ internal sealed class SvItemsEditSessionService
                             : metadata.FieldUseType,
                 },
             },
-            SwShItemsWorkflowService.ItemTypeField => item with { Metadata = metadata with { ItemType = value } },
-            SwShItemsWorkflowService.SortIndexField => item with { Metadata = metadata with { SortIndex = value } },
-            SwShItemsWorkflowService.GroupTypeField => item with { Metadata = metadata with { GroupType = value } },
-            SwShItemsWorkflowService.GroupIndexField => item with { Metadata = metadata with { GroupIndex = value } },
-            SwShItemsWorkflowService.AttackBoostField => item with { Metadata = metadata with { Boost0 = value } },
-            SwShItemsWorkflowService.DefenseBoostField => item with { Metadata = metadata with { Boost1 = value } },
-            SwShItemsWorkflowService.SpecialAttackBoostField => item with { Metadata = metadata with { Boost2 = value } },
-            SwShItemsWorkflowService.SpecialDefenseBoostField => item with { Metadata = metadata with { Boost3 = value } },
-            SwShItemsWorkflowService.SpeedBoostField => item with { Metadata = metadata with { UseFlags1 = value } },
-            SwShItemsWorkflowService.AccuracyBoostField => item with { Metadata = metadata with { UseFlags2 = value } },
-            SwShItemsWorkflowService.CriticalHitBoostField => item with { Metadata = metadata with { CureStatusFlags = value } },
-            SwShItemsWorkflowService.EvHpField => item with { Metadata = metadata with { EvHp = value } },
-            SwShItemsWorkflowService.EvAttackField => item with { Metadata = metadata with { EvAttack = value } },
-            SwShItemsWorkflowService.EvDefenseField => item with { Metadata = metadata with { EvDefense = value } },
-            SwShItemsWorkflowService.EvSpeedField => item with { Metadata = metadata with { EvSpeed = value } },
-            SwShItemsWorkflowService.EvSpecialAttackField => item with { Metadata = metadata with { EvSpecialAttack = value } },
-            SwShItemsWorkflowService.EvSpecialDefenseField => item with { Metadata = metadata with { EvSpecialDefense = value } },
-            SwShItemsWorkflowService.HealAmountField => item with { Metadata = metadata with { HealAmount = value } },
-            SwShItemsWorkflowService.PpGainField => item with { Metadata = metadata with { PpGain = value } },
-            SwShItemsWorkflowService.FriendshipGain1Field => item with { Metadata = metadata with { FriendshipGain1 = value } },
-            SwShItemsWorkflowService.FriendshipGain2Field => item with { Metadata = metadata with { FriendshipGain2 = value } },
-            SwShItemsWorkflowService.FriendshipGain3Field => item with { Metadata = metadata with { FriendshipGain3 = value } },
-            SwShItemsWorkflowService.MachineMoveIdField => item with
+            SvItemsWorkflowService.ItemTypeField => item with { Metadata = metadata with { ItemType = value } },
+            SvItemsWorkflowService.SortIndexField => item with { Metadata = metadata with { SortIndex = value } },
+            SvItemsWorkflowService.GroupTypeField => item with { Metadata = metadata with { GroupType = value } },
+            SvItemsWorkflowService.GroupIndexField => item with { Metadata = metadata with { GroupIndex = value } },
+            SvItemsWorkflowService.AttackBoostField => item with { Metadata = metadata with { Boost0 = value } },
+            SvItemsWorkflowService.DefenseBoostField => item with { Metadata = metadata with { Boost1 = value } },
+            SvItemsWorkflowService.SpecialAttackBoostField => item with { Metadata = metadata with { Boost2 = value } },
+            SvItemsWorkflowService.SpecialDefenseBoostField => item with { Metadata = metadata with { Boost3 = value } },
+            SvItemsWorkflowService.SpeedBoostField => item with { Metadata = metadata with { UseFlags1 = value } },
+            SvItemsWorkflowService.AccuracyBoostField => item with { Metadata = metadata with { UseFlags2 = value } },
+            SvItemsWorkflowService.CriticalHitBoostField => item with { Metadata = metadata with { CureStatusFlags = value } },
+            SvItemsWorkflowService.EvHpField => item with { Metadata = metadata with { EvHp = value } },
+            SvItemsWorkflowService.EvAttackField => item with { Metadata = metadata with { EvAttack = value } },
+            SvItemsWorkflowService.EvDefenseField => item with { Metadata = metadata with { EvDefense = value } },
+            SvItemsWorkflowService.EvSpeedField => item with { Metadata = metadata with { EvSpeed = value } },
+            SvItemsWorkflowService.EvSpecialAttackField => item with { Metadata = metadata with { EvSpecialAttack = value } },
+            SvItemsWorkflowService.EvSpecialDefenseField => item with { Metadata = metadata with { EvSpecialDefense = value } },
+            SvItemsWorkflowService.HealAmountField => item with { Metadata = metadata with { HealAmount = value } },
+            SvItemsWorkflowService.PpGainField => item with { Metadata = metadata with { PpGain = value } },
+            SvItemsWorkflowService.FriendshipGain1Field => item with { Metadata = metadata with { FriendshipGain1 = value } },
+            SvItemsWorkflowService.FriendshipGain2Field => item with { Metadata = metadata with { FriendshipGain2 = value } },
+            SvItemsWorkflowService.FriendshipGain3Field => item with { Metadata = metadata with { FriendshipGain3 = value } },
+            SvItemsWorkflowService.MachineMoveIdField => item with
             {
                 Metadata = metadata with
                 {
@@ -416,95 +416,95 @@ internal sealed class SvItemsEditSessionService
     {
         switch (field)
         {
-            case SwShItemsWorkflowService.BuyPriceField:
+            case SvItemsWorkflowService.BuyPriceField:
                 row.Price = value;
                 break;
-            case SwShItemsWorkflowService.WattsPriceField:
+            case SvItemsWorkflowService.WattsPriceField:
                 row.BP = value;
                 break;
-            case SwShItemsWorkflowService.PouchField:
+            case SvItemsWorkflowService.PouchField:
                 row.FieldPocket = (global::FieldPocket)value;
                 break;
-            case SwShItemsWorkflowService.FlingPowerField:
+            case SvItemsWorkflowService.FlingPowerField:
                 row.ThrowPower = value;
                 break;
-            case SwShItemsWorkflowService.FieldUseTypeField:
+            case SvItemsWorkflowService.FieldUseTypeField:
                 row.FieldFunctionType = (global::FieldFunctionType)value;
                 break;
-            case SwShItemsWorkflowService.CanUseOnPokemonField:
+            case SvItemsWorkflowService.CanUseOnPokemonField:
                 row.FieldFunctionType = value == 0
                     ? global::FieldFunctionType.FIELDFUNC_NONE
                     : row.FieldFunctionType == global::FieldFunctionType.FIELDFUNC_NONE
                         ? global::FieldFunctionType.FIELDFUNC_RECOVER
                         : row.FieldFunctionType;
                 break;
-            case SwShItemsWorkflowService.ItemTypeField:
+            case SvItemsWorkflowService.ItemTypeField:
                 row.ItemType = (global::ItemType)value;
                 break;
-            case SwShItemsWorkflowService.SortIndexField:
+            case SvItemsWorkflowService.SortIndexField:
                 row.SortNum = value;
                 break;
-            case SwShItemsWorkflowService.GroupTypeField:
+            case SvItemsWorkflowService.GroupTypeField:
                 row.ItemGroup = (global::ItemGroup)value;
                 break;
-            case SwShItemsWorkflowService.GroupIndexField:
+            case SvItemsWorkflowService.GroupIndexField:
                 row.GroupID = value;
                 break;
-            case SwShItemsWorkflowService.AttackBoostField:
+            case SvItemsWorkflowService.AttackBoostField:
                 row.WorkAttack = value;
                 break;
-            case SwShItemsWorkflowService.DefenseBoostField:
+            case SvItemsWorkflowService.DefenseBoostField:
                 row.WorkDefense = value;
                 break;
-            case SwShItemsWorkflowService.SpecialAttackBoostField:
+            case SvItemsWorkflowService.SpecialAttackBoostField:
                 row.WorkSpAttack = value;
                 break;
-            case SwShItemsWorkflowService.SpecialDefenseBoostField:
+            case SvItemsWorkflowService.SpecialDefenseBoostField:
                 row.WorkSpDefense = value;
                 break;
-            case SwShItemsWorkflowService.SpeedBoostField:
+            case SvItemsWorkflowService.SpeedBoostField:
                 row.WorkSpeed = value;
                 break;
-            case SwShItemsWorkflowService.AccuracyBoostField:
+            case SvItemsWorkflowService.AccuracyBoostField:
                 row.WorkAccuracy = value;
                 break;
-            case SwShItemsWorkflowService.CriticalHitBoostField:
+            case SvItemsWorkflowService.CriticalHitBoostField:
                 row.WorkCritical = value;
                 break;
-            case SwShItemsWorkflowService.EvHpField:
+            case SvItemsWorkflowService.EvHpField:
                 row.WorkStatusHp = value;
                 break;
-            case SwShItemsWorkflowService.EvAttackField:
+            case SvItemsWorkflowService.EvAttackField:
                 row.WorkStatusAtk = value;
                 break;
-            case SwShItemsWorkflowService.EvDefenseField:
+            case SvItemsWorkflowService.EvDefenseField:
                 row.WorkStatusDef = value;
                 break;
-            case SwShItemsWorkflowService.EvSpeedField:
+            case SvItemsWorkflowService.EvSpeedField:
                 row.WorkStatusSpd = value;
                 break;
-            case SwShItemsWorkflowService.EvSpecialAttackField:
+            case SvItemsWorkflowService.EvSpecialAttackField:
                 row.WorkStatusSAtk = value;
                 break;
-            case SwShItemsWorkflowService.EvSpecialDefenseField:
+            case SvItemsWorkflowService.EvSpecialDefenseField:
                 row.WorkStatusSDef = value;
                 break;
-            case SwShItemsWorkflowService.HealAmountField:
+            case SvItemsWorkflowService.HealAmountField:
                 row.WorkStatusHp = value;
                 break;
-            case SwShItemsWorkflowService.PpGainField:
+            case SvItemsWorkflowService.PpGainField:
                 row.WorkPpRcv = value;
                 break;
-            case SwShItemsWorkflowService.FriendshipGain1Field:
+            case SvItemsWorkflowService.FriendshipGain1Field:
                 row.WorkFriendly1 = value;
                 break;
-            case SwShItemsWorkflowService.FriendshipGain2Field:
+            case SvItemsWorkflowService.FriendshipGain2Field:
                 row.WorkFriendly2 = value;
                 break;
-            case SwShItemsWorkflowService.FriendshipGain3Field:
+            case SvItemsWorkflowService.FriendshipGain3Field:
                 row.WorkFriendly3 = value;
                 break;
-            case SwShItemsWorkflowService.MachineMoveIdField:
+            case SvItemsWorkflowService.MachineMoveIdField:
                 row.MachineWaza = (global::pml.common.WazaID)checked((ushort)value);
                 break;
         }

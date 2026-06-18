@@ -3,7 +3,6 @@
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.SV;
-using KM.SwSh.Workflows;
 using KM.SV.Workflows;
 using SharpCompress.Common;
 using SharpCompress.Readers;
@@ -28,15 +27,15 @@ public sealed class SvModMergerWorkflowService
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
     }
 
-    public SwShWorkflowSummary CreateSummary(OpenedProject project)
+    public SvWorkflowSummary CreateSummary(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
         var availability = project.Health.CanOpenEditableWorkflows
-            ? SwShWorkflowAvailability.Available
-            : SwShWorkflowAvailability.Disabled;
+            ? SvWorkflowAvailability.Available
+            : SvWorkflowAvailability.Disabled;
 
-        return new SwShWorkflowSummary(
+        return new SvWorkflowSummary(
             WorkflowId,
             "S/V Mod Merger",
             "Smart merge ordered Scarlet/Violet RomFS mods from folders, zip files, or rar files and patch the Trinity descriptor for LayeredFS.",

@@ -5,8 +5,8 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
-using KM.SwSh.Items;
-using KM.SwSh.Pokemon;
+using KM.SV.Items;
+using KM.SV.Pokemon;
 using KM.SV.Data;
 using KM.SV.Workflows;
 using System.Globalization;
@@ -32,12 +32,12 @@ internal sealed class SvPokemonEditSessionService
 
     private static readonly HashSet<string> EvYieldFields =
     [
-        SwShPokemonWorkflowService.EVYieldHPField,
-        SwShPokemonWorkflowService.EVYieldAttackField,
-        SwShPokemonWorkflowService.EVYieldDefenseField,
-        SwShPokemonWorkflowService.EVYieldSpecialAttackField,
-        SwShPokemonWorkflowService.EVYieldSpecialDefenseField,
-        SwShPokemonWorkflowService.EVYieldSpeedField,
+        SvPokemonWorkflowService.EVYieldHPField,
+        SvPokemonWorkflowService.EVYieldAttackField,
+        SvPokemonWorkflowService.EVYieldDefenseField,
+        SvPokemonWorkflowService.EVYieldSpecialAttackField,
+        SvPokemonWorkflowService.EVYieldSpecialDefenseField,
+        SvPokemonWorkflowService.EVYieldSpeedField,
     ];
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
@@ -54,7 +54,7 @@ internal sealed class SvPokemonEditSessionService
         this.pokemonWorkflowService = pokemonWorkflowService ?? new SvPokemonWorkflowService(this.fileSource);
     }
 
-    public SwShPokemonEditResult UpdateField(
+    public SvPokemonEditResult UpdateField(
         ProjectPaths paths,
         EditSession? session,
         int personalId,
@@ -78,7 +78,7 @@ internal sealed class SvPokemonEditSessionService
                 SvEditSessionSupport.PokemonDomain,
                 diagnostics))
         {
-            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SvPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
         if (IsGlobalYieldField(field))
@@ -86,11 +86,11 @@ internal sealed class SvPokemonEditSessionService
             var globalPendingEdit = CreateGlobalYieldPendingEdit(field, value, diagnostics);
             if (globalPendingEdit is null)
             {
-                return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+                return new SvPokemonEditResult(workflow, currentSession, diagnostics);
             }
 
             var globalUpdatedSession = ReplacePendingPokemonEdit(currentSession, globalPendingEdit);
-            return new SwShPokemonEditResult(
+            return new SvPokemonEditResult(
                 OverlayPendingEdits(loadedWorkflow, globalUpdatedSession.PendingEdits),
                 globalUpdatedSession,
                 diagnostics);
@@ -105,23 +105,23 @@ internal sealed class SvPokemonEditSessionService
                 SvEditSessionSupport.PokemonDomain,
                 field: "personalId",
                 expected: "Existing Pokemon personal record"));
-            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SvPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
         var pendingEdit = CreateFieldPendingEdit(workflow, pokemon, field, value, diagnostics);
         if (pendingEdit is null)
         {
-            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SvPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
         var updatedSession = ReplacePendingPokemonEdit(currentSession, pendingEdit);
-        return new SwShPokemonEditResult(
+        return new SvPokemonEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
             diagnostics);
     }
 
-    public SwShPokemonEditResult UpdateLearnset(
+    public SvPokemonEditResult UpdateLearnset(
         ProjectPaths paths,
         EditSession? session,
         int personalId,
@@ -146,7 +146,7 @@ internal sealed class SvPokemonEditSessionService
                 SvEditSessionSupport.PokemonDomain,
                 diagnostics))
         {
-            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SvPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
         var pokemon = workflow.Pokemon.FirstOrDefault(candidate => candidate.PersonalId == personalId);
@@ -158,13 +158,13 @@ internal sealed class SvPokemonEditSessionService
                 SvEditSessionSupport.PokemonDomain,
                 field: "personalId",
                 expected: "Existing Pokemon personal record"));
-            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SvPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
         var operation = CreateLearnsetOperation(pokemon, action, slot, moveId, level, diagnostics);
         if (operation is null)
         {
-            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SvPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
         var pendingEdit = SvEditSessionSupport.CreatePendingEdit(
@@ -176,13 +176,13 @@ internal sealed class SvPokemonEditSessionService
             FormatOperationValue(operation.MoveId, operation.Level));
         var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
 
-        return new SwShPokemonEditResult(
+        return new SvPokemonEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
             diagnostics);
     }
 
-    public SwShPokemonEditResult UpdateEvolution(
+    public SvPokemonEditResult UpdateEvolution(
         ProjectPaths paths,
         EditSession? session,
         int personalId,
@@ -210,7 +210,7 @@ internal sealed class SvPokemonEditSessionService
                 SvEditSessionSupport.PokemonDomain,
                 diagnostics))
         {
-            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SvPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
         var pokemon = workflow.Pokemon.FirstOrDefault(candidate => candidate.PersonalId == personalId);
@@ -222,7 +222,7 @@ internal sealed class SvPokemonEditSessionService
                 SvEditSessionSupport.PokemonDomain,
                 field: "personalId",
                 expected: "Existing Pokemon personal record"));
-            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SvPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
         var operation = CreateEvolutionOperation(
@@ -237,7 +237,7 @@ internal sealed class SvPokemonEditSessionService
             diagnostics);
         if (operation is null)
         {
-            return new SwShPokemonEditResult(workflow, currentSession, diagnostics);
+            return new SvPokemonEditResult(workflow, currentSession, diagnostics);
         }
 
         var pendingEdit = SvEditSessionSupport.CreatePendingEdit(
@@ -249,13 +249,13 @@ internal sealed class SvPokemonEditSessionService
             FormatEvolutionValue(operation));
         var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
 
-        return new SwShPokemonEditResult(
+        return new SvPokemonEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
             diagnostics);
     }
 
-    public SwShEditSessionValidation Validate(ProjectPaths paths, EditSession session)
+    public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
@@ -290,7 +290,7 @@ internal sealed class SvPokemonEditSessionService
                 SvEditSessionSupport.PokemonDomain));
         }
 
-        return new SwShEditSessionValidation(
+        return new SvEditSessionValidation(
             session,
             diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error),
             diagnostics);
@@ -377,8 +377,8 @@ internal sealed class SvPokemonEditSessionService
     }
 
     private static PendingEdit? CreateFieldPendingEdit(
-        SwShPokemonWorkflow workflow,
-        SwShPokemonRecord pokemon,
+        SvPokemonWorkflow workflow,
+        SvPokemonRecord pokemon,
         string field,
         string value,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -443,7 +443,7 @@ internal sealed class SvPokemonEditSessionService
             return null;
         }
 
-        if (string.Equals(normalizedField, SwShPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal))
+        if (string.Equals(normalizedField, SvPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal))
         {
             ValidateBaseExperienceValue(pokemon, parsed.Value, diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -520,7 +520,7 @@ internal sealed class SvPokemonEditSessionService
     }
 
     private static void ValidateBaseExperienceValue(
-        SwShPokemonRecord pokemon,
+        SvPokemonRecord pokemon,
         int baseExperience,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -534,13 +534,13 @@ internal sealed class SvPokemonEditSessionService
                 DiagnosticSeverity.Error,
                 "Base EXP cannot be represented by Scarlet/Violet's stored EXP addend for this Pokemon's current stats and evolution stage.",
                 SvEditSessionSupport.PokemonDomain,
-                field: SwShPokemonWorkflowService.BaseExperienceField,
+                field: SvPokemonWorkflowService.BaseExperienceField,
                 expected: "Base EXP that maps to a signed 16-bit S/V addend"));
         }
     }
 
     private static void ValidatePendingEdit(
-        SwShPokemonWorkflow workflow,
+        SvPokemonWorkflow workflow,
         PendingEdit edit,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -636,13 +636,13 @@ internal sealed class SvPokemonEditSessionService
             edit.Field,
             SvEditSessionSupport.PokemonDomain,
             diagnostics);
-        if (parsed is not null && string.Equals(edit.Field, SwShPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal))
+        if (parsed is not null && string.Equals(edit.Field, SvPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal))
         {
             ValidateBaseExperienceValue(pokemon, parsed.Value, diagnostics);
         }
     }
 
-    private static SwShPokemonWorkflow OverlayPendingEdits(SwShPokemonWorkflow workflow, IEnumerable<PendingEdit> edits)
+    private static SvPokemonWorkflow OverlayPendingEdits(SvPokemonWorkflow workflow, IEnumerable<PendingEdit> edits)
     {
         var updatedWorkflow = workflow;
         foreach (var edit in edits)
@@ -673,7 +673,7 @@ internal sealed class SvPokemonEditSessionService
         if (IsGlobalYieldEdit(pendingEdit))
         {
             return IsGlobalYieldEdit(candidate)
-                || string.Equals(candidate.Field, SwShPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal)
+                || string.Equals(candidate.Field, SvPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal)
                 || EvYieldFields.Contains(candidate.Field ?? string.Empty);
         }
 
@@ -684,7 +684,7 @@ internal sealed class SvPokemonEditSessionService
         }
 
         if (IsGlobalYieldEdit(candidate)
-            && (string.Equals(pendingEdit.Field, SwShPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal)
+            && (string.Equals(pendingEdit.Field, SvPokemonWorkflowService.BaseExperienceField, StringComparison.Ordinal)
                 || EvYieldFields.Contains(pendingEdit.Field ?? string.Empty)))
         {
             return true;
@@ -693,7 +693,7 @@ internal sealed class SvPokemonEditSessionService
         return false;
     }
 
-    private static SwShPokemonWorkflow OverlayPendingEdit(SwShPokemonWorkflow workflow, PendingEdit edit)
+    private static SvPokemonWorkflow OverlayPendingEdit(SvPokemonWorkflow workflow, PendingEdit edit)
     {
         if (!string.Equals(edit.Domain, SvEditSessionSupport.PokemonDomain, StringComparison.Ordinal))
         {
@@ -718,9 +718,9 @@ internal sealed class SvPokemonEditSessionService
         };
     }
 
-    private static SwShPokemonRecord OverlayPokemon(
-        SwShPokemonWorkflow workflow,
-        SwShPokemonRecord pokemon,
+    private static SvPokemonRecord OverlayPokemon(
+        SvPokemonWorkflow workflow,
+        SvPokemonRecord pokemon,
         PendingEdit edit)
     {
         if (TryParseLearnsetField(edit.Field, out _, out _)
@@ -749,9 +749,9 @@ internal sealed class SvPokemonEditSessionService
         return OverlayPersonalField(workflow, pokemon, edit.Field, value);
     }
 
-    private static SwShPokemonRecord OverlayPersonalField(
-        SwShPokemonWorkflow workflow,
-        SwShPokemonRecord pokemon,
+    private static SvPokemonRecord OverlayPersonalField(
+        SvPokemonWorkflow workflow,
+        SvPokemonRecord pokemon,
         string? field,
         int value)
     {
@@ -761,71 +761,71 @@ internal sealed class SvPokemonEditSessionService
         var abilities = pokemon.Abilities;
         var updated = field switch
         {
-            SwShPokemonWorkflowService.HPField => pokemon with { BaseStats = stats with { HP = value, Total = RecalculateTotal(stats with { HP = value }) } },
-            SwShPokemonWorkflowService.AttackField => pokemon with { BaseStats = stats with { Attack = value, Total = RecalculateTotal(stats with { Attack = value }) } },
-            SwShPokemonWorkflowService.DefenseField => pokemon with { BaseStats = stats with { Defense = value, Total = RecalculateTotal(stats with { Defense = value }) } },
-            SwShPokemonWorkflowService.SpecialAttackField => pokemon with { BaseStats = stats with { SpecialAttack = value, Total = RecalculateTotal(stats with { SpecialAttack = value }) } },
-            SwShPokemonWorkflowService.SpecialDefenseField => pokemon with { BaseStats = stats with { SpecialDefense = value, Total = RecalculateTotal(stats with { SpecialDefense = value }) } },
-            SwShPokemonWorkflowService.SpeedField => pokemon with { BaseStats = stats with { Speed = value, Total = RecalculateTotal(stats with { Speed = value }) } },
-            SwShPokemonWorkflowService.Type1Field => pokemon with { Type1 = FormatType(value) },
-            SwShPokemonWorkflowService.Type2Field => pokemon with { Type2 = FormatType(value) },
-            SwShPokemonWorkflowService.Ability1Field => pokemon with { Abilities = abilities with { Ability1 = value, Ability1Label = SvLabels.Ability(value) } },
-            SwShPokemonWorkflowService.Ability2Field => pokemon with { Abilities = abilities with { Ability2 = value, Ability2Label = SvLabels.Ability(value) } },
-            SwShPokemonWorkflowService.HiddenAbilityField => pokemon with { Abilities = abilities with { HiddenAbility = value, HiddenAbilityLabel = SvLabels.Ability(value) } },
-            SwShPokemonWorkflowService.CatchRateField => pokemon with { CatchRate = value },
-            SwShPokemonWorkflowService.EvolutionStageField => pokemon with { EvolutionStage = value },
-            SwShPokemonWorkflowService.GenderRatioField => pokemon with { GenderRatio = value, GenderRatioLabel = FormatGender(value) },
-            SwShPokemonWorkflowService.BaseExperienceField => pokemon with { BaseExperience = value },
-            SwShPokemonWorkflowService.HeightField => pokemon with { Height = value },
-            SwShPokemonWorkflowService.WeightField => pokemon with { Weight = value },
-            SwShPokemonWorkflowService.IsPresentInGameField => pokemon with { DexPresence = dex with { IsPresentInGame = value != 0 } },
-            SwShPokemonWorkflowService.RegionalDexIndexField => pokemon with { DexPresence = dex with { RegionalDexIndex = value } },
-            SwShPokemonWorkflowService.ArmorDexIndexField => pokemon with { DexPresence = dex with { ArmorDexIndex = value } },
-            SwShPokemonWorkflowService.CrownDexIndexField => pokemon with { DexPresence = dex with { CrownDexIndex = value } },
+            SvPokemonWorkflowService.HPField => pokemon with { BaseStats = stats with { HP = value, Total = RecalculateTotal(stats with { HP = value }) } },
+            SvPokemonWorkflowService.AttackField => pokemon with { BaseStats = stats with { Attack = value, Total = RecalculateTotal(stats with { Attack = value }) } },
+            SvPokemonWorkflowService.DefenseField => pokemon with { BaseStats = stats with { Defense = value, Total = RecalculateTotal(stats with { Defense = value }) } },
+            SvPokemonWorkflowService.SpecialAttackField => pokemon with { BaseStats = stats with { SpecialAttack = value, Total = RecalculateTotal(stats with { SpecialAttack = value }) } },
+            SvPokemonWorkflowService.SpecialDefenseField => pokemon with { BaseStats = stats with { SpecialDefense = value, Total = RecalculateTotal(stats with { SpecialDefense = value }) } },
+            SvPokemonWorkflowService.SpeedField => pokemon with { BaseStats = stats with { Speed = value, Total = RecalculateTotal(stats with { Speed = value }) } },
+            SvPokemonWorkflowService.Type1Field => pokemon with { Type1 = FormatType(value) },
+            SvPokemonWorkflowService.Type2Field => pokemon with { Type2 = FormatType(value) },
+            SvPokemonWorkflowService.Ability1Field => pokemon with { Abilities = abilities with { Ability1 = value, Ability1Label = SvLabels.Ability(value) } },
+            SvPokemonWorkflowService.Ability2Field => pokemon with { Abilities = abilities with { Ability2 = value, Ability2Label = SvLabels.Ability(value) } },
+            SvPokemonWorkflowService.HiddenAbilityField => pokemon with { Abilities = abilities with { HiddenAbility = value, HiddenAbilityLabel = SvLabels.Ability(value) } },
+            SvPokemonWorkflowService.CatchRateField => pokemon with { CatchRate = value },
+            SvPokemonWorkflowService.EvolutionStageField => pokemon with { EvolutionStage = value },
+            SvPokemonWorkflowService.GenderRatioField => pokemon with { GenderRatio = value, GenderRatioLabel = FormatGender(value) },
+            SvPokemonWorkflowService.BaseExperienceField => pokemon with { BaseExperience = value },
+            SvPokemonWorkflowService.HeightField => pokemon with { Height = value },
+            SvPokemonWorkflowService.WeightField => pokemon with { Weight = value },
+            SvPokemonWorkflowService.IsPresentInGameField => pokemon with { DexPresence = dex with { IsPresentInGame = value != 0 } },
+            SvPokemonWorkflowService.RegionalDexIndexField => pokemon with { DexPresence = dex with { RegionalDexIndex = value } },
+            SvPokemonWorkflowService.ArmorDexIndexField => pokemon with { DexPresence = dex with { ArmorDexIndex = value } },
+            SvPokemonWorkflowService.CrownDexIndexField => pokemon with { DexPresence = dex with { CrownDexIndex = value } },
             _ => pokemon,
         };
 
         return updated with { Personal = OverlayPersonalDetails(personal, field, value) };
     }
 
-    private static SwShPokemonPersonalDetails OverlayPersonalDetails(
-        SwShPokemonPersonalDetails personal,
+    private static SvPokemonPersonalDetails OverlayPersonalDetails(
+        SvPokemonPersonalDetails personal,
         string? field,
         int value)
     {
         return field switch
         {
-            SwShPokemonWorkflowService.Type1Field => personal with { Type1 = value },
-            SwShPokemonWorkflowService.Type2Field => personal with { Type2 = value },
-            SwShPokemonWorkflowService.CatchRateField => personal with { CatchRate = value },
-            SwShPokemonWorkflowService.EvolutionStageField => personal with { EvolutionStage = value },
-            SwShPokemonWorkflowService.EVYieldHPField => personal with { EVYieldHP = value },
-            SwShPokemonWorkflowService.EVYieldAttackField => personal with { EVYieldAttack = value },
-            SwShPokemonWorkflowService.EVYieldDefenseField => personal with { EVYieldDefense = value },
-            SwShPokemonWorkflowService.EVYieldSpecialAttackField => personal with { EVYieldSpecialAttack = value },
-            SwShPokemonWorkflowService.EVYieldSpecialDefenseField => personal with { EVYieldSpecialDefense = value },
-            SwShPokemonWorkflowService.EVYieldSpeedField => personal with { EVYieldSpeed = value },
-            SwShPokemonWorkflowService.GenderRatioField => personal with { GenderRatio = value },
-            SwShPokemonWorkflowService.HatchCyclesField => personal with { HatchCycles = value },
-            SwShPokemonWorkflowService.BaseFriendshipField => personal with { BaseFriendship = value },
-            SwShPokemonWorkflowService.ExpGrowthField => personal with { ExpGrowth = value },
-            SwShPokemonWorkflowService.EggGroup1Field => personal with { EggGroup1 = value },
-            SwShPokemonWorkflowService.EggGroup2Field => personal with { EggGroup2 = value },
-            SwShPokemonWorkflowService.BaseExperienceField => personal with { BaseExperience = value },
-            SwShPokemonWorkflowService.FormField => personal with { Form = value, FormStatsIndex = value },
-            SwShPokemonWorkflowService.ModelIdField => personal with { ModelId = (uint)value },
-            SwShPokemonWorkflowService.ColorField => personal with { Color = value },
-            SwShPokemonWorkflowService.HeightField => personal with { Height = value },
-            SwShPokemonWorkflowService.WeightField => personal with { Weight = value },
-            SwShPokemonWorkflowService.IsPresentInGameField => personal with { IsPresentInGame = value != 0 },
-            SwShPokemonWorkflowService.RegionalDexIndexField => personal with { RegionalDexIndex = value },
-            SwShPokemonWorkflowService.ArmorDexIndexField => personal with { ArmorDexIndex = value },
-            SwShPokemonWorkflowService.CrownDexIndexField => personal with { CrownDexIndex = value },
+            SvPokemonWorkflowService.Type1Field => personal with { Type1 = value },
+            SvPokemonWorkflowService.Type2Field => personal with { Type2 = value },
+            SvPokemonWorkflowService.CatchRateField => personal with { CatchRate = value },
+            SvPokemonWorkflowService.EvolutionStageField => personal with { EvolutionStage = value },
+            SvPokemonWorkflowService.EVYieldHPField => personal with { EVYieldHP = value },
+            SvPokemonWorkflowService.EVYieldAttackField => personal with { EVYieldAttack = value },
+            SvPokemonWorkflowService.EVYieldDefenseField => personal with { EVYieldDefense = value },
+            SvPokemonWorkflowService.EVYieldSpecialAttackField => personal with { EVYieldSpecialAttack = value },
+            SvPokemonWorkflowService.EVYieldSpecialDefenseField => personal with { EVYieldSpecialDefense = value },
+            SvPokemonWorkflowService.EVYieldSpeedField => personal with { EVYieldSpeed = value },
+            SvPokemonWorkflowService.GenderRatioField => personal with { GenderRatio = value },
+            SvPokemonWorkflowService.HatchCyclesField => personal with { HatchCycles = value },
+            SvPokemonWorkflowService.BaseFriendshipField => personal with { BaseFriendship = value },
+            SvPokemonWorkflowService.ExpGrowthField => personal with { ExpGrowth = value },
+            SvPokemonWorkflowService.EggGroup1Field => personal with { EggGroup1 = value },
+            SvPokemonWorkflowService.EggGroup2Field => personal with { EggGroup2 = value },
+            SvPokemonWorkflowService.BaseExperienceField => personal with { BaseExperience = value },
+            SvPokemonWorkflowService.FormField => personal with { Form = value, FormStatsIndex = value },
+            SvPokemonWorkflowService.ModelIdField => personal with { ModelId = (uint)value },
+            SvPokemonWorkflowService.ColorField => personal with { Color = value },
+            SvPokemonWorkflowService.HeightField => personal with { Height = value },
+            SvPokemonWorkflowService.WeightField => personal with { Weight = value },
+            SvPokemonWorkflowService.IsPresentInGameField => personal with { IsPresentInGame = value != 0 },
+            SvPokemonWorkflowService.RegionalDexIndexField => personal with { RegionalDexIndex = value },
+            SvPokemonWorkflowService.ArmorDexIndexField => personal with { ArmorDexIndex = value },
+            SvPokemonWorkflowService.CrownDexIndexField => personal with { CrownDexIndex = value },
             _ => personal,
         };
     }
 
-    private static SwShPokemonWorkflow OverlayGlobalYieldEdit(SwShPokemonWorkflow workflow, PendingEdit edit)
+    private static SvPokemonWorkflow OverlayGlobalYieldEdit(SvPokemonWorkflow workflow, PendingEdit edit)
     {
         if (!string.Equals(edit.NewValue, RemoveYieldValue, StringComparison.Ordinal))
         {
@@ -838,14 +838,14 @@ internal sealed class SvPokemonEditSessionService
                 .Select(pokemon => edit.Field switch
                 {
                     GlobalEvYieldField => OverlayAllEvYields(pokemon, 0),
-                    GlobalExpYieldField => OverlayPersonalField(workflow, pokemon, SwShPokemonWorkflowService.BaseExperienceField, 0),
+                    GlobalExpYieldField => OverlayPersonalField(workflow, pokemon, SvPokemonWorkflowService.BaseExperienceField, 0),
                     _ => pokemon,
                 })
                 .ToArray(),
         };
     }
 
-    private static SwShPokemonRecord OverlayAllEvYields(SwShPokemonRecord pokemon, int value)
+    private static SvPokemonRecord OverlayAllEvYields(SvPokemonRecord pokemon, int value)
     {
         return pokemon with
         {
@@ -861,8 +861,8 @@ internal sealed class SvPokemonEditSessionService
         };
     }
 
-    private static SwShPokemonRecord ApplyLearnsetOperation(
-        SwShPokemonRecord pokemon,
+    private static SvPokemonRecord ApplyLearnsetOperation(
+        SvPokemonRecord pokemon,
         LearnsetOperation operation)
     {
         var learnset = pokemon.Learnset.ToList();
@@ -872,7 +872,7 @@ internal sealed class SvPokemonEditSessionService
         {
             case AddAction:
             case UpsertAction:
-                var row = new SwShPokemonLearnsetMove(
+                var row = new SvPokemonLearnsetMove(
                     targetSlot,
                     operation.MoveId ?? 0,
                     SvLabels.Move(operation.MoveId ?? 0),
@@ -909,8 +909,8 @@ internal sealed class SvPokemonEditSessionService
         };
     }
 
-    private static SwShPokemonRecord ApplyEvolutionOperation(
-        SwShPokemonRecord pokemon,
+    private static SvPokemonRecord ApplyEvolutionOperation(
+        SvPokemonRecord pokemon,
         EvolutionOperation operation)
     {
         var evolutions = pokemon.Evolutions.ToList();
@@ -920,7 +920,7 @@ internal sealed class SvPokemonEditSessionService
         {
             case AddAction:
             case UpsertAction:
-                var row = new SwShPokemonEvolutionRecord(
+                var row = new SvPokemonEvolutionRecord(
                     targetSlot,
                     operation.Method ?? 0,
                     operation.Argument ?? 0,
@@ -958,8 +958,8 @@ internal sealed class SvPokemonEditSessionService
         };
     }
 
-    private static SwShPokemonRecord OverlayCompatibility(
-        SwShPokemonRecord pokemon,
+    private static SvPokemonRecord OverlayCompatibility(
+        SvPokemonRecord pokemon,
         string groupId,
         int slot,
         bool enabled)
@@ -1119,109 +1119,109 @@ internal sealed class SvPokemonEditSessionService
     {
         switch (field)
         {
-            case SwShPokemonWorkflowService.HPField:
+            case SvPokemonWorkflowService.HPField:
                 row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Hp = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.AttackField:
+            case SvPokemonWorkflowService.AttackField:
                 row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Atk = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.DefenseField:
+            case SvPokemonWorkflowService.DefenseField:
                 row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Def = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.SpecialAttackField:
+            case SvPokemonWorkflowService.SpecialAttackField:
                 row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Spa = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.SpecialDefenseField:
+            case SvPokemonWorkflowService.SpecialDefenseField:
                 row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Spd = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.SpeedField:
+            case SvPokemonWorkflowService.SpeedField:
                 row.BaseStats = (row.BaseStats ?? StatInfoRow.Zero) with { Spe = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.Type1Field:
+            case SvPokemonWorkflowService.Type1Field:
                 row.Type1 = checked((byte)value);
                 break;
-            case SwShPokemonWorkflowService.Type2Field:
+            case SvPokemonWorkflowService.Type2Field:
                 row.Type2 = checked((byte)value);
                 break;
-            case SwShPokemonWorkflowService.Ability1Field:
+            case SvPokemonWorkflowService.Ability1Field:
                 row.Ability1 = checked((ushort)value);
                 break;
-            case SwShPokemonWorkflowService.Ability2Field:
+            case SvPokemonWorkflowService.Ability2Field:
                 row.Ability2 = checked((ushort)value);
                 break;
-            case SwShPokemonWorkflowService.HiddenAbilityField:
+            case SvPokemonWorkflowService.HiddenAbilityField:
                 row.AbilityHidden = checked((ushort)value);
                 break;
-            case SwShPokemonWorkflowService.CatchRateField:
+            case SvPokemonWorkflowService.CatchRateField:
                 row.CatchRate = checked((byte)value);
                 break;
-            case SwShPokemonWorkflowService.EvolutionStageField:
+            case SvPokemonWorkflowService.EvolutionStageField:
                 row.EvoStage = checked((byte)value);
                 break;
-            case SwShPokemonWorkflowService.EVYieldHPField:
+            case SvPokemonWorkflowService.EVYieldHPField:
                 row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Hp = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.EVYieldAttackField:
+            case SvPokemonWorkflowService.EVYieldAttackField:
                 row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Atk = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.EVYieldDefenseField:
+            case SvPokemonWorkflowService.EVYieldDefenseField:
                 row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Def = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.EVYieldSpecialAttackField:
+            case SvPokemonWorkflowService.EVYieldSpecialAttackField:
                 row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Spa = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.EVYieldSpecialDefenseField:
+            case SvPokemonWorkflowService.EVYieldSpecialDefenseField:
                 row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Spd = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.EVYieldSpeedField:
+            case SvPokemonWorkflowService.EVYieldSpeedField:
                 row.EvYield = (row.EvYield ?? StatInfoRow.Zero) with { Spe = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.GenderRatioField:
+            case SvPokemonWorkflowService.GenderRatioField:
                 row.Gender = (row.Gender ?? new GenderInfoRow(0, 0)) with { Ratio = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.HatchCyclesField:
+            case SvPokemonWorkflowService.HatchCyclesField:
                 row.EggHatchSteps = checked((byte)value);
                 break;
-            case SwShPokemonWorkflowService.BaseFriendshipField:
+            case SvPokemonWorkflowService.BaseFriendshipField:
                 row.BaseFriendship = checked((byte)value);
                 break;
-            case SwShPokemonWorkflowService.ExpGrowthField:
+            case SvPokemonWorkflowService.ExpGrowthField:
                 row.XpGrowth = checked((byte)value);
                 break;
-            case SwShPokemonWorkflowService.EggGroup1Field:
+            case SvPokemonWorkflowService.EggGroup1Field:
                 row.EggGroup1 = checked((byte)value);
                 break;
-            case SwShPokemonWorkflowService.EggGroup2Field:
+            case SvPokemonWorkflowService.EggGroup2Field:
                 row.EggGroup2 = checked((byte)value);
                 break;
-            case SwShPokemonWorkflowService.BaseExperienceField:
+            case SvPokemonWorkflowService.BaseExperienceField:
                 ApplyBaseExperience(row, value);
                 break;
-            case SwShPokemonWorkflowService.FormField:
+            case SvPokemonWorkflowService.FormField:
                 row.Species = (row.Species ?? SpeciesInfoRow.Zero) with { Form = checked((ushort)value) };
                 break;
-            case SwShPokemonWorkflowService.ModelIdField:
+            case SvPokemonWorkflowService.ModelIdField:
                 row.Species = (row.Species ?? SpeciesInfoRow.Zero) with { Model = checked((ushort)value) };
                 break;
-            case SwShPokemonWorkflowService.ColorField:
+            case SvPokemonWorkflowService.ColorField:
                 row.Species = (row.Species ?? SpeciesInfoRow.Zero) with { Color = checked((byte)value) };
                 break;
-            case SwShPokemonWorkflowService.HeightField:
+            case SvPokemonWorkflowService.HeightField:
                 row.Species = (row.Species ?? SpeciesInfoRow.Zero) with { Height = checked((ushort)value) };
                 break;
-            case SwShPokemonWorkflowService.WeightField:
+            case SvPokemonWorkflowService.WeightField:
                 row.Species = (row.Species ?? SpeciesInfoRow.Zero) with { Weight = checked((ushort)value) };
                 break;
-            case SwShPokemonWorkflowService.IsPresentInGameField:
+            case SvPokemonWorkflowService.IsPresentInGameField:
                 row.IsPresent = value != 0;
                 break;
-            case SwShPokemonWorkflowService.RegionalDexIndexField:
+            case SvPokemonWorkflowService.RegionalDexIndexField:
                 row.PaldeaDex = (row.PaldeaDex ?? DexDataRow.Zero) with { Index = checked((ushort)value) };
                 break;
-            case SwShPokemonWorkflowService.ArmorDexIndexField:
+            case SvPokemonWorkflowService.ArmorDexIndexField:
                 row.KitakamiDex = (row.KitakamiDex ?? DexDataRow.Zero) with { Index = checked((ushort)value) };
                 break;
-            case SwShPokemonWorkflowService.CrownDexIndexField:
+            case SvPokemonWorkflowService.CrownDexIndexField:
                 row.BlueberryDex = (row.BlueberryDex ?? DexDataRow.Zero) with { Index = checked((ushort)value) };
                 break;
         }
@@ -1355,7 +1355,7 @@ internal sealed class SvPokemonEditSessionService
     }
 
     private static LearnsetOperation? CreateLearnsetOperation(
-        SwShPokemonRecord pokemon,
+        SvPokemonRecord pokemon,
         string action,
         int? slot,
         int? moveId,
@@ -1370,7 +1370,7 @@ internal sealed class SvPokemonEditSessionService
     }
 
     private static EvolutionOperation? CreateEvolutionOperation(
-        SwShPokemonRecord pokemon,
+        SvPokemonRecord pokemon,
         string action,
         int? slot,
         int? method,
@@ -1389,7 +1389,7 @@ internal sealed class SvPokemonEditSessionService
 
     private static LearnsetOperation? ParseLearnsetOperation(
         PendingEdit edit,
-        SwShPokemonRecord? pokemon,
+        SvPokemonRecord? pokemon,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!TryParseLearnsetField(edit.Field, out var action, out var slot)
@@ -1415,7 +1415,7 @@ internal sealed class SvPokemonEditSessionService
 
     private static EvolutionOperation? ParseEvolutionOperation(
         PendingEdit edit,
-        SwShPokemonRecord? pokemon,
+        SvPokemonRecord? pokemon,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!TryParseEvolutionField(edit.Field, out var action, out var slot)
@@ -1441,7 +1441,7 @@ internal sealed class SvPokemonEditSessionService
 
     private static void ValidateLearnsetOperation(
         LearnsetOperation operation,
-        SwShPokemonRecord pokemon,
+        SvPokemonRecord pokemon,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         switch (operation.Action)
@@ -1483,7 +1483,7 @@ internal sealed class SvPokemonEditSessionService
 
     private static void ValidateEvolutionOperation(
         EvolutionOperation operation,
-        SwShPokemonRecord pokemon,
+        SvPokemonRecord pokemon,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         switch (operation.Action)
@@ -1622,7 +1622,7 @@ internal sealed class SvPokemonEditSessionService
         return true;
     }
 
-    private static string CreateLearnsetSummary(SwShPokemonRecord pokemon, LearnsetOperation operation)
+    private static string CreateLearnsetSummary(SvPokemonRecord pokemon, LearnsetOperation operation)
     {
         return operation.Action switch
         {
@@ -1636,7 +1636,7 @@ internal sealed class SvPokemonEditSessionService
         };
     }
 
-    private static string CreateEvolutionSummary(SwShPokemonRecord pokemon, EvolutionOperation operation)
+    private static string CreateEvolutionSummary(SvPokemonRecord pokemon, EvolutionOperation operation)
     {
         return operation.Action switch
         {
@@ -1649,7 +1649,7 @@ internal sealed class SvPokemonEditSessionService
         };
     }
 
-    private static int RecalculateTotal(SwShPokemonBaseStats stats)
+    private static int RecalculateTotal(SvPokemonBaseStats stats)
     {
         return stats.HP + stats.Attack + stats.Defense + stats.SpecialAttack + stats.SpecialDefense + stats.Speed;
     }

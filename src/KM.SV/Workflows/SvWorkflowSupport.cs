@@ -2,13 +2,13 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
-using KM.SwSh.Workflows;
+using KM.SV.Workflows;
 
 namespace KM.SV.Workflows;
 
 internal static class SvWorkflowSupport
 {
-    public static SwShWorkflowSummary CreateSummary(
+    public static SvWorkflowSummary CreateSummary(
         OpenedProject project,
         string id,
         string label,
@@ -16,12 +16,12 @@ internal static class SvWorkflowSupport
         IReadOnlyList<ValidationDiagnostic>? diagnostics = null)
     {
         var availability = project.Health.CanOpenEditableWorkflows
-            ? SwShWorkflowAvailability.Available
+            ? SvWorkflowAvailability.Available
             : project.Health.CanOpenReadOnlyWorkflows
-                ? SwShWorkflowAvailability.ReadOnly
-                : SwShWorkflowAvailability.Disabled;
+                ? SvWorkflowAvailability.ReadOnly
+                : SvWorkflowAvailability.Disabled;
 
-        return new SwShWorkflowSummary(
+        return new SvWorkflowSummary(
             id,
             label,
             description,
