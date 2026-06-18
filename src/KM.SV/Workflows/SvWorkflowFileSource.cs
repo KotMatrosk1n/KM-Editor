@@ -21,17 +21,38 @@ internal sealed class SvWorkflowFileSource
         var relativePath = ToRelativePath(normalizedVirtualPath);
         var entry = FindEntry(project, relativePath);
 
-        if (entry?.LayeredFile is not null && !string.IsNullOrWhiteSpace(project.Paths.OutputRootPath))
+        if (!string.IsNullOrWhiteSpace(project.Paths.OutputRootPath))
         {
-            var layeredPath = CombineGraphPath(project.Paths.OutputRootPath, relativePath);
-            if (File.Exists(layeredPath))
+            var trinityModManagerPath = CombineGraphPath(project.Paths.OutputRootPath, normalizedVirtualPath);
+            if (File.Exists(trinityModManagerPath))
             {
                 return new SvWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
-                    File.ReadAllBytes(layeredPath),
+                    File.ReadAllBytes(trinityModManagerPath),
                     ProjectFileLayer.Layered,
-                    entry.State);
+                    ProjectFileGraphEntryState.LayeredOverride);
+            }
+
+            var standalonePath = CombineGraphPath(project.Paths.OutputRootPath, relativePath);
+            if (File.Exists(standalonePath))
+            {
+                return new SvWorkflowFile(
+                    normalizedVirtualPath,
+                    relativePath,
+                    File.ReadAllBytes(standalonePath),
+                    ProjectFileLayer.Layered,
+                    entry?.State ?? ProjectFileGraphEntryState.LayeredOverride);
+            }
+
+            if (TryReadOutputArchive(project.Paths.OutputRootPath, normalizedVirtualPath, out var layeredArchiveBytes))
+            {
+                return new SvWorkflowFile(
+                    normalizedVirtualPath,
+                    relativePath,
+                    layeredArchiveBytes,
+                    ProjectFileLayer.Layered,
+                    ProjectFileGraphEntryState.LayeredOverride);
             }
         }
 
@@ -107,7 +128,10 @@ internal sealed class SvWorkflowFileSource
         return new ProjectFileReference(file.SourceLayer, file.RelativePath);
     }
 
-    public static string ResolveOutputPath(ProjectPaths paths, string virtualRomFsPath)
+    public static string ResolveOutputPath(
+        ProjectPaths paths,
+        string virtualRomFsPath,
+        SvOutputMode outputMode = SvOutputMode.Standalone)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
@@ -117,7 +141,7 @@ internal sealed class SvWorkflowFileSource
             throw new InvalidOperationException("Set an output root before applying Scarlet/Violet edits.");
         }
 
-        var targetRelativePath = ToRelativePath(NormalizeVirtualPath(virtualRomFsPath));
+        var targetRelativePath = ToOutputRelativePath(NormalizeVirtualPath(virtualRomFsPath), outputMode);
         if (Path.IsPathRooted(targetRelativePath))
         {
             throw new InvalidOperationException($"Scarlet/Violet target path '{targetRelativePath}' must be relative.");
@@ -137,10 +161,11 @@ internal sealed class SvWorkflowFileSource
     public static PlannedWriteInfo CreatePlannedWrite(
         ProjectPaths paths,
         string virtualRomFsPath,
-        IReadOnlyList<ProjectFileReference> sources)
+        IReadOnlyList<ProjectFileReference> sources,
+        SvOutputMode outputMode = SvOutputMode.Standalone)
     {
-        var targetRelativePath = ToRelativePath(NormalizeVirtualPath(virtualRomFsPath));
-        var targetPath = ResolveOutputPath(paths, virtualRomFsPath);
+        var targetRelativePath = ToOutputRelativePath(NormalizeVirtualPath(virtualRomFsPath), outputMode);
+        var targetPath = ResolveOutputPath(paths, virtualRomFsPath, outputMode);
 
         return new PlannedWriteInfo(
             targetRelativePath,
@@ -148,14 +173,21 @@ internal sealed class SvWorkflowFileSource
             File.Exists(targetPath));
     }
 
-    public static void Write(ProjectPaths paths, string virtualRomFsPath, byte[] bytes)
+    public static void Write(
+        ProjectPaths paths,
+        string virtualRomFsPath,
+        byte[] bytes,
+        SvOutputMode outputMode = SvOutputMode.Standalone)
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
-        var targetPath = ResolveOutputPath(paths, virtualRomFsPath);
+        var targetPath = ResolveOutputPath(paths, virtualRomFsPath, outputMode);
         Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
         File.WriteAllBytes(targetPath, bytes);
-        WritePatchedDescriptor(paths);
+        if (outputMode == SvOutputMode.Standalone)
+        {
+            WritePatchedDescriptor(paths);
+        }
     }
 
     public static PlannedWriteInfo CreateDescriptorPlannedWrite(ProjectPaths paths)
@@ -164,7 +196,7 @@ internal sealed class SvWorkflowFileSource
         {
             new ProjectFileReference(ProjectFileLayer.Base, ToRelativePath(DescriptorVirtualPath)),
         };
-        return CreatePlannedWrite(paths, DescriptorVirtualPath, sources);
+        return CreatePlannedWrite(paths, DescriptorVirtualPath, sources, SvOutputMode.Standalone);
     }
 
     private static void WritePatchedDescriptor(ProjectPaths paths)
@@ -219,6 +251,16 @@ internal sealed class SvWorkflowFileSource
         return $"romfs/{virtualRomFsPath}";
     }
 
+    private static string ToOutputRelativePath(string normalizedVirtualPath, SvOutputMode outputMode)
+    {
+        return outputMode switch
+        {
+            SvOutputMode.Standalone => ToRelativePath(normalizedVirtualPath),
+            SvOutputMode.TrinityModManager => normalizedVirtualPath,
+            _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
+        };
+    }
+
     private static string NormalizeVirtualPath(string virtualRomFsPath)
     {
         var normalized = virtualRomFsPath.Replace('\\', '/').TrimStart('/');
@@ -233,6 +275,38 @@ internal sealed class SvWorkflowFileSource
     private static string CombineGraphPath(string rootPath, string relativePath)
     {
         return Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    private static bool TryReadOutputArchive(string outputRootPath, string virtualPath, out byte[] bytes)
+    {
+        bytes = [];
+        try
+        {
+            if (!HasTrinityArchive(outputRootPath))
+            {
+                return false;
+            }
+
+            using var archive = SvTrinityArchive.Open(outputRootPath);
+            return archive.TryReadFile(virtualPath, out bytes);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            bytes = [];
+            return false;
+        }
+    }
+
+    private static bool HasTrinityArchive(string rootPath)
+    {
+        return HasTrinityArchiveAt(rootPath)
+            || HasTrinityArchiveAt(Path.Combine(rootPath, "romfs"));
+    }
+
+    private static bool HasTrinityArchiveAt(string romFsRoot)
+    {
+        return File.Exists(Path.Combine(romFsRoot, "arc", "data.trpfd"))
+            && File.Exists(Path.Combine(romFsRoot, "arc", "data.trpfs"));
     }
 }
 

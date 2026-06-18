@@ -119,7 +119,10 @@ internal sealed class SvEncountersEditSessionService
             diagnostics);
     }
 
-    public ChangePlan CreateChangePlan(ProjectPaths paths, EditSession session)
+    public ChangePlan CreateChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        SvOutputMode outputMode = SvOutputMode.Standalone)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
@@ -131,10 +134,15 @@ internal sealed class SvEncountersEditSessionService
             SvEditSessionSupport.EncountersDomain,
             SvDataPaths.WildEncounterArray,
             "Wild Encounters",
-            validation.Diagnostics);
+            validation.Diagnostics,
+            outputMode);
     }
 
-    public ApplyResult ApplyChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
+    public ApplyResult ApplyChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        SvOutputMode outputMode = SvOutputMode.Standalone)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
@@ -142,7 +150,7 @@ internal sealed class SvEncountersEditSessionService
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        var currentPlan = CreateChangePlan(paths, session);
+        var currentPlan = CreateChangePlan(paths, session, outputMode);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
@@ -175,12 +183,18 @@ internal sealed class SvEncountersEditSessionService
                 return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
-            SvWorkflowFileSource.Write(paths, SvDataPaths.WildEncounterArray, WriteRows(rows));
-            writtenFiles.Add(SvEditSessionSupport.GeneratedReference(SvDataPaths.WildEncounterArray));
-            writtenFiles.Add(SvEditSessionSupport.GeneratedDescriptorReference());
+            SvWorkflowFileSource.Write(paths, SvDataPaths.WildEncounterArray, WriteRows(rows), outputMode);
+            writtenFiles.Add(SvEditSessionSupport.GeneratedReference(SvDataPaths.WildEncounterArray, outputMode));
+            if (outputMode == SvOutputMode.Standalone)
+            {
+                writtenFiles.Add(SvEditSessionSupport.GeneratedDescriptorReference());
+            }
+
             diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                "Applied Wild Encounters change plan and patched the Scarlet/Violet Trinity descriptor.",
+                outputMode == SvOutputMode.Standalone
+                    ? "Applied Wild Encounters change plan as standalone Scarlet/Violet output and patched the Trinity descriptor."
+                    : "Applied Wild Encounters change plan for Trinity Mod Manager. Run this output folder through Trinity Mod Manager before installing.",
                 SvEditSessionSupport.EncountersDomain));
         }
         catch (Exception exception)

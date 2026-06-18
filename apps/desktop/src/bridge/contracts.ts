@@ -410,13 +410,13 @@ export const validateEditSessionRequestSchema = z.strictObject({
   session: editSessionSchema
 });
 
-export const createChangePlanRequestSchema = z.strictObject({
-  paths: projectPathsSchema,
-  session: editSessionSchema
-});
+export const changePlanOutputModeSchema = z.enum(['standalone', 'trinityModManager']);
+
+export const createChangePlanRequestSchema = z.strictObject({ outputMode: changePlanOutputModeSchema.optional(), paths: projectPathsSchema, session: editSessionSchema });
 
 export const applyChangePlanRequestSchema = z.strictObject({
   changePlan: z.lazy(() => changePlanSchema),
+  outputMode: changePlanOutputModeSchema.optional(),
   paths: projectPathsSchema,
   session: editSessionSchema
 });
@@ -1918,15 +1918,20 @@ export const loadRaidBonusRewardsWorkflowResponseSchema = z.strictObject({
 });
 
 export const placementProvenanceSchema = z.strictObject({
-  fileState: projectFileGraphEntryStateSchema,
-  sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
+  fileState: projectFileGraphEntryStateSchema, sourceFile: z.string(), sourceLayer: projectFileLayerSchema
+});
+
+export const placementFieldValueSchema = z.strictObject({
+  displayValue: z.string(), field: z.string(), group: z.string(), isReadOnly: z.boolean(), label: z.string(), value: z.string()
 });
 
 export const placedObjectRecordSchema = z.strictObject({
   archiveMember: z.string(),
+  categoryId: z.string().optional(),
+  categoryLabel: z.string().optional(),
   chance: z.number().int().nullable(),
   chanceIndex: z.number().int().nonnegative().nullable(),
+  fields: z.array(placementFieldValueSchema).optional(),
   itemHash: z.string(),
   itemId: z.number().int().nonnegative().nullable(),
   itemName: z.string(),
@@ -1946,36 +1951,29 @@ export const placedObjectRecordSchema = z.strictObject({
 });
 
 export const placementEditableFieldOptionSchema = z.strictObject({
-  label: z.string(),
-  value: z.number().int()
+  label: z.string(), value: z.number().int()
 });
 
 export const placementEditableFieldSchema = z.strictObject({
-  field: z.string(),
-  label: z.string(),
-  maximumValue: z.number(),
-  minimumValue: z.number(),
-  options: z.array(placementEditableFieldOptionSchema).optional(),
-  valueKind: z.string()
+  description: z.string().optional(), field: z.string(), group: z.string().optional(), isReadOnly: z.boolean().optional(), label: z.string(),
+  maximumValue: z.number(), minimumValue: z.number(), options: z.array(placementEditableFieldOptionSchema).optional(), valueKind: z.string()
+});
+
+export const placementCategorySchema = z.strictObject({
+  description: z.string(), id: z.string(), label: z.string(), objectCount: z.number().int().nonnegative()
 });
 
 export const placementWorkflowStatsSchema = z.strictObject({
-  sourceFileCount: z.number().int().nonnegative(),
-  totalAreaCount: z.number().int().nonnegative(),
-  totalObjectCount: z.number().int().nonnegative()
+  sourceFileCount: z.number().int().nonnegative(), totalAreaCount: z.number().int().nonnegative(), totalObjectCount: z.number().int().nonnegative()
 });
 
 export const placementWorkflowSchema = z.strictObject({
-  diagnostics: z.array(apiDiagnosticSchema),
-  editableFields: z.array(placementEditableFieldSchema),
-  objects: z.array(placedObjectRecordSchema),
-  stats: placementWorkflowStatsSchema,
-  summary: workflowSummarySchema
+  categories: z.array(placementCategorySchema).optional(), diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(placementEditableFieldSchema), objects: z.array(placedObjectRecordSchema),
+  stats: placementWorkflowStatsSchema, summary: workflowSummarySchema
 });
 
-export const loadPlacementWorkflowResponseSchema = z.strictObject({
-  workflow: placementWorkflowSchema
-});
+export const loadPlacementWorkflowResponseSchema = z.strictObject({ workflow: placementWorkflowSchema });
 
 export const behaviorProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
@@ -3256,6 +3254,7 @@ export type ApplyChangePlanRequest = z.infer<typeof applyChangePlanRequestSchema
 export type ApplyChangePlanResponse = z.infer<typeof applyChangePlanResponseSchema>;
 export type ApplyResult = z.infer<typeof applyResultSchema>;
 export type ChangePlan = z.infer<typeof changePlanSchema>;
+export type ChangePlanOutputMode = z.infer<typeof changePlanOutputModeSchema>;
 export type CreateChangePlanRequest = z.infer<typeof createChangePlanRequestSchema>;
 export type CreateChangePlanResponse = z.infer<typeof createChangePlanResponseSchema>;
 export type EditSession = z.infer<typeof editSessionSchema>;
@@ -3326,9 +3325,7 @@ export type EncounterSlotRecord = z.infer<typeof encounterSlotRecordSchema>;
 export type EncounterTableRecord = z.infer<typeof encounterTableRecordSchema>;
 export type EncountersWorkflow = z.infer<typeof encountersWorkflowSchema>;
 export type RaidBattleEditableField = z.infer<typeof raidBattleEditableFieldSchema>;
-export type RaidBattleEditableFieldOption = z.infer<
-  typeof raidBattleEditableFieldOptionSchema
->;
+export type RaidBattleEditableFieldOption = z.infer<typeof raidBattleEditableFieldOptionSchema>;
 export type RaidBattleSlotRecord = z.infer<typeof raidBattleSlotRecordSchema>;
 export type RaidBattleTableRecord = z.infer<typeof raidBattleTableRecordSchema>;
 export type RaidBattlesWorkflow = z.infer<typeof raidBattlesWorkflowSchema>;
@@ -3338,6 +3335,7 @@ export type RaidRewardTableRecord = z.infer<typeof raidRewardTableRecordSchema>;
 export type RaidRewardsWorkflow = z.infer<typeof raidRewardsWorkflowSchema>;
 export type PlacedObjectRecord = z.infer<typeof placedObjectRecordSchema>;
 export type PlacementEditableField = z.infer<typeof placementEditableFieldSchema>;
+export type PlacementFieldValue = z.infer<typeof placementFieldValueSchema>;
 export type PlacementWorkflow = z.infer<typeof placementWorkflowSchema>;
 export type BehaviorEntryRecord = z.infer<typeof behaviorEntryRecordSchema>;
 export type BehaviorField = z.infer<typeof behaviorFieldSchema>;

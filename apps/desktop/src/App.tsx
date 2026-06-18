@@ -92,6 +92,7 @@ import {
   type BehaviorFieldOption,
   type BehaviorWorkflow,
   type ChangePlan,
+  type ChangePlanOutputMode,
   type DynamaxAdventureEditableField,
   type DynamaxAdventureRecord,
   type DynamaxAdventuresWorkflow,
@@ -240,11 +241,20 @@ import { FairyGymBoostsSection } from './features/fairy-gym-boosts/FairyGymBoost
 import { FashionUnlockSection } from './features/fashion-unlock/FashionUnlockSection';
 import { NpcItemGiftSection, formatNpcItemGiftPendingValue } from './features/npc-item-gift/NpcItemGiftSection';
 import { useNpcItemGiftWorkflowController } from './features/npc-item-gift/useNpcItemGiftWorkflowController';
+import {
+  type PlacementFieldControl,
+  formatPlacementPrimaryData,
+  getLegacyPlacementCategoryId,
+  getPlacementCategories,
+  getPlacementFieldControls,
+  getPlacementFieldValue
+} from './features/placement/placementUi';
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
 import {
   ShinyRateSection,
   formatShinyRatePendingValue
 } from './features/shiny-rate/ShinyRateSection';
+import { SvOutputConfirmationModal } from './features/sv-output/SvOutputConfirmationModal';
 import { WorkflowsSection } from './features/workflows/WorkflowsSection';
 import {
   TypeChartSection,
@@ -1089,13 +1099,6 @@ const raidRewardValueFieldNames = [
   'star4Value',
   'star5Value'
 ] as const;
-const placementLocationXFieldName = 'locationX';
-const placementLocationYFieldName = 'locationY';
-const placementLocationZFieldName = 'locationZ';
-const placementRotationYFieldName = 'rotationY';
-const placementItemIdFieldName = 'itemId';
-const placementQuantityFieldName = 'quantity';
-const placementChanceFieldName = 'chance';
 const virtualTableInitialRect = { height: 480, width: 800 };
 const virtualTableOverscan = 8;
 const virtualTableRowHeight = 40;
@@ -1528,6 +1531,7 @@ export function App({
   const clearSelectedGame = useWorkbenchStore((state) => state.clearSelectedGame);
   const health = openProject?.health ?? null;
   const selectedGame = draftPaths.selectedGame;
+  const isScarletVioletProject = isScarletVioletGame(selectedGame);
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
   const activeProjectStateLabel = getProjectStateLabel(health, projectStatus, activeSection);
   const isBusy = projectStatus === 'opening' || projectStatus === 'validating';
@@ -1648,6 +1652,8 @@ export function App({
   const [dynamaxAdventureApplyResult, setDynamaxAdventureApplyResult] =
     useState<ApplyResult | null>(null);
   const [saveProgress, setSaveProgress] = useState<SaveProgressState | null>(null);
+  const [svOutputConfirmation, setSvOutputConfirmation] =
+    useState<SvOutputConfirmationState | null>(null);
   const [exitPrompt, setExitPrompt] = useState<ExitPromptState | null>(null);
   const [dependencyWarning, setDependencyWarning] = useState<DependencyWarningState | null>(null);
   const [updateCheckStatus, setUpdateCheckStatus] = useState<UpdateCheckStatus>({
@@ -5725,26 +5731,53 @@ const resetModMergerPlan = () => {
     }
   };
 
-  const handleSaveValidatedChanges = async () => {
+  const handleSaveValidatedChanges = async (outputMode?: ChangePlanOutputMode) => {
     if (!editSession || !visibleChangePlan || !canSaveValidatedChanges) {
       return;
     }
 
-    const filesToWrite = visibleChangePlan.writes.map((write) => write.targetRelativePath);
-    const totalSteps = Math.max(filesToWrite.length, 1);
     setIsChangePlanApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
 
     try {
+      const paths = toProjectPaths(draftPaths);
+      let planToApply = visibleChangePlan;
+
       setSaveProgress({
-        detail: 'Preparing output plan',
+        detail: outputMode ? 'Creating selected output plan' : 'Preparing output plan',
         label: 'Preparing',
         percent: 8,
         step: 0,
-        totalSteps
+        totalSteps: 1
       });
       await delay(250);
+
+      if (outputMode) {
+        const planResponse = await bridge.createChangePlan({
+          outputMode,
+          paths,
+          session: editSession
+        });
+        planToApply = planResponse.changePlan;
+        setChangePlan(planToApply);
+        setChangePlanSessionSignature(getEditSessionSignature(editSession));
+
+        if (!planToApply.canApply || planToApply.writes.length === 0) {
+          setSaveProgress({
+            detail: 'Review output plan diagnostics',
+            label: 'Output plan needs attention',
+            percent: 100,
+            step: 1,
+            totalSteps: 1
+          });
+          await delay(500);
+          return;
+        }
+      }
+
+      const filesToWrite = planToApply.writes.map((write) => write.targetRelativePath);
+      const totalSteps = Math.max(filesToWrite.length, 1);
 
       for (const [index, file] of filesToWrite.entries()) {
         setSaveProgress({
@@ -5765,9 +5798,9 @@ const resetModMergerPlan = () => {
         totalSteps
       });
 
-      const paths = toProjectPaths(draftPaths);
       const response = await bridge.applyChangePlan({
-        changePlan: visibleChangePlan,
+        changePlan: planToApply,
+        outputMode,
         paths,
         session: editSession
       });
@@ -5776,7 +5809,7 @@ const resetModMergerPlan = () => {
       );
 
       if (!hasApplyErrors) {
-        setAppliedChangePlan(visibleChangePlan);
+        setAppliedChangePlan(planToApply);
         editSessionRef.current = null;
         setEditSession(null);
         setEditSessionSection(null);
@@ -7190,9 +7223,11 @@ const resetModMergerPlan = () => {
               isChangePlanApplying={isChangePlanApplying}
               isChangePlanCreating={isChangePlanCreating}
               isSessionValidating={isSessionValidating}
+              isScarletVioletProject={isScarletVioletProject}
               onCancelEditSession={handleCancelEditSession}
               onRemovePendingEdit={handleRemovePendingEdit}
-              onSaveValidatedChanges={handleSaveValidatedChanges}
+              onRequestSvOutput={(mode) => setSvOutputConfirmation({ mode })}
+              onSaveValidatedChanges={() => handleSaveValidatedChanges()}
               onValidateEditSession={handleValidateEditSession}
             />
           ) : null}
@@ -7209,6 +7244,7 @@ const resetModMergerPlan = () => {
         </div>
       </section>
       {saveProgress ? <SaveProgressModal progress={saveProgress} /> : null}
+      {svOutputConfirmation ? <SvOutputConfirmationModal isApplying={isChangePlanApplying} mode={svOutputConfirmation.mode} onCancel={() => setSvOutputConfirmation(null)} onConfirm={() => { const mode = svOutputConfirmation.mode; setSvOutputConfirmation(null); void handleSaveValidatedChanges(mode); }} outputRootPath={draftPaths.outputRootPath} /> : null}
       {exitPrompt ? (
         <ExitPromptModal
           kind={exitPrompt.kind}
@@ -13146,27 +13182,6 @@ function getRaidRewardEditableFieldGroup(field: NumericEditableField) {
   }
 
   return 'Reward Data';
-}
-
-function getPlacementEditableFieldGroup(field: PlacementEditableField) {
-  if (
-    field.field === placementItemIdFieldName ||
-    field.field === placementQuantityFieldName ||
-    field.field === placementChanceFieldName
-  ) {
-    return 'Item';
-  }
-
-  if (
-    field.field === placementLocationXFieldName ||
-    field.field === placementLocationYFieldName ||
-    field.field === placementLocationZFieldName ||
-    field.field === placementRotationYFieldName
-  ) {
-    return 'Position';
-  }
-
-  return 'Placement Data';
 }
 
 function getPokemonInstanceFieldGroup(field: NumericEditableField) {
@@ -19712,14 +19727,37 @@ function PlacementSection({
   workflow: PlacementWorkflow | null;
 }) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
+  const placementCategories = useMemo(
+    () => getPlacementCategories(workflow),
+    [workflow]
+  );
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const activeCategoryId =
+    placementCategories.find((category) => category.id === selectedCategoryId)?.id ??
+    placementCategories[0]?.id ??
+    null;
   const filteredObjects =
     workflow?.objects.filter((placedObject) => {
+      if (
+        activeCategoryId &&
+        (placedObject.categoryId ?? getLegacyPlacementCategoryId(placedObject)) !== activeCategoryId
+      ) {
+        return false;
+      }
+
       if (!normalizedSearch) {
         return true;
       }
 
       return [
         placedObject.archiveMember,
+        placedObject.categoryLabel ?? '',
+        ...(placedObject.fields ?? []).flatMap((field) => [
+          field.label,
+          field.value,
+          field.displayValue,
+          field.group
+        ]),
         placedObject.itemHash,
         placedObject.itemId?.toString() ?? '',
         placedObject.itemName,
@@ -19746,6 +19784,17 @@ function PlacementSection({
       onSelectObject(selectedObject.objectId);
     }
   }, [onSelectObject, selectedObject?.objectId, selectedObjectId]);
+
+  useEffect(() => {
+    if (
+      activeCategoryId === null ||
+      placementCategories.some((category) => category.id === selectedCategoryId)
+    ) {
+      return;
+    }
+
+    setSelectedCategoryId(activeCategoryId);
+  }, [activeCategoryId, placementCategories, selectedCategoryId]);
 
   return (
     <>
@@ -19781,13 +19830,44 @@ function PlacementSection({
           />
         </div>
 
+        {placementCategories.length > 0 ? (
+          <div
+            aria-label="Placement categories"
+            className="condition-tabs placement-category-tabs"
+            role="tablist"
+          >
+            {placementCategories.map((category) => (
+              <button
+                aria-selected={category.id === activeCategoryId}
+                className="condition-tab-button placement-category-tab"
+                key={category.id}
+                onClick={() => {
+                  setSelectedCategoryId(category.id);
+                  const firstObject = workflow?.objects.find(
+                    (placedObject) =>
+                      (placedObject.categoryId ?? getLegacyPlacementCategoryId(placedObject)) ===
+                      category.id
+                  );
+                  onSelectObject(firstObject?.objectId ?? null);
+                }}
+                role="tab"
+                title={category.description}
+                type="button"
+              >
+                <span>{category.label}</span>
+                <small>{category.objectCount}</small>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         {workflow ? (
           <div className="encounters-layout">
             <div className="raid-rewards-table" role="table" aria-label="Placed objects">
               <div className="raid-rewards-row raid-rewards-row-heading" role="row">
                 <span role="columnheader">Object</span>
-                <span role="columnheader">Map</span>
-                <span role="columnheader">Item</span>
+                <span role="columnheader">Category</span>
+                <span role="columnheader">Data</span>
                 <span role="columnheader">Position</span>
               </div>
               {filteredObjects.map((placedObject) => (
@@ -19807,8 +19887,10 @@ function PlacementSection({
                   type="button"
                 >
                   <span role="cell">{placedObject.label}</span>
-                  <span role="cell">{placedObject.map}</span>
-                  <span role="cell">{formatPlacementItem(placedObject)}</span>
+                  <span role="cell">
+                    {placedObject.categoryLabel || placedObject.map}
+                  </span>
+                  <span role="cell">{formatPlacementPrimaryData(placedObject)}</span>
                   <span role="cell">{formatPlacementCoordinates(placedObject)}</span>
                 </button>
               ))}
@@ -19864,14 +19946,15 @@ function SelectedPlacementPanel({
     Record<string, Record<string, string>>
   >({});
   const cancelActiveEditSession = useCancelActiveEditSession();
-  const visibleFields = editableFields.filter((field) =>
-    placedObject ? isPlacementFieldVisible(placedObject, field.field) : false
+  const visibleFields = useMemo(
+    () => (placedObject ? getPlacementFieldControls(placedObject, editableFields) : []),
+    [editableFields, placedObject]
   );
   const placementFieldGroups = useMemo(() => {
-    const groups: Array<{ group: string; fields: PlacementEditableField[] }> = [];
+    const groups: Array<{ group: string; fields: PlacementFieldControl[] }> = [];
 
     for (const field of visibleFields) {
-      const groupName = getPlacementEditableFieldGroup(field);
+      const groupName = field.group || 'Placement Data';
       let group = groups.find((candidate) => candidate.group === groupName);
       if (!group) {
         group = { group: groupName, fields: [] };
@@ -19886,21 +19969,13 @@ function SelectedPlacementPanel({
   const placementDraftDefaults = useMemo(
     () =>
       placedObject
-        ? createTrainerDrafts(
-            visibleFields.map((field) => toNumericEditableControlField(field)),
-            (field) => getEditablePlacementFieldValue(placedObject, field)
-          )
+        ? Object.fromEntries(visibleFields.map((field) => [field.field, field.value]))
         : {},
     [
-      placedObject?.chance,
-      placedObject?.itemId,
       placedObject?.objectId,
-      placedObject?.quantity,
-      placedObject?.rotationY,
-      placedObject?.x,
-      placedObject?.y,
-      placedObject?.z,
-      visibleFields.map((field) => field.field).join('|')
+      visibleFields
+        .map((field) => `${field.field}:${field.value}:${field.isReadOnly ? '1' : '0'}`)
+        .join('|')
     ]
   );
   const drafts = placedObject
@@ -19911,7 +19986,7 @@ function SelectedPlacementPanel({
       getPlacementDraftSummary(
         visibleFields,
         drafts,
-        placedObject ? (field) => getEditablePlacementFieldValue(placedObject, field) : null
+        placedObject ? (field) => getPlacementFieldValue(placedObject, field) : null
       ),
     [drafts, placedObject, visibleFields]
   );
@@ -20004,38 +20079,54 @@ function SelectedPlacementPanel({
                   <legend>{group.group}</legend>
                   <div className="editable-field-grid">
                     {group.fields.map((field) => {
-                      const currentValue = getEditablePlacementFieldValue(
-                        placedObject,
-                        field.field
-                      );
+                      const currentValue = getPlacementFieldValue(placedObject, field.field);
                       const draftValue = drafts[field.field] ?? '';
                       const draftState = getPlacementDraftState(draftValue, currentValue, field);
                       const isInvalid =
                         draftValue.trim() !== '' && draftState.normalizedValue === null;
                       const isChanged = draftState.normalizedValue !== null;
                       const fieldOptions = field.options ?? [];
+                      const isFieldReadOnly = field.isReadOnly;
                       const statusText = isInvalid
                         ? `Allowed range: ${field.minimumValue}-${field.maximumValue}.`
                         : isChanged
                           ? 'Changed'
-                          : null;
+                          : isFieldReadOnly
+                            ? 'Read-only'
+                            : null;
 
                       return (
                         <label
                           className={`path-field editable-field-control ${
                             isChanged ? 'editable-field-changed' : ''
-                          } ${isInvalid ? 'editable-field-invalid' : ''}`}
+                          } ${isInvalid ? 'editable-field-invalid' : ''} ${
+                            isFieldReadOnly ? 'editable-field-disabled placement-read-only-field' : ''
+                          }`}
                           htmlFor={`placement-field-${field.field}`}
                           key={field.field}
+                          title={
+                            isFieldReadOnly
+                              ? field.description || 'This Placement field is visible but not editable yet.'
+                              : getEditableFieldHelp(field)
+                          }
                         >
                           <span>{field.label}</span>
-                          {fieldOptions.length > 0 ? (
+                          {isFieldReadOnly ? (
+                            <input
+                              aria-label={field.label}
+                              disabled
+                              id={`placement-field-${field.field}`}
+                              type="text"
+                              value={field.displayValue || field.value}
+                            />
+                          ) : fieldOptions.length > 0 ? (
                             <SearchableOptionInput
                               ariaLabel={field.label}
                               disabled={
                                 !canEditPlacement ||
                                 editSession === null ||
-                                isPlacementUpdating
+                                isPlacementUpdating ||
+                                isFieldReadOnly
                               }
                               id={`placement-field-${field.field}`}
                               onChange={(value) => {
@@ -20066,7 +20157,8 @@ function SelectedPlacementPanel({
                               disabled={
                                 !canEditPlacement ||
                                 editSession === null ||
-                                isPlacementUpdating
+                                isPlacementUpdating ||
+                                isFieldReadOnly
                               }
                               id={`placement-field-${field.field}`}
                               max={field.maximumValue}
@@ -20087,7 +20179,7 @@ function SelectedPlacementPanel({
                               }}
                               step={field.valueKind === 'integer' ? 1 : 'any'}
                               title={getEditableFieldHelp(field)}
-                              type="number"
+                              type={field.valueKind === 'text' ? 'text' : 'number'}
                               value={draftValue}
                             />
                           )}
@@ -24160,9 +24252,11 @@ function ChangesSection({
   isEditSessionValidated,
   isChangePlanApplying,
   isChangePlanCreating,
+  isScarletVioletProject,
   isSessionValidating,
   onCancelEditSession,
   onRemovePendingEdit,
+  onRequestSvOutput,
   onSaveValidatedChanges,
   onValidateEditSession
 }: {
@@ -24175,9 +24269,11 @@ function ChangesSection({
   isEditSessionValidated: boolean;
   isChangePlanApplying: boolean;
   isChangePlanCreating: boolean;
+  isScarletVioletProject: boolean;
   isSessionValidating: boolean;
   onCancelEditSession: () => void;
   onRemovePendingEdit: (editIndex: number) => void;
+  onRequestSvOutput: (mode: ChangePlanOutputMode) => void;
   onSaveValidatedChanges: () => void;
   onValidateEditSession: () => void;
 }) {
@@ -24223,15 +24319,14 @@ function ChangesSection({
                 : 'Validate Pending Changes'}
             </span>
           </button>
-          <button
-            className="primary-button"
-            disabled={!canSaveValidatedChanges}
-            onClick={onSaveValidatedChanges}
-            type="button"
-          >
-            <Save aria-hidden="true" size={18} />
-            <span>{isChangePlanApplying ? 'Saving' : 'Save'}</span>
-          </button>
+          {isScarletVioletProject ? (
+            <>
+              <button className="primary-button" disabled={!canSaveValidatedChanges} onClick={() => onRequestSvOutput('standalone')} type="button"><Package aria-hidden="true" size={18} /><span>{isChangePlanApplying ? 'Outputting' : 'Output as Standalone'}</span></button>
+              <button className="secondary-button" disabled={!canSaveValidatedChanges} onClick={() => onRequestSvOutput('trinityModManager')} type="button"><GitMerge aria-hidden="true" size={18} /><span>{isChangePlanApplying ? 'Outputting' : 'Output for Trinity Mod Manager'}</span></button>
+            </>
+          ) : (
+            <button className="primary-button" disabled={!canSaveValidatedChanges} onClick={onSaveValidatedChanges} type="button"><Save aria-hidden="true" size={18} /><span>{isChangePlanApplying ? 'Saving' : 'Save'}</span></button>
+          )}
           <button
             className="danger-button"
             disabled={!editSession}
@@ -27387,6 +27482,8 @@ type SaveProgressState = {
   totalSteps: number;
 };
 
+type SvOutputConfirmationState = { mode: ChangePlanOutputMode };
+
 type ShopInventoryDraftChange = {
   field: string;
   slot: number;
@@ -28993,52 +29090,20 @@ function getEditableRaidBattleFieldValue(battleSlot: RaidBattleSlotRecord, field
   }
 }
 
-function isPlacementFieldVisible(placedObject: PlacedObjectRecord, field: string) {
-  if (field === placementChanceFieldName) {
-    return placedObject.objectType === 'HiddenItem';
-  }
-
-  if (field === placementItemIdFieldName) {
-    return placedObject.itemId !== null || placedObject.itemHash.length > 0;
-  }
-
-  return [
-    placementLocationXFieldName,
-    placementLocationYFieldName,
-    placementLocationZFieldName,
-    placementRotationYFieldName,
-    placementQuantityFieldName
-  ].includes(field);
-}
-
-function getEditablePlacementFieldValue(placedObject: PlacedObjectRecord, field: string) {
-  switch (field) {
-    case placementLocationXFieldName:
-      return placedObject.x;
-    case placementLocationYFieldName:
-      return placedObject.y;
-    case placementLocationZFieldName:
-      return placedObject.z;
-    case placementRotationYFieldName:
-      return placedObject.rotationY;
-    case placementItemIdFieldName:
-      return placedObject.itemId;
-    case placementQuantityFieldName:
-      return placedObject.quantity;
-    case placementChanceFieldName:
-      return placedObject.chance;
-    default:
-      return null;
-  }
-}
-
 function getPlacementDraftState(
   draftValue: string,
-  currentValue: number | null,
-  field: PlacementEditableField
+  currentValue: string | null,
+  field: PlacementFieldControl
 ) {
   const normalizedValue = draftValue.trim();
   if (!normalizedValue) {
+    return {
+      canSubmit: false,
+      normalizedValue: null
+    };
+  }
+
+  if (field.isReadOnly || field.valueKind === 'text') {
     return {
       canSubmit: false,
       normalizedValue: null
@@ -29063,15 +29128,15 @@ function getPlacementDraftState(
   return {
     canSubmit:
       inRange &&
-      (currentValue === null || Math.abs(parsedValue - currentValue) > Number.EPSILON),
+      (currentValue === null || Math.abs(parsedValue - Number(currentValue)) > Number.EPSILON),
     normalizedValue: inRange ? nextValue : null
   };
 }
 
 function getPlacementDraftSummary(
-  fields: PlacementEditableField[],
+  fields: PlacementFieldControl[],
   drafts: Record<string, string>,
-  getValue: ((field: string) => number | null) | null
+  getValue: ((field: string) => string | null) | null
 ): { changedFields: TrainerDraftChange[]; dirtyFieldCount: number; invalidFields: TrainerDraftChange[] } {
   const changedFields: TrainerDraftChange[] = [];
   const invalidFields: TrainerDraftChange[] = [];
@@ -29082,6 +29147,10 @@ function getPlacementDraftSummary(
   }
 
   for (const field of fields) {
+    if (field.isReadOnly) {
+      continue;
+    }
+
     const currentValue = getValue(field.field);
     const draftValue = drafts[field.field] ?? '';
     const draftState = getPlacementDraftState(draftValue, currentValue, field);
@@ -29120,6 +29189,17 @@ function formatPlacementItem(placedObject: PlacedObjectRecord) {
 }
 
 function formatPlacementCoordinates(placedObject: PlacedObjectRecord) {
+  if (placedObject.fields?.length) {
+    const x = placedObject.fields.find((field) => field.field === 'point.positionX');
+    const y = placedObject.fields.find((field) => field.field === 'point.positionY');
+    const z = placedObject.fields.find((field) => field.field === 'point.positionZ');
+    if (x || y || z) {
+      return [x, y, z]
+        .map((field) => field?.displayValue || field?.value || 'Scene-only')
+        .join(', ');
+    }
+  }
+
   return `${formatCoordinate(placedObject.x)}, ${formatCoordinate(placedObject.y)}, ${formatCoordinate(placedObject.z)}`;
 }
 

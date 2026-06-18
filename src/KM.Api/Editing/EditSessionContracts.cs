@@ -20,14 +20,16 @@ public sealed record ValidateEditSessionResponse(
 
 public sealed record CreateChangePlanRequest(
     ProjectPathsDto Paths,
-    EditSessionDto Session);
+    EditSessionDto Session,
+    ChangePlanOutputModeDto? OutputMode = null);
 
 public sealed record CreateChangePlanResponse(ChangePlanDto ChangePlan);
 
 public sealed record ApplyChangePlanRequest(
     ProjectPathsDto Paths,
     EditSessionDto Session,
-    ChangePlanDto ChangePlan);
+    ChangePlanDto ChangePlan,
+    ChangePlanOutputModeDto? OutputMode = null);
 
 public sealed record ApplyChangePlanResponse(ApplyResultDto ApplyResult);
 
@@ -72,3 +74,9 @@ public sealed record ApplyResultDto(
     string ApplyId,
     IReadOnlyList<string> WrittenFiles,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public enum ChangePlanOutputModeDto
+{
+    Standalone,
+    TrinityModManager,
+}

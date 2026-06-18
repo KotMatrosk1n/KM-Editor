@@ -78,6 +78,52 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletChangePlansCanOutputForTrinityModManager(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+        var session = UpdateItem(dispatcher, paths, itemId: 1, field: "buyPrice", value: "888");
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-trinity-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var write = Assert.Single(plan.Payload.ChangePlan.Writes);
+        Assert.Equal(SvDataPaths.ItemDataArray, write.TargetRelativePath);
+        Assert.DoesNotContain(plan.Payload.ChangePlan.Writes, candidate =>
+            string.Equals(candidate.TargetRelativePath, "romfs/arc/data.trpfd", StringComparison.Ordinal));
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-trinity-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal([SvDataPaths.ItemDataArray], apply.Payload.ApplyResult.WrittenFiles);
+        Assert.True(File.Exists(Path.Combine(temp.OutputRootPath, SvDataPaths.ItemDataArray.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "arc", "data.trpfd")));
+
+        var loaded = Dispatch<LoadItemsWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(paths),
+            "request-sv-trinity-load");
+        AssertSuccess(loaded);
+        Assert.Equal(888, loaded.Payload!.Workflow.Items.Single(item => item.ItemId == 1).BuyPrice);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletProjectExposesBasicEditorWorkflows(
         ProjectGameDto game,
         ulong titleId)
@@ -95,12 +141,13 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "pokemon", "trainers", "encounters", "modMerger"],
+            ["items", "pokemon", "trainers", "encounters", "placement", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trainers");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Wild Encounters");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Placement");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "S/V Mod Merger");
     }
 

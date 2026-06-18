@@ -15,6 +15,7 @@ internal static class SvEditSessionSupport
     public const string PokemonDomain = "workflow.pokemon";
     public const string TrainersDomain = "workflow.trainers";
     public const string EncountersDomain = "workflow.encounters";
+    public const string PlacementDomain = "workflow.placement";
 
     public static bool CanEdit(
         OpenedProject project,
@@ -112,7 +113,8 @@ internal static class SvEditSessionSupport
         string domain,
         string virtualPath,
         string workflowName,
-        IReadOnlyList<ValidationDiagnostic> validationDiagnostics)
+        IReadOnlyList<ValidationDiagnostic> validationDiagnostics,
+        SvOutputMode outputMode = SvOutputMode.Standalone)
     {
         var diagnostics = validationDiagnostics.ToList();
         if (session.PendingEdits.Count == 0)
@@ -130,14 +132,13 @@ internal static class SvEditSessionSupport
         }
 
         PlannedWriteInfo writeInfo;
-        PlannedWriteInfo descriptorWriteInfo;
         try
         {
             writeInfo = SvWorkflowFileSource.CreatePlannedWrite(
                 paths,
                 virtualPath,
-                session.PendingEdits.SelectMany(edit => edit.Sources).Distinct().ToArray());
-            descriptorWriteInfo = SvWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
+                session.PendingEdits.SelectMany(edit => edit.Sources).Distinct().ToArray(),
+                outputMode);
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or ArgumentException)
         {
@@ -158,16 +159,20 @@ internal static class SvEditSessionSupport
             writeInfo.Sources,
             writeInfo.ReplacesExistingOutput,
             reason);
-        var descriptorWrite = new PlannedFileWrite(
-            descriptorWriteInfo.TargetRelativePath,
-            descriptorWriteInfo.Sources,
-            descriptorWriteInfo.ReplacesExistingOutput,
-            "Patch Scarlet/Violet Trinity descriptor for LayeredFS overrides.");
-        var writes = new[] { dataWrite, descriptorWrite };
+        var writes = new List<PlannedFileWrite> { dataWrite };
+        if (outputMode == SvOutputMode.Standalone)
+        {
+            var descriptorWriteInfo = SvWorkflowFileSource.CreateDescriptorPlannedWrite(paths);
+            writes.Add(new PlannedFileWrite(
+                descriptorWriteInfo.TargetRelativePath,
+                descriptorWriteInfo.Sources,
+                descriptorWriteInfo.ReplacesExistingOutput,
+                "Patch Scarlet/Violet Trinity descriptor for standalone LayeredFS overrides."));
+        }
 
         diagnostics.Add(CreateDiagnostic(
             DiagnosticSeverity.Info,
-            $"Change plan preview contains {writes.Length} target files.",
+            $"Change plan preview contains {writes.Count} target files.",
             domain));
 
         return new ChangePlan(session.Id, writes, diagnostics);
@@ -209,9 +214,14 @@ internal static class SvEditSessionSupport
             diagnostics);
     }
 
-    public static ProjectFileReference GeneratedReference(string virtualPath)
+    public static ProjectFileReference GeneratedReference(
+        string virtualPath,
+        SvOutputMode outputMode = SvOutputMode.Standalone)
     {
-        return new ProjectFileReference(ProjectFileLayer.Generated, $"romfs/{virtualPath}");
+        var relativePath = outputMode == SvOutputMode.TrinityModManager
+            ? virtualPath
+            : $"romfs/{virtualPath}";
+        return new ProjectFileReference(ProjectFileLayer.Generated, relativePath);
     }
 
     public static ProjectFileReference GeneratedDescriptorReference()
