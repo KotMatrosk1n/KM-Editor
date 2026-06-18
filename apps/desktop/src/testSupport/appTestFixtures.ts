@@ -38,12 +38,12 @@ import {
   type TextWorkflow,
   type TradePokemonWorkflow,
   type TrainersWorkflow,
-  type TypeChartWorkflow,
-  type WorkflowSummary
+  type TypeChartWorkflow, type WorkflowSummary
 } from '../bridge/contracts';
 import { type ProjectBridge } from '../bridge/projectBridge';
 import { type DesktopServices, type NativeUpdate } from '../desktopServices';
 import { createFairyGymBoostsWorkflowFixture } from './fairyGymBoostsTestFixtures';
+import { createNpcItemGiftBridgeFixture, createNpcItemGiftWorkflowFixture } from './npcItemGiftTestFixtures';
 import { createShinyRateWorkflowFixture, createStageShinyRateFixtureResponse } from './shinyRateTestFixtures';
 export function createNativeUpdate(overrides: Partial<NativeUpdate> = {}): NativeUpdate {
   return {
@@ -3676,6 +3676,7 @@ export function createMockProjectBridge(
     },
     summary: startingItemsWorkflowSummary
   };
+  const npcItemGiftWorkflow = createNpcItemGiftWorkflowFixture(canEdit); const npcItemGiftWorkflowSummary = npcItemGiftWorkflow.summary;
   const exeFsPatchWorkflow: ExeFsPatchWorkflow = {
     checks: [
       {
@@ -4504,9 +4505,7 @@ export function createMockProjectBridge(
           fashionUnlockWorkflowSummary,
           gymUniformRemovalWorkflowSummary,
           ivScreenWorkflowSummary,
-          royalCandyWorkflowSummary,
-          startingItemsWorkflowSummary,
-          spreadsheetImportWorkflowSummary,
+          royalCandyWorkflowSummary, startingItemsWorkflowSummary, npcItemGiftWorkflowSummary, spreadsheetImportWorkflowSummary,
           modMergerWorkflowSummary
         ]
       }),
@@ -5319,6 +5318,7 @@ export function createMockProjectBridge(
         },
         workflow: startingItemsWorkflow
       }),
+    ...createNpcItemGiftBridgeFixture(npcItemGiftWorkflow),
     loadSpreadsheetImportWorkflow: () =>
       Promise.resolve({
         workflow: spreadsheetImportWorkflow

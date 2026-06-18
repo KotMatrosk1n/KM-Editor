@@ -264,6 +264,14 @@ import {
   validateProjectResponseSchema
 } from './contracts';
 import {
+  type LoadNpcItemGiftWorkflowRequest,
+  type LoadNpcItemGiftWorkflowResponse,
+  type StageNpcItemGiftRequest,
+  type StageNpcItemGiftResponse,
+  loadNpcItemGiftWorkflowResponseSchema,
+  stageNpcItemGiftResponseSchema
+} from './npcItemGiftContracts';
+import {
   type LoadFairyGymBoostsWorkflowRequest,
   type LoadFairyGymBoostsWorkflowResponse,
   type StageFairyGymBoostsRequest,
@@ -429,6 +437,12 @@ export type ProjectBridge = {
   stageStartingItems: (
     request: StageStartingItemsRequest
   ) => Promise<StageStartingItemsResponse>;
+  loadNpcItemGiftWorkflow: (
+    request: LoadNpcItemGiftWorkflowRequest
+  ) => Promise<LoadNpcItemGiftWorkflowResponse>;
+  stageNpcItemGift: (
+    request: StageNpcItemGiftRequest
+  ) => Promise<StageNpcItemGiftResponse>;
   loadSpreadsheetImportWorkflow: (
     request: LoadSpreadsheetImportWorkflowRequest
   ) => Promise<LoadSpreadsheetImportWorkflowResponse>;
@@ -890,6 +904,20 @@ export function createProjectBridge(
         kmCommandNames.stageStartingItems,
         request,
         stageStartingItemsResponseSchema
+      ),
+    loadNpcItemGiftWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadNpcItemGiftWorkflow,
+        request,
+        loadNpcItemGiftWorkflowResponseSchema
+      ),
+    stageNpcItemGift: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageNpcItemGift,
+        request,
+        stageNpcItemGiftResponseSchema
       ),
     loadSpreadsheetImportWorkflow: (request) =>
       sendProjectBridgeRequest(
