@@ -129,10 +129,17 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal("Tackle", Assert.Single(bulbasaur.Learnset).MoveName);
         var tmGroup = bulbasaur.Compatibility.Single(group => group.GroupId == "tm");
         Assert.Equal(1, tmGroup.EnabledCount);
-        var tmEntry = Assert.Single(tmGroup.Entries);
-        Assert.Equal(36, tmEntry.MoveId);
-        Assert.Equal("TM001 Take Down", tmEntry.Label);
-        Assert.True(tmEntry.CanLearn);
+        Assert.Equal(3, tmGroup.Entries.Count);
+        var tm001Entry = tmGroup.Entries.Single(entry => entry.MoveId == 36);
+        var tm002Entry = tmGroup.Entries.Single(entry => entry.MoveId == 45);
+        var tm100Entry = tmGroup.Entries.Single(entry => entry.MoveId == 349);
+        Assert.Equal("TM001 Take Down", tm001Entry.Label);
+        Assert.True(tm001Entry.CanLearn);
+        Assert.Equal("TM002 Growl", tm002Entry.Label);
+        Assert.False(tm002Entry.CanLearn);
+        Assert.Equal("TM100 Dragon Dance", tm100Entry.Label);
+        Assert.False(tm100Entry.CanLearn);
+        Assert.DoesNotContain(tmGroup.Entries, entry => entry.Label.Contains("Tackle", StringComparison.Ordinal));
 
         var pokemonFields = pokemon.Payload.Workflow.EditableFields;
         Assert.Contains(
@@ -180,12 +187,21 @@ public sealed class ScarletVioletBridgeTests
         AssertSuccess(items);
         var masterBall = items.Payload!.Workflow.Items.Single(item => item.ItemId == 1);
         var tm001 = items.Payload.Workflow.Items.Single(item => item.ItemId == 2);
+        var legacyMoveItem = items.Payload.Workflow.Items.Single(item => item.ItemId == 3);
+        var tm002 = items.Payload.Workflow.Items.Single(item => item.ItemId == 4);
+        var tm100 = items.Payload.Workflow.Items.Single(item => item.ItemId == 5);
         Assert.Equal("Master Ball", masterBall.Name);
         Assert.False(masterBall.Metadata.CanUseOnPokemon);
         Assert.True(tm001.Metadata.CanUseOnPokemon);
         Assert.Equal(1, tm001.Metadata.MachineSlot);
         Assert.Equal(36, tm001.Metadata.MachineMoveId);
         Assert.Equal("Take Down", tm001.Metadata.MachineMoveName);
+        Assert.Null(legacyMoveItem.Metadata.MachineSlot);
+        Assert.Equal(2, tm002.Metadata.MachineSlot);
+        Assert.Equal(45, tm002.Metadata.MachineMoveId);
+        Assert.Equal(100, tm100.Metadata.MachineSlot);
+        Assert.Equal(349, tm100.Metadata.MachineMoveId);
+        Assert.Equal("Dragon Dance", tm100.Metadata.MachineMoveName);
         var itemFields = items.Payload.Workflow.EditableFields;
         Assert.Contains(
             itemFields.Single(field => field.Field == "pouch").Options,
@@ -205,6 +221,9 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(
             itemFields.Single(field => field.Field == "groupIndex").Options,
             option => option.Value == 1 && option.Label.Contains("TM001 Take Down", StringComparison.Ordinal));
+        Assert.Contains(
+            itemFields.Single(field => field.Field == "groupIndex").Options,
+            option => option.Value == 2 && option.Label.Contains("TM002 Growl", StringComparison.Ordinal));
 
         var trainers = Dispatch<LoadTrainersWorkflowResponse>(
             dispatcher,
@@ -226,6 +245,11 @@ public sealed class ScarletVioletBridgeTests
             option => option.Value == (int)global::TokuseiType.SET_1 && option.Label == "Overgrow (Ability 1)");
         Assert.Equal((int)global::GemType.NORMAL, trainerPokemon.TeraType);
         Assert.Equal("Normal", trainerPokemon.TeraTypeLabel);
+        Assert.False(trainer.CanTerastallize);
+        Assert.Equal("Disabled", trainer.TeraTarget);
+        Assert.Contains(
+            trainer.AiFlagStates,
+            flag => flag.Label == "Basic" && flag.Description.Contains("baseline move selection", StringComparison.Ordinal));
 
         var trainerFields = trainers.Payload.Workflow.EditableFields;
         Assert.Contains(
@@ -370,8 +394,12 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(temp, SvDataPaths.TrainerDataArray, CreateTrainerDataArray());
         WriteSvOutput(temp, SvDataPaths.WildEncounterArray, CreateEncounterArray());
         temp.WriteBaseRomFsFile(SvDataPaths.EnglishPokemonNames, CreateTextTable(3, (1, "Bulbasaur"), (2, "Ivysaur")));
-        temp.WriteBaseRomFsFile(SvDataPaths.EnglishItemNames, CreateTextTable(3, (1, "Master Ball"), (2, "TM001")));
-        temp.WriteBaseRomFsFile(SvDataPaths.EnglishMoveNames, CreateTextTable(46, (33, "Tackle"), (36, "Take Down"), (45, "Growl")));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishItemNames,
+            CreateTextTable(6, (1, "Master Ball"), (2, "TM001"), (3, "Legacy Move Record"), (4, "TM002"), (5, "TM100")));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishMoveNames,
+            CreateTextTable(350, (33, "Tackle"), (36, "Take Down"), (45, "Growl"), (349, "Dragon Dance")));
         temp.WriteBaseRomFsFile(SvDataPaths.EnglishAbilityNames, CreateTextTable(66, (34, "Chlorophyll"), (65, "Overgrow")));
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishPlaceNames,
@@ -655,7 +683,46 @@ public sealed class ScarletVioletBridgeTests
             FieldPocket: global::FieldPocket.FPOCKET_WAZA,
             FieldFunctionType: global::FieldFunctionType.FIELDFUNC_WAZA,
             SetToPoke: true);
-        var vector = global::ItemDataArray.CreateValuesVector(builder, [masterBall, tm001]);
+        var legacyMoveIcon = builder.CreateString("item_legacy_move");
+        var legacyMoveItem = global::ItemData.CreateItemData(
+            builder,
+            Id: 3,
+            ItemType: global::ItemType.ITEMTYPE_NORMAL,
+            IconNameOffset: legacyMoveIcon,
+            MachineWaza: (global::pml.common.WazaID)33,
+            SortNum: 3,
+            GroupID: 1230,
+            FieldPocket: global::FieldPocket.FPOCKET_OTHER,
+            FieldFunctionType: global::FieldFunctionType.FIELDFUNC_NONE);
+        var tm002Icon = builder.CreateString("item_tm_002");
+        var tm002 = global::ItemData.CreateItemData(
+            builder,
+            Id: 4,
+            ItemType: global::ItemType.ITEMTYPE_WAZA,
+            IconNameOffset: tm002Icon,
+            Price: 800,
+            MachineWaza: (global::pml.common.WazaID)45,
+            SortNum: 4,
+            ItemGroup: global::ItemGroup.ITEMGROUP_WAZA_MACHINE,
+            GroupID: 2,
+            FieldPocket: global::FieldPocket.FPOCKET_WAZA,
+            FieldFunctionType: global::FieldFunctionType.FIELDFUNC_WAZA,
+            SetToPoke: true);
+        var tm100Icon = builder.CreateString("item_tm_100");
+        var tm100 = global::ItemData.CreateItemData(
+            builder,
+            Id: 5,
+            ItemType: global::ItemType.ITEMTYPE_WAZA,
+            IconNameOffset: tm100Icon,
+            Price: 800,
+            MachineWaza: (global::pml.common.WazaID)349,
+            SortNum: 100,
+            ItemGroup: global::ItemGroup.ITEMGROUP_WAZA_MACHINE,
+            GroupID: 0,
+            FieldPocket: global::FieldPocket.FPOCKET_WAZA,
+            FieldFunctionType: global::FieldFunctionType.FIELDFUNC_WAZA,
+            SetToPoke: true);
+        var vector = global::ItemDataArray.CreateValuesVector(builder, [masterBall, tm001, legacyMoveItem, tm002, tm100]);
         var root = global::ItemDataArray.CreateItemDataArray(builder, vector);
         global::ItemDataArray.FinishItemDataArrayBuffer(builder, root);
         return builder.SizedByteArray();

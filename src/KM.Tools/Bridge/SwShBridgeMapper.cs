@@ -2137,6 +2137,8 @@ public static class SwShBridgeMapper
             trainer.Items,
             trainer.AiFlags,
             trainer.AiFlagStates.Select(ToDto).ToArray(),
+            false,
+            "Disabled",
             trainer.Heal,
             trainer.Money,
             trainer.Gift,

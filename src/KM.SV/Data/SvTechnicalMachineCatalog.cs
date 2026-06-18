@@ -11,6 +11,7 @@ namespace KM.SV.Data;
 internal sealed record SvTechnicalMachineMove(
     int Slot,
     int ItemId,
+    int GroupId,
     int MoveId,
     string MoveName,
     string Label);
@@ -42,11 +43,18 @@ internal static class SvTechnicalMachineCatalog
         SvTextLabelLookup labels)
     {
         var table = global::ItemDataArray.GetRootAsItemDataArray(new ByteBuffer(itemData));
-        var records = new List<SvTechnicalMachineMove>();
+        var machineItems = new List<(int Slot, int ItemId, int GroupId, int MoveId, int SortNum)>();
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var item = table.Values(index);
-            if (item is null || !IsTechnicalMachine(item.Value))
+            if (item is null)
+            {
+                continue;
+            }
+
+            var itemName = labels.Item(item.Value.Id);
+            if (!IsTechnicalMachine(item.Value, itemName)
+                || !TryParseMachineSlot(itemName, out var slot))
             {
                 continue;
             }
@@ -57,14 +65,23 @@ internal static class SvTechnicalMachineCatalog
                 continue;
             }
 
-            var slot = item.Value.GroupID > 0 ? item.Value.GroupID : item.Value.Id;
-            var moveName = labels.Move(moveId);
+            machineItems.Add((slot, item.Value.Id, item.Value.GroupID, moveId, item.Value.SortNum));
+        }
+
+        var records = new List<SvTechnicalMachineMove>();
+        foreach (var item in machineItems
+            .OrderBy(item => item.Slot)
+            .ThenBy(item => item.SortNum)
+            .ThenBy(item => item.ItemId))
+        {
+            var moveName = labels.Move(item.MoveId);
             records.Add(new SvTechnicalMachineMove(
-                slot,
-                item.Value.Id,
-                moveId,
+                item.Slot,
+                item.ItemId,
+                item.GroupId,
+                item.MoveId,
                 moveName,
-                $"{FormatMachineLabel(slot)} {moveName}"));
+                $"{FormatMachineLabel(item.Slot)} {moveName}"));
         }
 
         return records
@@ -80,9 +97,31 @@ internal static class SvTechnicalMachineCatalog
 
     public static bool IsTechnicalMachine(global::ItemData item)
     {
+        return HasTechnicalMachineShape(item);
+    }
+
+    public static bool IsTechnicalMachine(global::ItemData item, string itemName)
+    {
+        return HasTechnicalMachineShape(item) && TryParseMachineSlot(itemName, out _);
+    }
+
+    private static bool HasTechnicalMachineShape(global::ItemData item)
+    {
         return item.ItemGroup == global::ItemGroup.ITEMGROUP_WAZA_MACHINE
-            || item.FieldFunctionType == global::FieldFunctionType.FIELDFUNC_WAZA
-            || ((int)item.MachineWaza > 0 && item.GroupID > 0);
+            && item.FieldPocket == global::FieldPocket.FPOCKET_WAZA
+            && item.FieldFunctionType == global::FieldFunctionType.FIELDFUNC_WAZA
+            && item.ItemType == global::ItemType.ITEMTYPE_WAZA
+            && (int)item.MachineWaza > 0;
+    }
+
+    private static bool TryParseMachineSlot(string itemName, out int slot)
+    {
+        slot = 0;
+        var trimmedName = itemName.Trim();
+        return trimmedName.Length == 5
+            && trimmedName.StartsWith("TM", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(trimmedName[2..], NumberStyles.None, CultureInfo.InvariantCulture, out slot)
+            && slot > 0;
     }
 
     public static string FormatMachineLabel(int slot)

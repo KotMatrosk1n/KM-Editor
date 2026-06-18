@@ -69,6 +69,8 @@ public sealed record TrainerRecordDto(
     IReadOnlyList<string> Items,
     int AiFlags,
     IReadOnlyList<TrainerAiFlagStateDto> AiFlagStates,
+    bool CanTerastallize,
+    string TeraTarget,
     bool Heal,
     int Money,
     int Gift,

@@ -59,13 +59,13 @@ import {
 import { type ReactVirtualizerOptions, useVirtualizer } from '@tanstack/react-virtual';
 import { listen } from '@tauri-apps/api/event';
 import {
-  formatEncounterLotWeight,
+  formatEncounterLotShare,
   formatEncounterSlotWeightSummary
 } from './encounterWeights';
 import {
-  buildSvEncounterFacetControls,
-  formatSvEncounterTableListDetails,
-  formatSvEncounterTableSummary,
+  buildSvEncounterConditionRows,
+  buildSvEncounterLocationRows,
+  getSvEncounterLocationKey,
   isScarletVioletEncounterTable,
   parseSvEncounterFacets
 } from './svEncounterTables';
@@ -816,6 +816,7 @@ const trainerItemFieldNames = [
   'trainerItem4Id'
 ] as const;
 const aiFlagsFieldName = 'aiFlags';
+const trainerCanTerastallizeFieldName = 'changeGem';
 const healFieldName = 'heal';
 const moneyFieldName = 'money';
 const giftFieldName = 'gift';
@@ -879,6 +880,7 @@ const trainerDataFieldNames = [
   classBallIdFieldName,
   battleTypeFieldName,
   ...trainerItemFieldNames,
+  trainerCanTerastallizeFieldName,
   healFieldName,
   moneyFieldName,
   giftFieldName
@@ -10981,6 +10983,20 @@ function SelectedTrainerPanel({
               <dt>Class ball scope</dt>
               <dd>{trainer.classBallScope}</dd>
             </div>
+            {contextualTrainerFields.some(
+              (field) => field.field === trainerCanTerastallizeFieldName
+            ) ? (
+              <>
+                <div>
+                  <dt>Can Terastallize</dt>
+                  <dd>{trainer.canTerastallize ? 'Yes' : 'No'}</dd>
+                </div>
+                <div>
+                  <dt>Tera target</dt>
+                  <dd>{trainer.teraTarget}</dd>
+                </div>
+              </>
+            ) : null}
             <div>
               <dt>Data layer</dt>
               <dd>{formatSourceLayer(trainer.provenance.sourceLayer)}</dd>
@@ -11842,6 +11858,10 @@ function getTrainerDataFieldGroup(field: TrainerEditableField) {
     field.field === battleTypeFieldName
   ) {
     return 'Trainer Setup';
+  }
+
+  if (field.field === trainerCanTerastallizeFieldName) {
+    return 'Terastallization';
   }
 
   if (trainerItemFieldNames.includes(field.field as (typeof trainerItemFieldNames)[number])) {
@@ -17365,8 +17385,8 @@ function EncountersSection({
                   role="row"
                   type="button"
                 >
-                  <span role="cell">{tableRow.table.location}</span>
-                  <span role="cell">{tableRow.table.gameVersion}</span>
+                  <span role="cell">{tableRow.location}</span>
+                  <span role="cell">{tableRow.gameVersion}</span>
                   <span role="cell">{tableRow.areaLabel}</span>
                 </button>
               ))}
@@ -17612,14 +17632,12 @@ function SelectedEncounterPanel({
               <dt>Location</dt>
               <dd>{table.location}</dd>
             </div>
-            <div>
-              <dt>Table</dt>
-              <dd>
-                {svEncounterFacets
-                  ? formatSvEncounterTableSummary(svEncounterFacets)
-                  : table.tableId}
-              </dd>
-            </div>
+            {!svEncounterFacets ? (
+              <div>
+                <dt>Table</dt>
+                <dd>{table.tableId}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>Archive member</dt>
               <dd>{table.archiveMember}</dd>
@@ -17639,7 +17657,7 @@ function SelectedEncounterPanel({
           </dl>
 
           {isSvEncounterTable ? (
-            <SvEncounterFacetNavigator
+            <SvEncounterConditionBrowser
               onSelectTable={onSelectTable}
               table={table}
               tables={tables}
@@ -17786,8 +17804,8 @@ function SelectedEncounterPanel({
                 </div>
                 {isSvEncounterTable && displayedEncounterSlots.length === 1 ? (
                   <p className="empty-copy sv-encounter-slot-note">
-                    One row matches this exact S/V filter. Change area, terrain, time, biome,
-                    or flag to inspect adjacent encounter rows.
+                    This exact S/V condition row has one slot. Use the condition browser above to
+                    inspect adjacent rows for this location.
                   </p>
                 ) : null}
 
@@ -17810,12 +17828,16 @@ function SelectedEncounterPanel({
                   </div>
                   <div>
                     <dt>{isSvEncounterTable ? 'Lot weight' : 'Probability'}</dt>
-                    <dd>
-                      {isSvEncounterTable
-                        ? formatEncounterLotWeight(encounterSlot.weight, encounterWeightTotal)
-                        : encounterSlot.weight}
-                    </dd>
+                    <dd>{encounterSlot.weight}</dd>
                   </div>
+                  {isSvEncounterTable ? (
+                    <div>
+                      <dt title="Calculated from this slot's lot weight divided by the selected condition row's total lot weight.">
+                        Share in row
+                      </dt>
+                      <dd>{formatEncounterLotShare(encounterSlot.weight, encounterWeightTotal)}</dd>
+                    </div>
+                  ) : null}
                   {isSvEncounterTable ? (
                     <div>
                       <dt
@@ -18000,7 +18022,7 @@ function SelectedEncounterPanel({
   );
 }
 
-function SvEncounterFacetNavigator({
+function SvEncounterConditionBrowser({
   onSelectTable,
   table,
   tables
@@ -18009,40 +18031,66 @@ function SvEncounterFacetNavigator({
   table: EncounterTableRecord;
   tables: EncounterTableRecord[];
 }) {
-  const facets = parseSvEncounterFacets(table);
-  const controls = useMemo(() => buildSvEncounterFacetControls(table, tables), [table, tables]);
+  const conditionRows = useMemo(
+    () => buildSvEncounterConditionRows(table, tables),
+    [table, tables]
+  );
+  const selectedRow =
+    conditionRows.find((row) => row.tableId === table.tableId) ?? conditionRows[0] ?? null;
 
-  if (!facets) {
+  if (!selectedRow) {
     return null;
   }
 
   return (
-    <section className="sv-encounter-navigator" aria-label="Scarlet/Violet encounter filters">
-      {controls.length > 0 ? (
-        <div className="sv-encounter-selector-grid">
-          {controls.map((control) => (
-            <label className="path-field sv-encounter-selector" key={control.key}>
-              <span>{control.label}</span>
-              <select
-                aria-label={control.label}
-                onChange={(event) => {
-                  const tableId = event.target.value;
-                  if (tableId.length > 0 && tableId !== table.tableId) {
-                    onSelectTable(tableId);
-                  }
-                }}
-                value={table.tableId}
-              >
-                {control.choices.map((choice) => (
-                  <option key={`${control.key}:${choice.value}`} value={choice.tableId}>
-                    {choice.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
+    <section className="sv-encounter-browser" aria-label="Scarlet/Violet encounter conditions">
+      <div className="sv-encounter-browser-summary">
+        <span>{conditionRows.length} condition rows in this location</span>
+        <span>
+          {selectedRow.slotCount} {selectedRow.slotCount === 1 ? 'slot' : 'slots'} in the
+          selected row
+        </span>
+        <span>Lot weights are relative inside the selected row</span>
+      </div>
+
+      <div className="sv-encounter-condition-table" role="table" aria-label="S/V condition rows">
+        <div className="sv-encounter-condition-row sv-encounter-condition-heading" role="row">
+          <span role="columnheader">Area</span>
+          <span role="columnheader">Game</span>
+          <span role="columnheader">Terrain</span>
+          <span role="columnheader">Time</span>
+          <span role="columnheader">Biome</span>
+          <span role="columnheader">Flag</span>
+          <span role="columnheader">Slots</span>
+          <span role="columnheader">Total weight</span>
         </div>
-      ) : null}
+        {conditionRows.map((row) => (
+          <button
+            aria-pressed={row.tableId === table.tableId}
+            className={`sv-encounter-condition-row ${
+              row.tableId === table.tableId ? 'sv-encounter-condition-row-selected' : ''
+            }`}
+            key={row.tableId}
+            onClick={() => {
+              if (row.tableId !== table.tableId) {
+                onSelectTable(row.tableId);
+              }
+            }}
+            role="row"
+            title={row.label}
+            type="button"
+          >
+            <span role="cell">{row.area}</span>
+            <span role="cell">{row.gameVersion}</span>
+            <span role="cell">{row.terrain}</span>
+            <span role="cell">{row.time}</span>
+            <span role="cell">{row.biome}</span>
+            <span role="cell">{row.flag}</span>
+            <span role="cell">{row.slotCount}</span>
+            <span role="cell">{row.totalWeight}</span>
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
@@ -25691,12 +25739,7 @@ function buildEncounterTableRows(
   selectedTable: EncounterTableRecord | null
 ): EncounterTableListRow[] {
   if (tables.some(isScarletVioletEncounterTable)) {
-    return tables.map((table) => ({
-      areaLabel: formatSvEncounterTableListDetails(table),
-      table,
-      tableIds: [table.tableId],
-      zoneKey: getEncounterTableZoneKey(table)
-    }));
+    return buildSvEncounterLocationRows(tables, selectedTable);
   }
 
   const tablesByZoneKey = new Map<string, EncounterTableRecord[]>();
@@ -25719,6 +25762,8 @@ function buildEncounterTableRows(
 
     return {
       areaLabel,
+      gameVersion: table.gameVersion,
+      location: table.location,
       table,
       tableIds: groupTables.map((groupTable) => groupTable.tableId),
       zoneKey
@@ -25881,7 +25926,7 @@ function getEncounterTableGroupKey(table: EncounterTableRecord) {
 
 function getEncounterTableZoneKey(table: EncounterTableRecord) {
   if (isScarletVioletEncounterTable(table)) {
-    return `sv:${table.tableId}`;
+    return getSvEncounterLocationKey(table);
   }
 
   return [table.gameVersion, table.location].join(':');
@@ -26516,6 +26561,8 @@ function getEditableTrainerFieldValue(trainer: TrainerRecord, field: string) {
       return trainer.itemIds[3] ?? null;
     case aiFlagsFieldName:
       return trainer.aiFlags;
+    case trainerCanTerastallizeFieldName:
+      return trainer.canTerastallize ? 1 : 0;
     case healFieldName:
       return trainer.heal ? 1 : 0;
     case moneyFieldName:
@@ -27309,6 +27356,8 @@ type EncounterConditionTab = {
 
 type EncounterTableListRow = {
   areaLabel: string;
+  gameVersion: string;
+  location: string;
   table: EncounterTableRecord;
   tableIds: string[];
   zoneKey: string;
@@ -28007,6 +28056,7 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     aiFlags: 'Battle AI behavior bitmask. Use the named AI flag checkboxes when they are shown.',
     canDynamax: 'Whether this Pokemon is allowed to Dynamax in trainer battles.',
     canGigantamax: 'Whether this Pokemon can use its Gigantamax form when eligible.',
+    [trainerCanTerastallizeFieldName]: 'S/V trainer-level flag that allows the trainer to Terastallize. The target comes from party Pokemon with a fixed Tera type.',
     dynamaxLevel: 'Dynamax level. Valid game values are 0 through 10.',
     effectSequence: 'Raw battle effect script/sequence ID. This controls special behavior and is not fully mapped yet.',
     [itemFieldFlagsFieldName]: 'Unknown raw item field flags. Visible for research, locked from editing until the bits are mapped.',

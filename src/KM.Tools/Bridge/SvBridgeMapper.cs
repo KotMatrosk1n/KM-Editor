@@ -467,6 +467,8 @@ public static class SvBridgeMapper
             trainer.Items,
             trainer.AiFlags,
             trainer.AiFlagStates.Select(ToDto).ToArray(),
+            trainer.CanTerastallize,
+            trainer.TeraTarget,
             trainer.Heal,
             trainer.Money,
             trainer.Gift,

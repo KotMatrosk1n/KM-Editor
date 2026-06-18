@@ -130,7 +130,7 @@ internal sealed class SvItemsWorkflowService
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.ItemDataArray);
             tmCatalog = SvTechnicalMachineCatalog.Read(source.Bytes, labels).ToArray();
-            items = LoadRecords(source, labels).ToArray();
+            items = LoadRecords(source, labels, tmCatalog).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -154,9 +154,13 @@ internal sealed class SvItemsWorkflowService
             diagnostics);
     }
 
-    private static IEnumerable<SvItemRecord> LoadRecords(SvWorkflowFile source, SvTextLabelLookup labels)
+    private static IEnumerable<SvItemRecord> LoadRecords(
+        SvWorkflowFile source,
+        SvTextLabelLookup labels,
+        IReadOnlyList<SvTechnicalMachineMove> tmCatalog)
     {
         var table = global::ItemDataArray.GetRootAsItemDataArray(new ByteBuffer(source.Bytes));
+        var tmCatalogByItemId = tmCatalog.ToDictionary(tm => tm.ItemId);
         for (var index = 0; index < table.ValuesLength; index++)
         {
             var item = table.Values(index);
@@ -165,13 +169,18 @@ internal sealed class SvItemsWorkflowService
                 continue;
             }
 
-            yield return ToRecord(item.Value, source, labels);
+            yield return ToRecord(item.Value, source, labels, tmCatalogByItemId);
         }
     }
 
-    private static SvItemRecord ToRecord(global::ItemData item, SvWorkflowFile source, SvTextLabelLookup labels)
+    private static SvItemRecord ToRecord(
+        global::ItemData item,
+        SvWorkflowFile source,
+        SvTextLabelLookup labels,
+        IReadOnlyDictionary<int, SvTechnicalMachineMove> tmCatalogByItemId)
     {
         var machineMoveId = (int)item.MachineWaza;
+        var machine = tmCatalogByItemId.GetValueOrDefault(item.Id);
         var metadata = new SvItemMetadata(
             (int)item.FieldPocket,
             PouchFlags: 0,
@@ -202,7 +211,7 @@ internal sealed class SvItemsWorkflowService
             item.WorkFriendly1,
             item.WorkFriendly2,
             item.WorkFriendly3,
-            MachineSlot: SvTechnicalMachineCatalog.IsTechnicalMachine(item) && machineMoveId > 0 ? item.GroupID : null,
+            MachineSlot: machine?.Slot,
             MachineMoveId: machineMoveId > 0 ? machineMoveId : null,
             MachineMoveName: machineMoveId > 0 ? labels.Move(machineMoveId) : null);
 
@@ -287,7 +296,12 @@ internal sealed class SvItemsWorkflowService
 
         foreach (var tm in tmCatalog)
         {
-            options.TryAdd(tm.Slot, $"{tm.Slot.ToString(CultureInfo.InvariantCulture)} {tm.Label}");
+            if (tm.GroupId > 0)
+            {
+                options.TryAdd(
+                    tm.GroupId,
+                    $"{tm.GroupId.ToString(CultureInfo.InvariantCulture)} {tm.Label}");
+            }
         }
 
         foreach (var group in items

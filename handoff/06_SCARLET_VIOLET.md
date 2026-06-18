@@ -52,11 +52,15 @@ Implemented S/V editor backend support:
   - Evolution method options now include named S/V condition IDs through `61`, including 1000-step evolutions, Finizen/Union Circle, Maushold form split, Gholdengo coins, Kingambit leader wins, Rage Fist uses, Dudunsparce Hyper Drill split, Basculegion recoil split, and the species-specific regional/Hisuian evolution rule.
   - Evolution argument options map known item, move, species, type, and fixed S/V value arguments where the condition kind is understood. The Gen 9 fixed-value cases currently name 1000-step evolutions, Gholdengo coins, Kingambit leader wins, Rage Fist uses, Basculegion recoil damage, and the condition 61 species-specific regional/Hisuian rules.
   - Supports personal scalar fields, evolutions, learnsets, and current compatibility-vector removal/toggle behavior.
+  - TM compatibility is resolved through the S/V item table, not the raw compatibility vector labels. Real TM records must have the S/V TM item shape and a localized `TM###` item name. This filters out legacy move-record rows such as `TM00` / Mega Punch and prevents fake public numbers such as `TM1230` or `TM2160`.
+  - The public TM number comes from the localized item name, so `TM100+` records are supported even when their raw `GroupID` is `0`.
   - Applies by writing loose `romfs/avalon/data/personal_array.bin` and patched `romfs/arc/data.trpfd`.
 - Items:
   - Loads `world/data/item/itemdata/itemdata_array.bin`.
   - Loads English item and TM/move labels from `message/dat/English/common/itemname.dat` and `wazaname.dat`.
   - Editable item fields now use S/V generated enum dropdowns for field pocket, field function, item type, and item group. TM move assignment uses the S/V English move table.
+  - Item `MachineSlot` is the public `TM###` number derived from the localized item name. `GroupID` stays the raw item data field and should not be treated as the TM number.
+  - TM move editing is only enabled for rows recognized as real S/V TM item records. Non-TM rows with a raw move id remain locked.
   - Supports item prices, pouch/type/sort/group fields, field function fields, Pokemon-use flag, EV/heal/PP/friendship fields, and TM move assignment.
   - S/V battle boost/work fields are intentionally not exposed yet because the shared Items panel interprets SwSh boost fields as packed nibbles while S/V stores them as separate FlatBuffer values.
   - Applies by writing loose `romfs/world/data/item/itemdata/itemdata_array.bin` and patched `romfs/arc/data.trpfd`.
@@ -66,6 +70,8 @@ Implemented S/V editor backend support:
   - Trainer Pokemon species, held items, and moves use the same S/V English label lookup as the Pokemon and Items workflows.
   - The S/V trainer editable field list now supplies dropdown/search options for species, held item, moves, gender, ability mode, nature, battle type, shiny mode, and Tera type instead of raw numeric inputs.
   - Trainer Pokemon form dropdowns use the currently drafted species value, so changing species updates contextual form options before saving.
+  - AI flag descriptions are now informative enough for mouseover/tooltips and inline text instead of one-word labels.
+  - Trainer Terastallization uses the real S/V fields currently identified: trainer-level `ChangeGem` means the trainer can Terastallize, and each party Pokemon has its own `GemType`. No separate trainer Tera slot field has been found. The desktop shows `Can Terastallize` and a derived `Tera target` summary from party slots with fixed Tera types.
   - Supports trainer battle type, money rate, AI flags, S/V flags, and existing trainer Pokemon slot fields including species/form/level/item/moves/EVs/IVs/shiny/Tera type.
   - Trainer Pokemon records carry nullable `TeraType` / `TeraTypeLabel` through the shared trainer DTO. SwSh records default those fields to null, and S/V only shows the field because `KM.SV` advertises `teraType` in its editable field list.
   - Applies by writing loose `romfs/world/data/trainer/trdata/trdata_array.bin` and patched `romfs/arc/data.trpfd`.
@@ -76,7 +82,8 @@ Implemented S/V editor backend support:
   - Known internal location aliases are mapped for `loc_desert_east/west`, `loc_lake_east/south`, `loc_snowymountain_01`, `a_d1108`, Area Zero field/cave ids, and `subarea_area18forest`. `a_d1202` is labeled as `Glaseado Cave (a_d1202)` until a better official subarea name is confirmed.
   - Biome display corrects known generated enum rough edges such as `OSEAN` -> `Ocean`, `CAVE_WATER` -> `Cave Water`, and `DENKI_ISHI` -> `Electric Stone`.
   - S/V grouping now uses S/V table-level encounter dimensions instead of SwSh-style `location:area` only: location, area, version table, land/water/air flags, time table, biome names, and flags. Per-species biome weights, height, band/outbreak data, and voice classification stay on the slot context so they do not split normal multi-Pokemon encounter tables into one-slot tables.
-  - The shared desktop Wild Encounters panel now has an S/V-specific rendering path: S/V tables are listed individually instead of collapsing into one huge location row, and the selected encounter uses compact facet selectors for version/area/terrain/time/biome/flags rather than the SwSh Symbol/Hidden/weather tab wall.
+  - The shared desktop Wild Encounters panel now has an S/V-specific rendering path. The left table condenses rows by display location while preserving all area/table ids under the selected row.
+  - The selected S/V encounter uses a condition browser instead of SwSh Symbol/Hidden/weather tabs or S/V facet dropdowns. It lists every valid row for the selected location with area, game, terrain, time, biome, flag, slot count, and total lot weight, and clicking a row selects the exact editable encounter table.
   - A deeper S/V-native encounter screen remains future work, especially for add/remove workflows and any still-unconfirmed subarea aliases.
   - Wild species editing uses S/V English species dropdown options, and the form dropdown uses the currently drafted species value.
   - Supports species, form, probability/lot value, minimum level, and maximum level.
@@ -218,6 +225,14 @@ Validation so far:
   - Fresh executable launched from the temp target; observed process `km-editor-desktop` PID `49400`.
 - S/V basic editor view exposure validation on 2026-06-17:
   - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "ScarletVioletBridgeTests|SvModMergerWorkflowServiceTests" --logger "console;verbosity=minimal"` passed: 7/7.
+  - S/V TM live check against the current local Scarlet RomFS found public TM slots `TM001` through `TM099`, with `TM001 Take Down`, no Tackle TM entry, and no fake `TM1230` / `TM2160` entries. The current local `DLCromfs` folder only contained `keyfile.dat`, so DLC `TM100+` item records were not present in that live path; synthetic bridge coverage verifies `TM100` works when the data is present.
+- S/V trainer and encounter UI cleanup validation on 2026-06-17:
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "ScarletVioletBridgeTests" --logger "console;verbosity=minimal"` passed: 10/10.
+  - `npm --prefix apps/desktop run test:run -- src/svEncounterTables.test.ts --testTimeout=30000` passed: 1/1.
+  - `npm --prefix apps/desktop run typecheck` passed.
+  - `npm --prefix apps/desktop run test:run -- src/App.test.tsx --testTimeout=30000` passed: 87/87.
+  - `dotnet build KM.Editor.slnx --no-restore --nologo` passed.
+  - Live trainer check against the current local Scarlet RomFS loaded 756 trainers; 113 have `CanTerastallize`, and examples such as Penny and Geeta derive Slot 6 targets from party Pokemon with fixed Tera types.
   - `npm --prefix apps/desktop run test:run -- src/App.test.tsx -t "Scarlet/Violet|game before showing|workflow categories" --testTimeout=30000` passed: 3/87.
   - `pnpm --filter @km-editor/desktop typecheck` passed.
   - `npm --prefix apps/desktop run test:run -- src/App.test.tsx --testTimeout=30000` passed: 87/87.
@@ -320,8 +335,7 @@ Validation so far:
     - Exact S/V field behavior still belongs in `Field function`; toggling `Can use on Pokemon` only clears field use or assigns a recover-style function when no function exists.
   - Wild Encounters:
     - Wild tables are filtered by selected game: Scarlet hides Violet-only rows, Violet hides Scarlet-only rows, and both-version rows remain visible for both.
-    - S/V encounter facet/selector controls are horizontally oriented with overflow instead of a tall vertical stack.
-    - Follow-up UI correction: the S/V encounter facet/selector controls must span the full selected encounter inspector width and use responsive grid columns, not a narrow scrollable block.
+    - S/V encounter condition controls were moved away from a tall vertical stack; the later condition-browser pass supersedes the temporary facet selector layout.
   - Validation:
     - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter ScarletVioletBridgeTests --logger "console;verbosity=minimal"` passed: 10/10.
     - `npm --prefix apps\desktop run test:run -- src\App.test.tsx --testTimeout=30000` passed: 87/87.
@@ -341,7 +355,7 @@ Validation so far:
     - Editing any trainer move on a DEFAULT row converts that Pokemon to `WazaType.MANUAL` and seeds the other move slots from the same derived moves before applying the user's change, so a single move edit does not erase the rest of the battle moves.
   - Wild Encounters:
     - S/V table grouping no longer includes per-species biome lot weights, height, band/outbreak metadata, or voice classification. Those values are shown as S/V slot conditions instead.
-    - The duplicate read-only facet cards above the dropdowns were removed; the remaining S/V selectors use the full inspector width.
+    - The duplicate read-only facet cards above the temporary dropdown layout were removed; the later condition-browser pass supersedes the remaining selector layout.
     - S/V slot cards show the Pokemon species ID (`#197 Umbreon`) rather than the table slot index (`#0 Umbreon`).
     - The editable S/V probability field is now labeled `Chance (%)`.
     - `Band group` means linked/group spawn metadata (`Bandrate`, `Bandtype`, optional band species/form/sex). `Voice class` is the row's `PokeVoiceClassification` internal S/V behavior/voice category.
@@ -373,9 +387,9 @@ Validation so far:
   - Wild Encounters:
     - S/V `Lotvalue` is now treated and labeled as a relative lot weight, not a percentage that must sum to 100.
     - The selected encounter header now says `Total lot weight` for S/V; SwSh still uses `Total chance`.
-    - S/V slot cards show `lot N`; selected slot details show `Lot weight` plus its approximate share inside the currently selected filter group.
+    - S/V slot cards show `lot N`; selected slot details show `Lot weight` plus its approximate share inside the currently selected condition row.
     - S/V displays all slots in the selected table instead of truncating to ten. SwSh keeps the existing ten-slot display behavior.
-    - One-slot S/V tables now display a compact note that only one row matches the exact selected area/terrain/time/biome/flag filter, so users know to change facets to inspect adjacent rows.
+    - One-slot S/V tables now display a compact note that only one slot exists in the exact selected condition row, so users know to use the condition browser to inspect adjacent rows.
     - Real Scarlet 4.0.0 bridge smoke with Scarlet selected showed 292 encounter tables after version filtering, 214 one-slot tables, and table lot-weight totals ranging from 1 to 477. These totals are expected S/V data, not validation errors.
   - Availability research:
     - Nintendo's DLC support page says The Hidden Treasure of Area Zero adds two areas and over 230 familiar Pokemon not previously in Scarlet/Violet.
@@ -385,11 +399,22 @@ Validation so far:
     - `pnpm --filter @km-editor/desktop typecheck` passed.
     - `npm --prefix apps/desktop run test:run -- src/App.test.tsx --testTimeout=30000` passed: 87/87 after rerunning with a larger tool timeout.
     - `dotnet test tests\KM.SwSh.Tests\KM.SwSh.Tests.csproj --no-restore --filter "FullyQualifiedName~Pokemon|FullyQualifiedName~Trainers|FullyQualifiedName~Items|FullyQualifiedName~Encounters" --logger "console;verbosity=minimal"` passed: 148/148.
+- S/V wild encounter condition-browser checkpoint on 2026-06-17:
+  - Desktop S/V encounter helpers now group the left encounter list by display location and build a scoped condition-row table from all S/V tables in the selected location.
+  - The selected encounter panel shows an `S/V condition rows` table with area, game, terrain, time, biome, flag, slots, and total weight. This avoids invalid dropdown combinations because every row is a real S/V encounter table.
+  - S/V lot weights remain raw editable weights. The UI separately displays calculated share percentages by dividing each slot's lot weight by the selected condition row's total lot weight.
+  - Validation:
+    - `npm --prefix apps/desktop run test:run -- src/svEncounterTables.test.ts src/svEncountersUi.test.tsx` passed: 3/3.
+    - `npm --prefix apps/desktop run typecheck` passed.
+    - `npm --prefix apps/desktop run test:run -- src/App.test.tsx src/svEncountersUi.test.tsx src/svEncounterTables.test.ts` passed: 90/90.
+    - `npm --prefix apps/desktop run build` passed with the existing large-chunk warning.
+    - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "ScarletVioletBridgeTests" --logger "console;verbosity=minimal" -p:UseSharedCompilation=false` passed: 10/10.
+    - `dotnet test tests\KM.SwSh.Tests\KM.SwSh.Tests.csproj --no-restore --filter "FullyQualifiedName~Pokemon|FullyQualifiedName~Trainers|FullyQualifiedName~Items|FullyQualifiedName~Encounters" --logger "console;verbosity=minimal" -p:UseSharedCompilation=false` passed: 153/153.
 
 Next steps:
 
 - Add targeted unit tests inside a future `KM.SV.Tests` project if S/V domain services grow beyond bridge-level coverage.
-- Keep improving S/V Wild Encounters toward a native editor: better filter combinations, slot add/remove behavior, and clearer handling of outbreak/band/voice dimensions.
+- Keep improving S/V Wild Encounters toward a native editor: slot add/remove behavior, better area/subarea labels, and clearer handling of outbreak/band/voice dimensions.
 - Add an Oodle smoke test only if the test environment intentionally supports the bundled DLL.
 - Add a real rar fixture or local archive smoke if we want format-specific RAR coverage beyond SharpCompress-backed intake.
 - Expand non-TM Pokemon compatibility support beyond current vector-preserving/removal behavior if the UI needs arbitrary insert/add workflows for Egg Moves or Reminder Moves.
