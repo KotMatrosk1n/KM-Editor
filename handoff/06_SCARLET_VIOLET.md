@@ -32,6 +32,8 @@ Current implementation state:
 - `Google.FlatBuffers` is added to `KM.Formats` and `KM.SV`.
 - `tests/KM.Formats.Tests` also references `Google.FlatBuffers` for synthetic S/V archive fixtures.
 - `KM.SV` is a separate project for S/V workflow/edit support and is referenced by `KM.Tools` and integration tests.
+- `KM.SV` must stay independent from `KM.SwSh`: do not add a `ProjectReference` to `KM.SwSh`, do not import `KM.SwSh.*` namespaces, and do not reuse SwSh workflow/edit DTO records or field-constant services from S/V code. Add S/V-owned records/constants/mappers under `KM.SV` instead.
+- The only current `SwSh` text inside `KM.SV` is `KM.Formats.SwSh` usage in `SvTextLabelLookup` for compatible message/AHTB parsing. That is a low-level file-format parser dependency through `KM.Formats`, not a dependency on the SwSh editor project.
 - `KM.SV` is organized with nested folders/namespaces: `Data`, `Workflows`, `Pokemon`, `Items`, `Trainers`, `Encounters`, and `ModMerger`.
 - New S/V editors should get their own domain folder and nested namespace when they become real workflow/editor code. For example, future S/V raid work should live under `src/KM.SV/Raids` with `KM.SV.Raids`, and future S/V trades should live under `src/KM.SV/Trades` with `KM.SV.Trades`.
 - Keep shared S/V plumbing in `Workflows` or `Data` only when it is genuinely cross-domain. Avoid adding new loose workflow files at the `src/KM.SV` project root.
@@ -73,7 +75,7 @@ Implemented S/V editor backend support:
   - Location display now falls back from explicit `LocationName` keys to area-id labels, so real Scarlet tables no longer display as `Unknown Location` when the encounter row only stores numeric area lists.
   - Known internal location aliases are mapped for `loc_desert_east/west`, `loc_lake_east/south`, `loc_snowymountain_01`, `a_d1108`, Area Zero field/cave ids, and `subarea_area18forest`. `a_d1202` is labeled as `Glaseado Cave (a_d1202)` until a better official subarea name is confirmed.
   - Biome display corrects known generated enum rough edges such as `OSEAN` -> `Ocean`, `CAVE_WATER` -> `Cave Water`, and `DENKI_ISHI` -> `Electric Stone`.
-  - S/V grouping now uses S/V encounter dimensions instead of SwSh-style `location:area` only: location, area, version table, land/water/air flags, time table, biome/lot values, flags, height, band/outbreak, and voice classification. This keeps unrelated rows from collapsing into one giant table.
+  - S/V grouping now uses S/V table-level encounter dimensions instead of SwSh-style `location:area` only: location, area, version table, land/water/air flags, time table, biome names, and flags. Per-species biome weights, height, band/outbreak data, and voice classification stay on the slot context so they do not split normal multi-Pokemon encounter tables into one-slot tables.
   - The shared desktop Wild Encounters panel now has an S/V-specific rendering path: S/V tables are listed individually instead of collapsing into one huge location row, and the selected encounter uses compact facet selectors for version/area/terrain/time/biome/flags rather than the SwSh Symbol/Hidden/weather tab wall.
   - A deeper S/V-native encounter screen remains future work, especially for add/remove workflows and any still-unconfirmed subarea aliases.
   - Wild species editing uses S/V English species dropdown options, and the form dropdown uses the currently drafted species value.
@@ -83,6 +85,7 @@ Implemented S/V editor backend support:
   - `items.load`, `pokemon.load`, `trainers.load`, and `encounters.load` route to `KM.SV` when the selected game is Scarlet/Violet.
   - The corresponding update commands and shared edit-session validate/plan/apply commands route to `KM.SV` for S/V projects.
   - `workflow.list` returns `items`, `pokemon`, `trainers`, `encounters`, and `modMerger` for S/V projects.
+  - S/V workflow and edit responses map through `SvBridgeMapper`; do not send S/V workflow records through `SwShBridgeMapper`.
 
 Implemented S/V Mod Merger support:
 
@@ -141,6 +144,23 @@ Important research notes:
 
 - S/V ordinary mods should write loose LayeredFS files and update `data.trpfd`; avoid rebuilding `data.trpfs` for normal editor workflows.
 - Current KM implementation patches `data.trpfd` in the lean runtime-facing style: overridden file hashes are removed from the active descriptor vectors. It does not add gftool's optional unused-file recovery metadata.
+- pkNX current upstream S/V support is still dump/schema/map-viewer oriented, not an editable S/V UI. Its README says Scarlet/Violet are only supported for dumping data, and issue #292 says the main GUI only launches Master Dump for S/V. Treat pkNX as a schema and relationship reference, not an implementation to copy.
+- pkNX exposes enough S/V field data for focused KM placement and behavior editors:
+  - Fixed symbol placement is the strongest first placement target. Relevant files are `world/scene/parts/field/streaming_event/{world,su1_world,su2_world}_fixed_placement_symbol_/*_{0,1}.trscn`, `world/data/field/fixed_symbol/fixed_symbol_table/fixed_symbol_table_array.bin`, `gem_symbol_lottery_table_array.bin`, `gem_symbol_setting/data.bin`, and `fixed_symbol_manager_data.bin`.
+  - Fixed symbol editable fields include table key, position through the scene point, species, form, level, sex, shiny/rare type, IV mode/value, move mode and four moves, ability mode, scale, Tera type, AI action, trigger action, behavior frequency, generation distances, first-generate flag, repop probability, generation pattern, and scenario requirement.
+  - Coin symbol placement is coordinate-backed for base Paldea via `world_coin_placement_symbol_0.trscn`; pkNX notes Scarlet and Violet data are identical for this. It exposes scene point name, first coin number, box label, position, and box encounter data through `eventBattlePokemon_array.bin`. DLC coin coverage still needs confirmation.
+  - Wild spawn point placement is viable as an S/V-native encounter point editor. Relevant point files are `encount_data_100000`, `encount_data_atlantis`, `encount_data_su1`, and `encount_data_su2`; point fields are position, level range, biome, substance, and area number.
+  - Outbreak point placement is viable after wild point support. Relevant files are `outbreak_point_main`, `outbreak_point_su1`, and `outbreak_point_su2`; fields are position, level range, biome, substance, area number, area name hash, and enable flags for land, water surface, underwater, air1, and air2.
+  - Area metadata can support the placement UI and some safer area editing. pkNX joins main/sub/inside/dungeon/location area tables with resident collision scenes for Paldea, Kitakami, and Terarium. AreaInfo fields include location names, BGM, environment/weather/light references, ride/fly/picnic/partner/spawn flags, encounter level min/max/adjust, base biome, tag, and biome override.
+  - Hidden item data exposed by pkNX is table/pool based rather than coordinate placement: item point biome weights, hidden item biome table ids, hidden item pool item/rate/count slots, rummaging category/pattern/items, and Pokemon drop item rate/count. Treat this as a loot table editor, not a true placement editor unless concrete scene points are found later.
+  - Pokemon behavior editor is feasible as a species behavior/profile editor. Relevant files are `world/data/pokemon/pokemon_unique_path_data/*` and per-species paths referenced by those path tables. Safe fields include movement type by ground/water/sky, time-of-day basic action IDs, instinct action IDs, pop probabilities, weather reaction action IDs, object/player/Pokemon recognition distances and action IDs, sound recognition, battle reaction IDs, home range, allow suspend, evolution action, species time-zone modes, favorite Pokemon/object/place/hate place, grounding/swimming/floating behavior types, common motion/look-around/foot IK/water/altitude fields, and PokeObj collision/movement thresholds.
+  - General Trinity scene object editing is possible later because pkNX has Trinity scene, scene point, scene object, property sheet, and component schemas. Do not make this the first placement editor: many component payloads are recursive or still partly raw, and pkNX only dumps/views them.
+- Recommended KM path:
+  - Build an S/V placement domain in `src/KM.SV/Placement` that reads Trinity archive files through existing `SvWorkflowFileSource` and exposes focused row models instead of raw Trinity trees.
+  - First editor should be `Fixed Symbol Placement`: join scene points to fixed symbol table rows by table key, resolve multi-spawner lottery keys, show derived area/location through Paldea collision data, and write both the fixed-symbol table and edited scene point coordinates.
+  - Second editor should be `Encounter Spawn Points`: edit point coordinates, level range, biome/substance/area number, and show computed matching encounter slots read-only at first. Add point insertion/removal only after round-trip and collision-derived area membership are proven.
+  - Third editor should be `Wild Pokemon Behavior`: expose named dropdowns for known enums and action IDs, keep very long action lists searchable, and keep unknown/raw fields behind an advanced guard until verified in game.
+  - Keep all S/V placement/behavior work isolated under `KM.SV`; do not reuse or extend SwSh Placement services for S/V because the file model and semantics are different.
 - High-priority virtual paths:
   - `avalon/data/personal_array.bin`
   - `avalon/data/waza_array.bin`
@@ -301,11 +321,36 @@ Validation so far:
   - Wild Encounters:
     - Wild tables are filtered by selected game: Scarlet hides Violet-only rows, Violet hides Scarlet-only rows, and both-version rows remain visible for both.
     - S/V encounter facet/selector controls are horizontally oriented with overflow instead of a tall vertical stack.
+    - Follow-up UI correction: the S/V encounter facet/selector controls must span the full selected encounter inspector width and use responsive grid columns, not a narrow scrollable block.
   - Validation:
     - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter ScarletVioletBridgeTests --logger "console;verbosity=minimal"` passed: 10/10.
     - `npm --prefix apps\desktop run test:run -- src\App.test.tsx --testTimeout=30000` passed: 87/87.
     - `dotnet test tests\KM.SwSh.Tests\KM.SwSh.Tests.csproj --no-restore --filter "FullyQualifiedName~Pokemon|FullyQualifiedName~Trainers|FullyQualifiedName~Items|FullyQualifiedName~Encounters" --logger "console;verbosity=minimal"` passed: 148/148.
     - Full `KM.SwSh.Tests` was attempted twice and timed out without reporting a failure; the focused SwSh editor subset above completed successfully.
+- S/V wild encounter full-width facet layout local build/open validation on 2026-06-17:
+  - `pnpm --filter @km-editor/desktop typecheck` passed.
+  - `npm --prefix apps\desktop run test:run -- src\App.test.tsx -t "Scarlet/Violet|Wild Encounters" --testTimeout=30000` passed: 1/87 selected.
+  - `npm --prefix apps\desktop run build` passed with the existing Vite large-chunk warning.
+  - `git diff --check -- apps\desktop\src\styles.css handoff\06_SCARLET_VIOLET.md` passed with only standard line-ending warnings.
+  - No-installer local exe build passed through Visual Studio Build Tools with fresh Cargo target `km-editor-tauri-target-sv-wild-layout-20260617` and `pnpm --dir apps/desktop exec tauri build --ci --no-bundle`.
+  - Fresh executable launched from the temp target; observed process `km-editor-desktop` PID `57728`.
+- S/V trainer moves and wild encounter grouping checkpoint on 2026-06-17:
+  - Trainers:
+    - `WazaType.DEFAULT` trainer Pokemon now display automatic battle moves derived from `avalon/data/personal_array.bin` level-up moves at the Pokemon's trainer level.
+    - DEFAULT rows with nonzero explicit move slots keep those explicit slots; automatic derivation is only used when all four explicit slots are empty.
+    - Editing any trainer move on a DEFAULT row converts that Pokemon to `WazaType.MANUAL` and seeds the other move slots from the same derived moves before applying the user's change, so a single move edit does not erase the rest of the battle moves.
+  - Wild Encounters:
+    - S/V table grouping no longer includes per-species biome lot weights, height, band/outbreak metadata, or voice classification. Those values are shown as S/V slot conditions instead.
+    - The duplicate read-only facet cards above the dropdowns were removed; the remaining S/V selectors use the full inspector width.
+    - S/V slot cards show the Pokemon species ID (`#197 Umbreon`) rather than the table slot index (`#0 Umbreon`).
+    - The editable S/V probability field is now labeled `Chance (%)`.
+    - `Band group` means linked/group spawn metadata (`Bandrate`, `Bandtype`, optional band species/form/sex). `Voice class` is the row's `PokeVoiceClassification` internal S/V behavior/voice category.
+  - Validation:
+    - `dotnet build src\KM.SV\KM.SV.csproj --no-restore --nologo -p:BuildProjectReferences=false` passed.
+    - `npm --prefix apps\desktop run test:run -- src\App.test.tsx --testTimeout=30000` passed: 87/87.
+    - `git diff --check -- src\KM.SV\Encounters\SvEncounterGrouping.cs src\KM.SV\Encounters\SvEncountersWorkflowService.cs src\KM.SV\Trainers\SvTrainerMoveResolver.cs src\KM.SV\Trainers\SvTrainersWorkflowService.cs src\KM.SV\Trainers\SvTrainersEditSessionService.cs apps\desktop\src\App.tsx apps\desktop\src\styles.css` passed with only standard line-ending warnings.
+    - Full `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "ScarletVioletBridgeTests"` and normal `dotnet build src\KM.SV\KM.SV.csproj --no-restore --nologo` are currently blocked before S/V validation by unrelated SwSh `NpcItemGift` compile errors in `KM.SwSh`.
+    - `pnpm --filter @km-editor/desktop typecheck` and `npm --prefix apps\desktop run build` are currently blocked by unrelated `npcItemGift` command/type errors in the desktop bridge contracts.
 
 Next steps:
 

@@ -3,8 +3,6 @@
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
-using KM.SwSh.Trainers;
-using KM.SwSh.Workflows;
 using KM.SV.Data;
 using KM.SV.Workflows;
 using System.Globalization;
@@ -15,28 +13,63 @@ internal sealed class SvTrainersWorkflowService
 {
     private const string WorkflowLabel = "Trainers";
     private const string WorkflowDescription = "Edit Scarlet/Violet trainer data and trainer Pokemon.";
+    public const string TrainerClassIdField = "trainerClassId";
+    public const string ClassBallIdField = "classBallId";
+    public const string BattleTypeField = "battleType";
+    public const string TrainerItem1IdField = "trainerItem1Id";
+    public const string TrainerItem2IdField = "trainerItem2Id";
+    public const string TrainerItem3IdField = "trainerItem3Id";
+    public const string TrainerItem4IdField = "trainerItem4Id";
+    public const string AiFlagsField = "aiFlags";
+    public const string HealField = "heal";
+    public const string MoneyField = "money";
+    public const string GiftField = "gift";
+    public const string SpeciesIdField = "speciesId";
+    public const string FormField = "form";
+    public const string LevelField = "level";
+    public const string HeldItemIdField = "heldItemId";
+    public const string Move1IdField = "move1Id";
+    public const string Move2IdField = "move2Id";
+    public const string Move3IdField = "move3Id";
+    public const string Move4IdField = "move4Id";
+    public const string GenderField = "gender";
+    public const string AbilityField = "ability";
+    public const string NatureField = "nature";
+    public const string EvHpField = "evHp";
+    public const string EvAttackField = "evAttack";
+    public const string EvDefenseField = "evDefense";
+    public const string EvSpecialAttackField = "evSpecialAttack";
+    public const string EvSpecialDefenseField = "evSpecialDefense";
+    public const string EvSpeedField = "evSpeed";
+    public const string IvHpField = "ivHp";
+    public const string IvAttackField = "ivAttack";
+    public const string IvDefenseField = "ivDefense";
+    public const string IvSpecialAttackField = "ivSpecialAttack";
+    public const string IvSpecialDefenseField = "ivSpecialDefense";
+    public const string IvSpeedField = "ivSpeed";
+    public const string ShinyField = "shiny";
     internal const string TeraTypeField = "teraType";
 
-    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BooleanOptions =
+    private static readonly IReadOnlyList<SvTrainerEditableFieldOption> BooleanOptions =
     [
         new(0, "No"),
         new(1, "Yes"),
     ];
 
-    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> BattleTypeOptions =
+    private static readonly IReadOnlyList<SvTrainerEditableFieldOption> BattleTypeOptions =
     [
         new(0, "1v1"),
         new(1, "2v2"),
     ];
 
-    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> GenderOptions =
+    private static readonly IReadOnlyList<SvTrainerEditableFieldOption> GenderOptions =
     [
         new(0, "Random"),
         new(1, "Male"),
         new(2, "Female"),
     ];
 
-    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> AbilityModeOptions =
+    private static readonly IReadOnlyList<SvTrainerEditableFieldOption> AbilityModeOptions =
     [
         new(0, "Random 1/2"),
         new(1, "Random 1/2/Hidden"),
@@ -45,7 +78,7 @@ internal sealed class SvTrainersWorkflowService
         new(4, "Hidden Ability"),
     ];
 
-    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> NatureOptions =
+    private static readonly IReadOnlyList<SvTrainerEditableFieldOption> NatureOptions =
     [
         new(0, "Default"),
         new(1, "Hardy (neutral)"),
@@ -75,13 +108,13 @@ internal sealed class SvTrainersWorkflowService
         new(25, "Quirky (neutral)"),
     ];
 
-    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> ShinyModeOptions =
+    private static readonly IReadOnlyList<SvTrainerEditableFieldOption> ShinyModeOptions =
     [
         new(0, "Default"),
         new(1, "Forced shiny"),
     ];
 
-    private static readonly IReadOnlyList<SwShTrainerEditableFieldOption> TeraTypeOptions =
+    private static readonly IReadOnlyList<SvTrainerEditableFieldOption> TeraTypeOptions =
     [
         new((int)global::GemType.DEFAULT, "Default"),
         new((int)global::GemType.RANDOM, "Random"),
@@ -106,32 +139,32 @@ internal sealed class SvTrainersWorkflowService
         new((int)global::GemType.NIJI, "Stellar"),
     ];
 
-    private static readonly IReadOnlyList<SwShTrainerEditableField> BaseEditableFields =
+    private static readonly IReadOnlyList<SvTrainerEditableField> BaseEditableFields =
     [
-        CreateField(SwShTrainersWorkflowService.BattleTypeField, "Battle type", 0, 1, BattleTypeOptions),
-        CreateField(SwShTrainersWorkflowService.MoneyField, "Money rate", sbyte.MinValue, sbyte.MaxValue),
-        CreateField(SwShTrainersWorkflowService.AiFlagsField, "AI flags", 0, byte.MaxValue),
+        CreateField(SvTrainersWorkflowService.BattleTypeField, "Battle type", 0, 1, BattleTypeOptions),
+        CreateField(SvTrainersWorkflowService.MoneyField, "Money rate", sbyte.MinValue, sbyte.MaxValue),
+        CreateField(SvTrainersWorkflowService.AiFlagsField, "AI flags", 0, byte.MaxValue),
         CreateField("isStrong", "Strong trainer", 0, 1, BooleanOptions, "boolean"),
         CreateField("changeGem", "Change Tera type", 0, 1, BooleanOptions, "boolean"),
-        CreateField(SwShTrainersWorkflowService.FormField, "Form", short.MinValue, short.MaxValue),
-        CreateField(SwShTrainersWorkflowService.LevelField, "Level", 0, 100),
-        CreateField(SwShTrainersWorkflowService.GenderField, "Gender", 0, 2, GenderOptions),
-        CreateField(SwShTrainersWorkflowService.AbilityField, "Ability mode", 0, 4, AbilityModeOptions),
-        CreateField(SwShTrainersWorkflowService.NatureField, "Nature", 0, 25, NatureOptions),
+        CreateField(SvTrainersWorkflowService.FormField, "Form", short.MinValue, short.MaxValue),
+        CreateField(SvTrainersWorkflowService.LevelField, "Level", 0, 100),
+        CreateField(SvTrainersWorkflowService.GenderField, "Gender", 0, 2, GenderOptions),
+        CreateField(SvTrainersWorkflowService.AbilityField, "Ability mode", 0, 4, AbilityModeOptions),
+        CreateField(SvTrainersWorkflowService.NatureField, "Nature", 0, 25, NatureOptions),
         CreateField(TeraTypeField, "Tera type", 0, 101, TeraTypeOptions),
-        CreateField(SwShTrainersWorkflowService.EvHpField, "HP EV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.EvAttackField, "Attack EV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.EvDefenseField, "Defense EV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.EvSpecialAttackField, "Sp. Atk EV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.EvSpecialDefenseField, "Sp. Def EV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.EvSpeedField, "Speed EV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.IvHpField, "HP IV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.IvAttackField, "Attack IV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.IvDefenseField, "Defense IV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.IvSpecialAttackField, "Sp. Atk IV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.IvSpecialDefenseField, "Sp. Def IV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.IvSpeedField, "Speed IV", 0, int.MaxValue),
-        CreateField(SwShTrainersWorkflowService.ShinyField, "Shiny mode", 0, 1, ShinyModeOptions),
+        CreateField(SvTrainersWorkflowService.EvHpField, "HP EV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.EvAttackField, "Attack EV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.EvDefenseField, "Defense EV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.EvSpecialAttackField, "Sp. Atk EV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.EvSpecialDefenseField, "Sp. Def EV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.EvSpeedField, "Speed EV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.IvHpField, "HP IV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.IvAttackField, "Attack IV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.IvDefenseField, "Defense IV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.IvSpecialAttackField, "Sp. Atk IV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.IvSpecialDefenseField, "Sp. Def IV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.IvSpeedField, "Speed IV", 0, int.MaxValue),
+        CreateField(SvTrainersWorkflowService.ShinyField, "Shiny mode", 0, 1, ShinyModeOptions),
     ];
 
     private readonly SvWorkflowFileSource fileSource;
@@ -141,32 +174,33 @@ internal sealed class SvTrainersWorkflowService
         this.fileSource = fileSource ?? new SvWorkflowFileSource();
     }
 
-    public SwShWorkflowSummary CreateSummary(OpenedProject project)
+    public SvWorkflowSummary CreateSummary(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
         return SvWorkflowSupport.CreateSummary(
             project,
-            SwShWorkflowIds.Trainers,
+            SvWorkflowIds.Trainers,
             WorkflowLabel,
             WorkflowDescription);
     }
 
-    public SwShTrainersWorkflow Load(OpenedProject project)
+    public SvTrainersWorkflow Load(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
         var diagnostics = new List<ValidationDiagnostic>();
         SvWorkflowFile? source = null;
         var labels = SvTextLabelLookup.None();
-        var trainers = Array.Empty<SwShTrainerRecord>();
+        var trainers = Array.Empty<SvTrainerRecord>();
 
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
             var abilityResolver = SvTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
+            var moveResolver = SvTrainerMoveResolver.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.TrainerDataArray);
-            trainers = LoadRecords(source, labels, abilityResolver).ToArray();
+            trainers = LoadRecords(source, labels, abilityResolver, moveResolver).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -177,26 +211,27 @@ internal sealed class SvTrainersWorkflowService
 
         var summary = SvWorkflowSupport.CreateSummary(
             project,
-            SwShWorkflowIds.Trainers,
+            SvWorkflowIds.Trainers,
             WorkflowLabel,
             WorkflowDescription,
             diagnostics.Count == 0 ? null : diagnostics);
 
-        return new SwShTrainersWorkflow(
+        return new SvTrainersWorkflow(
             summary,
             trainers,
             CreateEditableFields(labels),
-            new SwShTrainersWorkflowStats(
+            new SvTrainersWorkflowStats(
                 trainers.Length,
                 trainers.Sum(trainer => trainer.Team.Count),
                 source is null ? 0 : 1),
             diagnostics);
     }
 
-    private static IEnumerable<SwShTrainerRecord> LoadRecords(
+    private static IEnumerable<SvTrainerRecord> LoadRecords(
         SvWorkflowFile source,
         SvTextLabelLookup labels,
-        SvTrainerAbilityResolver abilityResolver)
+        SvTrainerAbilityResolver abilityResolver,
+        SvTrainerMoveResolver moveResolver)
     {
         var table = global::trainer.TrdataMainArray.GetRootAsTrdataMainArray(new ByteBuffer(source.Bytes));
         for (var index = 0; index < table.ValuesLength; index++)
@@ -207,24 +242,25 @@ internal sealed class SvTrainersWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, trainer.Value, source, labels, abilityResolver);
+            yield return ToRecord(index, trainer.Value, source, labels, abilityResolver, moveResolver);
         }
     }
 
-    private static SwShTrainerRecord ToRecord(
+    private static SvTrainerRecord ToRecord(
         int trainerId,
         global::trainer.TrdataMain trainer,
         SvWorkflowFile source,
         SvTextLabelLookup labels,
-        SvTrainerAbilityResolver abilityResolver)
+        SvTrainerAbilityResolver abilityResolver,
+        SvTrainerMoveResolver moveResolver)
     {
         var aiFlags = PackAiFlags(trainer);
-        var team = ReadTeam(trainer, labels, abilityResolver).ToArray();
+        var team = ReadTeam(trainer, labels, abilityResolver, moveResolver).ToArray();
         var aiStates = CreateAiStates(trainer);
         var className = labels.TrainerType(trainer.TrainerType);
         var name = labels.TrainerName(trainer.TrNameLabel, trainerId);
 
-        return new SwShTrainerRecord(
+        return new SvTrainerRecord(
             trainerId,
             name,
             TrainerClassId: 0,
@@ -244,7 +280,7 @@ internal sealed class SvTrainersWorkflowService
             CanEditClassBall: false,
             ClassBallScope: "none",
             team,
-            new SwShTrainerProvenance(
+            new SvTrainerProvenance(
                 source.RelativePath,
                 source.RelativePath,
                 ClassSourceFile: null,
@@ -256,10 +292,11 @@ internal sealed class SvTrainersWorkflowService
                 ClassFileState: null));
     }
 
-    private static IEnumerable<SwShTrainerPokemonRecord> ReadTeam(
+    private static IEnumerable<SvTrainerPokemonRecord> ReadTeam(
         global::trainer.TrdataMain trainer,
         SvTextLabelLookup labels,
-        SvTrainerAbilityResolver abilityResolver)
+        SvTrainerAbilityResolver abilityResolver,
+        SvTrainerMoveResolver moveResolver)
     {
         var slots = new[]
         {
@@ -279,24 +316,25 @@ internal sealed class SvTrainersWorkflowService
                 continue;
             }
 
-            yield return ToPokemon(index, pokemon.Value, labels, abilityResolver);
+            yield return ToPokemon(index, pokemon.Value, labels, abilityResolver, moveResolver);
         }
     }
 
-    private static SwShTrainerPokemonRecord ToPokemon(
+    private static SvTrainerPokemonRecord ToPokemon(
         int slot,
         global::PokeDataBattle pokemon,
         SvTextLabelLookup labels,
-        SvTrainerAbilityResolver abilityResolver)
+        SvTrainerAbilityResolver abilityResolver,
+        SvTrainerMoveResolver moveResolver)
     {
         var speciesId = (int)pokemon.DevId;
         var itemId = (int)pokemon.Item;
-        var moveIds = ReadMoves(pokemon);
+        var moveIds = ReadMoves(pokemon, moveResolver);
         var abilities = abilityResolver.Resolve(speciesId, pokemon.FormId);
         var abilityOptions = CreateAbilityModeOptions(abilities);
         var evs = pokemon.EffortValue;
         var ivs = pokemon.TalentValue;
-        var record = new SwShTrainerPokemonRecord(
+        var record = new SvTrainerPokemonRecord(
             slot,
             speciesId,
             labels.Pokemon(speciesId),
@@ -312,7 +350,7 @@ internal sealed class SvTrainersWorkflowService
             FormatAbilityMode(pokemon.Tokusei, abilities),
             (int)pokemon.Seikaku,
             FormatNature(pokemon.Seikaku),
-            new SwShTrainerPokemonStatsRecord(
+            new SvTrainerPokemonStatsRecord(
                 evs?.Hp ?? 0,
                 evs?.Atk ?? 0,
                 evs?.Def ?? 0,
@@ -321,7 +359,7 @@ internal sealed class SvTrainersWorkflowService
                 evs?.Agi ?? 0),
             DynamaxLevel: 0,
             CanGigantamax: false,
-            new SwShTrainerPokemonStatsRecord(
+            new SvTrainerPokemonStatsRecord(
                 ivs?.Hp ?? 0,
                 ivs?.Atk ?? 0,
                 ivs?.Def ?? 0,
@@ -339,15 +377,24 @@ internal sealed class SvTrainersWorkflowService
         return record;
     }
 
-    private static IReadOnlyList<int> ReadMoves(global::PokeDataBattle pokemon)
+    private static IReadOnlyList<int> ReadMoves(
+        global::PokeDataBattle pokemon,
+        SvTrainerMoveResolver moveResolver)
     {
-        return
-        [
+        var explicitMoves = new[]
+        {
             ReadMoveId(pokemon.Waza1),
             ReadMoveId(pokemon.Waza2),
             ReadMoveId(pokemon.Waza3),
             ReadMoveId(pokemon.Waza4),
-        ];
+        };
+
+        if (pokemon.WazaType == global::WazaType.DEFAULT && explicitMoves.All(move => move == 0))
+        {
+            return moveResolver.Resolve((int)pokemon.DevId, pokemon.FormId, pokemon.Level);
+        }
+
+        return explicitMoves;
     }
 
     private static int ReadMoveId(global::WazaSet? move)
@@ -367,7 +414,7 @@ internal sealed class SvTrainersWorkflowService
             | (trainer.AiChange ? 1 << 7 : 0);
     }
 
-    private static IReadOnlyList<SwShTrainerAiFlagState> CreateAiStates(global::trainer.TrdataMain trainer)
+    private static IReadOnlyList<SvTrainerAiFlagState> CreateAiStates(global::trainer.TrdataMain trainer)
     {
         var flags = new[]
         {
@@ -382,40 +429,40 @@ internal sealed class SvTrainersWorkflowService
         };
 
         return flags
-            .Select(flag => new SwShTrainerAiFlagState(flag.Item1, 1 << flag.Item1, flag.Item2, flag.Item3, flag.Item4))
+            .Select(flag => new SvTrainerAiFlagState(flag.Item1, 1 << flag.Item1, flag.Item2, flag.Item3, flag.Item4))
             .ToArray();
     }
 
-    private static IReadOnlyList<SwShTrainerEditableField> CreateEditableFields(SvTextLabelLookup labels)
+    private static IReadOnlyList<SvTrainerEditableField> CreateEditableFields(SvTextLabelLookup labels)
     {
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
         var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
         var moveOptions = CreateIndexedOptions(labels.MoveNameCount, labels.Move, includeNone: true);
-        var fields = new List<SwShTrainerEditableField>();
+        var fields = new List<SvTrainerEditableField>();
 
         foreach (var field in BaseEditableFields)
         {
-            if (field.Field == SwShTrainersWorkflowService.FormField)
+            if (field.Field == SvTrainersWorkflowService.FormField)
             {
-                fields.Add(CreateField(SwShTrainersWorkflowService.SpeciesIdField, "Species", 0, MaximumOptionValue(speciesOptions, ushort.MaxValue), speciesOptions));
+                fields.Add(CreateField(SvTrainersWorkflowService.SpeciesIdField, "Species", 0, MaximumOptionValue(speciesOptions, ushort.MaxValue), speciesOptions));
             }
 
             fields.Add(field);
 
-            if (field.Field == SwShTrainersWorkflowService.LevelField)
+            if (field.Field == SvTrainersWorkflowService.LevelField)
             {
-                fields.Add(CreateField(SwShTrainersWorkflowService.HeldItemIdField, "Held item", 0, MaximumOptionValue(itemOptions, int.MaxValue), itemOptions));
-                fields.Add(CreateField(SwShTrainersWorkflowService.Move1IdField, "Move 1", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
-                fields.Add(CreateField(SwShTrainersWorkflowService.Move2IdField, "Move 2", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
-                fields.Add(CreateField(SwShTrainersWorkflowService.Move3IdField, "Move 3", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
-                fields.Add(CreateField(SwShTrainersWorkflowService.Move4IdField, "Move 4", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
+                fields.Add(CreateField(SvTrainersWorkflowService.HeldItemIdField, "Held item", 0, MaximumOptionValue(itemOptions, int.MaxValue), itemOptions));
+                fields.Add(CreateField(SvTrainersWorkflowService.Move1IdField, "Move 1", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
+                fields.Add(CreateField(SvTrainersWorkflowService.Move2IdField, "Move 2", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
+                fields.Add(CreateField(SvTrainersWorkflowService.Move3IdField, "Move 3", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
+                fields.Add(CreateField(SvTrainersWorkflowService.Move4IdField, "Move 4", 0, MaximumOptionValue(moveOptions, ushort.MaxValue), moveOptions));
             }
         }
 
         return fields;
     }
 
-    private static IReadOnlyList<SwShTrainerEditableFieldOption> CreateIndexedOptions(
+    private static IReadOnlyList<SvTrainerEditableFieldOption> CreateIndexedOptions(
         int count,
         Func<int, string> resolveName,
         bool includeNone)
@@ -423,7 +470,7 @@ internal sealed class SvTrainersWorkflowService
         var firstValue = includeNone ? 0 : 1;
         if (count <= firstValue)
         {
-            return includeNone ? [new(0, "0 None")] : Array.Empty<SwShTrainerEditableFieldOption>();
+            return includeNone ? [new(0, "0 None")] : Array.Empty<SvTrainerEditableFieldOption>();
         }
 
         return Enumerable
@@ -431,7 +478,7 @@ internal sealed class SvTrainersWorkflowService
             .Select(value =>
             {
                 var label = value == 0 ? "None" : resolveName(value);
-                return new SwShTrainerEditableFieldOption(
+                return new SvTrainerEditableFieldOption(
                     value,
                     $"{value.ToString(CultureInfo.InvariantCulture)} {label}");
             })
@@ -439,27 +486,27 @@ internal sealed class SvTrainersWorkflowService
     }
 
     private static int MaximumOptionValue(
-        IReadOnlyList<SwShTrainerEditableFieldOption> options,
+        IReadOnlyList<SvTrainerEditableFieldOption> options,
         int fallback)
     {
         return options.Count == 0 ? fallback : options.Max(option => option.Value);
     }
 
-    private static SwShTrainerEditableField CreateField(
+    private static SvTrainerEditableField CreateField(
         string field,
         string label,
         int minimumValue,
         int maximumValue,
-        IReadOnlyList<SwShTrainerEditableFieldOption>? options = null,
+        IReadOnlyList<SvTrainerEditableFieldOption>? options = null,
         string valueKind = "integer")
     {
-        return new SwShTrainerEditableField(
+        return new SvTrainerEditableField(
             field,
             label,
             valueKind,
             minimumValue,
             maximumValue,
-            options ?? Array.Empty<SwShTrainerEditableFieldOption>());
+            options ?? Array.Empty<SvTrainerEditableFieldOption>());
     }
 
     internal static string FormatBattleType(global::trainer.BattleType value)
@@ -494,7 +541,7 @@ internal sealed class SvTrainersWorkflowService
             ?? SvLabels.EnumName(value);
     }
 
-    private static IReadOnlyList<SwShTrainerEditableFieldOption> CreateAbilityModeOptions(SvTrainerAbilitySet abilities)
+    private static IReadOnlyList<SvTrainerEditableFieldOption> CreateAbilityModeOptions(SvTrainerAbilitySet abilities)
     {
         return
         [

@@ -344,10 +344,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<ListWorkflowsRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var workflowList = IsScarletViolet(paths)
-            ? svWorkflowService.List(paths)
-            : swShWorkflowService.List(paths);
-        var response = SwShBridgeMapper.ToDto(workflowList);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.List(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.List(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -356,10 +355,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadItemsWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var workflow = IsScarletViolet(paths)
-            ? svWorkflowService.LoadItems(paths)
-            : swShWorkflowService.LoadItems(paths);
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadItems(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadItems(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -368,10 +366,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadPokemonWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var workflow = IsScarletViolet(paths)
-            ? svWorkflowService.LoadPokemon(paths)
-            : swShWorkflowService.LoadPokemon(paths);
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadPokemon(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadPokemon(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -383,20 +380,19 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var result = IsScarletViolet(paths)
-            ? svWorkflowService.UpdatePokemonField(
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.UpdatePokemonField(
                 paths,
                 session,
                 request.Payload.PersonalId,
                 request.Payload.Field,
-                request.Payload.Value)
-            : pokemonEditSessionService.UpdateField(
+                request.Payload.Value))
+            : SwShBridgeMapper.ToDto(pokemonEditSessionService.UpdateField(
                 paths,
                 session,
                 request.Payload.PersonalId,
                 request.Payload.Field,
-                request.Payload.Value);
-        var response = SwShBridgeMapper.ToDto(result);
+                request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -408,24 +404,23 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var result = IsScarletViolet(paths)
-            ? svWorkflowService.UpdatePokemonLearnset(
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDtoLearnsetUpdate(svWorkflowService.UpdatePokemonLearnset(
                 paths,
                 session,
                 request.Payload.PersonalId,
                 request.Payload.Action,
                 request.Payload.Slot,
                 request.Payload.MoveId,
-                request.Payload.Level)
-            : pokemonEditSessionService.UpdateLearnset(
+                request.Payload.Level))
+            : SwShBridgeMapper.ToDtoLearnsetUpdate(pokemonEditSessionService.UpdateLearnset(
                 paths,
                 session,
                 request.Payload.PersonalId,
                 request.Payload.Action,
                 request.Payload.Slot,
                 request.Payload.MoveId,
-                request.Payload.Level);
-        var response = SwShBridgeMapper.ToDtoLearnsetUpdate(result);
+                request.Payload.Level));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -437,8 +432,8 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var result = IsScarletViolet(paths)
-            ? svWorkflowService.UpdatePokemonEvolution(
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDtoEvolutionUpdate(svWorkflowService.UpdatePokemonEvolution(
                 paths,
                 session,
                 request.Payload.PersonalId,
@@ -448,8 +443,8 @@ public sealed class ProjectBridgeDispatcher
                 request.Payload.Argument,
                 request.Payload.Species,
                 request.Payload.Form,
-                request.Payload.Level)
-            : pokemonEditSessionService.UpdateEvolution(
+                request.Payload.Level))
+            : SwShBridgeMapper.ToDtoEvolutionUpdate(pokemonEditSessionService.UpdateEvolution(
                 paths,
                 session,
                 request.Payload.PersonalId,
@@ -459,8 +454,7 @@ public sealed class ProjectBridgeDispatcher
                 request.Payload.Argument,
                 request.Payload.Species,
                 request.Payload.Form,
-                request.Payload.Level);
-        var response = SwShBridgeMapper.ToDtoEvolutionUpdate(result);
+                request.Payload.Level));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -520,10 +514,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadTrainersWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var workflow = IsScarletViolet(paths)
-            ? svWorkflowService.LoadTrainers(paths)
-            : swShWorkflowService.LoadTrainers(paths);
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadTrainers(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadTrainers(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -535,22 +528,21 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var result = IsScarletViolet(paths)
-            ? svWorkflowService.UpdateTrainerField(
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateTrainerField(
                 paths,
                 session,
                 request.Payload.TrainerId,
                 request.Payload.Slot,
                 request.Payload.Field,
-                request.Payload.Value)
-            : trainersEditSessionService.UpdateField(
+                request.Payload.Value))
+            : SwShBridgeMapper.ToDto(trainersEditSessionService.UpdateField(
                 paths,
                 session,
                 request.Payload.TrainerId,
                 request.Payload.Slot,
                 request.Payload.Field,
-                request.Payload.Value);
-        var response = SwShBridgeMapper.ToDto(result);
+                request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -805,10 +797,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadEncountersWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var workflow = IsScarletViolet(paths)
-            ? svWorkflowService.LoadEncounters(paths)
-            : swShWorkflowService.LoadEncounters(paths);
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadEncounters(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadEncounters(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -820,22 +811,21 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var result = IsScarletViolet(paths)
-            ? svWorkflowService.UpdateEncounterSlotField(
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateEncounterSlotField(
                 paths,
                 session,
                 request.Payload.TableId,
                 request.Payload.Slot,
                 request.Payload.Field,
-                request.Payload.Value)
-            : encountersEditSessionService.UpdateSlotField(
+                request.Payload.Value))
+            : SwShBridgeMapper.ToDto(encountersEditSessionService.UpdateSlotField(
                 paths,
                 session,
                 request.Payload.TableId,
                 request.Payload.Slot,
                 request.Payload.Field,
-                request.Payload.Value);
-        var response = SwShBridgeMapper.ToDto(result);
+                request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1498,20 +1488,19 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var result = IsScarletViolet(paths)
-            ? svWorkflowService.UpdateItemField(
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateItemField(
                 paths,
                 session,
                 request.Payload.ItemId,
                 request.Payload.Field,
-                request.Payload.Value)
-            : itemsEditSessionService.UpdateField(
+                request.Payload.Value))
+            : SwShBridgeMapper.ToDto(itemsEditSessionService.UpdateField(
                 paths,
                 session,
                 request.Payload.ItemId,
                 request.Payload.Field,
-                request.Payload.Value);
-        var response = SwShBridgeMapper.ToDto(result);
+                request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1531,42 +1520,48 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<ValidateEditSessionRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var validation = IsScarletViolet(paths)
-            ? svWorkflowService.ValidateEditSession(paths, session)
-            : GetEditSessionDomain(session) switch
-            {
-                EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.Validate(paths, session),
-                EditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
-                EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.Validate(paths, session),
-                EditSessionDomain.BagHook => bagHookEditSessionService.Validate(paths, session),
-                EditSessionDomain.CatchCap => catchCapEditSessionService.Validate(paths, session),
-                EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.Validate(paths, session),
-                EditSessionDomain.ShinyRate => shinyRateEditSessionService.Validate(paths, session),
-                EditSessionDomain.TypeChart => typeChartEditSessionService.Validate(paths, session),
-                EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.Validate(paths, session),
-                EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.Validate(paths, session),
-                EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.Validate(paths, session),
-                EditSessionDomain.IvScreen => ivScreenEditSessionService.Validate(paths, session),
-                EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
-                EditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
-                EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.Validate(paths, session),
-                EditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
-                EditSessionDomain.Behavior => behaviorEditSessionService.Validate(paths, session),
-                EditSessionDomain.RaidBattles => raidBattlesEditSessionService.Validate(paths, session),
-                EditSessionDomain.RaidRewards => raidRewardsEditSessionService.Validate(paths, session),
-                EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.Validate(paths, session),
-                EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.Validate(paths, session),
-                EditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
-                EditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
-                EditSessionDomain.Text => textEditSessionService.Validate(paths, session),
-                EditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
-                EditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
-                EditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
-                EditSessionDomain.RoyalCandy => royalCandyEditSessionService.Validate(paths, session),
-                EditSessionDomain.StartingItems => startingItemsEditSessionService.Validate(paths, session),
-                EditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
-                _ => itemsEditSessionService.Validate(paths, session),
-            };
+        if (IsScarletViolet(paths))
+        {
+            var svValidation = svWorkflowService.ValidateEditSession(paths, session);
+            var svResponse = SvBridgeMapper.ToDto(svValidation);
+
+            return SerializeSuccess(svResponse, request.RequestId);
+        }
+
+        var validation = GetEditSessionDomain(session) switch
+        {
+            EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.Validate(paths, session),
+            EditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
+            EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.Validate(paths, session),
+            EditSessionDomain.BagHook => bagHookEditSessionService.Validate(paths, session),
+            EditSessionDomain.CatchCap => catchCapEditSessionService.Validate(paths, session),
+            EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.Validate(paths, session),
+            EditSessionDomain.ShinyRate => shinyRateEditSessionService.Validate(paths, session),
+            EditSessionDomain.TypeChart => typeChartEditSessionService.Validate(paths, session),
+            EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.Validate(paths, session),
+            EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.Validate(paths, session),
+            EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.Validate(paths, session),
+            EditSessionDomain.IvScreen => ivScreenEditSessionService.Validate(paths, session),
+            EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
+            EditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
+            EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.Validate(paths, session),
+            EditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
+            EditSessionDomain.Behavior => behaviorEditSessionService.Validate(paths, session),
+            EditSessionDomain.RaidBattles => raidBattlesEditSessionService.Validate(paths, session),
+            EditSessionDomain.RaidRewards => raidRewardsEditSessionService.Validate(paths, session),
+            EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.Validate(paths, session),
+            EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.Validate(paths, session),
+            EditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
+            EditSessionDomain.Shops => shopsEditSessionService.Validate(paths, session),
+            EditSessionDomain.Text => textEditSessionService.Validate(paths, session),
+            EditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
+            EditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
+            EditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
+            EditSessionDomain.RoyalCandy => royalCandyEditSessionService.Validate(paths, session),
+            EditSessionDomain.StartingItems => startingItemsEditSessionService.Validate(paths, session),
+            EditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
+            _ => itemsEditSessionService.Validate(paths, session),
+        };
         var response = SwShBridgeMapper.ToDto(validation);
 
         return SerializeSuccess(response, request.RequestId);

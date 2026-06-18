@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Diagnostics;
-using KM.SwSh.Workflows;
+using KM.SV.Workflows;
 
 namespace KM.SV.ModMerger;
 
@@ -28,7 +28,7 @@ public sealed record SvModMergerWorkflowStats(
     int OverrideCount);
 
 public sealed record SvModMergerWorkflow(
-    SwShWorkflowSummary Summary,
+    SvWorkflowSummary Summary,
     string? OutputRootPath,
     IReadOnlyList<SvModMergerSourceRecord> Sources,
     SvModMergerWorkflowStats Stats,

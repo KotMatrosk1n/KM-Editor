@@ -7,7 +7,6 @@
 
     <ProjectReference Include="..\KM.Core\KM.Core.csproj" />
     <ProjectReference Include="..\KM.Formats\KM.Formats.csproj" />
-    <ProjectReference Include="..\KM.SwSh\KM.SwSh.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

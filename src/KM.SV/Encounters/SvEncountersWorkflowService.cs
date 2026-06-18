@@ -3,8 +3,6 @@
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
-using KM.SwSh.Encounters;
-using KM.SwSh.Workflows;
 using KM.SV.Data;
 using KM.SV.Workflows;
 
@@ -14,14 +12,19 @@ internal sealed class SvEncountersWorkflowService
 {
     private const string WorkflowLabel = "Wild Encounters";
     private const string WorkflowDescription = "Edit Scarlet/Violet wild encounter rows.";
+    public const string SpeciesIdField = "speciesId";
+    public const string FormField = "form";
+    public const string ProbabilityField = "probability";
+    public const string LevelMinField = "levelMin";
+    public const string LevelMaxField = "levelMax";
 
-    private static readonly IReadOnlyList<SwShEncounterEditableField> BaseEditableFields =
+    private static readonly IReadOnlyList<SvEncounterEditableField> BaseEditableFields =
     [
-        new(SwShEncountersWorkflowService.SpeciesIdField, "Species", "integer", 0, ushort.MaxValue),
-        new(SwShEncountersWorkflowService.FormField, "Form", "integer", sbyte.MinValue, sbyte.MaxValue),
-        new(SwShEncountersWorkflowService.ProbabilityField, "Lot weight", "integer", short.MinValue, short.MaxValue),
-        new(SwShEncountersWorkflowService.LevelMinField, "Min Level", "integer", 0, 100),
-        new(SwShEncountersWorkflowService.LevelMaxField, "Max Level", "integer", 0, 100),
+        new(SvEncountersWorkflowService.SpeciesIdField, "Species", "integer", 0, ushort.MaxValue),
+        new(SvEncountersWorkflowService.FormField, "Form", "integer", sbyte.MinValue, sbyte.MaxValue),
+        new(SvEncountersWorkflowService.ProbabilityField, "Chance (%)", "integer", short.MinValue, short.MaxValue),
+        new(SvEncountersWorkflowService.LevelMinField, "Min Level", "integer", 0, 100),
+        new(SvEncountersWorkflowService.LevelMaxField, "Max Level", "integer", 0, 100),
     ];
 
     private readonly SvWorkflowFileSource fileSource;
@@ -31,24 +34,24 @@ internal sealed class SvEncountersWorkflowService
         this.fileSource = fileSource ?? new SvWorkflowFileSource();
     }
 
-    public SwShWorkflowSummary CreateSummary(OpenedProject project)
+    public SvWorkflowSummary CreateSummary(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
         return SvWorkflowSupport.CreateSummary(
             project,
-            SwShWorkflowIds.Encounters,
+            SvWorkflowIds.Encounters,
             WorkflowLabel,
             WorkflowDescription);
     }
 
-    public SwShEncountersWorkflow Load(OpenedProject project)
+    public SvEncountersWorkflow Load(OpenedProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
         var diagnostics = new List<ValidationDiagnostic>();
         SvWorkflowFile? source = null;
-        var tables = Array.Empty<SwShEncounterTableRecord>();
+        var tables = Array.Empty<SvEncounterTableRecord>();
         var labels = SvTextLabelLookup.None();
 
         try
@@ -66,23 +69,23 @@ internal sealed class SvEncountersWorkflowService
 
         var summary = SvWorkflowSupport.CreateSummary(
             project,
-            SwShWorkflowIds.Encounters,
+            SvWorkflowIds.Encounters,
             WorkflowLabel,
             WorkflowDescription,
             diagnostics.Count == 0 ? null : diagnostics);
 
-        return new SwShEncountersWorkflow(
+        return new SvEncountersWorkflow(
             summary,
             tables,
             CreateEditableFields(labels),
-            new SwShEncountersWorkflowStats(
+            new SvEncountersWorkflowStats(
                 tables.Length,
                 tables.Sum(table => table.Slots.Count),
                 source is null ? 0 : 1),
             diagnostics);
     }
 
-    private static IEnumerable<SwShEncounterTableRecord> LoadTables(
+    private static IEnumerable<SvEncounterTableRecord> LoadTables(
         SvWorkflowFile source,
         SvTextLabelLookup labels,
         ProjectGame? selectedGame)
@@ -105,7 +108,7 @@ internal sealed class SvEncountersWorkflowService
                 .Select((row, slotIndex) => ToSlot(slotIndex, row.Data, labels))
                 .ToArray();
 
-            yield return new SwShEncounterTableRecord(
+            yield return new SvEncounterTableRecord(
                 group.Key,
                 SvEncounterGrouping.FormatLocation(first, labels),
                 SvEncounterGrouping.FormatDisplayArea(first, labels),
@@ -113,7 +116,7 @@ internal sealed class SvEncountersWorkflowService
                 SvEncounterGrouping.FormatVersions(first.Versiontable),
                 source.RelativePath,
                 slots,
-                new SwShEncounterProvenance(source.RelativePath, source.SourceLayer, source.FileState));
+                new SvEncounterProvenance(source.RelativePath, source.SourceLayer, source.FileState));
         }
     }
 
@@ -132,13 +135,13 @@ internal sealed class SvEncountersWorkflowService
         return selectedGame == ProjectGame.Scarlet ? version.Value.A : version.Value.B;
     }
 
-    private static SwShEncounterSlotRecord ToSlot(
+    private static SvEncounterSlotRecord ToSlot(
         int slot,
         global::EncountPokeData row,
         SvTextLabelLookup labels)
     {
         var speciesId = (int)row.Devid;
-        return new SwShEncounterSlotRecord(
+        return new SvEncounterSlotRecord(
             slot,
             speciesId,
             labels.Pokemon(speciesId),
@@ -147,14 +150,14 @@ internal sealed class SvEncountersWorkflowService
             row.Maxlevel,
             row.Lotvalue,
             SvEncounterGrouping.FormatTimes(row.Timetable),
-            SvEncounterGrouping.FormatBiomes(row));
+            SvEncounterGrouping.FormatSlotContext(row, labels));
     }
 
-    private static IReadOnlyList<SwShEncounterEditableField> CreateEditableFields(SvTextLabelLookup labels)
+    private static IReadOnlyList<SvEncounterEditableField> CreateEditableFields(SvTextLabelLookup labels)
     {
         var speciesOptions = CreateIndexedOptions(labels.PokemonNameCount, labels.Pokemon, includeNone: true);
         return BaseEditableFields
-            .Select(field => field.Field == SwShEncountersWorkflowService.SpeciesIdField
+            .Select(field => field.Field == SvEncountersWorkflowService.SpeciesIdField
                 ? field with
                 {
                     MaximumValue = speciesOptions.Count > 0 ? speciesOptions.Max(option => option.Value) : field.MaximumValue,
@@ -164,7 +167,7 @@ internal sealed class SvEncountersWorkflowService
             .ToArray();
     }
 
-    private static IReadOnlyList<SwShEncounterEditableFieldOption> CreateIndexedOptions(
+    private static IReadOnlyList<SvEncounterEditableFieldOption> CreateIndexedOptions(
         int count,
         Func<int, string> resolveName,
         bool includeNone)
@@ -180,7 +183,7 @@ internal sealed class SvEncountersWorkflowService
             .Select(value =>
             {
                 var label = value == 0 ? "None" : resolveName(value);
-                return new SwShEncounterEditableFieldOption(
+                return new SvEncounterEditableFieldOption(
                     value,
                     $"{value.ToString(System.Globalization.CultureInfo.InvariantCulture)} {label}");
             })

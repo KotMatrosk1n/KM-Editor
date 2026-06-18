@@ -4,7 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
-using KM.SwSh.Workflows;
+using KM.SV.Workflows;
 using System.Globalization;
 
 namespace KM.SV.Workflows;
@@ -18,7 +18,7 @@ internal static class SvEditSessionSupport
 
     public static bool CanEdit(
         OpenedProject project,
-        SwShWorkflowSummary summary,
+        SvWorkflowSummary summary,
         IEnumerable<ValidationDiagnostic> workflowDiagnostics,
         string domain,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -33,7 +33,7 @@ internal static class SvEditSessionSupport
             return false;
         }
 
-        if (!project.Health.CanOpenEditableWorkflows || summary.Availability != SwShWorkflowAvailability.Available)
+        if (!project.Health.CanOpenEditableWorkflows || summary.Availability != SvWorkflowAvailability.Available)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,

@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-using KM.Core.Projects;
 using KM.Core.Editing;
-using KM.SwSh.Encounters;
-using KM.SwSh.Items;
-using KM.SwSh.Pokemon;
-using KM.SwSh.Trainers;
-using KM.SwSh.Workflows;
+using KM.Core.Projects;
 using KM.SV.Encounters;
 using KM.SV.Items;
 using KM.SV.ModMerger;
@@ -43,17 +38,17 @@ public sealed class SvWorkflowService
         encountersEditSessionService = new SvEncountersEditSessionService(this.projectWorkspaceService, fileSource, encountersWorkflowService);
     }
 
-    public SwShWorkflowList List(ProjectPaths paths)
+    public SvWorkflowList List(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
         if (!SvWorkflowFileSource.IsScarletViolet(paths.SelectedGame))
         {
-            return new SwShWorkflowList([]);
+            return new SvWorkflowList([]);
         }
 
         var project = projectWorkspaceService.Open(paths);
-        return new SwShWorkflowList(
+        return new SvWorkflowList(
         [
             itemsWorkflowService.CreateSummary(project),
             pokemonWorkflowService.CreateSummary(project),
@@ -63,7 +58,7 @@ public sealed class SvWorkflowService
         ]);
     }
 
-    public SwShItemsWorkflow LoadItems(ProjectPaths paths)
+    public SvItemsWorkflow LoadItems(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
@@ -71,7 +66,7 @@ public sealed class SvWorkflowService
         return itemsWorkflowService.Load(project);
     }
 
-    public SwShPokemonWorkflow LoadPokemon(ProjectPaths paths)
+    public SvPokemonWorkflow LoadPokemon(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
@@ -79,7 +74,7 @@ public sealed class SvWorkflowService
         return pokemonWorkflowService.Load(project);
     }
 
-    public SwShTrainersWorkflow LoadTrainers(ProjectPaths paths)
+    public SvTrainersWorkflow LoadTrainers(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
@@ -87,7 +82,7 @@ public sealed class SvWorkflowService
         return trainersWorkflowService.Load(project);
     }
 
-    public SwShEncountersWorkflow LoadEncounters(ProjectPaths paths)
+    public SvEncountersWorkflow LoadEncounters(ProjectPaths paths)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
@@ -125,7 +120,7 @@ public sealed class SvWorkflowService
         return modMergerWorkflowService.Apply(paths, modSources);
     }
 
-    public SwShItemsEditResult UpdateItemField(
+    public SvItemsEditResult UpdateItemField(
         ProjectPaths paths,
         EditSession? session,
         int itemId,
@@ -135,7 +130,7 @@ public sealed class SvWorkflowService
         return itemsEditSessionService.UpdateField(paths, session, itemId, field, value);
     }
 
-    public SwShPokemonEditResult UpdatePokemonField(
+    public SvPokemonEditResult UpdatePokemonField(
         ProjectPaths paths,
         EditSession? session,
         int personalId,
@@ -145,7 +140,7 @@ public sealed class SvWorkflowService
         return pokemonEditSessionService.UpdateField(paths, session, personalId, field, value);
     }
 
-    public SwShPokemonEditResult UpdatePokemonLearnset(
+    public SvPokemonEditResult UpdatePokemonLearnset(
         ProjectPaths paths,
         EditSession? session,
         int personalId,
@@ -157,7 +152,7 @@ public sealed class SvWorkflowService
         return pokemonEditSessionService.UpdateLearnset(paths, session, personalId, action, slot, moveId, level);
     }
 
-    public SwShPokemonEditResult UpdatePokemonEvolution(
+    public SvPokemonEditResult UpdatePokemonEvolution(
         ProjectPaths paths,
         EditSession? session,
         int personalId,
@@ -182,7 +177,7 @@ public sealed class SvWorkflowService
             level);
     }
 
-    public SwShTrainersEditResult UpdateTrainerField(
+    public SvTrainersEditResult UpdateTrainerField(
         ProjectPaths paths,
         EditSession? session,
         int trainerId,
@@ -193,7 +188,7 @@ public sealed class SvWorkflowService
         return trainersEditSessionService.UpdateField(paths, session, trainerId, slot, field, value);
     }
 
-    public SwShEncountersEditResult UpdateEncounterSlotField(
+    public SvEncountersEditResult UpdateEncounterSlotField(
         ProjectPaths paths,
         EditSession? session,
         string tableId,
@@ -204,7 +199,7 @@ public sealed class SvWorkflowService
         return encountersEditSessionService.UpdateSlotField(paths, session, tableId, slot, field, value);
     }
 
-    public SwShEditSessionValidation ValidateEditSession(ProjectPaths paths, EditSession session)
+    public SvEditSessionValidation ValidateEditSession(ProjectPaths paths, EditSession session)
     {
         return GetDomain(session) switch
         {
@@ -262,9 +257,9 @@ public sealed class SvWorkflowService
         };
     }
 
-    private static SwShEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
+    private static SvEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
     {
-        return new SwShEditSessionValidation(session, IsValid: false, [CreateMixedDiagnostic()]);
+        return new SvEditSessionValidation(session, IsValid: false, [CreateMixedDiagnostic()]);
     }
 
     private static ChangePlan CreateUnsupportedMixedChangePlan(EditSession session)
