@@ -4,12 +4,14 @@ using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.Items;
 using KM.Api.ModMerger;
+using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.SV.Encounters;
 using KM.SV.Items;
 using KM.SV.ModMerger;
+using KM.SV.Placement;
 using KM.SV.Pokemon;
 using KM.SV.Trainers;
 using KM.SV.Workflows;
@@ -18,6 +20,17 @@ namespace KM.Tools.Bridge;
 
 public static class SvBridgeMapper
 {
+    public static SvOutputMode ToCore(ChangePlanOutputModeDto? outputMode)
+    {
+        return outputMode switch
+        {
+            null => SvOutputMode.Standalone,
+            ChangePlanOutputModeDto.Standalone => SvOutputMode.Standalone,
+            ChangePlanOutputModeDto.TrinityModManager => SvOutputMode.TrinityModManager,
+            _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
+        };
+    }
+
     public static ListWorkflowsResponse ToDto(SvWorkflowList workflowList)
     {
         ArgumentNullException.ThrowIfNull(workflowList);
@@ -113,6 +126,23 @@ public static class SvBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static LoadPlacementWorkflowResponse ToDto(SvPlacementWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadPlacementWorkflowResponse(ToPlacementWorkflowDto(workflow));
+    }
+
+    public static UpdatePlacementObjectFieldResponse ToDto(SvPlacementEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePlacementObjectFieldResponse(
+            ToPlacementWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(SvEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -204,6 +234,20 @@ public static class SvBridgeMapper
                 workflow.Stats.TotalSlotCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static PlacementWorkflowDto ToPlacementWorkflowDto(SvPlacementWorkflow workflow)
+    {
+        return new PlacementWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Objects.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new PlacementWorkflowStatsDto(
+                workflow.Stats.TotalObjectCount,
+                workflow.Stats.TotalAreaCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
+            workflow.Categories.Select(ToDto).ToArray());
     }
 
     private static SvModMergerWorkflowDto ToWorkflowDto(SvModMergerWorkflow workflow)
@@ -603,6 +647,80 @@ public static class SvBridgeMapper
     private static EncounterEditableFieldOptionDto ToDto(SvEncounterEditableFieldOption option)
     {
         return new EncounterEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static PlacedObjectRecordDto ToDto(SvPlacedObjectRecord placedObject)
+    {
+        return new PlacedObjectRecordDto(
+            placedObject.ObjectId,
+            placedObject.ObjectType,
+            placedObject.Label,
+            placedObject.Map,
+            placedObject.ArchiveMember,
+            placedObject.ZoneIndex,
+            placedObject.ObjectIndex,
+            placedObject.ChanceIndex,
+            placedObject.ItemId,
+            placedObject.ItemName,
+            placedObject.ItemHash,
+            placedObject.Quantity,
+            placedObject.Chance,
+            placedObject.X,
+            placedObject.Y,
+            placedObject.Z,
+            placedObject.RotationY,
+            placedObject.ScriptId,
+            ToDto(placedObject.Provenance),
+            placedObject.CategoryId,
+            placedObject.CategoryLabel,
+            placedObject.Fields.Select(ToDto).ToArray());
+    }
+
+    private static PlacementFieldValueDto ToDto(SvPlacementFieldValue value)
+    {
+        return new PlacementFieldValueDto(
+            value.Field,
+            value.Label,
+            value.Group,
+            value.Value,
+            value.DisplayValue,
+            value.IsReadOnly);
+    }
+
+    private static PlacementEditableFieldDto ToDto(SvPlacementEditableField field)
+    {
+        return new PlacementEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray(),
+            field.Group,
+            field.IsReadOnly,
+            field.Description);
+    }
+
+    private static PlacementEditableFieldOptionDto ToDto(SvPlacementEditableFieldOption option)
+    {
+        return new PlacementEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static PlacementCategoryDto ToDto(SvPlacementCategory category)
+    {
+        return new PlacementCategoryDto(
+            category.Id,
+            category.Label,
+            category.Description,
+            category.ObjectCount);
+    }
+
+    private static PlacementProvenanceDto ToDto(SvPlacementProvenance provenance)
+    {
+        return new PlacementProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
     }
 
     private static EncounterProvenanceDto ToDto(SvEncounterProvenance provenance)

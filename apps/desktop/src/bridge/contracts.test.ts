@@ -3550,6 +3550,7 @@ describe('bridge contracts', () => {
       changePlanRequestSchema.safeParse({
         command: kmCommandNames.createChangePlan,
         payload: {
+          outputMode: 'trinityModManager',
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',
@@ -3574,6 +3575,7 @@ describe('bridge contracts', () => {
         command: kmCommandNames.applyChangePlan,
         payload: {
           changePlan,
+          outputMode: 'standalone',
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',

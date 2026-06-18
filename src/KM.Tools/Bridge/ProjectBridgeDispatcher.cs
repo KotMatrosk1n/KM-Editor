@@ -921,7 +921,16 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadPlacementWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadPlacementWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadPlacement(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (IsScarletViolet(paths))
+        {
+            var svWorkflow = svWorkflowService.LoadPlacement(paths);
+            var svResponse = SvBridgeMapper.ToDto(svWorkflow);
+
+            return SerializeSuccess(svResponse, request.RequestId);
+        }
+
+        var workflow = swShWorkflowService.LoadPlacement(paths);
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -933,8 +942,22 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (IsScarletViolet(paths))
+        {
+            var svResult = svWorkflowService.UpdatePlacementObjectField(
+                paths,
+                session,
+                request.Payload.ObjectId,
+                request.Payload.Field,
+                request.Payload.Value);
+            var svResponse = SvBridgeMapper.ToDto(svResult);
+
+            return SerializeSuccess(svResponse, request.RequestId);
+        }
+
         var result = placementEditSessionService.UpdateObjectField(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            paths,
             session,
             request.Payload.ObjectId,
             request.Payload.Field,
@@ -1610,7 +1633,7 @@ public sealed class ProjectBridgeDispatcher
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var changePlan = IsScarletViolet(paths)
-            ? svWorkflowService.CreateChangePlan(paths, session)
+            ? svWorkflowService.CreateChangePlan(paths, session, SvBridgeMapper.ToCore(request.Payload.OutputMode))
             : GetEditSessionDomain(session) switch
             {
                 EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.CreateChangePlan(paths, session),
@@ -1658,7 +1681,7 @@ public sealed class ProjectBridgeDispatcher
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var changePlan = EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan);
         var applyResult = IsScarletViolet(paths)
-            ? svWorkflowService.ApplyChangePlan(paths, session, changePlan)
+            ? svWorkflowService.ApplyChangePlan(paths, session, changePlan, SvBridgeMapper.ToCore(request.Payload.OutputMode))
             : GetEditSessionDomain(session) switch
             {
                 EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.ApplyChangePlan(paths, session, changePlan),

@@ -2611,6 +2611,42 @@ h2 {
   grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
 }
 
+.placement-category-tabs {
+  margin-top: 12px;
+}
+
+.placement-category-tab {
+  display: inline-grid;
+  grid-template-columns: minmax(0, auto) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.placement-category-tab small {
+  min-width: 24px;
+  padding: 2px 7px;
+  color: var(--color-text-muted);
+  background: rgb(8 13 24 / 70%);
+  border: 1px solid rgb(129 148 184 / 24%);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.placement-category-tab[aria-selected="true"] small {
+  color: #10192b;
+  background: var(--color-gold);
+  border-color: transparent;
+}
+
+.placement-read-only-field input:disabled {
+  color: #9aa7bd;
+  background: #0b1120;
+  border-style: dashed;
+  opacity: 1;
+}
+
 .flagwork-toolbar {
   grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
 }
