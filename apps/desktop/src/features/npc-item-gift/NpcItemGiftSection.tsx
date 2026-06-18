@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { ClipboardCheck, Gift, RotateCcw, Save, TriangleAlert } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ClipboardCheck, Gift, RotateCcw, Save, TriangleAlert } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { type EditSession } from '../../bridge/contracts';
 import {
   type NpcItemGiftItemOptionRecord,
@@ -18,6 +18,43 @@ import {
 import { formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
 type NpcGiftDrafts = Record<string, NpcItemGiftSelection>;
+
+type NpcItemGiftSelectableItemOption = NpcItemGiftItemOptionRecord & {
+  isUnavailable: boolean;
+  label: string;
+};
+
+type NpcItemGiftTabGroup = {
+  groupId: string;
+  label: string;
+  npcs: NpcItemGiftNpcGroup[];
+};
+
+const NPC_TAB_GROUPS = [
+  { groupId: 'gym-leaders', label: 'Gym Leaders' },
+  { groupId: 'important-characters', label: 'Important Characters' },
+  { groupId: 'main-game', label: 'Main Game NPCs' },
+  { groupId: 'isle-of-armor', label: 'Isle of Armor' },
+  { groupId: 'crown-tundra', label: 'Crown Tundra' },
+  { groupId: 'other', label: 'Other' }
+] as const;
+
+const GYM_LEADER_ORDER = [
+  'milo',
+  'nessa',
+  'kabu',
+  'bea',
+  'allister',
+  'opal',
+  'gordie',
+  'melony',
+  'piers',
+  'raihan',
+  'leon'
+];
+
+const GYM_LEADER_NPCS = new Set(GYM_LEADER_ORDER);
+const IMPORTANT_CHARACTER_NPCS = new Set(['sonia', 'hop', 'marnie', 'mum', 'ball-guy']);
 
 export function NpcItemGiftSection({
   editSession,
@@ -49,6 +86,11 @@ export function NpcItemGiftSection({
         .sort((left, right) => left.displayOrder - right.displayOrder) ?? [],
     [workflow?.npcs]
   );
+  const npcTabGroups = useMemo(() => groupNpcTabs(sortedNpcs), [sortedNpcs]);
+  const orderedNpcs = useMemo(
+    () => npcTabGroups.flatMap((group) => group.npcs),
+    [npcTabGroups]
+  );
   const workflowSelections = useMemo(() => getWorkflowSelections(workflow), [workflow]);
   const stagedNpcGiftEdit = editSession?.pendingEdits.find(
     (edit) => edit.domain === 'workflow.npcItemGift'
@@ -61,31 +103,45 @@ export function NpcItemGiftSection({
     () => mergeSelections(workflowSelections, stagedSelections),
     [workflowSelections, stagedSelections]
   );
-  const vanillaSelections = useMemo(() => getVanillaSelections(workflow), [workflow]);
   const cleanSelectionsKey = encodeSelectionsKey(cleanSelections);
 
   const [selectedNpcId, setSelectedNpcId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<NpcGiftDrafts>(() => createDrafts(cleanSelections));
+  const draftsRef = useRef(drafts);
+  const cleanSelectionsRef = useRef(cleanSelections);
+
+  cleanSelectionsRef.current = cleanSelections;
+
+  const replaceDrafts = (nextDrafts: NpcGiftDrafts) => {
+    draftsRef.current = nextDrafts;
+    setDrafts(nextDrafts);
+  };
+
+  const updateDrafts = (updater: (current: NpcGiftDrafts) => NpcGiftDrafts) => {
+    const nextDrafts = updater(draftsRef.current);
+    draftsRef.current = nextDrafts;
+    setDrafts(nextDrafts);
+  };
 
   useEffect(() => {
-    setDrafts(createDrafts(cleanSelections));
+    replaceDrafts(createDrafts(cleanSelections));
   }, [cleanSelectionsKey]);
 
   useEffect(() => {
-    if (sortedNpcs.length === 0) {
+    if (orderedNpcs.length === 0) {
       setSelectedNpcId(null);
       return;
     }
 
     setSelectedNpcId((current) =>
-      current && sortedNpcs.some((npc) => npc.npcId === current)
+      current && orderedNpcs.some((npc) => npc.npcId === current)
         ? current
-        : sortedNpcs[0].npcId
+        : orderedNpcs[0].npcId
     );
-  }, [sortedNpcs]);
+  }, [orderedNpcs]);
 
   const selectedNpc =
-    sortedNpcs.find((npc) => npc.npcId === selectedNpcId) ?? sortedNpcs[0] ?? null;
+    orderedNpcs.find((npc) => npc.npcId === selectedNpcId) ?? orderedNpcs[0] ?? null;
   const selectedDraftSelections = useMemo(
     () => getNpcDraftSelections(selectedNpc, drafts, cleanSelections),
     [selectedNpc, drafts, cleanSelections]
@@ -94,11 +150,8 @@ export function NpcItemGiftSection({
     () => getNpcCleanSelections(selectedNpc, cleanSelections),
     [selectedNpc, cleanSelections]
   );
-  const selectedVanillaSelections = useMemo(
-    () => getNpcCleanSelections(selectedNpc, vanillaSelections),
-    [selectedNpc, vanillaSelections]
-  );
   const isDirty = !areSelectionsEqual(selectedDraftSelections, selectedCleanSelections);
+  const hasDirtyDrafts = haveDraftsChanged(drafts, cleanSelections);
   const hasStagedChange = stagedSelections !== null;
   const stagedNpcId = useMemo(
     () => getStagedNpcId(workflow, stagedSelections),
@@ -110,14 +163,9 @@ export function NpcItemGiftSection({
     !isStaging &&
     !isChangePlanApplying;
   const canStage = canEdit && selectedDraftSelections.length > 0 && isDirty && !hasStagedChange;
-  const canRestoreVanilla =
-    canEdit &&
-    selectedDraftSelections.length > 0 &&
-    !areSelectionsEqual(selectedDraftSelections, selectedVanillaSelections) &&
-    !hasStagedChange;
   const canReviewPlan =
     hasStagedChange &&
-    !isDirty &&
+    !hasDirtyDrafts &&
     stagedNpcId === selectedNpc?.npcId &&
     !isChangePlanCreating;
   const canApplyPlan =
@@ -128,8 +176,8 @@ export function NpcItemGiftSection({
     !isChangePlanApplying;
 
   useEffect(() => {
-    onDirtyChange(isDirty);
-  }, [isDirty, onDirtyChange]);
+    onDirtyChange(hasDirtyDrafts);
+  }, [hasDirtyDrafts, onDirtyChange]);
 
   const selectNpc = (npc: NpcItemGiftNpcGroup) => {
     if (npc.npcId === selectedNpc?.npcId) {
@@ -143,31 +191,32 @@ export function NpcItemGiftSection({
       return;
     }
 
+    const latestCleanSelections = cleanSelectionsRef.current;
     if (
-      isDirty &&
+      haveDraftsChanged(draftsRef.current, latestCleanSelections) &&
       !window.confirm('Discard the un-staged NPC Item Gift edits and open another NPC?')
     ) {
       return;
     }
 
-    setDrafts(createDrafts(cleanSelections));
+    replaceDrafts(createDrafts(latestCleanSelections));
     setSelectedNpcId(npc.npcId);
   };
 
   const updateQuantity = (giftId: string, value: string) => {
     const quantity = Math.max(1, Math.min(999, Number.parseInt(value, 10) || 1));
-    setDrafts((current) => ({
+    updateDrafts((current) => ({
       ...current,
       [giftId]: {
-        ...(current[giftId] ?? cleanSelections[giftId]),
+        ...(current[giftId] ?? cleanSelectionsRef.current[giftId]),
         quantity
       }
     }));
   };
 
   const updateItem = (giftId: string, slotId: string, itemId: number) => {
-    setDrafts((current) => {
-      const selection = current[giftId] ?? cleanSelections[giftId];
+    updateDrafts((current) => {
+      const selection = current[giftId] ?? cleanSelectionsRef.current[giftId];
       if (!selection) {
         return current;
       }
@@ -182,6 +231,13 @@ export function NpcItemGiftSection({
         }
       };
     });
+  };
+
+  const restoreGiftDefault = (gift: NpcItemGiftRecord) => {
+    updateDrafts((current) => ({
+      ...current,
+      [gift.giftId]: getGiftVanillaSelection(gift)
+    }));
   };
 
   return (
@@ -214,29 +270,40 @@ export function NpcItemGiftSection({
 
         {workflow ? (
           <div className="npc-item-gift-editor">
-            <div className="npc-item-gift-tabs" role="tablist">
-              {sortedNpcs.map((npc) => {
-                const isSelected = selectedNpc?.npcId === npc.npcId;
-                const isStaged = stagedNpcId === npc.npcId;
-                return (
-                  <button
-                    aria-selected={isSelected}
-                    className={[
-                      'npc-item-gift-tab',
-                      isSelected ? 'is-selected' : '',
-                      isStaged ? 'is-staged' : ''
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    key={npc.npcId}
-                    onClick={() => selectNpc(npc)}
-                    role="tab"
-                    type="button"
+            <div className="npc-item-gift-tab-groups">
+              {npcTabGroups.map((group) => (
+                <section className="npc-item-gift-tab-group" key={group.groupId}>
+                  <h3>{group.label}</h3>
+                  <div
+                    aria-label={`${group.label} NPCs`}
+                    className="npc-item-gift-tabs"
+                    role="tablist"
                   >
-                    {npc.npcName}
-                  </button>
-                );
-              })}
+                    {group.npcs.map((npc) => {
+                      const isSelected = selectedNpc?.npcId === npc.npcId;
+                      const isStaged = stagedNpcId === npc.npcId;
+                      return (
+                        <button
+                          aria-selected={isSelected}
+                          className={[
+                            'npc-item-gift-tab',
+                            isSelected ? 'is-selected' : '',
+                            isStaged ? 'is-staged' : ''
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
+                          key={npc.npcId}
+                          onClick={() => selectNpc(npc)}
+                          role="tab"
+                          type="button"
+                        >
+                          {npc.npcName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
 
             {selectedNpc ? (
@@ -249,6 +316,7 @@ export function NpcItemGiftSection({
                     key={gift.giftId}
                     onItemChange={updateItem}
                     onQuantityChange={updateQuantity}
+                    onRestoreDefault={restoreGiftDefault}
                     selection={drafts[gift.giftId] ?? cleanSelections[gift.giftId]}
                   />
                 ))}
@@ -258,20 +326,6 @@ export function NpcItemGiftSection({
             )}
 
             <div className="type-chart-actions npc-item-gift-actions">
-              <button
-                className="danger-button"
-                disabled={!canRestoreVanilla}
-                onClick={() =>
-                  setDrafts((current) => ({
-                    ...current,
-                    ...createDrafts(selectedVanillaSelections)
-                  }))
-                }
-                type="button"
-              >
-                <RotateCcw aria-hidden="true" size={16} />
-                <span>Restore NPC Defaults</span>
-              </button>
               <button
                 className="primary-button"
                 disabled={!canStage}
@@ -310,6 +364,7 @@ export function NpcItemGiftSection({
 
       <WorkflowPanelOutputSections
         output={panelOutput}
+        scrollAfterEntries={6}
         workflowDiagnostics={workflow?.diagnostics ?? []}
       />
     </>
@@ -322,6 +377,7 @@ function NpcItemGiftCard({
   itemOptions,
   onItemChange,
   onQuantityChange,
+  onRestoreDefault,
   selection
 }: {
   disabled: boolean;
@@ -329,11 +385,15 @@ function NpcItemGiftCard({
   itemOptions: NpcItemGiftItemOptionRecord[];
   onItemChange: (giftId: string, slotId: string, itemId: number) => void;
   onQuantityChange: (giftId: string, value: string) => void;
+  onRestoreDefault: (gift: NpcItemGiftRecord) => void;
   selection: NpcItemGiftSelection | undefined;
 }) {
   if (!selection) {
     return null;
   }
+
+  const vanillaSelection = getGiftVanillaSelection(gift);
+  const isDefault = areSelectionsEqual([selection], [vanillaSelection]);
 
   return (
     <article className="npc-item-gift-card">
@@ -352,26 +412,13 @@ function NpcItemGiftCard({
           return (
             <label className="npc-item-gift-field" key={`${gift.giftId}:${item.slotId}`}>
               <span>{gift.items.length > 1 ? item.label : 'Item'}</span>
-              <select
+              <NpcItemGiftItemPicker
                 aria-label={`${gift.label} ${item.label}`}
                 disabled={disabled}
-                onChange={(event) =>
-                  onItemChange(gift.giftId, item.slotId, Number.parseInt(event.target.value, 10))
-                }
+                onChange={(itemId) => onItemChange(gift.giftId, item.slotId, itemId)}
+                options={getSelectableItemOptions(itemOptions, selectedItemId, item.itemName)}
                 value={selectedItemId}
-              >
-                {getSelectableItemOptions(itemOptions, selectedItemId, item.itemName).map(
-                  (option) => (
-                    <option
-                      disabled={option.isUnavailable}
-                      key={option.itemId}
-                      value={option.itemId}
-                    >
-                      {option.name} #{option.itemId}
-                    </option>
-                  )
-                )}
-              </select>
+              />
             </label>
           );
         })}
@@ -391,13 +438,188 @@ function NpcItemGiftCard({
       </div>
 
       <div className="npc-item-gift-defaults">
-        <span>Default amount {gift.vanillaQuantity}</span>
-        <span>
-          Default item{gift.items.length === 1 ? '' : 's'}{' '}
+        <p>
+          Default: {gift.vanillaQuantity} x{' '}
           {gift.items.map((item) => item.vanillaItemName).join(', ')}
-        </span>
+        </p>
+        <button
+          className="secondary-button npc-item-gift-restore-button"
+          disabled={disabled || isDefault}
+          onClick={() => onRestoreDefault(gift)}
+          type="button"
+        >
+          <RotateCcw aria-hidden="true" size={16} />
+          <span>Restore NPC default</span>
+        </button>
       </div>
     </article>
+  );
+}
+
+function NpcItemGiftItemPicker({
+  'aria-label': ariaLabel,
+  disabled,
+  onChange,
+  options,
+  value
+}: {
+  'aria-label': string;
+  disabled: boolean;
+  onChange: (value: number) => void;
+  options: NpcItemGiftSelectableItemOption[];
+  value: number;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const formattedValue = useMemo(
+    () => formatItemPickerValue(value, options),
+    [options, value]
+  );
+  const [query, setQuery] = useState(formattedValue);
+  const [hasUserQuery, setHasUserQuery] = useState(false);
+  const filteredOptions = useMemo(
+    () => getSmartItemMatches(hasUserQuery ? query : '', options),
+    [hasUserQuery, options, query]
+  );
+  const selectableOptions = filteredOptions.filter((option) => !option.isUnavailable);
+  const hasMenu = isOpen && !disabled && filteredOptions.length > 0;
+
+  useEffect(() => {
+    if (!isOpen) {
+      setQuery(formattedValue);
+      setHasUserQuery(false);
+    }
+  }, [formattedValue, isOpen]);
+
+  useEffect(() => {
+    if (disabled) {
+      setIsOpen(false);
+    }
+  }, [disabled]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [isOpen]);
+
+  const selectOption = (option: NpcItemGiftSelectableItemOption) => {
+    if (option.isUnavailable) {
+      return;
+    }
+
+    onChange(option.itemId);
+    setQuery(option.label);
+    setHasUserQuery(false);
+    setIsOpen(false);
+  };
+
+  const commitTypedOption = () => {
+    const exactMatch = findExactItemOption(query, options);
+    if (exactMatch) {
+      selectOption(exactMatch);
+      return;
+    }
+
+    if (hasUserQuery && selectableOptions.length === 1) {
+      selectOption(selectableOptions[0]!);
+      return;
+    }
+
+    setQuery(formattedValue);
+    setHasUserQuery(false);
+    setIsOpen(false);
+  };
+
+  const handleInputChange = (nextValue: string) => {
+    setQuery(nextValue);
+    setHasUserQuery(true);
+    setIsOpen(true);
+    const exactMatch = findExactItemOption(nextValue, options);
+    if (exactMatch) {
+      onChange(exactMatch.itemId);
+    }
+  };
+
+  return (
+    <div
+      className={`searchable-option-input ${disabled ? 'searchable-option-disabled' : ''}`}
+      ref={containerRef}
+    >
+      <input
+        aria-expanded={hasMenu}
+        aria-haspopup="listbox"
+        aria-label={ariaLabel}
+        autoComplete="off"
+        disabled={disabled}
+        inputMode="search"
+        onBlur={commitTypedOption}
+        onChange={(event) => handleInputChange(event.target.value)}
+        onFocus={() => {
+          setQuery(formattedValue);
+          setHasUserQuery(false);
+          setIsOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            setIsOpen(false);
+            return;
+          }
+
+          if (event.key === 'Enter' && selectableOptions.length > 0) {
+            event.preventDefault();
+            selectOption(selectableOptions[0]!);
+          }
+        }}
+        title={formattedValue}
+        type="text"
+        value={query}
+      />
+      <button
+        aria-label={`Show ${ariaLabel} options`}
+        className="searchable-option-toggle"
+        disabled={disabled}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          setQuery(formattedValue);
+          setHasUserQuery(false);
+          setIsOpen((current) => (current && !hasUserQuery ? false : true));
+        }}
+        tabIndex={-1}
+        type="button"
+      >
+        <ChevronDown aria-hidden="true" size={16} />
+      </button>
+      {hasMenu ? (
+        <div className="searchable-option-menu" role="listbox">
+          {filteredOptions.map((option) => (
+            <button
+              aria-disabled={option.isUnavailable}
+              className="searchable-option-row"
+              disabled={option.isUnavailable}
+              key={`${ariaLabel}:${option.itemId}`}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                selectOption(option);
+              }}
+              role="option"
+              type="button"
+            >
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -407,23 +629,27 @@ function NpcItemGiftSourceSummary({
   sources: NpcItemGiftWorkflow['sources'];
 }) {
   return (
-    <div className="npc-item-gift-source-grid">
-      {sources.map((source) => (
-        <dl className="npc-item-gift-source-summary" key={source.sourceId}>
-          <div>
-            <dt>{source.label}</dt>
-            <dd>{source.relativePath}</dd>
-          </div>
-          <div>
-            <dt>Layer</dt>
-            <dd>{formatSourceLayer(source.provenance.sourceLayer)}</dd>
-          </div>
-          <div>
-            <dt>File state</dt>
-            <dd>{formatFileState(source.provenance.fileState)}</dd>
-          </div>
-        </dl>
-      ))}
+    <div className="npc-item-gift-source-table-wrap">
+      <table className="npc-item-gift-source-table">
+        <thead>
+          <tr>
+            <th scope="col">Source</th>
+            <th scope="col">Path</th>
+            <th scope="col">Layer</th>
+            <th scope="col">File state</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sources.map((source) => (
+            <tr key={source.sourceId}>
+              <th scope="row">{source.label}</th>
+              <td>{source.relativePath}</td>
+              <td>{formatSourceLayer(source.provenance.sourceLayer)}</td>
+              <td>{formatFileState(source.provenance.fileState)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -487,23 +713,87 @@ function getWorkflowSelections(workflow: NpcItemGiftWorkflow | null): NpcGiftDra
   );
 }
 
-function getVanillaSelections(workflow: NpcItemGiftWorkflow | null): NpcGiftDrafts {
-  if (!workflow) {
-    return {};
+function getGiftVanillaSelection(gift: NpcItemGiftRecord): NpcItemGiftSelection {
+  return {
+    giftId: gift.giftId,
+    quantity: gift.vanillaQuantity,
+    items: gift.items.map((item) => ({
+      slotId: item.slotId,
+      itemId: item.vanillaItemId
+    }))
+  };
+}
+
+function groupNpcTabs(npcs: NpcItemGiftNpcGroup[]): NpcItemGiftTabGroup[] {
+  const groups = new Map<string, NpcItemGiftNpcGroup[]>(
+    NPC_TAB_GROUPS.map((group) => [group.groupId, [] as NpcItemGiftNpcGroup[]])
+  );
+
+  for (const npc of npcs) {
+    groups.get(getNpcTabGroupId(npc))?.push(npc);
   }
 
-  return createDrafts(
-    workflow.npcs.flatMap((npc) =>
-      npc.gifts.map((gift) => ({
-        giftId: gift.giftId,
-        quantity: gift.vanillaQuantity,
-        items: gift.items.map((item) => ({
-          slotId: item.slotId,
-          itemId: item.vanillaItemId
-        }))
-      }))
-    )
+  return NPC_TAB_GROUPS.map((group) => ({
+    ...group,
+    npcs: (groups.get(group.groupId) ?? []).slice().sort(compareNpcTabs)
+  })).filter((group) => group.npcs.length > 0);
+}
+
+function getNpcTabGroupId(npc: NpcItemGiftNpcGroup) {
+  if (GYM_LEADER_NPCS.has(npc.npcId)) {
+    return 'gym-leaders';
+  }
+
+  if (IMPORTANT_CHARACTER_NPCS.has(npc.npcId)) {
+    return 'important-characters';
+  }
+
+  if (npc.gifts.some((gift) => isIsleOfArmorPath(gift.relativePath))) {
+    return 'isle-of-armor';
+  }
+
+  if (npc.gifts.some((gift) => isCrownTundraPath(gift.relativePath))) {
+    return 'crown-tundra';
+  }
+
+  if (npc.gifts.every((gift) => isMainGamePath(gift.relativePath))) {
+    return 'main-game';
+  }
+
+  return 'other';
+}
+
+function compareNpcTabs(left: NpcItemGiftNpcGroup, right: NpcItemGiftNpcGroup) {
+  let leftGymOrder = GYM_LEADER_ORDER.indexOf(left.npcId);
+  let rightGymOrder = GYM_LEADER_ORDER.indexOf(right.npcId);
+  if (leftGymOrder !== -1 || rightGymOrder !== -1) {
+    leftGymOrder = leftGymOrder === -1 ? Number.MAX_SAFE_INTEGER : leftGymOrder;
+    rightGymOrder = rightGymOrder === -1 ? Number.MAX_SAFE_INTEGER : rightGymOrder;
+    if (leftGymOrder !== rightGymOrder) {
+      return leftGymOrder - rightGymOrder;
+    }
+  }
+
+  return (
+    getNpcFirstDisplayOrder(left) - getNpcFirstDisplayOrder(right) ||
+    left.npcName.localeCompare(right.npcName)
   );
+}
+
+function getNpcFirstDisplayOrder(npc: NpcItemGiftNpcGroup) {
+  return Math.min(npc.displayOrder, ...npc.gifts.map((gift) => gift.displayOrder));
+}
+
+function isMainGamePath(relativePath: string) {
+  return !isIsleOfArmorPath(relativePath) && !isCrownTundraPath(relativePath);
+}
+
+function isIsleOfArmorPath(relativePath: string) {
+  return relativePath.includes('/rigel01_') || relativePath.includes('/rigel1_');
+}
+
+function isCrownTundraPath(relativePath: string) {
+  return relativePath.includes('/rigel02_') || relativePath.includes('/rigel2_');
 }
 
 function createDrafts(selections: NpcItemGiftSelection[] | NpcGiftDrafts): NpcGiftDrafts {
@@ -562,6 +852,10 @@ function areSelectionsEqual(
   return encodeSelectionsKey(createDrafts(left)) === encodeSelectionsKey(createDrafts(right));
 }
 
+function haveDraftsChanged(drafts: NpcGiftDrafts, cleanSelections: NpcGiftDrafts) {
+  return encodeSelectionsKey(drafts) !== encodeSelectionsKey(cleanSelections);
+}
+
 function encodeSelectionsKey(selections: NpcGiftDrafts) {
   return Object.values(selections)
     .slice()
@@ -603,19 +897,108 @@ function getSelectableItemOptions(
   options: NpcItemGiftItemOptionRecord[],
   selectedItemId: number,
   selectedItemName: string
-) {
+): NpcItemGiftSelectableItemOption[] {
+  const mappedOptions = options.map((option) => toSelectableItemOption(option, false));
   if (options.some((option) => option.itemId === selectedItemId)) {
-    return options.map((option) => ({ ...option, isUnavailable: false }));
+    return mappedOptions;
   }
 
   return [
-    {
-      category: 'Unavailable',
-      isKeyItem: false,
-      isUnavailable: true,
-      itemId: selectedItemId,
-      name: `${selectedItemName} unavailable`
-    },
-    ...options.map((option) => ({ ...option, isUnavailable: false }))
+    toSelectableItemOption(
+      {
+        category: 'Unavailable',
+        isKeyItem: false,
+        itemId: selectedItemId,
+        name: `${selectedItemName} unavailable`
+      },
+      true
+    ),
+    ...mappedOptions
   ];
+}
+
+function toSelectableItemOption(
+  option: NpcItemGiftItemOptionRecord,
+  isUnavailable: boolean
+): NpcItemGiftSelectableItemOption {
+  return {
+    ...option,
+    isUnavailable,
+    label: `${option.name} #${option.itemId}`
+  };
+}
+
+function findExactItemOption(
+  value: string,
+  options: NpcItemGiftSelectableItemOption[]
+) {
+  const normalizedValue = value.trim().toLocaleLowerCase();
+  if (normalizedValue.length === 0) {
+    return null;
+  }
+
+  return (
+    options.find(
+      (option) =>
+        !option.isUnavailable &&
+        (option.label.toLocaleLowerCase() === normalizedValue ||
+          option.name.toLocaleLowerCase() === normalizedValue ||
+          option.itemId.toString() === normalizedValue)
+    ) ?? null
+  );
+}
+
+function formatItemPickerValue(
+  value: number,
+  options: NpcItemGiftSelectableItemOption[]
+) {
+  return options.find((option) => option.itemId === value)?.label ?? `Item ${value}`;
+}
+
+function getSmartItemMatches(
+  value: string,
+  options: NpcItemGiftSelectableItemOption[]
+) {
+  const query = value.trim();
+  if (query.length === 0) {
+    return options.slice(0, 100);
+  }
+
+  const normalizedQuery = query.toLocaleLowerCase();
+  const numericPrefix = normalizedQuery.match(/^\d+/)?.[0] ?? null;
+  if (numericPrefix) {
+    const normalizedNumericPrefix = numericPrefix.replace(/^0+/, '') || '0';
+    return options
+      .filter((option) => {
+        const rawValue = option.itemId.toString();
+        const normalizedValue = rawValue.replace(/^0+/, '') || '0';
+        const labelNumericPrefix =
+          option.label.match(/^\s*\$?\s*0*([\d,]+)/)?.[1]?.replace(/,/g, '') ?? null;
+
+        return (
+          rawValue.startsWith(numericPrefix) ||
+          normalizedValue.startsWith(normalizedNumericPrefix) ||
+          labelNumericPrefix?.startsWith(normalizedNumericPrefix)
+        );
+      })
+      .slice(0, 100);
+  }
+
+  const tokens = normalizedQuery
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length > 0);
+  if (tokens.length === 0) {
+    return options
+      .filter((option) => option.label.toLocaleLowerCase().startsWith(normalizedQuery))
+      .slice(0, 100);
+  }
+
+  return options
+    .filter((option) => {
+      const optionTokens = option.label.toLocaleLowerCase().split(/[^a-z0-9]+/);
+      return tokens.every((token) =>
+        optionTokens.some((optionToken) => optionToken.startsWith(token))
+      );
+    })
+    .slice(0, 100);
 }

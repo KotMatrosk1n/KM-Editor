@@ -14,6 +14,7 @@ internal static class SwShAmxCellPatcher
     private const ushort PawnMagic32 = 0xF1E0;
     private const ushort PawnMagic64 = 0xF1E1;
     private const short PawnFlagCompact = 0x0004;
+    private const uint PackedConstantOpcode = 0x000000BC;
 
     public static int ReadCodeCellInt(byte[] data, int cell)
     {
@@ -26,7 +27,7 @@ internal static class SwShAmxCellPatcher
             throw new InvalidDataException($"AMX code cell {cell} is outside code cell count {codeCells.Length}.");
         }
 
-        var value = SignedCellValue(codeCells[cell], decoded.CellSize);
+        var value = ReadCodeCellValue(codeCells[cell], decoded.CellSize);
         if (value is < int.MinValue or > int.MaxValue)
         {
             throw new InvalidDataException($"AMX code cell {cell} value {value} is outside the supported 32-bit integer range.");
@@ -54,7 +55,7 @@ internal static class SwShAmxCellPatcher
                 throw new InvalidDataException($"AMX code cell {patch.Cell} value {patch.Value} must not be negative.");
             }
 
-            codeCells[patch.Cell] = unchecked((ulong)patch.Value);
+            codeCells[patch.Cell] = WriteCodeCellValue(codeCells[patch.Cell], patch.Value, decoded.CellSize);
         }
 
         WriteCells(decoded.Expanded, decoded.Header.Cod, codeCells, decoded.CellSize);
@@ -293,6 +294,49 @@ internal static class SwShAmxCellPatcher
         8 => unchecked((long)value),
         _ => throw new ArgumentOutOfRangeException(nameof(cellSize)),
     };
+
+    private static long ReadCodeCellValue(ulong cell, int cellSize)
+    {
+        var signed = SignedCellValue(cell, cellSize);
+        if (signed is >= int.MinValue and <= int.MaxValue)
+        {
+            return signed;
+        }
+
+        if (TryReadPackedConstant(cell, cellSize, out var packedValue))
+        {
+            return packedValue;
+        }
+
+        return signed;
+    }
+
+    private static ulong WriteCodeCellValue(ulong cell, int value, int cellSize)
+    {
+        if (IsPackedConstantCell(cell, cellSize))
+        {
+            return ((ulong)(uint)value << 32) | (uint)cell;
+        }
+
+        return unchecked((ulong)value);
+    }
+
+    private static bool TryReadPackedConstant(ulong cell, int cellSize, out int value)
+    {
+        value = 0;
+        if (!IsPackedConstantCell(cell, cellSize))
+        {
+            return false;
+        }
+
+        value = unchecked((int)(uint)(cell >> 32));
+        return true;
+    }
+
+    private static bool IsPackedConstantCell(ulong cell, int cellSize)
+    {
+        return cellSize == 8 && (uint)cell == PackedConstantOpcode && (cell >> 32) != 0;
+    }
 
     private sealed record DecodedAmx(
         SwShAmxHeader Header,

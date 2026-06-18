@@ -555,6 +555,16 @@ h2 {
   background: linear-gradient(135deg, #27217a, #4f46e5);
 }
 
+.searchable-option-row:disabled {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.searchable-option-row:disabled:hover {
+  background: transparent;
+}
+
 .searchable-option-row span {
   display: block;
   min-width: 0;
@@ -3546,9 +3556,11 @@ h2 {
   gap: 10px;
   margin-top: 14px;
   padding: 12px 14px;
-  color: #ffe7a8;
-  background: #211b0e;
-  border: 1px solid var(--color-gold-dark);
+  color: #ead7a6;
+  background:
+    linear-gradient(180deg, rgb(31 29 21 / 86%), rgb(20 25 39 / 92%)),
+    var(--color-surface-muted);
+  border: 1px solid rgb(214 168 66 / 34%);
   border-radius: 8px;
   font-size: 13px;
   font-weight: 800;
@@ -3557,7 +3569,7 @@ h2 {
 
 .npc-item-gift-warning svg {
   flex: 0 0 auto;
-  color: var(--color-gold);
+  color: #d7b35b;
 }
 
 .npc-item-gift-tabs {
@@ -3566,41 +3578,91 @@ h2 {
   gap: 10px;
 }
 
+.npc-item-gift-tab-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.npc-item-gift-tab-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.npc-item-gift-tab-group h3 {
+  margin: 0;
+  color: #d8c381;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .npc-item-gift-tab {
+  position: relative;
   min-height: 44px;
   padding: 0 12px;
-  color: #f4e6c7;
-  background: #121a2a;
-  border: 1px solid var(--color-gold-dark);
+  color: var(--color-text-soft);
+  background:
+    linear-gradient(180deg, rgb(25 35 57 / 94%), rgb(15 23 39 / 98%)),
+    var(--color-surface-muted);
+  border: 1px solid rgb(81 99 133 / 62%);
   border-radius: 8px;
-  box-shadow: inset 0 0 0 1px rgba(214, 168, 66, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 5%),
+    0 1px 2px rgb(0 0 0 / 18%);
   font-size: 13px;
   font-weight: 900;
   cursor: pointer;
 }
 
 .npc-item-gift-tab:hover {
-  border-color: var(--color-gold);
-  color: #ffffff;
+  color: var(--color-text);
+  background:
+    linear-gradient(180deg, rgb(31 45 73 / 96%), rgb(18 29 49 / 98%)),
+    var(--color-surface);
+  border-color: rgb(137 155 194 / 72%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 7%),
+    0 4px 12px rgb(0 0 0 / 18%);
+  transform: translateY(-1px);
 }
 
 .npc-item-gift-tab.is-selected {
-  color: #ffffff;
-  background: #1d2740;
-  border-color: var(--color-gold);
+  color: var(--color-text);
+  background:
+    linear-gradient(135deg, rgb(38 47 76 / 98%), rgb(30 37 61 / 98%)),
+    var(--color-surface-strong);
+  border-color: rgb(214 168 66 / 58%);
   box-shadow:
-    inset 0 0 0 1px rgba(214, 168, 66, 0.32),
-    0 0 0 2px rgba(214, 168, 66, 0.12);
+    inset 3px 0 0 var(--color-gold),
+    inset 0 1px 0 rgb(255 255 255 / 6%),
+    0 0 0 1px rgb(214 168 66 / 12%);
+}
+
+.npc-item-gift-tab:focus-visible {
+  outline: 2px solid rgb(109 115 255 / 82%);
+  outline-offset: 2px;
+}
+
+.npc-item-gift-tab.is-staged {
+  padding-right: 58px;
 }
 
 .npc-item-gift-tab.is-staged::after {
   content: 'Staged';
-  display: block;
-  margin-top: 2px;
-  color: var(--color-gold);
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  padding: 2px 6px;
+  color: #1c2436;
+  background: #d8b75f;
+  border-radius: 999px;
   font-size: 10px;
   font-weight: 900;
+  line-height: 1;
   text-transform: uppercase;
+  transform: translateY(-50%);
 }
 
 .npc-item-gift-stack {
@@ -3667,7 +3729,7 @@ h2 {
   min-width: 0;
 }
 
-.npc-item-gift-field span {
+.npc-item-gift-field > span {
   color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 900;
@@ -3701,57 +3763,72 @@ h2 {
 .npc-item-gift-defaults {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
   color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 800;
 }
 
-.npc-item-gift-defaults span {
-  padding: 5px 8px;
-  background: #111a2c;
-  border: 1px solid #26344d;
-  border-radius: 8px;
+.npc-item-gift-defaults p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.npc-item-gift-restore-button {
+  min-height: 34px;
+  padding: 0 10px;
 }
 
 .npc-item-gift-actions {
   margin-top: 0;
 }
 
-.npc-item-gift-source-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.npc-item-gift-source-summary {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 12px;
+.npc-item-gift-source-table-wrap {
+  max-height: min(360px, 48vh);
+  overflow: auto;
   background: #0f1729;
   border: 1px solid #26344d;
   border-radius: 8px;
 }
 
-.npc-item-gift-source-summary div {
-  display: grid;
-  gap: 3px;
+.npc-item-gift-source-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
-.npc-item-gift-source-summary dt {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.npc-item-gift-source-summary dd {
-  min-width: 0;
-  margin: 0;
+.npc-item-gift-source-table th,
+.npc-item-gift-source-table td {
+  padding: 10px 12px;
   color: #f4f7fb;
   font-size: 12px;
   font-weight: 800;
+  line-height: 1.35;
+  text-align: left;
+  vertical-align: top;
+  border-top: 1px solid #26344d;
+}
+
+.npc-item-gift-source-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--color-text-muted);
+  font-weight: 900;
+  text-transform: uppercase;
+  background: #111a2c;
+  border-top: 0;
+}
+
+.npc-item-gift-source-table tbody th {
+  color: #f4e6c7;
+  font-weight: 900;
+}
+
+.npc-item-gift-source-table td:nth-child(2) {
   overflow-wrap: anywhere;
 }
 
@@ -4754,6 +4831,13 @@ h2 {
   min-width: 0;
 }
 
+.sv-encounter-selector select:disabled {
+  color: var(--color-text-muted);
+  border-style: dashed;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .royal-candy-inspector {
   grid-template-columns: minmax(240px, 0.45fr) minmax(0, 1fr);
   gap: 14px 18px;
@@ -5624,7 +5708,6 @@ input {
   .fairy-gym-source-grid,
   .npc-item-gift-tabs,
   .npc-item-gift-fields,
-  .npc-item-gift-source-grid,
   .shiny-rate-current,
   .shiny-rate-custom,
   .change-plan-list li,

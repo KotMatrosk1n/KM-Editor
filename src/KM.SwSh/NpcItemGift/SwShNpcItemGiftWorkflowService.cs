@@ -155,7 +155,7 @@ public sealed class SwShNpcItemGiftWorkflowService
         try
         {
             return itemsWorkflowService.Load(project).Items
-                .Where(item => item.ItemId > 0 && !string.Equals(item.Name, "None", StringComparison.OrdinalIgnoreCase))
+                .Where(IsSelectableNpcGiftItem)
                 .Where(item => !royalCandyInstalled || !SwShStartingItemsWorkflowService.IsReservedRoyalCandyStartingItem(item.ItemId, item.Name))
                 .Select(item => new SwShNpcItemGiftItemOptionRecord(
                     item.ItemId,
@@ -184,6 +184,39 @@ public sealed class SwShNpcItemGiftWorkflowService
         }
 
         return Array.Empty<SwShNpcItemGiftItemOptionRecord>();
+    }
+
+    private static bool IsSelectableNpcGiftItem(SwShItemRecord item)
+    {
+        if (item.ItemId <= 0)
+        {
+            return false;
+        }
+
+        var name = item.Name.Trim();
+        if (name.Length == 0
+            || string.Equals(name, "None", StringComparison.OrdinalIgnoreCase)
+            || IsGeneratedItemName(name)
+            || name.Contains("???", StringComparison.Ordinal)
+            || name.Contains("Dummy", StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith("Unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsGeneratedItemName(string name)
+    {
+        const string Prefix = "Item ";
+        if (!name.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var suffix = name[Prefix.Length..].Trim();
+        return suffix.Length > 0 && suffix.All(char.IsDigit);
     }
 
     private static IReadOnlyList<SwShNpcItemGiftSourceRecord> CreateSourceRecords(
