@@ -343,7 +343,9 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Raid Rewards' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Tools' }));
+    expect(screen.getByRole('button', { name: 'Randomizer' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Spreadsheet Import' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mod Merger' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Hooks' }));
     expect(screen.getByRole('button', { name: 'Bag Hook' })).toBeInTheDocument();
@@ -373,7 +375,7 @@ describe('App', () => {
     ]);
   });
 
-  it('shows only the enabled Scarlet/Violet regular editors and tools', async () => {
+  it('shows only Scarlet/Violet owned editors and tools from a contaminated workflow list', async () => {
     const user = userEvent.setup();
     const createWorkflowSummary = (id: string, label: string): WorkflowSummary => ({
       availability: 'available',
@@ -384,12 +386,12 @@ describe('App', () => {
     });
     const listWorkflows = vi.fn(async () => ({
       workflows: [
-        createWorkflowSummary('items', 'Items'),
-        createWorkflowSummary('pokemon', 'Pokemon Data'),
-        createWorkflowSummary('trainers', 'Trainers'),
-        createWorkflowSummary('encounters', 'Wild Encounters'),
-        createWorkflowSummary('modMerger', 'S/V Mod Merger')
-      ]
+        ['items', 'Items'], ['pokemon', 'Pokemon Data'], ['moves', 'Moves'], ['text', 'Text and Dialogue Map'],
+        ['trainers', 'Trainers'], ['encounters', 'Wild Encounters'], ['placement', 'Placement'],
+        ['raidBattles', 'Raid Battles'], ['flagworkSave', 'Flagwork and Save Inspectors'],
+        ['bagHook', 'Bag Hook'], ['royalCandy', 'Royal Candy Workflows'], ['shinyRate', 'Shiny Rate'],
+        ['spreadsheetImport', 'Spreadsheet Import'], ['randomizer', 'Randomizer'], ['modMerger', 'S/V Mod Merger']
+      ].map(([id, label]) => createWorkflowSummary(id, label))
     }));
     useWorkbenchStore.setState({
       draftPaths: {
@@ -413,20 +415,16 @@ describe('App', () => {
       .map((button) => button.textContent);
 
     expect(topLevelLabels).toEqual([
-      'Project Setup',
-      'Editors',
-      'Encounters & Pokemon Sources',
-      'Tools',
-      'Changes',
-      'Settings'
+      'Project Setup', 'Editors', 'Encounters & Pokemon Sources', 'Tools', 'Changes', 'Settings'
     ]);
 
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     expect(within(navigation).getByRole('button', { name: 'Pokemon' })).toBeInTheDocument();
     expect(within(navigation).getByRole('button', { name: 'Trainers' })).toBeInTheDocument();
     expect(within(navigation).getByRole('button', { name: 'Items' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Placement' })).toBeInTheDocument();
     expect(within(navigation).queryByRole('button', { name: 'Moves' })).not.toBeInTheDocument();
-    expect(within(navigation).queryByRole('button', { name: 'Placement' })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Text' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     expect(
@@ -442,6 +440,39 @@ describe('App', () => {
       within(navigation).queryByRole('button', { name: 'Spreadsheet Import' })
     ).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('button', { name: 'Randomizer' })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Hooks' })).not.toBeInTheDocument();
+    expect(
+      within(navigation).queryByRole('button', { name: 'Advanced Editors' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('closes a wrong-family active workflow section before it can stay mounted', async () => {
+    useWorkbenchStore.setState({
+      activeSection: 'shinyRate',
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        selectedGame: 'scarlet'
+      },
+      workflows: [
+        {
+          availability: 'available',
+          description: 'SwSh-only contaminated workflow.',
+          diagnostics: [],
+          id: 'shinyRate',
+          label: 'Shiny Rate'
+        }
+      ]
+    });
+
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 1, name: 'Project Setup' })).toBeInTheDocument()
+    );
+    expect(screen.queryByRole('heading', { level: 1, name: 'Shiny Rate' })).not.toBeInTheDocument();
   });
 
   it('resets Type Chart draft values to vanilla before staging', async () => {

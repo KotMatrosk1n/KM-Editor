@@ -7,6 +7,7 @@ import { App } from '../../App';
 import { type PlacementWorkflow } from '../../bridge/contracts';
 import { createMockProjectBridge } from '../../testSupport/appTestFixtures';
 import { useWorkbenchStore } from '../../workbenchStore';
+import { getPlacementCategories, getPlacementCategoryId } from './placementUi';
 
 const tauriEventMock = vi.hoisted(() => ({
   listen: vi.fn(() => Promise.resolve(() => undefined))
@@ -67,6 +68,28 @@ describe('PlacementSection', () => {
 
     expect(screen.getByText('No entries in Visible Items.')).toBeInTheDocument();
     expect(screen.getByText('No placement object selected.')).toBeInTheDocument();
+  });
+
+  it('keeps SwSh legacy placement rows out of S/V category metadata', () => {
+    const workflow = createSwShPlacementWorkflowWithStaleStructuredCategories();
+
+    expect(workflow.categories?.map((category) => category.objectCount)).toEqual([247, 4378]);
+    expect(getPlacementCategories(workflow)).toEqual([
+      {
+        description: 'Placed object records.',
+        id: 'visibleItems',
+        label: 'Visible Items',
+        objectCount: 1
+      },
+      {
+        description: 'Placed object records.',
+        id: 'hiddenItems',
+        label: 'Hidden Items',
+        objectCount: 1
+      }
+    ]);
+    expect(getPlacementCategoryId(workflow.objects[0]!)).toBe('visibleItems');
+    expect(getPlacementCategoryId(workflow.objects[1]!)).toBe('hiddenItems');
   });
 });
 
@@ -188,6 +211,113 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
     summary: {
       availability: 'available',
       description: 'S/V placement test workflow.',
+      diagnostics: [],
+      id: 'placement',
+      label: 'Placement'
+    }
+  };
+}
+
+function createSwShPlacementWorkflowWithStaleStructuredCategories(): PlacementWorkflow {
+  return {
+    categories: [
+      {
+        description: 'S/V visible item scene placements.',
+        id: 'visibleItems',
+        label: 'Visible Items',
+        objectCount: 247
+      },
+      {
+        description: 'S/V hidden item pool tables.',
+        id: 'hiddenItems',
+        label: 'Hidden Items',
+        objectCount: 4378
+      }
+    ],
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'itemId',
+        label: 'Item',
+        maximumValue: 9999,
+        minimumValue: 0,
+        options: [{ label: '1 Potion', value: 1 }, { label: '2 Great Ball', value: 2 }],
+        valueKind: 'integer'
+      },
+      {
+        field: 'quantity',
+        label: 'Quantity',
+        maximumValue: 999,
+        minimumValue: 0,
+        valueKind: 'integer'
+      }
+    ],
+    objects: [
+      {
+        archiveMember: 'a_test.bin',
+        categoryId: '',
+        categoryLabel: '',
+        chance: null,
+        chanceIndex: null,
+        fields: [],
+        itemHash: '0xAABBCCDD00112233',
+        itemId: 1,
+        itemName: 'Potion',
+        label: 'Field item: Potion',
+        map: 'Route 1',
+        objectId: 'a_test.bin|0|fieldItem|0|-',
+        objectIndex: 0,
+        objectType: 'FieldItem',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/archive/field/resident/placement.gfpak',
+          sourceLayer: 'base'
+        },
+        quantity: 1,
+        rotationY: 90,
+        scriptId: 'visible_potion',
+        x: 10.5,
+        y: 0,
+        zoneIndex: 0,
+        z: -4.25
+      },
+      {
+        archiveMember: 'a_test.bin',
+        categoryId: '',
+        categoryLabel: '',
+        chance: 35,
+        chanceIndex: 0,
+        fields: [],
+        itemHash: '0xAABBCCDD00112244',
+        itemId: 2,
+        itemName: 'Great Ball',
+        label: 'Hidden item: Great Ball',
+        map: 'Route 1',
+        objectId: 'a_test.bin|0|hiddenItem|0|0',
+        objectIndex: 0,
+        objectType: 'HiddenItem',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/bin/archive/field/resident/placement.gfpak',
+          sourceLayer: 'base'
+        },
+        quantity: 1,
+        rotationY: 0,
+        scriptId: null,
+        x: 11,
+        y: 0,
+        zoneIndex: 0,
+        z: -5
+      }
+    ],
+    stats: {
+      sourceFileCount: 1,
+      totalAreaCount: 1,
+      totalObjectCount: 2
+    },
+    summary: {
+      availability: 'available',
+      description: 'SwSh placement test workflow.',
       diagnostics: [],
       id: 'placement',
       label: 'Placement'

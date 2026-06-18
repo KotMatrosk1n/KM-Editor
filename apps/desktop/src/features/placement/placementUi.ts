@@ -30,17 +30,19 @@ export type PlacementFieldControl = {
 
 export function getPlacementCategories(workflow: PlacementWorkflow | null) {
   if (!workflow) return [];
-  if (workflow.categories?.length) return workflow.categories;
+  if (workflow.categories?.length && hasStructuredPlacementFields(workflow)) {
+    return workflow.categories;
+  }
 
   const counts = new Map<string, { description: string; id: string; label: string; objectCount: number }>();
   for (const object of workflow.objects) {
-    const id = getLegacyPlacementCategoryId(object);
+    const id = getPlacementCategoryId(object);
     const current = counts.get(id);
     if (current) current.objectCount += 1;
     else counts.set(id, {
       description: 'Placed object records.',
       id,
-      label: id === 'hiddenItems' ? 'Hidden Items' : 'Visible Items',
+      label: getPlacementCategoryLabel(object, id),
       objectCount: 1
     });
   }
@@ -48,8 +50,13 @@ export function getPlacementCategories(workflow: PlacementWorkflow | null) {
   return [...counts.values()];
 }
 
+export function getPlacementCategoryId(object: PlacedObjectRecord) {
+  const categoryId = object.categoryId?.trim();
+  return categoryId ? categoryId : getLegacyPlacementCategoryId(object);
+}
+
 export function getLegacyPlacementCategoryId(object: PlacedObjectRecord) {
-  return object.categoryId || (object.objectType === 'HiddenItem' ? 'hiddenItems' : 'visibleItems');
+  return object.objectType === 'HiddenItem' ? 'hiddenItems' : 'visibleItems';
 }
 
 export function getPlacementFieldControls(
@@ -143,8 +150,20 @@ export function formatPlacementCoordinates(object: PlacedObjectRecord) {
 }
 
 export function isPokemonPlacementObject(object: PlacedObjectRecord) {
-  const categoryId = object.categoryId ?? getLegacyPlacementCategoryId(object);
+  const categoryId = getPlacementCategoryId(object);
   return categoryId === 'fixedSymbols' || categoryId === 'coinSymbols';
+}
+
+function hasStructuredPlacementFields(workflow: PlacementWorkflow) {
+  return workflow.objects.some((object) => (object.fields?.length ?? 0) > 0);
+}
+
+function getPlacementCategoryLabel(object: PlacedObjectRecord, categoryId: string) {
+  const categoryLabel = object.categoryLabel?.trim();
+  if (categoryLabel) return categoryLabel;
+  if (categoryId === 'hiddenItems') return 'Hidden Items';
+  if (categoryId === 'visibleItems') return 'Visible Items';
+  return categoryId;
 }
 
 function isLegacyPlacementFieldVisible(object: PlacedObjectRecord, field: string) {
