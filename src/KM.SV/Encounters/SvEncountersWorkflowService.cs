@@ -22,7 +22,7 @@ internal sealed class SvEncountersWorkflowService
     [
         new(SvEncountersWorkflowService.SpeciesIdField, "Species", "integer", 0, ushort.MaxValue),
         new(SvEncountersWorkflowService.FormField, "Form", "integer", sbyte.MinValue, sbyte.MaxValue),
-        new(SvEncountersWorkflowService.ProbabilityField, "Chance (%)", "integer", short.MinValue, short.MaxValue),
+        new(SvEncountersWorkflowService.ProbabilityField, "Lot weight", "integer", short.MinValue, short.MaxValue),
         new(SvEncountersWorkflowService.LevelMinField, "Min Level", "integer", 0, 100),
         new(SvEncountersWorkflowService.LevelMaxField, "Max Level", "integer", 0, 100),
     ];

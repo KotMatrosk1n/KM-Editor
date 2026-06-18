@@ -127,6 +127,12 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal("Overgrow", bulbasaur.Abilities.Ability1Label);
         Assert.Equal(16, bulbasaur.BaseExperience);
         Assert.Equal("Tackle", Assert.Single(bulbasaur.Learnset).MoveName);
+        var tmGroup = bulbasaur.Compatibility.Single(group => group.GroupId == "tm");
+        Assert.Equal(1, tmGroup.EnabledCount);
+        var tmEntry = Assert.Single(tmGroup.Entries);
+        Assert.Equal(36, tmEntry.MoveId);
+        Assert.Equal("TM001 Take Down", tmEntry.Label);
+        Assert.True(tmEntry.CanLearn);
 
         var pokemonFields = pokemon.Payload.Workflow.EditableFields;
         Assert.Contains(
@@ -172,8 +178,14 @@ public sealed class ScarletVioletBridgeTests
             new LoadItemsWorkflowRequest(paths),
             "request-sv-item-labels");
         AssertSuccess(items);
-        Assert.Equal("Master Ball", Assert.Single(items.Payload!.Workflow.Items).Name);
-        Assert.False(Assert.Single(items.Payload.Workflow.Items).Metadata.CanUseOnPokemon);
+        var masterBall = items.Payload!.Workflow.Items.Single(item => item.ItemId == 1);
+        var tm001 = items.Payload.Workflow.Items.Single(item => item.ItemId == 2);
+        Assert.Equal("Master Ball", masterBall.Name);
+        Assert.False(masterBall.Metadata.CanUseOnPokemon);
+        Assert.True(tm001.Metadata.CanUseOnPokemon);
+        Assert.Equal(1, tm001.Metadata.MachineSlot);
+        Assert.Equal(36, tm001.Metadata.MachineMoveId);
+        Assert.Equal("Take Down", tm001.Metadata.MachineMoveName);
         var itemFields = items.Payload.Workflow.EditableFields;
         Assert.Contains(
             itemFields.Single(field => field.Field == "pouch").Options,
@@ -189,7 +201,10 @@ public sealed class ScarletVioletBridgeTests
             option => option.Value == (int)global::ItemGroup.ITEMGROUP_BALL && option.Label == "Ball");
         Assert.Contains(
             itemFields.Single(field => field.Field == "machineMoveId").Options,
-            option => option.Value == 33 && option.Label.Contains("Tackle", StringComparison.Ordinal));
+            option => option.Value == 36 && option.Label.Contains("Take Down", StringComparison.Ordinal));
+        Assert.Contains(
+            itemFields.Single(field => field.Field == "groupIndex").Options,
+            option => option.Value == 1 && option.Label.Contains("TM001 Take Down", StringComparison.Ordinal));
 
         var trainers = Dispatch<LoadTrainersWorkflowResponse>(
             dispatcher,
@@ -205,7 +220,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal(new[] { "Tackle", "None", "None", "None" }, trainerPokemon.Moves);
         Assert.Equal("Random", trainerPokemon.GenderLabel);
         Assert.Equal("Random 1/2", trainerPokemon.AbilityLabel);
-        Assert.Equal("Default", trainerPokemon.NatureLabel);
+        Assert.Equal("Default (game behavior)", trainerPokemon.NatureLabel);
         Assert.Contains(
             trainerPokemon.AbilityOptions,
             option => option.Value == (int)global::TokuseiType.SET_1 && option.Label == "Overgrow (Ability 1)");
@@ -234,6 +249,9 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(
             trainerFields.Single(field => field.Field == "shiny").Options,
             option => option.Value == 1 && option.Label == "Forced shiny");
+        Assert.Contains(
+            trainerFields.Single(field => field.Field == "shiny").Options,
+            option => option.Value == 0 && option.Label == "Default / not forced");
         Assert.Contains(
             trainerFields.Single(field => field.Field == "teraType").Options,
             option => option.Value == (int)global::GemType.FAIRY && option.Label == "Fairy");
@@ -286,6 +304,20 @@ public sealed class ScarletVioletBridgeTests
         var restoreEvSession = UpdatePokemonField(dispatcher, paths, personalId: 0, field: "evYieldAll", value: "restore");
         Apply(dispatcher, paths, restoreEvSession);
         Assert.Equal(1, ReadPersonal(temp, personalId: 1).EvYield!.Value.Spa);
+
+        var combinedSession = UpdatePokemonField(dispatcher, paths, personalId: 0, field: "expYieldAll", value: "remove");
+        combinedSession = UpdatePokemonField(
+            dispatcher,
+            paths,
+            combinedSession,
+            personalId: 0,
+            field: "evYieldAll",
+            value: "remove");
+        Assert.Contains(combinedSession.PendingEdits, edit => edit.Field == "expYieldAll");
+        Assert.Contains(combinedSession.PendingEdits, edit => edit.Field == "evYieldAll");
+        Apply(dispatcher, paths, combinedSession);
+        Assert.Equal(-16, ReadPersonal(temp, personalId: 1).ExpAddend);
+        Assert.Equal(0, ReadPersonal(temp, personalId: 1).EvYield!.Value.Spa);
     }
 
     [Theory]
@@ -338,8 +370,8 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(temp, SvDataPaths.TrainerDataArray, CreateTrainerDataArray());
         WriteSvOutput(temp, SvDataPaths.WildEncounterArray, CreateEncounterArray());
         temp.WriteBaseRomFsFile(SvDataPaths.EnglishPokemonNames, CreateTextTable(3, (1, "Bulbasaur"), (2, "Ivysaur")));
-        temp.WriteBaseRomFsFile(SvDataPaths.EnglishItemNames, CreateTextTable(2, (1, "Master Ball")));
-        temp.WriteBaseRomFsFile(SvDataPaths.EnglishMoveNames, CreateTextTable(46, (33, "Tackle"), (45, "Growl")));
+        temp.WriteBaseRomFsFile(SvDataPaths.EnglishItemNames, CreateTextTable(3, (1, "Master Ball"), (2, "TM001")));
+        temp.WriteBaseRomFsFile(SvDataPaths.EnglishMoveNames, CreateTextTable(46, (33, "Tackle"), (36, "Take Down"), (45, "Growl")));
         temp.WriteBaseRomFsFile(SvDataPaths.EnglishAbilityNames, CreateTextTable(66, (34, "Chlorophyll"), (65, "Overgrow")));
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishPlaceNames,
@@ -378,10 +410,21 @@ public sealed class ScarletVioletBridgeTests
         string field,
         string value)
     {
+        return UpdatePokemonField(dispatcher, paths, session: null, personalId, field, value);
+    }
+
+    private static EditSessionDto UpdatePokemonField(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        EditSessionDto? session,
+        int personalId,
+        string field,
+        string value)
+    {
         var response = Dispatch<UpdatePokemonFieldResponse>(
             dispatcher,
             KmCommandNames.UpdatePokemonField,
-            new UpdatePokemonFieldRequest(paths, Session: null, personalId, field, value),
+            new UpdatePokemonFieldRequest(paths, session, personalId, field, value),
             "request-sv-pokemon-field-update");
 
         AssertSuccess(response);
@@ -588,7 +631,7 @@ public sealed class ScarletVioletBridgeTests
     {
         var builder = new FlatBufferBuilder(1024);
         var icon = builder.CreateString("item_0001");
-        var item = global::ItemData.CreateItemData(
+        var masterBall = global::ItemData.CreateItemData(
             builder,
             Id: 1,
             IconNameOffset: icon,
@@ -598,7 +641,21 @@ public sealed class ScarletVioletBridgeTests
             SortNum: 1,
             GroupID: 1,
             SetToPoke: true);
-        var vector = global::ItemDataArray.CreateValuesVector(builder, [item]);
+        var tmIcon = builder.CreateString("item_tm_001");
+        var tm001 = global::ItemData.CreateItemData(
+            builder,
+            Id: 2,
+            ItemType: global::ItemType.ITEMTYPE_WAZA,
+            IconNameOffset: tmIcon,
+            Price: 800,
+            MachineWaza: (global::pml.common.WazaID)36,
+            SortNum: 2,
+            ItemGroup: global::ItemGroup.ITEMGROUP_WAZA_MACHINE,
+            GroupID: 1,
+            FieldPocket: global::FieldPocket.FPOCKET_WAZA,
+            FieldFunctionType: global::FieldFunctionType.FIELDFUNC_WAZA,
+            SetToPoke: true);
+        var vector = global::ItemDataArray.CreateValuesVector(builder, [masterBall, tm001]);
         var root = global::ItemDataArray.CreateItemDataArray(builder, vector);
         global::ItemDataArray.FinishItemDataArrayBuffer(builder, root);
         return builder.SizedByteArray();
@@ -622,7 +679,7 @@ public sealed class ScarletVioletBridgeTests
         ushort level,
         ushort evolutionLevel)
     {
-        var tmMoves = global::personal.CreateTmMovesVector(builder, species == 0 ? [] : [(ushort)33]);
+        var tmMoves = global::personal.CreateTmMovesVector(builder, species == 0 ? [] : [(ushort)36]);
         var eggMoves = global::personal.CreateEggMovesVector(builder, []);
         var reminderMoves = global::personal.CreateReminderMovesVector(builder, []);
 

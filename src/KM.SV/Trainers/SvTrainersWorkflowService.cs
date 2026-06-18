@@ -80,7 +80,7 @@ internal sealed class SvTrainersWorkflowService
 
     private static readonly IReadOnlyList<SvTrainerEditableFieldOption> NatureOptions =
     [
-        new(0, "Default"),
+        new(0, "Default (game behavior)"),
         new(1, "Hardy (neutral)"),
         new(2, "Lonely (+Atk, -Def)"),
         new(3, "Brave (+Atk, -Spe)"),
@@ -110,13 +110,13 @@ internal sealed class SvTrainersWorkflowService
 
     private static readonly IReadOnlyList<SvTrainerEditableFieldOption> ShinyModeOptions =
     [
-        new(0, "Default"),
+        new(0, "Default / not forced"),
         new(1, "Forced shiny"),
     ];
 
     private static readonly IReadOnlyList<SvTrainerEditableFieldOption> TeraTypeOptions =
     [
-        new((int)global::GemType.DEFAULT, "Default"),
+        new((int)global::GemType.DEFAULT, "Default (no override)"),
         new((int)global::GemType.RANDOM, "Random"),
         new((int)global::GemType.NORMAL, "Normal"),
         new((int)global::GemType.KAKUTOU, "Fighting"),
@@ -366,7 +366,7 @@ internal sealed class SvTrainersWorkflowService
                 ivs?.SpAtk ?? 0,
                 ivs?.SpDef ?? 0,
                 ivs?.Agi ?? 0),
-            pokemon.RareType != global::RareType.DEFAULT,
+            pokemon.RareType == global::RareType.RARE,
             CanDynamax: true,
             TeraType: (int)pokemon.GemType,
             TeraTypeLabel: FormatTeraType(pokemon.GemType))
@@ -389,7 +389,7 @@ internal sealed class SvTrainersWorkflowService
             ReadMoveId(pokemon.Waza4),
         };
 
-        if (pokemon.WazaType == global::WazaType.DEFAULT && explicitMoves.All(move => move == 0))
+        if (explicitMoves.All(move => move == 0))
         {
             return moveResolver.Resolve((int)pokemon.DevId, pokemon.FormId, pokemon.Level);
         }

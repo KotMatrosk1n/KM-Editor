@@ -294,8 +294,9 @@ internal sealed class SvPokemonWorkflowService
         try
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
+            var tmCatalog = SvTechnicalMachineCatalog.Load(project, fileSource, labels, diagnostics);
             source = fileSource.Read(project, SvDataPaths.PersonalArray);
-            pokemon = LoadRecords(source, labels).ToArray();
+            pokemon = LoadRecords(source, labels, tmCatalog).ToArray();
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
@@ -328,7 +329,10 @@ internal sealed class SvPokemonWorkflowService
             diagnostics);
     }
 
-    private static IEnumerable<SvPokemonRecord> LoadRecords(SvWorkflowFile source, SvTextLabelLookup labels)
+    private static IEnumerable<SvPokemonRecord> LoadRecords(
+        SvWorkflowFile source,
+        SvTextLabelLookup labels,
+        IReadOnlyList<SvTechnicalMachineMove> tmCatalog)
     {
         var table = global::personal_table.GetRootAspersonal_table(new ByteBuffer(source.Bytes));
         for (var index = 0; index < table.EntryLength; index++)
@@ -339,7 +343,7 @@ internal sealed class SvPokemonWorkflowService
                 continue;
             }
 
-            yield return ToRecord(index, entry.Value, source, labels);
+            yield return ToRecord(index, entry.Value, source, labels, tmCatalog);
         }
     }
 
@@ -347,7 +351,8 @@ internal sealed class SvPokemonWorkflowService
         int personalId,
         global::personal entry,
         SvWorkflowFile source,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        IReadOnlyList<SvTechnicalMachineMove> tmCatalog)
     {
         var species = entry.Species;
         var baseStatsData = entry.BaseStats;
@@ -465,7 +470,7 @@ internal sealed class SvPokemonWorkflowService
             weight,
             ReadEvolutions(entry, labels),
             ReadLearnset(entry, labels),
-            ReadCompatibility(entry, labels),
+            ReadCompatibility(entry, labels, tmCatalog),
             new SvPokemonProvenance(source.RelativePath, source.SourceLayer, source.FileState));
     }
 
@@ -527,25 +532,73 @@ internal sealed class SvPokemonWorkflowService
 
     private static IReadOnlyList<SvPokemonCompatibilityGroup> ReadCompatibility(
         global::personal entry,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        IReadOnlyList<SvTechnicalMachineMove> tmCatalog)
     {
-        return
-        [
-            CreateCompatibilityGroup("tm", "TM Moves", entry.GetTmMovesArray(), labels),
-            CreateCompatibilityGroup("egg", "Egg Moves", entry.GetEggMovesArray(), labels),
-            CreateCompatibilityGroup("reminder", "Reminder Moves", entry.GetReminderMovesArray(), labels),
-        ];
+        var groups = new List<SvPokemonCompatibilityGroup>
+        {
+            CreateTechnicalMachineCompatibilityGroup(entry.GetTmMovesArray(), labels, tmCatalog),
+        };
+
+        var eggMoves = entry.GetEggMovesArray();
+        if (eggMoves.Length > 0)
+        {
+            groups.Add(CreateMoveVectorCompatibilityGroup("egg", "Egg Moves", eggMoves, labels));
+        }
+
+        var reminderMoves = entry.GetReminderMovesArray();
+        if (reminderMoves.Length > 0)
+        {
+            groups.Add(CreateMoveVectorCompatibilityGroup("reminder", "Reminder Moves", reminderMoves, labels));
+        }
+
+        return groups;
     }
 
-    private static SvPokemonCompatibilityGroup CreateCompatibilityGroup(
+    private static SvPokemonCompatibilityGroup CreateTechnicalMachineCompatibilityGroup(
+        IReadOnlyList<ushort> learnableMoves,
+        SvTextLabelLookup labels,
+        IReadOnlyList<SvTechnicalMachineMove> tmCatalog)
+    {
+        if (tmCatalog.Count == 0)
+        {
+            return CreateMoveVectorCompatibilityGroup(
+                TechnicalMachineCompatibilityGroupId,
+                "TM Moves",
+                learnableMoves,
+                labels,
+                useMoveIdAsSlot: true);
+        }
+
+        var learnableMoveSet = learnableMoves
+            .Select(move => (int)move)
+            .ToHashSet();
+        var entries = tmCatalog
+            .Select(tm => new SvPokemonCompatibilityEntry(
+                tm.MoveId,
+                tm.MoveId,
+                tm.MoveName,
+                tm.Label,
+                learnableMoveSet.Contains(tm.MoveId)))
+            .ToArray();
+
+        return new SvPokemonCompatibilityGroup(
+            TechnicalMachineCompatibilityGroupId,
+            "TM Moves",
+            entries.Count(entry => entry.CanLearn),
+            entries);
+    }
+
+    private static SvPokemonCompatibilityGroup CreateMoveVectorCompatibilityGroup(
         string id,
         string label,
         IReadOnlyList<ushort> moves,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        bool useMoveIdAsSlot = false)
     {
         var entries = moves
             .Select((move, index) => new SvPokemonCompatibilityEntry(
-                index,
+                useMoveIdAsSlot ? move : index,
                 move,
                 labels.Move(move),
                 $"{index + 1}. {labels.Move(move)}",

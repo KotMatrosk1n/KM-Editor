@@ -58,7 +58,17 @@ import {
 } from 'lucide-react';
 import { type ReactVirtualizerOptions, useVirtualizer } from '@tanstack/react-virtual';
 import { listen } from '@tauri-apps/api/event';
-import { formatSvEncounterFacetValue } from './svEncounterLabels';
+import {
+  formatEncounterLotWeight,
+  formatEncounterSlotWeightSummary
+} from './encounterWeights';
+import {
+  buildSvEncounterFacetControls,
+  formatSvEncounterTableListDetails,
+  formatSvEncounterTableSummary,
+  isScarletVioletEncounterTable,
+  parseSvEncounterFacets
+} from './svEncounterTables';
 import {
   type ReactNode,
   Component,
@@ -791,6 +801,7 @@ const alternatePriceFieldName = 'alternatePrice';
 const itemFieldFlagsFieldName = 'fieldFlags';
 const itemUseFlags1FieldName = 'useFlags1';
 const itemUseFlags2FieldName = 'useFlags2';
+const itemMachineMoveIdFieldName = 'machineMoveId';
 const pokemonGlobalEvYieldFieldName = 'evYieldAll';
 const pokemonGlobalExpYieldFieldName = 'expYieldAll';
 const pokemonRemoveEvYieldValue = 'remove';
@@ -7808,7 +7819,7 @@ function SelectedItemPanel({
                         currentValue,
                         field
                       );
-                      const disabledReason = getItemFieldDisabledReason(field.field);
+                      const disabledReason = getItemFieldDisabledReason(field.field, item);
 
                       return (
                         <GiftPokemonDraftField
@@ -13230,7 +13241,7 @@ function getTradeFieldDisabledReason(fieldName: string) {
     : null;
 }
 
-function getItemFieldDisabledReason(fieldName: string) {
+function getItemFieldDisabledReason(fieldName: string, item?: ItemRecord | null) {
   if (fieldName === itemFieldFlagsFieldName) {
     return 'Unknown raw field flags are visible for research and locked until their meanings are confirmed.';
   }
@@ -13241,6 +13252,10 @@ function getItemFieldDisabledReason(fieldName: string) {
 
   if (fieldName === itemUseFlags2FieldName) {
     return 'Raw use flags 2 includes unknown bits 5-7. Edit the decoded known flags instead.';
+  }
+
+  if (fieldName === itemMachineMoveIdFieldName && item?.metadata.machineSlot === null) {
+    return 'Only TM item records can edit the taught move.';
   }
 
   return null;
@@ -17522,8 +17537,6 @@ function SelectedEncounterPanel({
     !isEncounterUpdating &&
     encounterDraftSummary.changedFields.length > 0 &&
     encounterDraftSummary.invalidFields.length === 0;
-  const encounterProbabilityTotal =
-    table?.slots.slice(0, 10).reduce((total, slot) => total + slot.weight, 0) ?? 0;
   const encounterLevelFieldNames = [encounterLevelMinFieldName, encounterLevelMaxFieldName];
   const encounterLevelZoneChanges = encounterSlot
     ? getEncounterLevelZoneChanges(encounterSlot, encounterDraftSummary.changedFields)
@@ -17565,6 +17578,15 @@ function SelectedEncounterPanel({
       : undefined;
   const isSvEncounterTable = table ? isScarletVioletEncounterTable(table) : false;
   const svEncounterFacets = table ? parseSvEncounterFacets(table) : null;
+  const displayedEncounterSlots = table
+    ? isSvEncounterTable
+      ? table.slots
+      : table.slots.slice(0, 10)
+    : [];
+  const encounterWeightTotal = displayedEncounterSlots.reduce(
+    (total, slot) => total + slot.weight,
+    0
+  );
 
   useEffect(() => {
     if (!encounterDraftKey) {
@@ -17719,19 +17741,21 @@ function SelectedEncounterPanel({
               <strong>Slots</strong>
               <span
                 className={
-                  encounterProbabilityTotal === 100
+                  isSvEncounterTable || encounterWeightTotal === 100
                     ? 'encounter-total-status'
                     : 'encounter-total-status encounter-total-warning'
                 }
               >
-                Total chance: {encounterProbabilityTotal}%
+                {isSvEncounterTable
+                  ? `Total lot weight: ${encounterWeightTotal}`
+                  : `Total chance: ${encounterWeightTotal}%`}
               </span>
             </div>
 
             {encounterSlot ? (
               <>
                 <div className="encounter-slot-tabs" aria-label="Encounter slot list">
-                  {table.slots.slice(0, 10).map((slot) => {
+                  {displayedEncounterSlots.map((slot) => {
                     const slotLabel = formatSpeciesFormLabel(
                       slot.species,
                       slot.form,
@@ -17749,11 +17773,23 @@ function SelectedEncounterPanel({
                         <PokemonSprite className="slot-tab-sprite" name={slotLabel} preferStatic />
                         <strong>{isSvEncounterTable ? `#${slot.speciesId}` : `#${slot.slot}`}</strong>
                         <span>{slotLabel}</span>
-                        <small>{`${slot.levelMin}-${slot.levelMax} / ${slot.weight}%`}</small>
+                        <small>
+                          {formatEncounterSlotWeightSummary(
+                            slot,
+                            encounterWeightTotal,
+                            isSvEncounterTable
+                          )}
+                        </small>
                       </button>
                     );
                   })}
                 </div>
+                {isSvEncounterTable && displayedEncounterSlots.length === 1 ? (
+                  <p className="empty-copy sv-encounter-slot-note">
+                    One row matches this exact S/V filter. Change area, terrain, time, biome,
+                    or flag to inspect adjacent encounter rows.
+                  </p>
+                ) : null}
 
                 <dl className="encounter-slot-detail">
                   <div>
@@ -17773,8 +17809,12 @@ function SelectedEncounterPanel({
                     </dd>
                   </div>
                   <div>
-                    <dt>{isSvEncounterTable ? 'Chance' : 'Probability'}</dt>
-                    <dd>{encounterSlot.weight}</dd>
+                    <dt>{isSvEncounterTable ? 'Lot weight' : 'Probability'}</dt>
+                    <dd>
+                      {isSvEncounterTable
+                        ? formatEncounterLotWeight(encounterSlot.weight, encounterWeightTotal)
+                        : encounterSlot.weight}
+                    </dd>
                   </div>
                   {isSvEncounterTable ? (
                     <div>
@@ -25847,163 +25887,6 @@ function getEncounterTableZoneKey(table: EncounterTableRecord) {
   return [table.gameVersion, table.location].join(':');
 }
 
-function isScarletVioletEncounterTable(table: EncounterTableRecord) {
-  return (
-    table.tableId.includes('|') ||
-    table.provenance.sourceFile.includes('world/data/encount') ||
-    table.gameVersion.includes('Scarlet') ||
-    table.gameVersion.includes('Violet')
-  );
-}
-
-function parseSvEncounterFacets(table: EncounterTableRecord | null): SvEncounterFacets | null {
-  if (!table || !isScarletVioletEncounterTable(table)) {
-    return null;
-  }
-
-  const parts = table.tableId.split('|');
-  if (parts.length < 7) {
-    return {
-      area: table.area,
-      biome: table.slots[0]?.weather ?? 'Any',
-      flag: 'no-flag',
-      location: table.location,
-      terrain: table.encounterType,
-      time: table.slots[0]?.timeOfDay ?? 'Any',
-      version: table.gameVersion
-    };
-  }
-
-  return {
-    location: parts[0] || table.location,
-    area: parts[1] || table.area,
-    version: parts[2] || table.gameVersion,
-    terrain: parts[3] || table.encounterType,
-    time: parts[4] || (table.slots[0]?.timeOfDay ?? 'Any'),
-    biome: parts[5] || (table.slots[0]?.weather ?? 'Any'),
-    flag: parts[6] || 'no-flag'
-  };
-}
-
-function buildSvEncounterFacetControls(
-  selectedTable: EncounterTableRecord,
-  tables: EncounterTableRecord[]
-): SvEncounterFacetControl[] {
-  const selectedFacets = parseSvEncounterFacets(selectedTable);
-  if (!selectedFacets) {
-    return [];
-  }
-
-  const candidates = tables
-    .map((table) => ({ facets: parseSvEncounterFacets(table), table }))
-    .filter((candidate): candidate is { facets: SvEncounterFacets; table: EncounterTableRecord } =>
-      candidate.facets !== null && candidate.facets.location === selectedFacets.location
-    );
-  const definitions: Array<{ key: SvEncounterFacetKey; label: string }> = [
-    { key: 'area', label: 'Area' },
-    { key: 'version', label: 'Version' },
-    { key: 'terrain', label: 'Terrain' },
-    { key: 'time', label: 'Time' },
-    { key: 'biome', label: 'Biome' },
-    { key: 'flag', label: 'Flag' }
-  ];
-
-  return definitions
-    .map((definition) => {
-      const choicesByValue = new Map<
-        string,
-        { label: string; score: number; tableId: string; value: string }
-      >();
-
-      for (const candidate of candidates) {
-        const value = candidate.facets[definition.key];
-        const score = scoreSvEncounterFacetMatch(selectedFacets, candidate.facets, definition.key);
-        const current = choicesByValue.get(value);
-        if (!current || score > current.score) {
-          choicesByValue.set(value, {
-            label: formatSvEncounterFacetValue(value),
-            score,
-            tableId: candidate.table.tableId,
-            value
-          });
-        }
-      }
-
-      choicesByValue.set(selectedFacets[definition.key], {
-        label: formatSvEncounterFacetValue(selectedFacets[definition.key]),
-        score: Number.MAX_SAFE_INTEGER,
-        tableId: selectedTable.tableId,
-        value: selectedFacets[definition.key]
-      });
-
-      const choices = [...choicesByValue.values()]
-        .sort((left, right) =>
-          left.value === selectedFacets[definition.key]
-            ? -1
-            : right.value === selectedFacets[definition.key]
-              ? 1
-              : left.label.localeCompare(right.label)
-        )
-        .map(({ label, tableId, value }) => ({ label, tableId, value }));
-
-      return {
-        choices,
-        currentValue: selectedFacets[definition.key],
-        key: definition.key,
-        label: definition.label
-      };
-    })
-    .filter((control) => control.choices.length > 1 && control.choices.some((choice) => choice.tableId === selectedTable.tableId));
-}
-
-function scoreSvEncounterFacetMatch(
-  selected: SvEncounterFacets,
-  candidate: SvEncounterFacets,
-  ignoredKey: SvEncounterFacetKey
-) {
-  const weights: Array<[SvEncounterFacetKey, number]> = [
-    ['area', 4],
-    ['version', 3],
-    ['terrain', 3],
-    ['time', 2],
-    ['biome', 2],
-    ['flag', 1]
-  ];
-
-  return weights.reduce(
-    (total, [key, weight]) =>
-      key === ignoredKey || selected[key] !== candidate[key] ? total : total + weight,
-    0
-  );
-}
-
-function formatSvEncounterTableSummary(facets: SvEncounterFacets) {
-  return [
-    formatSvEncounterFacetValue(facets.version),
-    formatSvEncounterFacetValue(facets.terrain),
-    formatSvEncounterFacetValue(facets.time),
-    formatSvEncounterFacetValue(facets.biome)
-  ]
-    .filter((part, index, parts) => part.length > 0 && parts.indexOf(part) === index)
-    .join(' / ');
-}
-
-function formatSvEncounterTableListDetails(table: EncounterTableRecord) {
-  const facets = parseSvEncounterFacets(table);
-  if (!facets) {
-    return table.area;
-  }
-
-  return [
-    formatSvEncounterFacetValue(facets.area),
-    formatSvEncounterFacetValue(facets.terrain),
-    formatSvEncounterFacetValue(facets.time),
-    formatSvEncounterFacetValue(facets.biome)
-  ]
-    .filter((part, index, parts) => part.length > 0 && parts.indexOf(part) === index)
-    .join(' / ');
-}
-
 function filterEncounterTables(tables: EncounterTableRecord[], searchText: string) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
 
@@ -27445,23 +27328,6 @@ type EncounterAreaCopyRequest = {
   targetArea: string;
   targetTableId: string;
   updates: EncounterSlotFieldUpdate[];
-};
-
-type SvEncounterFacetKey =
-  | 'area'
-  | 'version'
-  | 'terrain'
-  | 'time'
-  | 'biome'
-  | 'flag';
-
-type SvEncounterFacets = Record<'location' | SvEncounterFacetKey, string>;
-
-type SvEncounterFacetControl = {
-  choices: Array<{ label: string; tableId: string; value: string }>;
-  currentValue: string;
-  key: SvEncounterFacetKey;
-  label: string;
 };
 
 type SaveProgressState = {
