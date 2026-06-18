@@ -11,7 +11,9 @@ export function formatEncounterSlotWeightSummary(
     return `${slot.levelMin}-${slot.levelMax} / ${slot.weight}%`;
   }
 
-  return `${slot.levelMin}-${slot.levelMax} / lot ${slot.weight}`;
+  return `${slot.levelMin}-${slot.levelMax} / lot ${slot.weight}${
+    totalWeight > 0 ? ` (${formatEncounterShare(slot.weight, totalWeight)} share)` : ''
+  }`;
 }
 
 export function formatEncounterLotWeight(weight: number, totalWeight: number) {
@@ -20,6 +22,14 @@ export function formatEncounterLotWeight(weight: number, totalWeight: number) {
   }
 
   return `${weight} (${formatEncounterShare(weight, totalWeight)} share)`;
+}
+
+export function formatEncounterLotShare(weight: number, totalWeight: number) {
+  if (totalWeight <= 0) {
+    return 'Unavailable';
+  }
+
+  return `${formatEncounterShare(weight, totalWeight)} share`;
 }
 
 function formatEncounterShare(weight: number, totalWeight: number) {

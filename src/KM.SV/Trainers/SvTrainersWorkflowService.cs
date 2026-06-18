@@ -145,7 +145,7 @@ internal sealed class SvTrainersWorkflowService
         CreateField(SvTrainersWorkflowService.MoneyField, "Money rate", sbyte.MinValue, sbyte.MaxValue),
         CreateField(SvTrainersWorkflowService.AiFlagsField, "AI flags", 0, byte.MaxValue),
         CreateField("isStrong", "Strong trainer", 0, 1, BooleanOptions, "boolean"),
-        CreateField("changeGem", "Change Tera type", 0, 1, BooleanOptions, "boolean"),
+        CreateField("changeGem", "Can Terastallize", 0, 1, BooleanOptions, "boolean"),
         CreateField(SvTrainersWorkflowService.FormField, "Form", short.MinValue, short.MaxValue),
         CreateField(SvTrainersWorkflowService.LevelField, "Level", 0, 100),
         CreateField(SvTrainersWorkflowService.GenderField, "Gender", 0, 2, GenderOptions),
@@ -272,6 +272,8 @@ internal sealed class SvTrainersWorkflowService
             Items: [],
             aiFlags,
             aiStates,
+            trainer.ChangeGem,
+            FormatTeraTarget(trainer.ChangeGem, team),
             Heal: false,
             trainer.MoneyRate,
             Gift: 0,
@@ -418,14 +420,14 @@ internal sealed class SvTrainersWorkflowService
     {
         var flags = new[]
         {
-            (0, "Basic", "Basic AI", trainer.AiBasic),
-            (1, "High", "High AI", trainer.AiHigh),
-            (2, "Expert", "Expert AI", trainer.AiExpert),
-            (3, "Double", "Double-battle AI", trainer.AiDouble),
-            (4, "Raid", "Raid AI", trainer.AiRaid),
-            (5, "Weak", "Weak AI", trainer.AiWeak),
-            (6, "Item", "Item AI", trainer.AiItem),
-            (7, "Change", "Switching AI", trainer.AiChange),
+            (0, "Basic", "Enables baseline move selection and battle decisions.", trainer.AiBasic),
+            (1, "High", "Uses stronger scoring for move choice, targets, and matchup checks.", trainer.AiHigh),
+            (2, "Expert", "Enables the highest trainer AI tier for advanced battle decisions.", trainer.AiExpert),
+            (3, "Double", "Uses double-battle-aware partner, target, and spread move logic.", trainer.AiDouble),
+            (4, "Raid", "Uses raid-style AI checks for encounters that share raid battle behavior.", trainer.AiRaid),
+            (5, "Weak", "Allows weakness-aware choices against the opponent's active Pokemon.", trainer.AiWeak),
+            (6, "Item", "Allows the trainer AI to consider configured battle item usage.", trainer.AiItem),
+            (7, "Change", "Allows the trainer AI to consider switching Pokemon during battle.", trainer.AiChange),
         };
 
         return flags
@@ -568,6 +570,26 @@ internal sealed class SvTrainersWorkflowService
     {
         return TeraTypeOptions.FirstOrDefault(option => option.Value == (int)value)?.Label
             ?? SvLabels.EnumName(value);
+    }
+
+    internal static string FormatTeraTarget(bool canTerastallize, IReadOnlyList<SvTrainerPokemonRecord> team)
+    {
+        if (!canTerastallize)
+        {
+            return "Disabled";
+        }
+
+        var configuredTargets = team
+            .Where(pokemon => pokemon.TeraType is > (int)global::GemType.RANDOM)
+            .Select(pokemon =>
+                $"Slot {pokemon.Slot + 1}: {pokemon.Species} ({pokemon.TeraTypeLabel ?? "Tera type set"})")
+            .ToArray();
+        if (configuredTargets.Length == 0)
+        {
+            return "Enabled, no fixed Tera type on party slots";
+        }
+
+        return string.Join("; ", configuredTargets);
     }
 
     private sealed class SvTrainerAbilityResolver

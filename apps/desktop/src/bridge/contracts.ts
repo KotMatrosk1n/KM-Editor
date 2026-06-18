@@ -1121,7 +1121,7 @@ export const trainerRecordSchema = z.strictObject({
   aiFlagStates: z.array(trainerAiFlagStateSchema).default([]),
   battleType: z.string(),
   battleTypeValue: z.number().int().nonnegative(),
-  canEditClassBall: z.boolean().default(false),
+  canEditClassBall: z.boolean().default(false), canTerastallize: z.boolean().default(false),
   classBall: z.string().nullable().default(null),
   classBallId: z.number().int().nonnegative().nullable().default(null),
   classBallScope: z.string().default('Class file missing'),
@@ -1133,7 +1133,7 @@ export const trainerRecordSchema = z.strictObject({
   money: z.number().int().nonnegative().default(0),
   name: z.string(),
   provenance: trainerProvenanceSchema,
-  team: z.array(trainerPokemonRecordSchema),
+  team: z.array(trainerPokemonRecordSchema), teraTarget: z.string().default('Disabled'),
   trainerClass: z.string(),
   trainerClassId: z.number().int().nonnegative(),
   trainerId: z.number().int().nonnegative()

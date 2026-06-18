@@ -416,18 +416,21 @@ internal sealed class SvTrainersEditSessionService
                 AiFlags = value,
                 AiFlagStates = CreateAiStates(value),
             },
+            ChangeGemField => WithTeraTarget(trainer with { CanTerastallize = value != 0 }),
             _ => trainer,
         };
     }
 
     private static SvTrainerRecord OverlayTrainerPokemon(SvTrainerRecord trainer, int slot, string? field, int value)
     {
-        return trainer with
+        var updatedTrainer = trainer with
         {
             Team = trainer.Team
                 .Select(pokemon => pokemon.Slot == slot ? OverlayPokemon(pokemon, field, value) : pokemon)
                 .ToArray(),
         };
+
+        return WithTeraTarget(updatedTrainer);
     }
 
     private static SvTrainerPokemonRecord OverlayPokemon(SvTrainerPokemonRecord pokemon, string? field, int value)
@@ -488,6 +491,16 @@ internal sealed class SvTrainersEditSessionService
         {
             MoveIds = moveIds,
             Moves = moves,
+        };
+    }
+
+    private static SvTrainerRecord WithTeraTarget(SvTrainerRecord trainer)
+    {
+        return trainer with
+        {
+            TeraTarget = SvTrainersWorkflowService.FormatTeraTarget(
+                trainer.CanTerastallize,
+                trainer.Team),
         };
     }
 
@@ -761,14 +774,14 @@ internal sealed class SvTrainersEditSessionService
     {
         var definitions = new[]
         {
-            (0, "Basic", "Basic AI"),
-            (1, "High", "High AI"),
-            (2, "Expert", "Expert AI"),
-            (3, "Double", "Double-battle AI"),
-            (4, "Raid", "Raid AI"),
-            (5, "Weak", "Weak AI"),
-            (6, "Item", "Item AI"),
-            (7, "Change", "Switching AI"),
+            (0, "Basic", "Enables baseline move selection and battle decisions."),
+            (1, "High", "Uses stronger scoring for move choice, targets, and matchup checks."),
+            (2, "Expert", "Enables the highest trainer AI tier for advanced battle decisions."),
+            (3, "Double", "Uses double-battle-aware partner, target, and spread move logic."),
+            (4, "Raid", "Uses raid-style AI checks for encounters that share raid battle behavior."),
+            (5, "Weak", "Allows weakness-aware choices against the opponent's active Pokemon."),
+            (6, "Item", "Allows the trainer AI to consider configured battle item usage."),
+            (7, "Change", "Allows the trainer AI to consider switching Pokemon during battle."),
         };
 
         return definitions

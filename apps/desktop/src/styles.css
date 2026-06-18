@@ -4755,6 +4755,7 @@ h2 {
 
 .encounter-inspector > .panel-heading,
 .encounter-inspector > .item-provenance-list,
+.encounter-inspector > .sv-encounter-browser,
 .encounter-inspector > .sv-encounter-navigator,
 .encounter-inspector > .encounter-edit-form,
 .encounter-inspector > .empty-copy {
@@ -4774,6 +4775,7 @@ h2 {
   border-top: 1px solid #26344d;
 }
 
+.sv-encounter-browser,
 .sv-encounter-navigator {
   display: grid;
   gap: 12px;
@@ -4782,6 +4784,95 @@ h2 {
   background: #101827;
   border: 1px solid #26344d;
   border-radius: 8px;
+}
+
+.sv-encounter-browser-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sv-encounter-browser-summary span {
+  min-width: 0;
+  padding: 5px 9px;
+  overflow-wrap: anywhere;
+  color: var(--color-text-soft);
+  background: #0c1322;
+  border: 1px solid #26344d;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sv-encounter-condition-table {
+  display: grid;
+  min-width: 0;
+  max-height: 264px;
+  overflow: auto;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.sv-encounter-condition-row {
+  display: grid;
+  grid-template-columns:
+    minmax(190px, 1.4fr)
+    minmax(108px, 0.7fr)
+    minmax(96px, 0.65fr)
+    minmax(170px, 1.1fr)
+    minmax(170px, 1.1fr)
+    minmax(116px, 0.75fr)
+    minmax(62px, 0.4fr)
+    minmax(106px, 0.6fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 1060px;
+  min-height: 36px;
+  padding: 0 10px;
+  color: var(--color-text-soft);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #26344d;
+  text-align: left;
+}
+
+.sv-encounter-condition-row:last-child {
+  border-bottom: 0;
+}
+
+button.sv-encounter-condition-row {
+  cursor: pointer;
+}
+
+button.sv-encounter-condition-row:hover {
+  color: var(--color-text);
+  background: rgb(108 92 231 / 12%);
+}
+
+.sv-encounter-condition-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 32px;
+  color: #9aa7bd;
+  background: #111a2c;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.sv-encounter-condition-row-selected {
+  color: var(--color-text);
+  background: linear-gradient(135deg, #2f2a90, var(--color-accent));
+  box-shadow: inset 3px 0 0 var(--color-gold);
+}
+
+.sv-encounter-condition-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sv-encounter-facet-grid {
