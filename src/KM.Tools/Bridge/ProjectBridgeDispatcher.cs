@@ -210,6 +210,11 @@ public sealed class ProjectBridgeDispatcher
         {
             // Read the minimal envelope first so the payload can be deserialized into the command-specific DTO.
             var envelope = JsonSerializer.Deserialize<BridgeCommandEnvelope>(requestJson, BridgeJson.SerializerOptions);
+            var gameScopeFailure = ValidateCommandGameScope(envelope, requestJson);
+            if (gameScopeFailure is not null)
+            {
+                return gameScopeFailure;
+            }
 
             return envelope?.Command switch
             {
@@ -1770,6 +1775,147 @@ public sealed class ProjectBridgeDispatcher
     private static bool IsScarletViolet(ProjectPaths paths)
     {
         return paths.SelectedGame is ProjectGame.Scarlet or ProjectGame.Violet;
+    }
+
+    private static string? ValidateCommandGameScope(BridgeCommandEnvelope? envelope, string requestJson)
+    {
+        if (envelope?.Command is not { } command || !TryReadSelectedGame(requestJson, out var selectedGame))
+        {
+            return null;
+        }
+
+        if (IsSwordShieldOnlyCommand(command) && IsScarletViolet(selectedGame))
+        {
+            return SerializeFailure(
+                "bridge.gameMismatch",
+                $"Bridge command '{command}' is only available for Sword/Shield projects.",
+                envelope.RequestId);
+        }
+
+        if (IsScarletVioletOnlyCommand(command) && IsSwordShield(selectedGame))
+        {
+            return SerializeFailure(
+                "bridge.gameMismatch",
+                $"Bridge command '{command}' is only available for Scarlet/Violet projects.",
+                envelope.RequestId);
+        }
+
+        return null;
+    }
+
+    private static bool TryReadSelectedGame(string requestJson, out ProjectGameDto selectedGame)
+    {
+        selectedGame = default;
+
+        var request = JsonSerializer.Deserialize<BridgeRequest<JsonElement>>(requestJson, BridgeJson.SerializerOptions);
+        if (request?.Payload.ValueKind is not JsonValueKind.Object
+            || !request.Payload.TryGetProperty("paths", out var paths)
+            || paths.ValueKind is not JsonValueKind.Object
+            || !paths.TryGetProperty("selectedGame", out var selectedGameJson)
+            || selectedGameJson.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return false;
+        }
+
+        var parsedGame = selectedGameJson.Deserialize<ProjectGameDto?>(BridgeJson.SerializerOptions);
+        if (parsedGame is null)
+        {
+            return false;
+        }
+
+        selectedGame = parsedGame.Value;
+        return true;
+    }
+
+    private static bool IsSwordShield(ProjectGameDto game)
+    {
+        return game is ProjectGameDto.Sword or ProjectGameDto.Shield;
+    }
+
+    private static bool IsScarletViolet(ProjectGameDto game)
+    {
+        return game is ProjectGameDto.Scarlet or ProjectGameDto.Violet;
+    }
+
+    private static bool IsSwordShieldOnlyCommand(string command)
+    {
+        return command is
+            KmCommandNames.LoadMovesWorkflow or
+            KmCommandNames.UpdateMoveField or
+            KmCommandNames.LoadTextWorkflow or
+            KmCommandNames.UpdateTextEntry or
+            KmCommandNames.LoadGiftPokemonWorkflow or
+            KmCommandNames.UpdateGiftPokemonField or
+            KmCommandNames.LoadTradePokemonWorkflow or
+            KmCommandNames.UpdateTradePokemonField or
+            KmCommandNames.LoadStaticEncountersWorkflow or
+            KmCommandNames.UpdateStaticEncounterField or
+            KmCommandNames.LoadRentalPokemonWorkflow or
+            KmCommandNames.UpdateRentalPokemonField or
+            KmCommandNames.LoadDynamaxAdventuresWorkflow or
+            KmCommandNames.UpdateDynamaxAdventureField or
+            KmCommandNames.PreviewDynamaxAdventureDefaults or
+            KmCommandNames.PlanDynamaxAdventureSeed or
+            KmCommandNames.SearchDynamaxAdventureSeed or
+            KmCommandNames.SetDynamaxAdventureSaveSeed or
+            KmCommandNames.LoadShopsWorkflow or
+            KmCommandNames.UpdateShopInventoryItem or
+            KmCommandNames.LoadRaidBattlesWorkflow or
+            KmCommandNames.UpdateRaidBattleSlotField or
+            KmCommandNames.LoadRaidRewardsWorkflow or
+            KmCommandNames.UpdateRaidRewardField or
+            KmCommandNames.LoadRaidBonusRewardsWorkflow or
+            KmCommandNames.UpdateRaidBonusRewardField or
+            KmCommandNames.LoadBehaviorWorkflow or
+            KmCommandNames.UpdateBehaviorEntryField or
+            KmCommandNames.LoadFlagworkSaveWorkflow or
+            KmCommandNames.LoadBagHookWorkflow or
+            KmCommandNames.StageBagHookInstall or
+            KmCommandNames.StageBagHookUninstall or
+            KmCommandNames.LoadCatchCapWorkflow or
+            KmCommandNames.StageCatchCap or
+            KmCommandNames.StageCatchCapUninstall or
+            KmCommandNames.LoadHyperTrainingWorkflow or
+            KmCommandNames.StageHyperTraining or
+            KmCommandNames.LoadShinyRateWorkflow or
+            KmCommandNames.StageShinyRate or
+            KmCommandNames.LoadTypeChartWorkflow or
+            KmCommandNames.StageTypeChart or
+            KmCommandNames.LoadFairyGymBoostsWorkflow or
+            KmCommandNames.StageFairyGymBoosts or
+            KmCommandNames.LoadFashionUnlockWorkflow or
+            KmCommandNames.StageFashionUnlockInstall or
+            KmCommandNames.StageFashionUnlockUninstall or
+            KmCommandNames.LoadGymUniformRemovalWorkflow or
+            KmCommandNames.StageGymUniformRemovalInstall or
+            KmCommandNames.StageGymUniformRemovalUninstall or
+            KmCommandNames.LoadIvScreenWorkflow or
+            KmCommandNames.StageIvScreenInstall or
+            KmCommandNames.StageIvScreenUninstall or
+            KmCommandNames.LoadExeFsPatchWorkflow or
+            KmCommandNames.StageExeFsPatch or
+            KmCommandNames.LoadRoyalCandyWorkflow or
+            KmCommandNames.StageRoyalCandyWorkflow or
+            KmCommandNames.LoadStartingItemsWorkflow or
+            KmCommandNames.StageStartingItems or
+            KmCommandNames.LoadNpcItemGiftWorkflow or
+            KmCommandNames.StageNpcItemGift or
+            KmCommandNames.LoadSpreadsheetImportWorkflow or
+            KmCommandNames.PreviewSpreadsheetImport or
+            KmCommandNames.LoadModMergerWorkflow or
+            KmCommandNames.StageModMerge or
+            KmCommandNames.ApplyModMerge or
+            KmCommandNames.ImportRandomizerSeed or
+            KmCommandNames.ApplyRandomizer or
+            KmCommandNames.RestoreRandomizer;
+    }
+
+    private static bool IsScarletVioletOnlyCommand(string command)
+    {
+        return command is
+            KmCommandNames.LoadSvModMergerWorkflow or
+            KmCommandNames.StageSvModMerge or
+            KmCommandNames.ApplySvModMerge;
     }
 
     private static SwShEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)

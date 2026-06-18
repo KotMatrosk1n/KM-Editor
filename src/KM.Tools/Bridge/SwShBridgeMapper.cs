@@ -2487,7 +2487,19 @@ public static class SwShBridgeMapper
             placedObject.RotationY,
             placedObject.ScriptId,
             ToDto(placedObject.Provenance),
+            ToPlacementCategoryId(placedObject),
+            ToPlacementCategoryLabel(placedObject),
             Fields: Array.Empty<PlacementFieldValueDto>());
+    }
+
+    private static string ToPlacementCategoryId(SwShPlacedObjectRecord placedObject)
+    {
+        return placedObject.ObjectType == "HiddenItem" ? "hiddenItems" : "visibleItems";
+    }
+
+    private static string ToPlacementCategoryLabel(SwShPlacedObjectRecord placedObject)
+    {
+        return placedObject.ObjectType == "HiddenItem" ? "Hidden Items" : "Visible Items";
     }
 
     private static PlacementEditableFieldDto ToDto(SwShPlacementEditableField field)

@@ -205,6 +205,10 @@ import {
   type ProjectBridge
 } from './bridge/projectBridge';
 import {
+  createGameScopedProjectBridge,
+  isStaleProjectScopeError
+} from './bridge/gameScopedProjectBridge';
+import {
   desktopServices as defaultDesktopServices,
   type DesktopServices,
   type NativeUpdate
@@ -221,6 +225,7 @@ import {
   type WorkbenchSection,
   useWorkbenchStore
 } from './workbenchStore';
+import { getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isScarletVioletGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
 import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
 import {
@@ -246,7 +251,7 @@ import {
   formatPlacementCoordinates,
   formatPlacementItem,
   formatPlacementPrimaryData,
-  getLegacyPlacementCategoryId,
+  getPlacementCategoryId,
   getPlacementCategories,
   getPlacementFieldControls,
   getPlacementFieldValue,
@@ -582,79 +587,6 @@ const sections: Array<{
   }
 ];
 
-type WorkflowNavigationGroup = {
-  id:
-    | 'viewers'
-    | 'editors'
-    | 'encountersPokemonSources'
-    | 'economy'
-    | 'tools'
-    | 'hooks'
-    | 'advancedEditors';
-  label: string;
-  sectionIds: WorkbenchSection[];
-};
-
-const workflowNavigationGroups: WorkflowNavigationGroup[] = [
-  {
-    id: 'viewers',
-    label: 'Viewers',
-    sectionIds: ['flagworkSave', 'text']
-  },
-  {
-    id: 'editors',
-    label: 'Editors',
-    sectionIds: ['pokemon', 'trainers', 'moves', 'items', 'placement', 'behavior']
-  },
-  {
-    id: 'encountersPokemonSources',
-    label: 'Encounters & Pokemon Sources',
-    sectionIds: [
-      'encounters',
-      'staticEncounters',
-      'giftPokemon',
-      'tradePokemon',
-      'raidBattles'
-    ]
-  },
-  {
-    id: 'economy',
-    label: 'Economy',
-    sectionIds: ['shops', 'raidRewards', 'raidBonusRewards']
-  },
-  {
-    id: 'tools',
-    label: 'Tools',
-    sectionIds: ['randomizer', 'spreadsheetImport', 'modMerger']
-  },
-  {
-    id: 'hooks',
-    label: 'Hooks',
-    sectionIds: ['bagHook']
-  },
-  {
-    id: 'advancedEditors',
-    label: 'Advanced Editors',
-    sectionIds: [
-      'royalCandy',
-      'startingItems',
-      'npcItemGift',
-      'catchCap',
-      'ivScreen',
-      'hyperTraining',
-      'shinyRate',
-      'typeChart',
-      'fairyGymBoosts',
-      'fashionUnlock',
-      'gymUniformRemoval',
-      'dynamaxAdventures'
-    ]
-  }
-];
-
-const groupedWorkflowSectionIds = new Set(
-  workflowNavigationGroups.flatMap((group) => group.sectionIds)
-);
 const viewerSectionIds = new Set<WorkbenchSection>(['flagworkSave', 'text']);
 const primaryNavigationSections = sections.filter(
   (section) => section.id === 'health'
@@ -1194,7 +1126,7 @@ function selectTextFieldContents(field: HTMLInputElement | HTMLTextAreaElement) 
 }
 
 export function App({
-  bridge = defaultProjectBridge,
+  bridge: unscopedBridge = defaultProjectBridge,
   desktopServices = defaultDesktopServices
 }: {
   bridge?: ProjectBridge;
@@ -1206,6 +1138,15 @@ export function App({
   const applyResult = useWorkbenchStore((state) => state.applyResult);
   const changePlan = useWorkbenchStore((state) => state.changePlan);
   const draftPaths = useWorkbenchStore((state) => state.draftPaths);
+  const draftPathsRef = useRef(draftPaths);
+  draftPathsRef.current = draftPaths;
+  const bridge = useMemo(
+    () =>
+      createGameScopedProjectBridge(unscopedBridge, () =>
+        toProjectPaths(draftPathsRef.current)
+      ),
+    [unscopedBridge]
+  );
   const editSession = useWorkbenchStore((state) => state.editSession);
   const editValidationDiagnostics = useWorkbenchStore((state) => state.editValidationDiagnostics);
   const encounterSearchText = useWorkbenchStore((state) => state.encounterSearchText);
@@ -1535,6 +1476,12 @@ export function App({
   const health = openProject?.health ?? null;
   const selectedGame = draftPaths.selectedGame;
   const isScarletVioletProject = isScarletVioletGame(selectedGame);
+  const gameScopedWorkflows = useMemo(() =>
+    getGameScopedWorkflowSummaries(workflows, selectedGame), [selectedGame, workflows]);
+  const availableWorkflowSectionIds = useMemo(
+    () => new Set<WorkbenchSection>(gameScopedWorkflows.map((workflow) => workflow.id as WorkbenchSection)),
+    [gameScopedWorkflows]
+  );
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
   const activeProjectStateLabel = getProjectStateLabel(health, projectStatus, activeSection);
   const isBusy = projectStatus === 'opening' || projectStatus === 'validating';
@@ -1709,9 +1656,21 @@ export function App({
     !isChangePlanApplying &&
     !isChangePlanCreating &&
     !isSessionValidating;
+  const activeSectionHasLoadedWorkflow = getLoadedWorkflowStateForSection(activeSection, {
+    bagHookWorkflow, behaviorWorkflow, catchCapWorkflow, dynamaxAdventuresWorkflow,
+    encountersWorkflow, exeFsPatchWorkflow, fairyGymBoostsWorkflow, fashionUnlockWorkflow,
+    flagworkSaveWorkflow, giftPokemonWorkflow, gymUniformRemovalWorkflow, hyperTrainingWorkflow,
+    itemsWorkflow, ivScreenWorkflow, modMergerWorkflow, movesWorkflow, npcItemGiftWorkflow,
+    placementWorkflow, pokemonWorkflow, raidBattlesWorkflow, raidBonusRewardsWorkflow,
+    raidRewardsWorkflow, rentalPokemonWorkflow, royalCandyWorkflow, selectedGame, shinyRateWorkflow,
+    shopsWorkflow, spreadsheetImportWorkflow, startingItemsWorkflow, staticEncountersWorkflow,
+    svModMergerWorkflow, textWorkflow, tradePokemonWorkflow, trainersWorkflow, typeChartWorkflow
+  });
+  const activeSectionCanStayMounted =
+    isWorkflowNavigationVisibleForGame(activeSection, selectedGame, availableWorkflowSectionIds) ||
+    (isWorkflowSupportedForGame(activeSection, selectedGame) && activeSectionHasLoadedWorkflow);
   const activeSectionIsEditor =
-    (groupedWorkflowSectionIds.has(activeSection) || activeSection === 'dynamaxAdventures') &&
-    activeSection !== 'randomizer';
+    activeSectionCanStayMounted && activeSection !== 'randomizer';
   const activeEditorHasLocalDrafts = editorDraftDirtySections.has(activeSection);
   const activeSectionOwnsEditSession =
     editSession !== null && editSessionSection !== null && editSessionSection === activeSection;
@@ -1855,6 +1814,17 @@ export function App({
         return;
       }
 
+      if (
+        isWorkflowSection(destination) &&
+        !isWorkflowNavigationVisibleForGame(
+          destination,
+          selectedGame,
+          availableWorkflowSectionIds
+        )
+      ) {
+        return;
+      }
+
       if (destination !== 'changes') {
         const destinationOwnsEditSession =
           editSession !== null && editSessionSection !== null && destination === editSessionSection;
@@ -1893,8 +1863,10 @@ export function App({
       activeSection,
       activeSectionIsEditor,
       activeSectionOwnsEditSession,
+      availableWorkflowSectionIds,
       editSession,
       editSessionSection,
+      selectedGame,
       setActiveSection
     ]
   );
@@ -2035,6 +2007,17 @@ export function App({
       return nextGroups;
     });
   }, []);
+
+  useEffect(() => {
+    if (
+      !isWorkflowSection(activeSection) ||
+      activeSectionCanStayMounted
+    ) {
+      return;
+    }
+
+    setActiveSection('health');
+  }, [activeSection, activeSectionCanStayMounted, setActiveSection]);
 
   const handleValidateProject = async () => {
     setProjectStatus('validating');
@@ -3272,11 +3255,23 @@ export function App({
   };
 
   useEffect(() => {
-    if (!health?.canOpenEditableWorkflows || lazyLoadedWorkflowSections.has(activeSection)) {
+    if (
+      !health?.canOpenEditableWorkflows ||
+      !isWorkflowSupportedForGame(activeSection, selectedGame) ||
+      lazyLoadedWorkflowSections.has(activeSection)
+    ) {
       return;
     }
 
-    const workflowSummary = workflows.find((workflow) => workflow.id === activeSection);
+    const workflowSummary = gameScopedWorkflows.find((workflow) => workflow.id === activeSection);
+    if (
+      !workflowSummary &&
+      !activeSectionHasLoadedWorkflow &&
+      !standaloneWorkflowSectionIds.has(activeSection)
+    ) {
+      return;
+    }
+
     if (workflowSummary?.availability === 'disabled') {
       return;
     }
@@ -3483,6 +3478,7 @@ export function App({
     }
   }, [
     activeSection,
+    activeSectionHasLoadedWorkflow,
     bagHookWorkflow,
     catchCapWorkflow,
     dynamaxAdventuresWorkflow,
@@ -3493,6 +3489,7 @@ export function App({
     flagworkSaveWorkflow,
     giftPokemonWorkflow,
     gymUniformRemovalWorkflow,
+    gameScopedWorkflows,
     hyperTrainingWorkflow,
     health?.canOpenEditableWorkflows,
     isEncountersLoading,
@@ -3549,7 +3546,7 @@ export function App({
     tradePokemonWorkflow,
     trainersWorkflow,
     typeChartWorkflow,
-    workflows
+    selectedGame
   ]);
 
   const handlePreviewSpreadsheetImport = async (profileId: string, sourcePath: string) => {
@@ -6223,7 +6220,7 @@ const resetModMergerPlan = () => {
     }
 
     const response = await bridge.listWorkflows({ paths });
-    setWorkflows(response.workflows);
+    setWorkflows(getGameScopedWorkflowSummaries(response.workflows, paths.selectedGame));
   };
 
   const handleSelectGame = useCallback(
@@ -6262,7 +6259,6 @@ const resetModMergerPlan = () => {
   }
 
   const canShowWorkflowNavigation = Boolean(health?.canOpenEditableWorkflows);
-  const availableWorkflowSectionIds = new Set(workflows.map((workflow) => workflow.id));
 
   return (
     <CancelEditSessionContext.Provider value={requestCancelEditSession}>
@@ -6301,9 +6297,13 @@ const resetModMergerPlan = () => {
           })}
 
           {canShowWorkflowNavigation ? workflowNavigationGroups.map((group) => {
-            const visibleSectionIds = isScarletVioletGame(selectedGame)
-              ? group.sectionIds.filter((sectionId) => availableWorkflowSectionIds.has(sectionId))
-              : group.sectionIds;
+            const visibleSectionIds = group.sectionIds.filter((sectionId) =>
+              isWorkflowNavigationVisibleForGame(
+                sectionId,
+                selectedGame,
+                availableWorkflowSectionIds
+              )
+            );
             if (visibleSectionIds.length === 0) {
               return null;
             }
@@ -6486,7 +6486,7 @@ const resetModMergerPlan = () => {
               onOpenTextWorkflow={handleOpenTextWorkflow}
               onOpenTrainersWorkflow={handleOpenTrainersWorkflow}
               pendingEditCount={pendingEditCount}
-              workflows={workflows}
+              workflows={gameScopedWorkflows}
             />
           ) : null}
           {activeSection === 'items' ? (
@@ -19757,7 +19757,7 @@ function PlacementSection({
     workflow?.objects.filter((placedObject) => {
       if (
         activeCategoryId &&
-        (placedObject.categoryId ?? getLegacyPlacementCategoryId(placedObject)) !== activeCategoryId
+        getPlacementCategoryId(placedObject) !== activeCategoryId
       ) {
         return false;
       }
@@ -19867,9 +19867,7 @@ function PlacementSection({
                 onClick={() => {
                   setSelectedCategoryId(category.id);
                   const firstObject = workflow?.objects.find(
-                    (placedObject) =>
-                      (placedObject.categoryId ?? getLegacyPlacementCategoryId(placedObject)) ===
-                      category.id
+                    (placedObject) => getPlacementCategoryId(placedObject) === category.id
                   );
                   onSelectObject(firstObject?.objectId ?? null);
                 }}
@@ -24895,10 +24893,6 @@ function formatResolutionSource(source: ModMergerConflictResolution['source']) {
 function getFileName(path: string) {
   const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
   return normalized.split('/').pop() || path;
-}
-
-function isScarletVioletGame(game: ProjectGame | null | undefined) {
-  return game === 'scarlet' || game === 'violet';
 }
 
 function filterItems(items: ItemRecord[], searchText: string) {
@@ -30282,6 +30276,10 @@ function delay(milliseconds: number) {
 }
 
 function toBridgeDiagnostics(error: unknown): ApiDiagnostic[] {
+  if (isStaleProjectScopeError(error)) {
+    return [];
+  }
+
   if (error instanceof ProjectBridgeError) {
     if (error.apiError.diagnostics.length > 0) {
       return error.apiError.diagnostics;

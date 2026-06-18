@@ -1734,6 +1734,8 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("Field item: Potion", placedObject.Label);
         Assert.Equal("Route 1", placedObject.Map);
         Assert.Equal(SwShPlacementBridgeFixtures.AreaMember, placedObject.ArchiveMember);
+        Assert.Equal("visibleItems", placedObject.CategoryId);
+        Assert.Equal("Visible Items", placedObject.CategoryLabel);
         Assert.Equal(1u, placedObject.ItemId);
         Assert.Equal("Potion", placedObject.ItemName);
         Assert.Equal("0xAABBCCDD00112233", placedObject.ItemHash);
@@ -3665,6 +3667,44 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotNull(response.Error);
         Assert.Equal("bridge.unsupportedCommand", response.Error.Code);
         Assert.Equal("request-unsupported", response.RequestId);
+    }
+
+    [Fact]
+    public void DispatchSwordShieldOnlyCommandForScarletVioletProjectReturnsGameMismatch()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadMovesWorkflow,
+            new LoadMovesWorkflowRequest(temp.Paths with { SelectedGame = ProjectGameDto.Scarlet }),
+            requestId: "request-swsh-only");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<object>(responseJson);
+
+        Assert.Null(response.Payload);
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.gameMismatch", response.Error.Code);
+        Assert.Contains("Sword/Shield", response.Error.Message);
+        Assert.Equal("request-swsh-only", response.RequestId);
+    }
+
+    [Fact]
+    public void DispatchScarletVioletOnlyCommandForSwordShieldProjectReturnsGameMismatch()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        var requestJson = SerializeRequest(
+            KmCommandNames.LoadSvModMergerWorkflow,
+            new LoadSvModMergerWorkflowRequest(temp.Paths with { SelectedGame = ProjectGameDto.Sword }, []),
+            requestId: "request-sv-only");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<object>(responseJson);
+
+        Assert.Null(response.Payload);
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.gameMismatch", response.Error.Code);
+        Assert.Contains("Scarlet/Violet", response.Error.Message);
+        Assert.Equal("request-sv-only", response.RequestId);
     }
 
     private static string SerializeRequest<TPayload>(string command, TPayload payload, string requestId)
