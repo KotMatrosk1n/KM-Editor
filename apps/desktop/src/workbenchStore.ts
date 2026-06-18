@@ -40,6 +40,7 @@ import {
   type WorkflowSummary
 } from './bridge/contracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
+import { type NpcItemGiftWorkflow } from './bridge/npcItemGiftContracts';
 import { type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 export type WorkbenchSection =
   | 'health'
@@ -72,8 +73,7 @@ export type WorkbenchSection =
   | 'gymUniformRemoval'
   | 'ivScreen'
   | 'exefsPatches'
-  | 'royalCandy'
-  | 'startingItems'
+  | 'royalCandy' | 'startingItems' | 'npcItemGift'
   | 'spreadsheetImport'
   | 'modMerger'
   | 'randomizer'
@@ -111,8 +111,7 @@ type WorkbenchState = {
   shinyRateWorkflow: ShinyRateWorkflow | null;
   typeChartWorkflow: TypeChartWorkflow | null;
   fairyGymBoostsWorkflow: FairyGymBoostsWorkflow | null;
-  fashionUnlockWorkflow: FashionUnlockWorkflow | null;
-  gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null;
+  fashionUnlockWorkflow: FashionUnlockWorkflow | null; gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null;
   ivScreenWorkflow: IvScreenWorkflow | null;
   exeFsPatchSearchText: string;
   exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
@@ -120,8 +119,7 @@ type WorkbenchState = {
   flagworkSaveWorkflow: FlagworkSaveWorkflow | null;
   giftPokemonSearchText: string;
   giftPokemonWorkflow: GiftPokemonWorkflow | null;
-  tradePokemonSearchText: string;
-  tradePokemonWorkflow: TradePokemonWorkflow | null;
+  tradePokemonSearchText: string; tradePokemonWorkflow: TradePokemonWorkflow | null;
   staticEncounterSearchText: string;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
   rentalPokemonSearchText: string;
@@ -148,7 +146,7 @@ type WorkbenchState = {
   raidBonusRewardsWorkflow: RaidRewardsWorkflow | null;
   royalCandySearchText: string;
   royalCandyWorkflow: RoyalCandyWorkflow | null;
-  startingItemsWorkflow: StartingItemsWorkflow | null;
+  startingItemsWorkflow: StartingItemsWorkflow | null; npcItemGiftWorkflow: NpcItemGiftWorkflow | null;
   spreadsheetImportPreview: SpreadsheetImportPreview | null;
   spreadsheetImportSearchText: string;
   spreadsheetImportSourcePath: string;
@@ -243,7 +241,7 @@ type WorkbenchState = {
   setRaidBonusRewardsWorkflow: (raidBonusRewardsWorkflow: RaidRewardsWorkflow) => void;
   setRoyalCandySearchText: (royalCandySearchText: string) => void;
   setRoyalCandyWorkflow: (royalCandyWorkflow: RoyalCandyWorkflow) => void;
-  setStartingItemsWorkflow: (startingItemsWorkflow: StartingItemsWorkflow) => void;
+  setStartingItemsWorkflow: (startingItemsWorkflow: StartingItemsWorkflow) => void; setNpcItemGiftWorkflow: (npcItemGiftWorkflow: NpcItemGiftWorkflow) => void;
   setSpreadsheetImportPreview: (preview: SpreadsheetImportPreview | null) => void;
   setSpreadsheetImportSearchText: (spreadsheetImportSearchText: string) => void;
   setSpreadsheetImportSourcePath: (sourcePath: string) => void;
@@ -374,7 +372,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     raidBonusRewardsWorkflow: null,
     royalCandySearchText: '',
     royalCandyWorkflow: null,
-    startingItemsWorkflow: null,
+    startingItemsWorkflow: null, npcItemGiftWorkflow: null,
     spreadsheetImportPreview: null,
     spreadsheetImportSearchText: '',
     spreadsheetImportSourcePath: '',
@@ -468,7 +466,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   raidBonusRewardsWorkflow: null,
   royalCandySearchText: '',
   royalCandyWorkflow: null,
-  startingItemsWorkflow: null,
+  startingItemsWorkflow: null, npcItemGiftWorkflow: null,
   spreadsheetImportPreview: null,
   spreadsheetImportSearchText: '',
   spreadsheetImportSourcePath: '',
@@ -732,7 +730,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       raidBonusRewardsWorkflow: null,
       royalCandySearchText: '',
       royalCandyWorkflow: null,
-      startingItemsWorkflow: null,
+      startingItemsWorkflow: null, npcItemGiftWorkflow: null,
       spreadsheetImportPreview: null,
       spreadsheetImportSearchText: '',
       spreadsheetImportSourcePath: '',
@@ -1106,6 +1104,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         startingItemsWorkflow
       };
     }),
+  setNpcItemGiftWorkflow: (npcItemGiftWorkflow) =>
+    set((state) => ({ activeSection: resolveWorkflowLoadSection(state.activeSection, 'npcItemGift'), npcItemGiftWorkflow })),
   setSpreadsheetImportWorkflow: (spreadsheetImportWorkflow) =>
     set((state) => {
       const selectedSpreadsheetImportProfileId = spreadsheetImportWorkflow.profiles.some(

@@ -16,6 +16,7 @@ using KM.Api.HyperTraining;
 using KM.Api.Items;
 using KM.Api.IvScreen;
 using KM.Api.ModMerger;
+using KM.Api.NpcItemGift;
 using KM.Api.Placement;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
@@ -48,6 +49,7 @@ using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.IvScreen;
 using KM.SwSh.ModMerger;
+using KM.SwSh.NpcItemGift;
 using KM.SwSh.Placement;
 using KM.SwSh.Moves;
 using KM.SwSh.Pokemon;
@@ -534,6 +536,23 @@ public static class SwShBridgeMapper
 
         return new StageStartingItemsResponse(
             ToStartingItemsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadNpcItemGiftWorkflowResponse ToDto(SwShNpcItemGiftWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadNpcItemGiftWorkflowResponse(ToNpcItemGiftWorkflowDto(workflow));
+    }
+
+    public static StageNpcItemGiftResponse ToDto(SwShNpcItemGiftEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageNpcItemGiftResponse(
+            ToNpcItemGiftWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1650,6 +1669,21 @@ public static class SwShBridgeMapper
                 workflow.Stats.OccupiedGrantSlotCount,
                 workflow.Stats.ItemOptionCount,
                 workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static NpcItemGiftWorkflowDto ToNpcItemGiftWorkflowDto(SwShNpcItemGiftWorkflow workflow)
+    {
+        return new NpcItemGiftWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Npcs.Select(ToDto).ToArray(),
+            workflow.Sources.Select(ToDto).ToArray(),
+            workflow.ItemOptions.Select(ToDto).ToArray(),
+            new NpcItemGiftWorkflowStatsDto(
+                workflow.Stats.NpcCount,
+                workflow.Stats.GiftCount,
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.ItemOptionCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -2993,6 +3027,71 @@ public static class SwShBridgeMapper
     private static StartingItemsProvenanceDto ToDto(SwShStartingItemsProvenance provenance)
     {
         return new StartingItemsProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static NpcItemGiftNpcGroupDto ToDto(SwShNpcItemGiftNpcGroup npc)
+    {
+        return new NpcItemGiftNpcGroupDto(
+            npc.NpcId,
+            npc.NpcName,
+            npc.DisplayOrder,
+            npc.Gifts.Select(ToDto).ToArray());
+    }
+
+    private static NpcItemGiftRecordDto ToDto(SwShNpcItemGiftRecord gift)
+    {
+        return new NpcItemGiftRecordDto(
+            gift.GiftId,
+            gift.NpcId,
+            gift.NpcName,
+            gift.Label,
+            gift.Location,
+            gift.DisplayOrder,
+            gift.RelativePath,
+            gift.Quantity,
+            gift.VanillaQuantity,
+            gift.QuantityCell,
+            gift.Items.Select(ToDto).ToArray(),
+            ToDto(gift.Provenance));
+    }
+
+    private static NpcItemGiftItemSlotRecordDto ToDto(SwShNpcItemGiftItemSlotRecord item)
+    {
+        return new NpcItemGiftItemSlotRecordDto(
+            item.SlotId,
+            item.Label,
+            item.ItemId,
+            item.ItemName,
+            item.VanillaItemId,
+            item.VanillaItemName,
+            item.ItemCell);
+    }
+
+    private static NpcItemGiftSourceRecordDto ToDto(SwShNpcItemGiftSourceRecord source)
+    {
+        return new NpcItemGiftSourceRecordDto(
+            source.SourceId,
+            source.Label,
+            source.RelativePath,
+            source.Status,
+            ToDto(source.Provenance));
+    }
+
+    private static NpcItemGiftItemOptionRecordDto ToDto(SwShNpcItemGiftItemOptionRecord option)
+    {
+        return new NpcItemGiftItemOptionRecordDto(
+            option.ItemId,
+            option.Name,
+            option.Category,
+            option.IsKeyItem);
+    }
+
+    private static NpcItemGiftProvenanceDto ToDto(SwShNpcItemGiftProvenance provenance)
+    {
+        return new NpcItemGiftProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 import { z, type ZodTypeAny } from 'zod';
-
 export const kmCommandNameValues = [
   'project.open',
   'project.validate',
@@ -70,6 +69,8 @@ export const kmCommandNameValues = [
   'royalCandy.workflow.stage',
   'startingItems.load',
   'startingItems.stage',
+  'npcItemGift.load',
+  'npcItemGift.stage',
   'spreadsheetImport.load',
   'spreadsheetImport.preview',
   'modMerger.load',
@@ -162,6 +163,8 @@ export const kmCommandNames = {
   stageRoyalCandyWorkflow: 'royalCandy.workflow.stage',
   loadStartingItemsWorkflow: 'startingItems.load',
   stageStartingItems: 'startingItems.stage',
+  loadNpcItemGiftWorkflow: 'npcItemGift.load',
+  stageNpcItemGift: 'npcItemGift.stage',
   loadSpreadsheetImportWorkflow: 'spreadsheetImport.load',
   previewSpreadsheetImport: 'spreadsheetImport.preview',
   loadModMergerWorkflow: 'modMerger.load',

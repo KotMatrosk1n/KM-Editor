@@ -18,6 +18,7 @@ using KM.Api.Items;
 using KM.Api.IvScreen;
 using KM.Api.ModMerger;
 using KM.Api.Moves;
+using KM.Api.NpcItemGift;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
@@ -54,6 +55,7 @@ using KM.SwSh.Items;
 using KM.SwSh.IvScreen;
 using KM.SwSh.ModMerger;
 using KM.SwSh.Moves;
+using KM.SwSh.NpcItemGift;
 using KM.SwSh.Placement;
 using KM.SwSh.Pokemon;
 using KM.SwSh.Raids;
@@ -105,6 +107,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShRentalPokemonEditSessionService rentalPokemonEditSessionService;
     private readonly SwShRoyalCandyEditSessionService royalCandyEditSessionService;
     private readonly SwShStartingItemsEditSessionService startingItemsEditSessionService;
+    private readonly SwShNpcItemGiftEditSessionService npcItemGiftEditSessionService;
     private readonly SwShShopsEditSessionService shopsEditSessionService;
     private readonly SwShSpreadsheetImportExecutionService spreadsheetImportExecutionService;
     private readonly SwShModMergerWorkflowService modMergerWorkflowService;
@@ -143,6 +146,7 @@ public sealed class ProjectBridgeDispatcher
         SwShRentalPokemonEditSessionService? rentalPokemonEditSessionService = null,
         SwShRoyalCandyEditSessionService? royalCandyEditSessionService = null,
         SwShStartingItemsEditSessionService? startingItemsEditSessionService = null,
+        SwShNpcItemGiftEditSessionService? npcItemGiftEditSessionService = null,
         SwShShopsEditSessionService? shopsEditSessionService = null,
         SwShSpreadsheetImportExecutionService? spreadsheetImportExecutionService = null,
         SwShModMergerWorkflowService? modMergerWorkflowService = null,
@@ -180,6 +184,7 @@ public sealed class ProjectBridgeDispatcher
         this.rentalPokemonEditSessionService = rentalPokemonEditSessionService ?? new SwShRentalPokemonEditSessionService(this.projectWorkspaceService);
         this.royalCandyEditSessionService = royalCandyEditSessionService ?? new SwShRoyalCandyEditSessionService(this.projectWorkspaceService);
         this.startingItemsEditSessionService = startingItemsEditSessionService ?? new SwShStartingItemsEditSessionService(this.projectWorkspaceService);
+        this.npcItemGiftEditSessionService = npcItemGiftEditSessionService ?? new SwShNpcItemGiftEditSessionService(this.projectWorkspaceService);
         this.shopsEditSessionService = shopsEditSessionService ?? new SwShShopsEditSessionService(this.projectWorkspaceService);
         this.spreadsheetImportExecutionService = spreadsheetImportExecutionService ?? new SwShSpreadsheetImportExecutionService(this.projectWorkspaceService);
         this.modMergerWorkflowService = modMergerWorkflowService ?? new SwShModMergerWorkflowService(this.projectWorkspaceService);
@@ -282,6 +287,8 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.StageRoyalCandyWorkflow => DispatchStageRoyalCandyWorkflow(requestJson),
                 KmCommandNames.LoadStartingItemsWorkflow => DispatchLoadStartingItemsWorkflow(requestJson),
                 KmCommandNames.StageStartingItems => DispatchStageStartingItems(requestJson),
+                KmCommandNames.LoadNpcItemGiftWorkflow => DispatchLoadNpcItemGiftWorkflow(requestJson),
+                KmCommandNames.StageNpcItemGift => DispatchStageNpcItemGift(requestJson),
                 KmCommandNames.LoadSpreadsheetImportWorkflow => DispatchLoadSpreadsheetImportWorkflow(requestJson),
                 KmCommandNames.PreviewSpreadsheetImport => DispatchPreviewSpreadsheetImport(requestJson),
                 KmCommandNames.LoadModMergerWorkflow => DispatchLoadModMergerWorkflow(requestJson),
@@ -1341,6 +1348,35 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadNpcItemGiftWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadNpcItemGiftWorkflowRequest>(requestJson);
+        var workflow = swShWorkflowService.LoadNpcItemGift(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SwShBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageNpcItemGift(string requestJson)
+    {
+        var request = DeserializeRequest<StageNpcItemGiftRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = npcItemGiftEditSessionService.StageGifts(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.Gifts.Select(selection => new SwShNpcItemGiftSelection(
+                selection.GiftId,
+                selection.Quantity,
+                selection.Items.Select(item => new SwShNpcItemGiftItemSelection(
+                    item.SlotId,
+                    item.ItemId)).ToArray())).ToArray(),
+            session);
+        var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadSpreadsheetImportWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadSpreadsheetImportWorkflowRequest>(requestJson);
@@ -1559,6 +1595,7 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
             EditSessionDomain.RoyalCandy => royalCandyEditSessionService.Validate(paths, session),
             EditSessionDomain.StartingItems => startingItemsEditSessionService.Validate(paths, session),
+            EditSessionDomain.NpcItemGift => npcItemGiftEditSessionService.Validate(paths, session),
             EditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
             _ => itemsEditSessionService.Validate(paths, session),
         };
@@ -1605,6 +1642,7 @@ public sealed class ProjectBridgeDispatcher
                 EditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.RoyalCandy => royalCandyEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.StartingItems => startingItemsEditSessionService.CreateChangePlan(paths, session),
+                EditSessionDomain.NpcItemGift => npcItemGiftEditSessionService.CreateChangePlan(paths, session),
                 EditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
                 _ => itemsEditSessionService.CreateChangePlan(paths, session),
             };
@@ -1652,6 +1690,7 @@ public sealed class ProjectBridgeDispatcher
                 EditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.RoyalCandy => royalCandyEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.StartingItems => startingItemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
+                EditSessionDomain.NpcItemGift => npcItemGiftEditSessionService.ApplyChangePlan(paths, session, changePlan),
                 EditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
                 _ => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
             };
@@ -1700,6 +1739,7 @@ public sealed class ProjectBridgeDispatcher
             ["workflow.raidBonusRewards"] => EditSessionDomain.RaidBonusRewards,
             ["workflow.royalCandy"] => EditSessionDomain.RoyalCandy,
             ["workflow.startingItems"] => EditSessionDomain.StartingItems,
+            ["workflow.npcItemGift"] => EditSessionDomain.NpcItemGift,
             _ => EditSessionDomain.Mixed,
         };
     }
@@ -1934,6 +1974,7 @@ public sealed class ProjectBridgeDispatcher
         RaidBonusRewards,
         RoyalCandy,
         StartingItems,
+        NpcItemGift,
         Mixed,
     }
 }

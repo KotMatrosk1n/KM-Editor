@@ -12,6 +12,7 @@ import {
   FileSpreadsheet,
   Gift,
   GitMerge,
+  HandCoins,
   ListChecks,
   MapPinned,
   MapPin,
@@ -155,6 +156,13 @@ export const workflowDefinitions: Array<{
     description:
       'Requires Bag Hook and uses only slots 2-20. Clear selected slots and apply to remove Starting Items without touching Royal Candy.',
     icon: PackagePlus
+  },
+  {
+    id: 'npcItemGift',
+    label: 'NPC Item Gift',
+    description:
+      'Advanced RomFS editor for fixed NPC, trainer, story, and DLC item gifts. It stages one NPC at a time and patches only owned AMX cells.',
+    icon: HandCoins
   },
   {
     id: 'catchCap',

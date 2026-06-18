@@ -42,6 +42,7 @@ export function WorkflowsSection({
   isIvScreenLoading,
   isRoyalCandyLoading,
   isStartingItemsLoading,
+  isNpcItemGiftLoading,
   isSpreadsheetImportLoading,
   isModMergerLoading,
   onOpenEncountersWorkflow,
@@ -70,6 +71,7 @@ export function WorkflowsSection({
   onOpenRaidBonusRewardsWorkflow,
   onOpenRoyalCandyWorkflow,
   onOpenStartingItemsWorkflow,
+  onOpenNpcItemGiftWorkflow,
   onOpenShopsWorkflow,
   onOpenSpreadsheetImportWorkflow,
   onOpenModMergerWorkflow,
@@ -108,6 +110,7 @@ export function WorkflowsSection({
   isIvScreenLoading: boolean;
   isRoyalCandyLoading: boolean;
   isStartingItemsLoading: boolean;
+  isNpcItemGiftLoading: boolean;
   isSpreadsheetImportLoading: boolean;
   isModMergerLoading: boolean;
   onOpenEncountersWorkflow: () => void;
@@ -136,6 +139,7 @@ export function WorkflowsSection({
   onOpenRaidBonusRewardsWorkflow: () => void;
   onOpenRoyalCandyWorkflow: () => void;
   onOpenStartingItemsWorkflow: () => void;
+  onOpenNpcItemGiftWorkflow: () => void;
   onOpenShopsWorkflow: () => void;
   onOpenSpreadsheetImportWorkflow: () => void;
   onOpenModMergerWorkflow: () => void;
@@ -179,6 +183,7 @@ export function WorkflowsSection({
     ivScreen: action('Open IV Screen', isIvScreenLoading, onOpenIvScreenWorkflow),
     modMerger: action('Open Merger', isModMergerLoading, onOpenModMergerWorkflow),
     moves: action('Open Moves', isMovesLoading, onOpenMovesWorkflow),
+    npcItemGift: action('Open NPC Gifts', isNpcItemGiftLoading, onOpenNpcItemGiftWorkflow),
     placement: action('Open Placement', isPlacementLoading, onOpenPlacementWorkflow),
     pokemon: action('Open Pokemon', isPokemonLoading, onOpenPokemonWorkflow),
     raidBattles: action('Open Raid Battles', isRaidBattlesLoading, onOpenRaidBattlesWorkflow),

@@ -13,6 +13,7 @@ export const scopedEditorPanelSectionIds = new Set<WorkbenchSection>([
   'bagHook',
   'royalCandy',
   'startingItems',
+  'npcItemGift',
   'catchCap',
   'ivScreen',
   'hyperTraining',

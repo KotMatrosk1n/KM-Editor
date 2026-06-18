@@ -81,6 +81,8 @@ public static class KmCommandNames
     public const string StageRoyalCandyWorkflow = "royalCandy.workflow.stage";
     public const string LoadStartingItemsWorkflow = "startingItems.load";
     public const string StageStartingItems = "startingItems.stage";
+    public const string LoadNpcItemGiftWorkflow = "npcItemGift.load";
+    public const string StageNpcItemGift = "npcItemGift.stage";
     public const string LoadSpreadsheetImportWorkflow = "spreadsheetImport.load";
     public const string PreviewSpreadsheetImport = "spreadsheetImport.preview";
     public const string LoadModMergerWorkflow = "modMerger.load";

@@ -41,7 +41,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
             "The synthetic baseline must include enough files to exercise project graph enumeration.");
 
         var workflowList = Record(measurements, "workflows.list", () => workflowService.List(temp.Paths));
-        Assert.Equal(31, workflowList.Workflows.Count);
+        Assert.Equal(32, workflowList.Workflows.Count);
 
         var items = Record(measurements, "items.load", () => workflowService.LoadItems(temp.Paths));
         var pokemon = Record(measurements, "pokemon.load", () => workflowService.LoadPokemon(temp.Paths));
@@ -72,6 +72,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         var fashionUnlock = Record(measurements, "fashionUnlock.load", () => workflowService.LoadFashionUnlock(temp.Paths));
         var royalCandy = Record(measurements, "royalCandy.load", () => workflowService.LoadRoyalCandy(temp.Paths));
         var startingItems = Record(measurements, "startingItems.load", () => workflowService.LoadStartingItems(temp.Paths));
+        var npcItemGift = Record(measurements, "npcItemGift.load", () => workflowService.LoadNpcItemGift(temp.Paths));
         var spreadsheetImport = Record(measurements, "spreadsheetImport.load", () => workflowService.LoadSpreadsheetImport(temp.Paths));
         var modMerger = Record(measurements, "modMerger.load", () => workflowService.LoadModMerger(temp.Paths, null, null));
 
@@ -109,6 +110,7 @@ public sealed class SwShPerformanceBaselineTests(ITestOutputHelper output)
         Assert.True(fashionUnlock.Summary.Availability != SwShWorkflowAvailability.Disabled);
         Assert.True(royalCandy.Checks.Count > 0);
         Assert.Equal(19, startingItems.Stats.TotalGrantSlotCount);
+        Assert.True(npcItemGift.Stats.GiftCount > 0);
         Assert.Single(spreadsheetImport.Profiles);
         Assert.Equal(0, modMerger.Stats.MatchingFileCount);
 

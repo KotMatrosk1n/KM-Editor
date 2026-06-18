@@ -171,6 +171,7 @@ public sealed class ProjectBridgeDispatcherTests
                 "ivScreen",
                 "royalCandy",
                 "startingItems",
+                "npcItemGift",
                 "spreadsheetImport",
                 "modMerger",
             ],

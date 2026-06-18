@@ -23,6 +23,7 @@ import {
   Gift,
   GitMerge,
   GripVertical,
+  HandCoins,
   Layers,
   ListChecks,
   MapPinned,
@@ -227,6 +228,8 @@ import {
 import { type ShinyRateMode, type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 import { FairyGymBoostsSection } from './features/fairy-gym-boosts/FairyGymBoostsSection';
 import { FashionUnlockSection } from './features/fashion-unlock/FashionUnlockSection';
+import { NpcItemGiftSection, formatNpcItemGiftPendingValue } from './features/npc-item-gift/NpcItemGiftSection';
+import { useNpcItemGiftWorkflowController } from './features/npc-item-gift/useNpcItemGiftWorkflowController';
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
 import {
   ShinyRateSection,
@@ -480,6 +483,11 @@ const sections: Array<{
     icon: PackagePlus
   },
   {
+    id: 'npcItemGift',
+    label: 'NPC Item Gift',
+    icon: HandCoins
+  },
+  {
     id: 'catchCap',
     label: 'Catch Cap',
     icon: ShieldCheck
@@ -607,6 +615,7 @@ const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     sectionIds: [
       'royalCandy',
       'startingItems',
+      'npcItemGift',
       'catchCap',
       'ivScreen',
       'hyperTraining',
@@ -1411,6 +1420,10 @@ export function App({
   const setStartingItemsWorkflow = useWorkbenchStore(
     (state) => state.setStartingItemsWorkflow
   );
+  const npcItemGiftWorkflow = useWorkbenchStore((state) => state.npcItemGiftWorkflow);
+  const setNpcItemGiftWorkflow = useWorkbenchStore(
+    (state) => state.setNpcItemGiftWorkflow
+  );
   const setSpreadsheetImportPreview = useWorkbenchStore(
     (state) => state.setSpreadsheetImportPreview
   );
@@ -1722,6 +1735,8 @@ export function App({
     clearScopedEditorPanelState(section);
   };
 
+  const npcItemGiftController = useNpcItemGiftWorkflowController({ bridge, editSession, markClean: () => registerEditorDraftDirty('npcItemGift', false), onDiagnostics: setBridgeDiagnostics, onError: (error) => setBridgeDiagnostics(toBridgeDiagnostics(error)), onPanelDiagnostics: (diagnostics) => setScopedEditorPanelDiagnostics('npcItemGift', diagnostics), onSession: (session) => { setEditSession(session); setEditSessionSection(activeSectionIsEditor ? activeSection : null); }, onWorkflow: setNpcItemGiftWorkflow, paths: toProjectPaths(draftPaths), prepareStage: () => prepareScopedEditorPanelAction('npcItemGift') });
+
   const clearLoadedWorkflowData = useCallback(() => {
     useWorkbenchStore.setState({
       bagHookWorkflow: null,
@@ -1749,6 +1764,7 @@ export function App({
       rentalPokemonWorkflow: null,
       royalCandyWorkflow: null,
       startingItemsWorkflow: null,
+      npcItemGiftWorkflow: null,
       shopsWorkflow: null,
       spreadsheetImportPreview: null,
       spreadsheetImportWorkflow: null,
@@ -3431,6 +3447,9 @@ export function App({
           void handleOpenStartingItemsWorkflow();
         }
         break;
+      case 'npcItemGift':
+        if (!npcItemGiftWorkflow && !npcItemGiftController.isLoading) { markLazyLoadStarted(); void npcItemGiftController.open(); }
+        break;
       case 'spreadsheetImport':
         if (!spreadsheetImportWorkflow && !isSpreadsheetImportLoading) {
           markLazyLoadStarted();
@@ -3481,6 +3500,7 @@ export function App({
     isRoyalCandyLoading,
     isShopsLoading,
     isStartingItemsLoading,
+    npcItemGiftController.isLoading,
     isSpreadsheetImportLoading,
     isTextLoading,
     isTrainersLoading,
@@ -3500,6 +3520,7 @@ export function App({
     shopsWorkflow,
     shinyRateWorkflow,
     startingItemsWorkflow,
+    npcItemGiftWorkflow,
     spreadsheetImportWorkflow,
     staticEncountersWorkflow,
     textWorkflow,
@@ -6013,6 +6034,14 @@ const resetModMergerPlan = () => {
         }
       );
     }
+    if (npcItemGiftWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadNpcItemGiftWorkflow({ paths });
+          setNpcItemGiftWorkflow(response.workflow);
+        }
+      );
+    }
     if (spreadsheetImportWorkflow) {
       reloadTasks.push(
         async () => {
@@ -6372,6 +6401,7 @@ const resetModMergerPlan = () => {
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
               isStartingItemsLoading={isStartingItemsLoading}
+              isNpcItemGiftLoading={npcItemGiftController.isLoading}
               isSpreadsheetImportLoading={isSpreadsheetImportLoading}
               isModMergerLoading={isModMergerLoading}
               onOpenEncountersWorkflow={handleOpenEncountersWorkflow}
@@ -6400,6 +6430,7 @@ const resetModMergerPlan = () => {
               onOpenRaidBonusRewardsWorkflow={handleOpenRaidBonusRewardsWorkflow}
               onOpenRoyalCandyWorkflow={handleOpenRoyalCandyWorkflow}
               onOpenStartingItemsWorkflow={handleOpenStartingItemsWorkflow}
+              onOpenNpcItemGiftWorkflow={npcItemGiftController.open}
               onOpenShopsWorkflow={handleOpenShopsWorkflow}
               onOpenSpreadsheetImportWorkflow={handleOpenSpreadsheetImportWorkflow}
               onOpenModMergerWorkflow={handleOpenModMergerWorkflow}
@@ -7000,6 +7031,26 @@ const resetModMergerPlan = () => {
                 panelOutput={getScopedEditorPanelOutput('startingItems')}
                 selectedSlot={selectedStartingItemSlot}
                 workflow={startingItemsWorkflow}
+              />
+            )
+          ) : null}
+          {activeSection === 'npcItemGift' ? (
+            npcItemGiftController.isLoading && !npcItemGiftWorkflow ? (
+              <WorkflowLoadingPanel label="NPC Item Gift" />
+            ) : (
+              <NpcItemGiftSection
+                editSession={getEditSessionForSection('npcItemGift')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={npcItemGiftController.isStaging}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('npcItemGift')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('npcItemGift')}
+                onDirtyChange={(isDirty) =>
+                  registerEditorDraftDirty('npcItemGift', isDirty)
+                }
+                onStageGifts={npcItemGiftController.stage}
+                panelOutput={getScopedEditorPanelOutput('npcItemGift')}
+                workflow={npcItemGiftWorkflow}
               />
             )
           ) : null}
@@ -12030,6 +12081,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.royalCandy': 'Royal Candy',
     'workflow.shops': 'Shops',
     'workflow.startingItems': 'Starting Items',
+    'workflow.npcItemGift': 'NPC Item Gift',
     'workflow.staticEncounters': 'Static Encounters',
     'workflow.text': 'Text',
     'workflow.typeChart': 'Type Chart',
@@ -12321,6 +12373,13 @@ function getPendingEditDisplayDetails(
         fieldLabel: edit.field === 'grants' ? 'Startup grants' : undefined,
         newValueLabel: formatStartingItemsPendingValue(edit.newValue, context),
         recordLabel: 'Bag Hook slots 2-20'
+      });
+    case 'workflow.npcItemGift':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'gifts' ? 'NPC gifts' : undefined,
+        newValueLabel: formatNpcItemGiftPendingValue(edit.newValue),
+        recordLabel: 'One NPC'
       });
     case 'workflow.exefsPatches':
     case 'workflow.exefs': {
@@ -17688,7 +17747,7 @@ function SelectedEncounterPanel({
                         type="button"
                       >
                         <PokemonSprite className="slot-tab-sprite" name={slotLabel} preferStatic />
-                        <strong>{`#${slot.slot}`}</strong>
+                        <strong>{isSvEncounterTable ? `#${slot.speciesId}` : `#${slot.slot}`}</strong>
                         <span>{slotLabel}</span>
                         <small>{`${slot.levelMin}-${slot.levelMax} / ${slot.weight}%`}</small>
                       </button>
@@ -17714,9 +17773,19 @@ function SelectedEncounterPanel({
                     </dd>
                   </div>
                   <div>
-                    <dt>Probability</dt>
+                    <dt>{isSvEncounterTable ? 'Chance' : 'Probability'}</dt>
                     <dd>{encounterSlot.weight}</dd>
                   </div>
+                  {isSvEncounterTable ? (
+                    <div>
+                      <dt
+                        title="Biome weights, height range, linked group spawn metadata, voice class, and outbreak weight from the S/V encounter row."
+                      >
+                        S/V Conditions
+                      </dt>
+                      <dd>{encounterSlot.weather}</dd>
+                    </div>
+                  ) : null}
                 </dl>
 
                 <div className="editable-field-groups">
@@ -17909,24 +17978,6 @@ function SvEncounterFacetNavigator({
 
   return (
     <section className="sv-encounter-navigator" aria-label="Scarlet/Violet encounter filters">
-      <div className="sv-encounter-facet-grid">
-        {[
-          ['Version', facets.version],
-          ['Area', facets.area],
-          ['Terrain', facets.terrain],
-          ['Time', facets.time],
-          ['Biome', facets.biome],
-          ['Flag', facets.flag],
-          ['Height', facets.height],
-          ['Outbreak', facets.outbreak]
-        ].map(([label, value]) => (
-          <div className="sv-encounter-facet" key={label}>
-            <span>{label}</span>
-            <strong>{formatSvEncounterFacetValue(value)}</strong>
-          </div>
-        ))}
-      </div>
-
       {controls.length > 0 ? (
         <div className="sv-encounter-selector-grid">
           {controls.map((control) => (
@@ -25811,19 +25862,15 @@ function parseSvEncounterFacets(table: EncounterTableRecord | null): SvEncounter
   }
 
   const parts = table.tableId.split('|');
-  if (parts.length < 11) {
+  if (parts.length < 7) {
     return {
       area: table.area,
-      band: 'Any',
       biome: table.slots[0]?.weather ?? 'Any',
       flag: 'no-flag',
-      height: 'Any',
       location: table.location,
-      outbreak: '0',
       terrain: table.encounterType,
       time: table.slots[0]?.timeOfDay ?? 'Any',
-      version: table.gameVersion,
-      voice: 'voice:any'
+      version: table.gameVersion
     };
   }
 
@@ -25834,11 +25881,7 @@ function parseSvEncounterFacets(table: EncounterTableRecord | null): SvEncounter
     terrain: parts[3] || table.encounterType,
     time: parts[4] || (table.slots[0]?.timeOfDay ?? 'Any'),
     biome: parts[5] || (table.slots[0]?.weather ?? 'Any'),
-    flag: parts[6] || 'no-flag',
-    height: parts[7] || 'Any',
-    band: parts[8] || 'Any',
-    outbreak: parts[9] || '0',
-    voice: parts[10] || 'voice:any'
+    flag: parts[6] || 'no-flag'
   };
 }
 
@@ -25862,11 +25905,7 @@ function buildSvEncounterFacetControls(
     { key: 'terrain', label: 'Terrain' },
     { key: 'time', label: 'Time' },
     { key: 'biome', label: 'Biome' },
-    { key: 'flag', label: 'Flag' },
-    { key: 'height', label: 'Height' },
-    { key: 'band', label: 'Band' },
-    { key: 'outbreak', label: 'Outbreak' },
-    { key: 'voice', label: 'Voice' }
+    { key: 'flag', label: 'Flag' }
   ];
 
   return definitions
@@ -25928,11 +25967,7 @@ function scoreSvEncounterFacetMatch(
     ['terrain', 3],
     ['time', 2],
     ['biome', 2],
-    ['flag', 1],
-    ['height', 1],
-    ['band', 1],
-    ['outbreak', 1],
-    ['voice', 1]
+    ['flag', 1]
   ];
 
   return weights.reduce(
@@ -27418,11 +27453,7 @@ type SvEncounterFacetKey =
   | 'terrain'
   | 'time'
   | 'biome'
-  | 'flag'
-  | 'height'
-  | 'band'
-  | 'outbreak'
-  | 'voice';
+  | 'flag';
 
 type SvEncounterFacets = Record<'location' | SvEncounterFacetKey, string>;
 

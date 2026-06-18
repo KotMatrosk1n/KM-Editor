@@ -356,10 +356,11 @@ describe('App', () => {
         .getAllByRole('button')
         .filter((button) => button.classList.contains('nav-child-button'))
         .map((button) => button.textContent)
-        .slice(-11)
+        .slice(-12)
     ).toEqual([
       'Royal Candy',
       'Starting Items',
+      'NPC Item Gift',
       'Catch Cap',
       'IV Screen',
       'Hyper Training',
