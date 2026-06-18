@@ -1728,6 +1728,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal("request-placement", response.RequestId);
         Assert.NotNull(response.Payload);
         Assert.Equal(2, response.Payload.Workflow.Objects.Count);
+        Assert.Empty(response.Payload.Workflow.Categories!);
         var placedObject = response.Payload.Workflow.Objects.Single(placedObject => placedObject.ObjectType == "FieldItem");
         Assert.Equal($"{SwShPlacementBridgeFixtures.AreaMember}|0|fieldItem|0|-", placedObject.ObjectId);
         Assert.Equal("Field item: Potion", placedObject.Label);
@@ -1739,6 +1740,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Equal(1, placedObject.Quantity);
         Assert.Equal(10.5, placedObject.X);
         Assert.Equal(ProjectFileLayerDto.Base, placedObject.Provenance.SourceLayer);
+        Assert.Empty(placedObject.Fields!);
         Assert.Equal(1, response.Payload.Workflow.Stats.TotalAreaCount);
         Assert.Equal(3, response.Payload.Workflow.Stats.SourceFileCount);
         Assert.Contains(response.Payload.Workflow.EditableFields, field => field.Field == "itemId");

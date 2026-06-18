@@ -1435,7 +1435,8 @@ public static class SwShBridgeMapper
                 workflow.Stats.TotalObjectCount,
                 workflow.Stats.TotalAreaCount,
                 workflow.Stats.SourceFileCount),
-            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
+            Array.Empty<PlacementCategoryDto>());
     }
 
     private static BehaviorWorkflowDto ToBehaviorWorkflowDto(SwShBehaviorWorkflow workflow)
@@ -2485,7 +2486,8 @@ public static class SwShBridgeMapper
             placedObject.Z,
             placedObject.RotationY,
             placedObject.ScriptId,
-            ToDto(placedObject.Provenance));
+            ToDto(placedObject.Provenance),
+            Fields: Array.Empty<PlacementFieldValueDto>());
     }
 
     private static PlacementEditableFieldDto ToDto(SwShPlacementEditableField field)
