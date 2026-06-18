@@ -8,12 +8,15 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.Items;
+using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.SV.Data;
+using KM.SV.Trainers;
 using KM.Integration.Tests.Tools;
+using KM.Formats.SV.Placement;
 using KM.Formats.SwSh;
 using KM.Tools.Bridge;
 using Xunit;
@@ -29,6 +32,31 @@ public sealed class ScarletVioletBridgeTests
     {
         yield return [ProjectGameDto.Scarlet, ScarletTitleId];
         yield return [ProjectGameDto.Violet, VioletTitleId];
+    }
+
+    [Fact]
+    public void ScarletVioletTeraBehaviorSummaryDoesNotTreatEveryGemTypeAsTarget()
+    {
+        var gymLeaderTeam = new[]
+        {
+            CreateSvTrainerPokemon(slot: 0, "Wattrel", global::GemType.DENKI),
+            CreateSvTrainerPokemon(slot: 1, "Bellibolt", global::GemType.DENKI),
+            CreateSvTrainerPokemon(slot: 2, "Luxio", global::GemType.DENKI),
+            CreateSvTrainerPokemon(slot: 3, "Mismagius", global::GemType.DENKI),
+        };
+
+        Assert.Equal(
+            "Enabled; target is battle controlled. Fixed Tera types: Slot 1: Wattrel (Electric); Slot 2: Bellibolt (Electric); Slot 3: Luxio (Electric); Slot 4: Mismagius (Electric).",
+            SvTrainersWorkflowService.FormatTeraTarget(canTerastallize: true, gymLeaderTeam));
+
+        var singleFixedSlotTeam = new[]
+        {
+            CreateSvTrainerPokemon(slot: 5, "Sylveon", global::GemType.FAIRY),
+        };
+
+        Assert.Equal(
+            "Enabled; only fixed Tera type is Slot 6: Sylveon (Fairy).",
+            SvTrainersWorkflowService.FormatTeraTarget(canTerastallize: true, singleFixedSlotTeam));
     }
 
     [Theory]
@@ -342,6 +370,48 @@ public sealed class ScarletVioletBridgeTests
         var encounterTable = Assert.Single(encounters.Payload.Workflow.Tables);
         Assert.Equal("South Province (Area Two), South Province (Area Four)", encounterTable.Location);
         Assert.Equal("South Province (Area Two), South Province (Area Four)", encounterTable.Area);
+
+        var placement = Dispatch<LoadPlacementWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(paths),
+            "request-sv-placement-labels");
+        AssertSuccess(placement);
+        Assert.Contains(
+            placement.Payload!.Workflow.EditableFields.Single(field => field.Field == "fixed.shiny").Options,
+            option => option.Value == (int)global::RareType.NO_RARE && option.Label == "1 Not Shiny");
+        Assert.Contains(
+            placement.Payload.Workflow.EditableFields.Single(field => field.Field == "fixed.shiny").Options,
+            option => option.Value == (int)global::RareType.RARE && option.Label == "2 Shiny");
+        Assert.Equal(
+            "Emerge value 1",
+            placement.Payload.Workflow.EditableFields.Single(field => field.Field == "hidden.item1.chance").Label);
+        Assert.Equal(
+            int.MaxValue,
+            placement.Payload.Workflow.EditableFields.Single(field => field.Field == "hidden.item1.chance").MaximumValue);
+
+        var fixedSymbol = placement.Payload.Workflow.Objects.Single(entry => entry.CategoryId == "fixedSymbols");
+        Assert.Equal("Bulbasaur", fixedSymbol.ItemName);
+        Assert.Equal("1 Bulbasaur", fixedSymbol.Fields!.Single(field => field.Field == "fixed.speciesId").DisplayValue);
+        Assert.Equal("Not Shiny", fixedSymbol.Fields!.Single(field => field.Field == "fixed.shiny").DisplayValue);
+        var fixedAbility = fixedSymbol.Fields!.Single(field => field.Field == "fixed.abilityMode");
+        Assert.Equal("Overgrow (Ability 1)", fixedAbility.DisplayValue);
+        Assert.Contains(
+            fixedAbility.Options!,
+            option => option.Value == (int)global::TokuseiType.SET_1 && option.Label == "2 Overgrow (Ability 1)");
+        Assert.Contains(
+            fixedAbility.Options!,
+            option => option.Value == (int)global::TokuseiType.SET_3 && option.Label == "4 Chlorophyll (Hidden Ability)");
+
+        var coinSymbol = placement.Payload.Workflow.Objects.Single(entry => entry.CategoryId == "coinSymbols");
+        Assert.Equal("Bulbasaur", coinSymbol.ItemName);
+        Assert.Equal("1 Bulbasaur", coinSymbol.Fields!.Single(field => field.Field == "coin.speciesId").DisplayValue);
+        Assert.Equal("Shiny", coinSymbol.Fields!.Single(field => field.Field == "coin.shiny").DisplayValue);
+        var coinAbility = coinSymbol.Fields!.Single(field => field.Field == "coin.abilityMode");
+        Assert.Equal("Chlorophyll (Hidden Ability)", coinAbility.DisplayValue);
+        Assert.Contains(
+            coinAbility.Options!,
+            option => option.Value == (int)global::TokuseiType.SET_3 && option.Label == "4 Chlorophyll (Hidden Ability)");
     }
 
     [Theory]
@@ -440,6 +510,10 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(temp, SvDataPaths.PersonalArray, CreatePersonalArray());
         WriteSvOutput(temp, SvDataPaths.TrainerDataArray, CreateTrainerDataArray());
         WriteSvOutput(temp, SvDataPaths.WildEncounterArray, CreateEncounterArray());
+        WriteSvOutput(temp, SvDataPaths.FixedSymbolTableArray, CreateFixedSymbolTableArray());
+        WriteSvOutput(temp, SvDataPaths.EventBattlePokemonArray, CreateEventBattlePokemonArray());
+        WriteSvOutput(temp, SvDataPaths.HiddenItemDataTableArray, CreateHiddenItemDataTableArray());
+        WriteSvOutput(temp, SvDataPaths.RummagingItemDataTableArray, CreateRummagingItemDataTableArray());
         temp.WriteBaseRomFsFile(SvDataPaths.EnglishPokemonNames, CreateTextTable(3, (1, "Bulbasaur"), (2, "Ivysaur")));
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishItemNames,
@@ -673,6 +747,38 @@ public sealed class ScarletVioletBridgeTests
         return ReadTrainerPokemon(temp, trainerId, slot).GemType;
     }
 
+    private static SvTrainerPokemonRecord CreateSvTrainerPokemon(
+        int slot,
+        string species,
+        global::GemType teraType)
+    {
+        var stats = new SvTrainerPokemonStatsRecord(0, 0, 0, 0, 0, 0);
+        return new SvTrainerPokemonRecord(
+            slot,
+            SpeciesId: slot + 1,
+            species,
+            Form: 0,
+            Level: 50,
+            HeldItemId: 0,
+            HeldItem: null,
+            MoveIds: [0, 0, 0, 0],
+            Moves: ["None", "None", "None", "None"],
+            Gender: 0,
+            GenderLabel: "Random",
+            Ability: 0,
+            AbilityLabel: "Random 1/2",
+            Nature: 0,
+            NatureLabel: "Default (game behavior)",
+            stats,
+            DynamaxLevel: 0,
+            CanGigantamax: false,
+            stats,
+            Shiny: false,
+            CanDynamax: true,
+            TeraType: (int)teraType,
+            TeraTypeLabel: SvTrainersWorkflowService.FormatTeraType(teraType));
+    }
+
     private static global::PokeDataBattle ReadTrainerPokemon(TemporaryBridgeProject temp, int trainerId, int slot)
     {
         var table = global::trainer.TrdataMainArray.GetRootAsTrdataMainArray(
@@ -884,6 +990,89 @@ public sealed class ScarletVioletBridgeTests
         var vector = global::EncountPokeDataArray.CreateValuesVector(builder, [encounter]);
         var root = global::EncountPokeDataArray.CreateEncountPokeDataArray(builder, vector);
         global::EncountPokeDataArray.FinishEncountPokeDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateFixedSymbolTableArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var tableKey = builder.CreateString("ai_area01_01");
+        var pokeData = global::PokeDataSymbol.CreatePokeDataSymbol(
+            builder,
+            devId: (global::pml.common.DevID)1,
+            level: 5,
+            rareType: global::RareType.NO_RARE,
+            tokuseiIndex: global::TokuseiType.SET_1);
+        var fixedSymbol = FixedSymbolTable.CreateFixedSymbolTable(
+            builder,
+            tableKeyOffset: tableKey,
+            pokeDataSymbolOffset: pokeData);
+
+        var vector = FixedSymbolTableArray.CreateValuesVector(builder, [fixedSymbol]);
+        var root = FixedSymbolTableArray.CreateFixedSymbolTableArray(builder, vector);
+        FixedSymbolTableArray.FinishFixedSymbolTableArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateEventBattlePokemonArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var label = builder.CreateString("1055_multi_01");
+        var pokeData = global::PokeDataEventBattle.CreatePokeDataEventBattle(
+            builder,
+            devId: (global::pml.common.DevID)1,
+            level: 10,
+            rareType: global::RareType.RARE,
+            tokusei: global::TokuseiType.SET_3,
+            item: (global::ItemID)1,
+            dropItem: (global::ItemID)2,
+            dropItemNum: 1);
+        var coinSymbol = EventBattlePokemon.CreateEventBattlePokemon(
+            builder,
+            labelOffset: label,
+            pokeDataOffset: pokeData);
+
+        var vector = EventBattlePokemonArray.CreateValuesVector(builder, [coinSymbol]);
+        var root = EventBattlePokemonArray.CreateEventBattlePokemonArray(builder, vector);
+        EventBattlePokemonArray.FinishEventBattlePokemonArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateHiddenItemDataTableArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var tableId = builder.CreateString("1001");
+        var item1 = HiddenItemDataTableInfo.CreateHiddenItemDataTableInfo(
+            builder,
+            itemId: 1,
+            emergePercent: 200,
+            dropCount: 1);
+        var item2 = HiddenItemDataTableInfo.CreateHiddenItemDataTableInfo(
+            builder,
+            itemId: 2,
+            emergePercent: 50,
+            dropCount: 2);
+        var hiddenItem = HiddenItemDataTable.CreateHiddenItemDataTable(builder, tableId, [item1, item2]);
+
+        var vector = HiddenItemDataTableArray.CreateValuesVector(builder, [hiddenItem]);
+        var root = HiddenItemDataTableArray.CreateHiddenItemDataTableArray(builder, vector);
+        HiddenItemDataTableArray.FinishHiddenItemDataTableArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateRummagingItemDataTableArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var rummaging = RummagingItemDataTable.CreateRummagingItemDataTable(
+            builder,
+            category: RummagingCategory.Bush,
+            pattern: RummagingPattern.Normal,
+            item00: 1,
+            item01: 2);
+
+        var vector = RummagingItemDataTableArray.CreateValuesVector(builder, [rummaging]);
+        var root = RummagingItemDataTableArray.CreateRummagingItemDataTableArray(builder, vector);
+        RummagingItemDataTableArray.FinishRummagingItemDataTableArrayBuffer(builder, root);
         return builder.SizedByteArray();
     }
 

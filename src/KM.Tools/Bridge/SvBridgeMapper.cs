@@ -684,7 +684,8 @@ public static class SvBridgeMapper
             value.Group,
             value.Value,
             value.DisplayValue,
-            value.IsReadOnly);
+            value.IsReadOnly,
+            value.Options?.Select(ToDto).ToArray());
     }
 
     private static PlacementEditableFieldDto ToDto(SvPlacementEditableField field)

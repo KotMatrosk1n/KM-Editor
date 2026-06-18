@@ -243,11 +243,14 @@ import { NpcItemGiftSection, formatNpcItemGiftPendingValue } from './features/np
 import { useNpcItemGiftWorkflowController } from './features/npc-item-gift/useNpcItemGiftWorkflowController';
 import {
   type PlacementFieldControl,
+  formatPlacementCoordinates,
+  formatPlacementItem,
   formatPlacementPrimaryData,
   getLegacyPlacementCategoryId,
   getPlacementCategories,
   getPlacementFieldControls,
-  getPlacementFieldValue
+  getPlacementFieldValue,
+  isPokemonPlacementObject
 } from './features/placement/placementUi';
 import { RandomizerSection } from './features/randomizer/RandomizerSection';
 import {
@@ -6513,6 +6516,7 @@ const resetModMergerPlan = () => {
                 editSession={getEditSessionForSection('pokemon')}
                 isEditStarting={isEditStarting}
                 isPokemonUpdating={isPokemonUpdating}
+                isScarletVioletProject={isScarletVioletProject}
                 onSearchChange={setPokemonSearchText}
                 onSelectPokemon={setSelectedPokemonPersonalId}
                 onStartEditSession={handleStartEditSession}
@@ -6571,6 +6575,7 @@ const resetModMergerPlan = () => {
                 editSession={getEditSessionForSection('trainers')}
                 isEditStarting={isEditStarting}
                 isTrainerUpdating={isTrainerUpdating}
+                isScarletVioletProject={isScarletVioletProject}
                 onSearchChange={setTrainerSearchText}
                 onSelectTrainer={setSelectedTrainerId}
                 onStartEditSession={handleStartEditSession}
@@ -7926,6 +7931,7 @@ function PokemonSection({
   editSession,
   isEditStarting,
   isPokemonUpdating,
+  isScarletVioletProject,
   onSearchChange,
   onSelectPokemon,
   onStartEditSession,
@@ -7940,6 +7946,7 @@ function PokemonSection({
   editSession: EditSession | null;
   isEditStarting: boolean;
   isPokemonUpdating: boolean;
+  isScarletVioletProject: boolean;
   onSearchChange: (searchText: string) => void;
   onSelectPokemon: (personalId: number | null) => void;
   onStartEditSession: () => void;
@@ -8023,6 +8030,15 @@ function PokemonSection({
 
     setEvYieldConfirmation(null);
   }, [evYieldConfirmation, onUpdatePokemonField]);
+  const pokemonDiagnostics =
+    workflow && selectedPokemon ? (
+      <div className="pokemon-diagnostics-row">
+        <DiagnosticsSection diagnostics={workflow.diagnostics} />
+        <SelectedPokemonSummaryCard pokemon={selectedPokemon} variant="context" />
+      </div>
+    ) : (
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    );
 
   return (
     <>
@@ -8100,14 +8116,7 @@ function PokemonSection({
           </div>
         </div>
 
-        {workflow && selectedPokemon ? (
-          <div className="pokemon-diagnostics-row">
-            <DiagnosticsSection diagnostics={workflow.diagnostics} />
-            <SelectedPokemonSummaryCard pokemon={selectedPokemon} variant="context" />
-          </div>
-        ) : (
-          <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
-        )}
+        {isScarletVioletProject ? null : pokemonDiagnostics}
 
         {workflow ? (
           <div className="items-layout pokemon-layout">
@@ -8176,6 +8185,7 @@ function PokemonSection({
         )}
       </section>
 
+      {isScarletVioletProject ? pokemonDiagnostics : null}
       {expYieldConfirmation ? (
         <PokemonYieldConfirmationModal
           action={expYieldConfirmation}
@@ -10575,6 +10585,7 @@ function TrainersSection({
   editSession,
   isEditStarting,
   isTrainerUpdating,
+  isScarletVioletProject,
   onSearchChange,
   onSelectTrainer,
   onStartEditSession,
@@ -10587,6 +10598,7 @@ function TrainersSection({
   editSession: EditSession | null;
   isEditStarting: boolean;
   isTrainerUpdating: boolean;
+  isScarletVioletProject: boolean;
   onSearchChange: (searchText: string) => void;
   onSelectTrainer: (trainerId: number | null) => void;
   onStartEditSession: () => void;
@@ -10717,6 +10729,7 @@ function TrainersSection({
               editableFields={workflow.editableFields}
               isEditStarting={isEditStarting}
               isTrainerUpdating={isTrainerUpdating}
+              isScarletVioletProject={isScarletVioletProject}
               onSelectSlot={setSelectedSlot}
               onStartEditSession={onStartEditSession}
               onUpdateTrainerField={onUpdateTrainerField}
@@ -10742,6 +10755,7 @@ function SelectedTrainerPanel({
   editableFields,
   isEditStarting,
   isTrainerUpdating,
+  isScarletVioletProject,
   onSelectSlot,
   onStartEditSession,
   onUpdateTrainerField,
@@ -10755,6 +10769,7 @@ function SelectedTrainerPanel({
   editableFields: TrainerEditableField[];
   isEditStarting: boolean;
   isTrainerUpdating: boolean;
+  isScarletVioletProject: boolean;
   onSelectSlot: (slot: number | null) => void;
   onStartEditSession: () => void;
   onUpdateTrainerField: (
@@ -10883,6 +10898,9 @@ function SelectedTrainerPanel({
   const aiFlagsMaskLabel = trainer
     ? `0x${trainer.aiFlags.toString(16).padStart(4, '0').toLocaleUpperCase()}`
     : '0x0000';
+  const showTerastallizationDetails =
+    isScarletVioletProject &&
+    contextualTrainerFields.some((field) => field.field === trainerCanTerastallizeFieldName);
   const trainerFieldGroups = useMemo(
     () => groupTrainerEditableFields(contextualTrainerFields, getTrainerDataFieldGroup),
     [contextualTrainerFields]
@@ -11020,16 +11038,14 @@ function SelectedTrainerPanel({
               <dt>Class ball scope</dt>
               <dd>{trainer.classBallScope}</dd>
             </div>
-            {contextualTrainerFields.some(
-              (field) => field.field === trainerCanTerastallizeFieldName
-            ) ? (
+            {showTerastallizationDetails ? (
               <>
                 <div>
                   <dt>Can Terastallize</dt>
                   <dd>{trainer.canTerastallize ? 'Yes' : 'No'}</dd>
                 </div>
                 <div>
-                  <dt>Tera target</dt>
+                  <dt>Tera behavior</dt>
                   <dd>{trainer.teraTarget}</dd>
                 </div>
               </>
@@ -19771,11 +19787,12 @@ function PlacementSection({
         .toLocaleLowerCase()
         .includes(normalizedSearch);
     }) ?? [];
+  const activeCategoryLabel =
+    placementCategories.find((category) => category.id === activeCategoryId)?.label ??
+    'this category';
   const selectedObject =
     filteredObjects.find((placedObject) => placedObject.objectId === selectedObjectId) ??
-    workflow?.objects.find((placedObject) => placedObject.objectId === selectedObjectId) ??
     filteredObjects[0] ??
-    workflow?.objects[0] ??
     null;
   const canEditPlacement = workflow?.summary.availability === 'available';
   const pendingPlacementObjectIds = getPendingPlacementObjectIds(editSession);
@@ -19783,6 +19800,11 @@ function PlacementSection({
   useEffect(() => {
     if (selectedObject && selectedObject.objectId !== selectedObjectId) {
       onSelectObject(selectedObject.objectId);
+      return;
+    }
+
+    if (!selectedObject && selectedObjectId !== null) {
+      onSelectObject(null);
     }
   }, [onSelectObject, selectedObject?.objectId, selectedObjectId]);
 
@@ -19864,16 +19886,15 @@ function PlacementSection({
 
         {workflow ? (
           <div className="encounters-layout">
-            <div className="raid-rewards-table" role="table" aria-label="Placed objects">
-              <div className="raid-rewards-row raid-rewards-row-heading" role="row">
+            <div className="raid-rewards-table placement-object-table" role="table" aria-label="Placed objects">
+              <div className="raid-rewards-row raid-rewards-row-heading placement-object-row" role="row">
                 <span role="columnheader">Object</span>
-                <span role="columnheader">Category</span>
-                <span role="columnheader">Data</span>
+                <span role="columnheader">Pokemon / Data</span>
                 <span role="columnheader">Position</span>
               </div>
               {filteredObjects.map((placedObject) => (
                 <button
-                  className={`raid-rewards-row ${
+                  className={`raid-rewards-row placement-object-row ${
                     selectedObject?.objectId === placedObject.objectId
                       ? 'raid-rewards-row-selected'
                       : ''
@@ -19887,14 +19908,21 @@ function PlacementSection({
                   role="row"
                   type="button"
                 >
-                  <span role="cell">{placedObject.label}</span>
-                  <span role="cell">
-                    {placedObject.categoryLabel || placedObject.map}
+                  <span className="placement-object-name" role="cell">
+                    <strong>{placedObject.label}</strong>
+                    <small>{placedObject.map}</small>
                   </span>
-                  <span role="cell">{formatPlacementPrimaryData(placedObject)}</span>
+                  <span className="placement-primary-cell" role="cell">
+                    {formatPlacementPrimaryData(placedObject)}
+                  </span>
                   <span role="cell">{formatPlacementCoordinates(placedObject)}</span>
                 </button>
               ))}
+              {filteredObjects.length === 0 ? (
+                <div className="raid-rewards-row placement-object-row placement-empty-row" role="row">
+                  <span role="cell">No entries in {activeCategoryLabel}.</span>
+                </div>
+              ) : null}
             </div>
 
             <SelectedPlacementPanel
@@ -20053,7 +20081,7 @@ function SelectedPlacementPanel({
           <div className="encounter-edit-form">
             <dl className="encounter-slot-detail">
               <div>
-                <dt>Item</dt>
+                <dt>{isPokemonPlacementObject(placedObject) ? 'Pokemon' : 'Item'}</dt>
                 <dd>{formatPlacementItem(placedObject)}</dd>
               </div>
               <div>
@@ -20084,8 +20112,8 @@ function SelectedPlacementPanel({
                       const draftValue = drafts[field.field] ?? '';
                       const draftState = getPlacementDraftState(draftValue, currentValue, field);
                       const isInvalid =
-                        draftValue.trim() !== '' && draftState.normalizedValue === null;
-                      const isChanged = draftState.normalizedValue !== null;
+                        draftValue.trim() !== '' && draftState.isValid === false;
+                      const isChanged = draftState.canSubmit;
                       const fieldOptions = field.options ?? [];
                       const isFieldReadOnly = field.isReadOnly;
                       const statusText = isInvalid
@@ -29100,6 +29128,7 @@ function getPlacementDraftState(
   if (!normalizedValue) {
     return {
       canSubmit: false,
+      isValid: false,
       normalizedValue: null
     };
   }
@@ -29107,7 +29136,8 @@ function getPlacementDraftState(
   if (field.isReadOnly || field.valueKind === 'text') {
     return {
       canSubmit: false,
-      normalizedValue: null
+      isValid: true,
+      normalizedValue: normalizedValue
     };
   }
 
@@ -29125,11 +29155,13 @@ function getPlacementDraftState(
     field.valueKind === 'integer'
       ? parsedValue.toString()
       : parsedValue.toString();
+  const canSubmit =
+    inRange &&
+    (currentValue === null || Math.abs(parsedValue - Number(currentValue)) > Number.EPSILON);
 
   return {
-    canSubmit:
-      inRange &&
-      (currentValue === null || Math.abs(parsedValue - Number(currentValue)) > Number.EPSILON),
+    canSubmit,
+    isValid: inRange,
     normalizedValue: inRange ? nextValue : null
   };
 }
@@ -29155,8 +29187,8 @@ function getPlacementDraftSummary(
     const currentValue = getValue(field.field);
     const draftValue = drafts[field.field] ?? '';
     const draftState = getPlacementDraftState(draftValue, currentValue, field);
-    const isChanged = draftState.normalizedValue !== null;
-    const isInvalid = draftValue.trim() !== '' && draftState.normalizedValue === null;
+    const isChanged = draftState.canSubmit;
+    const isInvalid = draftValue.trim() !== '' && draftState.isValid === false;
 
     if (isChanged || isInvalid) {
       dirtyFieldCount += 1;
@@ -29179,33 +29211,6 @@ function getPlacementDraftSummary(
   }
 
   return { changedFields, dirtyFieldCount, invalidFields };
-}
-
-function formatPlacementItem(placedObject: PlacedObjectRecord) {
-  if (placedObject.itemId === null) {
-    return placedObject.itemHash || placedObject.itemName;
-  }
-
-  return `${placedObject.itemName} (${placedObject.itemId})`;
-}
-
-function formatPlacementCoordinates(placedObject: PlacedObjectRecord) {
-  if (placedObject.fields?.length) {
-    const x = placedObject.fields.find((field) => field.field === 'point.positionX');
-    const y = placedObject.fields.find((field) => field.field === 'point.positionY');
-    const z = placedObject.fields.find((field) => field.field === 'point.positionZ');
-    if (x || y || z) {
-      return [x, y, z]
-        .map((field) => field?.displayValue || field?.value || 'Scene-only')
-        .join(', ');
-    }
-  }
-
-  return `${formatCoordinate(placedObject.x)}, ${formatCoordinate(placedObject.y)}, ${formatCoordinate(placedObject.z)}`;
-}
-
-function formatCoordinate(value: number) {
-  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
 }
 
 function formatPokemonTypes(pokemon: PokemonRecord) {

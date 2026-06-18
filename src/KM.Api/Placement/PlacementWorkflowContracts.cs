@@ -20,7 +20,8 @@ public sealed record PlacementFieldValueDto(
     string Group,
     string Value,
     string DisplayValue,
-    bool IsReadOnly);
+    bool IsReadOnly,
+    IReadOnlyList<PlacementEditableFieldOptionDto>? Options = null);
 
 public sealed record PlacedObjectRecordDto(
     string ObjectId,

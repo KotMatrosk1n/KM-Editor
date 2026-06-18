@@ -158,8 +158,10 @@ internal sealed class SvPlacementWorkflowService
                 "romfs/message/dat/English"));
         }
 
-        TryLoadFixedSymbols(project, labels, objects, sourceFiles, diagnostics);
-        TryLoadCoinSymbols(project, labels, objects, sourceFiles, diagnostics);
+        var abilityResolver = SvPlacementAbilityResolver.Load(project, fileSource, labels, diagnostics);
+
+        TryLoadFixedSymbols(project, labels, abilityResolver, objects, sourceFiles, diagnostics);
+        TryLoadCoinSymbols(project, labels, abilityResolver, objects, sourceFiles, diagnostics);
         TryLoadHiddenItems(project, labels, objects, sourceFiles, diagnostics);
         TryLoadRummaging(project, labels, objects, sourceFiles, diagnostics);
 
@@ -190,6 +192,7 @@ internal sealed class SvPlacementWorkflowService
     private void TryLoadFixedSymbols(
         OpenedProject project,
         SvTextLabelLookup labels,
+        SvPlacementAbilityResolver abilityResolver,
         ICollection<SvPlacedObjectRecord> objects,
         ISet<string> sourceFiles,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -207,7 +210,7 @@ internal sealed class SvPlacementWorkflowService
                     continue;
                 }
 
-                objects.Add(ToFixedSymbolObject(index, row.Value, labels, source));
+                objects.Add(ToFixedSymbolObject(index, row.Value, labels, abilityResolver, source));
             }
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
@@ -221,6 +224,7 @@ internal sealed class SvPlacementWorkflowService
     private void TryLoadCoinSymbols(
         OpenedProject project,
         SvTextLabelLookup labels,
+        SvPlacementAbilityResolver abilityResolver,
         ICollection<SvPlacedObjectRecord> objects,
         ISet<string> sourceFiles,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -238,7 +242,7 @@ internal sealed class SvPlacementWorkflowService
                     continue;
                 }
 
-                objects.Add(ToCoinSymbolObject(index, row.Value, labels, source));
+                objects.Add(ToCoinSymbolObject(index, row.Value, labels, abilityResolver, source));
             }
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
@@ -318,6 +322,7 @@ internal sealed class SvPlacementWorkflowService
         int index,
         FixedSymbolTable row,
         SvTextLabelLookup labels,
+        SvPlacementAbilityResolver abilityResolver,
         SvWorkflowFile source)
     {
         var pokeData = row.PokeDataSymbol;
@@ -342,7 +347,7 @@ internal sealed class SvPlacementWorkflowService
 
         if (pokeData is not null)
         {
-            AddPokeDataSymbolFields(fields, pokeData.Value, labels);
+            AddPokeDataSymbolFields(fields, pokeData.Value, labels, abilityResolver);
         }
 
         if (row.PokeAI is { } ai)
@@ -384,6 +389,7 @@ internal sealed class SvPlacementWorkflowService
         int index,
         EventBattlePokemon row,
         SvTextLabelLookup labels,
+        SvPlacementAbilityResolver abilityResolver,
         SvWorkflowFile source)
     {
         var pokeData = row.PokeData;
@@ -407,7 +413,7 @@ internal sealed class SvPlacementWorkflowService
 
         if (pokeData is not null)
         {
-            AddEventBattlePokemonFields(fields, pokeData.Value, labels);
+            AddEventBattlePokemonFields(fields, pokeData.Value, labels, abilityResolver);
         }
 
         return new SvPlacedObjectRecord(
@@ -553,14 +559,16 @@ internal sealed class SvPlacementWorkflowService
     private static void AddPokeDataSymbolFields(
         ICollection<SvPlacementFieldValue> fields,
         global::PokeDataSymbol data,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        SvPlacementAbilityResolver abilityResolver)
     {
         var speciesId = (int)data.DevId;
+        var abilities = abilityResolver.Resolve(speciesId, data.FormId);
         fields.Add(Field(FixedSpeciesIdField, speciesId, speciesId == 0 ? "None" : $"{speciesId} {labels.Pokemon(speciesId)}"));
         fields.Add(Field(FixedFormField, data.FormId));
         fields.Add(Field(FixedLevelField, data.Level));
         fields.Add(Field(FixedGenderField, (int)data.Sex, SvLabels.EnumName(data.Sex)));
-        fields.Add(Field(FixedShinyField, (int)data.RareType, SvLabels.EnumName(data.RareType)));
+        fields.Add(Field(FixedShinyField, (int)data.RareType, FormatRareType(data.RareType)));
         fields.Add(Field(FixedIvModeField, (int)data.TalentType, SvLabels.EnumName(data.TalentType)));
         AddParamSetFields(fields, data.TalentValue, FixedIvHpField, FixedIvAttackField, FixedIvDefenseField, FixedIvSpecialAttackField, FixedIvSpecialDefenseField, FixedIvSpeedField);
         fields.Add(Field(FixedGuaranteedPerfectIvsField, data.TalentVNum));
@@ -569,7 +577,11 @@ internal sealed class SvPlacementWorkflowService
         fields.Add(Field(FixedMove2Field, WazaId(data.Waza2), MoveLabel(data.Waza2, labels)));
         fields.Add(Field(FixedMove3Field, WazaId(data.Waza3), MoveLabel(data.Waza3, labels)));
         fields.Add(Field(FixedMove4Field, WazaId(data.Waza4), MoveLabel(data.Waza4, labels)));
-        fields.Add(Field(FixedAbilityModeField, (int)data.TokuseiIndex, SvLabels.EnumName(data.TokuseiIndex)));
+        fields.Add(Field(
+            FixedAbilityModeField,
+            (int)data.TokuseiIndex,
+            FormatAbilityMode(data.TokuseiIndex, abilities),
+            options: CreateAbilityModeOptions(abilities)));
         fields.Add(Field(FixedScaleModeField, (int)data.ScaleType, SvLabels.EnumName(data.ScaleType)));
         fields.Add(Field(FixedScaleValueField, data.ScaleValue));
         fields.Add(Field(FixedTeraTypeField, (int)data.GemType, SvLabels.EnumName(data.GemType)));
@@ -579,14 +591,16 @@ internal sealed class SvPlacementWorkflowService
     private static void AddEventBattlePokemonFields(
         ICollection<SvPlacementFieldValue> fields,
         global::PokeDataEventBattle data,
-        SvTextLabelLookup labels)
+        SvTextLabelLookup labels,
+        SvPlacementAbilityResolver abilityResolver)
     {
         var speciesId = (int)data.DevId;
+        var abilities = abilityResolver.Resolve(speciesId, data.FormId);
         fields.Add(Field(CoinSpeciesIdField, speciesId, speciesId == 0 ? "None" : $"{speciesId} {labels.Pokemon(speciesId)}"));
         fields.Add(Field(CoinFormField, data.FormId));
         fields.Add(Field(CoinLevelField, data.Level));
         fields.Add(Field(CoinGenderField, (int)data.Sex, SvLabels.EnumName(data.Sex)));
-        fields.Add(Field(CoinShinyField, (int)data.RareType, SvLabels.EnumName(data.RareType)));
+        fields.Add(Field(CoinShinyField, (int)data.RareType, FormatRareType(data.RareType)));
         fields.Add(Field(CoinIvModeField, (int)data.TalentType, SvLabels.EnumName(data.TalentType)));
         fields.Add(Field(CoinGuaranteedPerfectIvsField, data.TalentVnum));
         fields.Add(Field(CoinHeldItemField, (int)data.Item, ItemLabel((int)data.Item, labels)));
@@ -594,7 +608,11 @@ internal sealed class SvPlacementWorkflowService
         fields.Add(Field(CoinDropCountField, data.DropItemNum));
         fields.Add(Field(CoinNatureField, (int)data.Seikaku, SvLabels.EnumName(data.Seikaku)));
         fields.Add(Field(CoinNatureBoostField, (int)data.SeikakuHosei, SvLabels.EnumName(data.SeikakuHosei)));
-        fields.Add(Field(CoinAbilityModeField, (int)data.Tokusei, SvLabels.EnumName(data.Tokusei)));
+        fields.Add(Field(
+            CoinAbilityModeField,
+            (int)data.Tokusei,
+            FormatAbilityMode(data.Tokusei, abilities),
+            options: CreateAbilityModeOptions(abilities)));
         fields.Add(Field(CoinMoveModeField, (int)data.WazaType, SvLabels.EnumName(data.WazaType)));
         fields.Add(Field(CoinMove1Field, WazaId(data.Waza1), MoveLabel(data.Waza1, labels)));
         fields.Add(Field(CoinMove2Field, WazaId(data.Waza2), MoveLabel(data.Waza2, labels)));
@@ -670,7 +688,7 @@ internal sealed class SvPlacementWorkflowService
             Integer(FixedFormField, "Form", "Fixed Symbol Pokemon", short.MinValue, short.MaxValue),
             Integer(FixedLevelField, "Level", "Fixed Symbol Pokemon", 0, 100),
             Integer(FixedGenderField, "Gender", "Fixed Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::SexType>()),
-            Integer(FixedShinyField, "Shiny setting", "Fixed Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::RareType>()),
+            Integer(FixedShinyField, "Shiny setting", "Fixed Symbol Pokemon", 0, 2, CreateRareTypeOptions()),
             Integer(FixedIvModeField, "IV mode", "Fixed Symbol IVs", int.MinValue, int.MaxValue, CreateEnumOptions<global::TalentType>()),
             Integer(FixedIvHpField, "HP IV", "Fixed Symbol IVs", 0, 31),
             Integer(FixedIvAttackField, "Attack IV", "Fixed Symbol IVs", 0, 31),
@@ -684,7 +702,7 @@ internal sealed class SvPlacementWorkflowService
             Integer(FixedMove2Field, "Move 2", "Fixed Symbol Moves", 0, ushort.MaxValue, moveOptions),
             Integer(FixedMove3Field, "Move 3", "Fixed Symbol Moves", 0, ushort.MaxValue, moveOptions),
             Integer(FixedMove4Field, "Move 4", "Fixed Symbol Moves", 0, ushort.MaxValue, moveOptions),
-            Integer(FixedAbilityModeField, "Ability mode", "Fixed Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::TokuseiType>()),
+            Integer(FixedAbilityModeField, "Ability mode", "Fixed Symbol Pokemon", 0, 4, CreateAbilityModeOptions(SvPlacementAbilitySet.Empty)),
             Integer(FixedScaleModeField, "Scale mode", "Fixed Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::SizeType>()),
             Integer(FixedScaleValueField, "Scale value", "Fixed Symbol Pokemon", short.MinValue, short.MaxValue),
             Integer(FixedTeraTypeField, "Tera type", "Fixed Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::GemType>()),
@@ -712,7 +730,7 @@ internal sealed class SvPlacementWorkflowService
             Integer(CoinFormField, "Form", "Coin Symbol Pokemon", short.MinValue, short.MaxValue),
             Integer(CoinLevelField, "Level", "Coin Symbol Pokemon", 0, 100),
             Integer(CoinGenderField, "Gender", "Coin Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::SexType>()),
-            Integer(CoinShinyField, "Shiny setting", "Coin Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::RareType>()),
+            Integer(CoinShinyField, "Shiny setting", "Coin Symbol Pokemon", 0, 2, CreateRareTypeOptions()),
             Integer(CoinIvModeField, "IV mode", "Coin Symbol IVs", int.MinValue, int.MaxValue, CreateEnumOptions<global::TalentType>()),
             Integer(CoinGuaranteedPerfectIvsField, "Guaranteed perfect IVs", "Coin Symbol IVs", sbyte.MinValue, sbyte.MaxValue),
             Integer(CoinHeldItemField, "Held item", "Coin Symbol Pokemon", 0, int.MaxValue, itemOptions),
@@ -720,7 +738,7 @@ internal sealed class SvPlacementWorkflowService
             Integer(CoinDropCountField, "Drop count", "Coin Symbol Drops", sbyte.MinValue, sbyte.MaxValue),
             Integer(CoinNatureField, "Nature", "Coin Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::SeikakuType>()),
             Integer(CoinNatureBoostField, "Nature mint override", "Coin Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::SeikakuType>()),
-            Integer(CoinAbilityModeField, "Ability mode", "Coin Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::TokuseiType>()),
+            Integer(CoinAbilityModeField, "Ability mode", "Coin Symbol Pokemon", 0, 4, CreateAbilityModeOptions(SvPlacementAbilitySet.Empty)),
             Integer(CoinMoveModeField, "Move selection mode", "Coin Symbol Moves", int.MinValue, int.MaxValue, CreateEnumOptions<global::WazaType>()),
             Integer(CoinMove1Field, "Move 1", "Coin Symbol Moves", 0, ushort.MaxValue, moveOptions),
             Integer(CoinMove2Field, "Move 2", "Coin Symbol Moves", 0, ushort.MaxValue, moveOptions),
@@ -749,7 +767,7 @@ internal sealed class SvPlacementWorkflowService
         {
             var group = $"Hidden Item Slot {slot + 1}";
             fields.Add(Integer(HiddenItemField(slot, HiddenItemSlotField.ItemId), $"Item {slot + 1}", group, 0, int.MaxValue, itemOptions));
-            fields.Add(Integer(HiddenItemField(slot, HiddenItemSlotField.Chance), $"Emerge percent {slot + 1}", group, 0, 100));
+            fields.Add(Integer(HiddenItemField(slot, HiddenItemSlotField.Chance), $"Emerge value {slot + 1}", group, 0, int.MaxValue));
             fields.Add(Integer(HiddenItemField(slot, HiddenItemSlotField.Count), $"Drop count {slot + 1}", group, 0, int.MaxValue));
         }
 
@@ -800,19 +818,34 @@ internal sealed class SvPlacementWorkflowService
         return Field(field, string.Empty, "Scene-only", isReadOnly: true);
     }
 
-    private static SvPlacementFieldValue Field(string field, int value, string? displayValue = null, bool isReadOnly = false)
+    private static SvPlacementFieldValue Field(
+        string field,
+        int value,
+        string? displayValue = null,
+        bool isReadOnly = false,
+        IReadOnlyList<SvPlacementEditableFieldOption>? options = null)
     {
         var text = value.ToString(CultureInfo.InvariantCulture);
-        return Field(field, text, displayValue ?? text, isReadOnly);
+        return Field(field, text, displayValue ?? text, isReadOnly, options);
     }
 
-    private static SvPlacementFieldValue Field(string field, float value, string? displayValue = null, bool isReadOnly = false)
+    private static SvPlacementFieldValue Field(
+        string field,
+        float value,
+        string? displayValue = null,
+        bool isReadOnly = false,
+        IReadOnlyList<SvPlacementEditableFieldOption>? options = null)
     {
         var text = value.ToString("R", CultureInfo.InvariantCulture);
-        return Field(field, text, displayValue ?? text, isReadOnly);
+        return Field(field, text, displayValue ?? text, isReadOnly, options);
     }
 
-    private static SvPlacementFieldValue Field(string field, string value, string displayValue, bool isReadOnly = false)
+    private static SvPlacementFieldValue Field(
+        string field,
+        string value,
+        string displayValue,
+        bool isReadOnly = false,
+        IReadOnlyList<SvPlacementEditableFieldOption>? options = null)
     {
         var definition = CreateEditableFields(SvTextLabelLookup.None()).FirstOrDefault(candidate => candidate.Field == field);
         return new SvPlacementFieldValue(
@@ -821,7 +854,8 @@ internal sealed class SvPlacementWorkflowService
             definition?.Group ?? "Placement Data",
             value,
             displayValue,
-            isReadOnly || definition?.IsReadOnly == true);
+            isReadOnly || definition?.IsReadOnly == true,
+            options);
     }
 
     private static IReadOnlyList<SvPlacementEditableFieldOption> CreateIndexedOptions(
@@ -855,6 +889,57 @@ internal sealed class SvPlacementWorkflowService
                 $"{Convert.ToInt32(value, CultureInfo.InvariantCulture)} {SvLabels.EnumName(value)}"))
             .OrderBy(option => option.Value)
             .ToArray();
+    }
+
+    private static IReadOnlyList<SvPlacementEditableFieldOption> CreateRareTypeOptions()
+    {
+        return
+        [
+            new((int)global::RareType.DEFAULT, "0 Default"),
+            new((int)global::RareType.NO_RARE, "1 Not Shiny"),
+            new((int)global::RareType.RARE, "2 Shiny"),
+        ];
+    }
+
+    private static string FormatRareType(global::RareType value)
+    {
+        return value switch
+        {
+            global::RareType.DEFAULT => "Default",
+            global::RareType.NO_RARE => "Not Shiny",
+            global::RareType.RARE => "Shiny",
+            _ => SvLabels.EnumName(value),
+        };
+    }
+
+    private static IReadOnlyList<SvPlacementEditableFieldOption> CreateAbilityModeOptions(SvPlacementAbilitySet abilities)
+    {
+        return
+        [
+            new((int)global::TokuseiType.RANDOM_12, "0 Random Ability 1 or 2"),
+            new((int)global::TokuseiType.RANDOM_123, "1 Random Ability 1, 2, or Hidden"),
+            new((int)global::TokuseiType.SET_1, $"2 {FormatAbilitySlot(abilities.Ability1, "Ability 1")}"),
+            new((int)global::TokuseiType.SET_2, $"3 {FormatAbilitySlot(abilities.Ability2, "Ability 2")}"),
+            new((int)global::TokuseiType.SET_3, $"4 {FormatAbilitySlot(abilities.HiddenAbility, "Hidden Ability")}"),
+        ];
+    }
+
+    private static string FormatAbilityMode(global::TokuseiType value, SvPlacementAbilitySet abilities)
+    {
+        return value switch
+        {
+            global::TokuseiType.RANDOM_12 => "Random Ability 1 or 2",
+            global::TokuseiType.RANDOM_123 => "Random Ability 1, 2, or Hidden",
+            global::TokuseiType.SET_1 => FormatAbilitySlot(abilities.Ability1, "Ability 1"),
+            global::TokuseiType.SET_2 => FormatAbilitySlot(abilities.Ability2, "Ability 2"),
+            global::TokuseiType.SET_3 => FormatAbilitySlot(abilities.HiddenAbility, "Hidden Ability"),
+            _ => SvLabels.EnumName(value),
+        };
+    }
+
+    private static string FormatAbilitySlot(string ability, string slot)
+    {
+        return string.Equals(ability, slot, StringComparison.Ordinal) ? slot : $"{ability} ({slot})";
     }
 
     private static IReadOnlyList<SvPlacementEditableFieldOption> BoolOptions()
@@ -1003,6 +1088,79 @@ internal sealed class SvPlacementWorkflowService
         ItemId,
         Chance,
         Count,
+    }
+
+    private sealed class SvPlacementAbilityResolver
+    {
+        private readonly IReadOnlyDictionary<string, SvPlacementAbilitySet> abilitiesBySpeciesForm;
+
+        private SvPlacementAbilityResolver(IReadOnlyDictionary<string, SvPlacementAbilitySet> abilitiesBySpeciesForm)
+        {
+            this.abilitiesBySpeciesForm = abilitiesBySpeciesForm;
+        }
+
+        public static SvPlacementAbilityResolver Empty { get; } = new(
+            new Dictionary<string, SvPlacementAbilitySet>(StringComparer.Ordinal));
+
+        public static SvPlacementAbilityResolver Load(
+            OpenedProject project,
+            SvWorkflowFileSource fileSource,
+            SvTextLabelLookup labels,
+            ICollection<ValidationDiagnostic> diagnostics)
+        {
+            try
+            {
+                var source = fileSource.Read(project, SvDataPaths.PersonalArray);
+                var table = global::personal_table.GetRootAspersonal_table(new ByteBuffer(source.Bytes));
+                var lookup = new Dictionary<string, SvPlacementAbilitySet>(StringComparer.Ordinal);
+                for (var index = 0; index < table.EntryLength; index++)
+                {
+                    var row = table.Entry(index);
+                    if (row?.Species is not { } species || !row.Value.IsPresent)
+                    {
+                        continue;
+                    }
+
+                    lookup.TryAdd(
+                        CreateKey(species.Species, species.Form),
+                        new SvPlacementAbilitySet(
+                            labels.Ability(row.Value.Ability1),
+                            labels.Ability(row.Value.Ability2),
+                            labels.Ability(row.Value.AbilityHidden)));
+                }
+
+                return new SvPlacementAbilityResolver(lookup);
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            {
+                diagnostics.Add(SvWorkflowSupport.Warning(
+                    $"Placement ability names could not be resolved from Pokemon Data: {exception.Message}",
+                    $"romfs/{SvDataPaths.PersonalArray}"));
+                return Empty;
+            }
+        }
+
+        public SvPlacementAbilitySet Resolve(int species, int form)
+        {
+            return abilitiesBySpeciesForm.TryGetValue(CreateKey(species, form), out var exact)
+                ? exact
+                : abilitiesBySpeciesForm.TryGetValue(CreateKey(species, 0), out var baseForm)
+                    ? baseForm
+                    : SvPlacementAbilitySet.Empty;
+        }
+
+        private static string CreateKey(int species, int form)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"{species}:{form}");
+        }
+    }
+
+    private sealed record SvPlacementAbilitySet(
+        string Ability1,
+        string Ability2,
+        string HiddenAbility)
+    {
+        public static SvPlacementAbilitySet Empty { get; } = new("Ability 1", "Ability 2", "Hidden Ability");
     }
 
     private sealed record CategorySeed(string Id, string Label, string Description);

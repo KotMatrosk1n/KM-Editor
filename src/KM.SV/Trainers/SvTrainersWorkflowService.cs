@@ -579,17 +579,31 @@ internal sealed class SvTrainersWorkflowService
             return "Disabled";
         }
 
-        var configuredTargets = team
+        var fixedTeraTypeSlots = team
             .Where(pokemon => pokemon.TeraType is > (int)global::GemType.RANDOM)
-            .Select(pokemon =>
-                $"Slot {pokemon.Slot + 1}: {pokemon.Species} ({pokemon.TeraTypeLabel ?? "Tera type set"})")
+            .OrderBy(pokemon => pokemon.Slot)
             .ToArray();
-        if (configuredTargets.Length == 0)
+        if (fixedTeraTypeSlots.Length == 0)
         {
-            return "Enabled, no fixed Tera type on party slots";
+            return "Enabled; no fixed party Tera type overrides";
         }
 
-        return string.Join("; ", configuredTargets);
+        if (fixedTeraTypeSlots.Length == 1)
+        {
+            var slot = fixedTeraTypeSlots[0];
+            return $"Enabled; only fixed Tera type is {FormatFixedTeraTypeSlot(slot)}";
+        }
+
+        var fixedTypeList = string.Join(
+            "; ",
+            fixedTeraTypeSlots.Select(slot => FormatFixedTeraTypeSlot(slot).TrimEnd('.')));
+        return $"Enabled; target is battle controlled. Fixed Tera types: {fixedTypeList}.";
+    }
+
+    private static string FormatFixedTeraTypeSlot(SvTrainerPokemonRecord pokemon)
+    {
+        return
+            $"Slot {(pokemon.Slot + 1).ToString(CultureInfo.InvariantCulture)}: {pokemon.Species} ({pokemon.TeraTypeLabel ?? "Tera type set"}).";
     }
 
     private sealed class SvTrainerAbilityResolver

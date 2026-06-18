@@ -1913,6 +1913,21 @@ describe('bridge contracts', () => {
     ).toBe(true);
 
     expect(
+      placementResponseSchema.safeParse({
+        payload: {
+          workflow: {
+            ...placementWorkflow,
+            categories: null,
+            objects: placementWorkflow.objects.map((object) => ({
+              ...object,
+              fields: null
+            }))
+          }
+        }
+      }).success
+    ).toBe(true);
+
+    expect(
       flagworkSaveRequestSchema.safeParse({
         command: kmCommandNames.loadFlagworkSaveWorkflow,
         payload: {

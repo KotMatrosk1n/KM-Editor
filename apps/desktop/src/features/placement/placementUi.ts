@@ -68,7 +68,7 @@ export function getPlacementFieldControls(
         label: value.label || definition?.label || value.field,
         maximumValue: definition?.maximumValue ?? Number.MAX_SAFE_INTEGER,
         minimumValue: definition?.minimumValue ?? Number.MIN_SAFE_INTEGER,
-        options: definition?.options ?? [],
+        options: value.options ?? definition?.options ?? [],
         value: value.value,
         valueKind: definition?.valueKind ?? 'text'
       };
@@ -126,6 +126,27 @@ export function formatPlacementPrimaryData(object: PlacedObjectRecord) {
     : `${object.itemName} (${object.itemId})`;
 }
 
+export function formatPlacementItem(object: PlacedObjectRecord) {
+  if (isPokemonPlacementObject(object)) return formatPlacementPrimaryData(object);
+  return object.itemId === null ? object.itemHash || object.itemName : `${object.itemName} (${object.itemId})`;
+}
+
+export function formatPlacementCoordinates(object: PlacedObjectRecord) {
+  if (object.fields?.length) {
+    const x = object.fields.find((field) => field.field === 'point.positionX');
+    const y = object.fields.find((field) => field.field === 'point.positionY');
+    const z = object.fields.find((field) => field.field === 'point.positionZ');
+    if (x || y || z) return [x, y, z].map((field) => field?.displayValue || field?.value || 'Scene-only').join(', ');
+  }
+
+  return `${formatCoordinate(object.x)}, ${formatCoordinate(object.y)}, ${formatCoordinate(object.z)}`;
+}
+
+export function isPokemonPlacementObject(object: PlacedObjectRecord) {
+  const categoryId = object.categoryId ?? getLegacyPlacementCategoryId(object);
+  return categoryId === 'fixedSymbols' || categoryId === 'coinSymbols';
+}
+
 function isLegacyPlacementFieldVisible(object: PlacedObjectRecord, field: string) {
   if (field === placementChanceFieldName) return object.objectType === 'HiddenItem';
   if (field === placementItemIdFieldName) return object.itemId !== null || object.itemHash.length > 0;
@@ -149,4 +170,8 @@ function getLegacyPlacementFieldGroup(field: PlacementEditableField) {
   }
 
   return 'Placement Data';
+}
+
+function formatCoordinate(value: number) {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
 }
