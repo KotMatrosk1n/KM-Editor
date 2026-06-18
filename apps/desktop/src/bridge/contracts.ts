@@ -1921,8 +1921,12 @@ export const placementProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema, sourceFile: z.string(), sourceLayer: projectFileLayerSchema
 });
 
+export const placementEditableFieldOptionSchema = z.strictObject({
+  label: z.string(), value: z.number().int()
+});
+
 export const placementFieldValueSchema = z.strictObject({
-  displayValue: z.string(), field: z.string(), group: z.string(), isReadOnly: z.boolean(), label: z.string(), value: z.string()
+  displayValue: z.string(), field: z.string(), group: z.string(), isReadOnly: z.boolean(), label: z.string(), options: z.array(placementEditableFieldOptionSchema).nullish(), value: z.string()
 });
 
 export const placedObjectRecordSchema = z.strictObject({
@@ -1931,7 +1935,7 @@ export const placedObjectRecordSchema = z.strictObject({
   categoryLabel: z.string().optional(),
   chance: z.number().int().nullable(),
   chanceIndex: z.number().int().nonnegative().nullable(),
-  fields: z.array(placementFieldValueSchema).optional(),
+  fields: z.array(placementFieldValueSchema).nullish(),
   itemHash: z.string(),
   itemId: z.number().int().nonnegative().nullable(),
   itemName: z.string(),
@@ -1950,10 +1954,6 @@ export const placedObjectRecordSchema = z.strictObject({
   z: z.number()
 });
 
-export const placementEditableFieldOptionSchema = z.strictObject({
-  label: z.string(), value: z.number().int()
-});
-
 export const placementEditableFieldSchema = z.strictObject({
   description: z.string().optional(), field: z.string(), group: z.string().optional(), isReadOnly: z.boolean().optional(), label: z.string(),
   maximumValue: z.number(), minimumValue: z.number(), options: z.array(placementEditableFieldOptionSchema).optional(), valueKind: z.string()
@@ -1968,7 +1968,7 @@ export const placementWorkflowStatsSchema = z.strictObject({
 });
 
 export const placementWorkflowSchema = z.strictObject({
-  categories: z.array(placementCategorySchema).optional(), diagnostics: z.array(apiDiagnosticSchema),
+  categories: z.array(placementCategorySchema).nullish(), diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(placementEditableFieldSchema), objects: z.array(placedObjectRecordSchema),
   stats: placementWorkflowStatsSchema, summary: workflowSummarySchema
 });

@@ -2647,6 +2647,41 @@ h2 {
   opacity: 1;
 }
 
+.placement-object-row {
+  grid-template-columns: minmax(140px, 0.9fr) minmax(190px, 1.25fr) minmax(170px, 1fr);
+}
+
+.placement-object-name {
+  display: grid;
+  gap: 2px;
+}
+
+.placement-object-name strong,
+.placement-object-name small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.placement-object-name small {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.placement-primary-cell {
+  color: #f4f7fb;
+  font-weight: 900;
+}
+
+.placement-empty-row {
+  grid-template-columns: 1fr;
+  min-height: 54px;
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
 .flagwork-toolbar {
   grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
 }

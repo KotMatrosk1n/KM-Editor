@@ -17,7 +17,8 @@ public sealed record SvPlacementFieldValue(
     string Group,
     string Value,
     string DisplayValue,
-    bool IsReadOnly);
+    bool IsReadOnly,
+    IReadOnlyList<SvPlacementEditableFieldOption>? Options = null);
 
 public sealed record SvPlacedObjectRecord(
     string ObjectId,
