@@ -227,6 +227,7 @@ public sealed class SwShEncountersEditSessionService
         try
         {
             var pack = SwShGfPackFile.Parse(File.ReadAllBytes(dataSource.AbsolutePath));
+            var workflow = encountersWorkflowService.Load(project);
 
             foreach (var editGroup in session.PendingEdits.GroupBy(GetArchiveMemberFileName, StringComparer.Ordinal))
             {
@@ -240,8 +241,9 @@ public sealed class SwShEncountersEditSessionService
                 }
 
                 var archive = SwShWildEncounterArchive.Parse(pack.GetFileByName(editGroup.Key));
+                var availableSubTableIndexes = CreateAvailableSubTableIndexLookup(workflow, editGroup.Key);
                 var archiveEdits = editGroup
-                    .SelectMany(edit => ToArchiveEdits(archive, edit, diagnostics))
+                    .SelectMany(edit => ToArchiveEdits(archive, edit, availableSubTableIndexes, diagnostics))
                     .ToArray();
 
                 if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -723,6 +725,7 @@ public sealed class SwShEncountersEditSessionService
     private static IReadOnlyList<SwShWildEncounterEdit> ToArchiveEdits(
         SwShWildEncounterArchive archive,
         PendingEdit edit,
+        IReadOnlyDictionary<int, IReadOnlySet<int>> availableSubTableIndexes,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out var slot)
@@ -761,7 +764,18 @@ public sealed class SwShEncountersEditSessionService
 
         if (field is SwShWildEncounterField.LevelMin or SwShWildEncounterField.LevelMax)
         {
-            return Enumerable.Range(0, archive.Tables[tableIndex].SubTables.Count)
+            if (!availableSubTableIndexes.TryGetValue(tableIndex, out var targetSubTableIndexes)
+                || targetSubTableIndexes.Count == 0)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending encounter level edit no longer matches an editable vanilla encounter section.",
+                    expected: "Vanilla-available encounter subtables"));
+                return [];
+            }
+
+            return targetSubTableIndexes
+                .Order()
                 .Select(targetSubTableIndex => new SwShWildEncounterEdit(
                     tableIndex,
                     targetSubTableIndex,
@@ -775,6 +789,37 @@ public sealed class SwShEncountersEditSessionService
         [
             new SwShWildEncounterEdit(tableIndex, subTableIndex, slot - 1, field.Value, value)
         ];
+    }
+
+    private static IReadOnlyDictionary<int, IReadOnlySet<int>> CreateAvailableSubTableIndexLookup(
+        SwShEncountersWorkflow workflow,
+        string archiveMember)
+    {
+        var lookup = new Dictionary<int, HashSet<int>>();
+        foreach (var table in workflow.Tables.Where(table => string.Equals(table.ArchiveMember, archiveMember, StringComparison.Ordinal)))
+        {
+            if (!SwShEncountersWorkflowService.TryParseTableId(
+                    table.TableId,
+                    out _,
+                    out var tableIndex,
+                    out _,
+                    out var subTableIndex))
+            {
+                continue;
+            }
+
+            if (!lookup.TryGetValue(tableIndex, out var subTableIndexes))
+            {
+                subTableIndexes = [];
+                lookup.Add(tableIndex, subTableIndexes);
+            }
+
+            subTableIndexes.Add(subTableIndex);
+        }
+
+        return lookup.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlySet<int>)pair.Value);
     }
 
     private static SwShWildEncounterField? ToArchiveField(string? field)

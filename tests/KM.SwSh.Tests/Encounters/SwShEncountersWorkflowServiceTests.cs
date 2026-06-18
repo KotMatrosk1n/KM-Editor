@@ -124,6 +124,85 @@ public sealed class SwShEncountersWorkflowServiceTests
         Assert.DoesNotContain(workflow.Tables, table => table.ArchiveMember.EndsWith("_k.bin", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(ProjectGame.Sword, "encount_symbol_k.bin")]
+    [InlineData(ProjectGame.Shield, "encount_symbol_t.bin")]
+    public void LoadSkipsVanillaEmptyEncounterSubTables(ProjectGame game, string archiveMember)
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    archiveMember,
+                    SwShEncounterTestFixtures.CreateArchive(subTables: CreateNormalFishingAndTreeSubTables()).Write()),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            SwShGameTextFile.Write(
+            [
+                new SwShGameTextLine("", Flags: 0),
+                new SwShGameTextLine("Bulbasaur", Flags: 0),
+                new SwShGameTextLine("Ivysaur", Flags: 0),
+                new SwShGameTextLine("Venusaur", Flags: 0),
+                new SwShGameTextLine("Charmander", Flags: 0),
+            ]));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, game);
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { SelectedGame = game });
+
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+
+        Assert.Contains(workflow.Tables, table => table.EncounterType == "Normal");
+        Assert.DoesNotContain(workflow.Tables, table => table.EncounterType == "Fishing");
+        Assert.DoesNotContain(workflow.Tables, table => table.EncounterType == "Shaking Trees");
+    }
+
+    [Fact]
+    public void LoadUsesBaseVanillaSubTablesWhenLayeredArchiveAddsImpossibleEncounters()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var baseArchive = SwShEncounterTestFixtures.CreateArchive(
+            subTables: CreateNormalFishingAndTreeSubTables());
+        var layeredArchive = SwShEncounterTestFixtures.CreateArchive(
+            subTables: CreateNormalFishingAndTreeSubTables(
+                fishing: CreateSubTable(5, 12, speciesOffset: 4),
+                shakingTrees: CreateSubTable(5, 12, speciesOffset: 8)));
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile("encount_symbol_k.bin", baseArchive.Write()),
+            ]).Write());
+        temp.WriteOutputFile(
+            "romfs/bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile("encount_symbol_k.bin", layeredArchive.Write()),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            SwShGameTextFile.Write(
+            [
+                new SwShGameTextLine("", Flags: 0),
+                new SwShGameTextLine("Bulbasaur", Flags: 0),
+                new SwShGameTextLine("Ivysaur", Flags: 0),
+                new SwShGameTextLine("Venusaur", Flags: 0),
+                new SwShGameTextLine("Charmander", Flags: 0),
+            ]));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+
+        var normal = Assert.Single(workflow.Tables);
+        Assert.Equal("Normal", normal.EncounterType);
+        Assert.Equal(ProjectFileLayer.Layered, normal.Provenance.SourceLayer);
+        Assert.DoesNotContain(workflow.Tables, table => table.EncounterType == "Fishing");
+        Assert.DoesNotContain(workflow.Tables, table => table.EncounterType == "Shaking Trees");
+    }
+
     [Fact]
     public void LoadExposesSurfingAndFlyingSymbolZonesAsEditableTables()
     {
@@ -250,5 +329,44 @@ public sealed class SwShEncountersWorkflowServiceTests
             workflow.Diagnostics,
             diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
                 && diagnostic.Domain == "workflow.encounters");
+    }
+
+    private static IReadOnlyList<SwShWildEncounterSubTable> CreateNormalFishingAndTreeSubTables(
+        SwShWildEncounterSubTable? fishing = null,
+        SwShWildEncounterSubTable? shakingTrees = null)
+    {
+        return Enumerable.Range(0, 11)
+            .Select(index => index switch
+            {
+                0 => CreateSubTable(3, 8),
+                9 => shakingTrees ?? CreateEmptySubTable(),
+                10 => fishing ?? CreateEmptySubTable(),
+                _ => CreateEmptySubTable(),
+            })
+            .ToArray();
+    }
+
+    private static SwShWildEncounterSubTable CreateSubTable(
+        byte levelMin,
+        byte levelMax,
+        int speciesOffset = 0)
+    {
+        return new SwShWildEncounterSubTable(
+            levelMin,
+            levelMax,
+            [
+                new SwShWildEncounterSlot(35, 1 + speciesOffset, 0),
+                new SwShWildEncounterSlot(65, 4 + speciesOffset, 1),
+            ]);
+    }
+
+    private static SwShWildEncounterSubTable CreateEmptySubTable()
+    {
+        return new SwShWildEncounterSubTable(
+            0,
+            0,
+            Enumerable.Range(0, 10)
+                .Select(_ => new SwShWildEncounterSlot(0, 0, 0))
+                .ToArray());
     }
 }

@@ -108,6 +108,7 @@ public sealed class SwShEncountersWorkflowService
         try
         {
             var pack = SwShGfPackFile.Parse(File.ReadAllBytes(dataSource.AbsolutePath));
+            var vanillaPack = LoadVanillaWildDataPack(project, dataSource, pack, diagnostics);
             var tables = new List<SwShEncounterTableRecord>();
             var provenance = CreateProvenance(dataSource.GraphEntry);
 
@@ -119,7 +120,10 @@ public sealed class SwShEncountersWorkflowService
                 }
 
                 var archive = SwShWildEncounterArchive.Parse(memberData);
-                tables.AddRange(FlattenArchive(archive, member, provenance, speciesNames));
+                var vanillaArchive = vanillaPack.TryGetFileByName(member.FileName, out var vanillaMemberData)
+                    ? SwShWildEncounterArchive.Parse(vanillaMemberData)
+                    : null;
+                tables.AddRange(FlattenArchive(archive, vanillaArchive, member, provenance, speciesNames));
             }
 
             if (tables.Count == 0)
@@ -195,6 +199,25 @@ public sealed class SwShEncountersWorkflowService
         }
 
         var sourcePath = ResolveSourcePath(project.Paths, graphEntry);
+
+        return sourcePath is not null && File.Exists(sourcePath)
+            ? new WorkflowFileSource(graphEntry, sourcePath)
+            : null;
+    }
+
+    internal static WorkflowFileSource? ResolveBaseWildDataSource(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        var graphEntry = project.FileGraph.Entries.FirstOrDefault(entry =>
+            string.Equals(entry.RelativePath, WildDataPath, StringComparison.OrdinalIgnoreCase));
+
+        if (graphEntry?.BaseFile is null)
+        {
+            return null;
+        }
+
+        var sourcePath = ResolveBaseSourcePath(project.Paths, graphEntry);
 
         return sourcePath is not null && File.Exists(sourcePath)
             ? new WorkflowFileSource(graphEntry, sourcePath)
@@ -339,6 +362,7 @@ public sealed class SwShEncountersWorkflowService
 
     private static IEnumerable<SwShEncounterTableRecord> FlattenArchive(
         SwShWildEncounterArchive archive,
+        SwShWildEncounterArchive? vanillaArchive,
         WildArchiveMember member,
         SwShEncounterProvenance provenance,
         IReadOnlyList<string> speciesNames)
@@ -349,6 +373,11 @@ public sealed class SwShEncountersWorkflowService
             for (var subTableIndex = 0; subTableIndex < table.SubTables.Count; subTableIndex++)
             {
                 var subTable = table.SubTables[subTableIndex];
+                if (!IsVanillaSubTableAvailable(vanillaArchive, tableIndex, table.ZoneId, subTableIndex))
+                {
+                    continue;
+                }
+
                 var encounterType = FormatSubTable(subTableIndex);
                 yield return new SwShEncounterTableRecord(
                     CreateTableId(member, tableIndex, table.ZoneId, subTableIndex),
@@ -396,6 +425,69 @@ public sealed class SwShEncountersWorkflowService
         return (uint)subTableIndex < (uint)SubTableLabels.Length
             ? SubTableLabels[subTableIndex]
             : $"Subtable {subTableIndex.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    private static bool IsVanillaSubTableAvailable(
+        SwShWildEncounterArchive? vanillaArchive,
+        int tableIndex,
+        ulong zoneId,
+        int subTableIndex)
+    {
+        if (vanillaArchive is null)
+        {
+            return true;
+        }
+
+        var vanillaTable = GetMatchingVanillaTable(vanillaArchive, tableIndex, zoneId);
+        if (vanillaTable is null || (uint)subTableIndex >= (uint)vanillaTable.SubTables.Count)
+        {
+            return false;
+        }
+
+        return HasVanillaPokemon(vanillaTable.SubTables[subTableIndex]);
+    }
+
+    private static SwShWildEncounterTable? GetMatchingVanillaTable(
+        SwShWildEncounterArchive vanillaArchive,
+        int tableIndex,
+        ulong zoneId)
+    {
+        if ((uint)tableIndex < (uint)vanillaArchive.Tables.Count
+            && vanillaArchive.Tables[tableIndex].ZoneId == zoneId)
+        {
+            return vanillaArchive.Tables[tableIndex];
+        }
+
+        return vanillaArchive.Tables.FirstOrDefault(table => table.ZoneId == zoneId);
+    }
+
+    private static bool HasVanillaPokemon(SwShWildEncounterSubTable subTable)
+    {
+        return subTable.Slots.Any(slot => slot.Species != 0);
+    }
+
+    private static SwShGfPackFile LoadVanillaWildDataPack(
+        OpenedProject project,
+        WorkflowFileSource activeSource,
+        SwShGfPackFile activePack,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (activeSource.GraphEntry.LayeredFile is null)
+        {
+            return activePack;
+        }
+
+        var baseSource = ResolveBaseWildDataSource(project);
+        if (baseSource is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                "Base wild encounter data is not available; using the active encounter archive to determine table availability.",
+                expected: WildDataPath));
+            return activePack;
+        }
+
+        return SwShGfPackFile.Parse(File.ReadAllBytes(baseSource.AbsolutePath));
     }
 
     private static string FormatExpectedArchiveMembers(ProjectGame? selectedGame)
@@ -537,6 +629,16 @@ public sealed class SwShEncountersWorkflowService
             return CombineGraphPath(paths.OutputRootPath, entry.RelativePath);
         }
 
+        if (entry.BaseFile is not null && entry.RelativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase))
+        {
+            return CombineGraphPath(paths.BaseRomFsPath, entry.RelativePath["romfs/".Length..]);
+        }
+
+        return null;
+    }
+
+    private static string? ResolveBaseSourcePath(ProjectPaths paths, ProjectFileGraphEntry entry)
+    {
         if (entry.BaseFile is not null && entry.RelativePath.StartsWith("romfs/", StringComparison.OrdinalIgnoreCase))
         {
             return CombineGraphPath(paths.BaseRomFsPath, entry.RelativePath["romfs/".Length..]);

@@ -220,6 +220,73 @@ public sealed class SwShEncountersEditSessionServiceTests
         Assert.Equal(3, outputHiddenArchive.Tables[0].SubTables[0].LevelMin);
     }
 
+    [Fact]
+    public void LevelEditsSkipVanillaEmptySubTablesInSelectedZone()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var symbolSubTables = new[]
+        {
+            CreateSubTable(3, 8),
+            CreateEmptySubTable(levelMin: 4, levelMax: 9),
+            CreateSubTable(5, 10),
+        };
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "encount_symbol_k.bin",
+                    SwShEncounterTestFixtures.CreateArchive(subTables: symbolSubTables).Write()),
+                new SwShGfPackNamedFile("encount_k.bin", SwShEncounterTestFixtures.CreateArchive(speciesOffset: 2).Write()),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            SwShGameTextFile.Write(
+            [
+                new SwShGameTextLine("", Flags: 0),
+                new SwShGameTextLine("Bulbasaur", Flags: 0),
+                new SwShGameTextLine("Ivysaur", Flags: 0),
+                new SwShGameTextLine("Venusaur", Flags: 0),
+                new SwShGameTextLine("Charmander", Flags: 0),
+            ]));
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+        var table = workflow.Tables.First(table =>
+            table.ArchiveMember == "encount_symbol_k.bin" && table.EncounterType == "Normal");
+        var service = new SwShEncountersEditSessionService();
+
+        var update = service.UpdateSlotField(
+            temp.Paths,
+            session: null,
+            table.TableId,
+            slot: 1,
+            field: "levelMin",
+            value: "7");
+
+        Assert.Equal(2, update.Workflow.Tables.Count(table => table.ArchiveMember == "encount_symbol_k.bin"));
+        Assert.DoesNotContain(update.Workflow.Tables, candidate =>
+            candidate.ArchiveMember == "encount_symbol_k.bin" && candidate.EncounterType == "Overcast");
+
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "data_table.gfpak");
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
+        var outputSymbolArchive = SwShWildEncounterArchive.Parse(outputPack.GetFileByName("encount_symbol_k.bin"));
+        Assert.Equal(7, outputSymbolArchive.Tables[0].SubTables[0].LevelMin);
+        Assert.Equal(4, outputSymbolArchive.Tables[0].SubTables[1].LevelMin);
+        Assert.Equal(7, outputSymbolArchive.Tables[0].SubTables[2].LevelMin);
+    }
+
     private static SwShWildEncounterSubTable CreateSubTable(byte levelMin, byte levelMax)
     {
         return new SwShWildEncounterSubTable(
@@ -229,5 +296,15 @@ public sealed class SwShEncountersEditSessionServiceTests
                 new SwShWildEncounterSlot(35, 1, 0),
                 new SwShWildEncounterSlot(65, 4, 1),
             ]);
+    }
+
+    private static SwShWildEncounterSubTable CreateEmptySubTable(byte levelMin, byte levelMax)
+    {
+        return new SwShWildEncounterSubTable(
+            levelMin,
+            levelMax,
+            Enumerable.Range(0, 10)
+                .Select(_ => new SwShWildEncounterSlot(0, 0, 0))
+                .ToArray());
     }
 }
