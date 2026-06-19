@@ -78,6 +78,30 @@ describe('Pokemon sprite ids', () => {
   });
 
   it('maps Scarlet and Violet form labels to bundled sprite ids', () => {
+    expect(getPokemonSpriteId('Great Tusk')).toBe('greattusk');
+    expect(getPokemonSpriteId('Scream Tail')).toBe('screamtail');
+    expect(getPokemonSpriteId('Brute Bonnet')).toBe('brutebonnet');
+    expect(getPokemonSpriteId('Flutter Mane')).toBe('fluttermane');
+    expect(getPokemonSpriteId('Slither Wing')).toBe('slitherwing');
+    expect(getPokemonSpriteId('Sandy Shocks')).toBe('sandyshocks');
+    expect(getPokemonSpriteId('Roaring Moon')).toBe('roaringmoon');
+    expect(getPokemonSpriteId('Iron Treads')).toBe('irontreads');
+    expect(getPokemonSpriteId('Iron Bundle')).toBe('ironbundle');
+    expect(getPokemonSpriteId('Iron Hands')).toBe('ironhands');
+    expect(getPokemonSpriteId('Iron Jugulis')).toBe('ironjugulis');
+    expect(getPokemonSpriteId('Iron Moth')).toBe('ironmoth');
+    expect(getPokemonSpriteId('Iron Thorns')).toBe('ironthorns');
+    expect(getPokemonSpriteId('Iron Valiant')).toBe('ironvaliant');
+    expect(getPokemonSpriteId('Walking Wake')).toBe('walkingwake');
+    expect(getPokemonSpriteId('Iron Leaves')).toBe('ironleaves');
+    expect(getPokemonSpriteId('Gouging Fire')).toBe('gougingfire');
+    expect(getPokemonSpriteId('Raging Bolt')).toBe('ragingbolt');
+    expect(getPokemonSpriteId('Iron Boulder')).toBe('ironboulder');
+    expect(getPokemonSpriteId('Iron Crown')).toBe('ironcrown');
+    expect(getPokemonSpriteId('Wo-Chien')).toBe('wochien');
+    expect(getPokemonSpriteId('Chien-Pao')).toBe('chienpao');
+    expect(getPokemonSpriteId('Ting-Lu')).toBe('tinglu');
+    expect(getPokemonSpriteId('Chi-Yu')).toBe('chiyu');
     expect(getPokemonSpriteId('Tauros (Paldean Combat Breed)')).toBe('tauros-paldeacombat');
     expect(getPokemonSpriteId('Tauros (Paldean Blaze Breed)')).toBe('tauros-paldeablaze');
     expect(getPokemonSpriteId('Tauros (Paldean Aqua Breed)')).toBe('tauros-paldeaaqua');
@@ -117,6 +141,30 @@ describe('Pokemon sprite ids', () => {
       'Basculin (Red-Striped)',
       'Basculin (Blue-Striped)',
       'Basculin (White-Striped)',
+      'Great Tusk',
+      'Scream Tail',
+      'Brute Bonnet',
+      'Flutter Mane',
+      'Slither Wing',
+      'Sandy Shocks',
+      'Roaring Moon',
+      'Iron Treads',
+      'Iron Bundle',
+      'Iron Hands',
+      'Iron Jugulis',
+      'Iron Moth',
+      'Iron Thorns',
+      'Iron Valiant',
+      'Walking Wake',
+      'Iron Leaves',
+      'Gouging Fire',
+      'Raging Bolt',
+      'Iron Boulder',
+      'Iron Crown',
+      'Wo-Chien',
+      'Chien-Pao',
+      'Ting-Lu',
+      'Chi-Yu',
       'Zorua (Hisuian)',
       'Zoroark (Hisuian)',
       'Braviary (Hisuian)',

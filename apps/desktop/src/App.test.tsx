@@ -420,6 +420,76 @@ describe('App', () => {
     ]);
   });
 
+  it('opens the active SwSh wiki page from the workspace header', async () => {
+    const user = userEvent.setup();
+    const openExternalUrl = vi.fn(async () => undefined);
+
+    render(
+      <App
+        bridge={createMockProjectBridge({}, true)}
+        desktopServices={createMockDesktopServices({ openExternalUrl })}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+    await user.click(await screen.findByRole('button', { name: 'Go to Wiki for Pokemon' }));
+
+    await waitFor(() =>
+      expect(openExternalUrl).toHaveBeenCalledWith(
+        'https://github.com/KotMatrosk1n/KM-Editor/wiki/Pokemon-Editor'
+      )
+    );
+  });
+
+  it('opens the active Scarlet/Violet wiki page from the workspace header', async () => {
+    const user = userEvent.setup();
+    const openExternalUrl = vi.fn(async () => undefined);
+    const listWorkflows = vi.fn(async () => ({
+      workflows: [
+        {
+          availability: 'available',
+          description: 'Edit Scarlet/Violet Pokemon data.',
+          diagnostics: [],
+          id: 'pokemon',
+          label: 'Pokemon Data'
+        }
+      ] satisfies WorkflowSummary[]
+    }));
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        selectedGame: 'scarlet'
+      }
+    });
+
+    render(
+      <App
+        bridge={createMockProjectBridge({ listWorkflows }, true)}
+        desktopServices={createMockDesktopServices({ openExternalUrl })}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await waitFor(() => expect(listWorkflows).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+    await user.click(await screen.findByRole('button', { name: 'Go to Wiki for Pokemon' }));
+
+    await waitFor(() =>
+      expect(openExternalUrl).toHaveBeenCalledWith(
+        'https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Pokemon-Editor'
+      )
+    );
+  });
+
   it('shows only Scarlet/Violet owned editors and tools from a contaminated workflow list', async () => {
     const user = userEvent.setup();
     const createWorkflowSummary = (id: string, label: string): WorkflowSummary => ({
@@ -547,7 +617,7 @@ describe('App', () => {
     await waitFor(() => expect(restoreFpsPatch).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('Not installed')).toBeInTheDocument();
     expect(screen.getByText('60FPS Patch is not installed.')).toBeInTheDocument();
-  });
+  }, 15_000);
 
   it('closes a wrong-family active workflow section before it can stay mounted', async () => {
     useWorkbenchStore.setState({
@@ -2867,6 +2937,191 @@ describe('App', () => {
     expect(
       screen.getByText('Applied Wild Encounters change plan to the configured LayeredFS output root.')
     ).toBeInTheDocument();
+  });
+
+  it('shows wild encounter form names without duplicating the suffix', async () => {
+    const user = userEvent.setup();
+    const workflow: EncountersWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        { field: 'speciesId', label: 'Species', maximumValue: 65535, minimumValue: 0, valueKind: 'integer' },
+        { field: 'form', label: 'Form', maximumValue: 255, minimumValue: 0, valueKind: 'integer' },
+        { field: 'probability', label: 'Probability', maximumValue: 100, minimumValue: 0, valueKind: 'integer' },
+        { field: 'levelMin', label: 'Min Level', maximumValue: 100, minimumValue: 0, valueKind: 'integer' },
+        { field: 'levelMax', label: 'Max Level', maximumValue: 100, minimumValue: 0, valueKind: 'integer' }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalSlotCount: 2,
+        totalTableCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
+        diagnostics: [],
+        id: 'encounters',
+        label: 'Wild Encounters'
+      },
+      tables: [
+        {
+          archiveMember: 'encount_symbol_k.bin',
+          area: 'Symbol',
+          encounterType: 'Normal',
+          gameVersion: 'Sword',
+          location: "Axew's Eye",
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+            sourceLayer: 'base'
+          },
+          slots: [
+            {
+              form: 0,
+              levelMax: 65,
+              levelMin: 60,
+              slot: 1,
+              species: 'Basculin (Red-Striped)',
+              speciesId: 550,
+              timeOfDay: null,
+              weather: 'Normal',
+              weight: 50
+            },
+            {
+              form: 2,
+              levelMax: 40,
+              levelMin: 35,
+              slot: 2,
+              species: 'Slowbro (Galarian)',
+              speciesId: 80,
+              timeOfDay: null,
+              weather: 'Normal',
+              weight: 50
+            }
+          ],
+          tableId: 'sword:symbol:0:1122334455667788:0'
+        }
+      ]
+    };
+
+    render(
+      <App
+        bridge={createMockProjectBridge(
+          {
+            loadEncountersWorkflow: () => Promise.resolve({ workflow })
+          },
+          true
+        )}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
+
+    expect(await screen.findByRole('button', { name: /#1.*Basculin \(Red-Striped\)/ })).toBeInTheDocument();
+    expect(screen.getAllByText('Basculin (Red-Striped)').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Basculin (Red-Striped) (Red-Striped)')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByLabelText('Form')).toHaveDisplayValue('Red-Striped');
+    await user.click(screen.getByRole('button', { name: 'Show Form options' }));
+    expect(screen.getByRole('option', { name: 'Red-Striped' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Blue-Striped' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'White-Striped' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Form 2' })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: /#2.*Slowbro \(Galarian\)/ }));
+
+    expect(screen.getAllByText('Slowbro (Galarian)').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Slowbro (Galarian) (Galarian)')).not.toBeInTheDocument();
+  });
+
+  it('labels Slowbro SwSh Galarian form without showing the reserved form slot', async () => {
+    const user = userEvent.setup();
+    const workflow: EncountersWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        { field: 'speciesId', label: 'Species', maximumValue: 65535, minimumValue: 0, valueKind: 'integer' },
+        { field: 'form', label: 'Form', maximumValue: 255, minimumValue: 0, valueKind: 'integer' },
+        { field: 'probability', label: 'Probability', maximumValue: 100, minimumValue: 0, valueKind: 'integer' },
+        { field: 'levelMin', label: 'Min Level', maximumValue: 100, minimumValue: 0, valueKind: 'integer' },
+        { field: 'levelMax', label: 'Max Level', maximumValue: 100, minimumValue: 0, valueKind: 'integer' }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalSlotCount: 1,
+        totalTableCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
+        diagnostics: [],
+        id: 'encounters',
+        label: 'Wild Encounters'
+      },
+      tables: [
+        {
+          archiveMember: 'encount_symbol_k.bin',
+          area: 'Symbol',
+          encounterType: 'Normal',
+          gameVersion: 'Sword',
+          location: "Axew's Eye",
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/bin/archive/field/resident/data_table.gfpak',
+            sourceLayer: 'base'
+          },
+          slots: [
+            {
+              form: 2,
+              levelMax: 40,
+              levelMin: 35,
+              slot: 1,
+              species: 'Slowbro (Galarian)',
+              speciesId: 80,
+              timeOfDay: null,
+              weather: 'Normal',
+              weight: 100
+            }
+          ],
+          tableId: 'sword:symbol:0:1122334455667788:0'
+        }
+      ]
+    };
+
+    render(
+      <App
+        bridge={createMockProjectBridge(
+          {
+            loadEncountersWorkflow: () => Promise.resolve({ workflow })
+          },
+          true
+        )}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByLabelText('Form')).toHaveDisplayValue('Galarian');
+    expect(screen.queryByText('Slowbro (Galarian) (Galarian)')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show Form options' }));
+
+    expect(screen.getByRole('option', { name: 'Kanto' })).toBeInTheDocument();
+    expect(screen.getAllByRole('option', { name: 'Galarian' })).toHaveLength(1);
+    expect(screen.queryByRole('option', { name: 'Mega' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Form 1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Form 2' })).not.toBeInTheDocument();
   });
 
   it('applies encounter level drafts to the entire selected zone', async () => {

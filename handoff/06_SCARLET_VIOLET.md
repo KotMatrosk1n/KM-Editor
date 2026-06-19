@@ -40,7 +40,21 @@ Current implementation state:
 - `SvWorkflowFileSource` reads layered loose output first, then loose base files, then the Trinity archive; applies write loose LayeredFS files under `romfs/...` and patches `romfs/arc/data.trpfd`.
 - `KM.SV` references `SharpCompress` for archive intake in S/V Mod Merger.
 - Desktop form-label resolution now includes S/V internal species IDs for Hisuian and Gen 9 forms such as Tauros breeds, Oinkologne, Dudunsparce, Palafin, Maushold, Squawkabilly, Tatsugiri, Gimmighoul, Koraidon/Miraidon ride forms, Ogerpon masks, Terapagos forms, Poltchageist, and Sinistcha. These are keyed to S/V `DevID` values, not NatDex values.
-- Desktop sprite resolution now has explicit aliases for S/V form labels whose visible names do not match Pokemon Showdown sprite filenames, including Hisuian/Paldean regional suffixes, Tauros Paldean breeds, Basculegion/Oinkologne gender forms, Dudunsparce segments, Maushold families, Squawkabilly plumages, Tatsugiri forms, Gimmighoul forms, Ogerpon mask/Tera forms, Terapagos forms, Poltchageist forms, and Sinistcha forms. The Smogon sprite repo was checked locally at `.scratch/smogon-sprites` commit `32a4c591`; all Smogon Gen 9 static species PNGs already have corresponding bundled static sprite IDs. Smogon and Pokemon Showdown did not have animated GIFs for Miraidon, Ogerpon, Ogerpon masks/Tera forms, Terapagos, or Terapagos forms, so those forms currently rely on the static sprite fallback.
+- Desktop sprite resolution now has explicit aliases for S/V labels whose visible names do not match Pokemon Showdown sprite filenames, including Hisuian/Paldean regional suffixes, S/V paradox and Ruin multi-word species names, Tauros Paldean breeds, Basculegion/Oinkologne gender forms, Dudunsparce segments, Maushold families, Squawkabilly plumages, Tatsugiri forms, Gimmighoul forms, Ogerpon mask/Tera forms, Terapagos forms, Poltchageist forms, and Sinistcha forms. The Smogon sprite repo was checked locally at `.scratch/smogon-sprites` commit `32a4c591`; all Smogon Gen 9 static species PNGs already have corresponding bundled static sprite IDs. Some S/V species have only static bundled assets and rely on the UI fallback from animated GIF to static PNG.
+
+SwSh and S/V separation hard rule:
+
+- Selecting Sword/Shield or Scarlet/Violet must behave like entering a different interface. Shared visible names such as Pokemon, Trainers, Wild Encounters, Placement, Items, or Mod Merger do not make those editors interchangeable.
+- Do not let S/V data, category names, field lists, DTO assumptions, output modes, dropdown options, cached workflow state, or diagnostics render inside a SwSh project. Do not let SwSh legacy data or field assumptions render inside an S/V project.
+- Prefer duplicate game-family-specific code over shared code when sharing would require conditionals based on undocumented layout, field names, enum semantics, table shape, write target, or UI behavior. It is acceptable to double code to keep the boundary clear.
+- Any genuinely shared desktop component must have an explicit game-family boundary. It must either receive only game-specific normalized data, or it must branch on a clear game family model with tests for both sides.
+- Desktop navigation and workflow mounting must use the explicit game-family support map in `apps/desktop/src/App.tsx`. Do not show or lazy-load a workflow section only because a raw backend summary has the same id as another game family's editor. Contaminated or stale workflow lists must be filtered before the sidebar, Workflow List, active-section mounting, and direct load handlers can use them.
+- Desktop shared-name editors now mount through game-family wrapper components in `apps/desktop/src/App.tsx`: `SwSh*Section` and `Sv*Section` for Items, Pokemon, Trainers, Wild Encounters, and Placement, with separate root classes such as `swsh-pokemon-section` / `sv-pokemon-section`. Keep future visual/layout changes under the matching family wrapper/root selector. Do not reintroduce unscoped Pokemon/Placement layout selectors that affect both games at once.
+- Pokemon form labels and dropdowns are part of the game-family boundary. Do not use one global form list for SwSh and S/V. SwSh must only expose forms present in Sword/Shield data, S/V must only expose forms present in Scarlet/Violet data, and shared desktop helpers must receive an explicit game family before resolving form names. Never show placeholder names such as `Form 1` or invalid out-of-game forms in user-facing form dropdowns unless that form has first been confirmed for the selected game. Do not renumber raw form IDs when hiding invalid/reserved slots; for example, SwSh Slowbro exposes only Kanto and Galarian to users, while Galarian still uses its real SwSh raw form value.
+- The bridge dispatcher must also enforce the game-family boundary. SwSh-only commands must return `bridge.gameMismatch` for Scarlet/Violet projects, and S/V-only commands must return `bridge.gameMismatch` for Sword/Shield projects before any workflow service runs. Do not rely on desktop navigation alone.
+- Any shared bridge/API contract change must include mapper tests for SwSh and S/V. SwSh mappers must not send S/V structured fields unless the SwSh UI explicitly supports them. S/V mappers must not reuse SwSh defaults as meaningful data.
+- App state and async bridge responses must be scoped by selected game and project paths. A response started for S/V must be dropped if the user has switched to SwSh or changed paths before it returns, and the reverse is also required.
+- Before PR or merge work that touches a shared editor surface, run at least one focused validation path for SwSh and one for S/V when both families have that editor or adjacent route.
 
 Implemented S/V editor backend support:
 
@@ -99,11 +113,37 @@ Implemented S/V editor backend support:
   - Wild species editing uses S/V English species dropdown options, and the form dropdown uses the currently drafted species value.
   - Supports species, form, probability/lot value, minimum level, and maximum level.
   - Applies by writing loose `romfs/world/data/encount/pokedata/pokedata/pokedata_array.bin` and patched `romfs/arc/data.trpfd`.
+- Placement:
+  - Workflow id is `placement`; backend lives under `src/KM.SV/Placement` with S/V-owned models and edit-session services.
+  - Desktop exposes five selectable categories so S/V placement data does not appear as one overwhelming mixed list: Fixed Symbols, Coin Symbols, Visible Items, Hidden Items, and Rummaging Points.
+  - Placement load reads S/V labels from the same S/V message lookup used by Pokemon, Items, Trainers, and Encounters. Species, item, and move dropdowns should use those S/V labels, not SwSh placement data.
+  - Desktop placement tables hide the redundant Category column when the user is already inside one category. Fixed Symbols and Coin Symbols emphasize the Pokemon/data value in the table so species names such as `Wingull` or `Bulbasaur` are visible without opening the object.
+  - Placement field values may now carry object-specific dropdown options. This is important for S/V ability modes because fixed ability slots need species/form-specific ability names instead of generic labels.
+  - S/V ability mode semantics are:
+    - `0` Random Ability 1 or 2.
+    - `1` Random Ability 1, 2, or Hidden.
+    - `2` Ability 1.
+    - `3` Ability 2.
+    - `4` Hidden Ability.
+    - When personal data and ability labels are loaded, fixed-slot options/display values should resolve to names such as `Overgrow (Ability 1)` and `Chlorophyll (Hidden Ability)`.
+  - S/V `RareType` placement labels should be user-facing shiny labels: `0 Default`, `1 Not Shiny`, and `2 Shiny`. Do not display `No Rare` / `Rare` to users.
+  - Fixed Symbols load `world/data/field/fixed_symbol/fixed_symbol_table/fixed_symbol_table_array.bin`. Confirmed editable fields include species, form, level, gender, shiny setting, IV mode and IV values, guaranteed perfect IV count, move mode and four moves, ability mode, scale mode/value, Tera type, Alcremie sweet, AI action, hunger, fatigue, sleepiness, AI priority, trigger action, behavior frequency, spawn/despawn distances, spawn mode, spawn on load, and respawn chance. Table key, required story flag, and scene point fields are visible but read-only.
+  - Fixed Symbol `Alcremie sweet` maps to `MahoippuViewID` and must only be editable when the fixed symbol species is Alcremie (`DEV_MAHOIPPU` / species id `869`). Non-Alcremie symbols should display the stored value but keep the control read-only.
+  - Coin Symbols load `world/data/battle/eventBattlePokemon/eventBattlePokemon_array.bin`. Confirmed editable fields include disable battle out, event encounter, species, form, level, gender, shiny setting, IV mode, guaranteed perfect IV count, held item, drop item/count, nature, nature mint override, ability mode, move mode and four moves, Tera type, scale mode/value, and ribbon. Coin scene labels such as battle label and first coin number are visible but read-only.
+  - Fixed Symbols and Coin Symbols resolve `WazaType.DEFAULT` move slots through S/V Pokemon Data level-up moves before display. The resolver lives in `KM.SV.Data.SvDefaultMoveResolver` and is shared by S/V Trainers and S/V Placement only. When a user edits one move on a default-move symbol, the edit session materializes the resolved default moves into all four move slots, switches the symbol to manual move mode, and then applies the requested slot change so the other default moves are not lost.
+  - Visible Items are currently inspect-only scene placements. Scene coordinates, rotations, point names, item ids, quantities, and related scene values must stay read-only until TRSCN write support is proven.
+  - Hidden Items load `world/data/item/hiddenItemDataTable/hiddenItemDataTable_array.bin`, `world/data/item/hiddenItemDataTable_su1/hiddenItemDataTable_su1_array.bin`, `world/data/item/hiddenItemDataTable_su2/hiddenItemDataTable_su2_array.bin`, and `world/data/item/hiddenItemDataTable_lc/hiddenItemDataTable_lc_array.bin`. Each pool exposes up to ten editable item slots with item id, emerge value, and drop count.
+  - Rummaging Points load `world/data/item/rummagingItemDataTable/rummagingItemDataTable_array.bin`. Confirmed editable fields are rummaging category, rummaging pattern, and five item slots.
+  - Placement edits use the normal S/V edit session and Changes path. They support both S/V output modes: standalone output writes under `romfs/` and patches `romfs/arc/data.trpfd`; Trinity Mod Manager output writes RomFS-relative files and skips descriptor patching.
+  - Placement deliberately does not reuse SwSh placement field constants or SwSh values. S/V uses Trinity and generated S/V FlatBuffer tables, so future placement work must remain under `KM.SV` and `KM.Formats.SV`.
 - Bridge routing:
-  - `items.load`, `moves.load`, `pokemon.load`, `trainers.load`, and `encounters.load` route to `KM.SV` when the selected game is Scarlet/Violet.
+  - `items.load`, `moves.load`, `pokemon.load`, `trainers.load`, `encounters.load`, and `placement.load` route to `KM.SV` when the selected game is Scarlet/Violet.
   - The corresponding update commands and shared edit-session validate/plan/apply commands route to `KM.SV` for S/V projects.
   - `workflow.list` returns `items`, `moves`, `pokemon`, `trainers`, `encounters`, `placement`, and `modMerger` for S/V projects.
   - S/V workflow and edit responses map through `SvBridgeMapper`; do not send S/V workflow records through `SwShBridgeMapper`.
+  - Desktop bridge calls are wrapped by `createGameScopedProjectBridge` in `apps/desktop/src/bridge/gameScopedProjectBridge.ts`. Any request with project paths is scoped by selected game plus base/output/save paths, and stale responses throw `StaleProjectScopeError` before they can update UI state. Preserve this wrapper for every current and future project-scoped bridge call.
+  - When adding new bridge methods, make sure requests include `paths` if the response can update project/editor state. That lets the game-scope wrapper reject stale SwSh/S/V responses after a game or path switch.
+  - Placement currently has an extra guard because it is the first shared-name editor to expose very different SwSh and S/V semantics. SwSh mapper output must stay legacy `visibleItems` / `hiddenItems`, and the desktop Placement category helper must not use S/V structured category metadata unless placement objects also carry structured S/V field values.
 
 Implemented S/V Mod Merger support:
 
@@ -173,11 +213,14 @@ Important research notes:
   - Hidden item data exposed by pkNX is table/pool based rather than coordinate placement: item point biome weights, hidden item biome table ids, hidden item pool item/rate/count slots, rummaging category/pattern/items, and Pokemon drop item rate/count. Treat this as a loot table editor, not a true placement editor unless concrete scene points are found later.
   - Pokemon behavior editor is feasible as a species behavior/profile editor. Relevant files are `world/data/pokemon/pokemon_unique_path_data/*` and per-species paths referenced by those path tables. Safe fields include movement type by ground/water/sky, time-of-day basic action IDs, instinct action IDs, pop probabilities, weather reaction action IDs, object/player/Pokemon recognition distances and action IDs, sound recognition, battle reaction IDs, home range, allow suspend, evolution action, species time-zone modes, favorite Pokemon/object/place/hate place, grounding/swimming/floating behavior types, common motion/look-around/foot IK/water/altitude fields, and PokeObj collision/movement thresholds.
   - General Trinity scene object editing is possible later because pkNX has Trinity scene, scene point, scene object, property sheet, and component schemas. Do not make this the first placement editor: many component payloads are recursive or still partly raw, and pkNX only dumps/views them.
-- Recommended KM path:
-  - Build an S/V placement domain in `src/KM.SV/Placement` that reads Trinity archive files through existing `SvWorkflowFileSource` and exposes focused row models instead of raw Trinity trees.
-  - First editor should be `Fixed Symbol Placement`: join scene points to fixed symbol table rows by table key, resolve multi-spawner lottery keys, show derived area/location through Paldea collision data, and write both the fixed-symbol table and edited scene point coordinates.
-  - Second editor should be `Encounter Spawn Points`: edit point coordinates, level range, biome/substance/area number, and show computed matching encounter slots read-only at first. Add point insertion/removal only after round-trip and collision-derived area membership are proven.
-  - Third editor should be `Wild Pokemon Behavior`: expose named dropdowns for known enums and action IDs, keep very long action lists searchable, and keep unknown/raw fields behind an advanced guard until verified in game.
+- Placement implementation guardrails and future work:
+  - The first S/V Placement editor is implemented under `src/KM.SV/Placement` and intentionally exposes focused row models instead of raw Trinity trees.
+  - Current Placement writes table data only. Scene point coordinates and rotations are visible but read-only until TRSCN writing, object identity preservation, and round-trip tests are proven.
+  - The current Fixed Symbols category edits the fixed-symbol table rows. It does not yet join editable scene points to table rows by TRSCN table key or lottery key.
+  - The current Coin Symbols category edits event battle Pokemon rows. Coin scene point metadata is visible only where known and must stay read-only until scene writes are supported.
+  - Hidden Items and Rummaging Points are table/pool editors, not coordinate placement editors. They should not be described as true scene placement until concrete scene point linkage and write support exist.
+  - Future `Encounter Spawn Points` support should edit point coordinates, level range, biome/substance/area number, and show computed matching encounter slots read-only at first. Add point insertion/removal only after round-trip and collision-derived area membership are proven.
+  - Future `Wild Pokemon Behavior` support should expose named dropdowns for known enums and action IDs, keep very long action lists searchable, and keep unknown/raw fields behind an advanced guard until verified in game.
   - Keep all S/V placement/behavior work isolated under `KM.SV`; do not reuse or extend SwSh Placement services for S/V because the file model and semantics are different.
 - High-priority virtual paths:
   - `avalon/data/personal_array.bin`
@@ -440,10 +483,54 @@ Validation so far:
     - `pnpm --prefix apps\desktop run typecheck` passed.
     - `pnpm --prefix apps\desktop run test:run` passed: 137/137.
 
+S/V Placement and output mode merge on 2026-06-18:
+
+* PR #183 `Add Scarlet and Violet placement and output modes` was opened and merged. Merge commit: `6286f797c34e9a9a7bb4a9ba8fbed0bf3a69502e`.
+* Added the S/V Placement editor with selectable placement categories and confirmed editable fields. Unknown fields remain visible but disabled.
+* Added S/V output modes through shared edit sessions and Changes. Standalone output writes `romfs` loose files and patches `romfs/arc/data.trpfd`. Trinity Mod Manager output writes RomFS relative files directly and skips descriptor patching.
+* S/V file loading now reads Trinity Mod Manager output, standalone loose output, standalone packed output archives, loose base files, and base Trinity archives in that order.
+* Existing S/V Items, Pokemon, Trainers, Wild Encounters, and Placement apply paths now pass output mode through the same change plan and apply flow.
+* Desktop Changes now shows S/V only `Output as Standalone` and `Output for Trinity Mod Manager` buttons with confirmation copy.
+* Local validation passed `pnpm test:changed`. PR checks passed CodeQL and Fast validation before admin merge.
+* No installer local executable build passed through Visual Studio Build Tools with fresh Cargo target `km-editor-tauri-target-sv-placement-output-20260618`, and the built executable was opened as `km-editor-desktop` PID `46232`.
+
+S/V Placement UI polish on 2026-06-18:
+
+* Fixed S/V Placement table readability by removing the Category column, showing Pokemon/data as a primary column, and clearing stale selections when the active category has no rows.
+* Read-only/text Placement fields no longer show numeric range errors just because their raw value is non-numeric. Invalid range text now only appears for non-empty invalid editable numeric drafts.
+* Fixed Symbols and Coin Symbols now resolve object-specific ability mode options from `personal_array.bin` and English ability labels.
+* Placement shiny labels now use `Not Shiny` and `Shiny` for `RareType.NO_RARE` and `RareType.RARE`.
+* Hidden Item slot chance fields are labeled `Emerge value` and allow the raw file values observed above 100.
+* Validation passed:
+  - `dotnet build src\KM.Tools\KM.Tools.csproj --no-restore -p:UseSharedCompilation=false`.
+  - `pnpm --dir apps\desktop run typecheck`.
+  - `pnpm --dir apps\desktop test:run src\features\placement\PlacementSection.test.tsx --testTimeout=30000`.
+  - `pnpm --dir apps\desktop test:run src\App.test.tsx --testTimeout=30000`.
+  - `pnpm --dir apps\desktop test:run src\bridge\contracts.test.ts src\bridge\projectBridge.test.ts --testTimeout=30000`.
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "FullyQualifiedName~ScarletViolet|FullyQualifiedName~Sv" --logger "console;verbosity=minimal"`.
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "FullyQualifiedName~Bridge|FullyQualifiedName~ProjectBridgeDispatcherTests" --logger "console;verbosity=minimal"`.
+  - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --logger "console;verbosity=minimal"`.
+  - No-installer local executable build passed through Visual Studio Build Tools with fresh Cargo target `km-editor-tauri-target-sv-placement-polish-20260618-054626`, and the built executable was opened as `km-editor-desktop` PID `39760`.
+
+S/V Pokemon layout and trainer Tera behavior checkpoint on 2026-06-18:
+
+* PR #185 `Polish Scarlet and Violet placement and Tera behavior` was opened and admin squash merged. Merge commit: `adbd46967351b4c18b3058463096ef6a62993475`.
+* Desktop Pokemon Data now keeps the extra diagnostics and selected summary strip outside the main Pokemon panel for S/V only. This avoids the large empty band seen in the S/V Pokemon editor while leaving non-S/V placement of that strip unchanged.
+* Real Scarlet trainer scan against `C:\Scarlet` showed 756 trainers and 113 trainers with `ChangeGem` enabled. Gym leader rows often set a fixed `GemType` on multiple or all party slots, for example Iono's first battle has fixed Electric `GemType` on slots 1-4. This confirms `PokeDataBattle.GemType` is a per-Pokemon Tera type override, not a reliable trainer-level target slot.
+* The generated S/V `TrdataMain` schema exposes `ChangeGem` plus `Poke1` through `Poke6`; `PokeDataBattle` exposes `GemType`. No separate trainer Tera target slot field has been found in `trdata_main_array`.
+* Trainer provenance now labels the S/V display as `Tera behavior`. When more than one party slot has a fixed Tera type, the summary says the target is battle controlled and lists the fixed Tera type Pokemon instead of calling every fixed `GemType` slot a target.
+* Validation passed:
+  - `pnpm test:changed`.
+  - `npm --prefix apps/desktop run test:run -- src/features/pokemon/PokemonSection.test.tsx --testTimeout=30000`.
+  - `dotnet test tests/KM.Integration.Tests/KM.Integration.Tests.csproj --no-restore --filter "FullyQualifiedName~ScarletVioletTeraBehaviorSummaryDoesNotTreatEveryGemTypeAsTarget" --logger "console;verbosity=minimal"`.
+  - `pnpm --filter @km-editor/desktop typecheck`.
+  - GitHub PR checks passed: CodeQL and Fast validation.
+
 Next steps:
 
 - Add targeted unit tests inside a future `KM.SV.Tests` project if S/V domain services grow beyond bridge-level coverage.
 - Confirm whether the S/V move-table `affinity` byte needs a visible UI field and label set.
+- Continue S/V Placement with TRSCN scene point write support only after round-trip tests prove coordinate, rotation, object identity, table key, and lottery key preservation. Until then, keep scene-derived Placement fields read-only.
 - Keep improving S/V Wild Encounters toward a native editor: slot add/remove behavior, better area/subarea labels, and clearer handling of outbreak/band/voice dimensions.
 - Add an Oodle smoke test only if the test environment intentionally supports the bundled DLL.
 - Add a real rar fixture or local archive smoke if we want format-specific RAR coverage beyond SharpCompress-backed intake.

@@ -295,6 +295,18 @@ textarea {
   box-shadow: 0 14px 42px rgb(0 0 0 / 20%);
 }
 
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.toolbar-wiki-button {
+  white-space: nowrap;
+}
+
 .title-block {
   min-width: 0;
 }
@@ -6100,6 +6112,10 @@ input {
 
   .toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .toolbar-actions {
+    justify-content: flex-start;
   }
 
   .content-grid {
