@@ -29223,7 +29223,52 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['necrozma-dawn-wings', 'necrozma-dawnwings'],
   ['necrozma-(ultra-necrozma)', 'necrozma-ultra'],
   ['necrozma-ultra-necrozma', 'necrozma-ultra'],
-  ['toxtricity-low-key-gmax', 'toxtricity-gmax']
+  ['toxtricity-low-key-gmax', 'toxtricity-gmax'],
+  ['basculin-blue-striped', 'basculin-bluestriped'],
+  ['basculin-white-striped', 'basculin-whitestriped'],
+  ['basculegion-female', 'basculegion-f'],
+  ['basculegion-male', 'basculegion'],
+  ['dudunsparce-three-segment-form', 'dudunsparce-threesegment'],
+  ['dudunsparce-three-segment', 'dudunsparce-threesegment'],
+  ['dudunsparce-two-segment-form', 'dudunsparce'],
+  ['gimmighoul-chest-form', 'gimmighoul'],
+  ['gimmighoul-roaming-form', 'gimmighoul-roaming'],
+  ['maushold-family-of-four', 'maushold-four'],
+  ['maushold-family-of-three', 'maushold'],
+  ['oinkologne-female', 'oinkologne-f'],
+  ['oinkologne-male', 'oinkologne'],
+  ['ogerpon-cornerstone-mask', 'ogerpon-cornerstone'],
+  ['ogerpon-cornerstone-mask-terastallized', 'ogerpon-cornerstonetera'],
+  ['ogerpon-hearthflame-mask', 'ogerpon-hearthflame'],
+  ['ogerpon-hearthflame-mask-terastallized', 'ogerpon-hearthflametera'],
+  ['ogerpon-teal-mask', 'ogerpon'],
+  ['ogerpon-teal-mask-terastallized', 'ogerpon-tealtera'],
+  ['ogerpon-wellspring-mask', 'ogerpon-wellspring'],
+  ['ogerpon-wellspring-mask-terastallized', 'ogerpon-wellspringtera'],
+  ['oricorio-pau-style', 'oricorio-pau'],
+  ['oricorio-pom-pom-style', 'oricorio-pompom'],
+  ['oricorio-sensu-style', 'oricorio-sensu'],
+  ['palafin-hero-form', 'palafin-hero'],
+  ['palafin-zero-form', 'palafin'],
+  ['poltchageist-artisan-form', 'poltchageist-artisan'],
+  ['poltchageist-counterfeit-form', 'poltchageist'],
+  ['sinistcha-masterpiece-form', 'sinistcha-masterpiece'],
+  ['sinistcha-unremarkable-form', 'sinistcha'],
+  ['squawkabilly-blue-plumage', 'squawkabilly-blue'],
+  ['squawkabilly-green-plumage', 'squawkabilly'],
+  ['squawkabilly-white-plumage', 'squawkabilly-white'],
+  ['squawkabilly-yellow-plumage', 'squawkabilly-yellow'],
+  ['tauros-paldean-aqua-breed', 'tauros-paldeaaqua'],
+  ['tauros-paldean-blaze-breed', 'tauros-paldeablaze'],
+  ['tauros-paldean-combat-breed', 'tauros-paldeacombat'],
+  ['tatsugiri-curly-form', 'tatsugiri'],
+  ['tatsugiri-droopy-form', 'tatsugiri-droopy'],
+  ['tatsugiri-stretchy-form', 'tatsugiri-stretchy'],
+  ['terapagos-normal-form', 'terapagos'],
+  ['terapagos-stellar-form', 'terapagos-stellar'],
+  ['terapagos-terastal-form', 'terapagos-terastal'],
+  ['ursaluna-bloodmoon', 'ursaluna-bloodmoon'],
+  ['ursaluna-standard', 'ursaluna']
 ]);
 
 export function getPokemonSpriteId(name: string) {
@@ -29272,10 +29317,13 @@ function normalizePokemonSpriteName(name: string) {
   return trimmedName
     .replace(/\s*\((Alolan)\)$/i, '-Alola')
     .replace(/\s*\((Galarian)\)$/i, '-Galar')
+    .replace(/\s*\((Hisuian)\)$/i, '-Hisui')
+    .replace(/\s*\((Paldean)\)$/i, '-Paldea')
     .replace(/\s*\((Female|Male)\)$/i, '-$1')
     .replace(/\s*\((Low Key)\)/i, '-Low-Key')
     .replace(/\s*\((Gigantamax|G-Max)\)$/i, '-Gmax')
     .replace(/\s*\((Regional Form \d+|Regional Form|Form \d+)\)$/i, '')
+    .replace(/[()]/g, '')
     .replace(/\s+/g, '-');
 }
 

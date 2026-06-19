@@ -40,6 +40,7 @@ Current implementation state:
 - `SvWorkflowFileSource` reads layered loose output first, then loose base files, then the Trinity archive; applies write loose LayeredFS files under `romfs/...` and patches `romfs/arc/data.trpfd`.
 - `KM.SV` references `SharpCompress` for archive intake in S/V Mod Merger.
 - Desktop form-label resolution now includes S/V internal species IDs for Hisuian and Gen 9 forms such as Tauros breeds, Oinkologne, Dudunsparce, Palafin, Maushold, Squawkabilly, Tatsugiri, Gimmighoul, Koraidon/Miraidon ride forms, Ogerpon masks, Terapagos forms, Poltchageist, and Sinistcha. These are keyed to S/V `DevID` values, not NatDex values.
+- Desktop sprite resolution now has explicit aliases for S/V form labels whose visible names do not match Pokemon Showdown sprite filenames, including Hisuian/Paldean regional suffixes, Tauros Paldean breeds, Basculegion/Oinkologne gender forms, Dudunsparce segments, Maushold families, Squawkabilly plumages, Tatsugiri forms, Gimmighoul forms, Ogerpon mask/Tera forms, Terapagos forms, Poltchageist forms, and Sinistcha forms. The Smogon sprite repo was checked locally at `.scratch/smogon-sprites` commit `32a4c591`; all Smogon Gen 9 static species PNGs already have corresponding bundled static sprite IDs. Smogon and Pokemon Showdown did not have animated GIFs for Miraidon, Ogerpon, Ogerpon masks/Tera forms, Terapagos, or Terapagos forms, so those forms currently rely on the static sprite fallback.
 
 Implemented S/V editor backend support:
 
