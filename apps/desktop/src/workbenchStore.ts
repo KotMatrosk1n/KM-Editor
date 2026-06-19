@@ -76,7 +76,7 @@ export type WorkbenchSection =
   | 'royalCandy' | 'startingItems' | 'npcItemGift'
   | 'spreadsheetImport'
   | 'modMerger'
-  | 'randomizer'
+  | 'fpsPatch' | 'randomizer'
   | 'changes'
   | 'settings';
 export type ProjectPathDraft = {

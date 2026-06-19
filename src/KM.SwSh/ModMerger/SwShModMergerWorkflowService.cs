@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.FpsPatch;
 using KM.SwSh.Workflows;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -268,6 +269,8 @@ public sealed class SwShModMergerWorkflowService
                 expected: "At least one selected RomFS file"));
             return new MergePlan(files, conflicts, outputs);
         }
+
+        AddFpsPatchOverlapDiagnostics(selected, diagnostics);
 
         var resolutionMap = resolutions
             .Where(resolution => !string.IsNullOrWhiteSpace(resolution.ConflictId))
@@ -1259,6 +1262,25 @@ public sealed class SwShModMergerWorkflowService
             || relativePath.StartsWith(SwShTrainerTeamFile.TrainerPokeRootRelativePath + "/", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static void AddFpsPatchOverlapDiagnostics(
+        IReadOnlyList<string> selectedFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var fpsPatchFileCount = selectedFiles.Count(SwShFpsPatchService.IsManagedRomFsPath);
+        if (fpsPatchFileCount == 0)
+        {
+            return;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Warning,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Selected {fpsPatchFileCount:N0} move-effect sequence file(s) also managed by 60FPS Patch. Applying this merge can replace that ROMFS timing overlay for those moves; reinstall 60FPS Patch after merging if the patched timing should win."),
+            file: SequenceRootRelativePathForDiagnostics(),
+            expected: "Reviewed overlap with 60FPS Patch ROMFS output"));
+    }
+
     private static int CountChangedRanges(byte[] baseBytes, byte[] modBytes)
     {
         var maxLength = Math.Max(baseBytes.Length, modBytes.Length);
@@ -1286,6 +1308,11 @@ public sealed class SwShModMergerWorkflowService
 
     private static string GetSupportKind(string relativePath)
     {
+        if (SwShFpsPatchService.IsManagedRomFsPath(relativePath))
+        {
+            return "60FPS move-effect BSEQ diff";
+        }
+
         if (string.Equals(relativePath, "romfs/bin/shop_data.bin", StringComparison.OrdinalIgnoreCase))
         {
             return "Shop data binary diff";
@@ -1312,6 +1339,11 @@ public sealed class SwShModMergerWorkflowService
         }
 
         return "RomFS binary diff";
+    }
+
+    private static string SequenceRootRelativePathForDiagnostics()
+    {
+        return "romfs/bin/battle/waza/sequence";
     }
 
     private static string NormalizeMergeMode(string? mergeMode)

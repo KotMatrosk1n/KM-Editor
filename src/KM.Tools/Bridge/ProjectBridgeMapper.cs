@@ -122,6 +122,18 @@ public static class ProjectBridgeMapper
         };
     }
 
+    public static ProjectGameDto ToDto(ProjectGame game)
+    {
+        return game switch
+        {
+            ProjectGame.Sword => ProjectGameDto.Sword,
+            ProjectGame.Shield => ProjectGameDto.Shield,
+            ProjectGame.Scarlet => ProjectGameDto.Scarlet,
+            ProjectGame.Violet => ProjectGameDto.Violet,
+            _ => throw new ArgumentOutOfRangeException(nameof(game), game, null),
+        };
+    }
+
     private static ProjectHealthStateDto ToDto(ProjectHealthState state)
     {
         return state switch

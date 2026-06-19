@@ -91,6 +91,9 @@ public static class KmCommandNames
     public const string LoadSvModMergerWorkflow = "svModMerger.load";
     public const string StageSvModMerge = "svModMerger.stage";
     public const string ApplySvModMerge = "svModMerger.apply";
+    public const string LoadFpsPatch = "fpsPatch.load";
+    public const string ApplyFpsPatch = "fpsPatch.apply";
+    public const string RestoreFpsPatch = "fpsPatch.restore";
     public const string ImportRandomizerSeed = "randomizer.seed.import";
     public const string ApplyRandomizer = "randomizer.apply";
     public const string RestoreRandomizer = "randomizer.restore";

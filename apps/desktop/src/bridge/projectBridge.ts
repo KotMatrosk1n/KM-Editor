@@ -264,6 +264,17 @@ import {
   validateProjectResponseSchema
 } from './contracts';
 import {
+  type ApplyFpsPatchRequest,
+  type ApplyFpsPatchResponse,
+  type LoadFpsPatchRequest,
+  type LoadFpsPatchResponse,
+  type RestoreFpsPatchRequest,
+  type RestoreFpsPatchResponse,
+  applyFpsPatchResponseSchema,
+  loadFpsPatchResponseSchema,
+  restoreFpsPatchResponseSchema
+} from './fpsPatchContracts';
+import {
   type LoadNpcItemGiftWorkflowRequest,
   type LoadNpcItemGiftWorkflowResponse,
   type StageNpcItemGiftRequest,
@@ -463,6 +474,9 @@ export type ProjectBridge = {
   applySvModMerge: (
     request: ApplySvModMergeRequest
   ) => Promise<ApplySvModMergeResponse>;
+  loadFpsPatch: (request: LoadFpsPatchRequest) => Promise<LoadFpsPatchResponse>;
+  applyFpsPatch: (request: ApplyFpsPatchRequest) => Promise<ApplyFpsPatchResponse>;
+  restoreFpsPatch: (request: RestoreFpsPatchRequest) => Promise<RestoreFpsPatchResponse>;
   importRandomizerSeed: (
     request: ImportRandomizerSeedRequest
   ) => Promise<ImportRandomizerSeedResponse>;
@@ -975,6 +989,12 @@ export function createProjectBridge(
         request,
         applySvModMergeResponseSchema
       ),
+    loadFpsPatch: (request) =>
+      sendProjectBridgeRequest(transport, kmCommandNames.loadFpsPatch, request, loadFpsPatchResponseSchema),
+    applyFpsPatch: (request) =>
+      sendProjectBridgeRequest(transport, kmCommandNames.applyFpsPatch, request, applyFpsPatchResponseSchema),
+    restoreFpsPatch: (request) =>
+      sendProjectBridgeRequest(transport, kmCommandNames.restoreFpsPatch, request, restoreFpsPatchResponseSchema),
     importRandomizerSeed: (request) =>
       sendProjectBridgeRequest(
         transport,

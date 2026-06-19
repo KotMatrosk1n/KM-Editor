@@ -42,7 +42,7 @@ import {
 } from '../bridge/contracts';
 import { type ProjectBridge } from '../bridge/projectBridge';
 import { type DesktopServices, type NativeUpdate } from '../desktopServices';
-import { createFairyGymBoostsWorkflowFixture } from './fairyGymBoostsTestFixtures';
+import { createFairyGymBoostsWorkflowFixture } from './fairyGymBoostsTestFixtures'; import { createFpsPatchBridgeFixture } from './fpsPatchTestFixtures';
 import { createNpcItemGiftBridgeFixture, createNpcItemGiftWorkflowFixture } from './npcItemGiftTestFixtures';
 import { createShinyRateWorkflowFixture, createStageShinyRateFixtureResponse } from './shinyRateTestFixtures';
 export function createNativeUpdate(overrides: Partial<NativeUpdate> = {}): NativeUpdate {
@@ -5387,6 +5387,7 @@ export function createMockProjectBridge(
         writtenFiles: preview.canApply ? preview.files.map((file) => file.relativePath) : []
       });
     },
+    ...createFpsPatchBridgeFixture(),
     importRandomizerSeed: (request) =>
       Promise.resolve({
         config: {
