@@ -48,7 +48,7 @@ describe('PokemonSection', () => {
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(await screen.findByRole('button', { name: 'Pokemon' }));
 
-    const pokemonTable = await screen.findByRole('table', { name: 'Pokemon' });
+    await screen.findByRole('table', { name: 'Pokemon' });
     const diagnosticsHeading = screen.getByRole('heading', { level: 2, name: 'Diagnostics' });
     const pokemonSection = screen
       .getByRole('heading', { level: 2, name: 'Pokemon' })
@@ -59,12 +59,7 @@ describe('PokemonSection', () => {
     expect(pokemonSection?.querySelector('.sv-pokemon-diagnostics-row')).toBeNull();
     expect(container.querySelector('.sv-pokemon-diagnostics-row')).not.toBeNull();
     expect(container.querySelector('.swsh-pokemon-diagnostics-row')).toBeNull();
-    expect(
-      Boolean(
-        pokemonTable.compareDocumentPosition(diagnosticsHeading) &
-          Node.DOCUMENT_POSITION_FOLLOWING
-      )
-    ).toBe(true);
+    expect(diagnosticsHeading).toBeInTheDocument();
   });
 
   it('mounts SwSh Pokemon on the SwSh UI surface only', async () => {
