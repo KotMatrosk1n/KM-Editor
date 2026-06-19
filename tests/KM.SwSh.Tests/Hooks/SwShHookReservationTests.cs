@@ -7,11 +7,13 @@ using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
 using KM.SwSh.ExeFs;
 using KM.SwSh.FashionUnlock;
+using KM.SwSh.FpsPatch;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.IvScreen;
 using KM.SwSh.RoyalCandy;
 using KM.SwSh.StartingItems;
+using KM.SwSh.Tests.FpsPatch;
 using KM.SwSh.Tests.Items;
 using KM.SwSh.Tests.Performance;
 using KM.SwSh.Workflows;
@@ -216,6 +218,41 @@ public sealed class SwShHookReservationTests
         }
     }
 
+    [Fact]
+    public void FpsPatchReservesTheWorkingSwordAndShieldMainTextSites()
+    {
+        var regions = SwShExeFsReservedRegionLedger.MainTextRegionsForOwner(SwShExeFsReservedRegionLedger.OwnerFpsPatch);
+        var expected = new Dictionary<string, (int Offset, int Length)>
+        {
+            ["60fps-sword-nvn-present-interval"] = (0x018A2C88, 0x04),
+            ["60fps-shield-nvn-present-interval"] = (0x018A2D18, 0x04),
+            ["60fps-duration-table-index-0"] = (0x000061F0, 0x04),
+            ["60fps-duration-table-paired-index-0"] = (0x0000620C, 0x04),
+            ["60fps-inline-frame-duration-low"] = (0x005DE834, 0x04),
+            ["60fps-inline-frame-duration-high"] = (0x005DE838, 0x04),
+            ["60fps-sword-battle-event-scheduler-adrp"] = (0x0131677C, 0x04),
+            ["60fps-sword-battle-event-scheduler-ldr"] = (0x01316780, 0x04),
+            ["60fps-shield-battle-event-scheduler-adrp"] = (0x013167AC, 0x04),
+            ["60fps-shield-battle-event-scheduler-ldr"] = (0x013167B0, 0x04),
+            ["60fps-actor-model-speed-setter"] = (0x009D17B0, 0x10),
+            ["60fps-actor-direct-speed-seed-a"] = (0x009D05C8, 0x04),
+            ["60fps-actor-direct-speed-seed-b"] = (0x009D0834, 0x04),
+            ["60fps-actor-direct-speed-seed-c"] = (0x009D0838, 0x04),
+            ["60fps-actor-direct-speed-seed-d"] = (0x009D0848, 0x04),
+        };
+
+        Assert.Equal(expected.Count, regions.Count);
+        foreach (var (featureId, site) in expected)
+        {
+            var region = Assert.Single(regions, candidate => candidate.FeatureId == featureId);
+            Assert.Equal(SwShExeFsReservedRegionLedger.ExeFsMainPath, region.RelativePath);
+            Assert.Equal("main.text", region.Area);
+            Assert.Equal(site.Offset, region.StartOffset);
+            Assert.Equal(site.Length, region.Length);
+            Assert.Equal(SwShExeFsReservedRegionLedger.OwnerFpsPatch, region.Owner);
+        }
+    }
+
     [Theory]
     [MemberData(nameof(ExeFsInstallOrders))]
     public void RoyalCandyAndCatchCapInstallInEitherOrderWithoutOverlapping(ProjectGame game, string workflowId, bool royalCandyFirst)
@@ -296,6 +333,61 @@ public sealed class SwShHookReservationTests
         Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main).Kind);
         Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main).Kind);
         Assert.Equal(ExpectedRoyalCandySignature(workflowId), SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main).Kind);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void FpsPatchMainBytesSurviveExeFsHookStack(ProjectGame game)
+    {
+        using var temp = CreateHookProjectWithFpsAnchors(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        ApplyFpsPatchMain(paths);
+        InstallEmptyBagHook(paths);
+        ApplyCatchCap(paths);
+        ApplyIvScreen(paths);
+        ApplyRoyalCandy(paths, RoyalCandyUnlimitedWorkflowId);
+        ApplyFashionUnlock(paths);
+        ApplyHyperTrainingMain(paths, minimumLevel: 50);
+        ApplyGymUniformRemoval(paths);
+
+        var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
+
+        Assert.Equal(SwShFpsPatchMainKind.Installed, SwShFpsMainPatcher.Analyze(main, game).Kind);
+        Assert.Equal(SwShCatchCapInstallKind.InstalledV1, SwShCatchCapMainPatcher.Analyze(main, game).Kind);
+        Assert.Equal(SwShIvScreenInstallKind.InstalledV1, SwShIvScreenMainPatcher.Analyze(main, game).Kind);
+        Assert.Equal(SwShFashionUnlockInstallKind.Installed, SwShFashionUnlockMainPatcher.Analyze(main, game).Kind);
+        Assert.Equal(SwShHyperTrainingMainKind.CustomMinimumLevel, SwShHyperTrainingMainPatcher.Analyze(main, game).Kind);
+        Assert.Equal(SwShRoyalCandyExeFsSignatureKind.Unlimited, SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main, game).Kind);
+        AssertGymUniformIpsInstalled(paths, game);
+    }
+
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void ExeFsHookCleanupPreservesFpsPatchMainBytes(ProjectGame game)
+    {
+        using var temp = CreateHookProjectWithFpsAnchors(game);
+        var paths = temp.Paths with { SelectedGame = game };
+        ApplyFpsPatchMain(paths);
+        InstallEmptyBagHook(paths);
+        ApplyCatchCap(paths);
+        ApplyIvScreen(paths);
+        ApplyRoyalCandy(paths, RoyalCandyUnlimitedWorkflowId);
+        ApplyFashionUnlock(paths);
+
+        ApplyCatchCapCleanup(paths);
+        ApplyIvScreenCleanup(paths);
+        ApplyFashionUnlockCleanup(paths);
+        ApplyRoyalCandyCleanup(paths);
+
+        var main = File.ReadAllBytes(OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath));
+
+        Assert.Equal(SwShFpsPatchMainKind.Installed, SwShFpsMainPatcher.Analyze(main, game).Kind);
+        Assert.Equal(SwShCatchCapInstallKind.NotInstalled, SwShCatchCapMainPatcher.Analyze(main, game).Kind);
+        Assert.Equal(SwShIvScreenInstallKind.NotInstalled, SwShIvScreenMainPatcher.Analyze(main, game).Kind);
+        Assert.Equal(SwShFashionUnlockInstallKind.NotInstalled, SwShFashionUnlockMainPatcher.Analyze(main, game).Kind);
+        Assert.Equal(SwShRoyalCandyExeFsSignatureKind.NotInstalled, SwShExeFsRoyalCandyMainPatcher.AnalyzeInstallation(main, game).Kind);
     }
 
     [Theory]
@@ -1449,6 +1541,13 @@ public sealed class SwShHookReservationTests
         return temp;
     }
 
+    private static TemporarySwShProject CreateHookProjectWithFpsAnchors(ProjectGame game)
+    {
+        var temp = CreateHookProject(game);
+        temp.WriteBaseExeFsFile("main", CreateSharedHookNsoWithFpsAnchors(game));
+        return temp;
+    }
+
     private static void InstallEmptyBagHook(ProjectPaths paths)
     {
         var service = new SwShBagHookEditSessionService();
@@ -1460,6 +1559,17 @@ public sealed class SwShHookReservationTests
 
         var apply = service.ApplyChangePlan(paths, stage.Session, plan);
         Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    private static void ApplyFpsPatchMain(ProjectPaths paths)
+    {
+        var targetPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath);
+        var sourcePath = File.Exists(targetPath)
+            ? targetPath
+            : Path.Combine(paths.BaseExeFsPath!, "main");
+        var output = SwShFpsMainPatcher.Apply(File.ReadAllBytes(sourcePath), paths.SelectedGame);
+        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+        File.WriteAllBytes(targetPath, output);
     }
 
     private static void ApplyStartingItems(ProjectPaths paths)
@@ -1744,6 +1854,19 @@ public sealed class SwShHookReservationTests
         WriteGymUniformRemovalVanillaAnchors(text);
         WriteFashionUnlockVanillaAnchors(text);
         WriteHyperTrainingVanillaAnchors(text, game);
+        return CreateNso(text, [0x10], [0x20], BuildIdForGame(game));
+    }
+
+    private static byte[] CreateSharedHookNsoWithFpsAnchors(ProjectGame game = ProjectGame.Sword)
+    {
+        var text = new byte[SwShFpsMainTestAnchors.RequiredTextLength];
+        WriteRoyalCandyVanillaAnchors(text);
+        WriteCatchCapVanillaAnchors(text, game);
+        WriteIvScreenVanillaAnchors(text, game);
+        WriteGymUniformRemovalVanillaAnchors(text);
+        WriteFashionUnlockVanillaAnchors(text);
+        WriteHyperTrainingVanillaAnchors(text, game);
+        SwShFpsMainTestAnchors.WriteVanilla(text, game);
         return CreateNso(text, [0x10], [0x20], BuildIdForGame(game));
     }
 

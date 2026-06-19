@@ -11,6 +11,7 @@ using KM.Api.ExeFs;
 using KM.Api.FairyGymBoosts;
 using KM.Api.FashionUnlock;
 using KM.Api.Flagwork;
+using KM.Api.FpsPatch;
 using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
 using KM.Api.HyperTraining;
@@ -49,6 +50,7 @@ using KM.SwSh.ExeFs;
 using KM.SwSh.FairyGymBoosts;
 using KM.SwSh.FashionUnlock;
 using KM.SwSh.Gifts;
+using KM.SwSh.FpsPatch;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.Items;
@@ -111,6 +113,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShShopsEditSessionService shopsEditSessionService;
     private readonly SwShSpreadsheetImportExecutionService spreadsheetImportExecutionService;
     private readonly SwShModMergerWorkflowService modMergerWorkflowService;
+    private readonly SwShFpsPatchService fpsPatchService;
     private readonly SwShRandomizerService randomizerService;
     private readonly SwShStaticEncountersEditSessionService staticEncountersEditSessionService;
     private readonly SwShTextEditSessionService textEditSessionService;
@@ -150,6 +153,7 @@ public sealed class ProjectBridgeDispatcher
         SwShShopsEditSessionService? shopsEditSessionService = null,
         SwShSpreadsheetImportExecutionService? spreadsheetImportExecutionService = null,
         SwShModMergerWorkflowService? modMergerWorkflowService = null,
+        SwShFpsPatchService? fpsPatchService = null,
         SwShRandomizerService? randomizerService = null,
         SwShStaticEncountersEditSessionService? staticEncountersEditSessionService = null,
         SwShTextEditSessionService? textEditSessionService = null,
@@ -188,6 +192,7 @@ public sealed class ProjectBridgeDispatcher
         this.shopsEditSessionService = shopsEditSessionService ?? new SwShShopsEditSessionService(this.projectWorkspaceService);
         this.spreadsheetImportExecutionService = spreadsheetImportExecutionService ?? new SwShSpreadsheetImportExecutionService(this.projectWorkspaceService);
         this.modMergerWorkflowService = modMergerWorkflowService ?? new SwShModMergerWorkflowService(this.projectWorkspaceService);
+        this.fpsPatchService = fpsPatchService ?? new SwShFpsPatchService(this.projectWorkspaceService);
         this.randomizerService = randomizerService ?? new SwShRandomizerService(this.projectWorkspaceService);
         this.staticEncountersEditSessionService = staticEncountersEditSessionService ?? new SwShStaticEncountersEditSessionService(this.projectWorkspaceService);
         this.textEditSessionService = textEditSessionService ?? new SwShTextEditSessionService(this.projectWorkspaceService);
@@ -302,6 +307,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadSvModMergerWorkflow => DispatchLoadSvModMergerWorkflow(requestJson),
                 KmCommandNames.StageSvModMerge => DispatchStageSvModMerge(requestJson),
                 KmCommandNames.ApplySvModMerge => DispatchApplySvModMerge(requestJson),
+                KmCommandNames.LoadFpsPatch => DispatchLoadFpsPatch(requestJson),
+                KmCommandNames.ApplyFpsPatch => DispatchApplyFpsPatch(requestJson),
+                KmCommandNames.RestoreFpsPatch => DispatchRestoreFpsPatch(requestJson),
                 KmCommandNames.ImportRandomizerSeed => DispatchImportRandomizerSeed(requestJson),
                 KmCommandNames.ApplyRandomizer => DispatchApplyRandomizer(requestJson),
                 KmCommandNames.RestoreRandomizer => DispatchRestoreRandomizer(requestJson),
@@ -1511,6 +1519,37 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadFpsPatch(string requestJson)
+    {
+        var request = DeserializeRequest<LoadFpsPatchRequest>(requestJson);
+        var status = fpsPatchService.Load(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = new LoadFpsPatchResponse(ToDto(status));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchApplyFpsPatch(string requestJson)
+    {
+        var request = DeserializeRequest<ApplyFpsPatchRequest>(requestJson);
+        var result = fpsPatchService.Apply(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = new ApplyFpsPatchResponse(
+            ToDto(result.Status),
+            EditSessionBridgeMapper.ToDto(result.ApplyResult));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchRestoreFpsPatch(string requestJson)
+    {
+        var request = DeserializeRequest<RestoreFpsPatchRequest>(requestJson);
+        var result = fpsPatchService.Restore(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = new RestoreFpsPatchResponse(
+            ToDto(result.Status),
+            EditSessionBridgeMapper.ToDto(result.ApplyResult));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchImportRandomizerSeed(string requestJson)
     {
         var request = DeserializeRequest<ImportRandomizerSeedRequest>(requestJson);
@@ -1905,6 +1944,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadModMergerWorkflow or
             KmCommandNames.StageModMerge or
             KmCommandNames.ApplyModMerge or
+            KmCommandNames.LoadFpsPatch or
+            KmCommandNames.ApplyFpsPatch or
+            KmCommandNames.RestoreFpsPatch or
             KmCommandNames.ImportRandomizerSeed or
             KmCommandNames.ApplyRandomizer or
             KmCommandNames.RestoreRandomizer;
@@ -1945,6 +1987,21 @@ public sealed class ProjectBridgeDispatcher
             Array.Empty<ProjectFileReference>(),
             new WriteManifest(applyId, appliedAt, emptyPlan.Writes),
             emptyPlan.Diagnostics);
+    }
+
+    private static FpsPatchStatusDto ToDto(SwShFpsPatchStatus status)
+    {
+        return new FpsPatchStatusDto(
+            status.Status,
+            status.Message,
+            status.BuildId,
+            status.DetectedGame is null ? null : ProjectBridgeMapper.ToDto(status.DetectedGame.Value),
+            status.PatchedMainSiteCount,
+            status.MainSiteCount,
+            status.PatchedRomFsFileCount,
+            status.ManagedRomFsFileCount,
+            status.ConflictingRomFsFileCount,
+            status.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
     private static ValidationDiagnostic CreateMixedSessionDiagnostic()

@@ -36,6 +36,7 @@ internal static class SwShExeFsReservedRegionLedger
     public const string OwnerBagHook = "Bag Hook";
     public const string OwnerCatchCap = "Catch Cap";
     public const string OwnerFashionUnlock = "Fashion Unlock";
+    public const string OwnerFpsPatch = "60FPS Patch";
     public const string OwnerGymUniformRemoval = "Gym Uniform Removal";
     public const string OwnerHyperTraining = "Hyper Training";
     public const string OwnerIvScreen = "IV Screen";
@@ -228,6 +229,22 @@ internal static class SwShExeFsReservedRegionLedger
 
         new(OwnerShinyRate, "shiny-rate-sword-reroll-loop-control", ExeFsMainPath, "main.text", 0x00D31488, 0x08, "Shiny Rate Sword reroll compare and break branch", "do-not-overwrite"),
         new(OwnerShinyRate, "shiny-rate-shield-reroll-loop-control", ExeFsMainPath, "main.text", 0x00D314B8, 0x08, "Shiny Rate Shield reroll compare and break branch", "do-not-overwrite"),
+
+        new(OwnerFpsPatch, "60fps-sword-nvn-present-interval", ExeFsMainPath, "main.text", 0x018A2C88, 0x04, "60FPS Sword NVN present interval", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-shield-nvn-present-interval", ExeFsMainPath, "main.text", 0x018A2D18, 0x04, "60FPS Shield NVN present interval", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-duration-table-index-0", ExeFsMainPath, "main.text", 0x000061F0, 0x04, "60FPS duration table index 0", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-duration-table-paired-index-0", ExeFsMainPath, "main.text", 0x0000620C, 0x04, "60FPS paired duration table index 0", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-inline-frame-duration-low", ExeFsMainPath, "main.text", 0x005DE834, 0x04, "60FPS inline frame duration low half", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-inline-frame-duration-high", ExeFsMainPath, "main.text", 0x005DE838, 0x04, "60FPS inline frame duration high half", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-sword-battle-event-scheduler-adrp", ExeFsMainPath, "main.text", 0x0131677C, 0x04, "60FPS Sword battle event scheduler ADRP", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-sword-battle-event-scheduler-ldr", ExeFsMainPath, "main.text", 0x01316780, 0x04, "60FPS Sword battle event scheduler LDR", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-shield-battle-event-scheduler-adrp", ExeFsMainPath, "main.text", 0x013167AC, 0x04, "60FPS Shield battle event scheduler ADRP", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-shield-battle-event-scheduler-ldr", ExeFsMainPath, "main.text", 0x013167B0, 0x04, "60FPS Shield battle event scheduler LDR", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-actor-model-speed-setter", ExeFsMainPath, "main.text", 0x009D17B0, 0x10, "60FPS central actor model speed setter", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-actor-direct-speed-seed-a", ExeFsMainPath, "main.text", 0x009D05C8, 0x04, "60FPS actor direct speed seed A", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-actor-direct-speed-seed-b", ExeFsMainPath, "main.text", 0x009D0834, 0x04, "60FPS actor direct speed seed B", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-actor-direct-speed-seed-c", ExeFsMainPath, "main.text", 0x009D0838, 0x04, "60FPS actor direct speed seed C", "do-not-overwrite"),
+        new(OwnerFpsPatch, "60fps-actor-direct-speed-seed-d", ExeFsMainPath, "main.text", 0x009D0848, 0x04, "60FPS actor direct speed seed D", "do-not-overwrite"),
 
         new(OwnerTypeChart, "type-chart-swsh", ExeFsMainPath, "main.ro", 0x00743600, 0x144, "Sword/Shield type-effectiveness table", "payload-only"),
 

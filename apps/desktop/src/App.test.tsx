@@ -343,9 +343,17 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Raid Rewards' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Tools' }));
+    expect(screen.getByRole('button', { name: '60FPS Patch' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Randomizer' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Spreadsheet Import' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mod Merger' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Spreadsheet Import' })).toBeInTheDocument();
+    expect(
+      within(navigation)
+        .getAllByRole('button')
+        .filter((button) => button.classList.contains('nav-child-button'))
+        .map((button) => button.textContent)
+        .slice(-4)
+    ).toEqual(['60FPS Patch', 'Randomizer', 'Mod Merger', 'Spreadsheet Import']);
 
     await user.click(screen.getByRole('button', { name: 'Hooks' }));
     expect(screen.getByRole('button', { name: 'Bag Hook' })).toBeInTheDocument();
@@ -437,6 +445,9 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Tools' }));
     expect(within(navigation).getByRole('button', { name: 'Mod Merger' })).toBeInTheDocument();
     expect(
+      within(navigation).queryByRole('button', { name: '60FPS Patch' })
+    ).not.toBeInTheDocument();
+    expect(
       within(navigation).queryByRole('button', { name: 'Spreadsheet Import' })
     ).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('button', { name: 'Randomizer' })).not.toBeInTheDocument();
@@ -444,6 +455,57 @@ describe('App', () => {
     expect(
       within(navigation).queryByRole('button', { name: 'Advanced Editors' })
     ).not.toBeInTheDocument();
+  });
+
+  it('installs and uninstalls the SwSh 60FPS Patch from Tools', async () => {
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge({}, true);
+    const loadFpsPatch = vi.fn(baseBridge.loadFpsPatch);
+    const applyFpsPatch = vi.fn(baseBridge.applyFpsPatch);
+    const restoreFpsPatch = vi.fn(baseBridge.restoreFpsPatch);
+
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadFpsPatch,
+          applyFpsPatch,
+          restoreFpsPatch
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+
+    await user.click(await screen.findByRole('button', { name: 'Tools' }));
+    await user.click(screen.getByRole('button', { name: '60FPS Patch' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: '60FPS Patch' })).toBeInTheDocument();
+    expect(screen.getAllByText('Not checked').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(loadFpsPatch).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Not installed')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Install' }));
+    await waitFor(() => expect(applyFpsPatch).toHaveBeenCalledTimes(1));
+    expect(applyFpsPatch).toHaveBeenCalledWith({
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        saveFilePath: null,
+        selectedGame: 'sword'
+      }
+    });
+    expect(await screen.findByText('Installed')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Uninstall' }));
+    await waitFor(() => expect(restoreFpsPatch).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Not installed')).toBeInTheDocument();
   });
 
   it('closes a wrong-family active workflow section before it can stay mounted', async () => {

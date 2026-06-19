@@ -4,8 +4,10 @@ using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
 using KM.SwSh.ExeFs;
+using KM.SwSh.FpsPatch;
 using KM.SwSh.ShinyRate;
 using KM.SwSh.Tests.Encounters;
+using KM.SwSh.Tests.FpsPatch;
 using KM.SwSh.Tests.Items;
 using System.Buffers.Binary;
 using Xunit;
@@ -218,6 +220,32 @@ public sealed class SwShShinyRateWorkflowTests
         AssertOnlyReservedTextBytesChanged(outputMainWithOtherHooks, outputMain);
     }
 
+    [Theory]
+    [InlineData(ProjectGame.Sword)]
+    [InlineData(ProjectGame.Shield)]
+    public void StageAndApplyShinyRatePreservesInstalledFpsPatch(ProjectGame game)
+    {
+        using var temp = TemporarySwShProject.Create();
+        var baseMain = CreateSyntheticShinyRateMainWithFpsAnchors(game);
+        var fpsMain = SwShFpsMainPatcher.Apply(baseMain, game);
+        temp.WriteBaseExeFsFile("main", baseMain);
+        temp.WriteOutputFile("exefs/main", fpsMain);
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, game);
+        var paths = temp.Paths with { SelectedGame = game };
+        var service = new SwShShinyRateEditSessionService();
+
+        var staged = service.StageRate(paths, "fixed", rollCount: 6, session: null);
+        var plan = service.CreateChangePlan(paths, staged.Session);
+        var apply = service.ApplyChangePlan(paths, staged.Session, plan);
+        var outputMain = File.ReadAllBytes(Path.Combine(temp.OutputRootPath, "exefs", "main"));
+
+        Assert.DoesNotContain(staged.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(plan.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(SwShFpsPatchMainKind.Installed, SwShFpsMainPatcher.Analyze(outputMain, game).Kind);
+        Assert.Equal(SwShShinyRateMainKind.FixedRolls, SwShShinyRateMainPatcher.Analyze(outputMain, game).Kind);
+    }
+
     [Fact]
     public void CalculateRollsForGenThreeOddsClampsToDefaultOneRoll()
     {
@@ -230,10 +258,14 @@ public sealed class SwShShinyRateWorkflowTests
 
     private static byte[] CreateSyntheticShinyRateMain(
         ProjectGame game = ProjectGame.Sword,
+        int? minimumTextLength = null,
         Action<byte[]>? extraTextSetup = null)
     {
         var shift = game == ProjectGame.Shield ? SwShShinyRateMainPatcher.ShieldOffsetDelta : 0;
-        var text = new byte[SwShShinyRateMainPatcher.SwordBreakOffset + shift + 0x40];
+        var textLength = Math.Max(
+            SwShShinyRateMainPatcher.SwordBreakOffset + shift + 0x40,
+            minimumTextLength ?? 0);
+        var text = new byte[textLength];
         Array.Fill(text, (byte)0xCC);
         FunctionPrelude.CopyTo(text.AsSpan(SwShShinyRateMainPatcher.SwordFunctionOffset + shift));
         WriteInstruction(text, SwShShinyRateMainPatcher.SwordCompareOffset + shift, VanillaCompareInstruction);
@@ -241,6 +273,14 @@ public sealed class SwShShinyRateWorkflowTests
         extraTextSetup?.Invoke(text);
 
         return CreateNso(text, [0x10], [0x20], BuildIdForGame(game));
+    }
+
+    private static byte[] CreateSyntheticShinyRateMainWithFpsAnchors(ProjectGame game)
+    {
+        return CreateSyntheticShinyRateMain(
+            game,
+            SwShFpsMainTestAnchors.RequiredTextLength,
+            text => SwShFpsMainTestAnchors.WriteVanilla(text, game));
     }
 
     private static SwShShinyRateMainKind ExpectedKind(string value)

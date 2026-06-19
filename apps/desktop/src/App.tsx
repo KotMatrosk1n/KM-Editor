@@ -199,6 +199,7 @@ import {
   type TrainerRecord,
   type TrainersWorkflow
 } from './bridge/contracts';
+import { type FpsPatchStatus } from './bridge/fpsPatchContracts';
 import {
   ProjectBridgeError,
   projectBridge as defaultProjectBridge,
@@ -560,6 +561,11 @@ const sections: Array<{
     id: 'exefsPatches',
     label: 'ExeFS Patches',
     icon: Wrench
+  },
+  {
+    id: 'fpsPatch',
+    label: '60FPS Patch',
+    icon: Zap
   },
   {
     id: 'spreadsheetImport',
@@ -1579,6 +1585,9 @@ export function App({
   const [isModMergerLoading, setIsModMergerLoading] = useState(false);
   const [isModMergerStaging, setIsModMergerStaging] = useState(false);
   const [isModMergerApplying, setIsModMergerApplying] = useState(false);
+  const [fpsPatchStatus, setFpsPatchStatus] = useState<FpsPatchStatus | null>(null);
+  const [isFpsPatchLoading, setIsFpsPatchLoading] = useState(false);
+  const [isFpsPatchApplying, setIsFpsPatchApplying] = useState(false);
   const [isRandomizerApplying, setIsRandomizerApplying] = useState(false);
   const [isOutputRootCreating, setIsOutputRootCreating] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
@@ -1671,7 +1680,7 @@ export function App({
     isWorkflowNavigationVisibleForGame(activeSection, selectedGame, availableWorkflowSectionIds) ||
     (isWorkflowSupportedForGame(activeSection, selectedGame) && activeSectionHasLoadedWorkflow);
   const activeSectionIsEditor =
-    activeSectionCanStayMounted && activeSection !== 'randomizer';
+    activeSectionCanStayMounted && activeSection !== 'fpsPatch' && activeSection !== 'randomizer';
   const activeEditorHasLocalDrafts = editorDraftDirtySections.has(activeSection);
   const activeSectionOwnsEditSession =
     editSession !== null && editSessionSection !== null && editSessionSection === activeSection;
@@ -1759,6 +1768,7 @@ export function App({
     setSvModMergerPreview(null);
     setSvModMergerApplyResult(null);
     setSvModSources([]);
+    setFpsPatchStatus(null);
     setLazyLoadedWorkflowSections(new Set());
     setEditorDraftDirtySections(new Set());
     clearScopedEditorPanelState();
@@ -3872,6 +3882,70 @@ const resetModMergerPlan = () => {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsModMergerApplying(false);
+    }
+  };
+
+  const handleLoadFpsPatch = async () => {
+    setIsFpsPatchLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadFpsPatch({
+        paths: toProjectPaths(draftPaths)
+      });
+      setFpsPatchStatus(response.status);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsFpsPatchLoading(false);
+    }
+  };
+
+  const handleApplyFpsPatch = async () => {
+    setIsFpsPatchApplying(true);
+    setBridgeDiagnostics([]);
+    setApplyResult(null);
+
+    try {
+      const paths = toProjectPaths(draftPaths);
+      const response = await bridge.applyFpsPatch({ paths });
+      setFpsPatchStatus(response.status);
+      setApplyResult(response.applyResult);
+
+      const hasApplyErrors = response.applyResult.diagnostics.some(
+        (diagnostic) => diagnostic.severity === 'error'
+      );
+      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        await refreshLoadedWorkflowsAfterApply(paths);
+      }
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsFpsPatchApplying(false);
+    }
+  };
+
+  const handleRestoreFpsPatch = async () => {
+    setIsFpsPatchApplying(true);
+    setBridgeDiagnostics([]);
+    setApplyResult(null);
+
+    try {
+      const paths = toProjectPaths(draftPaths);
+      const response = await bridge.restoreFpsPatch({ paths });
+      setFpsPatchStatus(response.status);
+      setApplyResult(response.applyResult);
+
+      const hasApplyErrors = response.applyResult.diagnostics.some(
+        (diagnostic) => diagnostic.severity === 'error'
+      );
+      if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        await refreshLoadedWorkflowsAfterApply(paths);
+      }
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsFpsPatchApplying(false);
     }
   };
 
@@ -7195,6 +7269,17 @@ const resetModMergerPlan = () => {
                 workflow={spreadsheetImportWorkflow}
               />
             )
+          ) : null}
+          {activeSection === 'fpsPatch' ? (
+            <FpsPatchSection
+              canApply={health?.canOpenEditableWorkflows ?? false}
+              isApplying={isFpsPatchApplying}
+              isLoading={isFpsPatchLoading}
+              onApply={handleApplyFpsPatch}
+              onRefresh={handleLoadFpsPatch}
+              onRestore={handleRestoreFpsPatch}
+              status={fpsPatchStatus}
+            />
           ) : null}
           {activeSection === 'randomizer' ? (
             <RandomizerSection
@@ -23352,6 +23437,110 @@ function StartingItemsSection({
       />
     </>
   );
+}
+
+function FpsPatchSection({
+  canApply,
+  isApplying,
+  isLoading,
+  onApply,
+  onRefresh,
+  onRestore,
+  status
+}: {
+  canApply: boolean;
+  isApplying: boolean;
+  isLoading: boolean;
+  onApply: () => void;
+  onRefresh: () => void;
+  onRestore: () => void;
+  status: FpsPatchStatus | null;
+}) {
+  const isBusy = isLoading || isApplying;
+  const mainSiteValue = status
+    ? `${status.patchedMainSiteCount}/${status.mainSiteCount}`
+    : 'Not checked';
+  const romFsValue = status
+    ? `${status.patchedRomFsFileCount.toLocaleString()}/${status.managedRomFsFileCount.toLocaleString()}`
+    : 'Not checked';
+
+  return (
+    <>
+      <section
+        aria-labelledby="fps-patch-heading"
+        className="panel wide-panel swsh-editor-surface fps-patch-section"
+      >
+        <div className="panel-heading">
+          <Zap aria-hidden="true" size={18} />
+          <h2 id="fps-patch-heading">60FPS Patch</h2>
+        </div>
+
+        <div className="metric-grid">
+          <Metric label="Status" value={status ? formatFpsPatchStatus(status.status) : 'Not checked'} />
+          <Metric label="ExeFS sites" value={mainSiteValue} />
+          <Metric label="Move BSEQ files" value={romFsValue} />
+          <Metric
+            label="Conflicts"
+            value={status ? status.conflictingRomFsFileCount.toLocaleString() : 'Not checked'}
+          />
+        </div>
+
+        <div className="mod-merger-action-row">
+          <button
+            className="secondary-button"
+            disabled={isBusy}
+            onClick={onRefresh}
+            title="Refresh 60FPS Patch status from Base ExeFS, Base RomFS, and Output Root."
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={16} />
+            <span>{isLoading ? 'Refreshing' : 'Refresh'}</span>
+          </button>
+          <button
+            className="primary-button"
+            disabled={!canApply || isBusy}
+            onClick={onApply}
+            title="Install the SwSh 60FPS ExeFS patch and generated move-effect BSEQ overlay."
+            type="button"
+          >
+            <CheckCircle aria-hidden="true" size={16} />
+            <span>{isApplying ? 'Working' : 'Install'}</span>
+          </button>
+          <button
+            className="danger-button"
+            disabled={!canApply || isBusy}
+            onClick={onRestore}
+            title="Remove only KM-owned 60FPS Patch output while preserving other output files and non-overlapping exefs/main bytes."
+            type="button"
+          >
+            <RotateCcw aria-hidden="true" size={16} />
+            <span>{isApplying ? 'Working' : 'Uninstall'}</span>
+          </button>
+        </div>
+      </section>
+
+      {status && status.diagnostics.length > 0 ? (
+        <DiagnosticsSection diagnostics={status.diagnostics} scrollAfterEntries={5} />
+      ) : null}
+    </>
+  );
+}
+
+function formatFpsPatchStatus(status: string) {
+  switch (status) {
+    case 'installed':
+      return 'Installed';
+    case 'notInstalled':
+      return 'Not installed';
+    case 'partial':
+      return 'Partial';
+    case 'blocked':
+      return 'Blocked';
+    case 'unsupported':
+      return 'Unsupported';
+    default:
+      return status;
+  }
 }
 
 function SvModMergerSection({

@@ -64,7 +64,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     sectionIds: ['encounters', 'staticEncounters', 'giftPokemon', 'tradePokemon', 'raidBattles']
   },
   { id: 'economy', label: 'Economy', sectionIds: ['shops', 'raidRewards', 'raidBonusRewards'] },
-  { id: 'tools', label: 'Tools', sectionIds: ['randomizer', 'spreadsheetImport', 'modMerger'] },
+  { id: 'tools', label: 'Tools', sectionIds: ['fpsPatch', 'randomizer', 'modMerger', 'spreadsheetImport'] },
   { id: 'hooks', label: 'Hooks', sectionIds: ['bagHook'] },
   {
     id: 'advancedEditors',
@@ -120,6 +120,7 @@ const swordShieldWorkflowSectionIds = new Set<WorkbenchSection>([
   'npcItemGift',
   'spreadsheetImport',
   'modMerger',
+  'fpsPatch',
   'randomizer'
 ]);
 
@@ -132,7 +133,7 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'modMerger'
 ]);
 
-export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['randomizer']);
+export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch', 'randomizer']);
 
 export type LoadedWorkflowStateBySection = {
   bagHookWorkflow: BagHookWorkflow | null;

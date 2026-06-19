@@ -33,6 +33,34 @@ public sealed class SwShModMergerWorkflowServiceTests
     }
 
     [Fact]
+    public void StageWarnsWhenSelectedFileIsManagedByFpsPatch()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        const string relativePath = "romfs/bin/battle/waza/sequence/ew052.bseq";
+        temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ew052.bseq", [0, 0, 0]);
+        WriteFile(modDirectory1, relativePath, [0, 1, 0]);
+        WriteFile(modDirectory2, "romfs/bin/unselected.bin", [0]);
+
+        var stage = new SwShModMergerWorkflowService().Stage(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [relativePath],
+            [],
+            []);
+
+        var file = Assert.Single(stage.Preview.Files);
+        Assert.Equal("60FPS move-effect BSEQ diff", file.SupportKind);
+        var warning = Assert.Single(
+            stage.Diagnostics,
+            diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Warning
+                && diagnostic.Message.Contains("60FPS Patch", StringComparison.Ordinal));
+        Assert.Equal("romfs/bin/battle/waza/sequence", warning.File);
+    }
+
+    [Fact]
     public void ApplyWritesMergedNonOverlappingByteChangesAndLeavesUnrelatedOutput()
     {
         using var temp = TemporarySwShProject.Create();
