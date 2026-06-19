@@ -652,6 +652,18 @@ h2 {
   opacity: 0.64;
 }
 
+.primary-button[aria-busy='true'],
+.secondary-button[aria-busy='true'],
+.danger-button[aria-busy='true'],
+.purple-button[aria-busy='true'] {
+  cursor: progress;
+}
+
+.button-busy-icon {
+  flex: 0 0 auto;
+  animation: km-spin 900ms linear infinite;
+}
+
 .path-list {
   display: grid;
   gap: 10px;
@@ -5465,6 +5477,76 @@ button.sv-encounter-condition-row:hover {
   margin-top: 16px;
 }
 
+.workflow-loading-body {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 14px;
+  background: #0b1120;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.workflow-loading-status {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.workflow-loading-status p {
+  margin: 0;
+  color: var(--color-text-soft);
+  font-weight: 800;
+}
+
+.workflow-loading-spinner {
+  flex: 0 0 auto;
+  color: var(--color-gold);
+  animation: km-spin 1s linear infinite;
+}
+
+.workflow-loading-track,
+.work-progress-track {
+  width: 100%;
+  height: 14px;
+  overflow: hidden;
+  background: #070b12;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+}
+
+.workflow-loading-fill,
+.work-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-gold));
+}
+
+.workflow-loading-fill {
+  width: 38%;
+  animation: km-progress-sweep 1.35s ease-in-out infinite;
+}
+
+.workflow-loading-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-loading-steps li {
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--color-text-muted);
+  background: #101827;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -5505,50 +5587,112 @@ button.sv-encounter-condition-row:hover {
   justify-content: flex-end;
 }
 
-.save-progress-panel {
+.work-progress-panel {
   width: min(620px, 100%);
 }
 
-.save-progress-track {
-  width: 100%;
-  height: 14px;
-  overflow: hidden;
-  background: #070b12;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-}
-
-.save-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--color-accent), var(--color-gold));
+.work-progress-fill {
   transition: width 220ms ease;
 }
 
-.save-progress-detail {
+.work-progress-track-indeterminate .work-progress-fill {
+  width: 42%;
+  animation: km-progress-sweep 1.35s ease-in-out infinite;
+}
+
+.work-progress-detail {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
   margin: 0;
 }
 
-.save-progress-detail div {
+.work-progress-detail div {
   display: grid;
   gap: 2px;
   min-width: 0;
 }
 
-.save-progress-detail dt {
+.work-progress-detail dt {
   color: var(--color-text-muted);
   font-size: 11px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.save-progress-detail dd {
+.work-progress-detail dd {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
   font-weight: 800;
+}
+
+.work-progress-step-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.work-progress-step {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.work-progress-step span {
+  width: 9px;
+  height: 9px;
+  background: #31415f;
+  border-radius: 999px;
+}
+
+.work-progress-step strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.work-progress-step-complete {
+  color: var(--color-text-soft);
+}
+
+.work-progress-step-complete span {
+  background: var(--color-success);
+}
+
+.work-progress-step-active {
+  color: var(--color-text);
+}
+
+.work-progress-step-active span {
+  background: var(--color-gold);
+  box-shadow: 0 0 0 4px rgb(214 168 66 / 18%);
+}
+
+@keyframes km-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes km-progress-sweep {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  50% {
+    transform: translateX(85%);
+  }
+
+  100% {
+    transform: translateX(260%);
+  }
 }
 
 .change-plan-list {
