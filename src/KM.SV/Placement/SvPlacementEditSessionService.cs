@@ -15,6 +15,7 @@ namespace KM.SV.Placement;
 internal sealed class SvPlacementEditSessionService
 {
     private const string WorkflowName = "Placement";
+    private const int AlcremieSpeciesId = (int)global::pml.common.DevID.DEV_MAHOIPPU;
 
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SvWorkflowFileSource fileSource;
@@ -75,7 +76,7 @@ internal sealed class SvPlacementEditSessionService
             return new SvPlacementEditResult(workflow, currentSession, diagnostics);
         }
 
-        var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
+        var updatedSession = ReplacePendingPlacementEdit(currentSession, pendingEdit);
         return new SvPlacementEditResult(
             OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
             updatedSession,
@@ -89,6 +90,7 @@ internal sealed class SvPlacementEditSessionService
 
         var project = projectWorkspaceService.Open(paths);
         var workflow = placementWorkflowService.Load(project);
+        var projectedWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         SvEditSessionSupport.CanEdit(
@@ -100,7 +102,7 @@ internal sealed class SvPlacementEditSessionService
 
         foreach (var edit in session.PendingEdits)
         {
-            ValidatePendingEdit(workflow, edit, diagnostics);
+            ValidatePendingEdit(projectedWorkflow, edit, diagnostics);
         }
 
         if (session.PendingEdits.Count > 0 && diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error))
@@ -302,6 +304,9 @@ internal sealed class SvPlacementEditSessionService
         SvOutputMode outputMode)
     {
         var source = fileSource.Read(project, sourcePath);
+        var moveResolver = edits.Any(IsFixedMoveField)
+            ? SvDefaultMoveResolver.Load(project, fileSource, diagnostics)
+            : SvDefaultMoveResolver.Empty;
         var rows = ReadFixedRows(source.Bytes);
         foreach (var edit in edits)
         {
@@ -313,7 +318,7 @@ internal sealed class SvPlacementEditSessionService
                 continue;
             }
 
-            ApplyFixedEdit(rows[index], edit, diagnostics);
+            ApplyFixedEdit(rows[index], edit, moveResolver, diagnostics);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -335,6 +340,9 @@ internal sealed class SvPlacementEditSessionService
         SvOutputMode outputMode)
     {
         var source = fileSource.Read(project, sourcePath);
+        var moveResolver = edits.Any(IsCoinMoveField)
+            ? SvDefaultMoveResolver.Load(project, fileSource, diagnostics)
+            : SvDefaultMoveResolver.Empty;
         var rows = ReadCoinRows(source.Bytes);
         foreach (var edit in edits)
         {
@@ -346,7 +354,7 @@ internal sealed class SvPlacementEditSessionService
                 continue;
             }
 
-            ApplyCoinEdit(rows[index], edit, diagnostics);
+            ApplyCoinEdit(rows[index], edit, moveResolver, diagnostics);
         }
 
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -606,7 +614,7 @@ internal sealed class SvPlacementEditSessionService
                 .Select(placedObject => placedObject.ObjectId == edit.RecordId
                     ? placedObject with
                     {
-                        Fields = placedObject.Fields
+                        Fields = RefreshConditionalFieldStates(placedObject.Fields
                             .Select(field => field.Field == edit.Field
                                 ? field with
                                 {
@@ -614,11 +622,62 @@ internal sealed class SvPlacementEditSessionService
                                     DisplayValue = FormatDisplayValue(edit.NewValue ?? string.Empty, editableField),
                                 }
                                 : field)
-                            .ToArray(),
+                            .ToArray()),
                     }
                     : placedObject)
                 .ToArray(),
         };
+    }
+
+    private static EditSession ReplacePendingPlacementEdit(EditSession session, PendingEdit pendingEdit)
+    {
+        var updatedSession = SvEditSessionSupport.ReplacePendingEdit(session, pendingEdit);
+        if (!IsFixedSpeciesEditAwayFromAlcremie(pendingEdit))
+        {
+            return updatedSession;
+        }
+
+        return updatedSession with
+        {
+            PendingEdits = updatedSession.PendingEdits
+                .Where(edit => !IsSamePlacementField(edit, pendingEdit.RecordId, SvPlacementWorkflowService.FixedAlcremieSweetField))
+                .ToArray(),
+        };
+    }
+
+    private static bool IsFixedSpeciesEditAwayFromAlcremie(PendingEdit edit)
+    {
+        return string.Equals(edit.Domain, SvEditSessionSupport.PlacementDomain, StringComparison.Ordinal)
+            && string.Equals(edit.Field, SvPlacementWorkflowService.FixedSpeciesIdField, StringComparison.Ordinal)
+            && int.TryParse(edit.NewValue, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var speciesId)
+            && speciesId != AlcremieSpeciesId;
+    }
+
+    private static bool IsSamePlacementField(PendingEdit edit, string? recordId, string field)
+    {
+        return string.Equals(edit.Domain, SvEditSessionSupport.PlacementDomain, StringComparison.Ordinal)
+            && string.Equals(edit.RecordId, recordId, StringComparison.Ordinal)
+            && string.Equals(edit.Field, field, StringComparison.Ordinal);
+    }
+
+    private static IReadOnlyList<SvPlacementFieldValue> RefreshConditionalFieldStates(IReadOnlyList<SvPlacementFieldValue> fields)
+    {
+        if (fields.All(field => !string.Equals(field.Field, SvPlacementWorkflowService.FixedAlcremieSweetField, StringComparison.Ordinal)))
+        {
+            return fields;
+        }
+
+        var speciesField = fields.FirstOrDefault(field =>
+            string.Equals(field.Field, SvPlacementWorkflowService.FixedSpeciesIdField, StringComparison.Ordinal));
+        var isAlcremie = speciesField is not null
+            && int.TryParse(speciesField.Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var speciesId)
+            && speciesId == AlcremieSpeciesId;
+
+        return fields
+            .Select(field => string.Equals(field.Field, SvPlacementWorkflowService.FixedAlcremieSweetField, StringComparison.Ordinal)
+                ? field with { IsReadOnly = !isAlcremie }
+                : field)
+            .ToArray();
     }
 
     private static string FormatDisplayValue(string value, SvPlacementEditableField field)
@@ -631,9 +690,28 @@ internal sealed class SvPlacementEditSessionService
         return value;
     }
 
+    private static bool IsFixedMoveField(PendingEdit edit)
+    {
+        return edit.Field is
+            SvPlacementWorkflowService.FixedMove1Field or
+            SvPlacementWorkflowService.FixedMove2Field or
+            SvPlacementWorkflowService.FixedMove3Field or
+            SvPlacementWorkflowService.FixedMove4Field;
+    }
+
+    private static bool IsCoinMoveField(PendingEdit edit)
+    {
+        return edit.Field is
+            SvPlacementWorkflowService.CoinMove1Field or
+            SvPlacementWorkflowService.CoinMove2Field or
+            SvPlacementWorkflowService.CoinMove3Field or
+            SvPlacementWorkflowService.CoinMove4Field;
+    }
+
     private static void ApplyFixedEdit(
         FixedSymbolRow row,
         PendingEdit edit,
+        SvDefaultMoveResolver moveResolver,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!TryParseInt(edit.NewValue, out var integer) && !TryParseFloat(edit.NewValue, out _))
@@ -687,16 +765,16 @@ internal sealed class SvPlacementEditSessionService
                 row.PokeData.WazaType = integer;
                 break;
             case SvPlacementWorkflowService.FixedMove1Field:
-                row.PokeData.Waza1.MoveId = integer;
+                row.PokeData.SetMove(0, integer, moveResolver);
                 break;
             case SvPlacementWorkflowService.FixedMove2Field:
-                row.PokeData.Waza2.MoveId = integer;
+                row.PokeData.SetMove(1, integer, moveResolver);
                 break;
             case SvPlacementWorkflowService.FixedMove3Field:
-                row.PokeData.Waza3.MoveId = integer;
+                row.PokeData.SetMove(2, integer, moveResolver);
                 break;
             case SvPlacementWorkflowService.FixedMove4Field:
-                row.PokeData.Waza4.MoveId = integer;
+                row.PokeData.SetMove(3, integer, moveResolver);
                 break;
             case SvPlacementWorkflowService.FixedAbilityModeField:
                 row.PokeData.TokuseiIndex = integer;
@@ -764,6 +842,7 @@ internal sealed class SvPlacementEditSessionService
     private static void ApplyCoinEdit(
         CoinSymbolRow row,
         PendingEdit edit,
+        SvDefaultMoveResolver moveResolver,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!TryParseInt(edit.NewValue, out var integer))
@@ -823,16 +902,16 @@ internal sealed class SvPlacementEditSessionService
                 row.PokeData.WazaType = integer;
                 break;
             case SvPlacementWorkflowService.CoinMove1Field:
-                row.PokeData.Waza1.MoveId = integer;
+                row.PokeData.SetMove(0, integer, moveResolver);
                 break;
             case SvPlacementWorkflowService.CoinMove2Field:
-                row.PokeData.Waza2.MoveId = integer;
+                row.PokeData.SetMove(1, integer, moveResolver);
                 break;
             case SvPlacementWorkflowService.CoinMove3Field:
-                row.PokeData.Waza3.MoveId = integer;
+                row.PokeData.SetMove(2, integer, moveResolver);
                 break;
             case SvPlacementWorkflowService.CoinMove4Field:
-                row.PokeData.Waza4.MoveId = integer;
+                row.PokeData.SetMove(3, integer, moveResolver);
                 break;
             case SvPlacementWorkflowService.CoinTeraTypeField:
                 row.PokeData.GemType = integer;
@@ -1284,6 +1363,32 @@ internal sealed class SvPlacementEditSessionService
                 ScaleValue,
                 (global::GemType)GemType,
                 (global::MahoippuViewID)MahoippuViewId);
+        }
+
+        public void SetMove(int index, int moveId, SvDefaultMoveResolver moveResolver)
+        {
+            var moveRows = MoveRows();
+            if (WazaType == (int)global::WazaType.DEFAULT || moveRows.All(row => row.MoveId == 0))
+            {
+                var currentMoves = moveRows.Select(row => row.MoveId).ToArray();
+                var defaultMoves = currentMoves.Any(move => move != 0)
+                    ? currentMoves
+                    : moveResolver.Resolve(DevId, FormId, Level);
+
+                for (var defaultIndex = 0; defaultIndex < moveRows.Length; defaultIndex++)
+                {
+                    moveRows[defaultIndex].MoveId = defaultMoves.ElementAtOrDefault(defaultIndex);
+                }
+
+                WazaType = (int)global::WazaType.MANUAL;
+            }
+
+            moveRows[index].MoveId = moveId;
+        }
+
+        private WazaSetRow[] MoveRows()
+        {
+            return [Waza1, Waza2, Waza3, Waza4];
         }
     }
 

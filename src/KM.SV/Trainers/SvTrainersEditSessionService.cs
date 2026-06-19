@@ -173,7 +173,7 @@ internal sealed class SvTrainersEditSessionService
         {
             var project = projectWorkspaceService.Open(paths);
             var source = fileSource.Read(project, SvDataPaths.TrainerDataArray);
-            var moveResolver = SvTrainerMoveResolver.Load(project, fileSource, diagnostics);
+            var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
             var rows = ReadRows(source.Bytes);
             foreach (var edit in session.PendingEdits)
             {
@@ -521,7 +521,7 @@ internal sealed class SvTrainersEditSessionService
     private static void ApplyEdit(
         IReadOnlyList<TrainerRow> rows,
         PendingEdit edit,
-        SvTrainerMoveResolver moveResolver,
+        SvDefaultMoveResolver moveResolver,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (!string.Equals(edit.Domain, SvEditSessionSupport.TrainersDomain, StringComparison.Ordinal)
@@ -618,7 +618,7 @@ internal sealed class SvTrainersEditSessionService
         PokemonRow row,
         string? field,
         int value,
-        SvTrainerMoveResolver moveResolver)
+        SvDefaultMoveResolver moveResolver)
     {
         switch (field)
         {
@@ -979,7 +979,7 @@ internal sealed class SvTrainersEditSessionService
             return result;
         }
 
-        public void SetMove(int index, int moveId, SvTrainerMoveResolver moveResolver)
+        public void SetMove(int index, int moveId, SvDefaultMoveResolver moveResolver)
         {
             if (WazaType == global::WazaType.DEFAULT)
             {

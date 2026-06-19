@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text.Json;
 using Google.FlatBuffers;
 using KM.Api.Bridge;
@@ -394,6 +395,8 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal("Bulbasaur", fixedSymbol.ItemName);
         Assert.Equal("1 Bulbasaur", fixedSymbol.Fields!.Single(field => field.Field == "fixed.speciesId").DisplayValue);
         Assert.Equal("Not Shiny", fixedSymbol.Fields!.Single(field => field.Field == "fixed.shiny").DisplayValue);
+        Assert.Equal("33 Tackle", fixedSymbol.Fields!.Single(field => field.Field == "fixed.move1").DisplayValue);
+        Assert.True(fixedSymbol.Fields!.Single(field => field.Field == "fixed.alcremieSweet").IsReadOnly);
         var fixedAbility = fixedSymbol.Fields!.Single(field => field.Field == "fixed.abilityMode");
         Assert.Equal("Overgrow (Ability 1)", fixedAbility.DisplayValue);
         Assert.Contains(
@@ -407,11 +410,99 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal("Bulbasaur", coinSymbol.ItemName);
         Assert.Equal("1 Bulbasaur", coinSymbol.Fields!.Single(field => field.Field == "coin.speciesId").DisplayValue);
         Assert.Equal("Shiny", coinSymbol.Fields!.Single(field => field.Field == "coin.shiny").DisplayValue);
+        Assert.Equal("33 Tackle", coinSymbol.Fields!.Single(field => field.Field == "coin.move1").DisplayValue);
         var coinAbility = coinSymbol.Fields!.Single(field => field.Field == "coin.abilityMode");
         Assert.Equal("Chlorophyll (Hidden Ability)", coinAbility.DisplayValue);
         Assert.Contains(
             coinAbility.Options!,
             option => option.Value == (int)global::TokuseiType.SET_3 && option.Label == "4 Chlorophyll (Hidden Ability)");
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletPlacementAlcremieSweetOnlyEditsAlcremieFixedSymbols(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var placement = Dispatch<LoadPlacementWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(paths),
+            "request-sv-placement-alcremie-sweet-load");
+        AssertSuccess(placement);
+        var fixedSymbol = placement.Payload!.Workflow.Objects.Single(entry => entry.CategoryId == "fixedSymbols");
+        Assert.True(fixedSymbol.Fields!.Single(field => field.Field == "fixed.alcremieSweet").IsReadOnly);
+
+        var stagedSpecies = Dispatch<UpdatePlacementObjectFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePlacementObjectField,
+            new UpdatePlacementObjectFieldRequest(
+                paths,
+                Session: null,
+                fixedSymbol.ObjectId,
+                Field: "fixed.speciesId",
+                Value: ((int)global::pml.common.DevID.DEV_MAHOIPPU).ToString(CultureInfo.InvariantCulture)),
+            "request-sv-placement-alcremie-sweet-unlock");
+        AssertSuccess(stagedSpecies);
+        var stagedFixedSymbol = stagedSpecies.Payload!.Workflow.Objects.Single(entry => entry.ObjectId == fixedSymbol.ObjectId);
+        Assert.False(stagedFixedSymbol.Fields!.Single(field => field.Field == "fixed.alcremieSweet").IsReadOnly);
+
+        WriteSvOutput(
+            temp,
+            SvDataPaths.FixedSymbolTableArray,
+            CreateFixedSymbolTableArray(global::pml.common.DevID.DEV_MAHOIPPU));
+        var alcremiePlacement = Dispatch<LoadPlacementWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(paths),
+            "request-sv-placement-alcremie-sweet-alcremie-load");
+        AssertSuccess(alcremiePlacement);
+        var alcremieFixedSymbol = alcremiePlacement.Payload!.Workflow.Objects.Single(entry => entry.CategoryId == "fixedSymbols");
+        Assert.False(alcremieFixedSymbol.Fields!.Single(field => field.Field == "fixed.alcremieSweet").IsReadOnly);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletPlacementFixedSymbolsResolveDefaultMovesBeforeManualMoveEdits(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var personalBytes = CreatePersonalArrayWithLevelupMoves((33, 1), (45, 3), (36, 5), (349, 7));
+        var personalTable = global::personal_table.GetRootAspersonal_table(new ByteBuffer(personalBytes));
+        Assert.Equal(4, personalTable.Entry(1)!.Value.LevelupMovesLength);
+        WriteSvOutput(temp, SvDataPaths.PersonalArray, personalBytes);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var placement = Dispatch<LoadPlacementWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(paths),
+            "request-sv-placement-default-moves");
+        AssertSuccess(placement);
+        var fixedSymbol = placement.Payload!.Workflow.Objects.Single(entry => entry.CategoryId == "fixedSymbols");
+        Assert.Equal("33 Tackle", fixedSymbol.Fields!.Single(field => field.Field == "fixed.move1").DisplayValue);
+        Assert.Equal("45 Growl", fixedSymbol.Fields!.Single(field => field.Field == "fixed.move2").DisplayValue);
+        Assert.Equal("36 Take Down", fixedSymbol.Fields!.Single(field => field.Field == "fixed.move3").DisplayValue);
+        Assert.Equal("None", fixedSymbol.Fields!.Single(field => field.Field == "fixed.move4").DisplayValue);
+
+        var session = UpdatePlacement(dispatcher, paths, fixedSymbol.ObjectId, field: "fixed.move1", value: "349");
+        Apply(dispatcher, paths, session);
+
+        var output = FixedSymbolTableArray.GetRootAsFixedSymbolTableArray(new ByteBuffer(ReadSvOutput(temp, SvDataPaths.FixedSymbolTableArray)));
+        var outputPokeData = output.Values(0)!.Value.PokeDataSymbol!.Value;
+        Assert.Equal(global::WazaType.MANUAL, outputPokeData.WazaType);
+        Assert.Equal((global::pml.common.WazaID)349, outputPokeData.Waza1!.Value.WazaId);
+        Assert.Equal((global::pml.common.WazaID)45, outputPokeData.Waza2!.Value.WazaId);
+        Assert.Equal((global::pml.common.WazaID)36, outputPokeData.Waza3!.Value.WazaId);
+        Assert.Equal((global::pml.common.WazaID)0, outputPokeData.Waza4!.Value.WazaId);
     }
 
     [Theory]
@@ -663,6 +754,23 @@ public sealed class ScarletVioletBridgeTests
         return response.Payload!.Session;
     }
 
+    private static EditSessionDto UpdatePlacement(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        string objectId,
+        string field,
+        string value)
+    {
+        var response = Dispatch<UpdatePlacementObjectFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePlacementObjectField,
+            new UpdatePlacementObjectFieldRequest(paths, Session: null, objectId, field, value),
+            "request-sv-placement-update");
+
+        AssertSuccess(response);
+        return response.Payload!.Session;
+    }
+
     private static void Apply(ProjectBridgeDispatcher dispatcher, ProjectPathsDto paths, EditSessionDto session)
     {
         var plan = Dispatch<CreateChangePlanResponse>(
@@ -892,21 +1000,45 @@ public sealed class ScarletVioletBridgeTests
         return builder.SizedByteArray();
     }
 
+    private static byte[] CreatePersonalArrayWithLevelupMoves(params (ushort Move, ushort Level)[] levelupMoves)
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var empty = CreatePersonal(builder, species: 0, hp: 0, level: 0, evolutionLevel: 0);
+        var bulbasaur = CreatePersonal(
+            builder,
+            species: 1,
+            hp: 45,
+            level: 1,
+            evolutionLevel: 16,
+            levelupMoves);
+        var vector = global::personal_table.CreateEntryVector(builder, [empty, bulbasaur]);
+        var root = global::personal_table.Createpersonal_table(builder, vector);
+        global::personal_table.Finishpersonal_tableBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
     private static Offset<global::personal> CreatePersonal(
         FlatBufferBuilder builder,
         ushort species,
         byte hp,
         ushort level,
-        ushort evolutionLevel)
+        ushort evolutionLevel,
+        IReadOnlyList<(ushort Move, ushort Level)>? learnedMoves = null)
     {
         var tmMoves = global::personal.CreateTmMovesVector(builder, species == 0 ? [] : [(ushort)36]);
         var eggMoves = global::personal.CreateEggMovesVector(builder, []);
         var reminderMoves = global::personal.CreateReminderMovesVector(builder, []);
 
-        global::personal.StartLevelupMovesVector(builder, species == 0 ? 0 : 1);
-        if (species != 0)
+        IReadOnlyList<(ushort Move, ushort Level)> moves = species == 0
+            ? Array.Empty<(ushort Move, ushort Level)>()
+            : learnedMoves is { Count: > 0 }
+                ? learnedMoves
+                : [(Move: (ushort)33, Level: level)];
+        global::personal.StartLevelupMovesVector(builder, moves.Count);
+        for (var index = moves.Count - 1; index >= 0; index--)
         {
-            global::levelup_move_data.Createlevelup_move_data(builder, Move: 33, Level: level);
+            var learnedMove = moves[index];
+            global::levelup_move_data.Createlevelup_move_data(builder, Move: learnedMove.Move, Level: learnedMove.Level);
         }
 
         var levelupMoves = builder.EndVector();
@@ -993,13 +1125,13 @@ public sealed class ScarletVioletBridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreateFixedSymbolTableArray()
+    private static byte[] CreateFixedSymbolTableArray(global::pml.common.DevID species = global::pml.common.DevID.DEV_HUSIGIDANE)
     {
         var builder = new FlatBufferBuilder(2048);
         var tableKey = builder.CreateString("ai_area01_01");
         var pokeData = global::PokeDataSymbol.CreatePokeDataSymbol(
             builder,
-            devId: (global::pml.common.DevID)1,
+            devId: species,
             level: 5,
             rareType: global::RareType.NO_RARE,
             tokuseiIndex: global::TokuseiType.SET_1);

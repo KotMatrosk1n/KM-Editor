@@ -198,7 +198,7 @@ internal sealed class SvTrainersWorkflowService
         {
             labels = SvTextLabelLookup.Load(project, fileSource, diagnostics);
             var abilityResolver = SvTrainerAbilityResolver.Load(project, fileSource, labels, diagnostics);
-            var moveResolver = SvTrainerMoveResolver.Load(project, fileSource, diagnostics);
+            var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
             source = fileSource.Read(project, SvDataPaths.TrainerDataArray);
             trainers = LoadRecords(source, labels, abilityResolver, moveResolver).ToArray();
         }
@@ -231,7 +231,7 @@ internal sealed class SvTrainersWorkflowService
         SvWorkflowFile source,
         SvTextLabelLookup labels,
         SvTrainerAbilityResolver abilityResolver,
-        SvTrainerMoveResolver moveResolver)
+        SvDefaultMoveResolver moveResolver)
     {
         var table = global::trainer.TrdataMainArray.GetRootAsTrdataMainArray(new ByteBuffer(source.Bytes));
         for (var index = 0; index < table.ValuesLength; index++)
@@ -252,7 +252,7 @@ internal sealed class SvTrainersWorkflowService
         SvWorkflowFile source,
         SvTextLabelLookup labels,
         SvTrainerAbilityResolver abilityResolver,
-        SvTrainerMoveResolver moveResolver)
+        SvDefaultMoveResolver moveResolver)
     {
         var aiFlags = PackAiFlags(trainer);
         var team = ReadTeam(trainer, labels, abilityResolver, moveResolver).ToArray();
@@ -298,7 +298,7 @@ internal sealed class SvTrainersWorkflowService
         global::trainer.TrdataMain trainer,
         SvTextLabelLookup labels,
         SvTrainerAbilityResolver abilityResolver,
-        SvTrainerMoveResolver moveResolver)
+        SvDefaultMoveResolver moveResolver)
     {
         var slots = new[]
         {
@@ -327,7 +327,7 @@ internal sealed class SvTrainersWorkflowService
         global::PokeDataBattle pokemon,
         SvTextLabelLookup labels,
         SvTrainerAbilityResolver abilityResolver,
-        SvTrainerMoveResolver moveResolver)
+        SvDefaultMoveResolver moveResolver)
     {
         var speciesId = (int)pokemon.DevId;
         var itemId = (int)pokemon.Item;
@@ -381,7 +381,7 @@ internal sealed class SvTrainersWorkflowService
 
     private static IReadOnlyList<int> ReadMoves(
         global::PokeDataBattle pokemon,
-        SvTrainerMoveResolver moveResolver)
+        SvDefaultMoveResolver moveResolver)
     {
         var explicitMoves = new[]
         {
