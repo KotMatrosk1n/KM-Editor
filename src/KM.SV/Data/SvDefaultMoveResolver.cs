@@ -3,27 +3,26 @@
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
-using KM.SV.Data;
 using KM.SV.Workflows;
 using System.Globalization;
 
-namespace KM.SV.Trainers;
+namespace KM.SV.Data;
 
-internal sealed class SvTrainerMoveResolver
+internal sealed class SvDefaultMoveResolver
 {
     private static readonly IReadOnlyList<int> EmptyMoveSet = [0, 0, 0, 0];
 
     private readonly IReadOnlyDictionary<string, IReadOnlyList<LevelupMove>> movesBySpeciesForm;
 
-    private SvTrainerMoveResolver(IReadOnlyDictionary<string, IReadOnlyList<LevelupMove>> movesBySpeciesForm)
+    private SvDefaultMoveResolver(IReadOnlyDictionary<string, IReadOnlyList<LevelupMove>> movesBySpeciesForm)
     {
         this.movesBySpeciesForm = movesBySpeciesForm;
     }
 
-    public static SvTrainerMoveResolver Empty { get; } = new(
+    public static SvDefaultMoveResolver Empty { get; } = new(
         new Dictionary<string, IReadOnlyList<LevelupMove>>(StringComparer.Ordinal));
 
-    public static SvTrainerMoveResolver Load(
+    public static SvDefaultMoveResolver Load(
         OpenedProject project,
         SvWorkflowFileSource fileSource,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -45,12 +44,12 @@ internal sealed class SvTrainerMoveResolver
                 lookup.TryAdd(CreateKey(species.Species, species.Form), ReadLevelupMoves(row.Value));
             }
 
-            return new SvTrainerMoveResolver(lookup);
+            return new SvDefaultMoveResolver(lookup);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
         {
             diagnostics.Add(SvWorkflowSupport.Warning(
-                $"Trainer automatic moves could not be resolved from Pokemon Data: {exception.Message}",
+                $"Automatic Pokemon moves could not be resolved from Pokemon Data: {exception.Message}",
                 $"romfs/{SvDataPaths.PersonalArray}"));
             return Empty;
         }

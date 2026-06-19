@@ -14,6 +14,7 @@ internal sealed class SvPlacementWorkflowService
 {
     private const string WorkflowLabel = "Placement";
     private const string WorkflowDescription = "Edit Scarlet/Violet placement tables and inspect scene-only placement fields.";
+    private const int AlcremieSpeciesId = (int)global::pml.common.DevID.DEV_MAHOIPPU;
 
     public const string FixedSymbolsCategory = "fixedSymbols";
     public const string CoinSymbolsCategory = "coinSymbols";
@@ -159,9 +160,10 @@ internal sealed class SvPlacementWorkflowService
         }
 
         var abilityResolver = SvPlacementAbilityResolver.Load(project, fileSource, labels, diagnostics);
+        var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
 
-        TryLoadFixedSymbols(project, labels, abilityResolver, objects, sourceFiles, diagnostics);
-        TryLoadCoinSymbols(project, labels, abilityResolver, objects, sourceFiles, diagnostics);
+        TryLoadFixedSymbols(project, labels, abilityResolver, moveResolver, objects, sourceFiles, diagnostics);
+        TryLoadCoinSymbols(project, labels, abilityResolver, moveResolver, objects, sourceFiles, diagnostics);
         TryLoadHiddenItems(project, labels, objects, sourceFiles, diagnostics);
         TryLoadRummaging(project, labels, objects, sourceFiles, diagnostics);
 
@@ -193,6 +195,7 @@ internal sealed class SvPlacementWorkflowService
         OpenedProject project,
         SvTextLabelLookup labels,
         SvPlacementAbilityResolver abilityResolver,
+        SvDefaultMoveResolver moveResolver,
         ICollection<SvPlacedObjectRecord> objects,
         ISet<string> sourceFiles,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -210,7 +213,7 @@ internal sealed class SvPlacementWorkflowService
                     continue;
                 }
 
-                objects.Add(ToFixedSymbolObject(index, row.Value, labels, abilityResolver, source));
+                objects.Add(ToFixedSymbolObject(index, row.Value, labels, abilityResolver, moveResolver, source));
             }
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
@@ -225,6 +228,7 @@ internal sealed class SvPlacementWorkflowService
         OpenedProject project,
         SvTextLabelLookup labels,
         SvPlacementAbilityResolver abilityResolver,
+        SvDefaultMoveResolver moveResolver,
         ICollection<SvPlacedObjectRecord> objects,
         ISet<string> sourceFiles,
         ICollection<ValidationDiagnostic> diagnostics)
@@ -242,7 +246,7 @@ internal sealed class SvPlacementWorkflowService
                     continue;
                 }
 
-                objects.Add(ToCoinSymbolObject(index, row.Value, labels, abilityResolver, source));
+                objects.Add(ToCoinSymbolObject(index, row.Value, labels, abilityResolver, moveResolver, source));
             }
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
@@ -323,6 +327,7 @@ internal sealed class SvPlacementWorkflowService
         FixedSymbolTable row,
         SvTextLabelLookup labels,
         SvPlacementAbilityResolver abilityResolver,
+        SvDefaultMoveResolver moveResolver,
         SvWorkflowFile source)
     {
         var pokeData = row.PokeDataSymbol;
@@ -347,7 +352,7 @@ internal sealed class SvPlacementWorkflowService
 
         if (pokeData is not null)
         {
-            AddPokeDataSymbolFields(fields, pokeData.Value, labels, abilityResolver);
+            AddPokeDataSymbolFields(fields, pokeData.Value, labels, abilityResolver, moveResolver);
         }
 
         if (row.PokeAI is { } ai)
@@ -390,6 +395,7 @@ internal sealed class SvPlacementWorkflowService
         EventBattlePokemon row,
         SvTextLabelLookup labels,
         SvPlacementAbilityResolver abilityResolver,
+        SvDefaultMoveResolver moveResolver,
         SvWorkflowFile source)
     {
         var pokeData = row.PokeData;
@@ -413,7 +419,7 @@ internal sealed class SvPlacementWorkflowService
 
         if (pokeData is not null)
         {
-            AddEventBattlePokemonFields(fields, pokeData.Value, labels, abilityResolver);
+            AddEventBattlePokemonFields(fields, pokeData.Value, labels, abilityResolver, moveResolver);
         }
 
         return new SvPlacedObjectRecord(
@@ -560,7 +566,8 @@ internal sealed class SvPlacementWorkflowService
         ICollection<SvPlacementFieldValue> fields,
         global::PokeDataSymbol data,
         SvTextLabelLookup labels,
-        SvPlacementAbilityResolver abilityResolver)
+        SvPlacementAbilityResolver abilityResolver,
+        SvDefaultMoveResolver moveResolver)
     {
         var speciesId = (int)data.DevId;
         var abilities = abilityResolver.Resolve(speciesId, data.FormId);
@@ -572,11 +579,12 @@ internal sealed class SvPlacementWorkflowService
         fields.Add(Field(FixedIvModeField, (int)data.TalentType, SvLabels.EnumName(data.TalentType)));
         AddParamSetFields(fields, data.TalentValue, FixedIvHpField, FixedIvAttackField, FixedIvDefenseField, FixedIvSpecialAttackField, FixedIvSpecialDefenseField, FixedIvSpeedField);
         fields.Add(Field(FixedGuaranteedPerfectIvsField, data.TalentVNum));
+        var moveIds = ResolveMoveIds(speciesId, data.FormId, data.Level, moveResolver, data.Waza1, data.Waza2, data.Waza3, data.Waza4);
         fields.Add(Field(FixedMoveModeField, (int)data.WazaType, SvLabels.EnumName(data.WazaType)));
-        fields.Add(Field(FixedMove1Field, WazaId(data.Waza1), MoveLabel(data.Waza1, labels)));
-        fields.Add(Field(FixedMove2Field, WazaId(data.Waza2), MoveLabel(data.Waza2, labels)));
-        fields.Add(Field(FixedMove3Field, WazaId(data.Waza3), MoveLabel(data.Waza3, labels)));
-        fields.Add(Field(FixedMove4Field, WazaId(data.Waza4), MoveLabel(data.Waza4, labels)));
+        fields.Add(Field(FixedMove1Field, moveIds[0], MoveLabel(moveIds[0], labels)));
+        fields.Add(Field(FixedMove2Field, moveIds[1], MoveLabel(moveIds[1], labels)));
+        fields.Add(Field(FixedMove3Field, moveIds[2], MoveLabel(moveIds[2], labels)));
+        fields.Add(Field(FixedMove4Field, moveIds[3], MoveLabel(moveIds[3], labels)));
         fields.Add(Field(
             FixedAbilityModeField,
             (int)data.TokuseiIndex,
@@ -585,14 +593,19 @@ internal sealed class SvPlacementWorkflowService
         fields.Add(Field(FixedScaleModeField, (int)data.ScaleType, SvLabels.EnumName(data.ScaleType)));
         fields.Add(Field(FixedScaleValueField, data.ScaleValue));
         fields.Add(Field(FixedTeraTypeField, (int)data.GemType, SvLabels.EnumName(data.GemType)));
-        fields.Add(Field(FixedAlcremieSweetField, (int)data.MahoippuViewId, SvLabels.EnumName(data.MahoippuViewId)));
+        fields.Add(Field(
+            FixedAlcremieSweetField,
+            (int)data.MahoippuViewId,
+            SvLabels.EnumName(data.MahoippuViewId),
+            isReadOnly: speciesId != AlcremieSpeciesId));
     }
 
     private static void AddEventBattlePokemonFields(
         ICollection<SvPlacementFieldValue> fields,
         global::PokeDataEventBattle data,
         SvTextLabelLookup labels,
-        SvPlacementAbilityResolver abilityResolver)
+        SvPlacementAbilityResolver abilityResolver,
+        SvDefaultMoveResolver moveResolver)
     {
         var speciesId = (int)data.DevId;
         var abilities = abilityResolver.Resolve(speciesId, data.FormId);
@@ -613,11 +626,12 @@ internal sealed class SvPlacementWorkflowService
             (int)data.Tokusei,
             FormatAbilityMode(data.Tokusei, abilities),
             options: CreateAbilityModeOptions(abilities)));
+        var moveIds = ResolveMoveIds(speciesId, data.FormId, data.Level, moveResolver, data.Waza1, data.Waza2, data.Waza3, data.Waza4);
         fields.Add(Field(CoinMoveModeField, (int)data.WazaType, SvLabels.EnumName(data.WazaType)));
-        fields.Add(Field(CoinMove1Field, WazaId(data.Waza1), MoveLabel(data.Waza1, labels)));
-        fields.Add(Field(CoinMove2Field, WazaId(data.Waza2), MoveLabel(data.Waza2, labels)));
-        fields.Add(Field(CoinMove3Field, WazaId(data.Waza3), MoveLabel(data.Waza3, labels)));
-        fields.Add(Field(CoinMove4Field, WazaId(data.Waza4), MoveLabel(data.Waza4, labels)));
+        fields.Add(Field(CoinMove1Field, moveIds[0], MoveLabel(moveIds[0], labels)));
+        fields.Add(Field(CoinMove2Field, moveIds[1], MoveLabel(moveIds[1], labels)));
+        fields.Add(Field(CoinMove3Field, moveIds[2], MoveLabel(moveIds[2], labels)));
+        fields.Add(Field(CoinMove4Field, moveIds[3], MoveLabel(moveIds[3], labels)));
         fields.Add(Field(CoinTeraTypeField, (int)data.GemType, SvLabels.EnumName(data.GemType)));
         fields.Add(Field(CoinScaleModeField, (int)data.ScaleType, SvLabels.EnumName(data.ScaleType)));
         fields.Add(Field(CoinScaleValueField, data.ScaleValue));
@@ -706,7 +720,14 @@ internal sealed class SvPlacementWorkflowService
             Integer(FixedScaleModeField, "Scale mode", "Fixed Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::SizeType>()),
             Integer(FixedScaleValueField, "Scale value", "Fixed Symbol Pokemon", short.MinValue, short.MaxValue),
             Integer(FixedTeraTypeField, "Tera type", "Fixed Symbol Pokemon", int.MinValue, int.MaxValue, CreateEnumOptions<global::GemType>()),
-            Integer(FixedAlcremieSweetField, "Alcremie sweet", "Fixed Symbol Pokemon", byte.MinValue, byte.MaxValue, CreateEnumOptions<global::MahoippuViewID>()),
+            Integer(
+                FixedAlcremieSweetField,
+                "Alcremie sweet",
+                "Fixed Symbol Pokemon",
+                byte.MinValue,
+                byte.MaxValue,
+                CreateEnumOptions<global::MahoippuViewID>(),
+                "Only editable when the fixed symbol species is Alcremie."),
             Integer(FixedAiActionField, "AI action", "Fixed Symbol AI", int.MinValue, int.MaxValue),
             Number(FixedAiHungerField, "Hunger", "Fixed Symbol AI", float.MinValue, float.MaxValue),
             Number(FixedAiFatigueField, "Fatigue", "Fixed Symbol AI", float.MinValue, float.MaxValue),
@@ -780,7 +801,8 @@ internal sealed class SvPlacementWorkflowService
         string group,
         double minimum,
         double maximum,
-        IReadOnlyList<SvPlacementEditableFieldOption>? options = null)
+        IReadOnlyList<SvPlacementEditableFieldOption>? options = null,
+        string description = "")
     {
         return new SvPlacementEditableField(
             field,
@@ -790,7 +812,7 @@ internal sealed class SvPlacementWorkflowService
             minimum,
             maximum,
             false,
-            string.Empty,
+            description,
             options ?? Array.Empty<SvPlacementEditableFieldOption>());
     }
 
@@ -956,9 +978,21 @@ internal sealed class SvPlacementWorkflowService
         return value ? "1" : "0";
     }
 
-    private static string MoveLabel(global::WazaSet? move, SvTextLabelLookup labels)
+    private static IReadOnlyList<int> ResolveMoveIds(
+        int speciesId,
+        int form,
+        int level,
+        SvDefaultMoveResolver moveResolver,
+        params global::WazaSet?[] moves)
     {
-        var moveId = WazaId(move);
+        var moveIds = moves.Select(WazaId).ToArray();
+        return moveIds.All(move => move == 0)
+            ? moveResolver.Resolve(speciesId, form, level)
+            : moveIds;
+    }
+
+    private static string MoveLabel(int moveId, SvTextLabelLookup labels)
+    {
         return moveId == 0 ? "None" : $"{moveId} {labels.Move(moveId)}";
     }
 

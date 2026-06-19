@@ -5181,8 +5181,9 @@ button.sv-encounter-condition-row:hover {
   grid-template-rows: 34px auto auto auto;
   justify-items: start;
   gap: 2px;
-  flex: 0 0 168px;
-  min-height: 108px;
+  align-content: start;
+  flex: 0 0 184px;
+  min-height: 126px;
   padding: 8px 10px;
   text-align: left;
 }
@@ -5192,17 +5193,21 @@ button.sv-encounter-condition-row:hover {
 .slot-tab-button small {
   min-width: 0;
   width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.slot-tab-button span {
+  line-height: 1.25;
 }
 
 .slot-tab-button small {
   color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 800;
-  overflow-wrap: anywhere;
-  white-space: normal;
+  line-height: 1.25;
 }
 
 .read-only-slot-grid {
