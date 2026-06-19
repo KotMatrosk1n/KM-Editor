@@ -29168,9 +29168,9 @@ function PokemonSummaryCard({
   return (
     <div className="pokemon-summary-card">
       <PokemonSprite className="pokemon-summary-sprite" name={name} />
-      <div>
-        <strong>{title}</strong>
-        <span>{subtitle}</span>
+      <div className="pokemon-summary-main">
+        <strong className="pokemon-summary-title">{title}</strong>
+        <span className="pokemon-summary-subtitle">{subtitle}</span>
       </div>
     </div>
   );

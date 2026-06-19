@@ -2274,6 +2274,19 @@ h2 {
   margin-top: 0;
 }
 
+.trainer-inspector .pokemon-summary-card > .pokemon-summary-main {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 4px;
+  row-gap: 2px;
+  min-width: 0;
+}
+
+.trainer-inspector .pokemon-summary-title,
+.trainer-inspector .pokemon-summary-subtitle {
+  min-width: 0;
+}
+
 .trainer-edit-form {
   display: grid;
   gap: 14px;
