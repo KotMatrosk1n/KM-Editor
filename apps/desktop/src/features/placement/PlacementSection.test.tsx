@@ -43,7 +43,9 @@ describe('PlacementSection', () => {
     const user = userEvent.setup();
     const loadPlacementWorkflow = vi.fn(async () => ({ workflow: createSvPlacementWorkflow() }));
 
-    render(<App bridge={createMockProjectBridge({ loadPlacementWorkflow }, true)} />);
+    const { container } = render(
+      <App bridge={createMockProjectBridge({ loadPlacementWorkflow }, true)} />
+    );
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
@@ -51,6 +53,9 @@ describe('PlacementSection', () => {
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     await user.click(await screen.findByRole('button', { name: 'Placement' }));
+
+    expect(container.querySelector('.sv-placement-section')).not.toBeNull();
+    expect(container.querySelector('.swsh-placement-section')).toBeNull();
 
     const table = await screen.findByRole('table', { name: 'Placed objects' });
     expect(within(table).queryByRole('columnheader', { name: 'Category' })).not.toBeInTheDocument();
@@ -90,6 +95,40 @@ describe('PlacementSection', () => {
     ]);
     expect(getPlacementCategoryId(workflow.objects[0]!)).toBe('visibleItems');
     expect(getPlacementCategoryId(workflow.objects[1]!)).toBe('hiddenItems');
+  });
+
+  it('does not render S/V placement category tabs for SwSh projects', async () => {
+    const user = userEvent.setup();
+    const loadPlacementWorkflow = vi.fn(async () => ({
+      workflow: createSwShPlacementWorkflowWithStaleStructuredCategories()
+    }));
+
+    useWorkbenchStore.setState((state) => ({
+      draftPaths: {
+        ...state.draftPaths,
+        selectedGame: 'sword'
+      }
+    }));
+
+    const { container } = render(
+      <App bridge={createMockProjectBridge({ loadPlacementWorkflow }, true)} />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(await screen.findByRole('button', { name: 'Placement' }));
+
+    expect(container.querySelector('.swsh-placement-section')).not.toBeNull();
+    expect(container.querySelector('.sv-placement-section')).toBeNull();
+
+    const table = await screen.findByRole('table', { name: 'Placed objects' });
+    expect(screen.queryByRole('tab', { name: /Visible Items/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Hidden Items/ })).not.toBeInTheDocument();
+    expect(within(table).getByText('Field item: Potion')).toBeInTheDocument();
+    expect(within(table).getByText('Hidden item: Great Ball')).toBeInTheDocument();
   });
 });
 

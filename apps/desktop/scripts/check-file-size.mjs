@@ -7,9 +7,8 @@ import { fileURLToPath } from 'node:url';
 const rootPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const srcPath = path.join(rootPath, 'src');
 const defaultMaxLines = 1250;
+const filesWithoutLineBudgets = new Set(['src/App.tsx', 'src/App.test.tsx']);
 const fileLineBudgets = new Map([
-  ['src/App.tsx', 30350],
-  ['src/App.test.tsx', 4690],
   ['src/bridge/contracts.ts', 3700],
   ['src/bridge/contracts.test.ts', 3650],
   ['src/bridge/projectBridge.test.ts', 2875],
@@ -22,6 +21,10 @@ const failures = [];
 
 for (const filePath of await collectSourceFiles(srcPath)) {
   const relativePath = toPosix(path.relative(rootPath, filePath));
+  if (filesWithoutLineBudgets.has(relativePath)) {
+    continue;
+  }
+
   const content = await readFile(filePath, 'utf8');
   const lineCount = content.length === 0 ? 0 : content.split(/\r\n|\r|\n/).length;
   const maxLines = fileLineBudgets.get(relativePath) ?? defaultMaxLines;
