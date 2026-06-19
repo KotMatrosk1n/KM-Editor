@@ -36,6 +36,18 @@ public sealed class SwShFpsBseqPatcherTests
         Assert.Equal(1, stats.FieldsChanged);
     }
 
+    [Fact]
+    public void ConvertOpeningDemoD010ScalesTimelineAndZerosNooneLifetime()
+    {
+        var data = CreateOpeningDemoBseq();
+
+        var patched = SwShFpsBseqPatcher.ConvertOpeningDemoD010(data, out _);
+
+        Assert.Equal(10684u, ReadU32(patched, 0x0C));
+        Assert.Equal(0u, ReadU32(patched, 0x24 + 21 * 20));
+        Assert.Equal(0u, ReadU32(patched, 0x24 + 21 * 20 + 4));
+    }
+
     private static byte[] CreateBseq(uint frameCount, uint startFrame, uint endFrame)
     {
         const ulong commandHash = 0x1122334455667788;
@@ -50,6 +62,29 @@ public sealed class SwShFpsBseqPatcherTests
         WriteU32(data, 0x28, endFrame);
         WriteU64(data, 0x30, commandHash);
         WriteU32(data, 0x38, 0xFFFFFFFF);
+        return data;
+    }
+
+    private static byte[] CreateOpeningDemoBseq()
+    {
+        const ulong commandHash = 0x1122334455667788;
+        const int commandCount = 22;
+        var data = new byte[0x24 + commandCount * 20 + 20];
+        Encoding.ASCII.GetBytes("SESD").CopyTo(data, 0);
+        WriteU32(data, 0x0C, 5342);
+        WriteU32(data, 0x10, 0);
+        WriteU32(data, 0x14, 1);
+        WriteU64(data, 0x18, commandHash);
+        WriteU32(data, 0x20, 0);
+        for (var index = 0; index < commandCount; index++)
+        {
+            var offset = 0x24 + index * 20;
+            WriteU32(data, offset, 0);
+            WriteU32(data, offset + 4, index == 21 ? 173u : 1u);
+            WriteU64(data, offset + 12, commandHash);
+        }
+
+        WriteU32(data, 0x24 + commandCount * 20, 0xFFFFFFFF);
         return data;
     }
 

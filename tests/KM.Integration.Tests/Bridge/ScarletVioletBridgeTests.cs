@@ -161,6 +161,53 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletNormalEditorsCanShareOnePendingEditSession(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var session = UpdatePokemonField(dispatcher, paths, personalId: 1, field: "hp", value: "47");
+        session = UpdateItem(dispatcher, paths, session, itemId: 1, field: "buyPrice", value: "999");
+
+        Assert.Collection(
+            session.PendingEdits,
+            edit => Assert.Equal("workflow.pokemon", edit.Domain),
+            edit => Assert.Equal("workflow.items", edit.Domain));
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, session),
+            "request-sv-normal-mixed-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == $"romfs/{SvDataPaths.PersonalArray}");
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == $"romfs/{SvDataPaths.ItemDataArray}");
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == "romfs/arc/data.trpfd");
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, session, plan.Payload.ChangePlan),
+            "request-sv-normal-mixed-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains($"romfs/{SvDataPaths.PersonalArray}", apply.Payload.ApplyResult.WrittenFiles);
+        Assert.Contains($"romfs/{SvDataPaths.ItemDataArray}", apply.Payload.ApplyResult.WrittenFiles);
+        Assert.Contains("romfs/arc/data.trpfd", apply.Payload.ApplyResult.WrittenFiles);
+
+        Assert.Equal(47, ReadPersonal(temp, personalId: 1).BaseStats!.Value.Hp);
+        Assert.Equal(999, ReadItemPrice(temp, itemId: 1));
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletProjectExposesBasicEditorWorkflows(
         ProjectGameDto game,
         ulong titleId)
@@ -620,6 +667,45 @@ public sealed class ScarletVioletBridgeTests
         Assert.DoesNotContain(encounters.Payload.Workflow.Tables, table => table.GameVersion == hiddenVersion);
     }
 
+    [Fact]
+    public void ScarletVioletWildEncountersKeepFormLabelsVisible()
+    {
+        using var temp = CreateScarletVioletProject(ScarletTitleId);
+        WriteScarletFixtures(temp);
+        WriteSvOutput(temp, SvDataPaths.WildEncounterArray, CreateEncounterArray(form: 1));
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Scarlet };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var encounters = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-sv-encounter-form-labels");
+
+        AssertSuccess(encounters);
+        Assert.True(
+            encounters.Payload!.Workflow.Tables.Count > 0,
+            string.Join("; ", encounters.Payload.Workflow.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        var table = Assert.Single(encounters.Payload.Workflow.Tables);
+        Assert.Equal("Bulbasaur (Form 1)", table.Slots[0].Species);
+
+        var response = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(
+                paths,
+                Session: null,
+                table.TableId,
+                0,
+                "form",
+                "0"),
+            "request-sv-encounter-form-overlay");
+
+        AssertSuccess(response);
+        var updatedTable = Assert.Single(response.Payload!.Workflow.Tables);
+        Assert.Equal("Bulbasaur", updatedTable.Slots[0].Species);
+    }
+
     private static TemporaryBridgeProject CreateScarletVioletProject(ulong titleId)
     {
         var temp = TemporaryBridgeProject.Create();
@@ -676,14 +762,26 @@ public sealed class ScarletVioletBridgeTests
         string field,
         string value)
     {
+        return UpdateItem(dispatcher, paths, session: null, itemId, field, value);
+    }
+
+    private static EditSessionDto UpdateItem(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        EditSessionDto? session,
+        int itemId,
+        string field,
+        string value)
+    {
         var response = Dispatch<UpdateItemFieldResponse>(
             dispatcher,
             KmCommandNames.UpdateItemField,
-            new UpdateItemFieldRequest(paths, Session: null, itemId, field, value),
+            new UpdateItemFieldRequest(paths, session, itemId, field, value),
             "request-sv-item-update");
 
         AssertSuccess(response);
-        Assert.Equal(value, Assert.Single(response.Payload!.Session.PendingEdits).NewValue);
+        Assert.Contains(response.Payload!.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.items" && edit.NewValue == value);
         return response.Payload.Session;
     }
 
@@ -1269,10 +1367,19 @@ public sealed class ScarletVioletBridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreateEncounterArray()
+    private static byte[] CreateEncounterArray(sbyte form = 0)
     {
         var builder = new FlatBufferBuilder(2048);
-        var encounter = CreateEncounter(builder, areaText: "4,5", species: 1, minLevel: 5, maxLevel: 12, lotValue: 40, scarlet: true, violet: true);
+        var encounter = CreateEncounter(
+            builder,
+            areaText: "4,5",
+            species: 1,
+            form,
+            minLevel: 5,
+            maxLevel: 12,
+            lotValue: 40,
+            scarlet: true,
+            violet: true);
 
         var vector = global::EncountPokeDataArray.CreateValuesVector(builder, [encounter]);
         var root = global::EncountPokeDataArray.CreateEncountPokeDataArray(builder, vector);
@@ -1366,9 +1473,9 @@ public sealed class ScarletVioletBridgeTests
     private static byte[] CreateVersionedEncounterArray()
     {
         var builder = new FlatBufferBuilder(2048);
-        var both = CreateEncounter(builder, areaText: "4,5", species: 1, minLevel: 5, maxLevel: 12, lotValue: 40, scarlet: true, violet: true);
-        var scarlet = CreateEncounter(builder, areaText: "4,5", species: 1, minLevel: 6, maxLevel: 13, lotValue: 30, scarlet: true, violet: false);
-        var violet = CreateEncounter(builder, areaText: "4,5", species: 1, minLevel: 7, maxLevel: 14, lotValue: 20, scarlet: false, violet: true);
+        var both = CreateEncounter(builder, areaText: "4,5", species: 1, form: 0, minLevel: 5, maxLevel: 12, lotValue: 40, scarlet: true, violet: true);
+        var scarlet = CreateEncounter(builder, areaText: "4,5", species: 1, form: 0, minLevel: 6, maxLevel: 13, lotValue: 30, scarlet: true, violet: false);
+        var violet = CreateEncounter(builder, areaText: "4,5", species: 1, form: 0, minLevel: 7, maxLevel: 14, lotValue: 20, scarlet: false, violet: true);
 
         var vector = global::EncountPokeDataArray.CreateValuesVector(builder, [both, scarlet, violet]);
         var root = global::EncountPokeDataArray.CreateEncountPokeDataArray(builder, vector);
@@ -1380,6 +1487,7 @@ public sealed class ScarletVioletBridgeTests
         FlatBufferBuilder builder,
         string areaText,
         ushort species,
+        sbyte form,
         short minLevel,
         short maxLevel,
         short lotValue,
@@ -1398,6 +1506,7 @@ public sealed class ScarletVioletBridgeTests
         global::EncountPokeData.AddMaxlevel(builder, maxLevel);
         global::EncountPokeData.AddMinlevel(builder, minLevel);
         global::EncountPokeData.AddDevid(builder, (global::pml.common.DevID)species);
+        global::EncountPokeData.AddFormno(builder, form);
         global::EncountPokeData.AddEnabletable(builder, global::EnableTable.CreateEnableTable(builder, true, false, false, false, false));
         global::EncountPokeData.AddBringItem(builder, global::BringItem.CreateBringItem(builder, (global::ItemID)0, BringRate: 0));
         return global::EncountPokeData.EndEncountPokeData(builder);

@@ -136,6 +136,51 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
 
 export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch', 'randomizer']);
 
+export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
+  'pokemon',
+  'trainers',
+  'moves',
+  'items',
+  'placement',
+  'behavior',
+  'encounters',
+  'staticEncounters',
+  'giftPokemon',
+  'tradePokemon',
+  'rentalPokemon',
+  'raidBattles',
+  'shops',
+  'raidRewards',
+  'raidBonusRewards',
+  'text'
+]);
+
+export const sharedStagedEditorDomains = new Set([
+  'workflow.pokemon',
+  'workflow.trainers',
+  'workflow.moves',
+  'workflow.items',
+  'workflow.placement',
+  'workflow.behavior',
+  'workflow.encounters',
+  'workflow.staticEncounters',
+  'workflow.giftPokemon',
+  'workflow.tradePokemon',
+  'workflow.rentalPokemon',
+  'workflow.raidBattles',
+  'workflow.shops',
+  'workflow.raidRewards',
+  'workflow.raidBonusRewards',
+  'workflow.text'
+]);
+
+export function isSharedStagedEditorSection(
+  section: WorkbenchSection,
+  game: ProjectGame | null | undefined
+) {
+  return sharedStagedEditorSectionIds.has(section) && isWorkflowSupportedForGame(section, game);
+}
+
 export type LoadedWorkflowStateBySection = {
   bagHookWorkflow: BagHookWorkflow | null;
   behaviorWorkflow: BehaviorWorkflow | null;

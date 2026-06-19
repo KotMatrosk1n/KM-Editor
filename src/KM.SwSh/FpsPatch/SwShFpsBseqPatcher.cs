@@ -13,8 +13,12 @@ internal sealed record SwShFpsBseqConversionStats(
 internal static class SwShFpsBseqPatcher
 {
     public const double MoveEffectTimelineScale = 2.25d;
+    public const double OpeningDemoTimelineScale = 2.0d;
+    public const double DynamaxBallTimelineScale = 2.0d;
 
     private const uint CommandTerminator = 0xFFFFFFFF;
+    private const int OpeningDemoNooneLifetimeCommandIndex = 21;
+    private const uint OpeningDemoNooneScaledEndFrame = 346;
     private static readonly byte[] Magic = Encoding.ASCII.GetBytes("SESD");
 
     public static byte[] Convert(byte[] source, double scale, out SwShFpsBseqConversionStats stats)
@@ -41,6 +45,26 @@ internal static class SwShFpsBseqPatcher
         }
 
         stats = new SwShFpsBseqConversionStats(layout.Commands.Count, fieldsChanged);
+        return data;
+    }
+
+    public static byte[] ConvertOpeningDemoD010(byte[] source, out SwShFpsBseqConversionStats stats)
+    {
+        var data = Convert(source, OpeningDemoTimelineScale, out stats);
+        var layout = ReadLayout(data);
+        if (layout.Commands.Count <= OpeningDemoNooneLifetimeCommandIndex)
+        {
+            throw new InvalidDataException("Opening demo BSEQ does not contain the expected noone startup command.");
+        }
+
+        var nooneLifetimeCommand = layout.Commands[OpeningDemoNooneLifetimeCommandIndex];
+        if (nooneLifetimeCommand.StartFrame != 0 || nooneLifetimeCommand.EndFrame != OpeningDemoNooneScaledEndFrame)
+        {
+            throw new InvalidDataException("Opening demo BSEQ noone startup command did not match the expected 60FPS layout.");
+        }
+
+        WriteU32(data, nooneLifetimeCommand.Offset + sizeof(uint), 0);
+        stats = stats with { FieldsChanged = stats.FieldsChanged + 1 };
         return data;
     }
 

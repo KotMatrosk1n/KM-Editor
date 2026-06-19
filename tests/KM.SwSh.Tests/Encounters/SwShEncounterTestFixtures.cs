@@ -55,6 +55,7 @@ internal static class SwShEncounterTestFixtures
     public static SwShWildEncounterArchive CreateArchive(
         int speciesOffset = 0,
         int? firstSlotSpecies = null,
+        int firstSlotForm = 0,
         int? firstSlotProbability = null,
         int? secondSlotProbability = null,
         ulong? zoneId = null,
@@ -71,7 +72,7 @@ internal static class SwShEncounterTestFixtures
                             3,
                             8,
                             [
-                                new SwShWildEncounterSlot((byte)(firstSlotProbability ?? 35), firstSlotSpecies ?? 1 + speciesOffset, 0),
+                                new SwShWildEncounterSlot((byte)(firstSlotProbability ?? 35), firstSlotSpecies ?? 1 + speciesOffset, (byte)firstSlotForm),
                                 new SwShWildEncounterSlot((byte)(secondSlotProbability ?? 65), 4 + speciesOffset, 1),
                             ]),
                     ]),

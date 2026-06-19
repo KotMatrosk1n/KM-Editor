@@ -681,7 +681,7 @@ public sealed class SwShEncountersEditSessionService
                     ? table with
                     {
                         Slots = table.Slots
-                            .Select(slotRecord => OverlaySlot(slotRecord, slot, edit.Field!, value))
+                            .Select(slotRecord => OverlaySlot(workflow, slotRecord, slot, edit.Field!, value))
                             .ToArray(),
                     }
                     : table)
@@ -690,6 +690,7 @@ public sealed class SwShEncountersEditSessionService
     }
 
     private static SwShEncounterSlotRecord OverlaySlot(
+        SwShEncountersWorkflow workflow,
         SwShEncounterSlotRecord slotRecord,
         int targetSlot,
         string field,
@@ -698,9 +699,23 @@ public sealed class SwShEncountersEditSessionService
         return field switch
         {
             SwShEncountersWorkflowService.SpeciesIdField when slotRecord.Slot == targetSlot =>
-                slotRecord with { SpeciesId = value, Species = value == 0 ? "Empty" : $"Species {value}" },
+                slotRecord with
+                {
+                    SpeciesId = value,
+                    Species = SwShEncountersWorkflowService.FormatEncounterSpeciesLabel(
+                        value,
+                        slotRecord.Form,
+                        ResolveSpeciesName(workflow, value)),
+                },
             SwShEncountersWorkflowService.FormField when slotRecord.Slot == targetSlot =>
-                slotRecord with { Form = value },
+                slotRecord with
+                {
+                    Form = value,
+                    Species = SwShEncountersWorkflowService.FormatEncounterSpeciesLabel(
+                        slotRecord.SpeciesId,
+                        value,
+                        ResolveSpeciesName(workflow, slotRecord.SpeciesId)),
+                },
             SwShEncountersWorkflowService.ProbabilityField when slotRecord.Slot == targetSlot =>
                 slotRecord with { Weight = value },
             SwShEncountersWorkflowService.LevelMinField =>
@@ -709,6 +724,27 @@ public sealed class SwShEncountersEditSessionService
                 slotRecord with { LevelMax = value },
             _ => slotRecord,
         };
+    }
+
+    private static string ResolveSpeciesName(SwShEncountersWorkflow workflow, int speciesId)
+    {
+        if (speciesId == 0)
+        {
+            return "Empty";
+        }
+
+        var speciesField = workflow.EditableFields.FirstOrDefault(field =>
+            string.Equals(field.Field, SwShEncountersWorkflowService.SpeciesIdField, StringComparison.Ordinal));
+        var option = speciesField?.Options.FirstOrDefault(candidate => candidate.Value == speciesId);
+        if (option is null)
+        {
+            return $"Species {speciesId}";
+        }
+
+        var prefix = speciesId.ToString("000", CultureInfo.InvariantCulture);
+        return option.Label.StartsWith(prefix, StringComparison.Ordinal)
+            ? option.Label[prefix.Length..].Trim()
+            : option.Label;
     }
 
     private static string GetArchiveMemberFileName(PendingEdit edit)

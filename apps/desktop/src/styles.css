@@ -920,6 +920,21 @@ h2 {
   white-space: nowrap;
 }
 
+.fps-patch-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0 14px;
+}
+
+.fps-patch-status-message {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .status-ready {
   color: #58d17c;
   background: #11291c;

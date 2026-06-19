@@ -526,6 +526,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
     await waitFor(() => expect(loadFpsPatch).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('Not installed')).toBeInTheDocument();
+    expect(screen.getByText('60FPS Patch is not installed.')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Install' }));
     await waitFor(() => expect(applyFpsPatch).toHaveBeenCalledTimes(1));
@@ -539,10 +540,13 @@ describe('App', () => {
       }
     });
     expect(await screen.findByText('Installed')).toBeInTheDocument();
+    expect(screen.getByText('60FPS Patch is installed.')).toBeInTheDocument();
+    expect(screen.getByText('1,019/1,019')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Uninstall' }));
     await waitFor(() => expect(restoreFpsPatch).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('Not installed')).toBeInTheDocument();
+    expect(screen.getByText('60FPS Patch is not installed.')).toBeInTheDocument();
   });
 
   it('closes a wrong-family active workflow section before it can stay mounted', async () => {
@@ -1416,7 +1420,11 @@ describe('App', () => {
     ).toBeInTheDocument();
     expect(updatePokemonField).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Remove EXP Yield?' })).getByRole('button', {
+        name: 'Cancel'
+      })
+    );
     expect(screen.queryByRole('dialog', { name: 'Remove EXP Yield?' })).not.toBeInTheDocument();
     expect(updatePokemonField).not.toHaveBeenCalled();
 
@@ -1462,7 +1470,11 @@ describe('App', () => {
     ).toBeInTheDocument();
     expect(updatePokemonField).toHaveBeenCalledTimes(2);
 
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Remove EV Yield?' })).getByRole('button', {
+        name: 'Cancel'
+      })
+    );
     expect(screen.queryByRole('dialog', { name: 'Remove EV Yield?' })).not.toBeInTheDocument();
     expect(updatePokemonField).toHaveBeenCalledTimes(2);
 
@@ -2134,7 +2146,7 @@ describe('App', () => {
     expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
   });
 
-  it('warns before switching editors with an active edit session', async () => {
+  it('continues one staged session across normal editors', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -2142,26 +2154,60 @@ describe('App', () => {
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
-    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
-    await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
-
-    expect(
-      await screen.findByRole('heading', { level: 2, name: 'Wild Encounters' })
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Edit' }));
     await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const hpInput = screen.getByLabelText('HP');
+    await user.clear(hpInput);
+    await user.type(hpInput, '99');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    expect(await screen.findByDisplayValue('99')).toBeInTheDocument();
+
     await user.click(screen.getByRole('button', { name: 'Items' }));
-
-    expect(await screen.findByRole('dialog', { name: 'Switch Editors?' })).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Stay Here' }));
-    expect(screen.getByRole('heading', { level: 2, name: 'Wild Encounters' })).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Items' }));
-    await user.click(await screen.findByRole('button', { name: 'Switch and Revert' }));
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Switch Editors?' })).not.toBeInTheDocument();
+
+    const buyPriceInput = screen.getByLabelText('Buy price');
+    await user.clear(buyPriceInput);
+    await user.type(buyPriceInput, '450');
+    await user.click(screen.getByRole('button', { name: 'Save Item' }));
+
+    expect(await screen.findByDisplayValue('450')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByText('Set Bulbasaur hp to 99.')).toBeInTheDocument();
+    expect(screen.getByText('Set Potion buy price to 450.')).toBeInTheDocument();
+  });
+
+  it('still warns before switching a staged normal session into an excluded workflow group', async () => {
+    const user = userEvent.setup();
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Pokemon' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const hpInput = screen.getByLabelText('HP');
+    await user.clear(hpInput);
+    await user.type(hpInput, '99');
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }));
+
+    expect(await screen.findByDisplayValue('99')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Hooks' }));
+    await user.click(screen.getByRole('button', { name: 'Bag Hook' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Switch Editors?' })).toBeInTheDocument();
   });
 
   it('allows reviewing staged changes in Changes and returning to the source editor', async () => {

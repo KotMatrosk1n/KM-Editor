@@ -33,7 +33,41 @@ public sealed class SwShEncountersEditSessionServiceTests
         Assert.Equal("workflow.encounters", Assert.Single(result.Session.PendingEdits).Domain);
         var updatedTable = result.Workflow.Tables.First(candidate => candidate.TableId == table.TableId);
         Assert.Equal(6, updatedTable.Slots[0].SpeciesId);
-        Assert.Equal("Species 6", updatedTable.Slots[0].Species);
+        Assert.Equal("Charizard", updatedTable.Slots[0].Species);
+    }
+
+    [Fact]
+    public void UpdateSlotFieldFormatsRegionalSpeciesAfterFormChange()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "encount_symbol_k.bin",
+                    SwShEncounterTestFixtures.CreateArchive(firstSlotSpecies: 80).Write()),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateSpeciesNameTable(80, (80, "Slowbro")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+        var table = Assert.Single(workflow.Tables);
+
+        var result = new SwShEncountersEditSessionService().UpdateSlotField(
+            temp.Paths,
+            session: null,
+            table.TableId,
+            slot: 1,
+            field: SwShEncountersWorkflowService.FormField,
+            value: "2");
+
+        var updatedTable = Assert.Single(result.Workflow.Tables);
+        Assert.Equal(80, updatedTable.Slots[0].SpeciesId);
+        Assert.Equal(2, updatedTable.Slots[0].Form);
+        Assert.Equal("Slowbro (Galarian)", updatedTable.Slots[0].Species);
     }
 
     [Fact]
@@ -306,5 +340,19 @@ public sealed class SwShEncountersEditSessionServiceTests
             Enumerable.Range(0, 10)
                 .Select(_ => new SwShWildEncounterSlot(0, 0, 0))
                 .ToArray());
+    }
+
+    private static byte[] CreateSpeciesNameTable(int highestIndex, params (int Index, string Name)[] replacements)
+    {
+        var names = Enumerable.Range(0, highestIndex + 1)
+            .Select(_ => new SwShGameTextLine("", Flags: 0))
+            .ToArray();
+
+        foreach (var (index, name) in replacements)
+        {
+            names[index] = new SwShGameTextLine(name, Flags: 0);
+        }
+
+        return SwShGameTextFile.Write(names);
     }
 }
