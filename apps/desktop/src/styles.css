@@ -934,19 +934,23 @@ h2 {
   margin-top: 16px;
 }
 
-.pokemon-toolbar {
+.swsh-pokemon-section .pokemon-toolbar,
+.sv-pokemon-section .pokemon-toolbar {
   grid-template-columns: minmax(240px, 1fr) minmax(360px, auto);
   align-items: start;
 }
 
-.pokemon-toolbar-side {
+.swsh-pokemon-section .pokemon-toolbar-side,
+.sv-pokemon-section .pokemon-toolbar-side {
   display: grid;
   gap: 10px;
   min-width: 0;
 }
 
-.pokemon-toolbar-metrics,
-.pokemon-toolbar-actions {
+.swsh-pokemon-section .pokemon-toolbar-metrics,
+.sv-pokemon-section .pokemon-toolbar-metrics,
+.swsh-pokemon-section .pokemon-toolbar-actions,
+.sv-pokemon-section .pokemon-toolbar-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -954,7 +958,8 @@ h2 {
   min-width: 0;
 }
 
-.pokemon-toolbar-metrics .metric {
+.swsh-pokemon-section .pokemon-toolbar-metrics .metric,
+.sv-pokemon-section .pokemon-toolbar-metrics .metric {
   min-width: 130px;
   flex: 1 1 130px;
 }
@@ -971,11 +976,13 @@ h2 {
   margin-top: 16px;
 }
 
-.pokemon-layout {
+.swsh-pokemon-layout,
+.sv-pokemon-layout {
   grid-template-columns: minmax(420px, 0.72fr) minmax(480px, 1fr);
 }
 
-.pokemon-table .items-row {
+.swsh-pokemon-section .pokemon-table .items-row,
+.sv-pokemon-section .pokemon-table .items-row {
   grid-template-columns: 64px minmax(180px, 1fr) minmax(120px, 0.8fr);
 }
 
@@ -1135,7 +1142,8 @@ h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.pokemon-summary-card {
+.swsh-pokemon-summary-card,
+.sv-pokemon-summary-card {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr);
   gap: 12px;
@@ -1146,11 +1154,13 @@ h2 {
   border-radius: 8px;
 }
 
-.pokemon-summary-card-detailed {
+.swsh-pokemon-summary-card.pokemon-summary-card-detailed,
+.sv-pokemon-summary-card.pokemon-summary-card-detailed {
   grid-template-columns: 64px minmax(0, 1fr);
 }
 
-.pokemon-summary-card-detailed .pokemon-summary-metadata {
+.swsh-pokemon-summary-card.pokemon-summary-card-detailed .pokemon-summary-metadata,
+.sv-pokemon-summary-card.pokemon-summary-card-detailed .pokemon-summary-metadata {
   grid-column: 1 / -1;
   grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
   margin: 4px 0 0;
@@ -1162,55 +1172,70 @@ h2 {
   gap: 10px;
 }
 
-.pokemon-diagnostics-row {
+.swsh-pokemon-diagnostics-row,
+.sv-pokemon-diagnostics-row {
   display: grid;
-  grid-template-columns: minmax(260px, 480px) minmax(320px, 560px);
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(420px, 0.72fr) minmax(480px, 1fr);
   gap: 16px;
   align-items: start;
-  justify-content: center;
-  max-width: 1080px;
-  margin: 16px auto 0;
+  justify-content: stretch;
+  justify-self: stretch;
+  width: 100%;
+  max-width: none;
+  margin: 16px 0 0;
+  padding: 0 16px;
+  box-sizing: border-box;
 }
 
-.pokemon-diagnostics-row > .pokemon-summary-card,
-.pokemon-diagnostics-row > .panel {
+.swsh-pokemon-diagnostics-row > .pokemon-summary-card,
+.sv-pokemon-diagnostics-row > .pokemon-summary-card,
+.swsh-pokemon-diagnostics-row > .panel,
+.sv-pokemon-diagnostics-row > .panel {
   align-self: start;
   min-width: 0;
   margin: 0;
 }
 
-.pokemon-diagnostics-row > .panel {
+.swsh-pokemon-diagnostics-row > .panel,
+.sv-pokemon-diagnostics-row > .panel {
   padding: 12px 14px;
 }
 
-.pokemon-summary-card-context {
+.swsh-pokemon-summary-card.pokemon-summary-card-context,
+.sv-pokemon-summary-card.pokemon-summary-card-context {
   grid-template-columns: 52px minmax(0, 1fr);
   gap: 10px;
   padding: 12px;
 }
 
-.pokemon-summary-card-context .pokemon-summary-metadata {
+.swsh-pokemon-summary-card.pokemon-summary-card-context .pokemon-summary-metadata,
+.sv-pokemon-summary-card.pokemon-summary-card-context .pokemon-summary-metadata {
   grid-column: 2;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin: 0;
 }
 
-.pokemon-summary-card-context .pokemon-summary-metadata dt {
+.swsh-pokemon-summary-card.pokemon-summary-card-context .pokemon-summary-metadata dt,
+.sv-pokemon-summary-card.pokemon-summary-card-context .pokemon-summary-metadata dt {
   font-size: 11px;
 }
 
-.pokemon-summary-card-context .pokemon-summary-metadata dd {
+.swsh-pokemon-summary-card.pokemon-summary-card-context .pokemon-summary-metadata dd,
+.sv-pokemon-summary-card.pokemon-summary-card-context .pokemon-summary-metadata dd {
   font-size: 14px;
 }
 
-.pokemon-summary-card div {
+.swsh-pokemon-summary-card div,
+.sv-pokemon-summary-card div {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
-.pokemon-summary-card strong {
+.swsh-pokemon-summary-card strong,
+.sv-pokemon-summary-card strong {
   min-width: 0;
   overflow: hidden;
   color: var(--color-text);
@@ -1219,7 +1244,8 @@ h2 {
   white-space: nowrap;
 }
 
-.pokemon-summary-card span {
+.swsh-pokemon-summary-card span,
+.sv-pokemon-summary-card span {
   color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 800;
@@ -1261,11 +1287,13 @@ h2 {
   border-top: 1px solid #26344d;
 }
 
-.pokemon-inspector {
+.swsh-pokemon-inspector,
+.sv-pokemon-inspector {
   display: contents;
 }
 
-.pokemon-left-stack {
+.swsh-pokemon-left-stack,
+.sv-pokemon-left-stack {
   display: grid;
   grid-column: 1;
   order: 1;
@@ -1275,9 +1303,11 @@ h2 {
   min-width: 0;
 }
 
-.pokemon-selected-stack {
+.swsh-pokemon-selected-stack,
+.sv-pokemon-selected-stack {
   display: grid;
   grid-column: 2;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   order: 2;
   gap: 14px;
   align-content: start;
@@ -1285,22 +1315,44 @@ h2 {
   min-width: 0;
 }
 
-.pokemon-selected-stack > .panel-heading,
-.pokemon-selected-stack > .item-provenance-list,
-.pokemon-stats-block,
-.pokemon-traits-block,
-.pokemon-personal-edit-block {
+.swsh-pokemon-selected-stack > .panel-heading,
+.sv-pokemon-selected-stack > .panel-heading,
+.swsh-pokemon-selected-stack > .pokemon-summary-card,
+.sv-pokemon-selected-stack > .pokemon-summary-card,
+.swsh-pokemon-selected-stack > .item-provenance-list,
+.sv-pokemon-selected-stack > .item-provenance-list,
+.swsh-pokemon-personal-edit-block,
+.sv-pokemon-personal-edit-block {
+  grid-column: 1 / -1;
   min-width: 0;
 }
 
-.pokemon-selected-stack > .panel-heading,
-.pokemon-selected-stack > .item-provenance-list,
-.pokemon-stats-block,
-.pokemon-traits-block,
-.pokemon-personal-edit-block,
-.pokemon-compatibility-block,
-.pokemon-evolutions-block,
-.pokemon-learnset-block {
+.swsh-pokemon-stats-block,
+.sv-pokemon-stats-block {
+  grid-column: span 4;
+}
+
+.swsh-pokemon-traits-block,
+.sv-pokemon-traits-block {
+  grid-column: span 8;
+}
+
+.swsh-pokemon-selected-stack > .panel-heading,
+.sv-pokemon-selected-stack > .panel-heading,
+.swsh-pokemon-selected-stack > .item-provenance-list,
+.sv-pokemon-selected-stack > .item-provenance-list,
+.swsh-pokemon-stats-block,
+.sv-pokemon-stats-block,
+.swsh-pokemon-traits-block,
+.sv-pokemon-traits-block,
+.swsh-pokemon-personal-edit-block,
+.sv-pokemon-personal-edit-block,
+.swsh-pokemon-compatibility-block,
+.sv-pokemon-compatibility-block,
+.swsh-pokemon-evolutions-block,
+.sv-pokemon-evolutions-block,
+.swsh-pokemon-learnset-block,
+.sv-pokemon-learnset-block {
   padding: 14px;
   background: linear-gradient(180deg, #101828, #0c1322);
   border: 1px solid rgb(93 113 151 / 42%);
@@ -1308,25 +1360,48 @@ h2 {
   box-shadow: var(--shadow-inset);
 }
 
-.pokemon-selected-stack > .panel-heading {
+.swsh-pokemon-selected-stack > .panel-heading,
+.sv-pokemon-selected-stack > .panel-heading {
   min-height: 52px;
 }
 
-.pokemon-selected-stack > .item-provenance-list {
+.swsh-pokemon-selected-stack > .item-provenance-list,
+.sv-pokemon-selected-stack > .item-provenance-list {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   margin-top: 0;
 }
 
-.pokemon-stats-block,
-.pokemon-traits-block,
-.pokemon-personal-edit-block,
-.pokemon-compatibility-block,
-.pokemon-evolutions-block,
-.pokemon-learnset-block {
+.swsh-pokemon-stats-block .compact-dl,
+.sv-pokemon-stats-block .compact-dl {
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.swsh-pokemon-traits-block .compact-dl,
+.sv-pokemon-traits-block .compact-dl {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px 14px;
+  margin: 0;
+}
+
+.swsh-pokemon-stats-block,
+.sv-pokemon-stats-block,
+.swsh-pokemon-traits-block,
+.sv-pokemon-traits-block,
+.swsh-pokemon-personal-edit-block,
+.sv-pokemon-personal-edit-block,
+.swsh-pokemon-compatibility-block,
+.sv-pokemon-compatibility-block,
+.swsh-pokemon-evolutions-block,
+.sv-pokemon-evolutions-block,
+.swsh-pokemon-learnset-block,
+.sv-pokemon-learnset-block {
   border-top: 1px solid rgb(93 113 151 / 42%);
 }
 
-.pokemon-learnset-block .learnset-list {
+.swsh-pokemon-learnset-block .learnset-list,
+.sv-pokemon-learnset-block .learnset-list {
   max-height: none;
   overflow: visible;
 }
@@ -1487,8 +1562,10 @@ h2 {
 .trainer-edit-form > .draft-action-row,
 .encounter-edit-form > .secondary-button,
 .encounter-edit-form > .draft-action-row,
-.pokemon-personal-edit-block > .secondary-button,
-.pokemon-personal-edit-block > .draft-action-row {
+.swsh-pokemon-personal-edit-block > .secondary-button,
+.sv-pokemon-personal-edit-block > .secondary-button,
+.swsh-pokemon-personal-edit-block > .draft-action-row,
+.sv-pokemon-personal-edit-block > .draft-action-row {
   order: -1;
 }
 
@@ -5748,7 +5825,8 @@ input {
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   }
 
-  .pokemon-layout {
+  .swsh-pokemon-layout,
+  .sv-pokemon-layout {
     grid-template-columns: minmax(360px, 0.75fr) minmax(420px, 1fr);
   }
 
@@ -5784,20 +5862,31 @@ input {
     grid-template-columns: 1fr;
   }
 
-  .pokemon-layout {
+  .swsh-pokemon-layout,
+  .sv-pokemon-layout {
     grid-template-columns: 1fr;
   }
 
-  .pokemon-diagnostics-row {
+  .swsh-pokemon-diagnostics-row,
+  .sv-pokemon-diagnostics-row {
     grid-template-columns: 1fr;
   }
 
-  .pokemon-left-stack,
-  .pokemon-selected-stack,
+  .swsh-pokemon-left-stack,
+  .sv-pokemon-left-stack,
+  .swsh-pokemon-selected-stack,
+  .sv-pokemon-selected-stack,
   .pokemon-table,
-  .pokemon-compatibility-block,
-  .pokemon-evolutions-block,
-  .pokemon-learnset-block {
+  .swsh-pokemon-stats-block,
+  .sv-pokemon-stats-block,
+  .swsh-pokemon-traits-block,
+  .sv-pokemon-traits-block,
+  .swsh-pokemon-compatibility-block,
+  .sv-pokemon-compatibility-block,
+  .swsh-pokemon-evolutions-block,
+  .sv-pokemon-evolutions-block,
+  .swsh-pokemon-learnset-block,
+  .sv-pokemon-learnset-block {
     grid-column: 1 / -1;
     grid-row: auto;
   }

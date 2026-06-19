@@ -273,6 +273,7 @@ import { formatBagHookStatus, formatFileState, formatSourceLayer } from './utils
 
 const appVersion = tauriConfig.version;
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
+type EditorUiFamily = 'swsh' | 'sv';
 
 const textControlInserts = [
   {
@@ -6492,8 +6493,22 @@ const resetModMergerPlan = () => {
           {activeSection === 'items' ? (
             isItemsLoading && !itemsWorkflow ? (
               <WorkflowLoadingPanel label="Items" />
+            ) : isScarletVioletProject ? (
+              <SvItemsSection
+                onSearchChange={setItemSearchText}
+                onSelectItem={setSelectedItemId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateItemField={handleUpdateItemField}
+                onUpdateItemFields={handleUpdateItemFields}
+                searchText={itemSearchText}
+                selectedItemId={selectedItemId}
+                editSession={getEditSessionForSection('items')}
+                isEditStarting={isEditStarting}
+                isItemUpdating={isItemUpdating}
+                workflow={itemsWorkflow}
+              />
             ) : (
-              <ItemsSection
+              <SwShItemsSection
                 onSearchChange={setItemSearchText}
                 onSelectItem={setSelectedItemId}
                 onStartEditSession={handleStartEditSession}
@@ -6511,12 +6526,27 @@ const resetModMergerPlan = () => {
           {activeSection === 'pokemon' ? (
             isPokemonLoading && !pokemonWorkflow ? (
               <WorkflowLoadingPanel label="Pokemon" />
-            ) : (
-              <PokemonSection
+            ) : isScarletVioletProject ? (
+              <SvPokemonSection
                 editSession={getEditSessionForSection('pokemon')}
                 isEditStarting={isEditStarting}
                 isPokemonUpdating={isPokemonUpdating}
-                isScarletVioletProject={isScarletVioletProject}
+                onSearchChange={setPokemonSearchText}
+                onSelectPokemon={setSelectedPokemonPersonalId}
+                onStartEditSession={handleStartEditSession}
+                onUpdatePokemonField={handleUpdatePokemonField}
+                onUpdatePokemonFields={handleUpdatePokemonFields}
+                onUpdatePokemonEvolution={handleUpdatePokemonEvolution}
+                onUpdatePokemonLearnset={handleUpdatePokemonLearnset}
+                searchText={pokemonSearchText}
+                selectedPokemonPersonalId={selectedPokemonPersonalId}
+                workflow={pokemonWorkflow}
+              />
+            ) : (
+              <SwShPokemonSection
+                editSession={getEditSessionForSection('pokemon')}
+                isEditStarting={isEditStarting}
+                isPokemonUpdating={isPokemonUpdating}
                 onSearchChange={setPokemonSearchText}
                 onSelectPokemon={setSelectedPokemonPersonalId}
                 onStartEditSession={handleStartEditSession}
@@ -6570,12 +6600,25 @@ const resetModMergerPlan = () => {
           {activeSection === 'trainers' ? (
             isTrainersLoading && !trainersWorkflow ? (
               <WorkflowLoadingPanel label="Trainers" />
-            ) : (
-              <TrainersSection
+            ) : isScarletVioletProject ? (
+              <SvTrainersSection
                 editSession={getEditSessionForSection('trainers')}
                 isEditStarting={isEditStarting}
                 isTrainerUpdating={isTrainerUpdating}
-                isScarletVioletProject={isScarletVioletProject}
+                onSearchChange={setTrainerSearchText}
+                onSelectTrainer={setSelectedTrainerId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateTrainerField={handleUpdateTrainerField}
+                onUpdateTrainerFields={handleUpdateTrainerFields}
+                searchText={trainerSearchText}
+                selectedTrainerId={selectedTrainerId}
+                workflow={trainersWorkflow}
+              />
+            ) : (
+              <SwShTrainersSection
+                editSession={getEditSessionForSection('trainers')}
+                isEditStarting={isEditStarting}
+                isTrainerUpdating={isTrainerUpdating}
                 onSearchChange={setTrainerSearchText}
                 onSelectTrainer={setSelectedTrainerId}
                 onStartEditSession={handleStartEditSession}
@@ -6714,8 +6757,23 @@ const resetModMergerPlan = () => {
           {activeSection === 'encounters' ? (
             isEncountersLoading && !encountersWorkflow ? (
               <WorkflowLoadingPanel label="Wild Encounters" />
+            ) : isScarletVioletProject ? (
+              <SvEncountersSection
+                editSession={getEditSessionForSection('encounters')}
+                isEditStarting={isEditStarting}
+                isEncounterUpdating={isEncounterUpdating}
+                onSearchChange={setEncounterSearchText}
+                onSelectTable={setSelectedEncounterTableId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateEncounterSlotField={handleUpdateEncounterSlotField}
+                onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
+                onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
+                searchText={encounterSearchText}
+                selectedTableId={selectedEncounterTableId}
+                workflow={encountersWorkflow}
+              />
             ) : (
-              <EncountersSection
+              <SwShEncountersSection
                 editSession={getEditSessionForSection('encounters')}
                 isEditStarting={isEditStarting}
                 isEncounterUpdating={isEncounterUpdating}
@@ -6803,8 +6861,22 @@ const resetModMergerPlan = () => {
           {activeSection === 'placement' ? (
             isPlacementLoading && !placementWorkflow ? (
               <WorkflowLoadingPanel label="Placement" />
+            ) : isScarletVioletProject ? (
+              <SvPlacementSection
+                editSession={getEditSessionForSection('placement')}
+                isEditStarting={isEditStarting}
+                isPlacementUpdating={isPlacementUpdating}
+                onSearchChange={setPlacementSearchText}
+                onSelectObject={setSelectedPlacementObjectId}
+                onStartEditSession={handleStartEditSession}
+                onUpdatePlacementObjectField={handleUpdatePlacementObjectField}
+                onUpdatePlacementObjectFields={handleUpdatePlacementObjectFields}
+                searchText={placementSearchText}
+                selectedObjectId={selectedPlacementObjectId}
+                workflow={placementWorkflow}
+              />
             ) : (
-              <PlacementSection
+              <SwShPlacementSection
                 editSession={getEditSessionForSection('placement')}
                 isEditStarting={isEditStarting}
                 isPlacementUpdating={isPlacementUpdating}
@@ -7554,20 +7626,9 @@ function HealthSection({
   );
 }
 
-function ItemsSection({
-  editSession,
-  isEditStarting,
-  isItemUpdating,
-  onSearchChange,
-  onSelectItem,
-  onStartEditSession,
-  onUpdateItemField,
-  onUpdateItemFields,
-  searchText,
-  selectedItemId,
-  workflow
-}: {
+type ItemsSectionProps = {
   editSession: EditSession | null;
+  editorFamily: EditorUiFamily;
   isEditStarting: boolean;
   isItemUpdating: boolean;
   onSearchChange: (searchText: string) => void;
@@ -7581,7 +7642,32 @@ function ItemsSection({
   searchText: string;
   selectedItemId: number | null;
   workflow: ItemsWorkflow | null;
-}) {
+};
+
+type ItemsSectionPublicProps = Omit<ItemsSectionProps, 'editorFamily'>;
+
+function SwShItemsSection(props: ItemsSectionPublicProps) {
+  return <ItemsSection {...props} editorFamily="swsh" />;
+}
+
+function SvItemsSection(props: ItemsSectionPublicProps) {
+  return <ItemsSection {...props} editorFamily="sv" />;
+}
+
+function ItemsSection({
+  editSession,
+  editorFamily,
+  isEditStarting,
+  isItemUpdating,
+  onSearchChange,
+  onSelectItem,
+  onStartEditSession,
+  onUpdateItemField,
+  onUpdateItemFields,
+  searchText,
+  selectedItemId,
+  workflow
+}: ItemsSectionProps) {
   const items = useMemo(
     () => (workflow?.items ?? []).filter((item) => item.itemId !== 0),
     [workflow?.items]
@@ -7596,7 +7682,10 @@ function ItemsSection({
 
   return (
     <>
-      <section aria-labelledby="items-heading" className="panel wide-panel">
+      <section
+        aria-labelledby="items-heading"
+        className={`panel wide-panel ${editorFamily}-editor-surface ${editorFamily}-items-section`}
+      >
         <div className="panel-heading">
           <Package aria-hidden="true" size={18} />
           <h2 id="items-heading">Items</h2>
@@ -7927,26 +8016,11 @@ function isPlaceholderPokemonRecord(pokemon: Pick<PokemonRecord, 'name' | 'perso
   return Number(pokemon.personalId) === 0 || pokemon.name.trim().toLowerCase() === 'egg';
 }
 
-function PokemonSection({
-  editSession,
-  isEditStarting,
-  isPokemonUpdating,
-  isScarletVioletProject,
-  onSearchChange,
-  onSelectPokemon,
-  onStartEditSession,
-  onUpdatePokemonField,
-  onUpdatePokemonFields,
-  onUpdatePokemonEvolution,
-  onUpdatePokemonLearnset,
-  searchText,
-  selectedPokemonPersonalId,
-  workflow
-}: {
+type PokemonSectionProps = {
   editSession: EditSession | null;
+  editorFamily: EditorUiFamily;
   isEditStarting: boolean;
   isPokemonUpdating: boolean;
-  isScarletVioletProject: boolean;
   onSearchChange: (searchText: string) => void;
   onSelectPokemon: (personalId: number | null) => void;
   onStartEditSession: () => void;
@@ -7977,7 +8051,34 @@ function PokemonSection({
   searchText: string;
   selectedPokemonPersonalId: number | null;
   workflow: PokemonWorkflow | null;
-}) {
+};
+
+type PokemonSectionPublicProps = Omit<PokemonSectionProps, 'editorFamily'>;
+
+function SwShPokemonSection(props: PokemonSectionPublicProps) {
+  return <PokemonSection {...props} editorFamily="swsh" />;
+}
+
+function SvPokemonSection(props: PokemonSectionPublicProps) {
+  return <PokemonSection {...props} editorFamily="sv" />;
+}
+
+function PokemonSection({
+  editSession,
+  editorFamily,
+  isEditStarting,
+  isPokemonUpdating,
+  onSearchChange,
+  onSelectPokemon,
+  onStartEditSession,
+  onUpdatePokemonField,
+  onUpdatePokemonFields,
+  onUpdatePokemonEvolution,
+  onUpdatePokemonLearnset,
+  searchText,
+  selectedPokemonPersonalId,
+  workflow
+}: PokemonSectionProps) {
   const pokemon = workflow?.pokemon ?? [];
   const filteredPokemon = useMemo(
     () => filterPokemon(pokemon, searchText),
@@ -8032,9 +8133,13 @@ function PokemonSection({
   }, [evYieldConfirmation, onUpdatePokemonField]);
   const pokemonDiagnostics =
     workflow && selectedPokemon ? (
-      <div className="pokemon-diagnostics-row">
+      <div className={`${editorFamily}-pokemon-diagnostics-row`}>
         <DiagnosticsSection diagnostics={workflow.diagnostics} />
-        <SelectedPokemonSummaryCard pokemon={selectedPokemon} variant="context" />
+        <SelectedPokemonSummaryCard
+          editorFamily={editorFamily}
+          pokemon={selectedPokemon}
+          variant="context"
+        />
       </div>
     ) : (
       <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
@@ -8042,7 +8147,10 @@ function PokemonSection({
 
   return (
     <>
-      <section aria-labelledby="pokemon-heading" className="panel wide-panel">
+      <section
+        aria-labelledby="pokemon-heading"
+        className={`panel wide-panel ${editorFamily}-editor-surface ${editorFamily}-pokemon-section`}
+      >
         <div className="panel-heading">
           <Dna aria-hidden="true" size={18} />
           <h2 id="pokemon-heading">Pokemon</h2>
@@ -8116,13 +8224,12 @@ function PokemonSection({
           </div>
         </div>
 
-        {isScarletVioletProject ? null : pokemonDiagnostics}
-
         {workflow ? (
-          <div className="items-layout pokemon-layout">
+          <div className={`items-layout ${editorFamily}-pokemon-layout`}>
             <SelectedPokemonPanel
               canEditPokemon={canEditPokemon}
               editSession={editSession}
+              editorFamily={editorFamily}
               editableFields={workflow.editableFields}
               evolutionMethodOptions={workflow.evolutionMethodOptions}
               isEditStarting={isEditStarting}
@@ -8185,7 +8292,7 @@ function PokemonSection({
         )}
       </section>
 
-      {isScarletVioletProject ? pokemonDiagnostics : null}
+      {pokemonDiagnostics}
       {expYieldConfirmation ? (
         <PokemonYieldConfirmationModal
           action={expYieldConfirmation}
@@ -8207,9 +8314,11 @@ function PokemonSection({
 }
 
 function SelectedPokemonSummaryCard({
+  editorFamily,
   pokemon,
   variant = 'detailed'
 }: {
+  editorFamily: EditorUiFamily;
   pokemon: PokemonRecord;
   variant?: 'context' | 'detailed';
 }) {
@@ -8218,7 +8327,7 @@ function SelectedPokemonSummaryCard({
 
   return (
     <div
-      className={`pokemon-summary-card ${
+      className={`${editorFamily}-pokemon-summary-card pokemon-summary-card ${
         isContext ? 'pokemon-summary-card-context' : 'pokemon-summary-card-detailed'
       }`}
     >
@@ -8266,6 +8375,7 @@ function SelectedPokemonSummaryCard({
 function SelectedPokemonPanel({
   canEditPokemon,
   editSession,
+  editorFamily,
   editableFields,
   evolutionMethodOptions,
   isEditStarting,
@@ -8282,6 +8392,7 @@ function SelectedPokemonPanel({
 }: {
   canEditPokemon: boolean;
   editSession: EditSession | null;
+  editorFamily: EditorUiFamily;
   editableFields: PokemonEditableField[];
   evolutionMethodOptions: PokemonEvolutionMethodOption[];
   isEditStarting: boolean;
@@ -8834,8 +8945,11 @@ function SelectedPokemonPanel({
     Number.isInteger(parsedNewEvolutionLevel);
 
   return (
-    <aside aria-label="Selected Pokemon provenance" className="item-inspector pokemon-inspector">
-      <div className="pokemon-selected-stack">
+    <aside
+      aria-label="Selected Pokemon provenance"
+      className={`item-inspector ${editorFamily}-pokemon-inspector`}
+    >
+      <div className={`${editorFamily}-pokemon-selected-stack`}>
         <div className="panel-heading">
           <ShieldCheck aria-hidden="true" size={18} />
           <h3>Selected Pokemon</h3>
@@ -8843,9 +8957,9 @@ function SelectedPokemonPanel({
 
         {pokemon ? (
           <>
-          <SelectedPokemonSummaryCard pokemon={pokemon} />
+          <SelectedPokemonSummaryCard editorFamily={editorFamily} pokemon={pokemon} />
 
-          <div className="inspector-block pokemon-stats-block">
+          <div className={`inspector-block ${editorFamily}-pokemon-stats-block`}>
             <h4>Base Stats</h4>
             <dl className="item-provenance-list compact-dl">
               <div>
@@ -8879,7 +8993,7 @@ function SelectedPokemonPanel({
             </dl>
           </div>
 
-          <div className="inspector-block pokemon-traits-block">
+          <div className={`inspector-block ${editorFamily}-pokemon-traits-block`}>
             <h4>Traits</h4>
             <dl className="item-provenance-list compact-dl">
               <div>
@@ -8915,7 +9029,7 @@ function SelectedPokemonPanel({
             </dl>
           </div>
 
-          <div className="inspector-block pokemon-personal-edit-block">
+          <div className={`inspector-block ${editorFamily}-pokemon-personal-edit-block`}>
             <h4>Personal Edit</h4>
             <div className="editable-field-groups">
               {personalFieldGroups.map((group) => (
@@ -9052,11 +9166,11 @@ function SelectedPokemonPanel({
         )}
       </div>
 
-      <div className="pokemon-left-stack">
+      <div className={`${editorFamily}-pokemon-left-stack`}>
         {pokemonTable}
       {pokemon ? (
         <>
-          <div className="inspector-block pokemon-learnset-block">
+          <div className={`inspector-block ${editorFamily}-pokemon-learnset-block`}>
             <h4>Learnset</h4>
             <div className="learnset-editor">
               {pokemon.learnset.length > 0 ? (
@@ -9319,7 +9433,7 @@ function SelectedPokemonPanel({
             </div>
           </div>
 
-          <div className="inspector-block pokemon-compatibility-block">
+          <div className={`inspector-block ${editorFamily}-pokemon-compatibility-block`}>
             <h4>Compatibility</h4>
             {pokemon.compatibility.length > 0 ? (
               <div className="compatibility-editor">
@@ -9384,7 +9498,7 @@ function SelectedPokemonPanel({
             )}
           </div>
 
-          <div className="inspector-block pokemon-evolutions-block">
+          <div className={`inspector-block ${editorFamily}-pokemon-evolutions-block`}>
             <h4>Evolutions</h4>
             <div className="learnset-editor">
               {pokemon.evolutions.length > 0 ? (
@@ -10581,21 +10695,9 @@ function SelectedTextPanel({
   );
 }
 
-function TrainersSection({
-  editSession,
-  isEditStarting,
-  isTrainerUpdating,
-  isScarletVioletProject,
-  onSearchChange,
-  onSelectTrainer,
-  onStartEditSession,
-  onUpdateTrainerField,
-  onUpdateTrainerFields,
-  searchText,
-  selectedTrainerId,
-  workflow
-}: {
+type TrainersSectionProps = {
   editSession: EditSession | null;
+  editorFamily: EditorUiFamily;
   isEditStarting: boolean;
   isTrainerUpdating: boolean;
   isScarletVioletProject: boolean;
@@ -10616,7 +10718,36 @@ function TrainersSection({
   searchText: string;
   selectedTrainerId: number | null;
   workflow: TrainersWorkflow | null;
-}) {
+};
+
+type TrainersSectionPublicProps = Omit<
+  TrainersSectionProps,
+  'editorFamily' | 'isScarletVioletProject'
+>;
+
+function SwShTrainersSection(props: TrainersSectionPublicProps) {
+  return <TrainersSection {...props} editorFamily="swsh" isScarletVioletProject={false} />;
+}
+
+function SvTrainersSection(props: TrainersSectionPublicProps) {
+  return <TrainersSection {...props} editorFamily="sv" isScarletVioletProject />;
+}
+
+function TrainersSection({
+  editSession,
+  editorFamily,
+  isEditStarting,
+  isTrainerUpdating,
+  isScarletVioletProject,
+  onSearchChange,
+  onSelectTrainer,
+  onStartEditSession,
+  onUpdateTrainerField,
+  onUpdateTrainerFields,
+  searchText,
+  selectedTrainerId,
+  workflow
+}: TrainersSectionProps) {
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const trainers = workflow?.trainers ?? [];
   const filteredTrainers = useMemo(
@@ -10651,7 +10782,10 @@ function TrainersSection({
 
   return (
     <>
-      <section aria-labelledby="trainers-heading" className="panel wide-panel">
+      <section
+        aria-labelledby="trainers-heading"
+        className={`panel wide-panel ${editorFamily}-editor-surface ${editorFamily}-trainers-section`}
+      >
         <div className="panel-heading">
           <Activity aria-hidden="true" size={18} />
           <h2 id="trainers-heading">Trainers</h2>
@@ -17274,21 +17408,9 @@ function isBadgeShopRecord(shop: ShopRecord) {
   );
 }
 
-function EncountersSection({
-  editSession,
-  isEditStarting,
-  isEncounterUpdating,
-  onSearchChange,
-  onSelectTable,
-  onStartEditSession,
-  onUpdateEncounterSlotField,
-  onUpdateEncounterSlotFields,
-  onUpdateEncounterSlotUpdates,
-  searchText,
-  selectedTableId,
-  workflow
-}: {
+type EncountersSectionProps = {
   editSession: EditSession | null;
+  editorFamily: EditorUiFamily;
   isEditStarting: boolean;
   isEncounterUpdating: boolean;
   onSearchChange: (searchText: string) => void;
@@ -17309,7 +17431,33 @@ function EncountersSection({
   searchText: string;
   selectedTableId: string | null;
   workflow: EncountersWorkflow | null;
-}) {
+};
+
+type EncountersSectionPublicProps = Omit<EncountersSectionProps, 'editorFamily'>;
+
+function SwShEncountersSection(props: EncountersSectionPublicProps) {
+  return <EncountersSection {...props} editorFamily="swsh" />;
+}
+
+function SvEncountersSection(props: EncountersSectionPublicProps) {
+  return <EncountersSection {...props} editorFamily="sv" />;
+}
+
+function EncountersSection({
+  editSession,
+  editorFamily,
+  isEditStarting,
+  isEncounterUpdating,
+  onSearchChange,
+  onSelectTable,
+  onStartEditSession,
+  onUpdateEncounterSlotField,
+  onUpdateEncounterSlotFields,
+  onUpdateEncounterSlotUpdates,
+  searchText,
+  selectedTableId,
+  workflow
+}: EncountersSectionProps) {
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const allTables = workflow?.tables ?? [];
   const filteredTables = useMemo(
@@ -17363,7 +17511,10 @@ function EncountersSection({
 
   return (
     <>
-      <section aria-labelledby="encounters-heading" className="panel wide-panel">
+      <section
+        aria-labelledby="encounters-heading"
+        className={`panel wide-panel ${editorFamily}-editor-surface ${editorFamily}-encounters-section`}
+      >
         <div className="panel-heading">
           <Layers aria-hidden="true" size={18} />
           <h2 id="encounters-heading">Wild Encounters</h2>
@@ -19715,22 +19866,12 @@ function SelectedBehaviorPanel({
   );
 }
 
-function PlacementSection({
-  editSession,
-  isEditStarting,
-  isPlacementUpdating,
-  onSearchChange,
-  onSelectObject,
-  onStartEditSession,
-  onUpdatePlacementObjectField,
-  onUpdatePlacementObjectFields,
-  searchText,
-  selectedObjectId,
-  workflow
-}: {
+type PlacementSectionProps = {
   editSession: EditSession | null;
+  editorFamily: EditorUiFamily;
   isEditStarting: boolean;
   isPlacementUpdating: boolean;
+  isScarletVioletProject: boolean;
   onSearchChange: (value: string) => void;
   onSelectObject: (objectId: string | null) => void;
   onStartEditSession: () => void;
@@ -19742,17 +19883,45 @@ function PlacementSection({
   searchText: string;
   selectedObjectId: string | null;
   workflow: PlacementWorkflow | null;
-}) {
+};
+
+type PlacementSectionPublicProps = Omit<
+  PlacementSectionProps,
+  'editorFamily' | 'isScarletVioletProject'
+>;
+
+function SwShPlacementSection(props: PlacementSectionPublicProps) {
+  return <PlacementSection {...props} editorFamily="swsh" isScarletVioletProject={false} />;
+}
+
+function SvPlacementSection(props: PlacementSectionPublicProps) {
+  return <PlacementSection {...props} editorFamily="sv" isScarletVioletProject />;
+}
+
+function PlacementSection({
+  editSession,
+  editorFamily,
+  isEditStarting,
+  isPlacementUpdating,
+  isScarletVioletProject,
+  onSearchChange,
+  onSelectObject,
+  onStartEditSession,
+  onUpdatePlacementObjectField,
+  onUpdatePlacementObjectFields,
+  searchText,
+  selectedObjectId,
+  workflow
+}: PlacementSectionProps) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
-  const placementCategories = useMemo(
-    () => getPlacementCategories(workflow),
-    [workflow]
-  );
+  const supportsPlacementCategories = isScarletVioletProject;
+  const placementCategories = supportsPlacementCategories ? getPlacementCategories(workflow) : [];
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
-  const activeCategoryId =
-    placementCategories.find((category) => category.id === selectedCategoryId)?.id ??
-    placementCategories[0]?.id ??
-    null;
+  const activeCategoryId = supportsPlacementCategories
+    ? placementCategories.find((category) => category.id === selectedCategoryId)?.id ??
+      placementCategories[0]?.id ??
+      null
+    : null;
   const filteredObjects =
     workflow?.objects.filter((placedObject) => {
       if (
@@ -19787,9 +19956,6 @@ function PlacementSection({
         .toLocaleLowerCase()
         .includes(normalizedSearch);
     }) ?? [];
-  const activeCategoryLabel =
-    placementCategories.find((category) => category.id === activeCategoryId)?.label ??
-    'this category';
   const selectedObject =
     filteredObjects.find((placedObject) => placedObject.objectId === selectedObjectId) ??
     filteredObjects[0] ??
@@ -19809,6 +19975,11 @@ function PlacementSection({
   }, [onSelectObject, selectedObject?.objectId, selectedObjectId]);
 
   useEffect(() => {
+    if (!supportsPlacementCategories) {
+      if (selectedCategoryId !== null) setSelectedCategoryId(null);
+      return;
+    }
+
     if (
       activeCategoryId === null ||
       placementCategories.some((category) => category.id === selectedCategoryId)
@@ -19817,11 +19988,14 @@ function PlacementSection({
     }
 
     setSelectedCategoryId(activeCategoryId);
-  }, [activeCategoryId, placementCategories, selectedCategoryId]);
+  }, [activeCategoryId, placementCategories, selectedCategoryId, supportsPlacementCategories]);
 
   return (
     <>
-      <section aria-labelledby="placement-heading" className="panel wide-panel">
+      <section
+        aria-labelledby="placement-heading"
+        className={`panel wide-panel ${editorFamily}-editor-surface ${editorFamily}-placement-section`}
+      >
         <div className="panel-heading">
           <MapPin aria-hidden="true" size={18} />
           <h2 id="placement-heading">Placement</h2>
@@ -19853,7 +20027,7 @@ function PlacementSection({
           />
         </div>
 
-        {placementCategories.length > 0 ? (
+        {supportsPlacementCategories && placementCategories.length > 0 ? (
           <div
             aria-label="Placement categories"
             className="condition-tabs placement-category-tabs"
@@ -19918,7 +20092,7 @@ function PlacementSection({
               ))}
               {filteredObjects.length === 0 ? (
                 <div className="raid-rewards-row placement-object-row placement-empty-row" role="row">
-                  <span role="cell">No entries in {activeCategoryLabel}.</span>
+                  <span role="cell">{activeCategoryId === null ? 'No placement entries.' : `No entries in ${placementCategories.find((category) => category.id === activeCategoryId)?.label ?? 'placement'}.`}</span>
                 </div>
               ) : null}
             </div>
@@ -23220,7 +23394,10 @@ function SvModMergerSection({
 
   return (
     <>
-      <section aria-labelledby="sv-mod-merger-heading" className="panel wide-panel">
+      <section
+        aria-labelledby="sv-mod-merger-heading"
+        className="panel wide-panel sv-editor-surface sv-mod-merger-section"
+      >
         <div className="panel-heading">
           <Layers aria-hidden="true" size={18} />
           <h2 id="sv-mod-merger-heading">S/V Mod Merger</h2>
@@ -23350,7 +23527,10 @@ function SvModMergerSection({
       </section>
 
       {preview ? (
-        <section aria-labelledby="sv-mod-merger-preview-heading" className="panel wide-panel">
+        <section
+          aria-labelledby="sv-mod-merger-preview-heading"
+          className="panel wide-panel sv-editor-surface sv-mod-merger-preview-section"
+        >
           <div className="panel-heading">
             <ListChecks aria-hidden="true" size={18} />
             <h2 id="sv-mod-merger-preview-heading">Merge Preview</h2>
@@ -23384,7 +23564,10 @@ function SvModMergerSection({
       ) : null}
 
       {applyResult ? (
-        <section aria-labelledby="sv-mod-merger-apply-heading" className="panel wide-panel">
+        <section
+          aria-labelledby="sv-mod-merger-apply-heading"
+          className="panel wide-panel sv-editor-surface sv-mod-merger-apply-section"
+        >
           <div className="panel-heading">
             <ClipboardCheck aria-hidden="true" size={18} />
             <h2 id="sv-mod-merger-apply-heading">Apply Result</h2>
@@ -23495,7 +23678,10 @@ function ModMergerSection({
 
   return (
     <>
-      <section aria-labelledby="mod-merger-heading" className="panel wide-panel mod-merger-panel">
+      <section
+        aria-labelledby="mod-merger-heading"
+        className="panel wide-panel swsh-editor-surface swsh-mod-merger-section mod-merger-panel"
+      >
         <div className="panel-heading">
           <Layers aria-hidden="true" size={18} />
           <h2 id="mod-merger-heading">Mod Merger</h2>
@@ -23606,7 +23792,7 @@ function ModMergerSection({
 
       <section
         aria-labelledby="mod-merger-files-heading"
-        className="panel wide-panel mod-merger-file-panel"
+        className="panel wide-panel swsh-editor-surface swsh-mod-merger-file-section mod-merger-file-panel"
       >
         <div className="panel-heading">
           <ListChecks aria-hidden="true" size={18} />
@@ -23690,7 +23876,7 @@ function ModMergerSection({
       {preview ? (
         <section
           aria-labelledby="mod-merger-preview-heading"
-          className="panel wide-panel mod-merger-preview-panel"
+          className="panel wide-panel swsh-editor-surface swsh-mod-merger-preview-section mod-merger-preview-panel"
         >
           <div className="panel-heading">
             <ClipboardCheck aria-hidden="true" size={18} />
@@ -23763,7 +23949,7 @@ function ModMergerSection({
       {preview?.conflicts.length ? (
         <section
           aria-labelledby="mod-merger-conflicts-heading"
-          className="panel wide-panel mod-merger-conflict-panel"
+          className="panel wide-panel swsh-editor-surface swsh-mod-merger-conflict-section mod-merger-conflict-panel"
         >
           <div className="panel-heading">
             <AlertTriangle aria-hidden="true" size={18} />
@@ -23835,7 +24021,7 @@ function ModMergerSection({
       {applyResult ? (
         <section
           aria-labelledby="mod-merger-apply-heading"
-          className="panel wide-panel mod-merger-apply-panel"
+          className="panel wide-panel swsh-editor-surface swsh-mod-merger-apply-section mod-merger-apply-panel"
         >
           <div className="panel-heading">
             <Save aria-hidden="true" size={18} />
