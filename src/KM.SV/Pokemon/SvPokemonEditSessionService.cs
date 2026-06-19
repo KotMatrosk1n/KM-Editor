@@ -173,7 +173,7 @@ internal sealed class SvPokemonEditSessionService
             new ProjectFileReference(pokemon.Provenance.SourceLayer, pokemon.Provenance.SourceFile),
             pokemon.PersonalId.ToString(CultureInfo.InvariantCulture),
             CreateOperationField(LearnsetFieldPrefix, operation.Action, operation.Slot),
-            FormatOperationValue(operation.MoveId, operation.Level));
+            FormatOperationValue(operation.MoveId, operation.RawLevel));
         var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
 
         return new SvPokemonEditResult(
@@ -896,7 +896,11 @@ internal sealed class SvPokemonEditSessionService
                     targetSlot,
                     operation.MoveId ?? 0,
                     SvLabels.Move(operation.MoveId ?? 0),
-                    operation.Level ?? 1);
+                    operation.Level ?? 1,
+                    operation.RawLevel ?? operation.Level ?? 1,
+                    (operation.RawLevel ?? operation.Level ?? 1) == SvLearnsetLevel.EvolutionRawLevel
+                        ? SvLearnsetLevel.EvolutionLabel
+                        : null);
                 if (targetSlot < learnset.Count)
                 {
                     learnset[targetSlot] = row;
@@ -1256,7 +1260,7 @@ internal sealed class SvPokemonEditSessionService
             case UpsertAction:
                 var learnedMove = new LevelupMoveRow(
                     checked((ushort)(operation.MoveId ?? 0)),
-                    checked((ushort)(operation.Level ?? 1)));
+                    checked((ushort)(operation.RawLevel ?? operation.Level ?? 1)));
                 if (targetSlot < row.LevelupMoves.Count)
                 {
                     row.LevelupMoves[targetSlot] = learnedMove;
@@ -1396,9 +1400,36 @@ internal sealed class SvPokemonEditSessionService
     {
         var normalizedAction = action == AddAction ? AddAction : action.Trim();
         var targetSlot = normalizedAction == AddAction ? pokemon.Learnset.Count : slot ?? -1;
-        var operation = new LearnsetOperation(normalizedAction, targetSlot, moveId, level);
+        var operation = new LearnsetOperation(
+            normalizedAction,
+            targetSlot,
+            moveId,
+            level,
+            ResolveLearnsetRawLevel(pokemon, normalizedAction, targetSlot, level));
         ValidateLearnsetOperation(operation, pokemon, diagnostics);
         return diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error) ? null : operation;
+    }
+
+    private static int? ResolveLearnsetRawLevel(
+        SvPokemonRecord pokemon,
+        string action,
+        int targetSlot,
+        int? requestedLevel)
+    {
+        if (requestedLevel is null)
+        {
+            return null;
+        }
+
+        if (action == UpsertAction
+            && targetSlot >= 0
+            && targetSlot < pokemon.Learnset.Count
+            && pokemon.Learnset[targetSlot] is { } existing)
+        {
+            return SvLearnsetLevel.PreserveRawLevel(requestedLevel.Value, existing.RawLevel, existing.Level);
+        }
+
+        return requestedLevel;
     }
 
     private static EvolutionOperation? CreateEvolutionOperation(
@@ -1436,7 +1467,13 @@ internal sealed class SvPokemonEditSessionService
             return null;
         }
 
-        var operation = new LearnsetOperation(action, slot, first >= 0 ? first : null, second >= 0 ? second : null);
+        int? rawLevel = second >= 0 ? second : null;
+        var operation = new LearnsetOperation(
+            action,
+            slot,
+            first >= 0 ? first : null,
+            rawLevel is { } value ? SvLearnsetLevel.ToDisplayLevel(value) : null,
+            rawLevel);
         if (pokemon is not null)
         {
             ValidateLearnsetOperation(operation, pokemon, diagnostics);
@@ -1480,7 +1517,9 @@ internal sealed class SvPokemonEditSessionService
         {
             case AddAction:
             case UpsertAction:
-                if (operation.MoveId is null or < 0 or > ushort.MaxValue || operation.Level is null or < 0 or > ushort.MaxValue)
+                if (operation.MoveId is null or < 0 or > ushort.MaxValue
+                    || operation.Level is null or < 0 or > ushort.MaxValue
+                    || operation.RawLevel is null or < 0 or > ushort.MaxValue)
                 {
                     diagnostics.Add(OperationDiagnostic("Learnset upserts require a move ID and level.", "moveId/level"));
                 }
@@ -1659,13 +1698,20 @@ internal sealed class SvPokemonEditSessionService
         return operation.Action switch
         {
             AddAction or UpsertAction =>
-                $"Set {pokemon.Name} learnset slot {operation.Slot} to Lv. {operation.Level} {SvLabels.Move(operation.MoveId ?? 0)}.",
+                $"Set {pokemon.Name} learnset slot {operation.Slot} to {FormatLearnsetLevel(operation)} {SvLabels.Move(operation.MoveId ?? 0)}.",
             RemoveAction => $"Remove {pokemon.Name} learnset slot {operation.Slot}.",
             MoveUpAction => $"Move {pokemon.Name} learnset slot {operation.Slot} up.",
             MoveDownAction => $"Move {pokemon.Name} learnset slot {operation.Slot} down.",
             MoveToAction => $"Move {pokemon.Name} learnset slot {operation.Slot} to slot {operation.MoveId}.",
             _ => $"Update {pokemon.Name} learnset slot {operation.Slot}.",
         };
+    }
+
+    private static string FormatLearnsetLevel(LearnsetOperation operation)
+    {
+        return operation.RawLevel == SvLearnsetLevel.EvolutionRawLevel
+            ? SvLearnsetLevel.EvolutionLabel
+            : $"Lv. {operation.Level}";
     }
 
     private static string CreateEvolutionSummary(SvPokemonRecord pokemon, EvolutionOperation operation)
@@ -1795,7 +1841,7 @@ internal sealed class SvPokemonEditSessionService
             expected: "Supported S/V Pokemon personal, learnset, evolution, or compatibility field");
     }
 
-    private sealed record LearnsetOperation(string Action, int Slot, int? MoveId, int? Level);
+    private sealed record LearnsetOperation(string Action, int Slot, int? MoveId, int? Level, int? RawLevel);
 
     private sealed record EvolutionOperation(
         string Action,

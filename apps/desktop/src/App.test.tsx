@@ -2305,6 +2305,197 @@ describe('App', () => {
     ).toBeInTheDocument();
   }, 10000);
 
+  it('uses Scarlet/Violet nature ids when showing trainer stat arrows', async () => {
+    const baseBridge = createMockProjectBridge({}, true);
+    const trainersResponse = await baseBridge.loadTrainersWorkflow({
+      paths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        saveFilePath: null,
+        selectedGame: 'scarlet'
+      }
+    });
+    const svNatureOptions = [
+      { label: 'Default (game behavior)', value: 0 },
+      { label: 'Hardy (neutral)', value: 1 },
+      { label: 'Lonely (+Atk, -Def)', value: 2 },
+      { label: 'Brave (+Atk, -Spe)', value: 3 },
+      { label: 'Adamant (+Atk, -SpA)', value: 4 }
+    ];
+    const svStatFields: TrainersWorkflow['editableFields'] = [
+      {
+        field: 'evHp',
+        label: 'HP EV',
+        maximumValue: 252,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'evAttack',
+        label: 'Attack EV',
+        maximumValue: 252,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'evDefense',
+        label: 'Defense EV',
+        maximumValue: 252,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'evSpecialAttack',
+        label: 'Sp. Atk EV',
+        maximumValue: 252,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'evSpecialDefense',
+        label: 'Sp. Def EV',
+        maximumValue: 252,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'evSpeed',
+        label: 'Speed EV',
+        maximumValue: 252,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivHp',
+        label: 'HP IV',
+        maximumValue: 31,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivAttack',
+        label: 'Attack IV',
+        maximumValue: 31,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivDefense',
+        label: 'Defense IV',
+        maximumValue: 31,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivSpecialAttack',
+        label: 'Sp. Atk IV',
+        maximumValue: 31,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivSpecialDefense',
+        label: 'Sp. Def IV',
+        maximumValue: 31,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'ivSpeed',
+        label: 'Speed IV',
+        maximumValue: 31,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      }
+    ];
+    const workflow: TrainersWorkflow = {
+      ...trainersResponse.workflow,
+      editableFields: [
+        ...trainersResponse.workflow.editableFields.map((field) =>
+          field.field === 'nature'
+            ? {
+                ...field,
+                maximumValue: 25,
+                options: svNatureOptions
+              }
+            : field
+        ),
+        ...svStatFields
+      ],
+      trainers: trainersResponse.workflow.trainers.map((trainer) => ({
+        ...trainer,
+        team: trainer.team.map((pokemon) => ({
+          ...pokemon,
+          nature: 1,
+          natureLabel: 'Hardy (neutral)'
+        }))
+      }))
+    };
+    const user = userEvent.setup();
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: 'base-exefs',
+        baseRomFsPath: 'base-romfs',
+        outputRootPath: 'output',
+        saveFilePath: '',
+        selectedGame: 'scarlet'
+      }
+    });
+
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadTrainersWorkflow: async () => ({ workflow })
+        }}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Trainers' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByLabelText('Nature')).toHaveDisplayValue('Hardy (neutral)');
+    expect(screen.queryByTitle(/Nature raises/)).not.toBeInTheDocument();
+    expect(screen.queryByTitle(/Nature lowers/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show Nature options' }));
+    await user.click(screen.getByRole('option', { name: 'Lonely (+Atk, -Def)' }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Nature')).toHaveDisplayValue('Lonely (+Atk, -Def)')
+    );
+    await waitFor(() =>
+      expect(screen.getAllByTitle('Nature raises Attack.').length).toBeGreaterThan(0)
+    );
+    expect(screen.getAllByTitle('Nature lowers Defense.').length).toBeGreaterThan(0);
+    expect(screen.queryByTitle('Nature lowers Speed.')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show Nature options' }));
+    await user.click(screen.getByRole('option', { name: 'Brave (+Atk, -Spe)' }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Nature')).toHaveDisplayValue('Brave (+Atk, -Spe)')
+    );
+    expect(screen.getAllByTitle('Nature raises Attack.').length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle('Nature lowers Speed.').length).toBeGreaterThan(0);
+    expect(screen.queryByTitle('Nature lowers Sp. Atk.')).not.toBeInTheDocument();
+  });
+
   it('keeps unsaved trainer and party Pokemon drafts when selecting other trainer records', async () => {
     const baseBridge = createMockProjectBridge({}, true);
     const trainersResponse = await baseBridge.loadTrainersWorkflow({

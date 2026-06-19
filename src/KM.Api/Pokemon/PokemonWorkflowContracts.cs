@@ -4,6 +4,7 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Projects;
 using KM.Api.Workflows;
+using System.Text.Json.Serialization;
 
 namespace KM.Api.Pokemon;
 
@@ -121,7 +122,9 @@ public sealed record PokemonLearnsetMoveDto(
     int Slot,
     int MoveId,
     string MoveName,
-    int Level);
+    int Level,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? RawLevel = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LevelLabel = null);
 
 public sealed record PokemonCompatibilityGroupDto(
     string GroupId,

@@ -627,6 +627,46 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletPokemonLearnsetsDisplayEvolutionSentinelAndPreserveRawLevel(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        WriteSvOutput(temp, SvDataPaths.PersonalArray, CreatePersonalArrayWithLevelupMoves((33, 253), (45, 1)));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loaded = Dispatch<LoadPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPokemonWorkflow,
+            new LoadPokemonWorkflowRequest(paths),
+            "request-sv-pokemon-learnset-evolution-load");
+        AssertSuccess(loaded);
+        var bulbasaur = loaded.Payload!.Workflow.Pokemon.Single(row => row.PersonalId == 1);
+        var evolutionMove = bulbasaur.Learnset[0];
+        Assert.Equal(0, evolutionMove.Level);
+        Assert.Equal(253, evolutionMove.RawLevel);
+        Assert.Equal("Evolution", evolutionMove.LevelLabel);
+
+        var staged = Dispatch<UpdatePokemonLearnsetResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonLearnset,
+            new UpdatePokemonLearnsetRequest(paths, null, 1, "upsert", 0, 45, 0),
+            "request-sv-pokemon-learnset-evolution-stage");
+        AssertSuccess(staged);
+        var edit = Assert.Single(staged.Payload!.Session.PendingEdits);
+        Assert.Equal("45|253", edit.NewValue);
+        Assert.Contains("Evolution", edit.Summary, StringComparison.Ordinal);
+
+        Apply(dispatcher, paths, staged.Payload.Session);
+        var personal = ReadPersonal(temp, personalId: 1);
+        Assert.Equal(45, personal.LevelupMoves(0)!.Value.Move);
+        Assert.Equal(253, personal.LevelupMoves(0)!.Value.Level);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletPlacementAlcremieSweetOnlyEditsAlcremieFixedSymbols(
         ProjectGameDto game,
         ulong titleId)
@@ -681,7 +721,7 @@ public sealed class ScarletVioletBridgeTests
     {
         using var temp = CreateScarletVioletProject(titleId);
         WriteScarletFixtures(temp);
-        var personalBytes = CreatePersonalArrayWithLevelupMoves((33, 1), (45, 3), (36, 5), (349, 7));
+        var personalBytes = CreatePersonalArrayWithLevelupMoves((33, 253), (45, 3), (36, 5), (349, 7));
         var personalTable = global::personal_table.GetRootAspersonal_table(new ByteBuffer(personalBytes));
         Assert.Equal(4, personalTable.Entry(1)!.Value.LevelupMovesLength);
         WriteSvOutput(temp, SvDataPaths.PersonalArray, personalBytes);

@@ -96,7 +96,9 @@ public sealed record SvPokemonLearnsetMove(
     int Slot,
     int MoveId,
     string MoveName,
-    int Level);
+    int Level,
+    int RawLevel,
+    string? LevelLabel);
 
 public sealed record SvPokemonCompatibilityGroup(
     string GroupId,

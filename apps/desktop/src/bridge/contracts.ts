@@ -776,14 +776,14 @@ export const pokemonEvolutionRecordSchema = z.strictObject({
   slot: z.number().int().nonnegative(),
   species: z.number().int().nonnegative()
 });
-
 export const pokemonLearnsetMoveSchema = z.strictObject({
   level: z.number().int().nonnegative(),
+  levelLabel: z.string().nullable().optional(),
   moveId: z.number().int().nonnegative(),
   moveName: z.string(),
+  rawLevel: z.number().int().nonnegative().nullable().optional(),
   slot: z.number().int().nonnegative()
 });
-
 export const pokemonCompatibilityEntrySchema = z.strictObject({
   canLearn: z.boolean(),
   label: z.string(),

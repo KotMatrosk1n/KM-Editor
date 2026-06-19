@@ -560,7 +560,9 @@ public static class SvBridgeMapper
             learnsetMove.Slot,
             learnsetMove.MoveId,
             learnsetMove.MoveName,
-            learnsetMove.Level);
+            learnsetMove.Level,
+            learnsetMove.RawLevel == learnsetMove.Level ? null : learnsetMove.RawLevel,
+            learnsetMove.LevelLabel);
     }
 
     private static PokemonCompatibilityGroupDto ToDto(SvPokemonCompatibilityGroup group)

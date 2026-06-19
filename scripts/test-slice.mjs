@@ -140,6 +140,7 @@ for (const item of commands) {
 console.log(`total elapsed: ${((Date.now() - totalStarted) / 1000).toFixed(2)}s`);
 
 function addFastCommands() {
+  add('workspace-path-check', 'Check workspace path hygiene', 'node scripts/check-workspace-paths.mjs');
   add('diff-check', 'Check whitespace and patch hygiene', 'git diff --check');
   add('desktop-typecheck', 'Typecheck desktop app', 'pnpm --filter @km-editor/desktop typecheck');
   add(
@@ -173,12 +174,14 @@ function addFastCommands() {
 }
 
 function addFullCommands() {
+  add('workspace-path-check', 'Check workspace path hygiene', 'node scripts/check-workspace-paths.mjs');
   add('diff-check', 'Check whitespace and patch hygiene', 'git diff --check');
   add('desktop-tests', 'Run all desktop Vitest tests', 'pnpm --dir apps/desktop test:run');
   add('backend-tests', 'Run all backend tests', dotnetProject('KM.Editor.slnx'));
 }
 
 function addChangedCommands() {
+  add('workspace-path-check', 'Check workspace path hygiene', 'node scripts/check-workspace-paths.mjs');
   add('diff-check', 'Check whitespace and patch hygiene', 'git diff --check');
 
   const changedFiles = getChangedFiles();

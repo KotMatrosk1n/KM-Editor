@@ -520,11 +520,14 @@ internal sealed class SvPokemonWorkflowService
                 continue;
             }
 
+            var rawLevel = learnedMove.Value.Level;
             moves.Add(new SvPokemonLearnsetMove(
                 index,
                 learnedMove.Value.Move,
                 labels.Move(learnedMove.Value.Move),
-                learnedMove.Value.Level));
+                SvLearnsetLevel.ToDisplayLevel(rawLevel),
+                rawLevel,
+                SvLearnsetLevel.ToLevelLabel(rawLevel)));
         }
 
         return moves;
