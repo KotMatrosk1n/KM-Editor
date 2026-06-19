@@ -10035,7 +10035,10 @@ function SelectedMovePanel({
     [editableFields]
   );
   const moveFieldGroups = useMemo(
-    () => groupNumericEditableFields(moveFields, getMoveEditableFieldGroup),
+    () =>
+      orderMoveEditableFieldGroups(
+        groupNumericEditableFields(moveFields, getMoveEditableFieldGroup)
+      ),
     [moveFields]
   );
   const moveDraftDefaults = useMemo(
@@ -10059,7 +10062,9 @@ function SelectedMovePanel({
   const activeFlags = move?.flags.filter((flag) => flag.enabled) ?? [];
   const visibleStatChanges =
     move?.statChanges.filter(
-      (statChange) => statChange.stat !== 0 || statChange.stage !== 0 || statChange.percent !== 0
+      (statChange) =>
+        statChange.stat > 0 ||
+        (statChange.stat === 0 && (statChange.stage !== 0 || statChange.percent !== 0))
     ) ?? [];
   const canSaveMoveDrafts =
     move !== null &&
@@ -10152,48 +10157,56 @@ function SelectedMovePanel({
                   </label>
                 </div>
               </fieldset>
-              {moveFieldGroups.map((group) => (
-                <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{group.group}</legend>
-                  <div className="editable-field-grid">
-                    {group.fields.map((field) => {
-                      const currentValue = getEditableMoveFieldValue(move, field.field);
-                      const draftValue = moveDrafts[field.field] ?? '';
-                      const draftState = getTrainerFieldDraftState(
-                        draftValue,
-                        currentValue,
-                        field
-                      );
+              {moveFieldGroups.map((group) => {
+                const isFlagsGroup = group.group === 'Flags';
+                return (
+                  <fieldset
+                    className={`editable-field-group${isFlagsGroup ? ' move-flags-field-group' : ''}`}
+                    key={group.group}
+                  >
+                    <legend>{group.group}</legend>
+                    <div
+                      className={`editable-field-grid${isFlagsGroup ? ' move-flags-field-grid' : ''}`}
+                    >
+                      {group.fields.map((field) => {
+                        const currentValue = getEditableMoveFieldValue(move, field.field);
+                        const draftValue = moveDrafts[field.field] ?? '';
+                        const draftState = getTrainerFieldDraftState(
+                          draftValue,
+                          currentValue,
+                          field
+                        );
 
-                      return (
-                        <GiftPokemonDraftField
-                          currentValue={currentValue}
-                          disabled={!canEditMoves || editSession === null || isMoveUpdating}
-                          draftState={draftState}
-                          draftValue={draftValue}
-                          field={field}
-                          idPrefix="move-field"
-                          key={field.field}
-                          onChange={(value) => {
-                            const nextDrafts = {
-                              ...moveDrafts,
-                              [field.field]: value
-                            };
-                            setMoveDraftsByMoveId((currentDrafts) =>
-                              setFieldDraftRecord(
-                                currentDrafts,
-                                move.moveId,
-                                nextDrafts,
-                                moveDraftDefaults
-                              )
-                            );
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                </fieldset>
-              ))}
+                        return (
+                          <GiftPokemonDraftField
+                            currentValue={currentValue}
+                            disabled={!canEditMoves || editSession === null || isMoveUpdating}
+                            draftState={draftState}
+                            draftValue={draftValue}
+                            field={field}
+                            idPrefix="move-field"
+                            key={field.field}
+                            onChange={(value) => {
+                              const nextDrafts = {
+                                ...moveDrafts,
+                                [field.field]: value
+                              };
+                              setMoveDraftsByMoveId((currentDrafts) =>
+                                setFieldDraftRecord(
+                                  currentDrafts,
+                                  move.moveId,
+                                  nextDrafts,
+                                  moveDraftDefaults
+                                )
+                              );
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                );
+              })}
             </div>
 
             {editSession ? (
@@ -13276,6 +13289,15 @@ function getMoveEditableFieldGroup(field: NumericEditableField) {
   }
 
   return 'Move Data';
+}
+
+function orderMoveEditableFieldGroups<TField extends NumericEditableField>(
+  groups: Array<{ group: string; fields: TField[] }>
+) {
+  return [
+    ...groups.filter((group) => group.group !== 'Flags'),
+    ...groups.filter((group) => group.group === 'Flags')
+  ];
 }
 
 function getEncounterEditableFieldGroup(field: NumericEditableField) {

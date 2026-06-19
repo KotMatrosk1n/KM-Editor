@@ -9,6 +9,7 @@ using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.Items;
+using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
@@ -74,6 +75,13 @@ public sealed class ScarletVioletBridgeTests
         var itemsSession = UpdateItem(dispatcher, paths, itemId: 1, field: "buyPrice", value: "777");
         Apply(dispatcher, paths, itemsSession);
         Assert.Equal(777, ReadItemPrice(temp, itemId: 1));
+
+        var movesSession = UpdateMove(dispatcher, paths, moveId: 33, field: "power", value: "50");
+        movesSession = UpdateMove(dispatcher, paths, movesSession, moveId: 33, field: "punch", value: "1");
+        Apply(dispatcher, paths, movesSession);
+        var move = ReadMove(temp, moveId: 33);
+        Assert.Equal(50, move.Power);
+        Assert.True(move.FlagPunch);
 
         var pokemonSession = UpdatePokemonField(dispatcher, paths, personalId: 1, field: "hp", value: "46");
         pokemonSession = UpdatePokemonLearnset(dispatcher, paths, pokemonSession, personalId: 1, slot: 0, moveId: 45, level: 7);
@@ -170,10 +178,11 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "pokemon", "trainers", "encounters", "placement", "modMerger"],
+            ["items", "moves", "pokemon", "trainers", "encounters", "placement", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Moves");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trainers");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Wild Encounters");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Placement");
@@ -254,6 +263,39 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(
             pokemon.Payload.Workflow.EvolutionMethodOptions.Single(option => option.Value == 61).ArgumentOptions,
             option => option.Value == 1 && option.Label.Contains("Hisuian Sliggoo", StringComparison.Ordinal));
+
+        var moves = Dispatch<LoadMovesWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadMovesWorkflow,
+            new LoadMovesWorkflowRequest(paths),
+            "request-sv-move-labels");
+        AssertSuccess(moves);
+        var tackle = moves.Payload!.Workflow.Moves.Single(row => row.MoveId == 33);
+        Assert.Equal("Tackle", tackle.Name);
+        Assert.True(tackle.CanUseMove);
+        Assert.Equal("Normal", tackle.TypeName);
+        Assert.Equal("Physical", tackle.CategoryName);
+        Assert.Equal("Opponent", tackle.TargetName);
+        Assert.Equal(40, tackle.Power);
+        Assert.Equal(35, tackle.PP);
+        Assert.Equal("None", tackle.InflictName);
+        Assert.Contains(tackle.Flags, flag => flag.Field == "makesContact" && flag.Enabled);
+        Assert.Contains(
+            moves.Payload.Workflow.EditableFields.Single(field => field.Field == "type").Options,
+            option => option.Value == 0 && option.Label == "0 Normal");
+        Assert.Contains(
+            moves.Payload.Workflow.EditableFields.Single(field => field.Field == "category").Options,
+            option => option.Value == 1 && option.Label == "1 Physical");
+        Assert.Contains(
+            moves.Payload.Workflow.EditableFields.Single(field => field.Field == "stat2").Options,
+            option => option.Value == -1 && option.Label == "-1 Unused");
+        var growl = moves.Payload.Workflow.Moves.Single(row => row.MoveId == 45);
+        Assert.Contains(
+            growl.StatChanges,
+            change => change.Slot == 1 && change.Stat == 2 && change.StatName == "Defense" && change.Stage == -1);
+        Assert.Contains(
+            growl.StatChanges,
+            change => change.Slot == 2 && change.Stat == -1 && change.StatName == "Unused (-1 raw)");
 
         var items = Dispatch<LoadItemsWorkflowResponse>(
             dispatcher,
@@ -586,6 +628,7 @@ public sealed class ScarletVioletBridgeTests
             CreateTrinityDescriptor(
                 [
                     SvDataPaths.ItemDataArray,
+                    SvDataPaths.MoveDataArray,
                     SvDataPaths.PersonalArray,
                     SvDataPaths.TrainerDataArray,
                     SvDataPaths.WildEncounterArray,
@@ -598,6 +641,7 @@ public sealed class ScarletVioletBridgeTests
     private static void WriteScarletFixtures(TemporaryBridgeProject temp)
     {
         WriteSvOutput(temp, SvDataPaths.ItemDataArray, CreateItemDataArray());
+        WriteSvOutput(temp, SvDataPaths.MoveDataArray, CreateMoveDataArray());
         WriteSvOutput(temp, SvDataPaths.PersonalArray, CreatePersonalArray());
         WriteSvOutput(temp, SvDataPaths.TrainerDataArray, CreateTrainerDataArray());
         WriteSvOutput(temp, SvDataPaths.WildEncounterArray, CreateEncounterArray());
@@ -641,6 +685,34 @@ public sealed class ScarletVioletBridgeTests
         AssertSuccess(response);
         Assert.Equal(value, Assert.Single(response.Payload!.Session.PendingEdits).NewValue);
         return response.Payload.Session;
+    }
+
+    private static EditSessionDto UpdateMove(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        int moveId,
+        string field,
+        string value)
+    {
+        return UpdateMove(dispatcher, paths, session: null, moveId, field, value);
+    }
+
+    private static EditSessionDto UpdateMove(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        EditSessionDto? session,
+        int moveId,
+        string field,
+        string value)
+    {
+        var response = Dispatch<UpdateMoveFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateMoveField,
+            new UpdateMoveFieldRequest(paths, session, moveId, field, value),
+            "request-sv-move-update");
+
+        AssertSuccess(response);
+        return response.Payload!.Session;
     }
 
     private static EditSessionDto UpdatePokemonField(
@@ -813,6 +885,7 @@ public sealed class ScarletVioletBridgeTests
         foreach (var path in new[]
         {
             SvDataPaths.ItemDataArray,
+            SvDataPaths.MoveDataArray,
             SvDataPaths.PersonalArray,
             SvDataPaths.TrainerDataArray,
             SvDataPaths.WildEncounterArray,
@@ -835,6 +908,21 @@ public sealed class ScarletVioletBridgeTests
         }
 
         throw new InvalidDataException($"Item {itemId} was not written.");
+    }
+
+    private static global::SvMoveData ReadMove(TemporaryBridgeProject temp, int moveId)
+    {
+        var table = global::SvMoveDataArray.GetRootAsSvMoveDataArray(new ByteBuffer(ReadSvOutput(temp, SvDataPaths.MoveDataArray)));
+        for (var index = 0; index < table.ValuesLength; index++)
+        {
+            var move = table.Values(index);
+            if (move is not null && move.Value.MoveId == moveId)
+            {
+                return move.Value;
+            }
+        }
+
+        throw new InvalidDataException($"Move {moveId} was not written.");
     }
 
     private static global::personal ReadPersonal(TemporaryBridgeProject temp, int personalId)
@@ -987,6 +1075,73 @@ public sealed class ScarletVioletBridgeTests
         var root = global::ItemDataArray.CreateItemDataArray(builder, vector);
         global::ItemDataArray.FinishItemDataArrayBuffer(builder, root);
         return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateMoveDataArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var tackle = CreateMove(builder, moveId: 33, power: 40, pp: 35, makesContact: true);
+        var growl = CreateMove(
+            builder,
+            moveId: 45,
+            power: 0,
+            pp: 40,
+            makesContact: false,
+            category: 0,
+            stat1: 2,
+            stat1Stage: -1,
+            stat1Chance: 100,
+            stat2: -1);
+        var vector = global::SvMoveDataArray.CreateValuesVector(builder, [tackle, growl]);
+        var root = global::SvMoveDataArray.CreateSvMoveDataArray(builder, vector);
+        global::SvMoveDataArray.FinishSvMoveDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static Offset<global::SvMoveData> CreateMove(
+        FlatBufferBuilder builder,
+        ushort moveId,
+        byte power,
+        byte pp,
+        bool makesContact,
+        byte category = 1,
+        sbyte stat1 = 0,
+        sbyte stat2 = 0,
+        sbyte stat3 = 0,
+        sbyte stat1Stage = 0,
+        sbyte stat2Stage = 0,
+        sbyte stat3Stage = 0,
+        byte stat1Chance = 0,
+        byte stat2Chance = 0,
+        byte stat3Chance = 0)
+    {
+        global::SvMoveData.StartSvMoveData(builder);
+        global::SvMoveData.AddStatChanges(
+            builder,
+            global::SvMoveStatChanges.CreateSvMoveStatChanges(
+                builder,
+                stat1,
+                stat2,
+                stat3,
+                stat1Stage,
+                stat2Stage,
+                stat3Stage,
+                stat1Chance,
+                stat2Chance,
+                stat3Chance));
+        global::SvMoveData.AddRawTarget(builder, 3);
+        global::SvMoveData.AddInflict(
+            builder,
+            global::SvMoveInflict.CreateSvMoveInflict(builder, Condition: 0, Chance: 0, TurnMode: 0, TurnMin: 0, TurnMax: 0));
+        global::SvMoveData.AddPp(builder, pp);
+        global::SvMoveData.AddAccuracy(builder, 100);
+        global::SvMoveData.AddPower(builder, power);
+        global::SvMoveData.AddCategory(builder, category);
+        global::SvMoveData.AddType(builder, 0);
+        global::SvMoveData.AddCanUseMove(builder, true);
+        global::SvMoveData.AddMoveId(builder, moveId);
+        global::SvMoveData.AddFlagMakesContact(builder, makesContact);
+        return global::SvMoveData.EndSvMoveData(builder);
     }
 
     private static byte[] CreatePersonalArray()

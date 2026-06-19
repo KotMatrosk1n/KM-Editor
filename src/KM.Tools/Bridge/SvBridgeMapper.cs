@@ -4,6 +4,7 @@ using KM.Api.Editing;
 using KM.Api.Encounters;
 using KM.Api.Items;
 using KM.Api.ModMerger;
+using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Trainers;
@@ -11,6 +12,7 @@ using KM.Api.Workflows;
 using KM.SV.Encounters;
 using KM.SV.Items;
 using KM.SV.ModMerger;
+using KM.SV.Moves;
 using KM.SV.Placement;
 using KM.SV.Pokemon;
 using KM.SV.Trainers;
@@ -51,6 +53,23 @@ public static class SvBridgeMapper
 
         return new UpdateItemFieldResponse(
             ToItemsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadMovesWorkflowResponse ToDto(SvMovesWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadMovesWorkflowResponse(ToMovesWorkflowDto(workflow));
+    }
+
+    public static UpdateMoveFieldResponse ToDto(SvMovesEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateMoveFieldResponse(
+            ToMovesWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -190,6 +209,20 @@ public static class SvBridgeMapper
             new ItemsWorkflowStatsDto(
                 workflow.Stats.TotalItemCount,
                 workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static MovesWorkflowDto ToMovesWorkflowDto(SvMovesWorkflow workflow)
+    {
+        return new MovesWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Moves.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new MovesWorkflowStatsDto(
+                workflow.Stats.TotalMoveCount,
+                workflow.Stats.EnabledMoveCount,
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.ActiveFlagCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -495,6 +528,86 @@ public static class SvBridgeMapper
             entry.MoveName,
             entry.Label,
             entry.CanLearn);
+    }
+
+    private static MoveRecordDto ToDto(SvMoveRecord move)
+    {
+        return new MoveRecordDto(
+            move.MoveId,
+            move.Name,
+            move.Description,
+            move.Version,
+            move.CanUseMove,
+            move.Type,
+            move.TypeName,
+            move.Quality,
+            move.Category,
+            move.CategoryName,
+            move.Power,
+            move.Accuracy,
+            move.PP,
+            move.Priority,
+            move.CritStage,
+            move.MaxMovePower,
+            move.Target,
+            move.TargetName,
+            move.HitMin,
+            move.HitMax,
+            move.TurnMin,
+            move.TurnMax,
+            move.Inflict,
+            move.InflictName,
+            move.InflictPercent,
+            move.RawInflictCount,
+            move.Flinch,
+            move.EffectSequence,
+            move.Recoil,
+            move.RawHealing,
+            move.StatChanges.Select(ToDto).ToArray(),
+            move.Flags.Select(ToDto).ToArray(),
+            ToDto(move.Provenance));
+    }
+
+    private static MoveEditableFieldDto ToDto(SvMoveEditableField field)
+    {
+        return new MoveEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static MoveEditableFieldOptionDto ToDto(SvMoveEditableFieldOption option)
+    {
+        return new MoveEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static MoveStatChangeRecordDto ToDto(SvMoveStatChangeRecord statChange)
+    {
+        return new MoveStatChangeRecordDto(
+            statChange.Slot,
+            statChange.Stat,
+            statChange.StatName,
+            statChange.Stage,
+            statChange.Percent);
+    }
+
+    private static MoveFlagRecordDto ToDto(SvMoveFlagRecord flag)
+    {
+        return new MoveFlagRecordDto(
+            flag.Field,
+            flag.Label,
+            flag.Enabled);
+    }
+
+    private static MoveProvenanceDto ToDto(SvMoveProvenance provenance)
+    {
+        return new MoveProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
     }
 
     private static TrainerRecordDto ToDto(SvTrainerRecord trainer)

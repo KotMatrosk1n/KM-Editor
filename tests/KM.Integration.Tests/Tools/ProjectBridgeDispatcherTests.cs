@@ -3674,8 +3674,8 @@ public sealed class ProjectBridgeDispatcherTests
     {
         using var temp = TemporaryBridgeProject.Create();
         var requestJson = SerializeRequest(
-            KmCommandNames.LoadMovesWorkflow,
-            new LoadMovesWorkflowRequest(temp.Paths with { SelectedGame = ProjectGameDto.Scarlet }),
+            KmCommandNames.LoadTextWorkflow,
+            new LoadTextWorkflowRequest(temp.Paths with { SelectedGame = ProjectGameDto.Scarlet }),
             requestId: "request-swsh-only");
 
         var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);

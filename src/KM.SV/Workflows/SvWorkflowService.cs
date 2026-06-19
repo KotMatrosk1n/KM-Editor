@@ -5,6 +5,7 @@ using KM.Core.Projects;
 using KM.SV.Encounters;
 using KM.SV.Items;
 using KM.SV.ModMerger;
+using KM.SV.Moves;
 using KM.SV.Placement;
 using KM.SV.Pokemon;
 using KM.SV.Trainers;
@@ -15,12 +16,14 @@ public sealed class SvWorkflowService
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SvItemsWorkflowService itemsWorkflowService;
+    private readonly SvMovesWorkflowService movesWorkflowService;
     private readonly SvPokemonWorkflowService pokemonWorkflowService;
     private readonly SvTrainersWorkflowService trainersWorkflowService;
     private readonly SvEncountersWorkflowService encountersWorkflowService;
     private readonly SvPlacementWorkflowService placementWorkflowService;
     private readonly SvModMergerWorkflowService modMergerWorkflowService;
     private readonly SvItemsEditSessionService itemsEditSessionService;
+    private readonly SvMovesEditSessionService movesEditSessionService;
     private readonly SvPokemonEditSessionService pokemonEditSessionService;
     private readonly SvTrainersEditSessionService trainersEditSessionService;
     private readonly SvEncountersEditSessionService encountersEditSessionService;
@@ -31,12 +34,14 @@ public sealed class SvWorkflowService
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         var fileSource = new SvWorkflowFileSource();
         itemsWorkflowService = new SvItemsWorkflowService(fileSource);
+        movesWorkflowService = new SvMovesWorkflowService(fileSource);
         pokemonWorkflowService = new SvPokemonWorkflowService(fileSource);
         trainersWorkflowService = new SvTrainersWorkflowService(fileSource);
         encountersWorkflowService = new SvEncountersWorkflowService(fileSource);
         placementWorkflowService = new SvPlacementWorkflowService(fileSource);
         modMergerWorkflowService = new SvModMergerWorkflowService(this.projectWorkspaceService);
         itemsEditSessionService = new SvItemsEditSessionService(this.projectWorkspaceService, fileSource, itemsWorkflowService);
+        movesEditSessionService = new SvMovesEditSessionService(this.projectWorkspaceService, fileSource, movesWorkflowService);
         pokemonEditSessionService = new SvPokemonEditSessionService(this.projectWorkspaceService, fileSource, pokemonWorkflowService);
         trainersEditSessionService = new SvTrainersEditSessionService(this.projectWorkspaceService, fileSource, trainersWorkflowService);
         encountersEditSessionService = new SvEncountersEditSessionService(this.projectWorkspaceService, fileSource, encountersWorkflowService);
@@ -56,6 +61,7 @@ public sealed class SvWorkflowService
         return new SvWorkflowList(
         [
             itemsWorkflowService.CreateSummary(project),
+            movesWorkflowService.CreateSummary(project),
             pokemonWorkflowService.CreateSummary(project),
             trainersWorkflowService.CreateSummary(project),
             encountersWorkflowService.CreateSummary(project),
@@ -70,6 +76,14 @@ public sealed class SvWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return itemsWorkflowService.Load(project);
+    }
+
+    public SvMovesWorkflow LoadMoves(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return movesWorkflowService.Load(project);
     }
 
     public SvPokemonWorkflow LoadPokemon(ProjectPaths paths)
@@ -142,6 +156,16 @@ public sealed class SvWorkflowService
         string value)
     {
         return itemsEditSessionService.UpdateField(paths, session, itemId, field, value);
+    }
+
+    public SvMovesEditResult UpdateMoveField(
+        ProjectPaths paths,
+        EditSession? session,
+        int moveId,
+        string field,
+        string value)
+    {
+        return movesEditSessionService.UpdateField(paths, session, moveId, field, value);
     }
 
     public SvPokemonEditResult UpdatePokemonField(
@@ -228,6 +252,7 @@ public sealed class SvWorkflowService
         return GetDomain(session) switch
         {
             SvEditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
+            SvEditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
@@ -245,6 +270,7 @@ public sealed class SvWorkflowService
         return GetDomain(session) switch
         {
             SvEditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -263,6 +289,7 @@ public sealed class SvWorkflowService
         return GetDomain(session) switch
         {
             SvEditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
@@ -284,6 +311,7 @@ public sealed class SvWorkflowService
         {
             [] => SvEditSessionDomain.None,
             [SvEditSessionSupport.ItemsDomain] => SvEditSessionDomain.Items,
+            [SvEditSessionSupport.MovesDomain] => SvEditSessionDomain.Moves,
             [SvEditSessionSupport.PokemonDomain] => SvEditSessionDomain.Pokemon,
             [SvEditSessionSupport.TrainersDomain] => SvEditSessionDomain.Trainers,
             [SvEditSessionSupport.EncountersDomain] => SvEditSessionDomain.Encounters,
@@ -328,6 +356,7 @@ public sealed class SvWorkflowService
     {
         None,
         Items,
+        Moves,
         Pokemon,
         Trainers,
         Encounters,
