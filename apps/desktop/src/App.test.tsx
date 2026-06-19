@@ -564,6 +564,146 @@ describe('App', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('keeps Scarlet/Violet advanced editor changes inside the editor', async () => {
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        selectedGame: 'scarlet'
+      }
+    });
+    const baseBridge = createMockProjectBridge({}, true);
+    const stageHyperspaceBypassInstall = vi.fn(baseBridge.stageHyperspaceBypassInstall);
+    const createChangePlan = vi.fn(baseBridge.createChangePlan);
+    const applyChangePlan = vi.fn(baseBridge.applyChangePlan);
+    const user = userEvent.setup();
+
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          applyChangePlan,
+          createChangePlan,
+          stageHyperspaceBypassInstall
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Hyperspace Bypass' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 2, name: 'Hyperspace Bypass' })
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Stage Install' }));
+
+    await waitFor(() => expect(stageHyperspaceBypassInstall).toHaveBeenCalledTimes(1));
+    expect(
+      await screen.findByText('Hyperspace Bypass install is staged for change-plan review.')
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Switch Editors?' })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Review and apply the pending changes inside this advanced editor, or discard them before leaving.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Go To Changes' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Stay Here' }));
+    expect(screen.getByRole('heading', { level: 2, name: 'Hyperspace Bypass' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review' }));
+
+    await waitFor(() => expect(createChangePlan).toHaveBeenCalledTimes(1));
+    expect(createChangePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputMode: 'standalone',
+        session: expect.objectContaining({
+          pendingEdits: expect.arrayContaining([
+            expect.objectContaining({ domain: 'workflow.hyperspaceBypass' })
+          ])
+        })
+      })
+    );
+    expect(await screen.findByText('Change plan preview contains 1 target file.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => expect(applyChangePlan).toHaveBeenCalledTimes(1));
+    expect(applyChangePlan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputMode: 'standalone',
+        changePlan: expect.objectContaining({
+          writes: expect.arrayContaining([
+            expect.objectContaining({ targetRelativePath: 'exefs/main' })
+          ])
+        })
+      })
+    );
+    expect(
+      await screen.findByText('Applied Hyperspace Bypass changes to the configured LayeredFS output root.')
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Changes' })).toBeInTheDocument();
+    expect(screen.getByText('No pending changes.')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Applied Hyperspace Bypass changes to the configured LayeredFS output root.')
+    ).not.toBeInTheDocument();
+  }, 15_000);
+
+  it('still routes normal Scarlet/Violet editor changes through Changes', async () => {
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        selectedGame: 'scarlet'
+      }
+    });
+    const user = userEvent.setup();
+
+    render(<App bridge={createMockProjectBridge({}, true)} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Items' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const buyPriceInput = screen.getByLabelText('Buy price');
+    await user.clear(buyPriceInput);
+    await user.type(buyPriceInput, '450');
+    await user.click(screen.getByRole('button', { name: 'Save Item' }));
+
+    await user.click(screen.getByRole('button', { name: 'Changes' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Switch Editors?' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Changes' })).toBeInTheDocument();
+    expect(screen.getByText('Set Potion buy price to 450.')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Validate Pending Changes' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Output for Trinity Mod Manager' })).toBeEnabled()
+    );
+  });
+
   it('installs and uninstalls the SwSh 60FPS Patch from Tools', async () => {
     const user = userEvent.setup();
     const baseBridge = createMockProjectBridge({}, true);

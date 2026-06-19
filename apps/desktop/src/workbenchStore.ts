@@ -40,6 +40,7 @@ import {
   type WorkflowSummary
 } from './bridge/contracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
+import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type NpcItemGiftWorkflow } from './bridge/npcItemGiftContracts';
 import { type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 export type WorkbenchSection =
@@ -69,9 +70,7 @@ export type WorkbenchSection =
   | 'shinyRate'
   | 'typeChart'
   | 'fairyGymBoosts'
-  | 'fashionUnlock'
-  | 'gymUniformRemoval'
-  | 'ivScreen'
+  | 'fashionUnlock' | 'gymUniformRemoval' | 'hyperspaceBypass' | 'ivScreen'
   | 'exefsPatches'
   | 'royalCandy' | 'startingItems' | 'npcItemGift'
   | 'spreadsheetImport'
@@ -111,8 +110,7 @@ type WorkbenchState = {
   shinyRateWorkflow: ShinyRateWorkflow | null;
   typeChartWorkflow: TypeChartWorkflow | null;
   fairyGymBoostsWorkflow: FairyGymBoostsWorkflow | null;
-  fashionUnlockWorkflow: FashionUnlockWorkflow | null; gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null;
-  ivScreenWorkflow: IvScreenWorkflow | null;
+  fashionUnlockWorkflow: FashionUnlockWorkflow | null; gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null; hyperspaceBypassWorkflow: HyperspaceBypassWorkflow | null; ivScreenWorkflow: IvScreenWorkflow | null;
   exeFsPatchSearchText: string;
   exeFsPatchWorkflow: ExeFsPatchWorkflow | null;
   flagworkSaveSearchText: string;
@@ -203,6 +201,7 @@ type WorkbenchState = {
   setGymUniformRemovalWorkflow: (
     gymUniformRemovalWorkflow: GymUniformRemovalWorkflow
   ) => void;
+  setHyperspaceBypassWorkflow: (hyperspaceBypassWorkflow: HyperspaceBypassWorkflow) => void;
   setIvScreenWorkflow: (ivScreenWorkflow: IvScreenWorkflow) => void;
   setExeFsPatchSearchText: (exeFsPatchSearchText: string) => void;
   setExeFsPatchWorkflow: (exeFsPatchWorkflow: ExeFsPatchWorkflow) => void;
@@ -336,8 +335,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     typeChartWorkflow: null,
     fairyGymBoostsWorkflow: null,
     fashionUnlockWorkflow: null,
-    gymUniformRemovalWorkflow: null,
-    ivScreenWorkflow: null,
+    gymUniformRemovalWorkflow: null, hyperspaceBypassWorkflow: null, ivScreenWorkflow: null,
     exeFsPatchSearchText: '',
     exeFsPatchWorkflow: null,
     flagworkSaveSearchText: '',
@@ -430,8 +428,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   typeChartWorkflow: null,
   fairyGymBoostsWorkflow: null,
   fashionUnlockWorkflow: null,
-  gymUniformRemovalWorkflow: null,
-  ivScreenWorkflow: null,
+  gymUniformRemovalWorkflow: null, hyperspaceBypassWorkflow: null, ivScreenWorkflow: null,
   exeFsPatchSearchText: '',
   exeFsPatchWorkflow: null,
   flagworkSaveSearchText: '',
@@ -1048,6 +1045,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       activeSection: resolveWorkflowLoadSection(state.activeSection, 'gymUniformRemoval'),
       gymUniformRemovalWorkflow
     })),
+  setHyperspaceBypassWorkflow: (hyperspaceBypassWorkflow) => set((state) => ({ activeSection: resolveWorkflowLoadSection(state.activeSection, 'hyperspaceBypass'), hyperspaceBypassWorkflow })),
   setExeFsPatchWorkflow: (exeFsPatchWorkflow) =>
     set((state) => {
       const selectedExeFsPatchId = exeFsPatchWorkflow.patches.some(

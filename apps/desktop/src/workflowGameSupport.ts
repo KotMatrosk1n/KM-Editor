@@ -33,6 +33,7 @@ import {
   type TypeChartWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
+import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type FairyGymBoostsWorkflow } from './bridge/fairyGymBoostsContracts';
 import { type NpcItemGiftWorkflow } from './bridge/npcItemGiftContracts';
 import { type ShinyRateWorkflow } from './bridge/shinyRateContracts';
@@ -81,6 +82,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
       'fairyGymBoosts',
       'fashionUnlock',
       'gymUniformRemoval',
+      'hyperspaceBypass',
       'dynamaxAdventures'
     ]
   }
@@ -131,10 +133,19 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'trainers',
   'encounters',
   'placement',
+  'hyperspaceBypass',
   'modMerger'
 ]);
 
 export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch', 'randomizer']);
+
+export const scarletVioletAdvancedEditorSectionIds = new Set<WorkbenchSection>([
+  'hyperspaceBypass'
+]);
+
+export const scarletVioletAdvancedEditorDomains = new Set([
+  'workflow.hyperspaceBypass'
+]);
 
 export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'pokemon',
@@ -181,6 +192,17 @@ export function isSharedStagedEditorSection(
   return sharedStagedEditorSectionIds.has(section) && isWorkflowSupportedForGame(section, game);
 }
 
+export function isScarletVioletAdvancedEditorSection(
+  section: WorkbenchSection | null,
+  game: ProjectGame | null | undefined
+) {
+  return (
+    section !== null &&
+    isScarletVioletGame(game) &&
+    scarletVioletAdvancedEditorSectionIds.has(section)
+  );
+}
+
 export type LoadedWorkflowStateBySection = {
   bagHookWorkflow: BagHookWorkflow | null;
   behaviorWorkflow: BehaviorWorkflow | null;
@@ -194,6 +216,7 @@ export type LoadedWorkflowStateBySection = {
   giftPokemonWorkflow: GiftPokemonWorkflow | null;
   gymUniformRemovalWorkflow: GymUniformRemovalWorkflow | null;
   hyperTrainingWorkflow: HyperTrainingWorkflow | null;
+  hyperspaceBypassWorkflow: HyperspaceBypassWorkflow | null;
   itemsWorkflow: ItemsWorkflow | null;
   ivScreenWorkflow: IvScreenWorkflow | null;
   modMergerWorkflow: ModMergerWorkflow | null;
@@ -281,6 +304,8 @@ export function getLoadedWorkflowStateForSection(
       return state.gymUniformRemovalWorkflow !== null;
     case 'hyperTraining':
       return state.hyperTrainingWorkflow !== null;
+    case 'hyperspaceBypass':
+      return state.hyperspaceBypassWorkflow !== null;
     case 'items':
       return state.itemsWorkflow !== null;
     case 'ivScreen':

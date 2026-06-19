@@ -14,6 +14,7 @@ using KM.Api.Flagwork;
 using KM.Api.FpsPatch;
 using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
+using KM.Api.HyperspaceBypass;
 using KM.Api.HyperTraining;
 using KM.Api.Items;
 using KM.Api.IvScreen;
@@ -288,6 +289,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadGymUniformRemovalWorkflow => DispatchLoadGymUniformRemovalWorkflow(requestJson),
                 KmCommandNames.StageGymUniformRemovalInstall => DispatchStageGymUniformRemovalInstall(requestJson),
                 KmCommandNames.StageGymUniformRemovalUninstall => DispatchStageGymUniformRemovalUninstall(requestJson),
+                KmCommandNames.LoadHyperspaceBypassWorkflow => DispatchLoadHyperspaceBypassWorkflow(requestJson),
+                KmCommandNames.StageHyperspaceBypassInstall => DispatchStageHyperspaceBypassInstall(requestJson),
+                KmCommandNames.StageHyperspaceBypassUninstall => DispatchStageHyperspaceBypassUninstall(requestJson),
                 KmCommandNames.LoadIvScreenWorkflow => DispatchLoadIvScreenWorkflow(requestJson),
                 KmCommandNames.StageIvScreenInstall => DispatchStageIvScreenInstall(requestJson),
                 KmCommandNames.StageIvScreenUninstall => DispatchStageIvScreenUninstall(requestJson),
@@ -1274,6 +1278,43 @@ public sealed class ProjectBridgeDispatcher
             ProjectBridgeMapper.ToCore(request.Payload.Paths),
             session);
         var response = SwShBridgeMapper.ToGymUniformRemovalUninstallDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadHyperspaceBypassWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadHyperspaceBypassWorkflowRequest>(requestJson);
+        var workflow = svWorkflowService.LoadHyperspaceBypass(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SvBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageHyperspaceBypassInstall(string requestJson)
+    {
+        var request = DeserializeRequest<StageHyperspaceBypassInstallRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = svWorkflowService.StageHyperspaceBypassInstall(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SvBridgeMapper.ToHyperspaceBypassInstallDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageHyperspaceBypassUninstall(string requestJson)
+    {
+        var request = DeserializeRequest<StageHyperspaceBypassUninstallRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = svWorkflowService.StageHyperspaceBypassUninstall(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SvBridgeMapper.ToHyperspaceBypassUninstallDto(result);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2294,6 +2335,9 @@ public sealed class ProjectBridgeDispatcher
     private static bool IsScarletVioletOnlyCommand(string command)
     {
         return command is
+            KmCommandNames.LoadHyperspaceBypassWorkflow or
+            KmCommandNames.StageHyperspaceBypassInstall or
+            KmCommandNames.StageHyperspaceBypassUninstall or
             KmCommandNames.LoadSvModMergerWorkflow or
             KmCommandNames.StageSvModMerge or
             KmCommandNames.ApplySvModMerge;

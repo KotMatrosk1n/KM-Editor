@@ -39,6 +39,7 @@ export function WorkflowsSection({
   isFairyGymBoostsLoading,
   isFashionUnlockLoading,
   isGymUniformRemovalLoading,
+  isHyperspaceBypassLoading,
   isIvScreenLoading,
   isRoyalCandyLoading,
   isStartingItemsLoading,
@@ -60,6 +61,7 @@ export function WorkflowsSection({
   onOpenFairyGymBoostsWorkflow,
   onOpenFashionUnlockWorkflow,
   onOpenGymUniformRemovalWorkflow,
+  onOpenHyperspaceBypassWorkflow,
   onOpenIvScreenWorkflow,
   onOpenItemsWorkflow,
   onOpenMovesWorkflow,
@@ -107,6 +109,7 @@ export function WorkflowsSection({
   isFairyGymBoostsLoading: boolean;
   isFashionUnlockLoading: boolean;
   isGymUniformRemovalLoading: boolean;
+  isHyperspaceBypassLoading: boolean;
   isIvScreenLoading: boolean;
   isRoyalCandyLoading: boolean;
   isStartingItemsLoading: boolean;
@@ -128,6 +131,7 @@ export function WorkflowsSection({
   onOpenFairyGymBoostsWorkflow: () => void;
   onOpenFashionUnlockWorkflow: () => void;
   onOpenGymUniformRemovalWorkflow: () => void;
+  onOpenHyperspaceBypassWorkflow: () => void;
   onOpenIvScreenWorkflow: () => void;
   onOpenItemsWorkflow: () => void;
   onOpenMovesWorkflow: () => void;
@@ -179,6 +183,7 @@ export function WorkflowsSection({
     giftPokemon: action('Open Gifts', isGiftPokemonLoading, onOpenGiftPokemonWorkflow),
     gymUniformRemoval: action('Open Gym Uniform', isGymUniformRemovalLoading, onOpenGymUniformRemovalWorkflow),
     hyperTraining: action('Open Hyper Training', isHyperTrainingLoading, onOpenHyperTrainingWorkflow),
+    hyperspaceBypass: action('Open Hyperspace', isHyperspaceBypassLoading, onOpenHyperspaceBypassWorkflow),
     items: action('Open Items', isItemsLoading, onOpenItemsWorkflow),
     ivScreen: action('Open IV Screen', isIvScreenLoading, onOpenIvScreenWorkflow),
     modMerger: action('Open Merger', isModMergerLoading, onOpenModMergerWorkflow),

@@ -199,6 +199,7 @@ import {
   type TrainerRecord,
   type TrainersWorkflow
 } from './bridge/contracts';
+import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type FpsPatchStatus } from './bridge/fpsPatchContracts';
 import {
   ProjectBridgeError,
@@ -226,7 +227,7 @@ import {
   type WorkbenchSection,
   useWorkbenchStore
 } from './workbenchStore';
-import { getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isScarletVioletGame, isSharedStagedEditorSection, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
+import { getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isScarletVioletAdvancedEditorSection, isScarletVioletGame, isSharedStagedEditorSection, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, scarletVioletAdvancedEditorDomains, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
 import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
 import {
@@ -245,6 +246,7 @@ import {
 import { type ShinyRateMode, type ShinyRateWorkflow } from './bridge/shinyRateContracts';
 import { FairyGymBoostsSection } from './features/fairy-gym-boosts/FairyGymBoostsSection';
 import { FashionUnlockSection } from './features/fashion-unlock/FashionUnlockSection';
+import { HyperspaceBypassSection } from './features/hyperspace-bypass/HyperspaceBypassSection';
 import { NpcItemGiftSection, formatNpcItemGiftPendingValue } from './features/npc-item-gift/NpcItemGiftSection';
 import { useNpcItemGiftWorkflowController } from './features/npc-item-gift/useNpcItemGiftWorkflowController';
 import {
@@ -557,6 +559,11 @@ const sections: Array<{
     id: 'gymUniformRemoval',
     label: 'Gym Uniform Removal',
     icon: Shirt
+  },
+  {
+    id: 'hyperspaceBypass',
+    label: 'Hyperspace Bypass',
+    icon: Sparkle
   },
   {
     id: 'exefsPatches',
@@ -1407,6 +1414,9 @@ export function App({
   const gymUniformRemovalWorkflow = useWorkbenchStore(
     (state) => state.gymUniformRemovalWorkflow
   );
+  const hyperspaceBypassWorkflow = useWorkbenchStore(
+    (state) => state.hyperspaceBypassWorkflow
+  );
   const ivScreenWorkflow = useWorkbenchStore((state) => state.ivScreenWorkflow);
   const setBagHookWorkflow = useWorkbenchStore((state) => state.setBagHookWorkflow);
   const setCatchCapWorkflow = useWorkbenchStore((state) => state.setCatchCapWorkflow);
@@ -1423,6 +1433,9 @@ export function App({
   );
   const setGymUniformRemovalWorkflow = useWorkbenchStore(
     (state) => state.setGymUniformRemovalWorkflow
+  );
+  const setHyperspaceBypassWorkflow = useWorkbenchStore(
+    (state) => state.setHyperspaceBypassWorkflow
   );
   const setIvScreenWorkflow = useWorkbenchStore((state) => state.setIvScreenWorkflow);
   const setExeFsPatchSearchText = useWorkbenchStore(
@@ -1647,6 +1660,8 @@ export function App({
   const [isFashionUnlockStaging, setIsFashionUnlockStaging] = useState(false);
   const [isGymUniformRemovalLoading, setIsGymUniformRemovalLoading] = useState(false);
   const [isGymUniformRemovalStaging, setIsGymUniformRemovalStaging] = useState(false);
+  const [isHyperspaceBypassLoading, setIsHyperspaceBypassLoading] = useState(false);
+  const [isHyperspaceBypassStaging, setIsHyperspaceBypassStaging] = useState(false);
   const [isIvScreenLoading, setIsIvScreenLoading] = useState(false);
   const [isIvScreenStaging, setIsIvScreenStaging] = useState(false);
   const [isExeFsPatchLoading, setIsExeFsPatchLoading] = useState(false);
@@ -1772,6 +1787,7 @@ export function App({
     bagHookWorkflow, behaviorWorkflow, catchCapWorkflow, dynamaxAdventuresWorkflow,
     encountersWorkflow, exeFsPatchWorkflow, fairyGymBoostsWorkflow, fashionUnlockWorkflow,
     flagworkSaveWorkflow, giftPokemonWorkflow, gymUniformRemovalWorkflow, hyperTrainingWorkflow,
+    hyperspaceBypassWorkflow,
     itemsWorkflow, ivScreenWorkflow, modMergerWorkflow, movesWorkflow, npcItemGiftWorkflow,
     placementWorkflow, pokemonWorkflow, raidBattlesWorkflow, raidBonusRewardsWorkflow,
     raidRewardsWorkflow, rentalPokemonWorkflow, royalCandyWorkflow, selectedGame, shinyRateWorkflow,
@@ -1794,6 +1810,19 @@ export function App({
     (editSessionSection === activeSection ||
       (editSessionCanBeSharedAcrossNormalEditors &&
         isSharedStagedEditorSection(activeSection, selectedGame)));
+  const editSessionIsScarletVioletAdvancedEditor =
+    editSession !== null &&
+    isScarletVioletGame(selectedGame) &&
+    editSession.pendingEdits.length > 0 &&
+    editSession.pendingEdits.every((edit) =>
+      scarletVioletAdvancedEditorDomains.has(edit.domain)
+    );
+  const activeSectionOwnsScarletVioletAdvancedEditSession =
+    editSessionIsScarletVioletAdvancedEditor &&
+    (
+      activeSectionOwnsEditSession ||
+      isScarletVioletAdvancedEditorSection(activeSection, selectedGame)
+    );
   const getEditSessionForSection = useCallback(
     (section: WorkbenchSection) =>
       editSessionSection === section ||
@@ -1841,6 +1870,9 @@ export function App({
     clearScopedEditorPanelState(section);
   };
 
+  const getScopedEditorOutputMode = (section: WorkbenchSection): ChangePlanOutputMode | undefined =>
+    isScarletVioletAdvancedEditorSection(section, selectedGame) ? 'standalone' : undefined;
+
   const npcItemGiftController = useNpcItemGiftWorkflowController({ bridge, editSession, markClean: () => registerEditorDraftDirty('npcItemGift', false), onDiagnostics: setBridgeDiagnostics, onError: (error) => setBridgeDiagnostics(toBridgeDiagnostics(error)), onPanelDiagnostics: (diagnostics) => setScopedEditorPanelDiagnostics('npcItemGift', diagnostics), onSession: (session) => { setEditSession(session); setEditSessionSection(activeSectionIsEditor ? activeSection : null); }, onWorkflow: setNpcItemGiftWorkflow, paths: toProjectPaths(draftPaths), prepareStage: () => prepareScopedEditorPanelAction('npcItemGift') });
 
   const clearLoadedWorkflowData = useCallback(() => {
@@ -1853,6 +1885,7 @@ export function App({
       fairyGymBoostsWorkflow: null,
       fashionUnlockWorkflow: null,
       gymUniformRemovalWorkflow: null,
+      hyperspaceBypassWorkflow: null,
       ivScreenWorkflow: null,
       dynamaxAdventuresWorkflow: null,
       encountersWorkflow: null,
@@ -1923,7 +1956,13 @@ export function App({
   const requestEditorExit = useCallback(
     (destination: WorkbenchSection | null, kind: ExitPromptState['kind']) => {
       if (editSession) {
-        setExitPrompt({ destination, kind, mode: 'confirm' });
+        setExitPrompt({
+          allowGoToChanges: !activeSectionOwnsScarletVioletAdvancedEditSession,
+          destination,
+          discardPendingSession: activeSectionOwnsScarletVioletAdvancedEditSession,
+          kind,
+          mode: 'confirm'
+        });
         return;
       }
 
@@ -1931,7 +1970,7 @@ export function App({
         setActiveSection(destination);
       }
     },
-    [editSession, setActiveSection]
+    [activeSectionOwnsScarletVioletAdvancedEditSession, editSession, setActiveSection]
   );
 
   const handleNavigateSection = useCallback(
@@ -1951,39 +1990,41 @@ export function App({
         return;
       }
 
-      if (destination !== 'changes') {
-        const destinationOwnsEditSession =
-          editSession !== null &&
-          (destination === editSessionSection ||
-            (editSessionCanBeSharedAcrossNormalEditors &&
-              isSharedStagedEditorSection(destination, selectedGame)));
-        const isLeavingActiveEditSession =
-          editSession !== null &&
-          !destinationOwnsEditSession &&
-          (
-            activeSectionOwnsEditSession ||
-            activeSection === 'changes' ||
-            activeSectionIsEditor
-          );
+      const destinationOwnsEditSession =
+        editSession !== null &&
+        (destination === editSessionSection ||
+          (editSessionCanBeSharedAcrossNormalEditors &&
+            isSharedStagedEditorSection(destination, selectedGame)));
+      const isLeavingActiveEditSession =
+        destination !== 'changes' &&
+        editSession !== null &&
+        !destinationOwnsEditSession &&
+        (
+          activeSectionOwnsEditSession ||
+          activeSection === 'changes' ||
+          activeSectionIsEditor
+        );
+      const isLeavingScarletVioletAdvancedEditorForChanges =
+        destination === 'changes' && activeSectionOwnsScarletVioletAdvancedEditSession;
 
-        if (isLeavingActiveEditSession) {
-          setExitPrompt({
-            destination,
-            discardPendingSession: true,
-            kind: 'editorSwitch',
-            mode: 'confirm'
-          });
-          return;
-        }
+      if (isLeavingActiveEditSession || isLeavingScarletVioletAdvancedEditorForChanges) {
+        setExitPrompt({
+          allowGoToChanges: !activeSectionOwnsScarletVioletAdvancedEditSession,
+          destination,
+          discardPendingSession: true,
+          kind: 'editorSwitch',
+          mode: 'confirm'
+        });
+        return;
+      }
 
-        if (activeSectionIsEditor && activeEditorHasLocalDrafts) {
-          setExitPrompt({
-            destination,
-            kind: 'editorSwitch',
-            mode: 'confirm'
-          });
-          return;
-        }
+      if (destination !== 'changes' && activeSectionIsEditor && activeEditorHasLocalDrafts) {
+        setExitPrompt({
+          destination,
+          kind: 'editorSwitch',
+          mode: 'confirm'
+        });
+        return;
       }
 
       setActiveSection(destination);
@@ -1993,6 +2034,7 @@ export function App({
       activeSection,
       activeSectionIsEditor,
       activeSectionOwnsEditSession,
+      activeSectionOwnsScarletVioletAdvancedEditSession,
       availableWorkflowSectionIds,
       editSession,
       editSessionCanBeSharedAcrossNormalEditors,
@@ -2082,6 +2124,11 @@ export function App({
       }
 
       if (prompt.kind === 'cancel') {
+        cancelDiscardActionRef.current = null;
+        return null;
+      }
+
+      if (prompt.allowGoToChanges === false) {
         cancelDiscardActionRef.current = null;
         return null;
       }
@@ -3192,6 +3239,64 @@ export function App({
     }
   };
 
+  const handleOpenHyperspaceBypassWorkflow = async () => {
+    setIsHyperspaceBypassLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadHyperspaceBypassWorkflow({
+        paths: toProjectPaths(draftPaths)
+      });
+      setHyperspaceBypassWorkflow(response.workflow);
+    } catch (error) {
+      setScopedEditorPanelDiagnostics('hyperspaceBypass', toBridgeDiagnostics(error));
+    } finally {
+      setIsHyperspaceBypassLoading(false);
+    }
+  };
+
+  const handleStageHyperspaceBypassInstall = async () => {
+    setIsHyperspaceBypassStaging(true);
+    prepareScopedEditorPanelAction('hyperspaceBypass');
+
+    try {
+      const response = await bridge.stageHyperspaceBypassInstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setHyperspaceBypassWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setScopedEditorPanelDiagnostics('hyperspaceBypass', response.diagnostics);
+      registerEditorDraftDirty('hyperspaceBypass', false);
+    } catch (error) {
+      setScopedEditorPanelDiagnostics('hyperspaceBypass', toBridgeDiagnostics(error));
+    } finally {
+      setIsHyperspaceBypassStaging(false);
+    }
+  };
+
+  const handleStageHyperspaceBypassUninstall = async () => {
+    setIsHyperspaceBypassStaging(true);
+    prepareScopedEditorPanelAction('hyperspaceBypass');
+
+    try {
+      const response = await bridge.stageHyperspaceBypassUninstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setHyperspaceBypassWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setScopedEditorPanelDiagnostics('hyperspaceBypass', response.diagnostics);
+      registerEditorDraftDirty('hyperspaceBypass', false);
+    } catch (error) {
+      setScopedEditorPanelDiagnostics('hyperspaceBypass', toBridgeDiagnostics(error));
+    } finally {
+      setIsHyperspaceBypassStaging(false);
+    }
+  };
+
   const handleOpenIvScreenWorkflow = async () => {
     setIsIvScreenLoading(true);
     setBridgeDiagnostics([]);
@@ -3589,6 +3694,12 @@ export function App({
           void handleOpenGymUniformRemovalWorkflow();
         }
         break;
+      case 'hyperspaceBypass':
+        if (!hyperspaceBypassWorkflow && !isHyperspaceBypassLoading) {
+          markLazyLoadStarted();
+          void handleOpenHyperspaceBypassWorkflow();
+        }
+        break;
       case 'ivScreen':
         if (!ivScreenWorkflow && !isIvScreenLoading) {
           markLazyLoadStarted();
@@ -3640,6 +3751,7 @@ export function App({
     gymUniformRemovalWorkflow,
     gameScopedWorkflows,
     hyperTrainingWorkflow,
+    hyperspaceBypassWorkflow,
     health?.canOpenEditableWorkflows,
     isEncountersLoading,
     isExeFsPatchLoading,
@@ -3657,6 +3769,7 @@ export function App({
     isFashionUnlockLoading,
     isGymUniformRemovalLoading,
     isHyperTrainingLoading,
+    isHyperspaceBypassLoading,
     isIvScreenLoading,
     isShinyRateLoading,
     isMovesLoading,
@@ -6003,6 +6116,7 @@ const resetModMergerPlan = () => {
 
     try {
       const response = await bridge.createChangePlan({
+        outputMode: getScopedEditorOutputMode(section),
         paths: toProjectPaths(draftPaths),
         session: editSession
       });
@@ -6016,7 +6130,7 @@ const resetModMergerPlan = () => {
         }
       }));
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      setScopedEditorPanelDiagnostics(section, toBridgeDiagnostics(error));
     } finally {
       setIsChangePlanCreating(false);
     }
@@ -6348,6 +6462,14 @@ const resetModMergerPlan = () => {
         }
       );
     }
+    if (hyperspaceBypassWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadHyperspaceBypassWorkflow({ paths });
+          setHyperspaceBypassWorkflow(response.workflow);
+        }
+      );
+    }
     if (ivScreenWorkflow) {
       reloadTasks.push(
         async () => {
@@ -6485,6 +6607,7 @@ const resetModMergerPlan = () => {
       const paths = toProjectPaths(draftPaths);
       const response = await bridge.applyChangePlan({
         changePlan: panelOutput.changePlan,
+        outputMode: getScopedEditorOutputMode(section),
         paths,
         session: editSession
       });
@@ -6529,7 +6652,7 @@ const resetModMergerPlan = () => {
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
-      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      setScopedEditorPanelDiagnostics(section, toBridgeDiagnostics(error));
     } finally {
       setIsChangePlanApplying(false);
       setWorkProgress(null);
@@ -6787,6 +6910,7 @@ const resetModMergerPlan = () => {
               isFairyGymBoostsLoading={isFairyGymBoostsLoading}
               isFashionUnlockLoading={isFashionUnlockLoading}
               isGymUniformRemovalLoading={isGymUniformRemovalLoading}
+              isHyperspaceBypassLoading={isHyperspaceBypassLoading}
               isIvScreenLoading={isIvScreenLoading}
               isExeFsPatchLoading={isExeFsPatchLoading}
               isRoyalCandyLoading={isRoyalCandyLoading}
@@ -6809,6 +6933,7 @@ const resetModMergerPlan = () => {
               onOpenFairyGymBoostsWorkflow={handleOpenFairyGymBoostsWorkflow}
               onOpenFashionUnlockWorkflow={handleOpenFashionUnlockWorkflow}
               onOpenGymUniformRemovalWorkflow={handleOpenGymUniformRemovalWorkflow}
+              onOpenHyperspaceBypassWorkflow={handleOpenHyperspaceBypassWorkflow}
               onOpenIvScreenWorkflow={handleOpenIvScreenWorkflow}
               onOpenItemsWorkflow={handleOpenItemsWorkflow}
               onOpenMovesWorkflow={handleOpenMovesWorkflow}
@@ -7417,6 +7542,24 @@ const resetModMergerPlan = () => {
               />
             )
           ) : null}
+          {activeSection === 'hyperspaceBypass' ? (
+            isHyperspaceBypassLoading && !hyperspaceBypassWorkflow ? (
+              <WorkflowLoadingPanel label="Hyperspace Bypass" />
+            ) : (
+              <HyperspaceBypassSection
+                editSession={getEditSessionForSection('hyperspaceBypass')}
+                isChangePlanApplying={isChangePlanApplying}
+                isChangePlanCreating={isChangePlanCreating}
+                isStaging={isHyperspaceBypassStaging}
+                onApplyChangePlan={() => void handleApplyScopedEditorChangePlan('hyperspaceBypass')}
+                onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('hyperspaceBypass')}
+                onStageInstall={handleStageHyperspaceBypassInstall}
+                onStageUninstall={handleStageHyperspaceBypassUninstall}
+                panelOutput={getScopedEditorPanelOutput('hyperspaceBypass')}
+                workflow={hyperspaceBypassWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'ivScreen' ? (
             isIvScreenLoading && !ivScreenWorkflow ? (
               <WorkflowLoadingPanel label="IV Screen" />
@@ -7628,6 +7771,7 @@ const resetModMergerPlan = () => {
                 giftPokemonWorkflow,
                 behaviorWorkflow,
                 hyperTrainingWorkflow,
+                hyperspaceBypassWorkflow,
                 itemsWorkflow,
                 ivScreenWorkflow,
                 movesWorkflow,
@@ -7676,6 +7820,7 @@ const resetModMergerPlan = () => {
       {exitPrompt ? (
         <ExitPromptModal
           kind={exitPrompt.kind}
+          allowGoToChanges={exitPrompt.allowGoToChanges ?? true}
           mode={exitPrompt.mode}
           onConfirmDiscard={handleConfirmExitDiscard}
           onDeclineDiscard={handleDeclineExitDiscard}
@@ -12775,6 +12920,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.gymUniformRemoval': 'Gym Uniform Removal',
     'workflow.behavior': 'Behavior',
     'workflow.hyperTraining': 'Hyper Training',
+    'workflow.hyperspaceBypass': 'Hyperspace Bypass',
     'workflow.shinyRate': 'Shiny Rate',
     'workflow.items': 'Items',
     'workflow.ivScreen': 'IV Screen',
@@ -13055,6 +13201,16 @@ function getPendingEditDisplayDetails(
             ? 'Skip gym uniform changes'
             : 'Restore base bytes',
         recordLabel: 'Gym Uniform Removal'
+      });
+    case 'workflow.hyperspaceBypass':
+      return createPendingEditDisplayDetails(edit, {
+        editorLabel,
+        fieldLabel: edit.field === 'install' ? 'Install' : 'Uninstall',
+        newValueLabel:
+          edit.recordId === 'hyperspace-bypass-v1-install'
+            ? 'Bypass the Hoopa runtime gate'
+            : 'Restore base bytes',
+        recordLabel: 'Hyperspace Bypass'
       });
     case 'workflow.ivScreen':
       return createPendingEditDisplayDetails(edit, {
@@ -25346,6 +25502,7 @@ type PendingEditContext = {
   giftPokemonWorkflow: GiftPokemonWorkflow | null;
   behaviorWorkflow: BehaviorWorkflow | null;
   hyperTrainingWorkflow: HyperTrainingWorkflow | null;
+  hyperspaceBypassWorkflow: HyperspaceBypassWorkflow | null;
   shinyRateWorkflow: ShinyRateWorkflow | null;
   itemsWorkflow: ItemsWorkflow | null;
   ivScreenWorkflow: IvScreenWorkflow | null;
@@ -25910,6 +26067,7 @@ function DependencyWarningModal({
 }
 
 function ExitPromptModal({
+  allowGoToChanges,
   kind,
   mode,
   onConfirmDiscard,
@@ -25917,6 +26075,7 @@ function ExitPromptModal({
   onGoToChanges,
   onStay
 }: {
+  allowGoToChanges: boolean;
   kind: ExitPromptState['kind'];
   mode: ExitPromptState['mode'];
   onConfirmDiscard: () => void;
@@ -25951,10 +26110,14 @@ function ExitPromptModal({
         <p className="modal-copy">
           {isConfirmMode
             ? isEditorSwitchPrompt
-              ? 'This editor has unsaved changes. Switching editors now will revert those edits.'
+              ? allowGoToChanges
+                ? 'This editor has unsaved changes. Switching editors now will revert those edits.'
+                : 'Review and apply the pending changes inside this advanced editor, or discard them before leaving.'
               : isCancelPrompt
               ? 'Canceling will discard every pending edit in this edit session. Are you sure you want to discard all changes?'
-              : 'This editor has pending changes or an active edit session. Exiting will discard those pending edits.'
+              : allowGoToChanges
+                ? 'This editor has pending changes or an active edit session. Exiting will discard those pending edits.'
+                : 'Review and apply the pending changes inside this advanced editor, or discard them before leaving.'
             : 'You can stay on this editor or go to Changes to validate and save the pending edits.'}
         </p>
         <div className="modal-actions">
@@ -25966,11 +26129,11 @@ function ExitPromptModal({
               </button>
               <button
                 className="secondary-button"
-                onClick={isEditorSwitchPrompt ? onStay : onDeclineDiscard}
+                onClick={isEditorSwitchPrompt || !allowGoToChanges ? onStay : onDeclineDiscard}
                 type="button"
               >
                 <X aria-hidden="true" size={16} />
-                <span>{isEditorSwitchPrompt ? 'Stay Here' : 'No'}</span>
+                <span>{isEditorSwitchPrompt || !allowGoToChanges ? 'Stay Here' : 'No'}</span>
               </button>
             </>
           ) : (
@@ -28797,6 +28960,7 @@ type ShopInventoryDraftRow = {
 };
 
 type ExitPromptState = {
+  allowGoToChanges?: boolean;
   destination: WorkbenchSection | null;
   discardPendingSession?: boolean;
   kind: 'cancel' | 'editor' | 'editorSwitch' | 'window';

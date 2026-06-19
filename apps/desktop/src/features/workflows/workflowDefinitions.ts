@@ -221,6 +221,13 @@ export const workflowDefinitions: Array<{
     icon: Shirt
   },
   {
+    id: 'hyperspaceBypass',
+    label: 'Hyperspace Bypass',
+    description:
+      'Advanced S/V ExeFS editor that lets any Pokemon pass the Hyperspace Hole/Fury Hoopa runtime gate.',
+    icon: Sparkle
+  },
+  {
     id: 'dynamaxAdventures',
     label: 'Dynamax Adventures',
     description:

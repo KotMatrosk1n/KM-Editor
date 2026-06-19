@@ -21,7 +21,8 @@ export const scopedEditorPanelSectionIds = new Set<WorkbenchSection>([
   'typeChart',
   'fairyGymBoosts',
   'fashionUnlock',
-  'gymUniformRemoval'
+  'gymUniformRemoval',
+  'hyperspaceBypass'
 ]);
 
 export function useScopedEditorPanelOutput(currentEditSessionSignature: string | null) {

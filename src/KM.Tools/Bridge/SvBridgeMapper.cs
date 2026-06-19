@@ -2,14 +2,18 @@
 
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.HyperspaceBypass;
 using KM.Api.Items;
 using KM.Api.ModMerger;
 using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
+using KM.Api.Projects;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
+using KM.Core.Projects;
 using KM.SV.Encounters;
+using KM.SV.HyperspaceBypass;
 using KM.SV.Items;
 using KM.SV.ModMerger;
 using KM.SV.Moves;
@@ -152,12 +156,41 @@ public static class SvBridgeMapper
         return new LoadPlacementWorkflowResponse(ToPlacementWorkflowDto(workflow));
     }
 
+    public static LoadHyperspaceBypassWorkflowResponse ToDto(SvHyperspaceBypassWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadHyperspaceBypassWorkflowResponse(ToHyperspaceBypassWorkflowDto(workflow));
+    }
+
     public static UpdatePlacementObjectFieldResponse ToDto(SvPlacementEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
 
         return new UpdatePlacementObjectFieldResponse(
             ToPlacementWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageHyperspaceBypassInstallResponse ToHyperspaceBypassInstallDto(
+        SvHyperspaceBypassEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageHyperspaceBypassInstallResponse(
+            ToHyperspaceBypassWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageHyperspaceBypassUninstallResponse ToHyperspaceBypassUninstallDto(
+        SvHyperspaceBypassEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageHyperspaceBypassUninstallResponse(
+            ToHyperspaceBypassWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -281,6 +314,25 @@ public static class SvBridgeMapper
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
             workflow.Categories.Select(ToDto).ToArray());
+    }
+
+    private static HyperspaceBypassWorkflowDto ToHyperspaceBypassWorkflowDto(
+        SvHyperspaceBypassWorkflow workflow)
+    {
+        return new HyperspaceBypassWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.BuildId,
+            workflow.PatchOffsetHex,
+            workflow.StubKind,
+            ToProjectGameDto(workflow.DetectedGame),
+            workflow.ReservedRegions.Select(ToDto).ToArray(),
+            ToDto(workflow.Provenance),
+            new HyperspaceBypassWorkflowStatsDto(
+                workflow.Stats.ReservedMainTextRegionCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
     private static SvModMergerWorkflowDto ToWorkflowDto(SvModMergerWorkflow workflow)
@@ -829,9 +881,28 @@ public static class SvBridgeMapper
             category.ObjectCount);
     }
 
+    private static HyperspaceBypassReservedRegionDto ToDto(SvHyperspaceBypassReservedRegion region)
+    {
+        return new HyperspaceBypassReservedRegionDto(
+            region.RegionId,
+            region.Label,
+            region.OffsetLabel,
+            region.StartOffset,
+            region.Length,
+            region.Rule);
+    }
+
     private static PlacementProvenanceDto ToDto(SvPlacementProvenance provenance)
     {
         return new PlacementProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static HyperspaceBypassProvenanceDto ToDto(SvHyperspaceBypassProvenance provenance)
+    {
+        return new HyperspaceBypassProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));
@@ -895,5 +966,10 @@ public static class SvBridgeMapper
             SvWorkflowAvailability.Available => WorkflowAvailabilityDto.Available,
             _ => throw new ArgumentOutOfRangeException(nameof(availability), availability, null),
         };
+    }
+
+    private static ProjectGameDto? ToProjectGameDto(ProjectGame? game)
+    {
+        return game is null ? null : ProjectBridgeMapper.ToDto(game.Value);
     }
 }

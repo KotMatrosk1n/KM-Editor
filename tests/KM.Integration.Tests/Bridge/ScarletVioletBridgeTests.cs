@@ -8,6 +8,7 @@ using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.HyperspaceBypass;
 using KM.Api.Items;
 using KM.Api.Moves;
 using KM.Api.Placement;
@@ -161,6 +162,122 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletHyperspaceBypassStagesStandaloneMainAndRejectsTrinityOutput(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        temp.WriteBaseExeFsFile("main", SvHyperspaceBypassBridgeFixtures.CreateCompatibleMain(game));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var load = Dispatch<LoadHyperspaceBypassWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadHyperspaceBypassWorkflow,
+            new LoadHyperspaceBypassWorkflowRequest(paths),
+            "request-sv-hyperspace-load");
+        AssertSuccess(load);
+        Assert.Equal("available", load.Payload!.Workflow.InstallStatus);
+        Assert.Equal(game, load.Payload.Workflow.DetectedGame);
+        Assert.Equal("main.text+0x02873A50", load.Payload.Workflow.PatchOffsetHex);
+        Assert.Contains(load.Payload.Workflow.ReservedRegions, region => region.RegionId == "hyperspace-hoopa-runtime-gate");
+
+        var stage = Dispatch<StageHyperspaceBypassInstallResponse>(
+            dispatcher,
+            KmCommandNames.StageHyperspaceBypassInstall,
+            new StageHyperspaceBypassInstallRequest(paths, Session: null),
+            "request-sv-hyperspace-stage");
+        AssertSuccess(stage);
+        Assert.Single(stage.Payload!.Session.PendingEdits);
+        Assert.Equal("workflow.hyperspaceBypass", stage.Payload.Session.PendingEdits[0].Domain);
+        Assert.DoesNotContain(stage.Payload.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var validation = Dispatch<ValidateEditSessionResponse>(
+            dispatcher,
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(paths, stage.Payload.Session),
+            "request-sv-hyperspace-validate");
+        AssertSuccess(validation);
+        Assert.True(validation.Payload!.IsValid);
+
+        var trinityPlan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, stage.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-hyperspace-trinity-plan");
+        AssertSuccess(trinityPlan);
+        Assert.False(trinityPlan.Payload!.ChangePlan.CanApply);
+        Assert.Empty(trinityPlan.Payload.ChangePlan.Writes);
+        Assert.Contains(
+            trinityPlan.Payload.ChangePlan.Diagnostics,
+            diagnostic => diagnostic.Message.Contains("outside Trinity Mod Manager RomFS output", StringComparison.Ordinal));
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, stage.Payload.Session),
+            "request-sv-hyperspace-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var write = Assert.Single(plan.Payload.ChangePlan.Writes);
+        Assert.Equal("exefs/main", write.TargetRelativePath);
+
+        var baseMainPath = Path.Combine(temp.BaseExeFsPath, "main");
+        var baseMainBytes = File.ReadAllBytes(baseMainPath);
+        Assert.Equal(SvHyperspaceBypassBridgeFixtures.VanillaSpeciesCompare, SvHyperspaceBypassBridgeFixtures.ReadPatchInstruction(baseMainBytes));
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, stage.Payload.Session, plan.Payload.ChangePlan),
+            "request-sv-hyperspace-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains("exefs/main", apply.Payload.ApplyResult.WrittenFiles);
+        Assert.Equal(baseMainBytes, File.ReadAllBytes(baseMainPath));
+
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var outputMainBytes = File.ReadAllBytes(outputMainPath);
+        Assert.Equal(SvHyperspaceBypassBridgeFixtures.BypassBranch, SvHyperspaceBypassBridgeFixtures.ReadPatchInstruction(outputMainBytes));
+
+        var installed = Dispatch<LoadHyperspaceBypassWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadHyperspaceBypassWorkflow,
+            new LoadHyperspaceBypassWorkflowRequest(paths),
+            "request-sv-hyperspace-installed-load");
+        AssertSuccess(installed);
+        Assert.Equal("installed", installed.Payload!.Workflow.InstallStatus);
+        Assert.Equal(ProjectFileLayerDto.Layered, installed.Payload.Workflow.Provenance.SourceLayer);
+
+        var uninstallStage = Dispatch<StageHyperspaceBypassUninstallResponse>(
+            dispatcher,
+            KmCommandNames.StageHyperspaceBypassUninstall,
+            new StageHyperspaceBypassUninstallRequest(paths, Session: null),
+            "request-sv-hyperspace-uninstall-stage");
+        AssertSuccess(uninstallStage);
+        Assert.Single(uninstallStage.Payload!.Session.PendingEdits);
+        Assert.Equal("workflow.hyperspaceBypass", uninstallStage.Payload.Session.PendingEdits[0].Domain);
+
+        var uninstallPlan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, uninstallStage.Payload.Session),
+            "request-sv-hyperspace-uninstall-plan");
+        AssertSuccess(uninstallPlan);
+        Assert.True(uninstallPlan.Payload!.ChangePlan.CanApply);
+
+        var uninstallApply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, uninstallStage.Payload.Session, uninstallPlan.Payload.ChangePlan),
+            "request-sv-hyperspace-uninstall-apply");
+        AssertSuccess(uninstallApply);
+        Assert.DoesNotContain(uninstallApply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.False(File.Exists(outputMainPath));
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletNormalEditorsCanShareOnePendingEditSession(
         ProjectGameDto game,
         ulong titleId)
@@ -225,7 +342,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "moves", "pokemon", "trainers", "encounters", "placement", "modMerger"],
+            ["items", "moves", "pokemon", "trainers", "encounters", "placement", "hyperspaceBypass", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
@@ -233,6 +350,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trainers");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Wild Encounters");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Placement");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Hyperspace Bypass");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "S/V Mod Merger");
     }
 
