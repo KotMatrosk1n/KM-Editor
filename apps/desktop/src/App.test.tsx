@@ -293,6 +293,43 @@ describe('App', () => {
     expect(await screen.findByRole('button', { name: 'Editors' })).toBeInTheDocument();
   });
 
+  it('shows busy feedback while validating project paths', async () => {
+    const user = userEvent.setup();
+    let resolveValidateProject!: () => void;
+    const validateProject = vi.fn(
+      (request: Parameters<ProjectBridge['validateProject']>[0]) =>
+        new Promise<Awaited<ReturnType<ProjectBridge['validateProject']>>>((resolve) => {
+          resolveValidateProject = () => {
+            resolve({
+              health: createHealthForValidatedPaths(
+                request.paths.baseRomFsPath ?? '',
+                request.paths.baseExeFsPath ?? '',
+                request.paths.outputRootPath ?? '',
+                request.paths.saveFilePath
+              )
+            });
+          };
+        })
+    );
+
+    render(<App bridge={createMockProjectBridge({ validateProject })} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+
+    const validatingButton = await screen.findByRole('button', { name: 'Validating' });
+    expect(validatingButton).toHaveAttribute('aria-busy', 'true');
+    expect(validatingButton.querySelector('.button-busy-icon')).not.toBeNull();
+
+    await act(async () => {
+      resolveValidateProject();
+    });
+
+    expect(await screen.findByRole('button', { name: 'Editors' })).toBeInTheDocument();
+  });
+
   it('shows the renamed workflow categories in sidebar order', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
@@ -1615,6 +1652,10 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Items' }));
 
     expect(await screen.findByText('Loading backend workflow data.')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Items loading progress' })).toBeInTheDocument();
+    expect(screen.getByText('Reading project files')).toBeInTheDocument();
+    expect(screen.getByText('Loading labels and tables')).toBeInTheDocument();
+    expect(screen.getByText('Building editor records')).toBeInTheDocument();
     expect(loadItemsCount).toBe(1);
 
     await user.click(screen.getByRole('button', { name: 'Project Setup' }));
@@ -1656,7 +1697,17 @@ describe('App', () => {
 
   it('starts an Items edit session, saves a pending buy price, validates it, reviews a plan, and applies it', async () => {
     const user = userEvent.setup();
-    render(<App bridge={createMockProjectBridge({}, true)} />);
+    const baseBridge = createMockProjectBridge({}, true);
+    let resolveApplyChangePlan!: () => void;
+    const applyChangePlan = vi.fn(
+      (request: Parameters<ProjectBridge['applyChangePlan']>[0]) =>
+        new Promise<Awaited<ReturnType<ProjectBridge['applyChangePlan']>>>((resolve) => {
+          resolveApplyChangePlan = () => {
+            void baseBridge.applyChangePlan(request).then(resolve);
+          };
+        })
+    );
+    render(<App bridge={{ ...baseBridge, applyChangePlan }} />);
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
@@ -1684,11 +1735,66 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
+    const progressDialog = await screen.findByRole('dialog');
+    expect(within(progressDialog).getByRole('progressbar')).toBeInTheDocument();
+    expect(within(progressDialog).getByText('Phase')).toBeInTheDocument();
+    expect(
+      within(progressDialog).getByText((_, element) =>
+        /^[1-4] of 4$/.test(element?.textContent ?? '')
+      )
+    ).toBeInTheDocument();
+    expect(within(progressDialog).getByText('Preparing output plan')).toBeInTheDocument();
+    expect(within(progressDialog).getByText('Writing files')).toBeInTheDocument();
+    expect(within(progressDialog).getByText('Applying output changes')).toBeInTheDocument();
+    expect(within(progressDialog).getByText('Refreshing loaded editors')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveApplyChangePlan();
+    });
+
     expect(await screen.findByRole('heading', { name: 'Output Plan' })).toBeInTheDocument();
     expect(screen.getAllByText('romfs/bin/pml/item/item.dat').length).toBeGreaterThan(0);
 
     expect(await screen.findByRole('heading', { name: 'Save Result' })).toBeInTheDocument();
     expect(screen.getByText('Applied Items change plan to the configured LayeredFS output root.')).toBeInTheDocument();
+  });
+
+  it('shows busy feedback while saving item drafts', async () => {
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge({}, true);
+    let resolveUpdateItemField!: () => void;
+    const updateItemField = vi.fn(
+      (request: Parameters<ProjectBridge['updateItemField']>[0]) =>
+        new Promise<Awaited<ReturnType<ProjectBridge['updateItemField']>>>((resolve) => {
+          resolveUpdateItemField = () => {
+            void baseBridge.updateItemField(request).then(resolve);
+          };
+        })
+    );
+    render(<App bridge={{ ...baseBridge, updateItemField }} />);
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Items' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    const buyPriceInput = screen.getByLabelText('Buy price');
+    await user.clear(buyPriceInput);
+    await user.type(buyPriceInput, '450');
+    await user.click(screen.getByRole('button', { name: 'Save Item' }));
+
+    const savingButton = await screen.findByRole('button', { name: 'Saving' });
+    expect(savingButton).toHaveAttribute('aria-busy', 'true');
+    expect(savingButton.querySelector('.button-busy-icon')).not.toBeNull();
+
+    await act(async () => {
+      resolveUpdateItemField();
+    });
+
+    expect(await screen.findByDisplayValue('450')).toBeInTheDocument();
   });
 
   it('asks before canceling editor changes and preserves drafts when declined', async () => {

@@ -746,6 +746,58 @@ const pathStatusLabels = {
   wrongKind: 'Wrong kind'
 } as const;
 
+const workflowLoadingSteps = [
+  'Reading project files',
+  'Loading labels and tables',
+  'Building editor records'
+] as const;
+
+const modMergeProgressSteps = [
+  'Reading selected mods',
+  'Merging mod files',
+  'Writing merged output',
+  'Refreshing loaded editors'
+] as const;
+
+const modMergePreviewProgressSteps = [
+  'Reading selected mods',
+  'Detecting merge conflicts',
+  'Building merge preview'
+] as const;
+
+const applyProgressSteps = [
+  'Reviewing change plan',
+  'Writing output files',
+  'Refreshing loaded editors'
+] as const;
+
+const saveChangesProgressSteps = [
+  'Preparing output plan',
+  'Writing files',
+  'Applying output changes',
+  'Refreshing loaded editors'
+] as const;
+
+const fpsPatchProgressSteps = [
+  'Reading patch state',
+  'Updating ExeFS output',
+  'Refreshing loaded editors'
+] as const;
+
+const randomizerProgressSteps = [
+  'Checking project folders',
+  'Generating randomizer output',
+  'Refreshing loaded editors',
+  'Completing'
+] as const;
+
+const randomizerRestoreProgressSteps = [
+  'Reading tracked output',
+  'Removing generated files',
+  'Refreshing loaded editors',
+  'Completing'
+] as const;
+
 const buyPriceFieldName = 'buyPrice';
 const sellPriceFieldName = 'sellPrice';
 const wattsPriceFieldName = 'wattsPrice';
@@ -854,6 +906,54 @@ const trainerPokemonFieldNames = [
   trainerTeraTypeFieldName,
   canDynamaxFieldName
 ] as const;
+
+function buildWorkProgressSteps(
+  labels: readonly string[],
+  activeIndex: number
+): WorkProgressStep[] {
+  const isComplete = activeIndex >= labels.length;
+
+  return labels.map((label, index) => ({
+    label,
+    state: isComplete || index < activeIndex ? 'complete' : index === activeIndex ? 'active' : 'pending'
+  }));
+}
+
+function createDeterminateWorkProgress(
+  label: string,
+  detail: string,
+  steps: readonly string[],
+  activeIndex: number,
+  percent: number
+): WorkProgressState {
+  const step = Math.min(Math.max(activeIndex + 1, 1), steps.length);
+
+  return {
+    detail,
+    label,
+    mode: 'determinate',
+    percent: Math.max(0, Math.min(100, percent)),
+    step,
+    steps: buildWorkProgressSteps(steps, activeIndex),
+    totalSteps: steps.length
+  };
+}
+
+function createIndeterminateWorkProgress(
+  label: string,
+  detail: string,
+  steps: readonly string[],
+  activeIndex: number
+): WorkProgressState {
+  return {
+    detail,
+    label,
+    mode: 'indeterminate',
+    step: Math.min(activeIndex + 1, steps.length),
+    steps: buildWorkProgressSteps(steps, activeIndex),
+    totalSteps: steps.length
+  };
+}
 const giftSpeciesFieldName = 'species';
 const giftBallItemIdFieldName = 'ballItemId';
 const giftShinyLockFieldName = 'shinyLock';
@@ -1611,7 +1711,7 @@ export function App({
     useState<string | null>(null);
   const [dynamaxAdventureApplyResult, setDynamaxAdventureApplyResult] =
     useState<ApplyResult | null>(null);
-  const [saveProgress, setSaveProgress] = useState<SaveProgressState | null>(null);
+  const [workProgress, setWorkProgress] = useState<WorkProgressState | null>(null);
   const [svOutputConfirmation, setSvOutputConfirmation] =
     useState<SvOutputConfirmationState | null>(null);
   const [exitPrompt, setExitPrompt] = useState<ExitPromptState | null>(null);
@@ -3772,6 +3872,12 @@ const resetModMergerPlan = () => {
       setIsModMergerStaging(true);
       setBridgeDiagnostics([]);
       setSvModMergerApplyResult(null);
+      setWorkProgress(createIndeterminateWorkProgress(
+        'Preparing S/V Mod Merge',
+        'Reading selected mod archives and folders',
+        modMergePreviewProgressSteps,
+        0
+      ));
 
       try {
         const response = await bridge.stageSvModMerge({
@@ -3784,6 +3890,7 @@ const resetModMergerPlan = () => {
         setBridgeDiagnostics(toBridgeDiagnostics(error));
       } finally {
         setIsModMergerStaging(false);
+        setWorkProgress(null);
       }
 
       return;
@@ -3792,6 +3899,12 @@ const resetModMergerPlan = () => {
     setIsModMergerStaging(true);
     setBridgeDiagnostics([]);
     setModMergerApplyResult(null);
+    setWorkProgress(createIndeterminateWorkProgress(
+      'Preparing Mod Merge',
+      'Reading selected mod directories',
+      modMergePreviewProgressSteps,
+      0
+    ));
 
     try {
       const response = await bridge.stageModMerge({
@@ -3809,6 +3922,7 @@ const resetModMergerPlan = () => {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsModMergerStaging(false);
+      setWorkProgress(null);
     }
   };
 
@@ -3827,6 +3941,12 @@ const resetModMergerPlan = () => {
       setIsModMergerApplying(true);
       setBridgeDiagnostics([]);
       setSvModMergerApplyResult(null);
+      setWorkProgress(createIndeterminateWorkProgress(
+        'Applying S/V Mod Merge',
+        'Merging selected mods in priority order',
+        modMergeProgressSteps,
+        1
+      ));
 
       try {
         const paths = toProjectPaths(draftPaths);
@@ -3842,12 +3962,19 @@ const resetModMergerPlan = () => {
           (diagnostic) => diagnostic.severity === 'error'
         );
         if (!hasApplyErrors && response.writtenFiles.length > 0) {
+          setWorkProgress(createIndeterminateWorkProgress(
+            'Applying S/V Mod Merge',
+            'Refreshing loaded editor data',
+            modMergeProgressSteps,
+            3
+          ));
           await refreshLoadedWorkflowsAfterApply(paths);
         }
       } catch (error) {
         setBridgeDiagnostics(toBridgeDiagnostics(error));
       } finally {
         setIsModMergerApplying(false);
+        setWorkProgress(null);
       }
 
       return;
@@ -3856,6 +3983,12 @@ const resetModMergerPlan = () => {
     setIsModMergerApplying(true);
     setBridgeDiagnostics([]);
     setModMergerApplyResult(null);
+    setWorkProgress(createIndeterminateWorkProgress(
+      'Applying Mod Merge',
+      'Merging selected mod directories',
+      modMergeProgressSteps,
+      1
+    ));
 
     try {
       const paths = toProjectPaths(draftPaths);
@@ -3876,12 +4009,19 @@ const resetModMergerPlan = () => {
         (diagnostic) => diagnostic.severity === 'error'
       );
       if (!hasApplyErrors && response.writtenFiles.length > 0) {
+        setWorkProgress(createIndeterminateWorkProgress(
+          'Applying Mod Merge',
+          'Refreshing loaded editor data',
+          modMergeProgressSteps,
+          3
+        ));
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsModMergerApplying(false);
+      setWorkProgress(null);
     }
   };
 
@@ -3905,6 +4045,12 @@ const resetModMergerPlan = () => {
     setIsFpsPatchApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
+    setWorkProgress(createIndeterminateWorkProgress(
+      'Applying 60FPS Patch',
+      'Updating executable patch output',
+      fpsPatchProgressSteps,
+      1
+    ));
 
     try {
       const paths = toProjectPaths(draftPaths);
@@ -3916,12 +4062,19 @@ const resetModMergerPlan = () => {
         (diagnostic) => diagnostic.severity === 'error'
       );
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        setWorkProgress(createIndeterminateWorkProgress(
+          'Applying 60FPS Patch',
+          'Refreshing loaded editor data',
+          fpsPatchProgressSteps,
+          2
+        ));
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsFpsPatchApplying(false);
+      setWorkProgress(null);
     }
   };
 
@@ -3929,6 +4082,12 @@ const resetModMergerPlan = () => {
     setIsFpsPatchApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
+    setWorkProgress(createIndeterminateWorkProgress(
+      'Restoring 60FPS Patch',
+      'Removing 60FPS patch output',
+      fpsPatchProgressSteps,
+      1
+    ));
 
     try {
       const paths = toProjectPaths(draftPaths);
@@ -3940,12 +4099,19 @@ const resetModMergerPlan = () => {
         (diagnostic) => diagnostic.severity === 'error'
       );
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        setWorkProgress(createIndeterminateWorkProgress(
+          'Restoring 60FPS Patch',
+          'Refreshing loaded editor data',
+          fpsPatchProgressSteps,
+          2
+        ));
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsFpsPatchApplying(false);
+      setWorkProgress(null);
     }
   };
 
@@ -3973,25 +4139,24 @@ const resetModMergerPlan = () => {
     try {
       const paths = toProjectPaths(draftPaths);
       const label = operation === 'applySeed' ? 'Applying Randomization Seed' : 'Randomizing';
-      setSaveProgress({
-        detail: 'Checking project folders',
+      setWorkProgress(createDeterminateWorkProgress(
         label,
-        percent: 8,
-        step: 0,
-        totalSteps: 3
-      });
+        'Checking project folders before writing randomizer output',
+        randomizerProgressSteps,
+        0,
+        8
+      ));
       await delay(200);
 
-      setSaveProgress({
-        detail:
+      setWorkProgress(createDeterminateWorkProgress(
+        label,
           operation === 'applySeed'
             ? 'Replaying the shared randomizer output'
             : 'Generating deterministic randomizer output',
-        label,
-        percent: 35,
-        step: 1,
-        totalSteps: 3
-      });
+        randomizerProgressSteps,
+        1,
+        35
+      ));
       const response = await bridge.applyRandomizer({
         config,
         paths
@@ -4001,24 +4166,24 @@ const resetModMergerPlan = () => {
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
-      setSaveProgress({
-        detail: hasApplyErrors ? 'Randomizer diagnostics need attention' : 'Refreshing loaded data',
-        label: hasApplyErrors ? 'Randomizer needs attention' : label,
-        percent: hasApplyErrors ? 90 : 82,
-        step: 2,
-        totalSteps: 3
-      });
+      setWorkProgress(createDeterminateWorkProgress(
+        hasApplyErrors ? 'Randomizer needs attention' : label,
+        hasApplyErrors ? 'Randomizer diagnostics need attention' : 'Refreshing loaded editor data',
+        randomizerProgressSteps,
+        2,
+        hasApplyErrors ? 90 : 82
+      ));
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
         await refreshLoadedWorkflowsAfterApply(paths);
       }
 
-      setSaveProgress({
-        detail: hasApplyErrors ? 'No output changes were finalized' : 'Randomizer output complete',
-        label: hasApplyErrors ? 'Randomizer needs attention' : 'Randomizer Complete',
-        percent: 100,
-        step: 3,
-        totalSteps: 3
-      });
+      setWorkProgress(createDeterminateWorkProgress(
+        hasApplyErrors ? 'Randomizer needs attention' : 'Randomizer Complete',
+        hasApplyErrors ? 'No output changes were finalized' : 'Randomizer output complete',
+        randomizerProgressSteps,
+        randomizerProgressSteps.length,
+        100
+      ));
       await delay(450);
 
       return response;
@@ -4027,7 +4192,7 @@ const resetModMergerPlan = () => {
       throw error;
     } finally {
       setIsRandomizerApplying(false);
-      setSaveProgress(null);
+      setWorkProgress(null);
     }
   };
 
@@ -4038,46 +4203,46 @@ const resetModMergerPlan = () => {
 
     try {
       const paths = toProjectPaths(draftPaths);
-      setSaveProgress({
-        detail: 'Reading tracked Randomizer output',
-        label: 'Restoring Vanilla Values',
-        percent: 12,
-        step: 0,
-        totalSteps: 3
-      });
+      setWorkProgress(createDeterminateWorkProgress(
+        'Restoring Vanilla Values',
+        'Reading tracked Randomizer output',
+        randomizerRestoreProgressSteps,
+        0,
+        12
+      ));
       await delay(200);
 
-      setSaveProgress({
-        detail: 'Removing generated romfs/exefs Randomizer files',
-        label: 'Restoring Vanilla Values',
-        percent: 45,
-        step: 1,
-        totalSteps: 3
-      });
+      setWorkProgress(createDeterminateWorkProgress(
+        'Restoring Vanilla Values',
+        'Removing generated romfs/exefs Randomizer files',
+        randomizerRestoreProgressSteps,
+        1,
+        45
+      ));
       const response = await bridge.restoreRandomizer({ paths });
       setApplyResult(response.applyResult);
 
       const hasApplyErrors = response.applyResult.diagnostics.some(
         (diagnostic) => diagnostic.severity === 'error'
       );
-      setSaveProgress({
-        detail: hasApplyErrors ? 'Restore diagnostics need attention' : 'Refreshing loaded data',
-        label: hasApplyErrors ? 'Restore needs attention' : 'Restoring Vanilla Values',
-        percent: hasApplyErrors ? 90 : 82,
-        step: 2,
-        totalSteps: 3
-      });
+      setWorkProgress(createDeterminateWorkProgress(
+        hasApplyErrors ? 'Restore needs attention' : 'Restoring Vanilla Values',
+        hasApplyErrors ? 'Restore diagnostics need attention' : 'Refreshing loaded editor data',
+        randomizerRestoreProgressSteps,
+        2,
+        hasApplyErrors ? 90 : 82
+      ));
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
         await refreshLoadedWorkflowsAfterApply(paths);
       }
 
-      setSaveProgress({
-        detail: hasApplyErrors ? 'Some files could not be restored' : 'Vanilla values restored',
-        label: hasApplyErrors ? 'Restore needs attention' : 'Restore Complete',
-        percent: 100,
-        step: 3,
-        totalSteps: 3
-      });
+      setWorkProgress(createDeterminateWorkProgress(
+        hasApplyErrors ? 'Restore needs attention' : 'Restore Complete',
+        hasApplyErrors ? 'Some files could not be restored' : 'Vanilla values restored',
+        randomizerRestoreProgressSteps,
+        randomizerRestoreProgressSteps.length,
+        100
+      ));
       await delay(450);
 
       return response;
@@ -4086,7 +4251,7 @@ const resetModMergerPlan = () => {
       throw error;
     } finally {
       setIsRandomizerApplying(false);
-      setSaveProgress(null);
+      setWorkProgress(null);
     }
   };
 
@@ -5120,6 +5285,12 @@ const resetModMergerPlan = () => {
     setDynamaxAdventureApplyResult(null);
     setApplyResult(null);
     setAppliedChangePlan(null);
+    setWorkProgress(createIndeterminateWorkProgress(
+      'Applying Dynamax Adventure Changes',
+      'Writing reviewed adventure changes',
+      applyProgressSteps,
+      1
+    ));
 
     try {
       const paths = toProjectPaths(draftPaths);
@@ -5145,6 +5316,12 @@ const resetModMergerPlan = () => {
       }
 
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        setWorkProgress(createIndeterminateWorkProgress(
+          'Applying Dynamax Adventure Changes',
+          'Refreshing loaded editor data',
+          applyProgressSteps,
+          2
+        ));
         await refreshLoadedWorkflowsAfterApply(paths);
       }
 
@@ -5153,6 +5330,7 @@ const resetModMergerPlan = () => {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsChangePlanApplying(false);
+      setWorkProgress(null);
     }
   };
 
@@ -5819,13 +5997,15 @@ const resetModMergerPlan = () => {
       const paths = toProjectPaths(draftPaths);
       let planToApply = visibleChangePlan;
 
-      setSaveProgress({
-        detail: outputMode ? 'Creating selected output plan' : 'Preparing output plan',
-        label: 'Preparing',
-        percent: 8,
-        step: 0,
-        totalSteps: 1
-      });
+      setWorkProgress(createDeterminateWorkProgress(
+        outputMode ? 'Preparing S/V Output' : 'Preparing Save',
+        outputMode
+          ? 'Creating the selected output package plan'
+          : 'Checking pending edits and target files',
+        saveChangesProgressSteps,
+        0,
+        8
+      ));
       await delay(250);
 
       if (outputMode) {
@@ -5839,13 +6019,13 @@ const resetModMergerPlan = () => {
         setChangePlanSessionSignature(getEditSessionSignature(editSession));
 
         if (!planToApply.canApply || planToApply.writes.length === 0) {
-          setSaveProgress({
-            detail: 'Review output plan diagnostics',
-            label: 'Output plan needs attention',
-            percent: 100,
-            step: 1,
-            totalSteps: 1
-          });
+          setWorkProgress(createDeterminateWorkProgress(
+            'Output plan needs attention',
+            'Review output plan diagnostics before saving',
+            saveChangesProgressSteps,
+            0,
+            100
+          ));
           await delay(500);
           return;
         }
@@ -5855,23 +6035,23 @@ const resetModMergerPlan = () => {
       const totalSteps = Math.max(filesToWrite.length, 1);
 
       for (const [index, file] of filesToWrite.entries()) {
-        setSaveProgress({
-          detail: file,
-          label: `Writing file ${index + 1} of ${totalSteps}`,
-          percent: Math.round(15 + ((index + 1) / totalSteps) * 70),
-          step: index + 1,
-          totalSteps
-        });
+        setWorkProgress(createDeterminateWorkProgress(
+          'Writing Output Files',
+          `${file} (${index + 1} of ${totalSteps})`,
+          saveChangesProgressSteps,
+          1,
+          Math.round(15 + ((index + 1) / totalSteps) * 70)
+        ));
         await delay(325);
       }
 
-      setSaveProgress({
-        detail: 'Finalizing output files',
-        label: 'Finalizing',
-        percent: 92,
-        step: totalSteps,
-        totalSteps
-      });
+      setWorkProgress(createDeterminateWorkProgress(
+        'Applying Output Changes',
+        'Finalizing the reviewed change plan',
+        saveChangesProgressSteps,
+        2,
+        92
+      ));
 
       const response = await bridge.applyChangePlan({
         changePlan: planToApply,
@@ -5894,23 +6074,30 @@ const resetModMergerPlan = () => {
       }
 
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        setWorkProgress(createDeterminateWorkProgress(
+          'Refreshing Editors',
+          'Reloading changed editor data',
+          saveChangesProgressSteps,
+          3,
+          96
+        ));
         await refreshLoadedWorkflowsAfterApply(paths);
       }
 
       setApplyResult(response.applyResult);
-      setSaveProgress({
-        detail: hasApplyErrors ? 'Some files need attention' : 'Saved pending changes',
-        label: hasApplyErrors ? 'Save needs attention' : 'Save complete',
-        percent: 100,
-        step: totalSteps,
-        totalSteps
-      });
+      setWorkProgress(createDeterminateWorkProgress(
+        hasApplyErrors ? 'Save needs attention' : 'Save complete',
+        hasApplyErrors ? 'Some files need attention' : 'Saved pending changes',
+        saveChangesProgressSteps,
+        saveChangesProgressSteps.length,
+        100
+      ));
       await delay(500);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsChangePlanApplying(false);
-      setSaveProgress(null);
+      setWorkProgress(null);
     }
   };
 
@@ -6185,6 +6372,12 @@ const resetModMergerPlan = () => {
     setIsChangePlanApplying(true);
     setBridgeDiagnostics([]);
     setApplyResult(null);
+    setWorkProgress(createIndeterminateWorkProgress(
+      'Applying Changes',
+      'Writing reviewed change plan',
+      applyProgressSteps,
+      1
+    ));
 
     try {
       const paths = toProjectPaths(draftPaths);
@@ -6206,6 +6399,12 @@ const resetModMergerPlan = () => {
       }
 
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        setWorkProgress(createIndeterminateWorkProgress(
+          'Applying Changes',
+          'Refreshing loaded editor data',
+          applyProgressSteps,
+          2
+        ));
         await refreshLoadedWorkflowsAfterApply(paths);
       }
       setApplyResult(response.applyResult);
@@ -6213,6 +6412,7 @@ const resetModMergerPlan = () => {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsChangePlanApplying(false);
+      setWorkProgress(null);
     }
   };
 
@@ -6227,6 +6427,12 @@ const resetModMergerPlan = () => {
     setEditValidationDiagnostics([]);
     setApplyResult(null);
     setAppliedChangePlan(null);
+    setWorkProgress(createIndeterminateWorkProgress(
+      'Applying Editor Changes',
+      'Writing reviewed editor changes',
+      applyProgressSteps,
+      1
+    ));
     setScopedEditorPanelStates((currentStates) => ({
       ...currentStates,
       [section]: {
@@ -6276,12 +6482,19 @@ const resetModMergerPlan = () => {
       }
 
       if (!hasApplyErrors && response.applyResult.writtenFiles.length > 0) {
+        setWorkProgress(createIndeterminateWorkProgress(
+          'Applying Editor Changes',
+          'Refreshing loaded editor data',
+          applyProgressSteps,
+          2
+        ));
         await refreshLoadedWorkflowsAfterApply(paths);
       }
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
     } finally {
       setIsChangePlanApplying(false);
+      setWorkProgress(null);
     }
   };
 
@@ -7405,7 +7618,7 @@ const resetModMergerPlan = () => {
           ) : null}
         </div>
       </section>
-      {saveProgress ? <SaveProgressModal progress={saveProgress} /> : null}
+      {workProgress ? <WorkProgressModal progress={workProgress} /> : null}
       {svOutputConfirmation ? <SvOutputConfirmationModal isApplying={isChangePlanApplying} mode={svOutputConfirmation.mode} onCancel={() => setSvOutputConfirmation(null)} onConfirm={() => { const mode = svOutputConfirmation.mode; setSvOutputConfirmation(null); void handleSaveValidatedChanges(mode); }} outputRootPath={draftPaths.outputRootPath} /> : null}
       {exitPrompt ? (
         <ExitPromptModal
@@ -7476,6 +7689,31 @@ function GameSelectionPage({
   );
 }
 
+function BusyActionContent({
+  busyLabel,
+  icon,
+  isBusy,
+  label,
+  size = 16
+}: {
+  busyLabel: string;
+  icon: ReactNode;
+  isBusy: boolean;
+  label: string;
+  size?: number;
+}) {
+  return (
+    <>
+      {isBusy ? (
+        <RefreshCw aria-hidden="true" className="button-busy-icon" size={size} />
+      ) : (
+        icon
+      )}
+      <span>{isBusy ? busyLabel : label}</span>
+    </>
+  );
+}
+
 function WorkflowLoadingPanel({ label }: { label: string }) {
   return (
     <section aria-labelledby="workflow-loading-heading" className="panel wide-panel">
@@ -7484,7 +7722,20 @@ function WorkflowLoadingPanel({ label }: { label: string }) {
         <h2 id="workflow-loading-heading">{label}</h2>
       </div>
 
-      <p className="empty-copy">Loading backend workflow data.</p>
+      <div aria-live="polite" className="workflow-loading-body" role="status">
+        <div className="workflow-loading-status">
+          <RefreshCw aria-hidden="true" className="workflow-loading-spinner" size={20} />
+          <p>Loading backend workflow data.</p>
+        </div>
+        <div aria-label={`${label} loading progress`} className="workflow-loading-track" role="progressbar">
+          <div className="workflow-loading-fill" />
+        </div>
+        <ol className="workflow-loading-steps">
+          {workflowLoadingSteps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      </div>
     </section>
   );
 }
@@ -7649,13 +7900,19 @@ function HealthSection({
 
         <div className="action-row">
           <button
+            aria-busy={(projectStatus === 'validating') || undefined}
             className="secondary-button"
             disabled={isBusy}
             onClick={onValidateProject}
             type="button"
           >
-            <RefreshCw aria-hidden="true" size={18} />
-            <span>{projectStatus === 'validating' ? 'Validating' : 'Validate Paths'}</span>
+            <BusyActionContent
+              busyLabel="Validating"
+              icon={<RefreshCw aria-hidden="true" size={18} />}
+              isBusy={projectStatus === 'validating'}
+              label="Validate Paths"
+              size={18}
+            />
           </button>
           <button
             className="secondary-button"
@@ -7667,6 +7924,7 @@ function HealthSection({
             <span>Open Output Root</span>
           </button>
           <button
+            aria-busy={isOutputRootCreating || undefined}
             className="secondary-button"
             disabled={
               !isDesktopAvailable ||
@@ -7677,10 +7935,13 @@ function HealthSection({
             onClick={onCreateOutputRootFolder}
             type="button"
           >
-            <Plus aria-hidden="true" size={18} />
-            <span>
-              {isOutputRootCreating ? 'Creating Output Root Folder' : 'Create Output Root Folder'}
-            </span>
+            <BusyActionContent
+              busyLabel="Creating Output Root Folder"
+              icon={<Plus aria-hidden="true" size={18} />}
+              isBusy={isOutputRootCreating}
+              label="Create Output Root Folder"
+              size={18}
+            />
           </button>
         </div>
       </section>
@@ -7975,6 +8236,7 @@ function SelectedItemPanel({
             {editSession ? (
               <div className="draft-action-row">
                 <button
+                  aria-busy={isItemUpdating || undefined}
                   className="primary-button"
                   disabled={!canSaveItemDrafts}
                   onClick={async () => {
@@ -7993,8 +8255,12 @@ function SelectedItemPanel({
                   }}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isItemUpdating ? 'Saving' : 'Save Item'}</span>
+                  <BusyActionContent
+                    busyLabel="Saving"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isItemUpdating}
+                    label="Save Item"
+                  />
                 </button>
                 <button
                   className="danger-button"
@@ -8013,13 +8279,18 @@ function SelectedItemPanel({
               </div>
             ) : (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditItems || isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             )}
 
@@ -9178,6 +9449,7 @@ function SelectedPokemonPanel({
             {editSession ? (
               <div className="draft-action-row">
                 <button
+                  aria-busy={isPokemonUpdating || undefined}
                   className="primary-button"
                   disabled={!canSavePokemonDrafts}
                   onClick={async () => {
@@ -9206,8 +9478,12 @@ function SelectedPokemonPanel({
                   }}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isPokemonUpdating ? 'Saving' : 'Save Changes'}</span>
+                  <BusyActionContent
+                    busyLabel="Saving"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isPokemonUpdating}
+                    label="Save Changes"
+                  />
                 </button>
                 <button
                   className="danger-button"
@@ -9235,13 +9511,18 @@ function SelectedPokemonPanel({
             ) : null}
             {canEditPokemon && editSession === null ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
           </div>
@@ -10218,13 +10499,18 @@ function SelectedMovePanel({
           <div className="item-edit-form move-edit-form">
             {!editSession ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditMoves || isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
 
@@ -10297,6 +10583,7 @@ function SelectedMovePanel({
             {editSession ? (
               <div className="draft-action-row">
                 <button
+                  aria-busy={isMoveUpdating || undefined}
                   className="primary-button"
                   disabled={!canSaveMoveDrafts}
                   onClick={async () => {
@@ -10315,8 +10602,12 @@ function SelectedMovePanel({
                   }}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isMoveUpdating ? 'Saving' : 'Save Move'}</span>
+                  <BusyActionContent
+                    busyLabel="Saving"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isMoveUpdating}
+                    label="Save Move"
+                  />
                 </button>
                 <button
                   className="danger-button"
@@ -10758,6 +11049,7 @@ function SelectedTextPanel({
 
             {editSession ? (
               <button
+                aria-busy={isTextUpdating || undefined}
                 className="primary-button"
                 disabled={!canSubmit || isTextUpdating}
                 onClick={async () => {
@@ -10770,18 +11062,27 @@ function SelectedTextPanel({
                 }}
                 type="button"
               >
-                <Save aria-hidden="true" size={16} />
-                <span>{isTextUpdating ? 'Saving' : 'Save Text'}</span>
+                <BusyActionContent
+                  busyLabel="Saving"
+                  icon={<Save aria-hidden="true" size={16} />}
+                  isBusy={isTextUpdating}
+                  label="Save Text"
+                />
               </button>
             ) : (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditText || isEditStarting || !entry.canEdit}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             )}
           </div>
@@ -11402,6 +11703,7 @@ function SelectedTrainerPanel({
             {editSession ? (
               <div className="draft-action-row">
                 <button
+                  aria-busy={isTrainerUpdating || undefined}
                   className="primary-button"
                   disabled={!canSaveTrainerDrafts}
                   onClick={async () => {
@@ -11421,8 +11723,12 @@ function SelectedTrainerPanel({
                   }}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isTrainerUpdating ? 'Saving' : 'Save Trainer'}</span>
+                  <BusyActionContent
+                    busyLabel="Saving"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isTrainerUpdating}
+                    label="Save Trainer"
+                  />
                 </button>
                 <button
                   className="danger-button"
@@ -11558,6 +11864,7 @@ function SelectedTrainerPanel({
                 {editSession ? (
                   <div className="draft-action-row">
                     <button
+                      aria-busy={isTrainerUpdating || undefined}
                       className="primary-button"
                       disabled={!canSavePokemonDrafts}
                       onClick={async () => {
@@ -11577,8 +11884,12 @@ function SelectedTrainerPanel({
                       }}
                       type="button"
                     >
-                      <Save aria-hidden="true" size={16} />
-                      <span>{isTrainerUpdating ? 'Saving' : 'Save Pokemon'}</span>
+                      <BusyActionContent
+                        busyLabel="Saving"
+                        icon={<Save aria-hidden="true" size={16} />}
+                        isBusy={isTrainerUpdating}
+                        label="Save Pokemon"
+                      />
                     </button>
                     <button
                       className="danger-button"
@@ -11606,13 +11917,18 @@ function SelectedTrainerPanel({
 
             {!editSession ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditTrainers || isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
           </div>
@@ -13700,9 +14016,19 @@ function ShinyLockRemovalConfirmationModal({
             <X aria-hidden="true" size={16} />
             <span>Cancel</span>
           </button>
-          <button className="primary-button" disabled={isApplying} onClick={onConfirm} type="button">
-            <ShieldCheck aria-hidden="true" size={16} />
-            <span>{isApplying ? 'Removing' : `Remove ${label} Shiny Lock`}</span>
+          <button
+            aria-busy={isApplying || undefined}
+            className="primary-button"
+            disabled={isApplying}
+            onClick={onConfirm}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Removing"
+              icon={<ShieldCheck aria-hidden="true" size={16} />}
+              isBusy={isApplying}
+              label={`Remove ${label} Shiny Lock`}
+            />
           </button>
         </div>
       </section>
@@ -14090,6 +14416,7 @@ function SelectedGiftPokemonPanel({
             {editSession ? (
               <div className="draft-action-row">
                 <button
+                  aria-busy={isGiftPokemonUpdating || undefined}
                   className="primary-button"
                   disabled={!canSaveGiftDrafts}
                   onClick={async () => {
@@ -14108,8 +14435,12 @@ function SelectedGiftPokemonPanel({
                   }}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isGiftPokemonUpdating ? 'Saving' : 'Save Gift'}</span>
+                  <BusyActionContent
+                    busyLabel="Saving"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isGiftPokemonUpdating}
+                    label="Save Gift"
+                  />
                 </button>
                 <button
                   className="danger-button"
@@ -14126,13 +14457,18 @@ function SelectedGiftPokemonPanel({
 
             {!editSession ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditGifts || isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
           </div>
@@ -14641,6 +14977,7 @@ function SelectedTradePokemonPanel({
             {editSession ? (
               <div className="draft-action-row">
                 <button
+                  aria-busy={isTradePokemonUpdating || undefined}
                   className="primary-button"
                   disabled={!canSaveTradeDrafts}
                   onClick={async () => {
@@ -14659,8 +14996,12 @@ function SelectedTradePokemonPanel({
                   }}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isTradePokemonUpdating ? 'Saving' : 'Save Trade'}</span>
+                  <BusyActionContent
+                    busyLabel="Saving"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isTradePokemonUpdating}
+                    label="Save Trade"
+                  />
                 </button>
                 <button
                   className="danger-button"
@@ -14677,13 +15018,18 @@ function SelectedTradePokemonPanel({
 
             {!editSession ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditTrades || isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
           </div>
@@ -15125,6 +15471,7 @@ function SelectedRentalPokemonPanel({
             {editSession ? (
               <div className="draft-action-row">
                 <button
+                  aria-busy={isRentalPokemonUpdating || undefined}
                   className="primary-button"
                   disabled={!canSaveRentalDrafts}
                   onClick={async () => {
@@ -15143,8 +15490,12 @@ function SelectedRentalPokemonPanel({
                   }}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isRentalPokemonUpdating ? 'Saving' : 'Save Rental'}</span>
+                  <BusyActionContent
+                    busyLabel="Saving"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isRentalPokemonUpdating}
+                    label="Save Rental"
+                  />
                 </button>
                 <button
                   className="danger-button"
@@ -15163,13 +15514,18 @@ function SelectedRentalPokemonPanel({
 
             {!editSession ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditRentals || isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
           </div>
@@ -15754,6 +16110,7 @@ function SelectedDynamaxAdventurePanel({
             </div>
             <div className="draft-action-row">
               <button
+                aria-busy={isDynamaxAdventureUpdating || undefined}
                 className="primary-button"
                 disabled={!canSaveAdventureDrafts}
                 onClick={async () => {
@@ -15772,10 +16129,15 @@ function SelectedDynamaxAdventurePanel({
                 }}
                 type="button"
               >
-                <Wrench aria-hidden="true" size={16} />
-                <span>{isDynamaxAdventureUpdating ? 'Staging' : 'Stage Install'}</span>
+                <BusyActionContent
+                  busyLabel="Staging"
+                  icon={<Wrench aria-hidden="true" size={16} />}
+                  isBusy={isDynamaxAdventureUpdating}
+                  label="Stage Install"
+                />
               </button>
               <button
+                aria-busy={isDynamaxAdventureUpdating || undefined}
                 className="danger-button"
                 disabled={
                   !canEditDynamaxAdventures || isDynamaxAdventureUpdating || isChangePlanCreating || isChangePlanApplying ||
@@ -15798,26 +16160,40 @@ function SelectedDynamaxAdventurePanel({
                 }}
                 type="button"
               >
-                <Trash2 aria-hidden="true" size={16} />
-                <span>Stage Uninstall</span>
+                <BusyActionContent
+                  busyLabel="Staging"
+                  icon={<Trash2 aria-hidden="true" size={16} />}
+                  isBusy={isDynamaxAdventureUpdating}
+                  label="Stage Uninstall"
+                />
               </button>
               <button
+                aria-busy={isChangePlanCreating || undefined}
                 className="secondary-button"
                 disabled={!canReviewPlan}
                 onClick={onCreateChangePlan}
                 type="button"
               >
-                <ClipboardCheck aria-hidden="true" size={16} />
-                <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                <BusyActionContent
+                  busyLabel="Reviewing"
+                  icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                  isBusy={isChangePlanCreating}
+                  label="Review"
+                />
               </button>
               <button
+                aria-busy={isChangePlanApplying || undefined}
                 className="primary-button"
                 disabled={!canApplyPlan}
                 onClick={onApplyChangePlan}
                 type="button"
               >
-                <Save aria-hidden="true" size={16} />
-                <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                <BusyActionContent
+                  busyLabel="Applying"
+                  icon={<Save aria-hidden="true" size={16} />}
+                  isBusy={isChangePlanApplying}
+                  label="Apply"
+                />
               </button>
               <span className="draft-action-summary">
                 {formatDraftSummary(adventureDraftSummary)}
@@ -16254,6 +16630,7 @@ function SelectedStaticEncounterPanel({
             {editSession ? (
               <div className="draft-action-row">
                 <button
+                  aria-busy={isStaticEncounterUpdating || undefined}
                   className="primary-button"
                   disabled={!canSaveEncounterDrafts}
                   onClick={async () => {
@@ -16272,8 +16649,12 @@ function SelectedStaticEncounterPanel({
                   }}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isStaticEncounterUpdating ? 'Saving' : 'Save Encounter'}</span>
+                  <BusyActionContent
+                    busyLabel="Saving"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isStaticEncounterUpdating}
+                    label="Save Encounter"
+                  />
                 </button>
                 <button
                   className="danger-button"
@@ -16294,13 +16675,18 @@ function SelectedStaticEncounterPanel({
 
             {!editSession ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditStaticEncounters || isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
           </div>
@@ -16806,6 +17192,7 @@ function SelectedShopPanel({
             {editSession ? (
               <div className="draft-action-row">
                 <button
+                  aria-busy={(isShopUpdating || isItemUpdating) || undefined}
                   className="primary-button"
                   disabled={!canSaveShopDrafts}
                   onClick={async () => {
@@ -16822,8 +17209,12 @@ function SelectedShopPanel({
                   }}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isShopUpdating || isItemUpdating ? 'Saving' : 'Save Changes'}</span>
+                  <BusyActionContent
+                    busyLabel="Saving"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isShopUpdating || isItemUpdating}
+                    label="Save Changes"
+                  />
                 </button>
                 <button
                   className="danger-button"
@@ -16844,13 +17235,18 @@ function SelectedShopPanel({
               </div>
             ) : (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditShops || isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             )}
 
@@ -18196,6 +18592,7 @@ function SelectedEncounterPanel({
                       {group.group === 'Levels' ? (
                         <div className="field-group-action-row">
                           <button
+                            aria-busy={isEncounterUpdating || undefined}
                             className="secondary-button"
                             disabled={!canApplyEncounterLevelsToZone}
                             onClick={async () => {
@@ -18222,7 +18619,12 @@ function SelectedEncounterPanel({
                             title="Apply this slot's level changes to every editable table in the current zone."
                             type="button"
                           >
-                            Apply to Entire Zone
+                            <BusyActionContent
+                              busyLabel="Applying"
+                              icon={null}
+                              isBusy={isEncounterUpdating}
+                              label="Apply to Entire Zone"
+                            />
                           </button>
                         </div>
                       ) : null}
@@ -18232,6 +18634,7 @@ function SelectedEncounterPanel({
                 {editSession ? (
                   <div className="draft-action-row">
                     <button
+                      aria-busy={isEncounterUpdating || undefined}
                       className="primary-button"
                       disabled={!canSaveEncounterDrafts}
                       onClick={async () => {
@@ -18255,8 +18658,12 @@ function SelectedEncounterPanel({
                       }}
                       type="button"
                     >
-                      <Save aria-hidden="true" size={16} />
-                      <span>{isEncounterUpdating ? 'Saving' : 'Save Encounter'}</span>
+                      <BusyActionContent
+                        busyLabel="Saving"
+                        icon={<Save aria-hidden="true" size={16} />}
+                        isBusy={isEncounterUpdating}
+                        label="Save Encounter"
+                      />
                     </button>
                     <button
                       className="danger-button"
@@ -18279,13 +18686,18 @@ function SelectedEncounterPanel({
 
             {!editSession ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditEncounters || isEditStarting || table.slots.length === 0}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
           </div>
@@ -18423,9 +18835,19 @@ function EncounterAreaCopyConfirmationModal({
             <X aria-hidden="true" size={16} />
             <span>Cancel</span>
           </button>
-          <button className="primary-button" disabled={isApplying} onClick={onConfirm} type="button">
-            <ArrowLeftRight aria-hidden="true" size={16} />
-            <span>{isApplying ? 'Applying' : `Apply to ${request.targetArea}`}</span>
+          <button
+            aria-busy={isApplying || undefined}
+            className="primary-button"
+            disabled={isApplying}
+            onClick={onConfirm}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Applying"
+              icon={<ArrowLeftRight aria-hidden="true" size={16} />}
+              isBusy={isApplying}
+              label={`Apply to ${request.targetArea}`}
+            />
           </button>
         </div>
       </section>
@@ -18938,6 +19360,7 @@ function SelectedRaidBattlePanel({
                 {editSession ? (
                   <div className="draft-action-row">
                     <button
+                      aria-busy={isRaidBattleUpdating || undefined}
                       className="primary-button"
                       disabled={!canSaveRaidBattleDrafts}
                       onClick={async () => {
@@ -18961,8 +19384,12 @@ function SelectedRaidBattlePanel({
                       }}
                       type="button"
                     >
-                      <Save aria-hidden="true" size={16} />
-                      <span>{isRaidBattleUpdating ? 'Saving' : 'Save Battle'}</span>
+                      <BusyActionContent
+                        busyLabel="Saving"
+                        icon={<Save aria-hidden="true" size={16} />}
+                        isBusy={isRaidBattleUpdating}
+                        label="Save Battle"
+                      />
                     </button>
                     <button
                       className="danger-button"
@@ -18985,13 +19412,18 @@ function SelectedRaidBattlePanel({
 
             {!editSession ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditRaidBattles || isEditStarting || table.slots.length === 0}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
           </div>
@@ -19424,6 +19856,7 @@ function SelectedRaidRewardPanel({
                 {editSession ? (
                   <div className="draft-action-row">
                     <button
+                      aria-busy={isRaidRewardUpdating || undefined}
                       className="primary-button"
                       disabled={!canSaveRaidRewardDrafts}
                       onClick={async () => {
@@ -19447,8 +19880,12 @@ function SelectedRaidRewardPanel({
                       }}
                       type="button"
                     >
-                      <Save aria-hidden="true" size={16} />
-                      <span>{isRaidRewardUpdating ? 'Saving' : 'Save Reward'}</span>
+                      <BusyActionContent
+                        busyLabel="Saving"
+                        icon={<Save aria-hidden="true" size={16} />}
+                        isBusy={isRaidRewardUpdating}
+                        label="Save Reward"
+                      />
                     </button>
                     <button
                       className="danger-button"
@@ -19471,13 +19908,18 @@ function SelectedRaidRewardPanel({
 
             {!editSession ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditRaidRewards || isEditStarting || table.rewards.length === 0}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
           </div>
@@ -19913,6 +20355,7 @@ function SelectedBehaviorPanel({
             {editSession ? (
               <div className="draft-action-row">
                 <button
+                  aria-busy={isBehaviorUpdating || undefined}
                   className="primary-button"
                   disabled={!canSaveBehaviorDrafts}
                   onClick={async () => {
@@ -19935,8 +20378,12 @@ function SelectedBehaviorPanel({
                   }}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isBehaviorUpdating ? 'Saving' : 'Save Behavior'}</span>
+                  <BusyActionContent
+                    busyLabel="Saving"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isBehaviorUpdating}
+                    label="Save Behavior"
+                  />
                 </button>
                 <button
                   className="danger-button"
@@ -19955,13 +20402,18 @@ function SelectedBehaviorPanel({
 
             {!editSession ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditBehavior || isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
           </div>
@@ -20510,6 +20962,7 @@ function SelectedPlacementPanel({
             {editSession ? (
               <div className="draft-action-row">
                 <button
+                  aria-busy={isPlacementUpdating || undefined}
                   className="primary-button"
                   disabled={!canSavePlacementDrafts}
                   onClick={async () => {
@@ -20532,8 +20985,12 @@ function SelectedPlacementPanel({
                   }}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isPlacementUpdating ? 'Saving' : 'Save Object'}</span>
+                  <BusyActionContent
+                    busyLabel="Saving"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isPlacementUpdating}
+                    label="Save Object"
+                  />
                 </button>
                 <button
                   className="danger-button"
@@ -20552,13 +21009,18 @@ function SelectedPlacementPanel({
 
             {!editSession ? (
               <button
+                aria-busy={isEditStarting || undefined}
                 className="secondary-button"
                 disabled={!canEditPlacement || isEditStarting}
                 onClick={onStartEditSession}
                 type="button"
               >
-                <Pencil aria-hidden="true" size={16} />
-                <span>{isEditStarting ? 'Starting' : 'Edit'}</span>
+                <BusyActionContent
+                  busyLabel="Starting"
+                  icon={<Pencil aria-hidden="true" size={16} />}
+                  isBusy={isEditStarting}
+                  label="Edit"
+                />
               </button>
             ) : null}
           </div>
@@ -21011,40 +21473,60 @@ function BagHookSection({
                   <div className="encounter-edit-form">
                     <div className="form-actions">
                       <button
+                        aria-busy={isStaging || undefined}
                         className="primary-button"
                         disabled={!canStageInstall || isStaging}
                         onClick={onStageInstall}
                         type="button"
                       >
-                        <Wrench aria-hidden="true" size={16} />
-                        <span>{isStaging ? 'Staging' : stageInstallLabel}</span>
+                        <BusyActionContent
+                          busyLabel="Staging"
+                          icon={<Wrench aria-hidden="true" size={16} />}
+                          isBusy={isStaging}
+                          label={stageInstallLabel}
+                        />
                       </button>
                       <button
+                        aria-busy={isStaging || undefined}
                         className="danger-button"
                         disabled={!canStageUninstall || isStaging}
                         onClick={onStageUninstall}
                         type="button"
                       >
-                        <Trash2 aria-hidden="true" size={16} />
-                        <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
+                        <BusyActionContent
+                          busyLabel="Staging"
+                          icon={<Trash2 aria-hidden="true" size={16} />}
+                          isBusy={isStaging}
+                          label="Stage Uninstall"
+                        />
                       </button>
                       <button
+                        aria-busy={isChangePlanCreating || undefined}
                         className="secondary-button"
                         disabled={!canReviewPlan}
                         onClick={onCreateChangePlan}
                         type="button"
                       >
-                        <ClipboardCheck aria-hidden="true" size={16} />
-                        <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                        <BusyActionContent
+                          busyLabel="Reviewing"
+                          icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                          isBusy={isChangePlanCreating}
+                          label="Review"
+                        />
                       </button>
                       <button
+                        aria-busy={isChangePlanApplying || undefined}
                         className="primary-button"
                         disabled={!canApplyPlan}
                         onClick={onApplyChangePlan}
                         type="button"
                       >
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                        <BusyActionContent
+                          busyLabel="Applying"
+                          icon={<Save aria-hidden="true" size={16} />}
+                          isBusy={isChangePlanApplying}
+                          label="Apply"
+                        />
                       </button>
                     </div>
 
@@ -21222,40 +21704,60 @@ function IvScreenSection({
               <div className="encounter-edit-form">
                 <div className="form-actions">
                   <button
+                    aria-busy={isStaging || undefined}
                     className="primary-button"
                     disabled={!canStageInstall || isStaging}
                     onClick={onStageInstall}
                     type="button"
                   >
-                    <Wrench aria-hidden="true" size={16} />
-                    <span>{isStaging ? 'Staging' : installLabel}</span>
+                    <BusyActionContent
+                      busyLabel="Staging"
+                      icon={<Wrench aria-hidden="true" size={16} />}
+                      isBusy={isStaging}
+                      label={installLabel}
+                    />
                   </button>
                   <button
+                    aria-busy={isStaging || undefined}
                     className="danger-button"
                     disabled={!canStageUninstall || isStaging}
                     onClick={onStageUninstall}
                     type="button"
                   >
-                    <Trash2 aria-hidden="true" size={16} />
-                    <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
+                    <BusyActionContent
+                      busyLabel="Staging"
+                      icon={<Trash2 aria-hidden="true" size={16} />}
+                      isBusy={isStaging}
+                      label="Stage Uninstall"
+                    />
                   </button>
                   <button
+                    aria-busy={isChangePlanCreating || undefined}
                     className="secondary-button"
                     disabled={!canReviewPlan}
                     onClick={onCreateChangePlan}
                     type="button"
                   >
-                    <ClipboardCheck aria-hidden="true" size={16} />
-                    <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                    <BusyActionContent
+                      busyLabel="Reviewing"
+                      icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                      isBusy={isChangePlanCreating}
+                      label="Review"
+                    />
                   </button>
                   <button
+                    aria-busy={isChangePlanApplying || undefined}
                     className="primary-button"
                     disabled={!canApplyPlan}
                     onClick={onApplyChangePlan}
                     type="button"
                   >
-                    <Save aria-hidden="true" size={16} />
-                    <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                    <BusyActionContent
+                      busyLabel="Applying"
+                      icon={<Save aria-hidden="true" size={16} />}
+                      isBusy={isChangePlanApplying}
+                      label="Apply"
+                    />
                   </button>
                 </div>
 
@@ -21447,6 +21949,7 @@ function HyperTrainingSection({
                     />
                   </label>
                   <button
+                    aria-busy={isStaging || undefined}
                     className="primary-button"
                     disabled={!canStage}
                     onClick={() => {
@@ -21456,8 +21959,12 @@ function HyperTrainingSection({
                     }}
                     type="button"
                   >
-                    <Save aria-hidden="true" size={16} />
-                    <span>{isStaging ? 'Staging' : 'Stage Cutoff'}</span>
+                    <BusyActionContent
+                      busyLabel="Staging"
+                      icon={<Save aria-hidden="true" size={16} />}
+                      isBusy={isStaging}
+                      label="Stage Cutoff"
+                    />
                   </button>
                   <button
                     className="secondary-button"
@@ -21523,22 +22030,32 @@ function HyperTrainingSection({
               <div className="encounter-edit-form">
                 <div className="form-actions">
                   <button
+                    aria-busy={isChangePlanCreating || undefined}
                     className="secondary-button"
                     disabled={!canReviewPlan}
                     onClick={onCreateChangePlan}
                     type="button"
                   >
-                    <ClipboardCheck aria-hidden="true" size={16} />
-                    <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                    <BusyActionContent
+                      busyLabel="Reviewing"
+                      icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                      isBusy={isChangePlanCreating}
+                      label="Review"
+                    />
                   </button>
                   <button
+                    aria-busy={isChangePlanApplying || undefined}
                     className="primary-button"
                     disabled={!canApplyPlan}
                     onClick={onApplyChangePlan}
                     type="button"
                   >
-                    <Save aria-hidden="true" size={16} />
-                    <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                    <BusyActionContent
+                      busyLabel="Applying"
+                      icon={<Save aria-hidden="true" size={16} />}
+                      isBusy={isChangePlanApplying}
+                      label="Apply"
+                    />
                   </button>
                 </div>
               </div>
@@ -21755,40 +22272,60 @@ function GymUniformRemovalSection({
               <div className="encounter-edit-form">
                 <div className="form-actions">
                   <button
+                    aria-busy={isStaging || undefined}
                     className="primary-button"
                     disabled={!canStageInstall || isStaging}
                     onClick={onStageInstall}
                     type="button"
                   >
-                    <Wrench aria-hidden="true" size={16} />
-                    <span>{isStaging ? 'Staging' : installLabel}</span>
+                    <BusyActionContent
+                      busyLabel="Staging"
+                      icon={<Wrench aria-hidden="true" size={16} />}
+                      isBusy={isStaging}
+                      label={installLabel}
+                    />
                   </button>
                   <button
+                    aria-busy={isStaging || undefined}
                     className="danger-button"
                     disabled={!canStageUninstall || isStaging}
                     onClick={onStageUninstall}
                     type="button"
                   >
-                    <Trash2 aria-hidden="true" size={16} />
-                    <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
+                    <BusyActionContent
+                      busyLabel="Staging"
+                      icon={<Trash2 aria-hidden="true" size={16} />}
+                      isBusy={isStaging}
+                      label="Stage Uninstall"
+                    />
                   </button>
                   <button
+                    aria-busy={isChangePlanCreating || undefined}
                     className="secondary-button"
                     disabled={!canReviewPlan}
                     onClick={onCreateChangePlan}
                     type="button"
                   >
-                    <ClipboardCheck aria-hidden="true" size={16} />
-                    <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                    <BusyActionContent
+                      busyLabel="Reviewing"
+                      icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                      isBusy={isChangePlanCreating}
+                      label="Review"
+                    />
                   </button>
                   <button
+                    aria-busy={isChangePlanApplying || undefined}
                     className="primary-button"
                     disabled={!canApplyPlan}
                     onClick={onApplyChangePlan}
                     type="button"
                   >
-                    <Save aria-hidden="true" size={16} />
-                    <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                    <BusyActionContent
+                      busyLabel="Applying"
+                      icon={<Save aria-hidden="true" size={16} />}
+                      isBusy={isChangePlanApplying}
+                      label="Apply"
+                    />
                   </button>
                 </div>
 
@@ -22098,40 +22635,60 @@ function CatchCapSection({
                   <div className="encounter-edit-form">
                     <div className="form-actions">
                       <button
+                        aria-busy={isStaging || undefined}
                         className="primary-button"
                         disabled={!canStage || isStaging}
                         onClick={() => onStageCaps(selectedCaps)}
                         type="button"
                       >
-                        <ClipboardCheck aria-hidden="true" size={16} />
-                        <span>{isStaging ? 'Staging' : 'Stage Caps'}</span>
+                        <BusyActionContent
+                          busyLabel="Staging"
+                          icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                          isBusy={isStaging}
+                          label="Stage Caps"
+                        />
                       </button>
                       <button
+                        aria-busy={isStaging || undefined}
                         className="danger-button"
                         disabled={!canStageUninstall || isStaging}
                         onClick={onStageUninstall}
                         type="button"
                       >
-                        <Trash2 aria-hidden="true" size={16} />
-                        <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
+                        <BusyActionContent
+                          busyLabel="Staging"
+                          icon={<Trash2 aria-hidden="true" size={16} />}
+                          isBusy={isStaging}
+                          label="Stage Uninstall"
+                        />
                       </button>
                       <button
+                        aria-busy={isChangePlanCreating || undefined}
                         className="secondary-button"
                         disabled={!canReviewPlan}
                         onClick={onCreateChangePlan}
                         type="button"
                       >
-                        <ClipboardCheck aria-hidden="true" size={16} />
-                        <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                        <BusyActionContent
+                          busyLabel="Reviewing"
+                          icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                          isBusy={isChangePlanCreating}
+                          label="Review"
+                        />
                       </button>
                       <button
+                        aria-busy={isChangePlanApplying || undefined}
                         className="primary-button"
                         disabled={!canApplyPlan}
                         onClick={onApplyChangePlan}
                         type="button"
                       >
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                        <BusyActionContent
+                          busyLabel="Applying"
+                          icon={<Save aria-hidden="true" size={16} />}
+                          isBusy={isChangePlanApplying}
+                          label="Apply"
+                        />
                       </button>
                     </div>
 
@@ -22410,13 +22967,18 @@ function SelectedExeFsPatchPanel({
             {patch ? (
               <div className="form-actions">
                 <button
+                  aria-busy={isStaging || undefined}
                   className="primary-button"
                   disabled={!canStagePatch || isStaging}
                   onClick={() => onStagePatch(patch.patchId)}
                   type="button"
                 >
-                  <Wrench aria-hidden="true" size={16} />
-                  <span>{isStaging ? 'Staging' : 'Stage Patch'}</span>
+                  <BusyActionContent
+                    busyLabel="Staging"
+                    icon={<Wrench aria-hidden="true" size={16} />}
+                    isBusy={isStaging}
+                    label="Stage Patch"
+                  />
                 </button>
               </div>
             ) : null}
@@ -22974,6 +23536,7 @@ function SelectedRoyalCandyPanel({
             <div className="royal-candy-action-column">
               <div className="form-actions">
                 <button
+                  aria-busy={isStaging || undefined}
                   className="primary-button"
                   disabled={!canUseStageButton || isStaging}
                   onClick={() => {
@@ -22986,26 +23549,40 @@ function SelectedRoyalCandyPanel({
                   }}
                   type="button"
                 >
-                  <ClipboardCheck aria-hidden="true" size={16} />
-                  <span>{isStaging ? 'Staging' : 'Stage'}</span>
+                  <BusyActionContent
+                    busyLabel="Staging"
+                    icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                    isBusy={isStaging}
+                    label="Stage"
+                  />
                 </button>
                 <button
+                  aria-busy={isChangePlanCreating || undefined}
                   className="secondary-button"
                   disabled={!canReviewPlan}
                   onClick={onCreateChangePlan}
                   type="button"
                 >
-                  <ClipboardCheck aria-hidden="true" size={16} />
-                  <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                  <BusyActionContent
+                    busyLabel="Reviewing"
+                    icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                    isBusy={isChangePlanCreating}
+                    label="Review"
+                  />
                 </button>
                 <button
+                  aria-busy={isChangePlanApplying || undefined}
                   className="primary-button"
                   disabled={!canApplyPlan}
                   onClick={onApplyChangePlan}
                   type="button"
                 >
-                  <Save aria-hidden="true" size={16} />
-                  <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                  <BusyActionContent
+                    busyLabel="Applying"
+                    icon={<Save aria-hidden="true" size={16} />}
+                    isBusy={isChangePlanApplying}
+                    label="Apply"
+                  />
                 </button>
               </div>
 
@@ -23389,31 +23966,46 @@ function StartingItemsSection({
                   <div className="encounter-edit-form">
                     <div className="form-actions">
                       <button
+                        aria-busy={isStaging || undefined}
                         className="primary-button"
                         disabled={!(canStage || canShowDependencyWarning) || isStaging}
                         onClick={() => onStageGrants(selectedGrants)}
                         type="button"
                       >
-                        <ClipboardCheck aria-hidden="true" size={16} />
-                        <span>{isStaging ? 'Staging' : 'Stage Items'}</span>
+                        <BusyActionContent
+                          busyLabel="Staging"
+                          icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                          isBusy={isStaging}
+                          label="Stage Items"
+                        />
                       </button>
                       <button
+                        aria-busy={isChangePlanCreating || undefined}
                         className="secondary-button"
                         disabled={!canReviewPlan}
                         onClick={onCreateChangePlan}
                         type="button"
                       >
-                        <ClipboardCheck aria-hidden="true" size={16} />
-                        <span>{isChangePlanCreating ? 'Reviewing' : 'Review'}</span>
+                        <BusyActionContent
+                          busyLabel="Reviewing"
+                          icon={<ClipboardCheck aria-hidden="true" size={16} />}
+                          isBusy={isChangePlanCreating}
+                          label="Review"
+                        />
                       </button>
                       <button
+                        aria-busy={isChangePlanApplying || undefined}
                         className="primary-button"
                         disabled={!canApplyPlan}
                         onClick={onApplyChangePlan}
                         type="button"
                       >
-                        <Save aria-hidden="true" size={16} />
-                        <span>{isChangePlanApplying ? 'Applying' : 'Apply'}</span>
+                        <BusyActionContent
+                          busyLabel="Applying"
+                          icon={<Save aria-hidden="true" size={16} />}
+                          isBusy={isChangePlanApplying}
+                          label="Apply"
+                        />
                       </button>
                     </div>
 
@@ -23509,34 +24101,49 @@ function FpsPatchSection({
 
         <div className="mod-merger-action-row">
           <button
+            aria-busy={isLoading || undefined}
             className="secondary-button"
             disabled={isBusy}
             onClick={onRefresh}
             title="Refresh 60FPS Patch status from Base ExeFS, Base RomFS, and Output Root."
             type="button"
           >
-            <RefreshCw aria-hidden="true" size={16} />
-            <span>{isLoading ? 'Refreshing' : 'Refresh'}</span>
+            <BusyActionContent
+              busyLabel="Refreshing"
+              icon={<RefreshCw aria-hidden="true" size={16} />}
+              isBusy={isLoading}
+              label="Refresh"
+            />
           </button>
           <button
+            aria-busy={isApplying || undefined}
             className="primary-button"
             disabled={!canApply || isBusy}
             onClick={onApply}
             title="Install the SwSh 60FPS ExeFS patch and generated move-effect BSEQ overlay."
             type="button"
           >
-            <CheckCircle aria-hidden="true" size={16} />
-            <span>{isApplying ? 'Working' : 'Install'}</span>
+            <BusyActionContent
+              busyLabel="Working"
+              icon={<CheckCircle aria-hidden="true" size={16} />}
+              isBusy={isApplying}
+              label="Install"
+            />
           </button>
           <button
+            aria-busy={isApplying || undefined}
             className="danger-button"
             disabled={!canApply || isBusy}
             onClick={onRestore}
             title="Remove only KM-owned 60FPS Patch output while preserving other output files and non-overlapping exefs/main bytes."
             type="button"
           >
-            <RotateCcw aria-hidden="true" size={16} />
-            <span>{isApplying ? 'Working' : 'Uninstall'}</span>
+            <BusyActionContent
+              busyLabel="Working"
+              icon={<RotateCcw aria-hidden="true" size={16} />}
+              isBusy={isApplying}
+              label="Uninstall"
+            />
           </button>
         </div>
       </section>
@@ -23634,22 +24241,32 @@ function SvModMergerSection({
             <span>Add Archive</span>
           </button>
           <button
+            aria-busy={isStaging || undefined}
             className="secondary-button"
             disabled={!canStage}
             onClick={onStageMerge}
             type="button"
           >
-            <ListChecks aria-hidden="true" size={16} />
-            <span>{isStaging ? 'Staging' : 'Stage Merge'}</span>
+            <BusyActionContent
+              busyLabel="Staging"
+              icon={<ListChecks aria-hidden="true" size={16} />}
+              isBusy={isStaging}
+              label="Stage Merge"
+            />
           </button>
           <button
+            aria-busy={isApplying || undefined}
             className="purple-button"
             disabled={!canApply}
             onClick={onApplyMerge}
             type="button"
           >
-            <ClipboardCheck aria-hidden="true" size={16} />
-            <span>{isApplying ? 'Applying' : 'Apply Merge'}</span>
+            <BusyActionContent
+              busyLabel="Applying"
+              icon={<ClipboardCheck aria-hidden="true" size={16} />}
+              isBusy={isApplying}
+              label="Apply Merge"
+            />
           </button>
         </div>
 
@@ -23906,14 +24523,19 @@ function ModMergerSection({
               ExeFS content.
             </p>
             <button
+              aria-busy={isLoading || undefined}
               className="secondary-button"
               disabled={!isDesktopAvailable || isLoading}
               onClick={() => onPickDirectory(1)}
               title="Set Mod Directory 1 by choosing a mod folder that contains RomFS files."
               type="button"
             >
-              <FolderOpen aria-hidden="true" size={16} />
-              <span>{isLoading ? 'Loading' : 'Set Mod Directory 1'}</span>
+              <BusyActionContent
+                busyLabel="Loading"
+                icon={<FolderOpen aria-hidden="true" size={16} />}
+                isBusy={isLoading}
+                label="Set Mod Directory 1"
+              />
             </button>
             <code title={directory1 || 'Mod Directory 1 is not set.'}>
               {directory1 || 'Not set'}
@@ -23927,14 +24549,19 @@ function ModMergerSection({
               sides before staging.
             </p>
             <button
+              aria-busy={isLoading || undefined}
               className="secondary-button"
               disabled={!isDesktopAvailable || isLoading}
               onClick={() => onPickDirectory(2)}
               title="Set Mod Directory 2 by choosing the second mod folder to compare."
               type="button"
             >
-              <FolderOpen aria-hidden="true" size={16} />
-              <span>{isLoading ? 'Loading' : 'Set Mod Directory 2'}</span>
+              <BusyActionContent
+                busyLabel="Loading"
+                icon={<FolderOpen aria-hidden="true" size={16} />}
+                isBusy={isLoading}
+                label="Set Mod Directory 2"
+              />
             </button>
             <code title={directory2 || 'Mod Directory 2 is not set.'}>
               {directory2 || 'Not set'}
@@ -24022,26 +24649,37 @@ function ModMergerSection({
             <span>Select All</span>
           </button>
           <button
+            aria-busy={isStaging || undefined}
             className="secondary-button"
             disabled={!canStage}
             onClick={onStageMerge}
             title="Build a merge preview for the selected matching RomFS files."
             type="button"
           >
-            <Layers aria-hidden="true" size={16} />
-            <span>{isStaging ? 'Staging' : 'Stage Merge'}</span>
+            <BusyActionContent
+              busyLabel="Staging"
+              icon={<Layers aria-hidden="true" size={16} />}
+              isBusy={isStaging}
+              label="Stage Merge"
+            />
           </button>
           <button
+            aria-busy={isStaging || undefined}
             className="secondary-button"
             disabled={!canReview}
             onClick={onReviewMerge}
             title="Review the staged merge again after changing conflict choices."
             type="button"
           >
-            <Search aria-hidden="true" size={16} />
-            <span>{isStaging ? 'Reviewing' : 'Review'}</span>
+            <BusyActionContent
+              busyLabel="Reviewing"
+              icon={<Search aria-hidden="true" size={16} />}
+              isBusy={isStaging}
+              label="Review"
+            />
           </button>
           <button
+            aria-busy={isApplying || undefined}
             className="primary-button"
             disabled={!canApply}
             onClick={onApplyMerge}
@@ -24052,8 +24690,12 @@ function ModMergerSection({
             }
             type="button"
           >
-            <Save aria-hidden="true" size={16} />
-            <span>{isApplying ? 'Applying' : 'Apply'}</span>
+            <BusyActionContent
+              busyLabel="Applying"
+              icon={<Save aria-hidden="true" size={16} />}
+              isBusy={isApplying}
+              label="Apply"
+            />
           </button>
           <span className="mod-merger-selection-status">
             {hasSelectedFiles ? `${selectedFileCount} selected` : 'No files selected'}
@@ -24702,6 +25344,7 @@ function ChangesSection({
   onValidateEditSession: () => void;
 }) {
   const pendingEdits = editSession?.pendingEdits ?? [];
+  const isPendingValidationBusy = isSessionValidating || isChangePlanCreating;
   const combinedDiagnostics = [
     ...diagnostics,
     ...(changePlan?.diagnostics ?? []),
@@ -24731,25 +25374,69 @@ function ChangesSection({
             }
           />
           <button
+            aria-busy={isPendingValidationBusy || undefined}
             className="secondary-button"
             disabled={pendingEdits.length === 0 || isSessionValidating || isChangePlanApplying}
             onClick={onValidateEditSession}
             type="button"
           >
-            <CheckCircle aria-hidden="true" size={18} />
-            <span>
-              {isSessionValidating || isChangePlanCreating
-                ? 'Validating'
-                : 'Validate Pending Changes'}
-            </span>
+            <BusyActionContent
+              busyLabel="Validating"
+              icon={<CheckCircle aria-hidden="true" size={18} />}
+              isBusy={isPendingValidationBusy}
+              label="Validate Pending Changes"
+              size={18}
+            />
           </button>
           {isScarletVioletProject ? (
             <>
-              <button className="primary-button" disabled={!canSaveValidatedChanges} onClick={() => onRequestSvOutput('standalone')} type="button"><Package aria-hidden="true" size={18} /><span>{isChangePlanApplying ? 'Outputting' : 'Output as Standalone'}</span></button>
-              <button className="secondary-button" disabled={!canSaveValidatedChanges} onClick={() => onRequestSvOutput('trinityModManager')} type="button"><GitMerge aria-hidden="true" size={18} /><span>{isChangePlanApplying ? 'Outputting' : 'Output for Trinity Mod Manager'}</span></button>
+              <button
+                aria-busy={isChangePlanApplying || undefined}
+                className="primary-button"
+                disabled={!canSaveValidatedChanges}
+                onClick={() => onRequestSvOutput('standalone')}
+                type="button"
+              >
+                <BusyActionContent
+                  busyLabel="Outputting"
+                  icon={<Package aria-hidden="true" size={18} />}
+                  isBusy={isChangePlanApplying}
+                  label="Output as Standalone"
+                  size={18}
+                />
+              </button>
+              <button
+                aria-busy={isChangePlanApplying || undefined}
+                className="secondary-button"
+                disabled={!canSaveValidatedChanges}
+                onClick={() => onRequestSvOutput('trinityModManager')}
+                type="button"
+              >
+                <BusyActionContent
+                  busyLabel="Outputting"
+                  icon={<GitMerge aria-hidden="true" size={18} />}
+                  isBusy={isChangePlanApplying}
+                  label="Output for Trinity Mod Manager"
+                  size={18}
+                />
+              </button>
             </>
           ) : (
-            <button className="primary-button" disabled={!canSaveValidatedChanges} onClick={onSaveValidatedChanges} type="button"><Save aria-hidden="true" size={18} /><span>{isChangePlanApplying ? 'Saving' : 'Save'}</span></button>
+            <button
+              aria-busy={isChangePlanApplying || undefined}
+              className="primary-button"
+              disabled={!canSaveValidatedChanges}
+              onClick={onSaveValidatedChanges}
+              type="button"
+            >
+              <BusyActionContent
+                busyLabel="Saving"
+                icon={<Save aria-hidden="true" size={18} />}
+                isBusy={isChangePlanApplying}
+                label="Save"
+                size={18}
+              />
+            </button>
           )}
           <button
             className="danger-button"
@@ -24835,38 +25522,67 @@ function ChangesSection({
   );
 }
 
-function SaveProgressModal({ progress }: { progress: SaveProgressState }) {
+function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
+  const isDeterminate = progress.mode === 'determinate';
+  const percent = isDeterminate ? Math.max(0, Math.min(100, progress.percent ?? 0)) : null;
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section
-        aria-labelledby="save-progress-heading"
+        aria-labelledby="work-progress-heading"
         aria-modal="true"
-        className="modal-panel save-progress-panel"
+        className="modal-panel work-progress-panel"
         role="dialog"
       >
         <div className="panel-heading">
-          <Save aria-hidden="true" size={18} />
-          <h2 id="save-progress-heading">{progress.label}</h2>
+          <Activity aria-hidden="true" size={18} />
+          <h2 id="work-progress-heading">{progress.label}</h2>
         </div>
-        <div className="save-progress-track" aria-label="Save progress">
-          <div className="save-progress-fill" style={{ width: `${progress.percent}%` }} />
+        <div
+          aria-label={`${progress.label} progress`}
+          aria-valuemax={isDeterminate ? 100 : undefined}
+          aria-valuemin={isDeterminate ? 0 : undefined}
+          aria-valuenow={percent ?? undefined}
+          className={`work-progress-track${isDeterminate ? '' : ' work-progress-track-indeterminate'}`}
+          role="progressbar"
+        >
+          <div
+            className="work-progress-fill"
+            style={isDeterminate ? { width: `${percent}%` } : undefined}
+          />
         </div>
-        <dl className="save-progress-detail">
+        <dl className="work-progress-detail">
+          {isDeterminate ? (
+            <div>
+              <dt>Progress</dt>
+              <dd>{percent}%</dd>
+            </div>
+          ) : null}
           <div>
-            <dt>Progress</dt>
-            <dd>{progress.percent}%</dd>
-          </div>
-          <div>
-            <dt>File</dt>
+            <dt>Current step</dt>
             <dd>{progress.detail}</dd>
           </div>
-          <div>
-            <dt>Step</dt>
-            <dd>
-              {progress.step} / {progress.totalSteps}
-            </dd>
-          </div>
+          {progress.step !== undefined &&
+          progress.totalSteps !== undefined &&
+          progress.totalSteps > 1 ? (
+            <div>
+              <dt>Phase</dt>
+              <dd>
+                {progress.step} of {progress.totalSteps}
+              </dd>
+            </div>
+          ) : null}
         </dl>
+        {progress.steps?.length ? (
+          <ol className="work-progress-step-list">
+            {progress.steps.map((step) => (
+              <li className={`work-progress-step work-progress-step-${step.state}`} key={step.label}>
+                <span aria-hidden="true" />
+                <strong>{step.label}</strong>
+              </li>
+            ))}
+          </ol>
+        ) : null}
       </section>
     </div>
   );
@@ -27894,12 +28610,19 @@ type EncounterAreaCopyRequest = {
   updates: EncounterSlotFieldUpdate[];
 };
 
-type SaveProgressState = {
+type WorkProgressStep = {
+  label: string;
+  state: 'active' | 'complete' | 'pending';
+};
+
+type WorkProgressState = {
   detail: string;
   label: string;
-  percent: number;
-  step: number;
-  totalSteps: number;
+  mode: 'determinate' | 'indeterminate';
+  percent?: number;
+  step?: number;
+  steps?: WorkProgressStep[];
+  totalSteps?: number;
 };
 
 type SvOutputConfirmationState = { mode: ChangePlanOutputMode };
