@@ -5032,10 +5032,10 @@ describe('App', () => {
           JSON.stringify([
             {
               draft: false,
-              html_url: 'https://github.example/releases/tag/v1.4.1',
-              name: 'KM Editor v1.4.1',
+              html_url: 'https://github.example/releases/tag/v1.5.1',
+              name: 'KM Editor v1.5.1',
               prerelease: false,
-              tag_name: 'v1.4.1'
+              tag_name: 'v1.5.1'
             }
           ]),
           { headers: { 'Content-Type': 'application/json' }, status: 200 }
@@ -5063,7 +5063,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Open Release' }));
 
     await waitFor(() =>
-      expect(openExternalUrl).toHaveBeenCalledWith('https://github.example/releases/tag/v1.4.1')
+      expect(openExternalUrl).toHaveBeenCalledWith('https://github.example/releases/tag/v1.5.1')
     );
     expect(openExternalUrl).toHaveBeenCalledTimes(1);
   });
@@ -5078,9 +5078,9 @@ describe('App', () => {
             {
               assets: [],
               draft: false,
-              html_url: 'https://github.example/releases/tag/v1.4.0',
+              html_url: 'https://github.example/releases/tag/v1.5.0',
               prerelease: false,
-              tag_name: 'v1.4.0'
+              tag_name: 'v1.5.0'
             }
           ]),
           { headers: { 'Content-Type': 'application/json' }, status: 200 }
@@ -5093,7 +5093,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('button', { name: 'Check for Updates' }));
 
-    expect(await screen.findByText('KM Editor v1.4.0 is up to date.')).toBeInTheDocument();
+    expect(await screen.findByText('KM Editor v1.5.0 is up to date.')).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Update Available' })).not.toBeInTheDocument();
   });
 
