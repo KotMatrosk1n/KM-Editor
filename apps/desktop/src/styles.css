@@ -1694,6 +1694,14 @@ h2 {
   align-items: stretch;
 }
 
+.move-flags-field-group {
+  grid-column: 1 / -1;
+}
+
+.move-flags-field-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
+}
+
 .move-field-editor-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

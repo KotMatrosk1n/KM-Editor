@@ -429,9 +429,9 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Editors' }));
     expect(within(navigation).getByRole('button', { name: 'Pokemon' })).toBeInTheDocument();
     expect(within(navigation).getByRole('button', { name: 'Trainers' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Moves' })).toBeInTheDocument();
     expect(within(navigation).getByRole('button', { name: 'Items' })).toBeInTheDocument();
     expect(within(navigation).getByRole('button', { name: 'Placement' })).toBeInTheDocument();
-    expect(within(navigation).queryByRole('button', { name: 'Moves' })).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('button', { name: 'Text' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));

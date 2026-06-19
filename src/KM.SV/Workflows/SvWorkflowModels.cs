@@ -8,6 +8,7 @@ namespace KM.SV.Workflows;
 public static class SvWorkflowIds
 {
     public const string Items = "items";
+    public const string Moves = "moves";
     public const string Pokemon = "pokemon";
     public const string Trainers = "trainers";
     public const string Encounters = "encounters";

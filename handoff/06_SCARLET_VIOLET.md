@@ -34,7 +34,7 @@ Current implementation state:
 - `KM.SV` is a separate project for S/V workflow/edit support and is referenced by `KM.Tools` and integration tests.
 - `KM.SV` must stay independent from `KM.SwSh`: do not add a `ProjectReference` to `KM.SwSh`, do not import `KM.SwSh.*` namespaces, and do not reuse SwSh workflow/edit DTO records or field-constant services from S/V code. Add S/V-owned records/constants/mappers under `KM.SV` instead.
 - The only current `SwSh` text inside `KM.SV` is `KM.Formats.SwSh` usage in `SvTextLabelLookup` for compatible message/AHTB parsing. That is a low-level file-format parser dependency through `KM.Formats`, not a dependency on the SwSh editor project.
-- `KM.SV` is organized with nested folders/namespaces: `Data`, `Workflows`, `Pokemon`, `Items`, `Trainers`, `Encounters`, and `ModMerger`.
+- `KM.SV` is organized with nested folders/namespaces: `Data`, `Workflows`, `Pokemon`, `Moves`, `Items`, `Trainers`, `Encounters`, and `ModMerger`.
 - New S/V editors should get their own domain folder and nested namespace when they become real workflow/editor code. For example, future S/V raid work should live under `src/KM.SV/Raids` with `KM.SV.Raids`, and future S/V trades should live under `src/KM.SV/Trades` with `KM.SV.Trades`.
 - Keep shared S/V plumbing in `Workflows` or `Data` only when it is genuinely cross-domain. Avoid adding new loose workflow files at the `src/KM.SV` project root.
 - `SvWorkflowFileSource` reads layered loose output first, then loose base files, then the Trinity archive; applies write loose LayeredFS files under `romfs/...` and patches `romfs/arc/data.trpfd`.
@@ -55,6 +55,16 @@ Implemented S/V editor backend support:
   - TM compatibility is resolved through the S/V item table, not the raw compatibility vector labels. Real TM records must have the S/V TM item shape and a localized `TM###` item name. This filters out legacy move-record rows such as `TM00` / Mega Punch and prevents fake public numbers such as `TM1230` or `TM2160`.
   - The public TM number comes from the localized item name, so `TM100+` records are supported even when their raw `GroupID` is `0`.
   - Applies by writing loose `romfs/avalon/data/personal_array.bin` and patched `romfs/arc/data.trpfd`.
+- Moves:
+  - Loads `avalon/data/waza_array.bin`.
+  - Loads English move labels from `message/dat/English/common/wazaname.dat`.
+  - Uses an S/V-owned FlatBuffer schema at `src/KM.Formats/SV/Schemas/SvMoveDataArray.fbs` with generated readers/writers under `src/KM.Formats/SV/Generated/GameData`.
+  - Exposes S/V move stats through the shared desktop Moves screen without referencing `KM.SwSh` services or records.
+  - Supports editable move usability, type, quality, category, power, accuracy, PP, priority, critical stage, target, hit count, inflicted condition/chance/turn fields, flinch, effect sequence, recoil/drain, healing behavior, three stat-change groups, and known battle flags.
+  - Known editable flags include contact, charge, recharge, protect, reflectable, snatch, mirror, punch, sound, dance, gravity, defrost, triple-battle distance, heal, substitute bypass, Sky Battle failure, ally animation, Metronome, Encore/Me First/Copycat/Mimic/Instruct failure, future attack, Pressure, combo, Sleep Talk/Assist blocks, powder, bite, bullet, multi-hit block, type-effectiveness bypass, Sheer Force, slicing, wind, and cannot-use-twice.
+  - The S/V `affinity` byte has been identified and is preserved during writes, but it is not exposed in the shared Moves UI yet.
+  - Unknown flags `56` through `60` and unused flags `61` through `70` are preserved during writes. Unknown active flags are visible in the loaded flag list but are not editable until their behavior is confirmed.
+  - Applies by writing loose `romfs/avalon/data/waza_array.bin` and patched `romfs/arc/data.trpfd`.
 - Items:
   - Loads `world/data/item/itemdata/itemdata_array.bin`.
   - Loads English item and TM/move labels from `message/dat/English/common/itemname.dat` and `wazaname.dat`.
@@ -89,9 +99,9 @@ Implemented S/V editor backend support:
   - Supports species, form, probability/lot value, minimum level, and maximum level.
   - Applies by writing loose `romfs/world/data/encount/pokedata/pokedata/pokedata_array.bin` and patched `romfs/arc/data.trpfd`.
 - Bridge routing:
-  - `items.load`, `pokemon.load`, `trainers.load`, and `encounters.load` route to `KM.SV` when the selected game is Scarlet/Violet.
+  - `items.load`, `moves.load`, `pokemon.load`, `trainers.load`, and `encounters.load` route to `KM.SV` when the selected game is Scarlet/Violet.
   - The corresponding update commands and shared edit-session validate/plan/apply commands route to `KM.SV` for S/V projects.
-  - `workflow.list` returns `items`, `pokemon`, `trainers`, `encounters`, and `modMerger` for S/V projects.
+  - `workflow.list` returns `items`, `moves`, `pokemon`, `trainers`, `encounters`, `placement`, and `modMerger` for S/V projects.
   - S/V workflow and edit responses map through `SvBridgeMapper`; do not send S/V workflow records through `SwShBridgeMapper`.
 
 Implemented S/V Mod Merger support:
@@ -99,7 +109,7 @@ Implemented S/V Mod Merger support:
 - Desktop tool name: `S/V Mod Merger`.
 - UI exposure:
   - Available only after selecting Scarlet or Violet in the game-selection UI.
-  - If an internal S/V project is loaded, workflow navigation filters to S/V-supported workflows: Pokemon Data, Items, Trainers, Wild Encounters, and S/V Mod Merger.
+  - If an internal S/V project is loaded, workflow navigation filters to S/V-supported workflows: Pokemon Data, Moves, Items, Trainers, Wild Encounters, Placement, and S/V Mod Merger.
   - Allows adding folder or archive mod sources.
   - Allows enabling/disabling, moving up/down, and removing individual mod sources.
 - Source handling:
@@ -410,10 +420,29 @@ Validation so far:
     - `npm --prefix apps/desktop run build` passed with the existing large-chunk warning.
     - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --filter "ScarletVioletBridgeTests" --logger "console;verbosity=minimal" -p:UseSharedCompilation=false` passed: 10/10.
     - `dotnet test tests\KM.SwSh.Tests\KM.SwSh.Tests.csproj --no-restore --filter "FullyQualifiedName~Pokemon|FullyQualifiedName~Trainers|FullyQualifiedName~Items|FullyQualifiedName~Encounters" --logger "console;verbosity=minimal" -p:UseSharedCompilation=false` passed: 153/153.
+- S/V Moves editor backend checkpoint on 2026-06-19:
+  - Added `src/KM.SV/Moves` as an S/V-owned workflow/edit-session domain. It does not reference `KM.SwSh`.
+  - Added S/V `waza_array.bin` schema and generated FlatBuffer readers/writers under `src/KM.Formats/SV`.
+  - Shared bridge commands `moves.load` and `moves.field.update` now route to `KM.SV` for Scarlet/Violet projects and remain routed to `KM.SwSh` for Sword/Shield projects.
+  - Desktop S/V workflow navigation now includes Moves while still filtering SwSh-only workflows for Scarlet/Violet projects.
+  - Real Scarlet local smoke against the current 4.0.0 archive loaded 920 move records, 698 enabled moves, one source file, and 3430 active known/unknown flag values from `avalon/data/waza_array.bin`. Tackle resolved as move 33, Normal, Physical, 40 power, 35 PP.
+  - S/V move stat selector slots are signed bytes. Real rows can use `-1` as an unused stat-change slot sentinel, especially on secondary/empty stat-change slots. Keep this value round-tripped as raw `-1`, show it as `Unused (-1 raw)`, and include `-1 Unused` in the S/V stat dropdown instead of clamping it to `0 None`.
+  - Real Scarlet 4.0.0 `moves.load` smoke after the fix found 105 negative stat selector slots. The first examples matched the bridge-error screenshot: Sand Attack, Tail Whip, Leer, Growl, and Acid all use `stat2 = -1` for an unused second stat-change slot.
+  - The shared desktop Moves contract must allow signed `stat` values for move stat-change records. SwSh still emits non-negative values, but S/V needs signed values to load real Scarlet/Violet `waza_array.bin` records without bridge validation errors.
+  - The desktop Moves edit form intentionally pushes the `Flags` group below the other move groups and renders it as a full-width grid. Keep this layout so the long S/V flag set expands horizontally before it becomes a tall one-column list.
+  - Local no-installer Tauri build/open on 2026-06-19 passed after the signed stat-slot fix using `km-editor-tauri-target-sv-moves-local`; launched `km-editor-desktop.exe` from the fresh release target.
+  - Validation:
+    - `dotnet build src\KM.SV\KM.SV.csproj --no-restore --nologo` passed.
+    - `dotnet build src\KM.Tools\KM.Tools.csproj --no-restore --nologo` passed.
+    - `dotnet build tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-restore --nologo` passed with one existing xUnit analyzer warning in `ProjectBridgeDispatcherTests`.
+    - `dotnet test tests\KM.Integration.Tests\KM.Integration.Tests.csproj --no-build --filter "FullyQualifiedName~ScarletVioletBridgeTests|FullyQualifiedName~ProjectBridgeDispatcherTests" --logger "console;verbosity=minimal"` passed: 96/96.
+    - `pnpm --prefix apps\desktop run typecheck` passed.
+    - `pnpm --prefix apps\desktop run test:run` passed: 137/137.
 
 Next steps:
 
 - Add targeted unit tests inside a future `KM.SV.Tests` project if S/V domain services grow beyond bridge-level coverage.
+- Confirm whether the S/V move-table `affinity` byte needs a visible UI field and label set.
 - Keep improving S/V Wild Encounters toward a native editor: slot add/remove behavior, better area/subarea labels, and clearer handling of outbreak/band/voice dimensions.
 - Add an Oodle smoke test only if the test environment intentionally supports the bundled DLL.
 - Add a real rar fixture or local archive smoke if we want format-specific RAR coverage beyond SharpCompress-backed intake.

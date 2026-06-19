@@ -646,6 +646,13 @@ describe('bridge contracts', () => {
               stage: -1,
               stat: 1,
               statName: 'Attack'
+            },
+            {
+              percent: 0,
+              slot: 3,
+              stage: 0,
+              stat: -1,
+              statName: 'Unused (-1 raw)'
             }
           ],
           target: 3,

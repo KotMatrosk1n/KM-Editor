@@ -482,8 +482,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadMovesWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadMovesWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadMoves(ProjectBridgeMapper.ToCore(request.Payload.Paths));
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadMoves(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadMoves(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -494,13 +496,20 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = movesEditSessionService.UpdateField(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.MoveId,
-            request.Payload.Field,
-            request.Payload.Value);
-        var response = SwShBridgeMapper.ToDto(result);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateMoveField(
+                paths,
+                session,
+                request.Payload.MoveId,
+                request.Payload.Field,
+                request.Payload.Value))
+            : SwShBridgeMapper.ToDto(movesEditSessionService.UpdateField(
+                paths,
+                session,
+                request.Payload.MoveId,
+                request.Payload.Field,
+                request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1879,8 +1888,6 @@ public sealed class ProjectBridgeDispatcher
     private static bool IsSwordShieldOnlyCommand(string command)
     {
         return command is
-            KmCommandNames.LoadMovesWorkflow or
-            KmCommandNames.UpdateMoveField or
             KmCommandNames.LoadTextWorkflow or
             KmCommandNames.UpdateTextEntry or
             KmCommandNames.LoadGiftPokemonWorkflow or

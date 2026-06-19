@@ -928,7 +928,7 @@ export const moveStatChangeRecordSchema = z.strictObject({
   percent: z.number().int().nonnegative(),
   slot: z.number().int().nonnegative(),
   stage: z.number().int(),
-  stat: z.number().int().nonnegative(),
+  stat: z.number().int(),
   statName: z.string()
 });
 

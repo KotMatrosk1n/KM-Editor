@@ -1,0 +1,100 @@
+struct SvMoveInflict {
+    condition: ushort;
+    chance: ubyte;
+    turn_mode: ubyte;
+    turn_min: ubyte;
+    turn_max: ubyte;
+}
+
+struct SvMoveStatChanges {
+    stat1: byte;
+    stat2: byte;
+    stat3: byte;
+    stat1_stage: byte;
+    stat2_stage: byte;
+    stat3_stage: byte;
+    stat1_chance: ubyte;
+    stat2_chance: ubyte;
+    stat3_chance: ubyte;
+}
+
+table SvMoveData {
+    move_id: ushort;
+    can_use_move: bool;
+    type: ubyte;
+    quality: ubyte;
+    category: ubyte;
+    power: ubyte;
+    accuracy: ubyte;
+    pp: ubyte;
+    priority: byte;
+    hit_max: ubyte;
+    hit_min: ubyte;
+    inflict: SvMoveInflict;
+    crit_stage: ubyte;
+    flinch: ubyte;
+    effect_sequence: ushort;
+    recoil: byte;
+    raw_healing: byte;
+    raw_target: ubyte;
+    stat_changes: SvMoveStatChanges;
+    affinity: byte;
+    flag_makes_contact: bool;
+    flag_charge: bool;
+    flag_recharge: bool;
+    flag_protect: bool;
+    flag_reflectable: bool;
+    flag_snatch: bool;
+    flag_mirror: bool;
+    flag_punch: bool;
+    flag_sound: bool;
+    flag_dance: bool;
+    flag_gravity: bool;
+    flag_defrost: bool;
+    flag_distance_triple: bool;
+    flag_heal: bool;
+    flag_ignore_substitute: bool;
+    flag_fail_sky_battle: bool;
+    flag_animate_ally: bool;
+    flag_metronome: bool;
+    flag_fail_encore: bool;
+    flag_fail_me_first: bool;
+    flag_future_attack: bool;
+    flag_pressure: bool;
+    flag_combo: bool;
+    flag_no_sleep_talk: bool;
+    flag_no_assist: bool;
+    flag_fail_copycat: bool;
+    flag_fail_mimic: bool;
+    flag_fail_instruct: bool;
+    flag_powder: bool;
+    flag_bite: bool;
+    flag_bullet: bool;
+    flag_no_multi_hit: bool;
+    flag_no_effectiveness: bool;
+    flag_sheer_force: bool;
+    flag_slicing: bool;
+    flag_wind: bool;
+    unknown56: bool;
+    unknown57: bool;
+    unknown58: bool;
+    unknown59: bool;
+    unknown60: bool;
+    unused61: bool;
+    unused62: bool;
+    unused63: bool;
+    unused64: bool;
+    unused65: bool;
+    unused66: bool;
+    unused67: bool;
+    unused68: bool;
+    unused69: bool;
+    unused70: bool;
+    flag_cant_use_twice: bool;
+}
+
+table SvMoveDataArray {
+    values:[SvMoveData];
+}
+
+root_type SvMoveDataArray;
