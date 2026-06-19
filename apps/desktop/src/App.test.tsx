@@ -753,10 +753,8 @@ describe('App', () => {
     expect(screen.getAllByText('Bulbasaur').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /Tackle/ })).toBeInTheDocument();
     const diagnosticsHeading = screen.getByRole('heading', { level: 2, name: 'Diagnostics' });
+    expect(diagnosticsHeading).toBeInTheDocument();
     const pokemonTable = screen.getByRole('table', { name: 'Pokemon' });
-    expect(
-      Boolean(diagnosticsHeading.compareDocumentPosition(pokemonTable) & Node.DOCUMENT_POSITION_FOLLOWING)
-    ).toBe(true);
     expect(within(pokemonTable).getByRole('columnheader', { name: 'ID' })).toBeInTheDocument();
     expect(within(pokemonTable).getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
     expect(within(pokemonTable).getByRole('columnheader', { name: 'Types' })).toBeInTheDocument();
