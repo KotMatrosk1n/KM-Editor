@@ -271,6 +271,7 @@ import {
   getTypeChartWorkflowValues
 } from './features/type-chart/TypeChartSection';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from './utils/workflowFormatters';
+import { getSectionWikiUrl } from './wikiLinks';
 
 const appVersion = tauriConfig.version;
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
@@ -1591,6 +1592,7 @@ export function App({
   );
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
   const activeProjectStateLabel = getProjectStateLabel(health, projectStatus, activeSection);
+  const activeWikiUrl = getSectionWikiUrl(activeSection, selectedGame);
   const isBusy = projectStatus === 'opening' || projectStatus === 'validating';
   const [bridgeDiagnostics, setBridgeDiagnostics] = useState<ApiDiagnostic[]>([]);
   const [isEditStarting, setIsEditStarting] = useState(false);
@@ -2524,6 +2526,24 @@ export function App({
     desktopServices.openExternalUrl,
     desktopServices.relaunchApp
   ]);
+
+  const handleOpenActiveWiki = useCallback(() => {
+    if (!activeWikiUrl) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        if (desktopServices.isAvailable) {
+          await desktopServices.openExternalUrl(activeWikiUrl);
+        } else {
+          window.open(activeWikiUrl, '_blank', 'noopener,noreferrer');
+        }
+      } catch {
+        window.open(activeWikiUrl, '_blank', 'noopener,noreferrer');
+      }
+    })();
+  }, [activeWikiUrl, desktopServices.isAvailable, desktopServices.openExternalUrl]);
 
   const handleOpenItemsWorkflow = async () => {
     setIsItemsLoading(true);
@@ -6691,17 +6711,32 @@ const resetModMergerPlan = () => {
             <h1>{activeSectionLabel}</h1>
           </div>
 
-          {activeSectionIsEditor ? (
-            <button
-              aria-label="Close Editor"
-              className="secondary-button icon-button"
-              onClick={handleCloseActiveEditor}
-              title="Close editor"
-              type="button"
-            >
-              <X aria-hidden="true" size={18} />
-            </button>
-          ) : null}
+          <div className="toolbar-actions">
+            {activeWikiUrl ? (
+              <button
+                aria-label={`Go to Wiki for ${activeSectionLabel ?? 'current view'}`}
+                className="secondary-button toolbar-wiki-button"
+                onClick={handleOpenActiveWiki}
+                title="Open wiki page"
+                type="button"
+              >
+                <ExternalLink aria-hidden="true" size={16} />
+                <span>Go to Wiki</span>
+              </button>
+            ) : null}
+
+            {activeSectionIsEditor ? (
+              <button
+                aria-label="Close Editor"
+                className="secondary-button icon-button"
+                onClick={handleCloseActiveEditor}
+                title="Close editor"
+                type="button"
+              >
+                <X aria-hidden="true" size={18} />
+              </button>
+            ) : null}
+          </div>
         </header>
 
         <div className="workspace-content">
@@ -8630,7 +8665,8 @@ function PokemonSection({
                       const pokemonLabel = formatSpeciesFormLabel(
                         record.name,
                         record.form,
-                        record.speciesId
+                        record.speciesId,
+                        editorFamily
                       );
 
                       return (
@@ -8697,7 +8733,12 @@ function SelectedPokemonSummaryCard({
   variant?: 'context' | 'detailed';
 }) {
   const isContext = variant === 'context';
-  const pokemonLabel = formatSpeciesFormLabel(pokemon.name, pokemon.form, pokemon.speciesId);
+  const pokemonLabel = formatSpeciesFormLabel(
+    pokemon.name,
+    pokemon.form,
+    pokemon.speciesId,
+    editorFamily
+  );
 
   return (
     <div
@@ -8967,7 +9008,8 @@ function SelectedPokemonPanel({
         currentPokemonDrafts,
         evolutionMethodOptions,
         pokemonSpeciesOptions,
-        pokemonSpeciesLabels
+        pokemonSpeciesLabels,
+        editorFamily
       );
       if (review.changes.length > 0 || review.invalidCount > 0) {
         return currentDrafts;
@@ -8977,7 +9019,7 @@ function SelectedPokemonPanel({
       delete nextDrafts[pokemonKey];
       return nextDrafts;
     });
-  }, [evolutionMethodOptions, pokemon, pokemonSpeciesLabels, pokemonSpeciesOptions]);
+  }, [editorFamily, evolutionMethodOptions, pokemon, pokemonSpeciesLabels, pokemonSpeciesOptions]);
 
   useEffect(() => {
     if (!pokemon) {
@@ -9189,8 +9231,14 @@ function SelectedPokemonPanel({
     pokemonSpeciesOptions
   );
   const selectedEvolutionFormOptions = useMemo(
-    () => createEvolutionFormOptions(parsedEvolutionSpecies, pokemonSpeciesLabels, evolutionFormDraft),
-    [evolutionFormDraft, parsedEvolutionSpecies, pokemonSpeciesLabels]
+    () =>
+      createEvolutionFormOptions(
+        parsedEvolutionSpecies,
+        pokemonSpeciesLabels,
+        evolutionFormDraft,
+        editorFamily
+      ),
+    [editorFamily, evolutionFormDraft, parsedEvolutionSpecies, pokemonSpeciesLabels]
   );
   const parsedEvolutionForm = parseEditableIntegerDraft(
     evolutionFormDraft,
@@ -9210,8 +9258,14 @@ function SelectedPokemonPanel({
     pokemonSpeciesOptions
   );
   const newEvolutionFormOptions = useMemo(
-    () => createEvolutionFormOptions(parsedNewEvolutionSpecies, pokemonSpeciesLabels, newEvolutionFormDraft),
-    [newEvolutionFormDraft, parsedNewEvolutionSpecies, pokemonSpeciesLabels]
+    () =>
+      createEvolutionFormOptions(
+        parsedNewEvolutionSpecies,
+        pokemonSpeciesLabels,
+        newEvolutionFormDraft,
+        editorFamily
+      ),
+    [editorFamily, newEvolutionFormDraft, parsedNewEvolutionSpecies, pokemonSpeciesLabels]
   );
   const parsedNewEvolutionForm = parseEditableIntegerDraft(
     newEvolutionFormDraft,
@@ -9280,9 +9334,11 @@ function SelectedPokemonPanel({
         evolutionDraftsBySlot,
         evolutionMethodOptions,
         pokemonSpeciesOptions,
-        pokemonSpeciesLabels
+        pokemonSpeciesLabels,
+        editorFamily
       ),
     [
+      editorFamily,
       evolutionDraftsBySlot,
       evolutionMethodOptions,
       pokemon,
@@ -9439,6 +9495,7 @@ function SelectedPokemonPanel({
                           draftValue={draftValue}
                           field={field}
                           formOptionContext={{
+                            gameFamily: editorFamily,
                             species: pokemon.name,
                             speciesId: pokemon.speciesId
                           }}
@@ -9896,7 +9953,8 @@ function SelectedPokemonPanel({
                     const evolutionFormLabel = formatEvolutionFormReference(
                       pokemonSpeciesLabels,
                       evolution.species,
-                      evolution.form
+                      evolution.form,
+                      editorFamily
                     );
 
                     return (
@@ -11277,6 +11335,7 @@ function TrainersSection({
             <SelectedTrainerPanel
               canEditTrainers={canEditTrainers}
               editSession={editSession}
+              editorFamily={editorFamily}
               editableFields={workflow.editableFields}
               isEditStarting={isEditStarting}
               isTrainerUpdating={isTrainerUpdating}
@@ -11303,6 +11362,7 @@ function TrainersSection({
 function SelectedTrainerPanel({
   canEditTrainers,
   editSession,
+  editorFamily,
   editableFields,
   isEditStarting,
   isTrainerUpdating,
@@ -11317,6 +11377,7 @@ function SelectedTrainerPanel({
 }: {
   canEditTrainers: boolean;
   editSession: EditSession | null;
+  editorFamily: EditorUiFamily;
   editableFields: TrainerEditableField[];
   isEditStarting: boolean;
   isTrainerUpdating: boolean;
@@ -11413,10 +11474,11 @@ function SelectedTrainerPanel({
             pokemonDrafts[speciesIdFieldName],
             selectedPokemon.species,
             selectedPokemon.speciesId,
-            selectedPokemon.abilityOptions
+            selectedPokemon.abilityOptions,
+            editorFamily
           )
         : undefined,
-    [defaultContextualPokemonFields, pokemonDrafts, selectedPokemon]
+    [defaultContextualPokemonFields, editorFamily, pokemonDrafts, selectedPokemon]
   );
   const contextualPokemonFields = useMemo(
     () =>
@@ -11778,7 +11840,8 @@ function SelectedTrainerPanel({
                   const pokemonLabel = formatSpeciesFormLabel(
                     pokemon.species,
                     pokemon.form,
-                    pokemon.speciesId
+                    pokemon.speciesId,
+                    editorFamily
                   );
 
                   return (
@@ -14406,6 +14469,7 @@ function SelectedGiftPokemonPanel({
                           field={field}
                           formOptionContext={{
                             abilityOptions: gift.abilityOptions,
+                            gameFamily: 'swsh',
                             species: gift.species,
                             speciesId: gift.speciesId
                           }}
@@ -14961,11 +15025,13 @@ function SelectedTradePokemonPanel({
                           formOptionContext={
                             field.field === tradeRequiredFormFieldName
                               ? {
+                                  gameFamily: 'swsh',
                                   species: trade.requiredSpecies,
                                   speciesId: trade.requiredSpeciesId
                                 }
                               : {
                                   abilityOptions: trade.abilityOptions,
+                                  gameFamily: 'swsh',
                                   species: trade.species,
                                   speciesId: trade.speciesId
                                 }
@@ -15461,6 +15527,7 @@ function SelectedRentalPokemonPanel({
                           field={field}
                           formOptionContext={{
                             abilityOptions: rental.abilityOptions,
+                            gameFamily: 'swsh',
                             species: rental.species,
                             speciesId: rental.speciesId
                           }}
@@ -16114,6 +16181,7 @@ function SelectedDynamaxAdventurePanel({
                           field={field}
                           formOptionContext={{
                             abilityOptions: adventureAbilityOptions,
+                            gameFamily: 'swsh',
                             species: encounter.species,
                             speciesId: draftedSpeciesId
                           }}
@@ -16620,6 +16688,7 @@ function SelectedStaticEncounterPanel({
                           field={field}
                           formOptionContext={{
                             abilityOptions: encounter.abilityOptions,
+                            gameFamily: 'swsh',
                             species: encounter.species,
                             speciesId: encounter.speciesId
                           }}
@@ -18100,6 +18169,7 @@ function EncountersSection({
               areaTabs={areaTabs}
               canEditEncounters={canEditEncounters}
               editSession={editSession}
+              editorFamily={editorFamily}
               editableFields={workflow.editableFields}
               encounterSlot={selectedEncounterSlot}
               conditionTabs={conditionTabs}
@@ -18131,6 +18201,7 @@ function SelectedEncounterPanel({
   canEditEncounters,
   conditionTabs,
   editSession,
+  editorFamily,
   editableFields,
   encounterSlot,
   isEditStarting,
@@ -18149,6 +18220,7 @@ function SelectedEncounterPanel({
   canEditEncounters: boolean;
   conditionTabs: EncounterConditionTab[];
   editSession: EditSession | null;
+  editorFamily: EditorUiFamily;
   editableFields: EncounterEditableField[];
   encounterSlot: EncounterSlotRecord | null;
   isEditStarting: boolean;
@@ -18224,10 +18296,12 @@ function SelectedEncounterPanel({
             ) ?? null,
             drafts[encounterSpeciesFieldName],
             encounterSlot.species,
-            encounterSlot.speciesId
+            encounterSlot.speciesId,
+            undefined,
+            editorFamily
           )
         : undefined,
-    [defaultEncounterFields, drafts, encounterSlot]
+    [defaultEncounterFields, drafts, editorFamily, encounterSlot]
   );
   const encounterFields = useMemo(
     () =>
@@ -18481,7 +18555,8 @@ function SelectedEncounterPanel({
                     const slotLabel = formatSpeciesFormLabel(
                       slot.species,
                       slot.form,
-                      slot.speciesId
+                      slot.speciesId,
+                      editorFamily
                     );
 
                     return (
@@ -18520,7 +18595,8 @@ function SelectedEncounterPanel({
                       {formatSpeciesFormLabel(
                         encounterSlot.species,
                         encounterSlot.form,
-                        encounterSlot.speciesId
+                        encounterSlot.speciesId,
+                        editorFamily
                       )}
                     </dd>
                   </div>
@@ -19345,6 +19421,7 @@ function SelectedRaidBattlePanel({
                               formOptionContext={{
                                 abilityOptions: battleSlot.abilityOptions,
                                 formOptions: battleSlot.formOptions,
+                                gameFamily: 'swsh',
                                 species: battleSlot.species,
                                 speciesId: battleSlot.speciesId
                               }}
@@ -26156,9 +26233,10 @@ function formatReferenceLabel(
 function formatEvolutionFormReference(
   speciesLabels: ReadonlyMap<number, string>,
   speciesId: number,
-  form: number
+  form: number,
+  gameFamily: EditorUiFamily = 'swsh'
 ) {
-  return createEvolutionFormOptions(speciesId, speciesLabels, form.toString()).find(
+  return createEvolutionFormOptions(speciesId, speciesLabels, form.toString(), gameFamily).find(
     (option) => option.value === form
   )?.label ?? `Form ${form}`;
 }
@@ -26166,20 +26244,27 @@ function formatEvolutionFormReference(
 function createEvolutionFormOptions(
   speciesId: number | null,
   speciesLabels: ReadonlyMap<number, string>,
-  draftValue: string
+  draftValue: string,
+  gameFamily: EditorUiFamily = 'swsh'
 ): EditableFieldOption[] {
   const formValues = new Set<number>([0]);
   const parsedDraft = Number.parseInt(draftValue, 10);
-  if (Number.isInteger(parsedDraft) && parsedDraft >= 0 && parsedDraft <= 255) {
-    formValues.add(parsedDraft);
-  }
 
-  const context = createEvolutionFormOptionContext(speciesId, speciesLabels);
+  const context = createEvolutionFormOptionContext(speciesId, speciesLabels, gameFamily);
   if (context !== null) {
     addKnownSpeciesFormValues(context, formValues);
-    if (formValues.size === 1 && speciesHasKnownAlternateForms(context)) {
-      formValues.add(1);
+    if (
+      Number.isInteger(parsedDraft) &&
+      parsedDraft >= 0 &&
+      parsedDraft <= 255 &&
+      (parsedDraft === 0 ||
+        resolveSpeciesFormLabel(context.species, parsedDraft, context.speciesId, gameFamily) !==
+          undefined)
+    ) {
+      formValues.add(parsedDraft);
     }
+  } else if (Number.isInteger(parsedDraft) && parsedDraft >= 0 && parsedDraft <= 255) {
+    formValues.add(parsedDraft);
   }
 
   return [...formValues]
@@ -26295,7 +26380,8 @@ function reviewPokemonEvolutionDrafts(
   draftsBySlot: Record<number, PokemonEvolutionDraftFields>,
   evolutionMethodOptions: PokemonEvolutionMethodOption[],
   pokemonSpeciesOptions: PokemonEditableFieldOption[],
-  pokemonSpeciesLabels: ReadonlyMap<number, string>
+  pokemonSpeciesLabels: ReadonlyMap<number, string>,
+  gameFamily: EditorUiFamily = 'swsh'
 ): { changes: PokemonEvolutionDraftChange[]; invalidCount: number } {
   if (!pokemon) {
     return { changes: [], invalidCount: 0 };
@@ -26321,7 +26407,12 @@ function reviewPokemonEvolutionDrafts(
     );
     const argument = parseEditableIntegerDraft(draft.argument, argumentOptions);
     const species = parseEditableIntegerDraft(draft.species, pokemonSpeciesOptions);
-    const formOptions = createEvolutionFormOptions(species, pokemonSpeciesLabels, draft.form);
+    const formOptions = createEvolutionFormOptions(
+      species,
+      pokemonSpeciesLabels,
+      draft.form,
+      gameFamily
+    );
     const form = parseEditableIntegerDraft(draft.form, formOptions);
     const level = Number.parseInt(draft.level, 10);
 
@@ -26383,7 +26474,8 @@ function createPokemonSpeciesOptions(pokemonRecords: PokemonRecord[]): PokemonEd
 
 function createEvolutionFormOptionContext(
   speciesId: number | null,
-  speciesLabels: ReadonlyMap<number, string>
+  speciesLabels: ReadonlyMap<number, string>,
+  gameFamily: EditorUiFamily = 'swsh'
 ): SpeciesFormOptionContext | null {
   if (speciesId === null || !Number.isInteger(speciesId)) {
     return null;
@@ -26392,6 +26484,7 @@ function createEvolutionFormOptionContext(
   const speciesLabel = formatReferenceLabel(speciesLabels, speciesId, 'Species');
   const species = getReferenceSpriteName(speciesLabel);
   return {
+    gameFamily,
     species: species || speciesLabel,
     speciesId
   };
@@ -26402,7 +26495,8 @@ function createDraftSpeciesFormOptionContext(
   draftValue: string | undefined,
   fallbackSpecies: string,
   fallbackSpeciesId: number,
-  abilityOptions?: EditableFieldOption[]
+  abilityOptions?: EditableFieldOption[],
+  gameFamily?: EditorUiFamily
 ): SpeciesFormOptionContext {
   const options = speciesField?.options ?? [];
   const parsedSpeciesId =
@@ -26417,14 +26511,16 @@ function createDraftSpeciesFormOptionContext(
 
   return {
     abilityOptions,
+    gameFamily,
     species,
     speciesId
   };
 }
 
 function addKnownSpeciesFormValues(context: SpeciesFormOptionContext, formValues: Set<number>) {
+  const formLabels = getSpeciesFormLabelData(context.gameFamily);
   if (context.speciesId !== undefined) {
-    for (const key of speciesFormLabelsBySpeciesId.keys()) {
+    for (const key of formLabels.labelsBySpeciesId.keys()) {
       const [speciesIdText, formText] = key.split(':');
       if (Number.parseInt(speciesIdText, 10) === context.speciesId) {
         formValues.add(Number.parseInt(formText, 10));
@@ -26433,7 +26529,7 @@ function addKnownSpeciesFormValues(context: SpeciesFormOptionContext, formValues
   }
 
   const normalizedSpecies = normalizeSpeciesName(context.species);
-  for (const key of speciesFormLabelsBySpeciesName.keys()) {
+  for (const key of formLabels.labelsBySpeciesName.keys()) {
     const [speciesName, formText] = key.split(':');
     if (speciesName === normalizedSpecies) {
       formValues.add(Number.parseInt(formText, 10));
@@ -28606,6 +28702,7 @@ type EditableFieldOption = {
 type SpeciesFormOptionContext = {
   abilityOptions?: EditableFieldOption[];
   formOptions?: EditableFieldOption[];
+  gameFamily?: EditorUiFamily;
   species: string;
   speciesId?: number;
 };
@@ -29268,11 +29365,27 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['basculin-white-striped', 'basculin-whitestriped'],
   ['basculegion-female', 'basculegion-f'],
   ['basculegion-male', 'basculegion'],
+  ['brute-bonnet', 'brutebonnet'],
+  ['chi-yu', 'chiyu'],
+  ['chien-pao', 'chienpao'],
   ['dudunsparce-three-segment-form', 'dudunsparce-threesegment'],
   ['dudunsparce-three-segment', 'dudunsparce-threesegment'],
   ['dudunsparce-two-segment-form', 'dudunsparce'],
+  ['flutter-mane', 'fluttermane'],
   ['gimmighoul-chest-form', 'gimmighoul'],
   ['gimmighoul-roaming-form', 'gimmighoul-roaming'],
+  ['gouging-fire', 'gougingfire'],
+  ['great-tusk', 'greattusk'],
+  ['iron-boulder', 'ironboulder'],
+  ['iron-bundle', 'ironbundle'],
+  ['iron-crown', 'ironcrown'],
+  ['iron-hands', 'ironhands'],
+  ['iron-jugulis', 'ironjugulis'],
+  ['iron-leaves', 'ironleaves'],
+  ['iron-moth', 'ironmoth'],
+  ['iron-thorns', 'ironthorns'],
+  ['iron-treads', 'irontreads'],
+  ['iron-valiant', 'ironvaliant'],
   ['maushold-family-of-four', 'maushold-four'],
   ['maushold-family-of-three', 'maushold'],
   ['oinkologne-female', 'oinkologne-f'],
@@ -29292,8 +29405,13 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['palafin-zero-form', 'palafin'],
   ['poltchageist-artisan-form', 'poltchageist-artisan'],
   ['poltchageist-counterfeit-form', 'poltchageist'],
+  ['raging-bolt', 'ragingbolt'],
+  ['roaring-moon', 'roaringmoon'],
+  ['sandy-shocks', 'sandyshocks'],
   ['sinistcha-masterpiece-form', 'sinistcha-masterpiece'],
   ['sinistcha-unremarkable-form', 'sinistcha'],
+  ['scream-tail', 'screamtail'],
+  ['slither-wing', 'slitherwing'],
   ['squawkabilly-blue-plumage', 'squawkabilly-blue'],
   ['squawkabilly-green-plumage', 'squawkabilly'],
   ['squawkabilly-white-plumage', 'squawkabilly-white'],
@@ -29307,8 +29425,11 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['terapagos-normal-form', 'terapagos'],
   ['terapagos-stellar-form', 'terapagos-stellar'],
   ['terapagos-terastal-form', 'terapagos-terastal'],
+  ['ting-lu', 'tinglu'],
   ['ursaluna-bloodmoon', 'ursaluna-bloodmoon'],
-  ['ursaluna-standard', 'ursaluna']
+  ['ursaluna-standard', 'ursaluna'],
+  ['walking-wake', 'walkingwake'],
+  ['wo-chien', 'wochien']
 ]);
 
 export function getPokemonSpriteId(name: string) {
@@ -29521,20 +29642,21 @@ function createContextualSpeciesFormOptions(
 ): EditableFieldOption[] {
   const formValues = new Set<number>([0]);
 
-  if (knownFormCount !== undefined && knownFormCount > 1) {
-    for (let form = 1; form < knownFormCount && form <= 255; form += 1) {
-      formValues.add(form);
-    }
-  }
-
   addKnownSpeciesFormValues(formOptionContext, formValues);
 
-  if (currentValue !== null && currentValue >= 0 && currentValue <= 255) {
-    formValues.add(currentValue);
-  }
-
-  if (formValues.size === 1 && speciesHasKnownAlternateForms(formOptionContext)) {
-    formValues.add(1);
+  if (knownFormCount !== undefined && knownFormCount > 1) {
+    for (let form = 1; form < knownFormCount && form <= 255; form += 1) {
+      if (
+        resolveSpeciesFormLabel(
+          formOptionContext.species,
+          form,
+          formOptionContext.speciesId,
+          formOptionContext.gameFamily
+        ) !== undefined
+      ) {
+        formValues.add(form);
+      }
+    }
   }
 
   return [...formValues]
@@ -29542,7 +29664,19 @@ function createContextualSpeciesFormOptions(
     .map((form) => ({
       label: formatSpeciesFormOptionLabel(form, formOptionContext),
       value: form
-    }));
+    }))
+    .reduce<EditableFieldOption[]>((options, option) => {
+      const duplicateIndex = options.findIndex(
+        (candidate) => normalizeSpeciesName(candidate.label) === normalizeSpeciesName(option.label)
+      );
+      if (duplicateIndex === -1) {
+        options.push(option);
+      } else if (option.value === currentValue) {
+        options[duplicateIndex] = option;
+      }
+
+      return options;
+    }, []);
 }
 
 function isSpeciesFormField(fieldName: string | undefined) {
@@ -29577,9 +29711,10 @@ function getFormFieldDisabledReason(
 }
 
 function speciesHasKnownAlternateForms(context: SpeciesFormOptionContext) {
+  const formLabels = getSpeciesFormLabelData(context.gameFamily);
   return (
-    (context.speciesId !== undefined && knownAlternateFormSpeciesIds.has(context.speciesId)) ||
-    knownAlternateFormSpeciesNames.has(normalizeSpeciesName(context.species))
+    (context.speciesId !== undefined && formLabels.alternateSpeciesIds.has(context.speciesId)) ||
+    formLabels.alternateSpeciesNames.has(normalizeSpeciesName(context.species))
   );
 }
 
@@ -30496,8 +30631,20 @@ function formatTradePokemonMemory(trade: TradePokemonRecord) {
 type SpeciesFormLabelDefinition = {
   baseFormLabel?: string;
   forms: ReadonlyArray<readonly [number, string]>;
+  gameFamily: SpeciesFormGameFamily;
   speciesId: number;
   speciesNames: readonly string[];
+};
+
+type SpeciesFormGameFamily = EditorUiFamily | 'both';
+
+type SpeciesFormLabelData = {
+  alternateSpeciesIds: Set<number>;
+  alternateSpeciesNames: Set<string>;
+  baseLabelsBySpeciesId: Map<number, string>;
+  baseLabelsBySpeciesName: Map<string, string>;
+  labelsBySpeciesId: Map<string, string>;
+  labelsBySpeciesName: Map<string, string>;
 };
 
 const alcremieCreamFormLabels = [
@@ -30757,39 +30904,39 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [1, 'Ice Rider'],
     [2, 'Shadow Rider']
   ]),
-  createFormLabelDefinition(58, ['growlithe'], [[1, 'Hisuian']], 'Kantonian'),
-  createFormLabelDefinition(59, ['arcanine'], [[1, 'Hisuian']], 'Kantonian'),
-  createFormLabelDefinition(100, ['voltorb'], [[1, 'Hisuian']], 'Kantonian'),
-  createFormLabelDefinition(101, ['electrode'], [[1, 'Hisuian']], 'Kantonian'),
+  createFormLabelDefinition(58, ['growlithe'], [[1, 'Hisuian']], 'Kantonian', 'sv'),
+  createFormLabelDefinition(59, ['arcanine'], [[1, 'Hisuian']], 'Kantonian', 'sv'),
+  createFormLabelDefinition(100, ['voltorb'], [[1, 'Hisuian']], 'Kantonian', 'sv'),
+  createFormLabelDefinition(101, ['electrode'], [[1, 'Hisuian']], 'Kantonian', 'sv'),
   createFormLabelDefinition(128, ['tauros'], [
     [1, 'Paldean Combat Breed'],
     [2, 'Paldean Blaze Breed'],
     [3, 'Paldean Aqua Breed']
-  ], 'Kantonian'),
-  createFormLabelDefinition(157, ['typhlosion'], [[1, 'Hisuian']], 'Johtonian'),
-  createFormLabelDefinition(194, ['wooper'], [[1, 'Paldean']], 'Johtonian'),
-  createFormLabelDefinition(211, ['qwilfish'], [[1, 'Hisuian']], 'Johtonian'),
-  createFormLabelDefinition(215, ['sneasel'], [[1, 'Hisuian']], 'Johtonian'),
-  createFormLabelDefinition(503, ['samurott'], [[1, 'Hisuian']], 'Unovan'),
-  createFormLabelDefinition(549, ['lilligant'], [[1, 'Hisuian']], 'Unovan'),
+  ], 'Kantonian', 'sv'),
+  createFormLabelDefinition(157, ['typhlosion'], [[1, 'Hisuian']], 'Johtonian', 'sv'),
+  createFormLabelDefinition(194, ['wooper'], [[1, 'Paldean']], 'Johtonian', 'sv'),
+  createFormLabelDefinition(211, ['qwilfish'], [[1, 'Hisuian']], 'Johtonian', 'sv'),
+  createFormLabelDefinition(215, ['sneasel'], [[1, 'Hisuian']], 'Johtonian', 'sv'),
+  createFormLabelDefinition(503, ['samurott'], [[1, 'Hisuian']], 'Unovan', 'sv'),
+  createFormLabelDefinition(549, ['lilligant'], [[1, 'Hisuian']], 'Unovan', 'sv'),
   createFormLabelDefinition(550, ['basculin'], [
     [0, 'Red-Striped'],
     [1, 'Blue-Striped'],
     [2, 'White-Striped']
-  ]),
-  createFormLabelDefinition(570, ['zorua'], [[1, 'Hisuian']], 'Unovan'),
-  createFormLabelDefinition(571, ['zoroark'], [[1, 'Hisuian']], 'Unovan'),
-  createFormLabelDefinition(628, ['braviary'], [[1, 'Hisuian']], 'Unovan'),
-  createFormLabelDefinition(705, ['sliggoo'], [[1, 'Hisuian']], 'Kalosian'),
-  createFormLabelDefinition(706, ['goodra'], [[1, 'Hisuian']], 'Kalosian'),
-  createFormLabelDefinition(713, ['avalugg'], [[1, 'Hisuian']], 'Kalosian'),
-  createFormLabelDefinition(724, ['decidueye'], [[1, 'Hisuian']], 'Alolan'),
+  ], undefined, 'sv'),
+  createFormLabelDefinition(570, ['zorua'], [[1, 'Hisuian']], 'Unovan', 'sv'),
+  createFormLabelDefinition(571, ['zoroark'], [[1, 'Hisuian']], 'Unovan', 'sv'),
+  createFormLabelDefinition(628, ['braviary'], [[1, 'Hisuian']], 'Unovan', 'sv'),
+  createFormLabelDefinition(705, ['sliggoo'], [[1, 'Hisuian']], 'Kalosian', 'sv'),
+  createFormLabelDefinition(706, ['goodra'], [[1, 'Hisuian']], 'Kalosian', 'sv'),
+  createFormLabelDefinition(713, ['avalugg'], [[1, 'Hisuian']], 'Kalosian', 'sv'),
+  createFormLabelDefinition(724, ['decidueye'], [[1, 'Hisuian']], 'Alolan', 'sv'),
   createFormLabelDefinition(741, ['oricorio'], [
     [0, 'Baile Style'],
     [1, 'Pom-Pom Style'],
     [2, "Pa'u Style"],
     [3, 'Sensu Style']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(774, ['minior'], [
     [0, 'Red Meteor'],
     [1, 'Orange Meteor'],
@@ -30805,61 +30952,61 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [11, 'Blue Core'],
     [12, 'Indigo Core'],
     [13, 'Violet Core']
-  ]),
-  createFormLabelDefinition(901, ['ursaluna'], [[1, 'Bloodmoon']], 'Standard'),
+  ], undefined, 'sv'),
+  createFormLabelDefinition(901, ['ursaluna'], [[1, 'Bloodmoon']], 'Standard', 'sv'),
   createFormLabelDefinition(902, ['basculegion'], [
     [0, 'Male'],
     [1, 'Female']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(905, ['enamorus'], [
     [0, 'Incarnate Forme'],
     [1, 'Therian Forme']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(916, ['oinkologne'], [
     [0, 'Male'],
     [1, 'Female']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(917, ['dudunsparce'], [
     [0, 'Two-Segment Form'],
     [1, 'Three-Segment Form']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(934, ['palafin'], [
     [0, 'Zero Form'],
     [1, 'Hero Form']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(946, ['maushold'], [
     [0, 'Family of Four'],
     [1, 'Family of Three']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(952, ['tatsugiri'], [
     [0, 'Curly Form'],
     [1, 'Droopy Form'],
     [2, 'Stretchy Form']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(960, ['squawkabilly'], [
     [0, 'Green Plumage'],
     [1, 'Blue Plumage'],
     [2, 'Yellow Plumage'],
     [3, 'White Plumage']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(976, ['gimmighoul'], [
     [0, 'Chest Form'],
     [1, 'Roaming Form']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(998, ['koraidon'], [
     [0, 'Apex Build'],
     [1, 'Limited Build'],
     [2, 'Sprinting Build'],
     [3, 'Swimming Build'],
     [4, 'Gliding Build']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(999, ['miraidon'], [
     [0, 'Ultimate Mode'],
     [1, 'Low-Power Mode'],
     [2, 'Drive Mode'],
     [3, 'Aquatic Mode'],
     [4, 'Glide Mode']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(1011, ['ogerpon'], [
     [0, 'Teal Mask'],
     [1, 'Wellspring Mask'],
@@ -30869,72 +31016,84 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [5, 'Wellspring Mask Terastallized'],
     [6, 'Hearthflame Mask Terastallized'],
     [7, 'Cornerstone Mask Terastallized']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(1021, ['terapagos'], [
     [0, 'Normal Form'],
     [1, 'Terastal Form'],
     [2, 'Stellar Form']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(1024, ['poltchageist'], [
     [0, 'Counterfeit Form'],
     [1, 'Artisan Form']
-  ]),
+  ], undefined, 'sv'),
   createFormLabelDefinition(1025, ['sinistcha'], [
     [0, 'Unremarkable Form'],
     [1, 'Masterpiece Form']
-  ])
+  ], undefined, 'sv')
 ];
 
-const speciesFormLabelsBySpeciesId = new Map<string, string>(
-  knownSpeciesFormLabelDefinitions.flatMap((definition): Array<[string, string]> =>
-    definition.forms.map(([form, label]) => [`${definition.speciesId}:${form}`, label])
-  )
-);
-
-const speciesFormLabelsBySpeciesName = new Map<string, string>(
-  knownSpeciesFormLabelDefinitions.flatMap((definition): Array<[string, string]> =>
-    definition.speciesNames.flatMap((speciesName): Array<[string, string]> =>
-      definition.forms.map(([form, label]) => [
-        `${normalizeSpeciesName(speciesName)}:${form}`,
-        label
-      ])
-    )
-  )
-);
-
-const baseSpeciesFormLabelsBySpeciesId = new Map<number, string>(
-  knownSpeciesFormLabelDefinitions
-    .filter((definition) => definition.baseFormLabel !== undefined)
-    .map((definition) => [definition.speciesId, definition.baseFormLabel!])
-);
-
-const baseSpeciesFormLabelsBySpeciesName = new Map<string, string>(
-  knownSpeciesFormLabelDefinitions.flatMap((definition): Array<[string, string]> =>
-    definition.baseFormLabel === undefined
-      ? []
-      : definition.speciesNames.map((speciesName) => [
-          normalizeSpeciesName(speciesName),
-          definition.baseFormLabel!
-        ])
-  )
-);
-
-const knownAlternateFormSpeciesIds = new Set(
-  knownSpeciesFormLabelDefinitions.map((definition) => definition.speciesId)
-);
-const knownAlternateFormSpeciesNames = new Set(
-  knownSpeciesFormLabelDefinitions.flatMap((definition) =>
-    definition.speciesNames.map((speciesName) => normalizeSpeciesName(speciesName))
-  )
-);
+const speciesFormLabelDataByFamily: Record<EditorUiFamily, SpeciesFormLabelData> = {
+  sv: createSpeciesFormLabelData('sv'),
+  swsh: createSpeciesFormLabelData('swsh')
+};
 
 function createFormLabelDefinition(
   speciesId: number,
   speciesNames: readonly string[],
   forms: ReadonlyArray<readonly [number, string]>,
-  baseFormLabel?: string
+  baseFormLabel?: string,
+  gameFamily: SpeciesFormGameFamily = 'both'
 ): SpeciesFormLabelDefinition {
-  return { baseFormLabel, forms, speciesId, speciesNames };
+  return { baseFormLabel, forms, gameFamily, speciesId, speciesNames };
+}
+
+function createSpeciesFormLabelData(gameFamily: EditorUiFamily): SpeciesFormLabelData {
+  const definitions = knownSpeciesFormLabelDefinitions.filter(
+    (definition) => definition.gameFamily === 'both' || definition.gameFamily === gameFamily
+  );
+
+  return {
+    alternateSpeciesIds: new Set(definitions.map((definition) => definition.speciesId)),
+    alternateSpeciesNames: new Set(
+      definitions.flatMap((definition) =>
+        definition.speciesNames.map((speciesName) => normalizeSpeciesName(speciesName))
+      )
+    ),
+    baseLabelsBySpeciesId: new Map(
+      definitions
+        .filter((definition) => definition.baseFormLabel !== undefined)
+        .map((definition) => [definition.speciesId, definition.baseFormLabel!])
+    ),
+    baseLabelsBySpeciesName: new Map(
+      definitions.flatMap((definition): Array<[string, string]> =>
+        definition.baseFormLabel === undefined
+          ? []
+          : definition.speciesNames.map((speciesName) => [
+              normalizeSpeciesName(speciesName),
+              definition.baseFormLabel!
+            ])
+      )
+    ),
+    labelsBySpeciesId: new Map(
+      definitions.flatMap((definition): Array<[string, string]> =>
+        definition.forms.map(([form, label]) => [`${definition.speciesId}:${form}`, label])
+      )
+    ),
+    labelsBySpeciesName: new Map(
+      definitions.flatMap((definition): Array<[string, string]> =>
+        definition.speciesNames.flatMap((speciesName): Array<[string, string]> =>
+          definition.forms.map(([form, label]) => [
+            `${normalizeSpeciesName(speciesName)}:${form}`,
+            label
+          ])
+        )
+      )
+    )
+  };
+}
+
+function getSpeciesFormLabelData(gameFamily: EditorUiFamily | undefined) {
+  return speciesFormLabelDataByFamily[gameFamily ?? 'swsh'];
 }
 
 function createAlcremieFormLabels(): Array<readonly [number, string]> {
@@ -30983,42 +31142,63 @@ function createSilvallyFormLabels(): Array<readonly [number, string]> {
   ].map((label, form) => [form, label] as const);
 }
 
-function formatSpeciesFormLabel(species: string, form: number, speciesId?: number) {
-  const formLabel = resolveSpeciesFormLabel(species, form, speciesId);
+function formatSpeciesFormLabel(
+  species: string,
+  form: number,
+  speciesId?: number,
+  gameFamily?: EditorUiFamily
+) {
+  const formLabel = resolveSpeciesFormLabel(species, form, speciesId, gameFamily);
   if (form === 0) {
-    return formLabel === undefined ? species : `${species} (${formLabel})`;
+    return formLabel === undefined || speciesAlreadyIncludesFormLabel(species, formLabel)
+      ? species
+      : `${species} (${formLabel})`;
   }
 
   const displayLabel =
     formLabel ??
     `Form ${form}`;
 
-  return `${species} (${displayLabel})`;
+  return speciesAlreadyIncludesFormLabel(species, displayLabel)
+    ? species
+    : `${species} (${displayLabel})`;
 }
 
 function formatSpeciesFormOptionLabel(form: number, context: SpeciesFormOptionContext) {
   return (
-    resolveSpeciesFormLabel(context.species, form, context.speciesId) ??
+    resolveSpeciesFormLabel(context.species, form, context.speciesId, context.gameFamily) ??
     (form === 0 ? resolveBaseSpeciesFormLabel(context) ?? 'Base' : `Form ${form}`)
   );
 }
 
 function resolveBaseSpeciesFormLabel(context: SpeciesFormOptionContext) {
+  const formLabels = getSpeciesFormLabelData(context.gameFamily);
   return (
     (context.speciesId !== undefined
-      ? baseSpeciesFormLabelsBySpeciesId.get(context.speciesId)
+      ? formLabels.baseLabelsBySpeciesId.get(context.speciesId)
       : undefined) ??
-    baseSpeciesFormLabelsBySpeciesName.get(normalizeSpeciesName(context.species))
+    formLabels.baseLabelsBySpeciesName.get(normalizeSpeciesName(context.species))
   );
 }
 
-function resolveSpeciesFormLabel(species: string, form: number, speciesId?: number) {
+function resolveSpeciesFormLabel(
+  species: string,
+  form: number,
+  speciesId?: number,
+  gameFamily?: EditorUiFamily
+) {
+  const formLabels = getSpeciesFormLabelData(gameFamily);
   return (
     (speciesId !== undefined
-      ? speciesFormLabelsBySpeciesId.get(`${speciesId}:${form}`)
+      ? formLabels.labelsBySpeciesId.get(`${speciesId}:${form}`)
       : undefined) ??
-    speciesFormLabelsBySpeciesName.get(`${normalizeSpeciesName(species)}:${form}`)
+    formLabels.labelsBySpeciesName.get(`${normalizeSpeciesName(species)}:${form}`)
   );
+}
+
+function speciesAlreadyIncludesFormLabel(species: string, formLabel: string) {
+  const match = species.trim().match(/\(([^()]*)\)\s*$/);
+  return match ? normalizeSpeciesName(match[1] ?? '') === normalizeSpeciesName(formLabel) : false;
 }
 
 function normalizeSpeciesName(species: string) {

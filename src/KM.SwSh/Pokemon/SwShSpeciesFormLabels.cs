@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using System.Globalization;
+using System.Text;
 
 namespace KM.SwSh.Pokemon;
 
@@ -99,7 +100,7 @@ internal static class SwShSpeciesFormLabels
         {
             var baseRegionalFormLabel = ResolveBaseRegionalFormLabel(speciesId);
             var baseFormLabel = knownFormLabel ?? baseRegionalFormLabel;
-            return baseFormLabel is null
+            return baseFormLabel is null || SpeciesAlreadyIncludesFormLabel(speciesName, baseFormLabel)
                 ? speciesName
                 : string.Create(
                     CultureInfo.InvariantCulture,
@@ -109,9 +110,11 @@ internal static class SwShSpeciesFormLabels
         var formLabel = knownFormLabel
             ?? string.Create(CultureInfo.InvariantCulture, $"Form {localFormIndex}");
 
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"{speciesName} ({formLabel})");
+        return SpeciesAlreadyIncludesFormLabel(speciesName, formLabel)
+            ? speciesName
+            : string.Create(
+                CultureInfo.InvariantCulture,
+                $"{speciesName} ({formLabel})");
     }
 
     internal static string FormatSpeciesFormOptionLabel(int speciesId, int localFormIndex)
@@ -340,6 +343,37 @@ internal static class SwShSpeciesFormLabels
     internal static string? ResolveBaseRegionalFormLabel(int speciesId)
     {
         return BaseRegionalFormLabels.TryGetValue(speciesId, out var label) ? label : null;
+    }
+
+    private static bool SpeciesAlreadyIncludesFormLabel(string speciesName, string formLabel)
+    {
+        var trimmedSpecies = speciesName.TrimEnd();
+        if (!trimmedSpecies.EndsWith(')'))
+        {
+            return false;
+        }
+
+        var openParenthesis = trimmedSpecies.LastIndexOf('(');
+        if (openParenthesis < 0 || openParenthesis >= trimmedSpecies.Length - 1)
+        {
+            return false;
+        }
+
+        var existingLabel = trimmedSpecies.Substring(
+            openParenthesis + 1,
+            trimmedSpecies.Length - openParenthesis - 2);
+        return NormalizeFormLabel(existingLabel) == NormalizeFormLabel(formLabel);
+    }
+
+    private static string NormalizeFormLabel(string label)
+    {
+        return new string(
+            label
+                .Normalize(NormalizationForm.FormD)
+                .Where(c => CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                .Where(char.IsLetterOrDigit)
+                .Select(char.ToLowerInvariant)
+                .ToArray());
     }
 
 }

@@ -57,6 +57,32 @@ public sealed class SwShEncountersWorkflowServiceTests
             [
                 new SwShGfPackNamedFile(
                     "encount_symbol_k.bin",
+                    SwShEncounterTestFixtures.CreateArchive(firstSlotSpecies: 199, firstSlotForm: 1).Write()),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateSpeciesNameTable(199, (199, "Slowking")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+
+        var table = Assert.Single(workflow.Tables);
+        Assert.Equal(199, table.Slots[0].SpeciesId);
+        Assert.Equal(1, table.Slots[0].Form);
+        Assert.Equal("Slowking (Galarian)", table.Slots[0].Species);
+    }
+
+    [Fact]
+    public void LoadFormatsGalarianSlowbroEncounterFormTwo()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "encount_symbol_k.bin",
                     SwShEncounterTestFixtures.CreateArchive(firstSlotSpecies: 80, firstSlotForm: 2).Write()),
             ]).Write());
         temp.WriteBaseRomFsFile(
