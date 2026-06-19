@@ -1,2 +1,5 @@
 packages:
   - "apps/*"
+
+overrides:
+  undici: 7.28.0
