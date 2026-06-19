@@ -956,6 +956,74 @@ describe('App', () => {
     expect(within(pokemonTable).queryByText('Fire')).not.toBeInTheDocument();
   });
 
+  it('uses SwSh Pokemon Data display names without appending frontend form fallbacks', async () => {
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge();
+    const loadPokemonWorkflow: ProjectBridge['loadPokemonWorkflow'] = async (request) => {
+      const response = await baseBridge.loadPokemonWorkflow(request);
+      const template = response.workflow.pokemon[0];
+      const slowbroBase = {
+        ...template,
+        form: 0,
+        formLabel: 'Kanto',
+        name: 'Slowbro (Kanto)',
+        personalId: 80,
+        speciesId: 80,
+        type1: 'Water',
+        type2: 'Psychic'
+      };
+      const slowbroGalarian = {
+        ...template,
+        form: 1,
+        formLabel: 'Galarian',
+        name: 'Slowbro (Galarian)',
+        personalId: 927,
+        speciesId: 80,
+        type1: 'Poison',
+        type2: 'Psychic'
+      };
+
+      return {
+        workflow: {
+          ...response.workflow,
+          pokemon: [slowbroBase, slowbroGalarian],
+          stats: {
+            ...response.workflow.stats,
+            presentPokemonCount: 2,
+            totalPokemonCount: 2
+          }
+        }
+      };
+    };
+
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadPokemonWorkflow
+        }}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Pokemon' }));
+
+    const pokemonTable = await screen.findByRole('table', { name: 'Pokemon' });
+    expect(within(pokemonTable).getByText('Slowbro (Kanto)')).toBeInTheDocument();
+    expect(within(pokemonTable).getByText('Slowbro (Galarian)')).toBeInTheDocument();
+    expect(screen.queryByText('Slowbro (Galarian) (Form 1)')).not.toBeInTheDocument();
+    expect(screen.queryByText('Slowbro (Galarian) (Galarian)')).not.toBeInTheDocument();
+
+    await user.click(within(pokemonTable).getByRole('row', { name: /927Slowbro \(Galarian\)/ }));
+
+    expect(screen.getAllByText('Slowbro (Galarian)').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Slowbro (Galarian) (Form 1)')).not.toBeInTheDocument();
+    expect(screen.queryByText('Slowbro (Galarian) (Galarian)')).not.toBeInTheDocument();
+  });
+
   it('starts a Pokemon edit session and saves a personal stat change', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);

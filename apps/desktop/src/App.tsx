@@ -8662,13 +8662,6 @@ function PokemonSection({
                     getKey={(record) => record.personalId}
                     items={filteredPokemon}
                     renderRow={(record) => {
-                      const pokemonLabel = formatSpeciesFormLabel(
-                        record.name,
-                        record.form,
-                        record.speciesId,
-                        editorFamily
-                      );
-
                       return (
                         <button
                           className={`items-row ${
@@ -8681,7 +8674,7 @@ function PokemonSection({
                           type="button"
                         >
                           <span role="cell">{record.personalId}</span>
-                          <span role="cell">{pokemonLabel}</span>
+                          <span role="cell">{formatPokemonRecordName(record, editorFamily)}</span>
                           <span role="cell">{formatPokemonTypes(record)}</span>
                         </button>
                       );
@@ -8733,12 +8726,7 @@ function SelectedPokemonSummaryCard({
   variant?: 'context' | 'detailed';
 }) {
   const isContext = variant === 'context';
-  const pokemonLabel = formatSpeciesFormLabel(
-    pokemon.name,
-    pokemon.form,
-    pokemon.speciesId,
-    editorFamily
-  );
+  const pokemonLabel = formatPokemonRecordName(pokemon, editorFamily);
 
   return (
     <div
@@ -8785,6 +8773,12 @@ function SelectedPokemonSummaryCard({
       </dl>
     </div>
   );
+}
+
+function formatPokemonRecordName(pokemon: PokemonRecord, editorFamily: EditorUiFamily) {
+  return editorFamily === 'swsh'
+    ? pokemon.name
+    : formatSpeciesFormLabel(pokemon.name, pokemon.form, pokemon.speciesId, editorFamily);
 }
 
 function SelectedPokemonPanel({
