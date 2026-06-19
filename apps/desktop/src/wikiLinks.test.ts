@@ -20,6 +20,9 @@ describe('wiki links', () => {
     expect(getSectionWikiUrl('encounters', 'violet')).toBe(
       'https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Wild-Encounters-Editor'
     );
+    expect(getSectionWikiUrl('hyperspaceBypass', 'scarlet')).toBe(
+      'https://github.com/KotMatrosk1n/KM-Editor/wiki/Hyperspace-Bypass'
+    );
   });
 
   it('hides the button for sections without a wiki page', () => {

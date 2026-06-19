@@ -1,8 +1,8 @@
 # KM Editor
 
-KM Editor is a desktop editor for Pokemon Sword and Pokemon Shield mod projects.
+KM Editor is a desktop editor for Pokemon Sword, Pokemon Shield, Pokemon Scarlet, and Pokemon Violet mod projects.
 
-It works through a safer LayeredFS flow: choose Sword or Shield, validate clean RomFS and ExeFS paths, inspect records with source provenance, stage edits, review the change plan, and apply only after validation. Your base dump stays clean, and the app tells you when something looks off before it writes output.
+It works through a safer LayeredFS flow: choose a supported game, validate clean RomFS and ExeFS paths, inspect records with source provenance, stage edits, review the change plan, and apply only after validation. Your base dump stays clean, and the app tells you when something looks off before it writes output.
 
 ![KM Editor Project Setup](docs/assets/km-editor-project-setup.png)
 
@@ -10,11 +10,12 @@ It works through a safer LayeredFS flow: choose Sword or Shield, validate clean 
 
 - Validates clean base RomFS, base ExeFS, output root, and selected game before editors open.
 - Shows where records came from: base files, layered overrides, generated output, or pending edits.
-- Edits Pokemon, trainers, moves, items, encounters, raids, shops, placement objects, and behavior data.
+- Edits Sword and Shield Pokemon, trainers, moves, items, encounters, raids, shops, placement objects, and behavior data.
+- Edits Scarlet and Violet Pokemon, trainers, moves, items, placement data, and wild encounters.
 - Includes viewers for game text, flagwork metadata, and save-related inspection.
 - Stages changes into an edit session so you can remove mistakes before applying.
 - Uses reviewed change plans for higher-risk output, including hook-backed workflows.
-- Supports Bag Hook, Royal Candy, Starting Items, Catch Cap, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, and Dynamax Adventures through documented ownership rules.
+- Supports Bag Hook, Royal Candy, Starting Items, Catch Cap, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, and Hyperspace Bypass through documented ownership rules.
 - Includes a reproducible Randomizer for Pokemon data, encounters, raid rewards, and type chart output.
 - Checks for native app updates from Settings on updater-enabled builds.
 
@@ -49,4 +50,4 @@ Installer and updater release builds also need Tauri updater signing secrets. Se
 - [Desktop app notes](apps/desktop/README.md)
 - [Backend test notes](tests/README.md)
 
-Royal Candy, Starting Items, Catch Cap Editor, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, and Dynamax Adventures are available as Advanced Editors with documented Sword and Shield ownership rules. Randomizer and Mod Merger are available under Tools, with shareable seeds for Randomizer and one-sided file copy support for SwSh mod merging. Rental Pokemon remains hidden as work in progress until its runtime safety work is finished. See the [Hook Architecture wiki page](https://github.com/KotMatrosk1n/KM-Editor/wiki/Hook-Architecture), [Randomizer](https://github.com/KotMatrosk1n/KM-Editor/wiki/Randomizer), [Type Chart](https://github.com/KotMatrosk1n/KM-Editor/wiki/Type-Chart), [Fairy Gym Boosts](https://github.com/KotMatrosk1n/KM-Editor/wiki/Fairy-Gym-Boosts), [Fashion Unlock](https://github.com/KotMatrosk1n/KM-Editor/wiki/Fashion-Unlock), [Gym Uniform Removal](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gym-Uniform-Removal), [Rental Pokemon Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Rental-Pokemon-Editor), and [Dynamax Adventures](https://github.com/KotMatrosk1n/KM-Editor/wiki/Dynamax-Adventures).
+Royal Candy, Starting Items, Catch Cap Editor, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, and Hyperspace Bypass are available as Advanced Editors with documented ownership rules. Randomizer and Mod Merger are available under Tools, with shareable seeds for Randomizer, one-sided file copy support for SwSh mod merging, and Scarlet and Violet archive or folder merging support. Rental Pokemon remains hidden as work in progress until its runtime safety work is finished. See the [Hook Architecture wiki page](https://github.com/KotMatrosk1n/KM-Editor/wiki/Hook-Architecture), [Randomizer](https://github.com/KotMatrosk1n/KM-Editor/wiki/Randomizer), [Type Chart](https://github.com/KotMatrosk1n/KM-Editor/wiki/Type-Chart), [Fairy Gym Boosts](https://github.com/KotMatrosk1n/KM-Editor/wiki/Fairy-Gym-Boosts), [Fashion Unlock](https://github.com/KotMatrosk1n/KM-Editor/wiki/Fashion-Unlock), [Gym Uniform Removal](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gym-Uniform-Removal), [Rental Pokemon Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Rental-Pokemon-Editor), [Dynamax Adventures](https://github.com/KotMatrosk1n/KM-Editor/wiki/Dynamax-Adventures), and [Hyperspace Bypass](https://github.com/KotMatrosk1n/KM-Editor/wiki/Hyperspace-Bypass).

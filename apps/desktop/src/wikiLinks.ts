@@ -49,6 +49,7 @@ const commonWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
 
 const scarletVioletWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
   encounters: 'Scarlet-and-Violet-Wild-Encounters-Editor',
+  hyperspaceBypass: 'Hyperspace-Bypass',
   items: 'Scarlet-and-Violet-Items-Editor',
   modMerger: 'Scarlet-and-Violet-Mod-Merger',
   moves: 'Scarlet-and-Violet-Moves-Editor',
