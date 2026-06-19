@@ -95,7 +95,10 @@ internal sealed class SvDefaultMoveResolver
                 continue;
             }
 
-            moves.Add(new LevelupMove(index, learnedMove.Value.Move, learnedMove.Value.Level));
+            moves.Add(new LevelupMove(
+                index,
+                learnedMove.Value.Move,
+                SvLearnsetLevel.ToDisplayLevel(learnedMove.Value.Level)));
         }
 
         return moves;

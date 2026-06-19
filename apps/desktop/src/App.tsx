@@ -9945,7 +9945,7 @@ function SelectedPokemonPanel({
                               <GripVertical size={15} />
                             </span>
                             <span>#{move.slot + 1}</span>
-                            <span>Lv. {displayMove.level}</span>
+                            <span>{displayMove.levelLabel ?? `Lv. ${displayMove.level}`}</span>
                             <strong>{displayMove.moveName}</strong>
                             <span>{displayMove.moveId}</span>
                           </button>
@@ -11672,8 +11672,11 @@ function SelectedTrainerPanel({
     const natureField =
       contextualPokemonFields.find((field) => field.field === natureFieldName) ?? null;
     const natureDraftValue = pokemonDrafts[natureFieldName] ?? selectedPokemon.nature.toString();
-    return getNatureStatEffects(parseEditableIntegerDraft(natureDraftValue, natureField?.options));
-  }, [contextualPokemonFields, pokemonDrafts, selectedPokemon]);
+    return getNatureStatEffects(
+      parseEditableIntegerDraft(natureDraftValue, natureField?.options),
+      editorFamily
+    );
+  }, [contextualPokemonFields, editorFamily, pokemonDrafts, selectedPokemon]);
   const selectedPokemonCanDynamax = useMemo(() => {
     if (!selectedPokemon) {
       return true;
@@ -12608,7 +12611,10 @@ type NatureStatEffects = {
   up: NatureStatKey | null;
 };
 
-function getNatureStatEffects(nature: number | null): NatureStatEffects | null {
+function getNatureStatEffects(
+  nature: number | null,
+  editorFamily: EditorUiFamily = 'swsh'
+): NatureStatEffects | null {
   const effects: Record<number, NatureStatEffects> = {
     1: { up: 'attack', down: 'defense' },
     2: { up: 'attack', down: 'speed' },
@@ -12632,7 +12638,12 @@ function getNatureStatEffects(nature: number | null): NatureStatEffects | null {
     23: { up: 'specialDefense', down: 'specialAttack' }
   };
 
-  return nature === null ? null : effects[nature] ?? { up: null, down: null };
+  if (nature === null) {
+    return null;
+  }
+
+  const normalizedNature = editorFamily === 'sv' && nature > 0 ? nature - 1 : nature;
+  return effects[normalizedNature] ?? { up: null, down: null };
 }
 
 function getNatureStatAdornment(fieldName: string, effects: NatureStatEffects | null) {
@@ -13650,9 +13661,10 @@ function formatPokemonLearnsetPendingValue(
 
   switch (details.action) {
     case 'upsert': {
-      const [moveText, levelText] = (value ?? '').split(':');
+      const [moveText, levelText] = splitPokemonOperationValue(value);
       const move = formatPendingOptionValue(moveText, context.pokemonWorkflow?.learnsetMoveOptions);
-      return levelText ? `Lv. ${levelText} ${move}` : move;
+      const level = formatPokemonLearnsetLevelText(levelText);
+      return level ? `${level} ${move}` : move;
     }
     case 'moveUp':
       return `Move slot #${details.slot + 1} up`;
@@ -13667,6 +13679,19 @@ function formatPokemonLearnsetPendingValue(
     default:
       return formatPendingEditValue(value);
   }
+}
+
+function splitPokemonOperationValue(value: string | null | undefined) {
+  const text = value ?? '';
+  return text.includes('|') ? text.split('|') : text.split(':');
+}
+
+function formatPokemonLearnsetLevelText(levelText: string | undefined) {
+  if (!levelText) {
+    return null;
+  }
+
+  return parseOptionalInteger(levelText) === 253 ? 'Evolution' : `Lv. ${levelText}`;
 }
 
 function formatPokemonEvolutionPendingValue(
@@ -26473,12 +26498,18 @@ function getPokemonLearnsetDraftDisplay(
   const levelDraft = draft?.level ?? move.level.toString();
   const moveId = parseEditableIntegerDraft(moveIdDraft, moveOptions);
   const level = Number.parseInt(levelDraft, 10);
+  const levelValue = Number.isInteger(level) ? level : move.level;
+  const levelLabel =
+    levelValue === move.level && levelDraft === move.level.toString()
+      ? move.levelLabel ?? null
+      : null;
   const moveOption = moveId === null
     ? undefined
     : moveOptions.find((option) => option.value === moveId);
 
   return {
-    level: Number.isInteger(level) ? level : move.level,
+    level: levelValue,
+    levelLabel,
     moveId: moveId ?? move.moveId,
     moveName:
       moveOption?.label.replace(/^\d+\s+/, '') ??

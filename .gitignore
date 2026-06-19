@@ -56,6 +56,14 @@ playwright-report/
 /scratch/
 /tmp/
 /temp/
+/scratch-ghidra-da/
+/scratch-ghidra-scripts/
+/scratch-royal-candy-inspect/
+
+## Local workspace notes
+/handoff/
+/KM_Editor_Handoff.md
+/0x71002e0ef0
 
 ## Private fixtures
 /fixtures/private/
