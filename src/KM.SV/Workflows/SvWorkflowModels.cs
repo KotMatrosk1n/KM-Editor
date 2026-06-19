@@ -13,6 +13,7 @@ public static class SvWorkflowIds
     public const string Trainers = "trainers";
     public const string Encounters = "encounters";
     public const string Placement = "placement";
+    public const string HyperspaceBypass = "hyperspaceBypass";
     public const string ModMerger = "modMerger";
 }
 

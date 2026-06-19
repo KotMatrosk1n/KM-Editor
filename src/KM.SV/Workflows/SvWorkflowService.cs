@@ -5,6 +5,7 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SV.Encounters;
+using KM.SV.HyperspaceBypass;
 using KM.SV.Items;
 using KM.SV.ModMerger;
 using KM.SV.Moves;
@@ -23,6 +24,7 @@ public sealed class SvWorkflowService
     private readonly SvTrainersWorkflowService trainersWorkflowService;
     private readonly SvEncountersWorkflowService encountersWorkflowService;
     private readonly SvPlacementWorkflowService placementWorkflowService;
+    private readonly SvHyperspaceBypassWorkflowService hyperspaceBypassWorkflowService;
     private readonly SvModMergerWorkflowService modMergerWorkflowService;
     private readonly SvItemsEditSessionService itemsEditSessionService;
     private readonly SvMovesEditSessionService movesEditSessionService;
@@ -30,6 +32,7 @@ public sealed class SvWorkflowService
     private readonly SvTrainersEditSessionService trainersEditSessionService;
     private readonly SvEncountersEditSessionService encountersEditSessionService;
     private readonly SvPlacementEditSessionService placementEditSessionService;
+    private readonly SvHyperspaceBypassEditSessionService hyperspaceBypassEditSessionService;
 
     public SvWorkflowService(ProjectWorkspaceService? projectWorkspaceService = null)
     {
@@ -41,6 +44,7 @@ public sealed class SvWorkflowService
         trainersWorkflowService = new SvTrainersWorkflowService(fileSource);
         encountersWorkflowService = new SvEncountersWorkflowService(fileSource);
         placementWorkflowService = new SvPlacementWorkflowService(fileSource);
+        hyperspaceBypassWorkflowService = new SvHyperspaceBypassWorkflowService();
         modMergerWorkflowService = new SvModMergerWorkflowService(this.projectWorkspaceService);
         itemsEditSessionService = new SvItemsEditSessionService(this.projectWorkspaceService, fileSource, itemsWorkflowService);
         movesEditSessionService = new SvMovesEditSessionService(this.projectWorkspaceService, fileSource, movesWorkflowService);
@@ -48,6 +52,9 @@ public sealed class SvWorkflowService
         trainersEditSessionService = new SvTrainersEditSessionService(this.projectWorkspaceService, fileSource, trainersWorkflowService);
         encountersEditSessionService = new SvEncountersEditSessionService(this.projectWorkspaceService, fileSource, encountersWorkflowService);
         placementEditSessionService = new SvPlacementEditSessionService(this.projectWorkspaceService, fileSource, placementWorkflowService);
+        hyperspaceBypassEditSessionService = new SvHyperspaceBypassEditSessionService(
+            this.projectWorkspaceService,
+            hyperspaceBypassWorkflowService);
     }
 
     public SvWorkflowList List(ProjectPaths paths)
@@ -68,6 +75,7 @@ public sealed class SvWorkflowService
             trainersWorkflowService.CreateSummary(project),
             encountersWorkflowService.CreateSummary(project),
             placementWorkflowService.CreateSummary(project),
+            hyperspaceBypassWorkflowService.CreateSummary(project),
             modMergerWorkflowService.CreateSummary(project),
         ]);
     }
@@ -118,6 +126,14 @@ public sealed class SvWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return placementWorkflowService.Load(project);
+    }
+
+    public SvHyperspaceBypassWorkflow LoadHyperspaceBypass(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return hyperspaceBypassWorkflowService.Load(project);
     }
 
     public SvModMergerWorkflow LoadModMerger(
@@ -249,6 +265,20 @@ public sealed class SvWorkflowService
         return placementEditSessionService.UpdateObjectField(paths, session, objectId, field, value);
     }
 
+    public SvHyperspaceBypassEditResult StageHyperspaceBypassInstall(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        return hyperspaceBypassEditSessionService.StageInstall(paths, session);
+    }
+
+    public SvHyperspaceBypassEditResult StageHyperspaceBypassUninstall(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        return hyperspaceBypassEditSessionService.StageUninstall(paths, session);
+    }
+
     public SvEditSessionValidation ValidateEditSession(ProjectPaths paths, EditSession session)
     {
         var domain = GetDomain(session);
@@ -293,6 +323,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
+            SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
             _ => itemsEditSessionService.Validate(paths, session),
         };
@@ -312,6 +343,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
             _ => itemsEditSessionService.CreateChangePlan(paths, session, outputMode),
         };
@@ -332,6 +364,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
             _ => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
         };
@@ -450,6 +483,7 @@ public sealed class SvWorkflowService
             [SvEditSessionSupport.TrainersDomain] => SvEditSessionDomain.Trainers,
             [SvEditSessionSupport.EncountersDomain] => SvEditSessionDomain.Encounters,
             [SvEditSessionSupport.PlacementDomain] => SvEditSessionDomain.Placement,
+            [SvHyperspaceBypassEditSessionService.HyperspaceBypassEditDomain] => SvEditSessionDomain.HyperspaceBypass,
             _ => SvEditSessionDomain.Mixed,
         };
     }
@@ -477,6 +511,7 @@ public sealed class SvWorkflowService
             SvEditSessionSupport.TrainersDomain => SvEditSessionDomain.Trainers,
             SvEditSessionSupport.EncountersDomain => SvEditSessionDomain.Encounters,
             SvEditSessionSupport.PlacementDomain => SvEditSessionDomain.Placement,
+            SvHyperspaceBypassEditSessionService.HyperspaceBypassEditDomain => SvEditSessionDomain.HyperspaceBypass,
             null or "" => SvEditSessionDomain.None,
             _ => SvEditSessionDomain.Mixed,
         };
@@ -587,6 +622,7 @@ public sealed class SvWorkflowService
         Trainers,
         Encounters,
         Placement,
+        HyperspaceBypass,
         Mixed,
     }
 }

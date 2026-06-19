@@ -1,9 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { invoke } from '@tauri-apps/api/core';
-import { z, type ZodTypeAny } from 'zod';
 import {
-  type ApiError,
   type ApplyChangePlanRequest,
   type ApplyChangePlanResponse,
   type CreateChangePlanRequest,
@@ -132,7 +130,6 @@ import {
   type LoadTextWorkflowResponse,
   type LoadTrainersWorkflowRequest,
   type LoadTrainersWorkflowResponse,
-  type KmCommandName,
   type OpenProjectRequest,
   type OpenProjectResponse,
   type RefreshFileGraphRequest,
@@ -176,7 +173,6 @@ import {
   type ValidateProjectRequest,
   type ValidateProjectResponse,
   applyChangePlanResponseSchema,
-  createBridgeResponseSchema,
   createChangePlanResponseSchema,
   kmCommandNames,
   listWorkflowsResponseSchema,
@@ -298,6 +294,22 @@ import {
   loadShinyRateWorkflowResponseSchema,
   stageShinyRateResponseSchema
 } from './shinyRateContracts';
+import {
+  type LoadHyperspaceBypassWorkflowRequest,
+  type LoadHyperspaceBypassWorkflowResponse,
+  type StageHyperspaceBypassInstallRequest,
+  type StageHyperspaceBypassInstallResponse,
+  type StageHyperspaceBypassUninstallRequest,
+  type StageHyperspaceBypassUninstallResponse,
+  loadHyperspaceBypassWorkflowResponseSchema,
+  stageHyperspaceBypassInstallResponseSchema,
+  stageHyperspaceBypassUninstallResponseSchema
+} from './hyperspaceBypassContracts';
+export { ProjectBridgeError } from './projectBridgeError';
+import {
+  sendProjectBridgeRequest,
+  type ProjectBridgeTransport
+} from './projectBridgeRequest';
 
 export type ProjectBridge = {
   applyChangePlan: (request: ApplyChangePlanRequest) => Promise<ApplyChangePlanResponse>;
@@ -427,6 +439,15 @@ export type ProjectBridge = {
   stageGymUniformRemovalUninstall: (
     request: StageGymUniformRemovalUninstallRequest
   ) => Promise<StageGymUniformRemovalUninstallResponse>;
+  loadHyperspaceBypassWorkflow: (
+    request: LoadHyperspaceBypassWorkflowRequest
+  ) => Promise<LoadHyperspaceBypassWorkflowResponse>;
+  stageHyperspaceBypassInstall: (
+    request: StageHyperspaceBypassInstallRequest
+  ) => Promise<StageHyperspaceBypassInstallResponse>;
+  stageHyperspaceBypassUninstall: (
+    request: StageHyperspaceBypassUninstallRequest
+  ) => Promise<StageHyperspaceBypassUninstallResponse>;
   loadIvScreenWorkflow: (
     request: LoadIvScreenWorkflowRequest
   ) => Promise<LoadIvScreenWorkflowResponse>;
@@ -537,18 +558,6 @@ export type ProjectBridge = {
   ) => Promise<ValidateEditSessionResponse>;
   validateProject: (request: ValidateProjectRequest) => Promise<ValidateProjectResponse>;
 };
-
-export type ProjectBridgeTransport = (requestJson: string) => Promise<string>;
-
-export class ProjectBridgeError extends Error {
-  public readonly apiError: ApiError;
-
-  public constructor(apiError: ApiError) {
-    super(apiError.message);
-    this.name = 'ProjectBridgeError';
-    this.apiError = apiError;
-  }
-}
 
 const tauriProjectBridgeTransport: ProjectBridgeTransport = (requestJson) => {
   if (!hasTauriRuntime()) {
@@ -729,6 +738,27 @@ export function createProjectBridge(
         kmCommandNames.stageGymUniformRemovalUninstall,
         request,
         stageGymUniformRemovalUninstallResponseSchema
+      ),
+    loadHyperspaceBypassWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadHyperspaceBypassWorkflow,
+        request,
+        loadHyperspaceBypassWorkflowResponseSchema
+      ),
+    stageHyperspaceBypassInstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageHyperspaceBypassInstall,
+        request,
+        stageHyperspaceBypassInstallResponseSchema
+      ),
+    stageHyperspaceBypassUninstall: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageHyperspaceBypassUninstall,
+        request,
+        stageHyperspaceBypassUninstallResponseSchema
       ),
     loadIvScreenWorkflow: (request) =>
       sendProjectBridgeRequest(
@@ -1209,39 +1239,6 @@ export function createProjectBridge(
 }
 
 export const projectBridge = createProjectBridge();
-
-async function sendProjectBridgeRequest<TPayloadSchema extends ZodTypeAny>(
-  transport: ProjectBridgeTransport,
-  command: KmCommandName,
-  payload: unknown,
-  payloadSchema: TPayloadSchema
-): Promise<z.infer<TPayloadSchema>> {
-  const requestId = createRequestId(command);
-  const responseJson = await transport(
-    JSON.stringify({
-      command,
-      payload,
-      requestId
-    })
-  );
-  const response = createBridgeResponseSchema(payloadSchema).parse(JSON.parse(responseJson));
-
-  if (response.error) {
-    throw new ProjectBridgeError(response.error);
-  }
-
-  if (response.payload === null || response.payload === undefined) {
-    throw new Error('Project bridge response did not include a payload.');
-  }
-
-  return response.payload;
-}
-
-function createRequestId(command: KmCommandName) {
-  const randomValue = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
-
-  return `${command}:${randomValue}`;
-}
 
 function hasTauriRuntime() {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
