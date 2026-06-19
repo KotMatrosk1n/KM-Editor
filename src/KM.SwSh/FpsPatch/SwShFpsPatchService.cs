@@ -24,7 +24,7 @@ public sealed class SwShFpsPatchService
     private static readonly string[] ManagedBseqPrefixes = ["eg", "es", "et", "ew"];
     private static readonly ManagedBseqTimingOverride[] RequiredManagedBseqFiles =
     [
-        new("romfs/bin/demo/sequence/d230.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/d230.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee316.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee326.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee328.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),

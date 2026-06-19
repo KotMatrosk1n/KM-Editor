@@ -35,7 +35,7 @@ public sealed class SwShModMergerWorkflowServiceTests
     [Theory]
     [InlineData("romfs/bin/battle/waza/sequence/ew052.bseq")]
     [InlineData("romfs/bin/battle/waza/sequence/ee411.bseq")]
-    [InlineData("romfs/bin/demo/sequence/d230.bseq")]
+    [InlineData("romfs/bin/battle/waza/sequence/d230.bseq")]
     public void StageWarnsWhenSelectedFileIsManagedByFpsPatch(string relativePath)
     {
         using var temp = TemporarySwShProject.Create();
