@@ -319,7 +319,7 @@ internal sealed class SvEncountersEditSessionService
                     ? table with
                     {
                         Slots = table.Slots
-                            .Select(row => row.Slot == slot ? OverlaySlot(row, edit.Field, value) : row)
+                            .Select(row => row.Slot == slot ? OverlaySlot(workflow, row, edit.Field, value) : row)
                             .ToArray(),
                     }
                     : table)
@@ -327,21 +327,56 @@ internal sealed class SvEncountersEditSessionService
         };
     }
 
-    private static SvEncounterSlotRecord OverlaySlot(SvEncounterSlotRecord slot, string? field, int value)
+    private static SvEncounterSlotRecord OverlaySlot(
+        SvEncountersWorkflow workflow,
+        SvEncounterSlotRecord slot,
+        string? field,
+        int value)
     {
         return field switch
         {
             SvEncountersWorkflowService.SpeciesIdField => slot with
             {
                 SpeciesId = value,
-                Species = value == 0 ? "Empty" : SvLabels.Pokemon(value),
+                Species = SvEncountersWorkflowService.FormatEncounterSpeciesLabel(
+                    value,
+                    slot.Form,
+                    ResolveSpeciesName(workflow, value)),
             },
-            SvEncountersWorkflowService.FormField => slot with { Form = value },
+            SvEncountersWorkflowService.FormField => slot with
+            {
+                Form = value,
+                Species = SvEncountersWorkflowService.FormatEncounterSpeciesLabel(
+                    slot.SpeciesId,
+                    value,
+                    ResolveSpeciesName(workflow, slot.SpeciesId)),
+            },
             SvEncountersWorkflowService.ProbabilityField => slot with { Weight = value },
             SvEncountersWorkflowService.LevelMinField => slot with { LevelMin = value },
             SvEncountersWorkflowService.LevelMaxField => slot with { LevelMax = value },
             _ => slot,
         };
+    }
+
+    private static string ResolveSpeciesName(SvEncountersWorkflow workflow, int speciesId)
+    {
+        if (speciesId == 0)
+        {
+            return "Empty";
+        }
+
+        var speciesField = workflow.EditableFields.FirstOrDefault(field =>
+            string.Equals(field.Field, SvEncountersWorkflowService.SpeciesIdField, StringComparison.Ordinal));
+        var option = speciesField?.Options.FirstOrDefault(candidate => candidate.Value == speciesId);
+        if (option is null)
+        {
+            return SvLabels.Pokemon(speciesId);
+        }
+
+        var prefix = speciesId.ToString(CultureInfo.InvariantCulture);
+        return option.Label.StartsWith(prefix, StringComparison.Ordinal)
+            ? option.Label[prefix.Length..].Trim()
+            : option.Label;
     }
 
     private static void ApplyEdit(

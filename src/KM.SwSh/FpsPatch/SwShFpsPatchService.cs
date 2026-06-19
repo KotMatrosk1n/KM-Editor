@@ -18,9 +18,35 @@ public sealed class SwShFpsPatchService
     private const string ManifestRelativePath = ".km-editor/60fps-patch-manifest.json";
     private const string SequenceRootInsideRomFs = "bin/battle/waza/sequence";
     private const string SequenceRootRelativePath = "romfs/bin/battle/waza/sequence";
+    private const string OpeningDemoBseqRelativePath = "romfs/bin/demo/sequence/d010.bseq";
     private const int ExpectedManagedBseqFileCount = 1010;
 
     private static readonly string[] ManagedBseqPrefixes = ["eg", "es", "et", "ew"];
+    private static readonly ManagedBseqTimingOverride[] RequiredManagedBseqFiles =
+    [
+        new("romfs/bin/demo/sequence/d230.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee316.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee326.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee328.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee411.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee412.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee502.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+    ];
+
+    private static readonly ManagedBseqTimingOverride[] OptionalManagedBseqScaleOverrides =
+    [
+        new("romfs/bin/battle/waza/sequence/eg_ball01.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/eg_ball01_crw.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/eg_ball02.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/eg_ball02_crw.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/eg_ball03.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/eg_ball03_crw.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+    ];
+
+    private static readonly IReadOnlyDictionary<string, double> ManagedBseqTimelineScales = RequiredManagedBseqFiles
+        .Concat(OptionalManagedBseqScaleOverrides)
+        .ToDictionary(file => file.RelativePath, file => file.Scale, StringComparer.OrdinalIgnoreCase);
+    private static readonly int ExpectedManagedRomFsFileCount = ExpectedManagedBseqFileCount + RequiredManagedBseqFiles.Length + 2;
     private static readonly JsonSerializerOptions ManifestJsonOptions = new()
     {
         WriteIndented = true,
@@ -36,27 +62,21 @@ public sealed class SwShFpsPatchService
     public static bool IsManagedRomFsPath(string relativePath)
     {
         var normalized = NormalizeRelativePath(relativePath);
-        if (!normalized.StartsWith(SequenceRootRelativePath + "/", StringComparison.OrdinalIgnoreCase)
-            || !normalized.EndsWith(".bseq", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var fileName = Path.GetFileName(normalized);
-        return ManagedBseqPrefixes.Any(prefix => fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        return IsSpecialManagedRomFsPath(normalized) || IsManagedMoveEffectBseqPath(normalized);
     }
 
     public bool IsGeneratedRomFsOutput(ProjectPaths paths, string relativePath)
     {
         ArgumentNullException.ThrowIfNull(paths);
 
+        var normalized = NormalizeRelativePath(relativePath);
         if (!IsManagedRomFsPath(relativePath) || string.IsNullOrWhiteSpace(paths.BaseRomFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             return false;
         }
 
-        var sourcePath = ResolveBaseRomFsPath(paths.BaseRomFsPath, relativePath);
-        var outputPath = ResolveOutputPath(paths.OutputRootPath, relativePath);
+        var sourcePath = ResolveBaseRomFsPath(paths.BaseRomFsPath, normalized);
+        var outputPath = ResolveOutputPath(paths.OutputRootPath, normalized);
         if (sourcePath is null || outputPath is null || !File.Exists(sourcePath) || !File.Exists(outputPath))
         {
             return false;
@@ -64,7 +84,7 @@ public sealed class SwShFpsPatchService
 
         try
         {
-            var generated = ConvertBseq(File.ReadAllBytes(sourcePath));
+            var generated = ConvertManagedRomFsFile(normalized, File.ReadAllBytes(sourcePath));
             var output = File.ReadAllBytes(outputPath);
             return output.SequenceEqual(generated);
         }
@@ -91,9 +111,9 @@ public sealed class SwShFpsPatchService
         ValidateEditableProject(project, diagnostics);
 
         var mainStatus = AnalyzeMain(paths, diagnostics);
-        var bseqStatus = AnalyzeBseqOutputs(paths, diagnostics);
+        var romFsStatus = AnalyzeRomFsOutputs(paths, diagnostics);
 
-        return CreateStatus(mainStatus, bseqStatus, diagnostics);
+        return CreateStatus(mainStatus, romFsStatus, diagnostics);
     }
 
     public SwShFpsPatchApplyResult Apply(ProjectPaths paths)
@@ -106,7 +126,7 @@ public sealed class SwShFpsPatchService
         var writtenFiles = new List<ProjectFileReference>();
 
         var preparedMain = PrepareMainApply(paths, diagnostics);
-        var preparedBseqFiles = PrepareBseqApply(paths, diagnostics);
+        var preparedRomFsFiles = PrepareRomFsApply(paths, diagnostics);
         if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             return CreateApplyResult(paths, writtenFiles, diagnostics);
@@ -117,14 +137,14 @@ public sealed class SwShFpsPatchService
             WriteOutputFile(paths.OutputRootPath!, ExeFsMainPath, preparedMain, diagnostics, writtenFiles);
         }
 
-        foreach (var preparedFile in preparedBseqFiles)
+        foreach (var preparedFile in preparedRomFsFiles)
         {
             WriteOutputFile(paths.OutputRootPath!, preparedFile.RelativePath, preparedFile.Contents, diagnostics, writtenFiles);
         }
 
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
-            RecordManifest(paths, preparedMain is not null, preparedBseqFiles, diagnostics);
+            RecordManifest(paths, preparedMain is not null, preparedRomFsFiles, diagnostics);
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
                 writtenFiles.Count == 0
@@ -155,7 +175,7 @@ public sealed class SwShFpsPatchService
         }
 
         RestoreMain(paths, diagnostics, writtenFiles);
-        RestoreBseqFiles(paths, diagnostics, writtenFiles);
+        RestoreRomFsFiles(paths, diagnostics, writtenFiles);
         DeleteManifest(paths, diagnostics);
 
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -231,11 +251,11 @@ public sealed class SwShFpsPatchService
         return null;
     }
 
-    private IReadOnlyList<PreparedBseqFile> PrepareBseqApply(
+    private IReadOnlyList<PreparedRomFsFile> PrepareRomFsApply(
         ProjectPaths paths,
         ICollection<ValidationDiagnostic> diagnostics)
     {
-        var preparedFiles = new List<PreparedBseqFile>();
+        var preparedFiles = new List<PreparedRomFsFile>();
         if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
             diagnostics.Add(CreateDiagnostic(
@@ -260,69 +280,110 @@ public sealed class SwShFpsPatchService
 
         foreach (var sourceFile in sourceFiles)
         {
-            try
+            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
+        }
+
+        PrepareManagedRomFsFile(paths, OpeningDemoBseqRelativePath, preparedFiles, diagnostics);
+        foreach (var sourceFile in RequiredManagedBseqFiles)
+        {
+            PrepareManagedRomFsFile(paths, sourceFile.RelativePath, preparedFiles, diagnostics);
+        }
+
+        PrepareManagedRomFsFile(paths, SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath, preparedFiles, diagnostics);
+
+        return preparedFiles;
+    }
+
+    private static void PrepareManagedRomFsFile(
+        ProjectPaths paths,
+        string relativePath,
+        ICollection<PreparedRomFsFile> preparedFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var sourcePath = ResolveBaseRomFsPath(paths.BaseRomFsPath!, relativePath);
+        if (sourcePath is null || !File.Exists(sourcePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch could not find a required Base RomFS file.",
+                file: relativePath,
+                expected: "Complete Sword/Shield Base RomFS"));
+            return;
+        }
+
+        PrepareManagedRomFsFile(
+            paths,
+            new ManagedRomFsFile(sourcePath, NormalizeRelativePath(relativePath)),
+            preparedFiles,
+            diagnostics);
+    }
+
+    private static void PrepareManagedRomFsFile(
+        ProjectPaths paths,
+        ManagedRomFsFile sourceFile,
+        ICollection<PreparedRomFsFile> preparedFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        try
+        {
+            var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
+            var generated = ConvertManagedRomFsFile(sourceFile.RelativePath, sourceBytes);
+            var targetPath = ResolveOutputPath(paths.OutputRootPath!, sourceFile.RelativePath);
+            if (targetPath is null)
             {
-                var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
-                var generated = ConvertBseq(sourceBytes);
-                var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
-                if (targetPath is null)
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "60FPS Patch target must stay inside Output Root.",
+                    file: sourceFile.RelativePath,
+                    expected: "Output-root-contained RomFS target"));
+                return;
+            }
+
+            if (File.Exists(targetPath))
+            {
+                var existing = File.ReadAllBytes(targetPath);
+                if (existing.SequenceEqual(generated))
+                {
+                    return;
+                }
+
+                if (!existing.SequenceEqual(sourceBytes))
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
-                        "60FPS Patch target must stay inside Output Root.",
+                        "60FPS Patch found an existing non-60FPS ROMFS file and will not overwrite it.",
                         file: sourceFile.RelativePath,
-                        expected: "Output-root-contained RomFS target"));
-                    continue;
+                        expected: "No existing modded ROMFS file, or one already generated by 60FPS Patch"));
+                    return;
                 }
+            }
 
-                if (File.Exists(targetPath))
-                {
-                    var existing = File.ReadAllBytes(targetPath);
-                    if (existing.SequenceEqual(generated))
-                    {
-                        continue;
-                    }
-
-                    if (!existing.SequenceEqual(sourceBytes))
-                    {
-                        diagnostics.Add(CreateDiagnostic(
-                            DiagnosticSeverity.Error,
-                            "60FPS Patch found an existing non-60FPS move-effect sequence file and will not overwrite it.",
-                            file: sourceFile.RelativePath,
-                            expected: "No existing modded sequence file, or one already generated by 60FPS Patch"));
-                        continue;
-                    }
-                }
-
-                preparedFiles.Add(new PreparedBseqFile(sourceFile.RelativePath, generated, ComputeSha256(generated)));
-            }
-            catch (IOException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"60FPS Patch could not read or stage a BSEQ file: {exception.Message}",
-                    file: sourceFile.RelativePath,
-                    expected: "Readable BSEQ source and target"));
-            }
-            catch (UnauthorizedAccessException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    $"60FPS Patch could not read or stage a BSEQ file: {exception.Message}",
-                    file: sourceFile.RelativePath,
-                    expected: "Readable BSEQ source and target"));
-            }
-            catch (InvalidDataException exception)
-            {
-                diagnostics.Add(CreateDiagnostic(
-                    DiagnosticSeverity.Error,
-                    exception.Message,
-                    file: sourceFile.RelativePath,
-                    expected: "Valid SwSh BSEQ sequence file"));
-            }
+            preparedFiles.Add(new PreparedRomFsFile(sourceFile.RelativePath, generated, ComputeSha256(generated)));
         }
-
-        return preparedFiles;
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"60FPS Patch could not read or stage a ROMFS file: {exception.Message}",
+                file: sourceFile.RelativePath,
+                expected: "Readable Base RomFS source and writable Output Root target"));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"60FPS Patch could not read or stage a ROMFS file: {exception.Message}",
+                file: sourceFile.RelativePath,
+                expected: "Readable Base RomFS source and writable Output Root target"));
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                exception.Message,
+                file: sourceFile.RelativePath,
+                expected: "Valid Sword/Shield ROMFS file for 60FPS Patch conversion"));
+        }
     }
 
     private void RestoreMain(
@@ -393,7 +454,7 @@ public sealed class SwShFpsPatchService
         }
     }
 
-    private void RestoreBseqFiles(
+    private void RestoreRomFsFiles(
         ProjectPaths paths,
         ICollection<ValidationDiagnostic> diagnostics,
         ICollection<ProjectFileReference> writtenFiles)
@@ -407,7 +468,7 @@ public sealed class SwShFpsPatchService
             return;
         }
 
-        foreach (var sourceFile in EnumerateManagedBseqFiles(paths.BaseRomFsPath, diagnostics))
+        foreach (var sourceFile in EnumerateManagedRomFsFiles(paths.BaseRomFsPath, diagnostics))
         {
             var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
             if (targetPath is null || !File.Exists(targetPath))
@@ -418,13 +479,13 @@ public sealed class SwShFpsPatchService
             try
             {
                 var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
-                var generated = ConvertBseq(sourceBytes);
+                var generated = ConvertManagedRomFsFile(sourceFile.RelativePath, sourceBytes);
                 var outputBytes = File.ReadAllBytes(targetPath);
                 if (!outputBytes.SequenceEqual(generated))
                 {
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Warning,
-                        "60FPS Patch left this sequence file in place because it no longer matches KM-owned 60FPS output.",
+                        "60FPS Patch left this ROMFS file in place because it no longer matches KM-owned 60FPS output.",
                         file: sourceFile.RelativePath,
                         expected: "Unmodified 60FPS Patch generated file"));
                     continue;
@@ -437,17 +498,17 @@ public sealed class SwShFpsPatchService
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not remove a generated BSEQ file: {exception.Message}",
+                    $"60FPS Patch could not remove a generated ROMFS file: {exception.Message}",
                     file: sourceFile.RelativePath,
-                    expected: "Deletable generated BSEQ file"));
+                    expected: "Deletable generated 60FPS Patch file"));
             }
             catch (UnauthorizedAccessException exception)
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Warning,
-                    $"60FPS Patch could not remove a generated BSEQ file: {exception.Message}",
+                    $"60FPS Patch could not remove a generated ROMFS file: {exception.Message}",
                     file: sourceFile.RelativePath,
-                    expected: "Deletable generated BSEQ file"));
+                    expected: "Deletable generated 60FPS Patch file"));
             }
             catch (InvalidDataException exception)
             {
@@ -529,7 +590,7 @@ public sealed class SwShFpsPatchService
         return MainStatus.Empty;
     }
 
-    private BseqStatus AnalyzeBseqOutputs(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
+    private RomFsStatus AnalyzeRomFsOutputs(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
     {
         if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath))
         {
@@ -538,15 +599,15 @@ public sealed class SwShFpsPatchService
                 "60FPS Patch requires Base RomFS.",
                 field: "baseRomFsPath",
                 expected: "Readable Base RomFS folder"));
-            return BseqStatus.Empty;
+            return RomFsStatus.Empty;
         }
 
-        var sourceFiles = EnumerateManagedBseqFiles(paths.BaseRomFsPath, diagnostics);
+        var sourceFiles = EnumerateManagedRomFsFiles(paths.BaseRomFsPath, diagnostics);
         var patchedCount = 0;
         var conflictingCount = 0;
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
         {
-            return new BseqStatus(sourceFiles.Count, patchedCount, conflictingCount);
+            return new RomFsStatus(sourceFiles.Count, patchedCount, conflictingCount);
         }
 
         foreach (var sourceFile in sourceFiles)
@@ -560,7 +621,7 @@ public sealed class SwShFpsPatchService
             try
             {
                 var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
-                var generated = ConvertBseq(sourceBytes);
+                var generated = ConvertManagedRomFsFile(sourceFile.RelativePath, sourceBytes);
                 var outputBytes = File.ReadAllBytes(targetPath);
                 if (outputBytes.SequenceEqual(generated))
                 {
@@ -585,12 +646,12 @@ public sealed class SwShFpsPatchService
             }
         }
 
-        return new BseqStatus(sourceFiles.Count, patchedCount, conflictingCount);
+        return new RomFsStatus(sourceFiles.Count, patchedCount, conflictingCount);
     }
 
     private SwShFpsPatchStatus CreateStatus(
         MainStatus mainStatus,
-        BseqStatus bseqStatus,
+        RomFsStatus romFsStatus,
         IReadOnlyList<ValidationDiagnostic> diagnostics)
     {
         var hasErrors = diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
@@ -609,26 +670,26 @@ public sealed class SwShFpsPatchService
         }
         else if (mainStatus.PatchedSiteCount == mainStatus.SiteCount
             && mainStatus.SiteCount > 0
-            && bseqStatus.ManagedFileCount == ExpectedManagedBseqFileCount
-            && bseqStatus.PatchedFileCount == bseqStatus.ManagedFileCount
-            && bseqStatus.ConflictingFileCount == 0)
+            && romFsStatus.ManagedFileCount == ExpectedManagedRomFsFileCount
+            && romFsStatus.PatchedFileCount == romFsStatus.ManagedFileCount
+            && romFsStatus.ConflictingFileCount == 0)
         {
             status = "installed";
             message = "60FPS Patch is installed.";
         }
-        else if (mainStatus.PatchedSiteCount == 0 && bseqStatus.PatchedFileCount == 0)
+        else if (mainStatus.PatchedSiteCount == 0 && romFsStatus.PatchedFileCount == 0)
         {
-            status = bseqStatus.ConflictingFileCount == 0 ? "notInstalled" : "blocked";
-            message = bseqStatus.ConflictingFileCount == 0
+            status = romFsStatus.ConflictingFileCount == 0 ? "notInstalled" : "blocked";
+            message = romFsStatus.ConflictingFileCount == 0
                 ? "60FPS Patch is not installed."
-                : "60FPS Patch found move-effect sequence files owned by another mod.";
+                : "60FPS Patch found ROMFS files owned by another mod.";
         }
         else
         {
-            status = bseqStatus.ConflictingFileCount == 0 ? "partial" : "blocked";
-            message = bseqStatus.ConflictingFileCount == 0
+            status = romFsStatus.ConflictingFileCount == 0 ? "partial" : "blocked";
+            message = romFsStatus.ConflictingFileCount == 0
                 ? "60FPS Patch is partially installed."
-                : "60FPS Patch is partially installed and has move-effect sequence conflicts.";
+                : "60FPS Patch is partially installed and has ROMFS conflicts.";
         }
 
         return new SwShFpsPatchStatus(
@@ -638,9 +699,9 @@ public sealed class SwShFpsPatchService
             mainStatus.DetectedGame,
             mainStatus.PatchedSiteCount,
             mainStatus.SiteCount,
-            bseqStatus.PatchedFileCount,
-            bseqStatus.ManagedFileCount,
-            bseqStatus.ConflictingFileCount,
+            romFsStatus.PatchedFileCount,
+            romFsStatus.ManagedFileCount,
+            romFsStatus.ConflictingFileCount,
             diagnostics);
     }
 
@@ -668,7 +729,28 @@ public sealed class SwShFpsPatchService
         return new SwShFpsPatchApplyResult(status, applyResult);
     }
 
-    private static IReadOnlyList<ManagedBseqFile> EnumerateManagedBseqFiles(
+    private static IReadOnlyList<ManagedRomFsFile> EnumerateManagedRomFsFiles(
+        string baseRomFsPath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var files = EnumerateManagedBseqFiles(baseRomFsPath, diagnostics).ToList();
+        AddRequiredManagedRomFsFile(baseRomFsPath, OpeningDemoBseqRelativePath, files, diagnostics);
+        foreach (var sourceFile in RequiredManagedBseqFiles)
+        {
+            AddRequiredManagedRomFsFile(baseRomFsPath, sourceFile.RelativePath, files, diagnostics);
+        }
+
+        AddRequiredManagedRomFsFile(
+            baseRomFsPath,
+            SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath,
+            files,
+            diagnostics);
+        return files
+            .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<ManagedRomFsFile> EnumerateManagedBseqFiles(
         string baseRomFsPath,
         ICollection<ValidationDiagnostic> diagnostics)
     {
@@ -688,7 +770,7 @@ public sealed class SwShFpsPatchService
             return Directory
                 .EnumerateFiles(sequenceRoot, "*.bseq", SearchOption.TopDirectoryOnly)
                 .Where(path => IsManagedBseqFileName(Path.GetFileName(path)))
-                .Select(path => new ManagedBseqFile(
+                .Select(path => new ManagedRomFsFile(
                     Path.GetFullPath(path),
                     $"{SequenceRootRelativePath}/{Path.GetFileName(path).Replace('\\', '/')}"))
                 .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
@@ -720,12 +802,82 @@ public sealed class SwShFpsPatchService
             && ManagedBseqPrefixes.Any(prefix => fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static byte[] ConvertBseq(byte[] sourceBytes)
+    private static void AddRequiredManagedRomFsFile(
+        string baseRomFsPath,
+        string relativePath,
+        ICollection<ManagedRomFsFile> files,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var sourcePath = ResolveBaseRomFsPath(baseRomFsPath, relativePath);
+        if (sourcePath is null || !File.Exists(sourcePath))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch could not find a required Base RomFS file.",
+                file: relativePath,
+                expected: "Complete Sword/Shield Base RomFS"));
+            return;
+        }
+
+        files.Add(new ManagedRomFsFile(sourcePath, NormalizeRelativePath(relativePath)));
+    }
+
+    private static byte[] ConvertManagedRomFsFile(string relativePath, byte[] sourceBytes)
+    {
+        var normalized = NormalizeRelativePath(relativePath);
+        if (ManagedBseqTimelineScales.TryGetValue(normalized, out var scale))
+        {
+            return ConvertBseq(sourceBytes, scale);
+        }
+
+        if (IsManagedMoveEffectBseqPath(normalized))
+        {
+            return ConvertBseq(sourceBytes, SwShFpsBseqPatcher.MoveEffectTimelineScale);
+        }
+
+        if (string.Equals(normalized, OpeningDemoBseqRelativePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return SwShFpsBseqPatcher.ConvertOpeningDemoD010(sourceBytes, out _);
+        }
+
+        if (string.Equals(
+            normalized,
+            SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            return SwShFpsDemoAudiencePatcher.ConvertArchive(sourceBytes);
+        }
+
+        throw new InvalidDataException("60FPS Patch does not manage this ROMFS path.");
+    }
+
+    private static byte[] ConvertBseq(byte[] sourceBytes, double scale)
     {
         return SwShFpsBseqPatcher.Convert(
             sourceBytes,
-            SwShFpsBseqPatcher.MoveEffectTimelineScale,
+            scale,
             out _);
+    }
+
+    private static bool IsSpecialManagedRomFsPath(string normalizedRelativePath)
+    {
+        return string.Equals(normalizedRelativePath, OpeningDemoBseqRelativePath, StringComparison.OrdinalIgnoreCase)
+            || ManagedBseqTimelineScales.ContainsKey(normalizedRelativePath)
+            || string.Equals(
+                normalizedRelativePath,
+                SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath,
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsManagedMoveEffectBseqPath(string normalizedRelativePath)
+    {
+        if (!normalizedRelativePath.StartsWith(SequenceRootRelativePath + "/", StringComparison.OrdinalIgnoreCase)
+            || !normalizedRelativePath.EndsWith(".bseq", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return IsManagedBseqFileName(Path.GetFileName(normalizedRelativePath));
     }
 
     private static void ValidateEditableProject(
@@ -842,7 +994,7 @@ public sealed class SwShFpsPatchService
     private static void RecordManifest(
         ProjectPaths paths,
         bool wroteMain,
-        IReadOnlyList<PreparedBseqFile> preparedBseqFiles,
+        IReadOnlyList<PreparedRomFsFile> preparedRomFsFiles,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         if (string.IsNullOrWhiteSpace(paths.OutputRootPath))
@@ -862,7 +1014,7 @@ public sealed class SwShFpsPatchService
                 Version: 1,
                 CreatedAt: DateTimeOffset.UtcNow,
                 ExeFsMainPatched: wroteMain,
-                RomFsFiles: preparedBseqFiles
+                RomFsFiles: preparedRomFsFiles
                     .Select(file => new FpsPatchManifestFile(file.RelativePath, file.Sha256))
                     .ToArray());
             var directory = Path.GetDirectoryName(manifestPath);
@@ -942,11 +1094,15 @@ public sealed class SwShFpsPatchService
             Expected: expected);
     }
 
-    private sealed record ManagedBseqFile(
+    private sealed record ManagedRomFsFile(
         string SourcePath,
         string RelativePath);
 
-    private sealed record PreparedBseqFile(
+    private sealed record ManagedBseqTimingOverride(
+        string RelativePath,
+        double Scale);
+
+    private sealed record PreparedRomFsFile(
         string RelativePath,
         byte[] Contents,
         string Sha256);
@@ -961,12 +1117,12 @@ public sealed class SwShFpsPatchService
         public static MainStatus Empty { get; } = new(SwShFpsPatchMainKind.Conflict, null, null, 0, 0);
     }
 
-    private sealed record BseqStatus(
+    private sealed record RomFsStatus(
         int ManagedFileCount,
         int PatchedFileCount,
         int ConflictingFileCount)
     {
-        public static BseqStatus Empty { get; } = new(0, 0, 0);
+        public static RomFsStatus Empty { get; } = new(0, 0, 0);
     }
 
     private sealed record FpsPatchManifest(

@@ -226,7 +226,7 @@ import {
   type WorkbenchSection,
   useWorkbenchStore
 } from './workbenchStore';
-import { getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isScarletVioletGame, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
+import { getGameScopedWorkflowSummaries, getLoadedWorkflowStateForSection, isScarletVioletGame, isSharedStagedEditorSection, isWorkflowNavigationVisibleForGame, isWorkflowSection, isWorkflowSupportedForGame, sharedStagedEditorDomains, standaloneWorkflowSectionIds, type WorkflowNavigationGroup, workflowNavigationGroups } from './workflowGameSupport';
 import kmLogoUrl from './assets/km-logo.png';
 import tauriConfig from '../src-tauri/tauri.conf.json';
 import {
@@ -1782,11 +1782,24 @@ export function App({
   const activeSectionIsEditor =
     activeSectionCanStayMounted && activeSection !== 'fpsPatch' && activeSection !== 'randomizer';
   const activeEditorHasLocalDrafts = editorDraftDirtySections.has(activeSection);
+  const editSessionCanBeSharedAcrossNormalEditors =
+    editSession !== null &&
+    (editSessionSection === null ||
+      isSharedStagedEditorSection(editSessionSection, selectedGame)) &&
+    editSession.pendingEdits.every((edit) => sharedStagedEditorDomains.has(edit.domain));
   const activeSectionOwnsEditSession =
-    editSession !== null && editSessionSection !== null && editSessionSection === activeSection;
+    editSession !== null &&
+    (editSessionSection === activeSection ||
+      (editSessionCanBeSharedAcrossNormalEditors &&
+        isSharedStagedEditorSection(activeSection, selectedGame)));
   const getEditSessionForSection = useCallback(
-    (section: WorkbenchSection) => (editSessionSection === section ? editSession : null),
-    [editSession, editSessionSection]
+    (section: WorkbenchSection) =>
+      editSessionSection === section ||
+      (editSessionCanBeSharedAcrossNormalEditors &&
+        isSharedStagedEditorSection(section, selectedGame))
+        ? editSession
+        : null,
+    [editSession, editSessionCanBeSharedAcrossNormalEditors, editSessionSection, selectedGame]
   );
 
   const registerEditorDraftDirty = useCallback(
@@ -1938,13 +1951,17 @@ export function App({
 
       if (destination !== 'changes') {
         const destinationOwnsEditSession =
-          editSession !== null && editSessionSection !== null && destination === editSessionSection;
+          editSession !== null &&
+          (destination === editSessionSection ||
+            (editSessionCanBeSharedAcrossNormalEditors &&
+              isSharedStagedEditorSection(destination, selectedGame)));
         const isLeavingActiveEditSession =
           editSession !== null &&
+          !destinationOwnsEditSession &&
           (
             activeSectionOwnsEditSession ||
-            (activeSection === 'changes' && !destinationOwnsEditSession) ||
-            (activeSectionIsEditor && !destinationOwnsEditSession)
+            activeSection === 'changes' ||
+            activeSectionIsEditor
           );
 
         if (isLeavingActiveEditSession) {
@@ -1976,6 +1993,7 @@ export function App({
       activeSectionOwnsEditSession,
       availableWorkflowSectionIds,
       editSession,
+      editSessionCanBeSharedAcrossNormalEditors,
       editSessionSection,
       selectedGame,
       setActiveSection
@@ -24071,6 +24089,7 @@ function FpsPatchSection({
   status: FpsPatchStatus | null;
 }) {
   const isBusy = isLoading || isApplying;
+  const statusLabel = status ? formatFpsPatchStatus(status.status) : 'Not checked';
   const mainSiteValue = status
     ? `${status.patchedMainSiteCount}/${status.mainSiteCount}`
     : 'Not checked';
@@ -24089,10 +24108,16 @@ function FpsPatchSection({
           <h2 id="fps-patch-heading">60FPS Patch</h2>
         </div>
 
+        <div className="fps-patch-status-row" aria-live="polite">
+          <span className={`status-pill ${getFpsPatchStatusClassName(status?.status ?? 'unchecked')}`}>
+            {statusLabel}
+          </span>
+          {status ? <span className="fps-patch-status-message">{status.message}</span> : null}
+        </div>
+
         <div className="metric-grid">
-          <Metric label="Status" value={status ? formatFpsPatchStatus(status.status) : 'Not checked'} />
           <Metric label="ExeFS sites" value={mainSiteValue} />
-          <Metric label="Move BSEQ files" value={romFsValue} />
+          <Metric label="ROMFS files" value={romFsValue} />
           <Metric
             label="Conflicts"
             value={status ? status.conflictingRomFsFileCount.toLocaleString() : 'Not checked'}
@@ -24120,7 +24145,7 @@ function FpsPatchSection({
             className="primary-button"
             disabled={!canApply || isBusy}
             onClick={onApply}
-            title="Install the SwSh 60FPS ExeFS patch and generated move-effect BSEQ overlay."
+            title="Install the SwSh 60FPS ExeFS patch and generated ROMFS timing and animation overlays."
             type="button"
           >
             <BusyActionContent
@@ -24169,6 +24194,21 @@ function formatFpsPatchStatus(status: string) {
       return 'Unsupported';
     default:
       return status;
+  }
+}
+
+function getFpsPatchStatusClassName(status: string) {
+  switch (status) {
+    case 'installed':
+      return 'status-ready';
+    case 'blocked':
+    case 'unsupported':
+      return 'status-blocked';
+    case 'notInstalled':
+    case 'partial':
+    case 'unchecked':
+    default:
+      return 'status-warning';
   }
 }
 

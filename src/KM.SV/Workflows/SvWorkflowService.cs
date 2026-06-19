@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Core.Diagnostics;
 using KM.Core.Editing;
+using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SV.Encounters;
 using KM.SV.Items;
@@ -249,7 +251,41 @@ public sealed class SvWorkflowService
 
     public SvEditSessionValidation ValidateEditSession(ProjectPaths paths, EditSession session)
     {
-        return GetDomain(session) switch
+        var domain = GetDomain(session);
+        return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
+            ? ValidateNormalDomains(paths, session, domains)
+            : ValidateSingleDomain(paths, session, domain);
+    }
+
+    public ChangePlan CreateChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        SvOutputMode outputMode = SvOutputMode.Standalone)
+    {
+        var domain = GetDomain(session);
+        return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
+            ? CreateNormalDomainChangePlan(paths, session, domains, outputMode)
+            : CreateSingleDomainChangePlan(paths, session, domain, outputMode);
+    }
+
+    public ApplyResult ApplyChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan changePlan,
+        SvOutputMode outputMode = SvOutputMode.Standalone)
+    {
+        var domain = GetDomain(session);
+        return domain == SvEditSessionDomain.Mixed && TryGetNormalDomains(session, out var domains)
+            ? ApplyNormalDomainChangePlan(paths, session, changePlan, domains, outputMode)
+            : ApplySingleDomainChangePlan(paths, session, changePlan, domain, outputMode);
+    }
+
+    private SvEditSessionValidation ValidateSingleDomain(
+        ProjectPaths paths,
+        EditSession session,
+        SvEditSessionDomain domain)
+    {
+        return domain switch
         {
             SvEditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
@@ -262,12 +298,13 @@ public sealed class SvWorkflowService
         };
     }
 
-    public ChangePlan CreateChangePlan(
+    private ChangePlan CreateSingleDomainChangePlan(
         ProjectPaths paths,
         EditSession session,
-        SvOutputMode outputMode = SvOutputMode.Standalone)
+        SvEditSessionDomain domain,
+        SvOutputMode outputMode)
     {
-        return GetDomain(session) switch
+        return domain switch
         {
             SvEditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -280,13 +317,14 @@ public sealed class SvWorkflowService
         };
     }
 
-    public ApplyResult ApplyChangePlan(
+    private ApplyResult ApplySingleDomainChangePlan(
         ProjectPaths paths,
         EditSession session,
         ChangePlan changePlan,
-        SvOutputMode outputMode = SvOutputMode.Standalone)
+        SvEditSessionDomain domain,
+        SvOutputMode outputMode)
     {
-        return GetDomain(session) switch
+        return domain switch
         {
             SvEditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
@@ -297,6 +335,102 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
             _ => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
         };
+    }
+
+    private SvEditSessionValidation ValidateNormalDomains(
+        ProjectPaths paths,
+        EditSession session,
+        IReadOnlyList<SvEditSessionDomain> domains)
+    {
+        var diagnostics = new List<ValidationDiagnostic>();
+        foreach (var domain in domains)
+        {
+            var validation = ValidateSingleDomain(paths, SliceSession(session, domain), domain);
+            diagnostics.AddRange(validation.Diagnostics);
+        }
+
+        return new SvEditSessionValidation(
+            session,
+            diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error),
+            diagnostics);
+    }
+
+    private ChangePlan CreateNormalDomainChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        IReadOnlyList<SvEditSessionDomain> domains,
+        SvOutputMode outputMode)
+    {
+        var validation = ValidateNormalDomains(paths, session, domains);
+        var diagnostics = validation.Diagnostics.ToList();
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
+        var writes = new List<PlannedFileWrite>();
+        foreach (var domain in domains)
+        {
+            var domainPlan = CreateSingleDomainChangePlan(paths, SliceSession(session, domain), domain, outputMode);
+            diagnostics.AddRange(domainPlan.Diagnostics);
+            writes.AddRange(domainPlan.Writes);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
+        return new ChangePlan(session.Id, CombinePlannedWrites(writes), diagnostics);
+    }
+
+    private ApplyResult ApplyNormalDomainChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        IReadOnlyList<SvEditSessionDomain> domains,
+        SvOutputMode outputMode)
+    {
+        var applyId = Guid.NewGuid().ToString("N");
+        var appliedAt = DateTimeOffset.UtcNow;
+        var currentPlan = CreateNormalDomainChangePlan(paths, session, domains, outputMode);
+        var diagnostics = currentPlan.Diagnostics.ToList();
+        var writtenFiles = new List<ProjectFileReference>();
+
+        if (!SvEditSessionSupport.ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        {
+            diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Reviewed change plan is stale. Review the change plan again before applying.",
+                "sv.editor",
+                expected: "Current reviewed Scarlet/Violet change plan"));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return SvEditSessionSupport.CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+
+        foreach (var domain in domains)
+        {
+            var domainSession = SliceSession(session, domain);
+            var domainPlan = CreateSingleDomainChangePlan(paths, domainSession, domain, outputMode);
+            var result = ApplySingleDomainChangePlan(paths, domainSession, domainPlan, domain, outputMode);
+            diagnostics.AddRange(result.Diagnostics);
+            writtenFiles.AddRange(result.WrittenFiles);
+
+            if (result.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                break;
+            }
+        }
+
+        return SvEditSessionSupport.CreateApplyResult(
+            applyId,
+            appliedAt,
+            currentPlan,
+            writtenFiles.Distinct().ToArray(),
+            diagnostics);
     }
 
     private static SvEditSessionDomain GetDomain(EditSession session)
@@ -318,6 +452,98 @@ public sealed class SvWorkflowService
             [SvEditSessionSupport.PlacementDomain] => SvEditSessionDomain.Placement,
             _ => SvEditSessionDomain.Mixed,
         };
+    }
+
+    private static bool TryGetNormalDomains(
+        EditSession session,
+        out IReadOnlyList<SvEditSessionDomain> domains)
+    {
+        var orderedDomains = session.PendingEdits
+            .Select(edit => GetDomain(edit.Domain))
+            .Where(domain => domain != SvEditSessionDomain.None)
+            .Distinct()
+            .ToArray();
+
+        domains = orderedDomains;
+        return orderedDomains.Length > 1 && orderedDomains.All(IsNormalDomain);
+    }
+
+    private static SvEditSessionDomain GetDomain(string? domain)
+    {
+        return domain switch
+        {
+            SvEditSessionSupport.ItemsDomain => SvEditSessionDomain.Items,
+            SvEditSessionSupport.PokemonDomain => SvEditSessionDomain.Pokemon,
+            SvEditSessionSupport.TrainersDomain => SvEditSessionDomain.Trainers,
+            SvEditSessionSupport.EncountersDomain => SvEditSessionDomain.Encounters,
+            SvEditSessionSupport.PlacementDomain => SvEditSessionDomain.Placement,
+            null or "" => SvEditSessionDomain.None,
+            _ => SvEditSessionDomain.Mixed,
+        };
+    }
+
+    private static bool IsNormalDomain(SvEditSessionDomain domain)
+    {
+        return domain is
+            SvEditSessionDomain.Items or
+            SvEditSessionDomain.Pokemon or
+            SvEditSessionDomain.Trainers or
+            SvEditSessionDomain.Encounters or
+            SvEditSessionDomain.Placement;
+    }
+
+    private static EditSession SliceSession(EditSession session, SvEditSessionDomain domain)
+    {
+        var domainName = GetDomainName(domain);
+        return session with
+        {
+            PendingEdits = session.PendingEdits
+                .Where(edit => string.Equals(edit.Domain, domainName, StringComparison.Ordinal))
+                .ToArray(),
+        };
+    }
+
+    private static string GetDomainName(SvEditSessionDomain domain)
+    {
+        return domain switch
+        {
+            SvEditSessionDomain.Items => SvEditSessionSupport.ItemsDomain,
+            SvEditSessionDomain.Pokemon => SvEditSessionSupport.PokemonDomain,
+            SvEditSessionDomain.Trainers => SvEditSessionSupport.TrainersDomain,
+            SvEditSessionDomain.Encounters => SvEditSessionSupport.EncountersDomain,
+            SvEditSessionDomain.Placement => SvEditSessionSupport.PlacementDomain,
+            _ => string.Empty,
+        };
+    }
+
+    private static IReadOnlyList<PlannedFileWrite> CombinePlannedWrites(IEnumerable<PlannedFileWrite> writes)
+    {
+        return writes
+            .GroupBy(write => write.TargetRelativePath, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var groupedWrites = group.ToArray();
+                if (groupedWrites.Length == 1)
+                {
+                    return groupedWrites[0];
+                }
+
+                return new PlannedFileWrite(
+                    group.Key,
+                    groupedWrites
+                        .SelectMany(write => write.Sources)
+                        .Distinct()
+                        .ToArray(),
+                    groupedWrites.Any(write => write.ReplacesExistingOutput),
+                    string.Join(
+                        " ",
+                        groupedWrites
+                            .Select(write => write.Reason)
+                            .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                            .Distinct(StringComparer.Ordinal)));
+            })
+            .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static SvEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)

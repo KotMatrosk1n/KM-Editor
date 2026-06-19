@@ -5590,26 +5590,26 @@ export function createMockProjectBridge(
         alternatePrice: 'alternate price'
       };
       const fieldLabel = fieldLabels[request.field] ?? request.field;
+      const pendingEdit = {
+        domain: 'workflow.items',
+        field: request.field,
+        newValue: request.value,
+        recordId: request.itemId.toString(),
+        sources: [
+          {
+            layer: 'base' as const,
+            relativePath: 'romfs/bin/pml/item/item.dat'
+          }
+        ],
+        summary: `Set Potion ${fieldLabel} to ${request.value}.`
+      };
+      const pendingEdits = [...(request.session?.pendingEdits ?? []), pendingEdit];
 
       return Promise.resolve({
         diagnostics: [],
         session: {
           hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.items',
-              field: request.field,
-              newValue: request.value,
-              recordId: request.itemId.toString(),
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/pml/item/item.dat'
-                }
-              ],
-              summary: `Set Potion ${fieldLabel} to ${request.value}.`
-            }
-          ],
+          pendingEdits,
           sessionId: 'session-1'
         },
         workflow: {
@@ -5658,39 +5658,35 @@ export function createMockProjectBridge(
         }
       });
     },
-    updatePokemonField: (request) =>
-      Promise.resolve({
+    updatePokemonField: (request) => {
+      const pendingEdit = {
+        domain: 'workflow.pokemon',
+        field: request.field,
+        newValue: request.value,
+        recordId: request.personalId.toString(),
+        sources: [
+          {
+            layer: 'base' as const,
+            relativePath: 'romfs/bin/pml/personal/personal_total.bin'
+          }
+        ],
+        summary:
+          request.field.startsWith('compatibility:')
+            ? `${request.value === '1' ? 'Enable' : 'Disable'} Bulbasaur ${
+                getMockPokemonCompatibilityLabel(pokemonWorkflow, request.personalId, request.field) ??
+                request.field
+              } compatibility.`
+            : request.field === 'canNotDynamax'
+            ? `Set Bulbasaur cannot dynamax to ${request.value === '1' ? 'enabled' : 'disabled'}.`
+            : `Set Bulbasaur ${request.field} to ${request.value}.`
+      };
+      const pendingEdits = [...(request.session?.pendingEdits ?? []), pendingEdit];
+
+      return Promise.resolve({
         diagnostics: [],
         session: {
           hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.pokemon',
-              field: request.field,
-              newValue: request.value,
-              recordId: request.personalId.toString(),
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/pml/personal/personal_total.bin'
-                }
-              ],
-              summary:
-                request.field.startsWith('compatibility:')
-                  ? `${request.value === '1' ? 'Enable' : 'Disable'} Bulbasaur ${
-                      getMockPokemonCompatibilityLabel(
-                        pokemonWorkflow,
-                        request.personalId,
-                        request.field
-                      ) ?? request.field
-                    } compatibility.`
-                  : request.field === 'canNotDynamax'
-                  ? `Set Bulbasaur cannot dynamax to ${
-                      request.value === '1' ? 'enabled' : 'disabled'
-                    }.`
-                  : `Set Bulbasaur ${request.field} to ${request.value}.`
-            }
-          ],
+          pendingEdits,
           sessionId: 'session-1'
         },
         workflow: {
@@ -5760,7 +5756,8 @@ export function createMockProjectBridge(
             return pokemon;
           })
         }
-      }),
+      });
+    },
     updatePokemonLearnset: (request) =>
       Promise.resolve({
         diagnostics: [],
@@ -6036,26 +6033,27 @@ export function createMockProjectBridge(
           })
         }
       }),
-    updateTextEntry: (request) =>
-      Promise.resolve({
+    updateTextEntry: (request) => {
+      const pendingEdit = {
+        domain: 'workflow.text',
+        field: 'value',
+        newValue: request.value,
+        recordId: request.textKey,
+        sources: [
+          {
+            layer: 'base' as const,
+            relativePath: 'romfs/bin/message/English/common/story.dat'
+          }
+        ],
+        summary: `Set story #0 to "${request.value}".`
+      };
+      const pendingEdits = [...(request.session?.pendingEdits ?? []), pendingEdit];
+
+      return Promise.resolve({
         diagnostics: [],
         session: {
           hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.text',
-              field: 'value',
-              newValue: request.value,
-              recordId: request.textKey,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath: 'romfs/bin/message/English/common/story.dat'
-                }
-              ],
-              summary: `Set story #0 to "${request.value}".`
-            }
-          ],
+          pendingEdits,
           sessionId: 'session-1'
         },
         workflow: {
@@ -6068,33 +6066,34 @@ export function createMockProjectBridge(
             entry.textKey === request.textKey ? { ...entry, value: request.value } : entry
           )
         }
-      }),
-    updateTrainerField: (request) =>
-      Promise.resolve({
+      });
+    },
+    updateTrainerField: (request) => {
+      const pendingEdit = {
+        domain: 'workflow.trainers',
+        field: request.field,
+        newValue: request.value,
+        recordId: request.slot === null ? request.trainerId.toString() : `${request.trainerId}:${request.slot}`,
+        sources: [
+          {
+            layer: 'base' as const,
+            relativePath: request.slot === null
+              ? 'romfs/bin/trainer/trainer_data/trainer_010.bin'
+              : 'romfs/bin/trainer/trainer_poke/trainer_010.bin'
+          }
+        ],
+        summary:
+          request.slot === null
+            ? `Set Avery ${request.field} to ${request.value}.`
+            : `Set Avery slot ${request.slot} level to ${request.value}.`
+      };
+      const pendingEdits = [...(request.session?.pendingEdits ?? []), pendingEdit];
+
+      return Promise.resolve({
         diagnostics: [],
         session: {
           hasPendingChanges: true,
-          pendingEdits: [
-            {
-              domain: 'workflow.trainers',
-              field: request.field,
-              newValue: request.value,
-              recordId: request.slot === null ? request.trainerId.toString() : `${request.trainerId}:${request.slot}`,
-              sources: [
-                {
-                  layer: 'base',
-                  relativePath:
-                    request.slot === null
-                      ? 'romfs/bin/trainer/trainer_data/trainer_010.bin'
-                      : 'romfs/bin/trainer/trainer_poke/trainer_010.bin'
-                }
-              ],
-              summary:
-                request.slot === null
-                  ? `Set Avery ${request.field} to ${request.value}.`
-                  : `Set Avery slot ${request.slot} level to ${request.value}.`
-            }
-          ],
+          pendingEdits,
           sessionId: 'session-1'
         },
         workflow: {
@@ -6112,7 +6111,8 @@ export function createMockProjectBridge(
               : trainer
             )
         }
-      }),
+      });
+    },
     updateGiftPokemonField: (request) => {
       const value = Number.parseInt(request.value, 10);
       const ivKey = ivFieldToKey[request.field as keyof typeof ivFieldToKey] ?? null;

@@ -1640,7 +1640,69 @@ public sealed class ProjectBridgeDispatcher
             return SerializeSuccess(svResponse, request.RequestId);
         }
 
-        var validation = GetEditSessionDomain(session) switch
+        var validation = ValidateSwShEditSession(paths, session);
+        var response = SwShBridgeMapper.ToDto(validation);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchCreateChangePlan(string requestJson)
+    {
+        var request = DeserializeRequest<CreateChangePlanRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var changePlan = IsScarletViolet(paths)
+            ? svWorkflowService.CreateChangePlan(paths, session, SvBridgeMapper.ToCore(request.Payload.OutputMode))
+            : CreateSwShChangePlan(paths, session);
+        var response = new CreateChangePlanResponse(EditSessionBridgeMapper.ToDto(changePlan));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchApplyChangePlan(string requestJson)
+    {
+        var request = DeserializeRequest<ApplyChangePlanRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var changePlan = EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan);
+        var applyResult = IsScarletViolet(paths)
+            ? svWorkflowService.ApplyChangePlan(paths, session, changePlan, SvBridgeMapper.ToCore(request.Payload.OutputMode))
+            : ApplySwShChangePlan(paths, session, changePlan);
+        var response = new ApplyChangePlanResponse(EditSessionBridgeMapper.ToDto(applyResult));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private SwShEditSessionValidation ValidateSwShEditSession(ProjectPaths paths, EditSession session)
+    {
+        var domain = GetEditSessionDomain(session);
+        return domain == EditSessionDomain.Mixed && TryGetNormalSwShDomains(session, out var domains)
+            ? ValidateNormalSwShDomains(paths, session, domains)
+            : ValidateSingleSwShDomain(paths, session, domain);
+    }
+
+    private ChangePlan CreateSwShChangePlan(ProjectPaths paths, EditSession session)
+    {
+        var domain = GetEditSessionDomain(session);
+        return domain == EditSessionDomain.Mixed && TryGetNormalSwShDomains(session, out var domains)
+            ? CreateNormalSwShChangePlan(paths, session, domains)
+            : CreateSingleSwShChangePlan(paths, session, domain);
+    }
+
+    private ApplyResult ApplySwShChangePlan(ProjectPaths paths, EditSession session, ChangePlan reviewedPlan)
+    {
+        var domain = GetEditSessionDomain(session);
+        return domain == EditSessionDomain.Mixed && TryGetNormalSwShDomains(session, out var domains)
+            ? ApplyNormalSwShChangePlan(paths, session, reviewedPlan, domains)
+            : ApplySingleSwShChangePlan(paths, session, reviewedPlan, domain);
+    }
+
+    private SwShEditSessionValidation ValidateSingleSwShDomain(
+        ProjectPaths paths,
+        EditSession session,
+        EditSessionDomain domain)
+    {
+        return domain switch
         {
             EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.Validate(paths, session),
             EditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
@@ -1675,104 +1737,374 @@ public sealed class ProjectBridgeDispatcher
             EditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
             _ => itemsEditSessionService.Validate(paths, session),
         };
-        var response = SwShBridgeMapper.ToDto(validation);
-
-        return SerializeSuccess(response, request.RequestId);
     }
 
-    private string DispatchCreateChangePlan(string requestJson)
+    private ChangePlan CreateSingleSwShChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        EditSessionDomain domain)
     {
-        var request = DeserializeRequest<CreateChangePlanRequest>(requestJson);
-        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var changePlan = IsScarletViolet(paths)
-            ? svWorkflowService.CreateChangePlan(paths, session, SvBridgeMapper.ToCore(request.Payload.OutputMode))
-            : GetEditSessionDomain(session) switch
-            {
-                EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.BagHook => bagHookEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.CatchCap => catchCapEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.ShinyRate => shinyRateEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.TypeChart => typeChartEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.IvScreen => ivScreenEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.Behavior => behaviorEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.RaidBattles => raidBattlesEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.RaidRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.Text => textEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.RoyalCandy => royalCandyEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.StartingItems => startingItemsEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.NpcItemGift => npcItemGiftEditSessionService.CreateChangePlan(paths, session),
-                EditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
-                _ => itemsEditSessionService.CreateChangePlan(paths, session),
-            };
-        var response = new CreateChangePlanResponse(EditSessionBridgeMapper.ToDto(changePlan));
-
-        return SerializeSuccess(response, request.RequestId);
+        return domain switch
+        {
+            EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.BagHook => bagHookEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.CatchCap => catchCapEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.ShinyRate => shinyRateEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.TypeChart => typeChartEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.IvScreen => ivScreenEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Behavior => behaviorEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.RaidBattles => raidBattlesEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.RaidRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Shops => shopsEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Text => textEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.RoyalCandy => royalCandyEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.StartingItems => startingItemsEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.NpcItemGift => npcItemGiftEditSessionService.CreateChangePlan(paths, session),
+            EditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
+            _ => itemsEditSessionService.CreateChangePlan(paths, session),
+        };
     }
 
-    private string DispatchApplyChangePlan(string requestJson)
+    private ApplyResult ApplySingleSwShChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        EditSessionDomain domain)
     {
-        var request = DeserializeRequest<ApplyChangePlanRequest>(requestJson);
-        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var changePlan = EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan);
-        var applyResult = IsScarletViolet(paths)
-            ? svWorkflowService.ApplyChangePlan(paths, session, changePlan, SvBridgeMapper.ToCore(request.Payload.OutputMode))
-            : GetEditSessionDomain(session) switch
-            {
-                EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.BagHook => bagHookEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.CatchCap => catchCapEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.ShinyRate => shinyRateEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.TypeChart => typeChartEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.IvScreen => ivScreenEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.Behavior => behaviorEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.RaidBattles => raidBattlesEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.RaidRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.Text => textEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.RoyalCandy => royalCandyEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.StartingItems => startingItemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.NpcItemGift => npcItemGiftEditSessionService.ApplyChangePlan(paths, session, changePlan),
-                EditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
-                _ => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan),
-            };
-        var response = new ApplyChangePlanResponse(EditSessionBridgeMapper.ToDto(applyResult));
+        return domain switch
+        {
+            EditSessionDomain.DynamaxAdventures => dynamaxAdventuresEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.ExeFsPatches => exeFsPatchEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.BagHook => bagHookEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.CatchCap => catchCapEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.HyperTraining => hyperTrainingEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.ShinyRate => shinyRateEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.TypeChart => typeChartEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.FairyGymBoosts => fairyGymBoostsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.GymUniformRemoval => gymUniformRemovalEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.IvScreen => ivScreenEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.RentalPokemon => rentalPokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.Behavior => behaviorEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.RaidBattles => raidBattlesEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.RaidRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.RaidBonusRewards => raidRewardsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.StaticEncounters => staticEncountersEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.Shops => shopsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.Text => textEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.RoyalCandy => royalCandyEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.StartingItems => startingItemsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.NpcItemGift => npcItemGiftEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+            EditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
+            _ => itemsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan),
+        };
+    }
 
-        return SerializeSuccess(response, request.RequestId);
+    private SwShEditSessionValidation ValidateNormalSwShDomains(
+        ProjectPaths paths,
+        EditSession session,
+        IReadOnlyList<EditSessionDomain> domains)
+    {
+        var diagnostics = new List<ValidationDiagnostic>();
+        foreach (var domain in domains)
+        {
+            var validation = ValidateSingleSwShDomain(paths, SliceSession(session, domain), domain);
+            diagnostics.AddRange(validation.Diagnostics);
+        }
+
+        return new SwShEditSessionValidation(
+            session,
+            diagnostics.All(diagnostic => diagnostic.Severity != DiagnosticSeverity.Error),
+            diagnostics);
+    }
+
+    private ChangePlan CreateNormalSwShChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        IReadOnlyList<EditSessionDomain> domains)
+    {
+        var validation = ValidateNormalSwShDomains(paths, session, domains);
+        var diagnostics = validation.Diagnostics.ToList();
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
+        var writes = new List<PlannedFileWrite>();
+        foreach (var domain in domains)
+        {
+            var domainPlan = CreateSingleSwShChangePlan(paths, SliceSession(session, domain), domain);
+            diagnostics.AddRange(domainPlan.Diagnostics);
+            writes.AddRange(domainPlan.Writes);
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
+        }
+
+        return new ChangePlan(session.Id, CombinePlannedWrites(writes), diagnostics);
+    }
+
+    private ApplyResult ApplyNormalSwShChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        ChangePlan reviewedPlan,
+        IReadOnlyList<EditSessionDomain> domains)
+    {
+        var applyId = Guid.NewGuid().ToString("N");
+        var appliedAt = DateTimeOffset.UtcNow;
+        var currentPlan = CreateNormalSwShChangePlan(paths, session, domains);
+        var diagnostics = currentPlan.Diagnostics.ToList();
+        var writtenFiles = new List<ProjectFileReference>();
+
+        if (!ReviewedPlanMatchesCurrentPlan(reviewedPlan, currentPlan))
+        {
+            diagnostics.Add(new ValidationDiagnostic(
+                DiagnosticSeverity.Error,
+                "Reviewed change plan is stale. Review the change plan again before applying.",
+                Domain: "workflow.editSession",
+                Expected: "Current reviewed Sword/Shield change plan"));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return CreateCombinedApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
+        }
+
+        foreach (var domain in domains)
+        {
+            var domainSession = SliceSession(session, domain);
+            var domainPlan = CreateSingleSwShChangePlan(paths, domainSession, domain);
+            var result = ApplySingleSwShChangePlan(paths, domainSession, domainPlan, domain);
+            diagnostics.AddRange(result.Diagnostics);
+            writtenFiles.AddRange(result.WrittenFiles);
+
+            if (result.Diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                break;
+            }
+        }
+
+        return CreateCombinedApplyResult(
+            applyId,
+            appliedAt,
+            currentPlan,
+            writtenFiles.Distinct().ToArray(),
+            diagnostics);
+    }
+
+    private static ApplyResult CreateCombinedApplyResult(
+        string applyId,
+        DateTimeOffset appliedAt,
+        ChangePlan currentPlan,
+        IReadOnlyList<ProjectFileReference> writtenFiles,
+        IReadOnlyList<ValidationDiagnostic> diagnostics)
+    {
+        return new ApplyResult(
+            applyId,
+            appliedAt,
+            writtenFiles,
+            new WriteManifest(applyId, appliedAt, currentPlan.Writes),
+            diagnostics);
+    }
+
+    private static bool TryGetNormalSwShDomains(
+        EditSession session,
+        out IReadOnlyList<EditSessionDomain> domains)
+    {
+        var orderedDomains = session.PendingEdits
+            .Select(edit => GetEditSessionDomain(edit.Domain))
+            .Where(domain => domain != EditSessionDomain.None)
+            .Distinct()
+            .ToArray();
+
+        domains = orderedDomains;
+        return orderedDomains.Length > 1 && orderedDomains.All(IsNormalSwShDomain);
+    }
+
+    private static EditSessionDomain GetEditSessionDomain(string? domain)
+    {
+        return domain switch
+        {
+            "workflow.items" => EditSessionDomain.Items,
+            "workflow.moves" => EditSessionDomain.Moves,
+            "workflow.text" => EditSessionDomain.Text,
+            "workflow.pokemon" => EditSessionDomain.Pokemon,
+            "workflow.trainers" => EditSessionDomain.Trainers,
+            "workflow.shops" => EditSessionDomain.Shops,
+            "workflow.encounters" => EditSessionDomain.Encounters,
+            "workflow.exefsPatches" => EditSessionDomain.ExeFsPatches,
+            "workflow.bagHook" => EditSessionDomain.BagHook,
+            "workflow.catchCap" => EditSessionDomain.CatchCap,
+            "workflow.hyperTraining" => EditSessionDomain.HyperTraining,
+            "workflow.shinyRate" => EditSessionDomain.ShinyRate,
+            "workflow.typeChart" => EditSessionDomain.TypeChart,
+            "workflow.fairyGymBoosts" => EditSessionDomain.FairyGymBoosts,
+            "workflow.fashionUnlock" => EditSessionDomain.FashionUnlock,
+            "workflow.gymUniformRemoval" => EditSessionDomain.GymUniformRemoval,
+            "workflow.ivScreen" => EditSessionDomain.IvScreen,
+            "workflow.giftPokemon" => EditSessionDomain.GiftPokemon,
+            "workflow.tradePokemon" => EditSessionDomain.TradePokemon,
+            "workflow.rentalPokemon" => EditSessionDomain.RentalPokemon,
+            "workflow.dynamaxAdventures" => EditSessionDomain.DynamaxAdventures,
+            "workflow.staticEncounters" => EditSessionDomain.StaticEncounters,
+            "workflow.placement" => EditSessionDomain.Placement,
+            "workflow.behavior" => EditSessionDomain.Behavior,
+            "workflow.raidBattles" => EditSessionDomain.RaidBattles,
+            "workflow.raidRewards" => EditSessionDomain.RaidRewards,
+            "workflow.raidBonusRewards" => EditSessionDomain.RaidBonusRewards,
+            "workflow.royalCandy" => EditSessionDomain.RoyalCandy,
+            "workflow.startingItems" => EditSessionDomain.StartingItems,
+            "workflow.npcItemGift" => EditSessionDomain.NpcItemGift,
+            null or "" => EditSessionDomain.None,
+            _ => EditSessionDomain.Mixed,
+        };
+    }
+
+    private static bool IsNormalSwShDomain(EditSessionDomain domain)
+    {
+        return domain is
+            EditSessionDomain.Items or
+            EditSessionDomain.Moves or
+            EditSessionDomain.Text or
+            EditSessionDomain.Pokemon or
+            EditSessionDomain.Trainers or
+            EditSessionDomain.Shops or
+            EditSessionDomain.Encounters or
+            EditSessionDomain.GiftPokemon or
+            EditSessionDomain.TradePokemon or
+            EditSessionDomain.RentalPokemon or
+            EditSessionDomain.StaticEncounters or
+            EditSessionDomain.Placement or
+            EditSessionDomain.Behavior or
+            EditSessionDomain.RaidBattles or
+            EditSessionDomain.RaidRewards or
+            EditSessionDomain.RaidBonusRewards;
+    }
+
+    private static EditSession SliceSession(EditSession session, EditSessionDomain domain)
+    {
+        var domainName = GetEditSessionDomainName(domain);
+        return session with
+        {
+            PendingEdits = session.PendingEdits
+                .Where(edit => string.Equals(edit.Domain, domainName, StringComparison.Ordinal))
+                .ToArray(),
+        };
+    }
+
+    private static string GetEditSessionDomainName(EditSessionDomain domain)
+    {
+        return domain switch
+        {
+            EditSessionDomain.Items => "workflow.items",
+            EditSessionDomain.Moves => "workflow.moves",
+            EditSessionDomain.Text => "workflow.text",
+            EditSessionDomain.Pokemon => "workflow.pokemon",
+            EditSessionDomain.Trainers => "workflow.trainers",
+            EditSessionDomain.Shops => "workflow.shops",
+            EditSessionDomain.Encounters => "workflow.encounters",
+            EditSessionDomain.ExeFsPatches => "workflow.exefsPatches",
+            EditSessionDomain.BagHook => "workflow.bagHook",
+            EditSessionDomain.CatchCap => "workflow.catchCap",
+            EditSessionDomain.HyperTraining => "workflow.hyperTraining",
+            EditSessionDomain.ShinyRate => "workflow.shinyRate",
+            EditSessionDomain.TypeChart => "workflow.typeChart",
+            EditSessionDomain.FairyGymBoosts => "workflow.fairyGymBoosts",
+            EditSessionDomain.FashionUnlock => "workflow.fashionUnlock",
+            EditSessionDomain.GymUniformRemoval => "workflow.gymUniformRemoval",
+            EditSessionDomain.IvScreen => "workflow.ivScreen",
+            EditSessionDomain.GiftPokemon => "workflow.giftPokemon",
+            EditSessionDomain.TradePokemon => "workflow.tradePokemon",
+            EditSessionDomain.RentalPokemon => "workflow.rentalPokemon",
+            EditSessionDomain.DynamaxAdventures => "workflow.dynamaxAdventures",
+            EditSessionDomain.StaticEncounters => "workflow.staticEncounters",
+            EditSessionDomain.Placement => "workflow.placement",
+            EditSessionDomain.Behavior => "workflow.behavior",
+            EditSessionDomain.RaidBattles => "workflow.raidBattles",
+            EditSessionDomain.RaidRewards => "workflow.raidRewards",
+            EditSessionDomain.RaidBonusRewards => "workflow.raidBonusRewards",
+            EditSessionDomain.RoyalCandy => "workflow.royalCandy",
+            EditSessionDomain.StartingItems => "workflow.startingItems",
+            EditSessionDomain.NpcItemGift => "workflow.npcItemGift",
+            _ => string.Empty,
+        };
+    }
+
+    private static IReadOnlyList<PlannedFileWrite> CombinePlannedWrites(IEnumerable<PlannedFileWrite> writes)
+    {
+        return writes
+            .GroupBy(write => write.TargetRelativePath, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var groupedWrites = group.ToArray();
+                if (groupedWrites.Length == 1)
+                {
+                    return groupedWrites[0];
+                }
+
+                return new PlannedFileWrite(
+                    group.Key,
+                    groupedWrites
+                        .SelectMany(write => write.Sources)
+                        .Distinct()
+                        .ToArray(),
+                    groupedWrites.Any(write => write.ReplacesExistingOutput),
+                    string.Join(
+                        " ",
+                        groupedWrites
+                            .Select(write => write.Reason)
+                            .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                            .Distinct(StringComparer.Ordinal)));
+            })
+            .OrderBy(write => write.TargetRelativePath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static bool ReviewedPlanMatchesCurrentPlan(ChangePlan reviewedPlan, ChangePlan currentPlan)
+    {
+        if (!reviewedPlan.CanApply
+            || reviewedPlan.SessionId != currentPlan.SessionId
+            || reviewedPlan.Writes.Count != currentPlan.Writes.Count)
+        {
+            return false;
+        }
+
+        var reviewedTargets = reviewedPlan.Writes
+            .Select(write => write.TargetRelativePath)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var currentTargets = currentPlan.Writes
+            .Select(write => write.TargetRelativePath)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        return reviewedTargets.SequenceEqual(currentTargets, StringComparer.Ordinal);
     }
 
     private static EditSessionDomain GetEditSessionDomain(EditSession session)

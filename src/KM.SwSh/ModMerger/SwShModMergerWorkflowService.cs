@@ -1276,8 +1276,8 @@ public sealed class SwShModMergerWorkflowService
             DiagnosticSeverity.Warning,
             string.Create(
                 CultureInfo.InvariantCulture,
-                $"Selected {fpsPatchFileCount:N0} move-effect sequence file(s) also managed by 60FPS Patch. Applying this merge can replace that ROMFS timing overlay for those moves; reinstall 60FPS Patch after merging if the patched timing should win."),
-            file: SequenceRootRelativePathForDiagnostics(),
+                $"Selected {fpsPatchFileCount:N0} ROMFS file(s) also managed by 60FPS Patch. Applying this merge can replace that 60FPS timing or animation overlay; reinstall 60FPS Patch after merging if the patched timing should win."),
+            file: FpsPatchRelativePathForDiagnostics(),
             expected: "Reviewed overlap with 60FPS Patch ROMFS output"));
     }
 
@@ -1310,7 +1310,7 @@ public sealed class SwShModMergerWorkflowService
     {
         if (SwShFpsPatchService.IsManagedRomFsPath(relativePath))
         {
-            return "60FPS move-effect BSEQ diff";
+            return "60FPS Patch ROMFS diff";
         }
 
         if (string.Equals(relativePath, "romfs/bin/shop_data.bin", StringComparison.OrdinalIgnoreCase))
@@ -1341,9 +1341,9 @@ public sealed class SwShModMergerWorkflowService
         return "RomFS binary diff";
     }
 
-    private static string SequenceRootRelativePathForDiagnostics()
+    private static string FpsPatchRelativePathForDiagnostics()
     {
-        return "romfs/bin/battle/waza/sequence";
+        return "romfs";
     }
 
     private static string NormalizeMergeMode(string? mergeMode)

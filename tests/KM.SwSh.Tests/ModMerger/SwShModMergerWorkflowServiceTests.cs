@@ -32,14 +32,16 @@ public sealed class SwShModMergerWorkflowServiceTests
         Assert.Equal(1, workflow.Stats.MatchingFileCount);
     }
 
-    [Fact]
-    public void StageWarnsWhenSelectedFileIsManagedByFpsPatch()
+    [Theory]
+    [InlineData("romfs/bin/battle/waza/sequence/ew052.bseq")]
+    [InlineData("romfs/bin/battle/waza/sequence/ee411.bseq")]
+    [InlineData("romfs/bin/demo/sequence/d230.bseq")]
+    public void StageWarnsWhenSelectedFileIsManagedByFpsPatch(string relativePath)
     {
         using var temp = TemporarySwShProject.Create();
         var modDirectory1 = CreateModDirectory(temp, "mod-1");
         var modDirectory2 = CreateModDirectory(temp, "mod-2");
-        const string relativePath = "romfs/bin/battle/waza/sequence/ew052.bseq";
-        temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ew052.bseq", [0, 0, 0]);
+        temp.WriteBaseRomFsFile(relativePath["romfs/".Length..], [0, 0, 0]);
         WriteFile(modDirectory1, relativePath, [0, 1, 0]);
         WriteFile(modDirectory2, "romfs/bin/unselected.bin", [0]);
 
@@ -52,12 +54,40 @@ public sealed class SwShModMergerWorkflowServiceTests
             []);
 
         var file = Assert.Single(stage.Preview.Files);
-        Assert.Equal("60FPS move-effect BSEQ diff", file.SupportKind);
+        Assert.Equal("60FPS Patch ROMFS diff", file.SupportKind);
         var warning = Assert.Single(
             stage.Diagnostics,
             diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Warning
                 && diagnostic.Message.Contains("60FPS Patch", StringComparison.Ordinal));
-        Assert.Equal("romfs/bin/battle/waza/sequence", warning.File);
+        Assert.Equal("romfs", warning.File);
+    }
+
+    [Fact]
+    public void StageWarnsWhenSelectedArchiveIsManagedByFpsPatch()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var modDirectory1 = CreateModDirectory(temp, "mod-1");
+        var modDirectory2 = CreateModDirectory(temp, "mod-2");
+        const string relativePath = "romfs/bin/archive/demo/share/anime/a_pl0110.gfpak";
+        temp.WriteBaseRomFsFile("bin/archive/demo/share/anime/a_pl0110.gfpak", [0, 0, 0]);
+        WriteFile(modDirectory1, relativePath, [0, 1, 0]);
+        WriteFile(modDirectory2, "romfs/bin/unselected.bin", [0]);
+
+        var stage = new SwShModMergerWorkflowService().Stage(
+            temp.Paths,
+            modDirectory1,
+            modDirectory2,
+            [relativePath],
+            [],
+            []);
+
+        var file = Assert.Single(stage.Preview.Files);
+        Assert.Equal("60FPS Patch ROMFS diff", file.SupportKind);
+        Assert.Contains(
+            stage.Diagnostics,
+            diagnostic => diagnostic.Severity == KM.Core.Diagnostics.DiagnosticSeverity.Warning
+                && diagnostic.Message.Contains("60FPS Patch", StringComparison.Ordinal)
+                && diagnostic.File == "romfs");
     }
 
     [Fact]

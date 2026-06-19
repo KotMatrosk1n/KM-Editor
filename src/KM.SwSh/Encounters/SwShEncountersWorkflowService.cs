@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.SwSh.Pokemon;
 using KM.SwSh.Workflows;
 using System.Globalization;
 
@@ -318,6 +319,30 @@ public sealed class SwShEncountersWorkflowService
         return true;
     }
 
+    internal static string FormatEncounterSpeciesLabel(
+        int speciesId,
+        int form,
+        IReadOnlyList<string> speciesNames)
+    {
+        if (speciesId == 0)
+        {
+            return "Empty";
+        }
+
+        var speciesName = GetLookupValue(speciesNames, speciesId, $"Species {speciesId}");
+        return FormatEncounterSpeciesLabel(speciesId, form, speciesName);
+    }
+
+    internal static string FormatEncounterSpeciesLabel(
+        int speciesId,
+        int form,
+        string speciesName)
+    {
+        return speciesId == 0
+            ? "Empty"
+            : SwShSpeciesFormLabels.FormatSpeciesFormLabel(speciesName, speciesId, form);
+    }
+
     private static SwShEncountersWorkflow CreateWorkflow(
         SwShWorkflowSummary summary,
         IReadOnlyList<SwShEncounterTableRecord> tables,
@@ -404,9 +429,7 @@ public sealed class SwShEncountersWorkflowService
         return new SwShEncounterSlotRecord(
             slotIndex + 1,
             slot.Species,
-            slot.Species == 0
-                ? "Empty"
-                : GetLookupValue(speciesNames, slot.Species, $"Species {slot.Species}"),
+            FormatEncounterSpeciesLabel(slot.Species, slot.Form, speciesNames),
             slot.Form,
             subTable.LevelMin,
             subTable.LevelMax,

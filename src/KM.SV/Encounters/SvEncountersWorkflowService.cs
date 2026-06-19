@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using System.Globalization;
 using Google.FlatBuffers;
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
@@ -135,6 +136,29 @@ internal sealed class SvEncountersWorkflowService
         return selectedGame == ProjectGame.Scarlet ? version.Value.A : version.Value.B;
     }
 
+    internal static string FormatEncounterSpeciesLabel(
+        int speciesId,
+        int form,
+        SvTextLabelLookup labels)
+    {
+        return FormatEncounterSpeciesLabel(speciesId, form, labels.Pokemon(speciesId));
+    }
+
+    internal static string FormatEncounterSpeciesLabel(
+        int speciesId,
+        int form,
+        string speciesName)
+    {
+        if (speciesId == 0)
+        {
+            return "Empty";
+        }
+
+        return form == 0
+            ? speciesName
+            : string.Create(CultureInfo.InvariantCulture, $"{speciesName} (Form {form})");
+    }
+
     private static SvEncounterSlotRecord ToSlot(
         int slot,
         global::EncountPokeData row,
@@ -144,7 +168,7 @@ internal sealed class SvEncountersWorkflowService
         return new SvEncounterSlotRecord(
             slot,
             speciesId,
-            labels.Pokemon(speciesId),
+            FormatEncounterSpeciesLabel(speciesId, row.Formno, labels),
             row.Formno,
             row.Minlevel,
             row.Maxlevel,

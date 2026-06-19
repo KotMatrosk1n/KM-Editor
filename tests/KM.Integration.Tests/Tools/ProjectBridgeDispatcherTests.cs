@@ -491,6 +491,72 @@ public sealed class ProjectBridgeDispatcherTests
     }
 
     [Fact]
+    public void DispatchApplyChangePlanAllowsNormalEditorsToShareOneSession()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShPokemonBridgeFixtures.WriteBasePokemonData(temp);
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var pokemonUpdateJson = SerializeRequest(
+            KmCommandNames.UpdatePokemonField,
+            new UpdatePokemonFieldRequest(
+                temp.Paths,
+                Session: null,
+                PersonalId: 1,
+                Field: "canNotDynamax",
+                Value: "true"),
+            requestId: "request-normal-session-pokemon");
+        var pokemonUpdate = DeserializeResponse<UpdatePokemonFieldResponse>(
+            dispatcher.Dispatch(pokemonUpdateJson)).Payload!;
+        var itemUpdateJson = SerializeRequest(
+            KmCommandNames.UpdateItemField,
+            new UpdateItemFieldRequest(
+                temp.Paths,
+                pokemonUpdate.Session,
+                ItemId: 1,
+                Field: "buyPrice",
+                Value: "650"),
+            requestId: "request-normal-session-item");
+        var itemUpdate = DeserializeResponse<UpdateItemFieldResponse>(
+            dispatcher.Dispatch(itemUpdateJson)).Payload!;
+
+        Assert.Collection(
+            itemUpdate.Session.PendingEdits,
+            edit => Assert.Equal("workflow.pokemon", edit.Domain),
+            edit => Assert.Equal("workflow.items", edit.Domain));
+
+        var planJson = SerializeRequest(
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(temp.Paths, itemUpdate.Session),
+            requestId: "request-normal-session-plan");
+        var plan = DeserializeResponse<CreateChangePlanResponse>(
+            dispatcher.Dispatch(planJson)).Payload!.ChangePlan;
+        Assert.True(plan.CanApply);
+        Assert.Contains(plan.Writes, write => write.TargetRelativePath == "romfs/bin/pml/personal/personal_total.bin");
+        Assert.Contains(plan.Writes, write => write.TargetRelativePath == "romfs/bin/pml/item/item.dat");
+
+        var applyJson = SerializeRequest(
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(temp.Paths, itemUpdate.Session, plan),
+            requestId: "request-normal-session-apply");
+        var apply = DeserializeResponse<ApplyChangePlanResponse>(
+            dispatcher.Dispatch(applyJson)).Payload!.ApplyResult;
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains("romfs/bin/pml/personal/personal_total.bin", apply.WrittenFiles);
+        Assert.Contains("romfs/bin/pml/item/item.dat", apply.WrittenFiles);
+
+        var personalPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs/bin/pml/personal/personal_total.bin".Replace('/', Path.DirectorySeparatorChar));
+        var itemPath = Path.Combine(temp.OutputRootPath, "romfs", "bin", "pml", "item", "item.dat");
+        Assert.True(SwShPersonalTable.Parse(File.ReadAllBytes(personalPath)).Records[1].CanNotDynamax);
+        Assert.Equal(650u, SwShItemTable.Parse(File.ReadAllBytes(itemPath)).Records[1].BuyPrice);
+    }
+
+    [Fact]
     public void DispatchLoadStaticEncountersWorkflowReturnsRealStaticEncounterRecords()
     {
         using var temp = TemporaryBridgeProject.Create();

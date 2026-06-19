@@ -48,6 +48,32 @@ public sealed class SwShEncountersWorkflowServiceTests
     }
 
     [Fact]
+    public void LoadFormatsRegionalEncounterSlotSpeciesNames()
+    {
+        using var temp = TemporarySwShProject.Create();
+        temp.WriteBaseRomFsFile(
+            "bin/archive/field/resident/data_table.gfpak",
+            SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "encount_symbol_k.bin",
+                    SwShEncounterTestFixtures.CreateArchive(firstSlotSpecies: 80, firstSlotForm: 2).Write()),
+            ]).Write());
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/monsname.dat",
+            CreateSpeciesNameTable(80, (80, "Slowbro")));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths with { OutputRootPath = null });
+
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+
+        var table = Assert.Single(workflow.Tables);
+        Assert.Equal(80, table.Slots[0].SpeciesId);
+        Assert.Equal(2, table.Slots[0].Form);
+        Assert.Equal("Slowbro (Galarian)", table.Slots[0].Species);
+    }
+
+    [Fact]
     public void LoadFormatsKnownEncounterZoneNames()
     {
         using var temp = TemporarySwShProject.Create();
@@ -368,5 +394,19 @@ public sealed class SwShEncountersWorkflowServiceTests
             Enumerable.Range(0, 10)
                 .Select(_ => new SwShWildEncounterSlot(0, 0, 0))
                 .ToArray());
+    }
+
+    private static byte[] CreateSpeciesNameTable(int highestIndex, params (int Index, string Name)[] replacements)
+    {
+        var names = Enumerable.Range(0, highestIndex + 1)
+            .Select(_ => new SwShGameTextLine("", Flags: 0))
+            .ToArray();
+
+        foreach (var (index, name) in replacements)
+        {
+            names[index] = new SwShGameTextLine(name, Flags: 0);
+        }
+
+        return SwShGameTextFile.Write(names);
     }
 }
