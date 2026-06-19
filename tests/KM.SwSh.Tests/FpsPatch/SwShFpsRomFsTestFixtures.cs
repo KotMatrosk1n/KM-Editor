@@ -22,7 +22,7 @@ internal static class SwShFpsRomFsTestFixtures
         WriteMoveEffectFiles(temp, "ew", 787, moveBseq);
 
         temp.WriteBaseRomFsFile("bin/demo/sequence/d010.bseq", CreateOpeningDemoBseq());
-        temp.WriteBaseRomFsFile("bin/demo/sequence/d230.bseq", moveBseq);
+        temp.WriteBaseRomFsFile("bin/battle/waza/sequence/d230.bseq", moveBseq);
         temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee316.bseq", moveBseq);
         temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee326.bseq", moveBseq);
         temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee328.bseq", moveBseq);

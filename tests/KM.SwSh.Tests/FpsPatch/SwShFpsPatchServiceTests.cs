@@ -45,12 +45,12 @@ public sealed class SwShFpsPatchServiceTests
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee316.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee411.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/demo/sequence/d010.bseq"));
-        Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/demo/sequence/d230.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/d230.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/archive/demo/share/anime/a_pl0110.gfpak"));
         Assert.Equal(23u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee316.bseq")));
         Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee411.bseq")));
         Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "eg_ball01.bseq")));
-        Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d230.bseq")));
+        Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "d230.bseq")));
 
         var restore = service.Restore(paths);
 
@@ -65,7 +65,7 @@ public sealed class SwShFpsPatchServiceTests
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "eg_ball01.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee411.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d010.bseq")));
-        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d230.bseq")));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "d230.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "archive", "demo", "share", "anime", "a_pl0110.gfpak")));
     }
 
