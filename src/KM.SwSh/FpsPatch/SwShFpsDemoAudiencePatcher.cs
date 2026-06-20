@@ -60,16 +60,16 @@ internal static class SwShFpsDemoAudiencePatcher
                 continue;
             }
 
-            var keyFrames = FlatBufferAnimation.GetKeyFrames(file.Data);
-            var frameRate = FlatBufferAnimation.GetFrameRate(file.Data);
+            var keyFrames = SwShFpsFlatBufferAnimation.GetKeyFrames(file.Data);
+            var frameRate = SwShFpsFlatBufferAnimation.GetFrameRate(file.Data);
             var (patchedData, changedVectors) = FlatBufferMaterial.ExpandFloatVectorParamTo60Fps(file.Data, TranslateV0ParamName);
             if (changedVectors == 0)
             {
                 throw new InvalidDataException("60FPS Patch could not find opening audience TranslateV0 flipbook tracks.");
             }
 
-            FlatBufferAnimation.SetKeyFrames(patchedData, ConvertKeyFramesTo60Fps(keyFrames));
-            FlatBufferAnimation.SetFrameRate(patchedData, ConvertFrameRateTo60Fps(frameRate));
+            SwShFpsFlatBufferAnimation.SetKeyFrames(patchedData, ConvertKeyFramesTo60Fps(keyFrames));
+            SwShFpsFlatBufferAnimation.SetFrameRate(patchedData, ConvertFrameRateTo60Fps(frameRate));
             archive.Files[index] = file with { Data = patchedData };
             changedTargetClips++;
         }
@@ -98,8 +98,8 @@ internal static class SwShFpsDemoAudiencePatcher
                     .ToArray();
                 return new SwShFpsDemoAudienceClipInfo(
                     file.RelativeHash,
-                    FlatBufferAnimation.GetKeyFrames(file.Data),
-                    FlatBufferAnimation.GetFrameRate(file.Data),
+                    SwShFpsFlatBufferAnimation.GetKeyFrames(file.Data),
+                    SwShFpsFlatBufferAnimation.GetFrameRate(file.Data),
                     vectors.Select(vector => vector.Length).ToArray(),
                     vectors);
             })
@@ -422,80 +422,6 @@ internal static class SwShFpsDemoAudiencePatcher
             while (next == 0xFF);
 
             return length;
-        }
-    }
-
-    private static class FlatBufferAnimation
-    {
-        public static uint GetFrameRate(byte[] data)
-        {
-            var frameRateOffset = GetInfoFieldOffset(data, 2);
-            return frameRateOffset < 0 ? 0 : ReadU32(data, frameRateOffset);
-        }
-
-        public static uint GetKeyFrames(byte[] data)
-        {
-            var keyFrameOffset = GetInfoFieldOffset(data, 1);
-            return keyFrameOffset < 0 ? 0 : ReadU32(data, keyFrameOffset);
-        }
-
-        public static void SetKeyFrames(byte[] data, uint keyFrames)
-        {
-            var keyFrameOffset = GetInfoFieldOffset(data, 1);
-            if (keyFrameOffset < 0)
-            {
-                throw new InvalidDataException("GF animation KeyFrames field not found.");
-            }
-
-            WriteU32(data, keyFrameOffset, keyFrames);
-        }
-
-        public static void SetFrameRate(byte[] data, uint frameRate)
-        {
-            var frameRateOffset = GetInfoFieldOffset(data, 2);
-            if (frameRateOffset < 0)
-            {
-                throw new InvalidDataException("GF animation FrameRate field not found.");
-            }
-
-            WriteU32(data, frameRateOffset, frameRate);
-        }
-
-        private static int GetInfoFieldOffset(byte[] data, int infoFieldIndex)
-        {
-            var root = ReadUOffset(data, 0);
-            var infoOffset = GetTableFieldOffset(data, root, 0);
-            if (infoOffset == 0)
-            {
-                return -1;
-            }
-
-            var infoTable = checked(root + infoOffset + ReadUOffset(data, root + infoOffset));
-            var fieldOffset = GetTableFieldOffset(data, infoTable, infoFieldIndex);
-            return fieldOffset == 0 ? -1 : infoTable + fieldOffset;
-        }
-
-        private static int GetTableFieldOffset(byte[] data, int tableOffset, int fieldIndex)
-        {
-            if (tableOffset < sizeof(int) || tableOffset + sizeof(int) > data.Length)
-            {
-                return 0;
-            }
-
-            var vtableOffset = tableOffset - ReadI32(data, tableOffset);
-            if (vtableOffset < 0 || vtableOffset + sizeof(ushort) * 2 > data.Length)
-            {
-                return 0;
-            }
-
-            var vtableLength = ReadU16(data, vtableOffset);
-            var entryOffset = 4 + fieldIndex * 2;
-            if (entryOffset + 2 > vtableLength || vtableOffset + entryOffset + 2 > data.Length)
-            {
-                return 0;
-            }
-
-            return ReadU16(data, vtableOffset + entryOffset);
         }
     }
 

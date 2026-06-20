@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Formats.SwSh;
 using KM.SwSh.Tests.Items;
 using System.Buffers.Binary;
 using System.Text;
@@ -11,6 +12,14 @@ internal static class SwShFpsRomFsTestFixtures
     public const ulong AudienceClipHash = 0xE46DE99F0E990642;
     public const ulong AudienceSubClipHash = 0xCD523A1B23139151;
     public const ulong AudienceSub02ClipHash = 0xC6A053DEED7A7E03;
+    public const string TrainerThrowCameraRelativePath = "romfs/bin/battle/waza/camera/ballthrow/tr0002_00_ba_ballthrow01_cam.gfbcama";
+    public const string PlayerThrowCameraRelativePath = "romfs/bin/battle/waza/camera/ballthrow/pc0001_00_ba_ballthrow01_cam.gfbcama";
+    public const string TrainerThrowBattleModelRelativePath = "romfs/bin/battle/waza/model/anm/ob0304_00_tr0002_00_ba0120_g_ballthrow01_end.gfbanm";
+    public const string PlayerThrowBattleModelRelativePath = "romfs/bin/battle/waza/model/anm/ob0304_00_pc0002_00_ba0120_g_ballthrow01_end.gfbanm";
+    public const string TrainerThrowLooseRelativePath = "romfs/bin/chara/data/tr/tr0165_00_wife/anm/tr0165_00_ba0120_g_ballthrow01_loop.gfbanm";
+    public const string TrainerThrowArchiveRelativePath = "romfs/bin/archive/chara/data/tr/anm/tr0002_00_friend_tr0002_00_battle01.gfpak";
+    public const string TrainerThrowArchiveClipName = "tr0002_00_ba0122_g_ballthrow01_end.gfbanm";
+    public const string TrainerNonThrowArchiveClipName = "tr0002_00_ba0414_speak03_end.gfbanm";
 
     public static void WriteCompleteManagedBaseRomFs(TemporarySwShProject temp)
     {
@@ -22,6 +31,8 @@ internal static class SwShFpsRomFsTestFixtures
         WriteMoveEffectFiles(temp, "ew", 787, moveBseq);
 
         temp.WriteBaseRomFsFile("bin/demo/sequence/d010.bseq", CreateOpeningDemoBseq());
+        temp.WriteBaseRomFsFile("bin/demo/sequence/d030.bseq", moveBseq);
+        temp.WriteBaseRomFsFile("bin/demo/sequence/r2d020.bseq", moveBseq);
         temp.WriteBaseRomFsFile("bin/battle/waza/sequence/d230.bseq", moveBseq);
         temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee316.bseq", moveBseq);
         temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee326.bseq", moveBseq);
@@ -30,6 +41,24 @@ internal static class SwShFpsRomFsTestFixtures
         temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee412.bseq", moveBseq);
         temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee502.bseq", moveBseq);
         temp.WriteBaseRomFsFile("bin/archive/demo/share/anime/a_pl0110.gfpak", CreateAudienceArchive());
+        temp.WriteBaseRomFsFile(
+            TrainerThrowCameraRelativePath["romfs/".Length..],
+            CreateGfAnimationClip(keyFrames: 143, frameRate: 60));
+        temp.WriteBaseRomFsFile(
+            PlayerThrowCameraRelativePath["romfs/".Length..],
+            CreateGfAnimationClip(keyFrames: 101, frameRate: 60));
+        temp.WriteBaseRomFsFile(
+            TrainerThrowBattleModelRelativePath["romfs/".Length..],
+            CreateGfAnimationClip(keyFrames: 196, frameRate: 60));
+        temp.WriteBaseRomFsFile(
+            PlayerThrowBattleModelRelativePath["romfs/".Length..],
+            CreateGfAnimationClip(keyFrames: 371, frameRate: 60));
+        temp.WriteBaseRomFsFile(
+            TrainerThrowLooseRelativePath["romfs/".Length..],
+            CreateGfAnimationClip(keyFrames: 120, frameRate: 60));
+        temp.WriteBaseRomFsFile(
+            TrainerThrowArchiveRelativePath["romfs/".Length..],
+            CreateTrainerThrowArchive());
     }
 
     public static byte[] CreateMoveBseq(uint frameCount, uint startFrame, uint endFrame)
@@ -80,6 +109,29 @@ internal static class SwShFpsRomFsTestFixtures
             (AudienceSub02ClipHash, CreateGfbanmClip(includeTranslateV0: false, CreateFlipbookValues())));
     }
 
+    public static byte[] CreateGfAnimationClip(uint keyFrames, uint frameRate)
+    {
+        return CreateGfbanmClip(
+            includeTranslateV0: false,
+            [],
+            keyFrames,
+            frameRate);
+    }
+
+    public static byte[] CreateTrainerThrowArchive()
+    {
+        return SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    TrainerThrowArchiveClipName,
+                    CreateGfAnimationClip(keyFrames: 148, frameRate: 60)),
+                new SwShGfPackNamedFile(
+                    TrainerNonThrowArchiveClipName,
+                    CreateGfAnimationClip(keyFrames: 80, frameRate: 60)),
+            ])
+            .Write();
+    }
+
     public static float[] CreateFlipbookValues(float offset = 0.0f)
     {
         return Enumerable.Range(0, 33)
@@ -115,7 +167,11 @@ internal static class SwShFpsRomFsTestFixtures
         }
     }
 
-    private static byte[] CreateGfbanmClip(bool includeTranslateV0, float[] values)
+    private static byte[] CreateGfbanmClip(
+        bool includeTranslateV0,
+        float[] values,
+        uint keyFrames = 33,
+        uint frameRate = 30)
     {
         var builder = new FlatBufferFixtureBuilder();
         var root = builder.AddTable(maxFieldIndex: 2, objectSize: 12, new Dictionary<int, ushort>
@@ -131,8 +187,8 @@ internal static class SwShFpsRomFsTestFixtures
             [2] = 8,
         });
         builder.PatchOffset(root.FieldLocations[0], info.TableOffset);
-        builder.WriteU32(info.TableOffset + 4, 33);
-        builder.WriteU32(info.TableOffset + 8, 30);
+        builder.WriteU32(info.TableOffset + 4, keyFrames);
+        builder.WriteU32(info.TableOffset + 8, frameRate);
 
         var materialTable = builder.AddTable(maxFieldIndex: 0, objectSize: 8, new Dictionary<int, ushort>
         {

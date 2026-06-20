@@ -18,6 +18,12 @@ public sealed class SwShFpsPatchService
     private const string ManifestRelativePath = ".km-editor/60fps-patch-manifest.json";
     private const string SequenceRootInsideRomFs = "bin/battle/waza/sequence";
     private const string SequenceRootRelativePath = "romfs/bin/battle/waza/sequence";
+    private const string DemoSequenceRootInsideRomFs = "bin/demo/sequence";
+    private const string DemoSequenceRootRelativePath = "romfs/bin/demo/sequence";
+    private const string TrainerBattleArchiveRootInsideRomFs = "bin/archive/chara/data/tr/anm";
+    private const string TrainerBallthrowCameraRootInsideRomFs = "bin/battle/waza/camera/ballthrow";
+    private const string BattleModelAnimationRootInsideRomFs = "bin/battle/waza/model/anm";
+    private const string CharaTrainerRootInsideRomFs = "bin/chara/data/tr";
     private const string OpeningDemoBseqRelativePath = "romfs/bin/demo/sequence/d010.bseq";
     private const int ExpectedManagedBseqFileCount = 1010;
 
@@ -46,7 +52,6 @@ public sealed class SwShFpsPatchService
     private static readonly IReadOnlyDictionary<string, double> ManagedBseqTimelineScales = RequiredManagedBseqFiles
         .Concat(OptionalManagedBseqScaleOverrides)
         .ToDictionary(file => file.RelativePath, file => file.Scale, StringComparer.OrdinalIgnoreCase);
-    private static readonly int ExpectedManagedRomFsFileCount = ExpectedManagedBseqFileCount + RequiredManagedBseqFiles.Length + 2;
     private static readonly JsonSerializerOptions ManifestJsonOptions = new()
     {
         WriteIndented = true,
@@ -62,7 +67,10 @@ public sealed class SwShFpsPatchService
     public static bool IsManagedRomFsPath(string relativePath)
     {
         var normalized = NormalizeRelativePath(relativePath);
-        return IsSpecialManagedRomFsPath(normalized) || IsManagedMoveEffectBseqPath(normalized);
+        return IsSpecialManagedRomFsPath(normalized)
+            || IsManagedMoveEffectBseqPath(normalized)
+            || IsManagedDemoSequenceBseqPath(normalized)
+            || SwShFpsTrainerThrowPatcher.IsManagedRomFsPath(normalized);
     }
 
     public bool IsGeneratedRomFsOutput(ProjectPaths paths, string relativePath)
@@ -265,31 +273,40 @@ public sealed class SwShFpsPatchService
             return preparedFiles;
         }
 
-        var sourceFiles = EnumerateManagedBseqFiles(paths.BaseRomFsPath, diagnostics);
-        if (sourceFiles.Count != ExpectedManagedBseqFileCount)
+        var moveEffectFiles = EnumerateManagedBseqFiles(paths.BaseRomFsPath, diagnostics);
+        if (moveEffectFiles.Count != ExpectedManagedBseqFileCount)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 string.Create(
                     CultureInfo.InvariantCulture,
-                    $"60FPS Patch expected {ExpectedManagedBseqFileCount:N0} managed move-effect BSEQ files, but found {sourceFiles.Count:N0}."),
+                    $"60FPS Patch expected {ExpectedManagedBseqFileCount:N0} managed move-effect BSEQ files, but found {moveEffectFiles.Count:N0}."),
                 file: SequenceRootRelativePath,
                 expected: "Complete Sword/Shield Base RomFS move-effect sequence folder"));
             return preparedFiles;
         }
 
-        foreach (var sourceFile in sourceFiles)
+        foreach (var sourceFile in moveEffectFiles)
         {
             PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
         }
 
-        PrepareManagedRomFsFile(paths, OpeningDemoBseqRelativePath, preparedFiles, diagnostics);
+        foreach (var sourceFile in EnumerateManagedDemoBseqFiles(paths.BaseRomFsPath, diagnostics))
+        {
+            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
+        }
+
         foreach (var sourceFile in RequiredManagedBseqFiles)
         {
             PrepareManagedRomFsFile(paths, sourceFile.RelativePath, preparedFiles, diagnostics);
         }
 
         PrepareManagedRomFsFile(paths, SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath, preparedFiles, diagnostics);
+
+        foreach (var sourceFile in EnumerateManagedTrainerThrowFiles(paths.BaseRomFsPath, diagnostics))
+        {
+            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
+        }
 
         return preparedFiles;
     }
@@ -670,7 +687,7 @@ public sealed class SwShFpsPatchService
         }
         else if (mainStatus.PatchedSiteCount == mainStatus.SiteCount
             && mainStatus.SiteCount > 0
-            && romFsStatus.ManagedFileCount == ExpectedManagedRomFsFileCount
+            && romFsStatus.ManagedFileCount > 0
             && romFsStatus.PatchedFileCount == romFsStatus.ManagedFileCount
             && romFsStatus.ConflictingFileCount == 0)
         {
@@ -734,7 +751,7 @@ public sealed class SwShFpsPatchService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var files = EnumerateManagedBseqFiles(baseRomFsPath, diagnostics).ToList();
-        AddRequiredManagedRomFsFile(baseRomFsPath, OpeningDemoBseqRelativePath, files, diagnostics);
+        files.AddRange(EnumerateManagedDemoBseqFiles(baseRomFsPath, diagnostics));
         foreach (var sourceFile in RequiredManagedBseqFiles)
         {
             AddRequiredManagedRomFsFile(baseRomFsPath, sourceFile.RelativePath, files, diagnostics);
@@ -745,6 +762,7 @@ public sealed class SwShFpsPatchService
             SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath,
             files,
             diagnostics);
+        files.AddRange(EnumerateManagedTrainerThrowFiles(baseRomFsPath, diagnostics));
         return files
             .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -802,6 +820,51 @@ public sealed class SwShFpsPatchService
             && ManagedBseqPrefixes.Any(prefix => fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
+    private static IReadOnlyList<ManagedRomFsFile> EnumerateManagedDemoBseqFiles(
+        string baseRomFsPath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var sequenceRoot = Path.Combine(baseRomFsPath, DemoSequenceRootInsideRomFs);
+        if (!Directory.Exists(sequenceRoot))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch could not find the demo sequence folder.",
+                file: DemoSequenceRootRelativePath,
+                expected: "Sword/Shield Base RomFS demo sequence folder"));
+            return [];
+        }
+
+        try
+        {
+            return Directory
+                .EnumerateFiles(sequenceRoot, "*.bseq", SearchOption.TopDirectoryOnly)
+                .Select(path => new ManagedRomFsFile(
+                    Path.GetFullPath(path),
+                    $"{DemoSequenceRootRelativePath}/{Path.GetFileName(path).Replace('\\', '/')}"))
+                .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"60FPS Patch could not scan demo BSEQ files: {exception.Message}",
+                file: DemoSequenceRootRelativePath,
+                expected: "Readable demo sequence folder"));
+            return [];
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"60FPS Patch could not scan demo BSEQ files: {exception.Message}",
+                file: DemoSequenceRootRelativePath,
+                expected: "Readable demo sequence folder"));
+            return [];
+        }
+    }
+
     private static void AddRequiredManagedRomFsFile(
         string baseRomFsPath,
         string relativePath,
@@ -822,6 +885,102 @@ public sealed class SwShFpsPatchService
         files.Add(new ManagedRomFsFile(sourcePath, NormalizeRelativePath(relativePath)));
     }
 
+    private static IReadOnlyList<ManagedRomFsFile> EnumerateManagedTrainerThrowFiles(
+        string baseRomFsPath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var files = new List<ManagedRomFsFile>();
+        AddManagedTrainerThrowFiles(
+            baseRomFsPath,
+            TrainerBallthrowCameraRootInsideRomFs,
+            SwShFpsTrainerThrowPatcher.TrainerBallthrowCameraRootRelativePath,
+            "*.gfbcama",
+            SearchOption.TopDirectoryOnly,
+            files,
+            diagnostics);
+        AddManagedTrainerThrowFiles(
+            baseRomFsPath,
+            BattleModelAnimationRootInsideRomFs,
+            SwShFpsTrainerThrowPatcher.BattleModelAnimationRootRelativePath,
+            "*.gfbanm",
+            SearchOption.TopDirectoryOnly,
+            files,
+            diagnostics);
+        AddManagedTrainerThrowFiles(
+            baseRomFsPath,
+            CharaTrainerRootInsideRomFs,
+            SwShFpsTrainerThrowPatcher.CharaTrainerRootRelativePath,
+            "*.gfbanm",
+            SearchOption.AllDirectories,
+            files,
+            diagnostics);
+        AddManagedTrainerThrowFiles(
+            baseRomFsPath,
+            TrainerBattleArchiveRootInsideRomFs,
+            SwShFpsTrainerThrowPatcher.TrainerBattleArchiveRootRelativePath,
+            "*_battle*.gfpak",
+            SearchOption.TopDirectoryOnly,
+            files,
+            diagnostics);
+
+        return files
+            .DistinctBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static void AddManagedTrainerThrowFiles(
+        string baseRomFsPath,
+        string rootInsideRomFs,
+        string rootRelativePath,
+        string pattern,
+        SearchOption searchOption,
+        ICollection<ManagedRomFsFile> files,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var root = Path.Combine(baseRomFsPath, rootInsideRomFs);
+        if (!Directory.Exists(root))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch could not find a trainer throw animation folder.",
+                file: rootRelativePath,
+                expected: "Complete Sword/Shield Base RomFS trainer animation folders"));
+            return;
+        }
+
+        try
+        {
+            foreach (var path in Directory.EnumerateFiles(root, pattern, searchOption))
+            {
+                var relativePath = $"{rootRelativePath}/{Path.GetRelativePath(root, path).Replace('\\', '/')}";
+                var normalized = NormalizeRelativePath(relativePath);
+                if (!SwShFpsTrainerThrowPatcher.IsManagedRomFsPath(normalized))
+                {
+                    continue;
+                }
+
+                files.Add(new ManagedRomFsFile(Path.GetFullPath(path), normalized));
+            }
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"60FPS Patch could not scan trainer throw files: {exception.Message}",
+                file: rootRelativePath,
+                expected: "Readable trainer animation folder"));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"60FPS Patch could not scan trainer throw files: {exception.Message}",
+                file: rootRelativePath,
+                expected: "Readable trainer animation folder"));
+        }
+    }
+
     private static byte[] ConvertManagedRomFsFile(string relativePath, byte[] sourceBytes)
     {
         var normalized = NormalizeRelativePath(relativePath);
@@ -840,12 +999,27 @@ public sealed class SwShFpsPatchService
             return SwShFpsBseqPatcher.ConvertOpeningDemoD010(sourceBytes, out _);
         }
 
+        if (IsManagedDemoSequenceBseqPath(normalized))
+        {
+            return ConvertBseq(sourceBytes, SwShFpsBseqPatcher.OpeningDemoTimelineScale);
+        }
+
         if (string.Equals(
             normalized,
             SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath,
             StringComparison.OrdinalIgnoreCase))
         {
             return SwShFpsDemoAudiencePatcher.ConvertArchive(sourceBytes);
+        }
+
+        if (SwShFpsTrainerThrowPatcher.IsTrainerBattleArchivePath(normalized))
+        {
+            return SwShFpsTrainerThrowPatcher.ConvertTrainerBattleArchive(sourceBytes, normalized);
+        }
+
+        if (SwShFpsTrainerThrowPatcher.IsTrainerThrowAnimationPath(normalized))
+        {
+            return SwShFpsTrainerThrowPatcher.ConvertAnimationToHalfSpeed(sourceBytes);
         }
 
         throw new InvalidDataException("60FPS Patch does not manage this ROMFS path.");
@@ -878,6 +1052,12 @@ public sealed class SwShFpsPatchService
         }
 
         return IsManagedBseqFileName(Path.GetFileName(normalizedRelativePath));
+    }
+
+    private static bool IsManagedDemoSequenceBseqPath(string normalizedRelativePath)
+    {
+        return normalizedRelativePath.StartsWith(DemoSequenceRootRelativePath + "/", StringComparison.OrdinalIgnoreCase)
+            && normalizedRelativePath.EndsWith(".bseq", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void ValidateEditableProject(

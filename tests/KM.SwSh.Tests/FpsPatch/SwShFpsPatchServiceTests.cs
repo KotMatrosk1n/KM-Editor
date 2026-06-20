@@ -2,6 +2,7 @@
 
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
+using KM.Formats.SwSh;
 using KM.SwSh.FpsPatch;
 using KM.SwSh.Tests.Encounters;
 using KM.SwSh.Tests.Items;
@@ -29,10 +30,10 @@ public sealed class SwShFpsPatchServiceTests
         Assert.Equal(ProjectGame.Shield, apply.Status.DetectedGame);
         Assert.Equal(15, apply.Status.PatchedMainSiteCount);
         Assert.Equal(15, apply.Status.MainSiteCount);
-        Assert.Equal(1019, apply.Status.PatchedRomFsFileCount);
-        Assert.Equal(1019, apply.Status.ManagedRomFsFileCount);
+        Assert.Equal(1025, apply.Status.PatchedRomFsFileCount);
+        Assert.Equal(1025, apply.Status.ManagedRomFsFileCount);
         Assert.Equal(0, apply.Status.ConflictingRomFsFileCount);
-        Assert.Equal(1020, apply.ApplyResult.WrittenFiles.Count);
+        Assert.Equal(1026, apply.ApplyResult.WrittenFiles.Count);
 
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         Assert.True(File.Exists(outputMainPath));
@@ -45,12 +46,41 @@ public sealed class SwShFpsPatchServiceTests
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee316.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee411.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/demo/sequence/d010.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/demo/sequence/d030.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/demo/sequence/r2d020.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/d230.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/archive/demo/share/anime/a_pl0110.gfpak"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.TrainerThrowCameraRelativePath));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.TrainerThrowBattleModelRelativePath));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.TrainerThrowLooseRelativePath));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.TrainerThrowArchiveRelativePath));
+        Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.PlayerThrowCameraRelativePath));
+        Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.PlayerThrowBattleModelRelativePath));
         Assert.Equal(23u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee316.bseq")));
         Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee411.bseq")));
         Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "eg_ball01.bseq")));
         Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "d230.bseq")));
+        Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d030.bseq")));
+        Assert.Equal(30u, ReadAnimationFrameRate(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.TrainerThrowCameraRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.Equal(30u, ReadAnimationFrameRate(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.TrainerThrowBattleModelRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.Equal(30u, ReadAnimationFrameRate(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.TrainerThrowLooseRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        var trainerArchive = SwShGfPackFile.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.TrainerThrowArchiveRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.Equal(
+            30u,
+            SwShFpsTrainerThrowPatcher.InspectAnimation(
+                trainerArchive.GetFileByName(SwShFpsRomFsTestFixtures.TrainerThrowArchiveClipName)).FrameRate);
+        Assert.Equal(
+            60u,
+            SwShFpsTrainerThrowPatcher.InspectAnimation(
+                trainerArchive.GetFileByName(SwShFpsRomFsTestFixtures.TrainerNonThrowArchiveClipName)).FrameRate);
 
         var restore = service.Restore(paths);
 
@@ -59,19 +89,32 @@ public sealed class SwShFpsPatchServiceTests
         Assert.Equal(ProjectGame.Shield, restore.Status.DetectedGame);
         Assert.Equal(0, restore.Status.PatchedMainSiteCount);
         Assert.Equal(0, restore.Status.PatchedRomFsFileCount);
-        Assert.Equal(1019, restore.Status.ManagedRomFsFileCount);
+        Assert.Equal(1025, restore.Status.ManagedRomFsFileCount);
         Assert.False(File.Exists(outputMainPath));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ew052.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "eg_ball01.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee411.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d010.bseq")));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d030.bseq")));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "r2d020.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "d230.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "archive", "demo", "share", "anime", "a_pl0110.gfpak")));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.TrainerThrowCameraRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.TrainerThrowArchiveRelativePath.Replace('/', Path.DirectorySeparatorChar))));
     }
 
     private static uint ReadFrameCount(string path)
     {
         var data = File.ReadAllBytes(path);
         return BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x0C, sizeof(uint)));
+    }
+
+    private static uint ReadAnimationFrameRate(string path)
+    {
+        return SwShFpsTrainerThrowPatcher.InspectAnimation(File.ReadAllBytes(path)).FrameRate;
     }
 }
