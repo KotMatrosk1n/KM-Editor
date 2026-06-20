@@ -21,6 +21,10 @@ public sealed record PlacementFieldValueDto(
     string Value,
     string DisplayValue,
     bool IsReadOnly,
+    string ValueKind = "text",
+    double MinimumValue = 0,
+    double MaximumValue = 0,
+    string Description = "",
     IReadOnlyList<PlacementEditableFieldOptionDto>? Options = null);
 
 public sealed record PlacedObjectRecordDto(

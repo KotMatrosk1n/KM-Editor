@@ -101,6 +101,54 @@ public sealed class SwShPlacementEditSessionServiceTests
         Assert.Equal(SwShPlacementTestFixtures.GreatBallHash, outputArchive.Zones[0].HiddenItems[0].Chances[0].ItemHash);
     }
 
+    [Fact]
+    public void ApplyChangePlanWritesEditableRawPlacementField()
+    {
+        using var temp = CreateEditableProject();
+        var service = new SwShPlacementEditSessionService();
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+        var workflow = new SwShPlacementWorkflowService().Load(project);
+        var fieldItem = workflow.Objects.Single(placedObject => placedObject.ObjectType == "FieldItem");
+        var scaleXField = fieldItem.Fields!.First(field =>
+            field.Field.StartsWith("raw.", StringComparison.Ordinal)
+            && field.Field.EndsWith("ScaleX", StringComparison.Ordinal));
+
+        Assert.False(scaleXField.IsReadOnly);
+        var update = service.UpdateObjectField(
+            temp.Paths,
+            EditSession.Start(),
+            fieldItem.ObjectId,
+            scaleXField.Field,
+            "2");
+        var edit = Assert.Single(update.Session.PendingEdits);
+        Assert.Equal(scaleXField.Field, edit.Field);
+        var plan = service.CreateChangePlan(temp.Paths, update.Session);
+
+        var apply = service.ApplyChangePlan(temp.Paths, update.Session, plan);
+
+        Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "romfs",
+            "bin",
+            "archive",
+            "field",
+            "resident",
+            "placement.gfpak");
+        var outputPack = SwShGfPackFile.Parse(File.ReadAllBytes(outputPath));
+        var outputArchive = SwShPlacementZoneArchive.Parse(
+            outputPack.GetFileByName(SwShPlacementTestFixtures.AreaMember),
+            new SwShItemHashTable(
+            [
+                new SwShItemHashEntry(1, SwShPlacementTestFixtures.PotionHash),
+                new SwShItemHashEntry(2, SwShPlacementTestFixtures.GreatBallHash),
+            ]).ToItemIdByHash());
+        var outputRawObject = outputArchive.Zones[0].RawObjects.Single(rawObject =>
+            rawObject.ObjectType == "FieldItem"
+            && rawObject.ObjectIndex == fieldItem.ObjectIndex);
+        Assert.Equal("2", outputRawObject.Fields.Single(field => field.Field == scaleXField.Field).Value);
+    }
+
     private static TemporarySwShProject CreateEditableProject()
     {
         var temp = TemporarySwShProject.Create();

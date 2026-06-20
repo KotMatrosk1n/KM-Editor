@@ -35,16 +35,63 @@ public sealed class SwShPlacementWorkflowService
     private const string AreaNameHashTableMember = "AreaNameHashTable.tbl";
     private const string ZoneNameHashTableMember = "ZoneNameHashTable.tbl";
     private const string ObjectNameHashTableMember = "ObjectNameHashTable.tbl";
+    private const string VanishFlagAutoTableMember = "VanishFlagAutoTable.tbl";
+    private const string FlagworkRootPath = "romfs/bin/flagwork/";
+    private const string TrainerIdHashTablePath = "romfs/bin/trainer/trainer_id_hash_table.tbl";
 
     private static readonly IReadOnlyList<SwShPlacementEditableField> EditableFields =
     [
-        new SwShPlacementEditableField(LocationXField, "X", "number", MinimumCoordinate, MaximumCoordinate),
-        new SwShPlacementEditableField(LocationYField, "Y", "number", MinimumCoordinate, MaximumCoordinate),
-        new SwShPlacementEditableField(LocationZField, "Z", "number", MinimumCoordinate, MaximumCoordinate),
-        new SwShPlacementEditableField(RotationYField, "Rotation Y", "number", MinimumRotation, MaximumRotation),
-        new SwShPlacementEditableField(ItemIdField, "Item", "integer", 0, MaximumItemId),
-        new SwShPlacementEditableField(QuantityField, "Quantity", "integer", 0, MaximumQuantity),
-        new SwShPlacementEditableField(ChanceField, "Chance", "integer", 0, MaximumChance),
+        new SwShPlacementEditableField(LocationXField, "X", "number", MinimumCoordinate, MaximumCoordinate, Group: "Transform"),
+        new SwShPlacementEditableField(LocationYField, "Y", "number", MinimumCoordinate, MaximumCoordinate, Group: "Transform"),
+        new SwShPlacementEditableField(LocationZField, "Z", "number", MinimumCoordinate, MaximumCoordinate, Group: "Transform"),
+        new SwShPlacementEditableField(RotationYField, "Rotation Y", "number", MinimumRotation, MaximumRotation, Group: "Transform"),
+        new SwShPlacementEditableField(ItemIdField, "Item", "integer", 0, MaximumItemId, Group: "Item"),
+        new SwShPlacementEditableField(QuantityField, "Quantity", "integer", 0, MaximumQuantity, Group: "Item"),
+        new SwShPlacementEditableField(ChanceField, "Chance", "integer", 0, MaximumChance, Group: "Item"),
+    ];
+
+    private static readonly IReadOnlyDictionary<string, PlacementCategoryInfo> CategoryByObjectType =
+        new Dictionary<string, PlacementCategoryInfo>(StringComparer.Ordinal)
+        {
+            ["FieldItem"] = new("items", "Items", "Visible pickups, hidden pickups, and berry/tree item entries."),
+            ["HiddenItem"] = new("items", "Items", "Visible pickups, hidden pickups, and berry/tree item entries."),
+            ["BerryTree"] = new("items", "Items", "Visible pickups, hidden pickups, and berry/tree item entries."),
+            ["NPCType1"] = new("npcsTrainers", "NPCs & Trainers", "NPC instances, trainer anchors, models, animations, messages, paths, and event references."),
+            ["NPCType2"] = new("npcsTrainers", "NPCs & Trainers", "NPC instances, trainer anchors, models, animations, messages, paths, and event references."),
+            ["Trainer"] = new("npcsTrainers", "NPCs & Trainers", "NPC instances, trainer anchors, models, animations, messages, paths, and event references."),
+            ["Critter"] = new("pokemonEncounters", "Pokemon & Encounters", "Static Pokemon, wild symbol anchors, raid dens, fishing points, and ambient critter placements."),
+            ["FishingPoint"] = new("pokemonEncounters", "Pokemon & Encounters", "Static Pokemon, wild symbol anchors, raid dens, fishing points, and ambient critter placements."),
+            ["Nest"] = new("pokemonEncounters", "Pokemon & Encounters", "Static Pokemon, wild symbol anchors, raid dens, fishing points, and ambient critter placements."),
+            ["StaticObject"] = new("pokemonEncounters", "Pokemon & Encounters", "Static Pokemon, wild symbol anchors, raid dens, fishing points, and ambient critter placements."),
+            ["Symbol"] = new("pokemonEncounters", "Pokemon & Encounters", "Static Pokemon, wild symbol anchors, raid dens, fishing points, and ambient critter placements."),
+            ["FlyTo"] = new("travelNavigation", "Travel & Navigation", "Warps, fly anchors, spawn anchors, jumps, ladders, and traversal objects."),
+            ["Ladder"] = new("travelNavigation", "Travel & Navigation", "Warps, fly anchors, spawn anchors, jumps, ladders, and traversal objects."),
+            ["PokeCenterAnchor"] = new("travelNavigation", "Travel & Navigation", "Warps, fly anchors, spawn anchors, jumps, ladders, and traversal objects."),
+            ["RotomRally"] = new("travelNavigation", "Travel & Navigation", "Warps, fly anchors, spawn anchors, jumps, ladders, and traversal objects."),
+            ["StepJump"] = new("travelNavigation", "Travel & Navigation", "Warps, fly anchors, spawn anchors, jumps, ladders, and traversal objects."),
+            ["Warp"] = new("travelNavigation", "Travel & Navigation", "Warps, fly anchors, spawn anchors, jumps, ladders, and traversal objects."),
+            ["Environment"] = new("worldObjects", "World Objects", "Unit objects, particles, environment events, and scene support objects."),
+            ["IKStep"] = new("worldObjects", "World Objects", "Unit objects, particles, environment events, and scene support objects."),
+            ["Particle"] = new("worldObjects", "World Objects", "Unit objects, particles, environment events, and scene support objects."),
+            ["UnitObject"] = new("worldObjects", "World Objects", "Unit objects, particles, environment events, and scene support objects."),
+            ["AdvancedTip"] = new("messagesPrompts", "Messages & UI Prompts", "Trainer tips, signs, popups, and message/sign hash placements."),
+            ["Popup"] = new("messagesPrompts", "Messages & UI Prompts", "Trainer tips, signs, popups, and message/sign hash placements."),
+            ["TrainerTip"] = new("messagesPrompts", "Messages & UI Prompts", "Trainer tips, signs, popups, and message/sign hash placements."),
+            ["Quadrant"] = new("triggersVolumes", "Triggers & Volumes", "Trigger and quadrant volume records."),
+            ["Trigger"] = new("triggersVolumes", "Triggers & Volumes", "Trigger and quadrant volume records."),
+            ["Path"] = new("pathsTechnical", "Paths & Technical", "Movement paths and technical placement metadata."),
+        };
+
+    private static readonly IReadOnlyList<string> CategoryOrder =
+    [
+        "items",
+        "npcsTrainers",
+        "pokemonEncounters",
+        "travelNavigation",
+        "worldObjects",
+        "messagesPrompts",
+        "triggersVolumes",
+        "pathsTechnical",
     ];
 
     public SwShWorkflowSummary CreateSummary(OpenedProject project)
@@ -99,6 +146,7 @@ public sealed class SwShPlacementWorkflowService
             var areaNames = LoadRequiredHashTable(pack, AreaNameHashTableMember);
             var zoneNames = LoadOptionalHashTable(pack, ZoneNameHashTableMember, diagnostics);
             var objectNames = LoadOptionalHashTable(pack, ObjectNameHashTableMember, diagnostics);
+            var hashLabels = LoadPlacementHashLabels(project, pack, areaNames, zoneNames, objectNames, diagnostics);
             var provenance = CreateProvenance(placementSource.GraphEntry);
             var records = new List<SwShPlacedObjectRecord>();
             var areaCount = 0;
@@ -127,6 +175,7 @@ public sealed class SwShPlacementWorkflowService
                         archive,
                         zoneNames,
                         objectNames,
+                        hashLabels,
                         itemHashes,
                         itemDisplayNames,
                         provenance));
@@ -272,6 +321,7 @@ public sealed class SwShPlacementWorkflowService
         SwShPlacementZoneArchive archive,
         IReadOnlyDictionary<ulong, string> zoneNames,
         IReadOnlyDictionary<ulong, string> objectNames,
+        IReadOnlyDictionary<ulong, string> hashLabels,
         IReadOnlyDictionary<int, ulong> itemHashes,
         IReadOnlyList<string> itemNames,
         SwShPlacementProvenance provenance)
@@ -281,12 +331,16 @@ public sealed class SwShPlacementWorkflowService
         foreach (var zone in archive.Zones)
         {
             var map = ResolveZoneName(zone, zoneNames);
+            var rawObjects = zone.RawObjects
+                .GroupBy(rawObject => (rawObject.ObjectType, rawObject.ObjectIndex))
+                .ToDictionary(group => group.Key, group => group.First());
             foreach (var fieldItem in zone.FieldItems)
             {
+                rawObjects.TryGetValue(("FieldItem", fieldItem.ObjectIndex), out var rawObject);
                 var itemId = ResolveFieldItemId(fieldItem, itemIdsByHash);
                 var itemHash = fieldItem.ItemHashes.FirstOrDefault();
                 var itemName = ResolveItemName(itemId, itemNames);
-                records.Add(new SwShPlacedObjectRecord(
+                records.Add(CreatePlacedObjectRecord(
                     CreateObjectRecordId(archiveMember, zone.ZoneIndex, "fieldItem", fieldItem.ObjectIndex, null),
                     "FieldItem",
                     itemName == "None" ? "Field item" : $"Field item: {itemName}",
@@ -305,15 +359,17 @@ public sealed class SwShPlacementWorkflowService
                     fieldItem.Transform.Z,
                     fieldItem.Transform.RotationY,
                     string.IsNullOrWhiteSpace(fieldItem.Model) ? ResolveObjectName(zone.ObjectHash, objectNames) : CleanPath(fieldItem.Model),
-                    provenance));
+                    provenance,
+                    CreateFieldItemFields(fieldItem, itemId, itemName, itemHash, rawObject, hashLabels, itemIdsByHash, itemNames)));
             }
 
             foreach (var hiddenItem in zone.HiddenItems)
             {
+                rawObjects.TryGetValue(("HiddenItem", hiddenItem.ObjectIndex), out var rawObject);
                 foreach (var chance in hiddenItem.Chances)
                 {
                     var itemName = ResolveItemName(chance.ItemId, itemNames);
-                    records.Add(new SwShPlacedObjectRecord(
+                    records.Add(CreatePlacedObjectRecord(
                         CreateObjectRecordId(archiveMember, zone.ZoneIndex, "hiddenItem", hiddenItem.ObjectIndex, chance.ChanceIndex),
                         "HiddenItem",
                         itemName == "None" ? "Hidden item" : $"Hidden item: {itemName}",
@@ -332,12 +388,384 @@ public sealed class SwShPlacementWorkflowService
                         hiddenItem.Transform.Z,
                         hiddenItem.Transform.RotationY,
                         ResolveObjectName(zone.ObjectHash, objectNames),
-                        provenance));
+                        provenance,
+                        CreateHiddenItemFields(hiddenItem, chance, itemName, rawObject, hashLabels, itemIdsByHash, itemNames)));
                 }
+            }
+
+            foreach (var rawObject in zone.RawObjects
+                .Where(rawObject => rawObject.ObjectType is not ("FieldItem" or "HiddenItem")))
+            {
+                records.Add(CreatePlacedObjectRecord(
+                    CreateObjectRecordId(archiveMember, zone.ZoneIndex, rawObject.ObjectType, rawObject.ObjectIndex, null),
+                    rawObject.ObjectType,
+                    CreateRawObjectLabel(rawObject, hashLabels, itemIdsByHash, itemNames),
+                    map,
+                    archiveMember,
+                    zone.ZoneIndex,
+                    rawObject.ObjectIndex,
+                    ChanceIndex: null,
+                    ItemId: null,
+                    itemName: string.Empty,
+                    itemHash: string.Empty,
+                    Quantity: 0,
+                    Chance: null,
+                    rawObject.Transform.X,
+                    rawObject.Transform.Y,
+                    rawObject.Transform.Z,
+                    rawObject.Transform.RotationY,
+                    string.IsNullOrWhiteSpace(rawObject.LinkValue)
+                        ? ResolveObjectName(rawObject.ObjectHash, objectNames)
+                        : rawObject.LinkValue,
+                    provenance,
+                    ConvertRawFields(rawObject.Fields, hashLabels, itemIdsByHash, itemNames)));
             }
         }
 
         return records;
+    }
+
+    private static IReadOnlyList<SwShPlacementFieldValue> ConvertRawFields(
+        IReadOnlyList<SwShPlacementRawField> rawFields,
+        IReadOnlyDictionary<ulong, string> hashLabels,
+        IReadOnlyDictionary<ulong, int> itemIdsByHash,
+        IReadOnlyList<string> itemNames)
+    {
+        return rawFields
+            .Select(field => new SwShPlacementFieldValue(
+                field.Field,
+                field.Label,
+                field.Group,
+                field.Value,
+                ResolveRawDisplayValue(field, hashLabels, itemIdsByHash, itemNames),
+                field.IsReadOnly,
+                field.ValueKind,
+                field.MinimumValue,
+                field.MaximumValue,
+                field.Description))
+            .ToArray();
+    }
+
+    private static SwShPlacementFieldValue EditableField(
+        string field,
+        string label,
+        string group,
+        double value)
+    {
+        var formatted = FormatNumber(value);
+        return new SwShPlacementFieldValue(
+            field,
+            label,
+            group,
+            formatted,
+            formatted,
+            IsReadOnly: false,
+            ValueKind: "number",
+            MinimumValue: MinimumCoordinate,
+            MaximumValue: MaximumCoordinate);
+    }
+
+    private static SwShPlacementFieldValue EditableField(
+        string field,
+        string label,
+        string group,
+        int? value,
+        string displayValue)
+    {
+        return new SwShPlacementFieldValue(
+            field,
+            label,
+            group,
+            value?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            displayValue,
+            IsReadOnly: false,
+            ValueKind: "integer",
+            MinimumValue: 0,
+            MaximumValue: field == ChanceField
+                ? MaximumChance
+                : field == QuantityField
+                    ? MaximumQuantity
+                    : MaximumItemId);
+    }
+
+    private static SwShPlacementFieldValue ReadOnlyField(
+        string field,
+        string label,
+        string group,
+        string value,
+        string displayValue)
+    {
+        return new SwShPlacementFieldValue(
+            field,
+            label,
+            group,
+            value,
+            displayValue,
+            IsReadOnly: true,
+            Description: "Reference value displayed for context; edit the mapped field when available.");
+    }
+
+    private static string ResolveRawDisplayValue(
+        SwShPlacementRawField field,
+        IReadOnlyDictionary<ulong, string> hashLabels,
+        IReadOnlyDictionary<ulong, int> itemIdsByHash,
+        IReadOnlyList<string> itemNames)
+    {
+        return ResolveRawDisplayValue(field.Value, field.DisplayValue, field.Label, field.Field, hashLabels, itemIdsByHash, itemNames);
+    }
+
+    private static string ResolveRawDisplayValue(
+        string value,
+        string displayValue,
+        string label,
+        string field,
+        IReadOnlyDictionary<ulong, string> hashLabels,
+        IReadOnlyDictionary<ulong, int> itemIdsByHash,
+        IReadOnlyList<string> itemNames)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.IsNullOrWhiteSpace(displayValue) ? "None" : displayValue;
+        }
+
+        if (!TryParseHash(value, out var hash))
+        {
+            return displayValue;
+        }
+
+        if (hash == 0)
+        {
+            return "None";
+        }
+
+        if (hash == SwShPlacementZoneArchive.EmptyFnvHash)
+        {
+            return "None (empty hash)";
+        }
+
+        if (label.Contains("Item", StringComparison.OrdinalIgnoreCase)
+            || field.Contains("FieldItem", StringComparison.Ordinal)
+            || field.Contains("HiddenItem", StringComparison.Ordinal)
+            || field.Contains("BerryTree", StringComparison.Ordinal))
+        {
+            var itemDisplay = ResolveItemHashDisplay(hash, itemIdsByHash, itemNames);
+            if (!string.IsNullOrWhiteSpace(itemDisplay))
+            {
+                return itemDisplay;
+            }
+        }
+
+        if (hashLabels.TryGetValue(hash, out var hashLabel) && !string.IsNullOrWhiteSpace(hashLabel))
+        {
+            return $"{CleanPath(hashLabel)} ({FormatHash(hash)})";
+        }
+
+        return displayValue;
+    }
+
+    private static string ResolveItemHashDisplay(
+        ulong hash,
+        IReadOnlyDictionary<ulong, int> itemIdsByHash,
+        IReadOnlyList<string> itemNames)
+    {
+        if (hash == 0)
+        {
+            return "None";
+        }
+
+        if (hash == SwShPlacementZoneArchive.EmptyFnvHash)
+        {
+            return "None (empty hash)";
+        }
+
+        return itemIdsByHash.TryGetValue(hash, out var itemId)
+            ? $"{ResolveItemName(itemId, itemNames)} ({itemId.ToString(CultureInfo.InvariantCulture)})"
+            : FormatHash(hash);
+    }
+
+    private static string CreateRawObjectLabel(
+        SwShPlacementRawObject rawObject,
+        IReadOnlyDictionary<ulong, string> hashLabels,
+        IReadOnlyDictionary<ulong, int> itemIdsByHash,
+        IReadOnlyList<string> itemNames)
+    {
+        var typeLabel = rawObject.ObjectType switch
+        {
+            "AdvancedTip" => "Advanced tip",
+            "BerryTree" => "Berry tree",
+            "Critter" => "Critter",
+            "Environment" => "Environment",
+            "FishingPoint" => "Fishing point",
+            "FlyTo" => "Fly anchor",
+            "IKStep" => "IK step",
+            "Ladder" => "Ladder",
+            "Nest" => "Raid den",
+            "NPCType1" => "NPC",
+            "NPCType2" => "NPC",
+            "Particle" => "Particle",
+            "Path" => "Path",
+            "PokeCenterAnchor" => "Pokemon Center anchor",
+            "Popup" => "Popup",
+            "Quadrant" => "Quadrant",
+            "RotomRally" => "Rotom Rally",
+            "StaticObject" => "Static Pokemon",
+            "StepJump" => "Step jump",
+            "Symbol" => "Symbol spawn",
+            "Trainer" => "Trainer",
+            "TrainerTip" => "Trainer tip",
+            "Trigger" => "Trigger",
+            "UnitObject" => "World object",
+            "Warp" => "Warp",
+            _ => rawObject.ObjectType,
+        };
+
+        var primaryLabel = ResolveRawDisplayValue(
+            rawObject.PrimaryLabel,
+            rawObject.PrimaryLabel,
+            typeLabel,
+            rawObject.ObjectType,
+            hashLabels,
+            itemIdsByHash,
+            itemNames);
+
+        if (IsEmptyRawDisplay(primaryLabel) && rawObject.ObjectHash != 0)
+        {
+            primaryLabel = ResolveRawDisplayValue(
+                FormatHash(rawObject.ObjectHash),
+                FormatHash(rawObject.ObjectHash),
+                typeLabel,
+                rawObject.ObjectType,
+                hashLabels,
+                itemIdsByHash,
+                itemNames);
+        }
+
+        return string.IsNullOrWhiteSpace(primaryLabel)
+            || primaryLabel == rawObject.ObjectType
+            || IsEmptyRawDisplay(primaryLabel)
+            ? $"{typeLabel} {rawObject.ObjectIndex.ToString(CultureInfo.InvariantCulture)}"
+            : $"{typeLabel}: {primaryLabel}";
+    }
+
+    private static bool IsEmptyRawDisplay(string value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            || value.Equals("None", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("None (empty hash)", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static PlacementCategoryInfo ResolveCategory(string objectType)
+    {
+        return CategoryByObjectType.TryGetValue(objectType, out var category)
+            ? category
+            : new PlacementCategoryInfo("pathsTechnical", "Paths & Technical", "Technical placement records.");
+    }
+
+    private static SwShPlacedObjectRecord CreatePlacedObjectRecord(
+        string objectId,
+        string objectType,
+        string label,
+        string map,
+        string archiveMember,
+        int zoneIndex,
+        int objectIndex,
+        int? ChanceIndex,
+        uint? ItemId,
+        string itemName,
+        string itemHash,
+        int Quantity,
+        int? Chance,
+        double x,
+        double y,
+        double z,
+        double rotationY,
+        string? scriptId,
+        SwShPlacementProvenance provenance,
+        IReadOnlyList<SwShPlacementFieldValue> fields)
+    {
+        var category = ResolveCategory(objectType);
+        return new SwShPlacedObjectRecord(
+            objectId,
+            objectType,
+            label,
+            map,
+            archiveMember,
+            zoneIndex,
+            objectIndex,
+            ChanceIndex,
+            ItemId,
+            itemName,
+            itemHash,
+            Quantity,
+            Chance,
+            x,
+            y,
+            z,
+            rotationY,
+            scriptId,
+            provenance,
+            category.Id,
+            category.Label,
+            fields);
+    }
+
+    private static IReadOnlyList<SwShPlacementFieldValue> CreateFieldItemFields(
+        SwShPlacementFieldItem fieldItem,
+        int? itemId,
+        string itemName,
+        ulong itemHash,
+        SwShPlacementRawObject? rawObject,
+        IReadOnlyDictionary<ulong, string> hashLabels,
+        IReadOnlyDictionary<ulong, int> itemIdsByHash,
+        IReadOnlyList<string> itemNames)
+    {
+        var fields = new List<SwShPlacementFieldValue>
+        {
+            EditableField(LocationXField, "X", "Transform", fieldItem.Transform.X),
+            EditableField(LocationYField, "Y", "Transform", fieldItem.Transform.Y),
+            EditableField(LocationZField, "Z", "Transform", fieldItem.Transform.Z),
+            EditableField(RotationYField, "Rotation Y", "Transform", fieldItem.Transform.RotationY),
+            EditableField(ItemIdField, "Item", "Item", itemId, itemName),
+            EditableField(QuantityField, "Quantity", "Item", fieldItem.Quantity),
+            ReadOnlyField("fieldItem.hash", "Item Hash", "Item", FormatHash(itemHash), ResolveItemHashDisplay(itemHash, itemIdsByHash, itemNames)),
+        };
+
+        if (rawObject is not null)
+        {
+            fields.AddRange(ConvertRawFields(rawObject.Fields, hashLabels, itemIdsByHash, itemNames));
+        }
+
+        return fields;
+    }
+
+    private static IReadOnlyList<SwShPlacementFieldValue> CreateHiddenItemFields(
+        SwShPlacementHiddenItem hiddenItem,
+        SwShPlacementHiddenItemChance chance,
+        string itemName,
+        SwShPlacementRawObject? rawObject,
+        IReadOnlyDictionary<ulong, string> hashLabels,
+        IReadOnlyDictionary<ulong, int> itemIdsByHash,
+        IReadOnlyList<string> itemNames)
+    {
+        var fields = new List<SwShPlacementFieldValue>
+        {
+            EditableField(LocationXField, "X", "Transform", hiddenItem.Transform.X),
+            EditableField(LocationYField, "Y", "Transform", hiddenItem.Transform.Y),
+            EditableField(LocationZField, "Z", "Transform", hiddenItem.Transform.Z),
+            EditableField(RotationYField, "Rotation Y", "Transform", hiddenItem.Transform.RotationY),
+            EditableField(ItemIdField, "Item", "Item", chance.ItemId, itemName),
+            EditableField(QuantityField, "Quantity", "Item", chance.Quantity),
+            EditableField(ChanceField, "Chance", "Item", chance.Chance),
+            ReadOnlyField("hiddenItem.chanceIndex", "Chance Slot", "Item", chance.ChanceIndex.ToString(CultureInfo.InvariantCulture), chance.ChanceIndex.ToString(CultureInfo.InvariantCulture)),
+            ReadOnlyField("hiddenItem.hash", "Item Hash", "Item", FormatHash(chance.ItemHash), ResolveItemHashDisplay(chance.ItemHash, itemIdsByHash, itemNames)),
+        };
+
+        if (rawObject is not null)
+        {
+            fields.AddRange(ConvertRawFields(rawObject.Fields, hashLabels, itemIdsByHash, itemNames));
+        }
+
+        return fields;
     }
 
     private static int? ResolveFieldItemId(
@@ -416,6 +844,26 @@ public sealed class SwShPlacementWorkflowService
         return hash == 0 ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"0x{hash:X16}");
     }
 
+    private static string FormatNumber(double value)
+    {
+        return value.ToString("0.###", CultureInfo.InvariantCulture);
+    }
+
+    private static bool TryParseHash(string value, out ulong hash)
+    {
+        hash = 0;
+        if (!value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return ulong.TryParse(
+            value[2..],
+            NumberStyles.HexNumber,
+            CultureInfo.InvariantCulture,
+            out hash);
+    }
+
     private static IReadOnlyDictionary<ulong, string> LoadRequiredHashTable(
         SwShGfPackFile pack,
         string memberName)
@@ -450,6 +898,98 @@ public sealed class SwShPlacementWorkflowService
                 file: PlacementDataPath,
                 expected: "Sword/Shield placement AHTB"));
             return new Dictionary<ulong, string>();
+        }
+    }
+
+    private static IReadOnlyDictionary<ulong, string> LoadPlacementHashLabels(
+        OpenedProject project,
+        SwShGfPackFile pack,
+        IReadOnlyDictionary<ulong, string> areaNames,
+        IReadOnlyDictionary<ulong, string> zoneNames,
+        IReadOnlyDictionary<ulong, string> objectNames,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var labels = new Dictionary<ulong, string>();
+        AddHashLabels(labels, areaNames);
+        AddHashLabels(labels, zoneNames);
+        AddHashLabels(labels, objectNames);
+
+        if (pack.ContainsFileName(VanishFlagAutoTableMember))
+        {
+            try
+            {
+                AddHashLabels(labels, SwShAhtbFile.Parse(pack.GetFileByName(VanishFlagAutoTableMember)).ToDictionary());
+            }
+            catch (InvalidDataException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"Placement vanish flag table could not be decoded: {exception.Message}",
+                    file: PlacementDataPath,
+                    expected: "Sword/Shield placement AHTB"));
+            }
+        }
+
+        foreach (var source in project.FileGraph.Entries
+            .Where(entry =>
+                entry.RelativePath.StartsWith(FlagworkRootPath, StringComparison.OrdinalIgnoreCase)
+                && entry.RelativePath.EndsWith(".tbl", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .Select(entry => ResolveWorkflowFile(project, entry.RelativePath))
+            .Where(source => source is not null)
+            .Cast<WorkflowFileSource>())
+        {
+            AddWorkflowHashLabels(labels, source, diagnostics);
+        }
+
+        var trainerIdSource = ResolveWorkflowFile(project, TrainerIdHashTablePath);
+        if (trainerIdSource is not null)
+        {
+            AddWorkflowHashLabels(labels, trainerIdSource, diagnostics);
+        }
+
+        return labels;
+    }
+
+    private static void AddWorkflowHashLabels(
+        IDictionary<ulong, string> labels,
+        WorkflowFileSource source,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        try
+        {
+            AddHashLabels(labels, SwShAhtbFile.Parse(File.ReadAllBytes(source.AbsolutePath)).ToDictionary());
+        }
+        catch (InvalidDataException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Placement label table '{source.GraphEntry.RelativePath}' could not be decoded: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Sword/Shield AHTB"));
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"Placement label table '{source.GraphEntry.RelativePath}' could not be read: {exception.Message}",
+                file: source.GraphEntry.RelativePath,
+                expected: "Readable Sword/Shield AHTB"));
+        }
+    }
+
+    private static void AddHashLabels(
+        IDictionary<ulong, string> labels,
+        IReadOnlyDictionary<ulong, string> additions)
+    {
+        foreach (var (hash, label) in additions)
+        {
+            if (hash == 0 || string.IsNullOrWhiteSpace(label) || labels.ContainsKey(hash))
+            {
+                continue;
+            }
+
+            labels.Add(hash, label);
         }
     }
 
@@ -583,7 +1123,29 @@ public sealed class SwShPlacementWorkflowService
             objects,
             CreateEditableFields(itemNames),
             new SwShPlacementWorkflowStats(objects.Count, areaCount, sourceFileCount),
-            diagnostics);
+            diagnostics,
+            CreateCategories(objects));
+    }
+
+    private static IReadOnlyList<SwShPlacementCategory> CreateCategories(
+        IReadOnlyList<SwShPlacedObjectRecord> objects)
+    {
+        var counts = objects
+            .GroupBy(record => record.CategoryId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var infoById = objects
+            .Select(record => ResolveCategory(record.ObjectType))
+            .GroupBy(category => category.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
+        return CategoryOrder
+            .Where(counts.ContainsKey)
+            .Select(categoryId =>
+            {
+                var info = infoById[categoryId];
+                return new SwShPlacementCategory(info.Id, info.Label, info.Description, counts[categoryId]);
+            })
+            .ToArray();
     }
 
     private static IReadOnlyList<SwShPlacementEditableField> CreateEditableFields(
@@ -689,3 +1251,8 @@ public sealed class SwShPlacementWorkflowService
 internal sealed record WorkflowFileSource(
     ProjectFileGraphEntry GraphEntry,
     string AbsolutePath);
+
+internal sealed record PlacementCategoryInfo(
+    string Id,
+    string Label,
+    string Description);

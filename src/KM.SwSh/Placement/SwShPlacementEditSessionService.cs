@@ -8,6 +8,7 @@ using KM.Formats.SwSh;
 using KM.SwSh.Items;
 using KM.SwSh.Workflows;
 using System.Globalization;
+using System.Text;
 using PlacementArchiveField = KM.Formats.SwSh.SwShPlacementEditableField;
 
 namespace KM.SwSh.Placement;
@@ -227,18 +228,34 @@ public sealed class SwShPlacementEditSessionService
                 }
 
                 var archive = SwShPlacementZoneArchive.Parse(pack.GetFileByName(editGroup.Key), itemIdsByHash);
-                var archiveEdits = editGroup
-                    .Select(edit => ToArchiveEdit(archive, itemHashes, edit, diagnostics))
-                    .Where(edit => edit is not null)
-                    .Select(edit => edit!)
-                    .ToArray();
+                var archiveEdits = new List<SwShPlacementObjectEdit>();
+                var rawFieldEdits = new List<SwShPlacementRawFieldEdit>();
+                foreach (var edit in editGroup)
+                {
+                    if (IsRawPlacementField(edit.Field))
+                    {
+                        var rawFieldEdit = ToRawFieldEdit(edit, diagnostics);
+                        if (rawFieldEdit is not null)
+                        {
+                            rawFieldEdits.Add(rawFieldEdit);
+                        }
+
+                        continue;
+                    }
+
+                    var archiveEdit = ToArchiveEdit(archive, itemHashes, edit, diagnostics);
+                    if (archiveEdit is not null)
+                    {
+                        archiveEdits.Add(archiveEdit);
+                    }
+                }
 
                 if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
                 {
                     return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
                 }
 
-                pack.SetFileByName(editGroup.Key, archive.WriteEdits(archiveEdits));
+                pack.SetFileByName(editGroup.Key, archive.WriteEdits(archiveEdits, rawFieldEdits));
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
@@ -297,7 +314,7 @@ public sealed class SwShPlacementEditSessionService
         string field,
         string newValue)
     {
-        return field switch
+        var updated = field switch
         {
             SwShPlacementWorkflowService.LocationXField when TryParseDouble(newValue, out var value) => placedObject with { X = value },
             SwShPlacementWorkflowService.LocationYField when TryParseDouble(newValue, out var value) => placedObject with { Y = value },
@@ -315,6 +332,30 @@ public sealed class SwShPlacementEditSessionService
             },
             _ => placedObject,
         };
+
+        return updated with { Fields = OverlayStructuredField(updated.Fields, field, newValue) };
+    }
+
+    private static IReadOnlyList<SwShPlacementFieldValue>? OverlayStructuredField(
+        IReadOnlyList<SwShPlacementFieldValue>? fields,
+        string field,
+        string newValue)
+    {
+        if (fields is null)
+        {
+            return null;
+        }
+
+        return fields
+            .Select(value => value.Field == field
+                ? value with
+                {
+                    Value = newValue,
+                    DisplayValue = value.Options?.FirstOrDefault(option =>
+                        option.Value.ToString(CultureInfo.InvariantCulture) == newValue)?.Label ?? newValue,
+                }
+                : value)
+            .ToArray();
     }
 
     private static PendingEdit? CreatePendingEdit(
@@ -329,10 +370,10 @@ public sealed class SwShPlacementEditSessionService
             return null;
         }
 
-        var normalized = NormalizeValue(field, value);
+        var normalized = NormalizeValue(placedObject, field, value);
         return new PendingEdit(
             PlacementEditDomain,
-            $"{placedObject.Label} {GetFieldLabel(field)} -> {normalized}",
+            $"{placedObject.Label} {GetFieldLabel(placedObject, field)} -> {normalized}",
             [new ProjectFileReference(placedObject.Provenance.SourceLayer, placedObject.Provenance.SourceFile)],
             RecordId: placedObject.ObjectId,
             Field: field,
@@ -386,6 +427,11 @@ public sealed class SwShPlacementEditSessionService
 
                 return ValidateInt(field, value, 0, SwShPlacementWorkflowService.MaximumChance, diagnostics);
             default:
+                if (IsRawPlacementField(field))
+                {
+                    return ValidateRawFieldValue(placedObject, field, value, diagnostics);
+                }
+
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
                     $"Placement field '{field}' is not editable.",
@@ -562,6 +608,47 @@ public sealed class SwShPlacementEditSessionService
         return new SwShPlacementObjectEdit(zoneIndex, kind, objectIndex, chanceIndex, field, value, hashValue);
     }
 
+    private static SwShPlacementRawFieldEdit? ToRawFieldEdit(
+        PendingEdit edit,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (edit.RecordId is null
+            || edit.Field is null
+            || edit.NewValue is null
+            || !SwShPlacementWorkflowService.TryParseObjectRecordId(
+                edit.RecordId,
+                out _,
+                out var zoneIndex,
+                out var objectType,
+                out var objectIndex,
+                out _))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "Pending placement raw edit record id is invalid.",
+                field: "recordId",
+                expected: "Placement record id"));
+            return null;
+        }
+
+        return new SwShPlacementRawFieldEdit(
+            zoneIndex,
+            ToRawObjectType(objectType),
+            objectIndex,
+            edit.Field,
+            edit.NewValue);
+    }
+
+    private static string ToRawObjectType(string objectType)
+    {
+        return objectType switch
+        {
+            "fieldItem" => "FieldItem",
+            "hiddenItem" => "HiddenItem",
+            _ => objectType,
+        };
+    }
+
     private static bool RequiresHashForArchiveEdit(
         SwShPlacementZoneArchive archive,
         SwShPlacementObjectKind kind,
@@ -733,8 +820,142 @@ public sealed class SwShPlacementEditSessionService
         return true;
     }
 
-    private static string NormalizeValue(string field, string value)
+    private static bool ValidateRawFieldValue(
+        SwShPlacedObjectRecord placedObject,
+        string field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
     {
+        var fieldValue = FindStructuredField(placedObject, field);
+        if (fieldValue is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Placement field '{field}' is not present on the selected object.",
+                field: "field",
+                expected: "Existing placement field"));
+            return false;
+        }
+
+        if (fieldValue.IsReadOnly)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Placement field '{fieldValue.Label}' is visible for context but cannot be edited in place.",
+                field: "field",
+                expected: "Editable scalar placement field"));
+            return false;
+        }
+
+        return fieldValue.ValueKind switch
+        {
+            "boolean" => ValidateRawBoolean(fieldValue, value, diagnostics),
+            "hash" => ValidateRawHash(fieldValue, value, diagnostics),
+            "integer" => ValidateRawInteger(fieldValue, value, diagnostics),
+            "number" => ValidateDouble(field, value, fieldValue.MinimumValue, fieldValue.MaximumValue, diagnostics),
+            "text" => ValidateRawText(fieldValue, value, diagnostics),
+            _ => ValidateRawText(fieldValue, value, diagnostics),
+        };
+    }
+
+    private static bool ValidateRawBoolean(
+        SwShPlacementFieldValue field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (TryParseBoolean(value, out _))
+        {
+            return true;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"Placement field '{field.Label}' must be true/false or 1/0.",
+            field: "value",
+            expected: "Boolean placement value"));
+        return false;
+    }
+
+    private static bool ValidateRawHash(
+        SwShPlacementFieldValue field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (TryParseHashValue(value, out _))
+        {
+            return true;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            $"Placement field '{field.Label}' must be a decimal value, 0x-prefixed hash, or None.",
+            field: "value",
+            expected: "64-bit placement hash"));
+        return false;
+    }
+
+    private static bool ValidateRawInteger(
+        SwShPlacementFieldValue field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (double.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            && Math.Truncate(parsed) == parsed
+            && parsed >= field.MinimumValue
+            && parsed <= field.MaximumValue)
+        {
+            return true;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Placement field '{field.Label}' must be an integer between {field.MinimumValue} and {field.MaximumValue}."),
+            field: "value",
+            expected: "Placement integer value"));
+        return false;
+    }
+
+    private static bool ValidateRawText(
+        SwShPlacementFieldValue field,
+        string value,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        if (field.MaximumValue <= 0 || Encoding.UTF8.GetByteCount(value) <= field.MaximumValue)
+        {
+            return true;
+        }
+
+        diagnostics.Add(CreateDiagnostic(
+            DiagnosticSeverity.Error,
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"Placement field '{field.Label}' can use at most {field.MaximumValue} UTF-8 bytes in the current FlatBuffer layout."),
+            field: "value",
+            expected: "Text that fits the existing placement string allocation"));
+        return false;
+    }
+
+    private static string NormalizeValue(SwShPlacedObjectRecord placedObject, string field, string value)
+    {
+        var structuredField = FindStructuredField(placedObject, field);
+        if (structuredField is not null && IsRawPlacementField(field))
+        {
+            return structuredField.ValueKind switch
+            {
+                "boolean" => TryParseBoolean(value, out var parsedBoolean)
+                    ? (parsedBoolean ? "true" : "false")
+                    : value,
+                "hash" => TryParseHashValue(value, out var parsedHash)
+                    ? FormatHash(parsedHash)
+                    : value,
+                "integer" => double.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture).ToString("0", CultureInfo.InvariantCulture),
+                "number" => double.Parse(value, NumberStyles.Float, CultureInfo.InvariantCulture).ToString("R", CultureInfo.InvariantCulture),
+                _ => value,
+            };
+        }
+
         return field switch
         {
             SwShPlacementWorkflowService.LocationXField
@@ -743,6 +964,84 @@ public sealed class SwShPlacementEditSessionService
                 or SwShPlacementWorkflowService.RotationYField => double.Parse(value, CultureInfo.InvariantCulture).ToString("R", CultureInfo.InvariantCulture),
             _ => int.Parse(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
         };
+    }
+
+    private static SwShPlacementFieldValue? FindStructuredField(SwShPlacedObjectRecord placedObject, string field)
+    {
+        return placedObject.Fields?.FirstOrDefault(candidate => candidate.Field == field);
+    }
+
+    private static bool IsRawPlacementField(string? field)
+    {
+        return field?.StartsWith("raw.", StringComparison.Ordinal) == true;
+    }
+
+    private static bool TryParseBoolean(string value, out bool parsed)
+    {
+        var trimmed = value.Trim();
+        if (bool.TryParse(trimmed, out parsed))
+        {
+            return true;
+        }
+
+        if (trimmed == "1")
+        {
+            parsed = true;
+            return true;
+        }
+
+        if (trimmed == "0")
+        {
+            parsed = false;
+            return true;
+        }
+
+        if (trimmed.Equals("yes", StringComparison.OrdinalIgnoreCase))
+        {
+            parsed = true;
+            return true;
+        }
+
+        if (trimmed.Equals("no", StringComparison.OrdinalIgnoreCase))
+        {
+            parsed = false;
+            return true;
+        }
+
+        parsed = false;
+        return false;
+    }
+
+    private static bool TryParseHashValue(string value, out ulong parsed)
+    {
+        var trimmed = value.Trim();
+        if (trimmed.Length == 0
+            || trimmed.Equals("none", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("empty", StringComparison.OrdinalIgnoreCase))
+        {
+            parsed = SwShPlacementZoneArchive.EmptyFnvHash;
+            return true;
+        }
+
+        var hexIndex = trimmed.IndexOf("0x", StringComparison.OrdinalIgnoreCase);
+        if (hexIndex >= 0)
+        {
+            var hex = trimmed[(hexIndex + 2)..];
+            var separatorIndex = hex.IndexOfAny(new[] { ' ', ')', ']' });
+            if (separatorIndex >= 0)
+            {
+                hex = hex[..separatorIndex];
+            }
+
+            return ulong.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out parsed);
+        }
+
+        return ulong.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed);
+    }
+
+    private static string FormatHash(ulong hash)
+    {
+        return hash == 0 ? string.Empty : string.Create(CultureInfo.InvariantCulture, $"0x{hash:X16}");
     }
 
     private static string GetArchiveMemberFileName(PendingEdit edit)
@@ -809,8 +1108,14 @@ public sealed class SwShPlacementEditSessionService
         return entry.LayeredFile is not null ? ProjectFileLayer.Layered : ProjectFileLayer.Base;
     }
 
-    private static string GetFieldLabel(string field)
+    private static string GetFieldLabel(SwShPlacedObjectRecord placedObject, string field)
     {
+        var structuredField = FindStructuredField(placedObject, field);
+        if (structuredField is not null)
+        {
+            return structuredField.Label;
+        }
+
         return field switch
         {
             SwShPlacementWorkflowService.LocationXField => "X",

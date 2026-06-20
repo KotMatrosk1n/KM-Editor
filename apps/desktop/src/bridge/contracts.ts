@@ -1928,7 +1928,7 @@ export const placementEditableFieldOptionSchema = z.strictObject({
 });
 
 export const placementFieldValueSchema = z.strictObject({
-  displayValue: z.string(), field: z.string(), group: z.string(), isReadOnly: z.boolean(), label: z.string(), options: z.array(placementEditableFieldOptionSchema).nullish(), value: z.string()
+  description: z.string().optional().default(''), displayValue: z.string(), field: z.string(), group: z.string(), isReadOnly: z.boolean(), label: z.string(), maximumValue: z.number().optional().default(0), minimumValue: z.number().optional().default(0), options: z.array(placementEditableFieldOptionSchema).nullish(), value: z.string(), valueKind: z.string().optional().default('text')
 });
 
 export const placedObjectRecordSchema = z.strictObject({

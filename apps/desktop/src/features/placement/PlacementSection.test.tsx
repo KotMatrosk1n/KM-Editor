@@ -192,32 +192,44 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
         chanceIndex: null,
         fields: [
           {
+            description: '',
             displayValue: 'ai_area01_01',
             field: 'point.tableKey',
             group: 'Scene Placement',
             isReadOnly: true,
             label: 'Pokemon data key',
-            value: 'ai_area01_01'
+            maximumValue: 0,
+            minimumValue: 0,
+            value: 'ai_area01_01',
+            valueKind: 'text'
           },
           {
+            description: '',
             displayValue: '1 Bulbasaur',
             field: 'fixed.speciesId',
             group: 'Fixed Symbol Pokemon',
             isReadOnly: false,
             label: 'Species',
-            value: '1'
+            maximumValue: 65535,
+            minimumValue: 0,
+            value: '1',
+            valueKind: 'integer'
           },
           {
+            description: '',
             displayValue: 'Overgrow (Ability 1)',
             field: 'fixed.abilityMode',
             group: 'Fixed Symbol Pokemon',
             isReadOnly: false,
             label: 'Ability mode',
+            maximumValue: 4,
+            minimumValue: 0,
             options: [
               { label: '2 Overgrow (Ability 1)', value: 2 },
               { label: '4 Chlorophyll (Hidden Ability)', value: 4 }
             ],
-            value: '2'
+            value: '2',
+            valueKind: 'integer'
           }
         ],
         itemHash: 'ai_area01_01',

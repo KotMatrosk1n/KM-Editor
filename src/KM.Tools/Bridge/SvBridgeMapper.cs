@@ -964,6 +964,10 @@ public static class SvBridgeMapper
             value.Value,
             value.DisplayValue,
             value.IsReadOnly,
+            "text",
+            0,
+            0,
+            string.Empty,
             value.Options?.Select(ToDto).ToArray());
     }
 
