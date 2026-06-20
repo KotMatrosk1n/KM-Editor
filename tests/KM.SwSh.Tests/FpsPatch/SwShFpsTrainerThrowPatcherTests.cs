@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
-using KM.Formats.SwSh;
 using KM.SwSh.FpsPatch;
 using Xunit;
 
@@ -21,31 +20,17 @@ public sealed class SwShFpsTrainerThrowPatcherTests
     }
 
     [Fact]
-    public void ConvertTrainerBattleArchiveOnlySlowsBallThrowClips()
+    public void TrainerThrowGfPathsAreLegacyCleanupOnly()
     {
-        var source = SwShFpsRomFsTestFixtures.CreateTrainerThrowArchive();
-
-        var patched = SwShFpsTrainerThrowPatcher.ConvertTrainerBattleArchive(
-            source,
-            SwShFpsRomFsTestFixtures.TrainerThrowArchiveRelativePath);
-
-        var archive = SwShGfPackFile.Parse(patched);
-        var throwInfo = SwShFpsTrainerThrowPatcher.InspectAnimation(
-            archive.GetFileByName(SwShFpsRomFsTestFixtures.TrainerThrowArchiveClipName));
-        var nonThrowInfo = SwShFpsTrainerThrowPatcher.InspectAnimation(
-            archive.GetFileByName(SwShFpsRomFsTestFixtures.TrainerNonThrowArchiveClipName));
-        Assert.Equal(30u, throwInfo.FrameRate);
-        Assert.Equal(60u, nonThrowInfo.FrameRate);
-    }
-
-    [Fact]
-    public void ServiceRecognizesTrainerThrowRomFsPaths()
-    {
-        Assert.True(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.TrainerThrowCameraRelativePath));
-        Assert.True(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.TrainerThrowBattleModelRelativePath));
-        Assert.True(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.TrainerThrowLooseRelativePath));
-        Assert.True(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.TrainerThrowArchiveRelativePath));
+        Assert.False(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.TrainerThrowCameraRelativePath));
+        Assert.False(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.TrainerThrowBattleModelRelativePath));
+        Assert.True(SwShFpsTrainerThrowPatcher.IsLegacyBallThrowTimingPath(SwShFpsRomFsTestFixtures.TrainerThrowCameraRelativePath));
+        Assert.True(SwShFpsTrainerThrowPatcher.IsLegacyBallThrowTimingPath(SwShFpsRomFsTestFixtures.TrainerThrowBattleModelRelativePath));
+        Assert.False(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.TrainerThrowLooseRelativePath));
+        Assert.False(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.TrainerThrowArchiveRelativePath));
         Assert.False(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.PlayerThrowCameraRelativePath));
         Assert.False(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.PlayerThrowBattleModelRelativePath));
+        Assert.False(SwShFpsTrainerThrowPatcher.IsLegacyBallThrowTimingPath(SwShFpsRomFsTestFixtures.PlayerThrowCameraRelativePath));
+        Assert.False(SwShFpsTrainerThrowPatcher.IsLegacyBallThrowTimingPath(SwShFpsRomFsTestFixtures.PlayerThrowBattleModelRelativePath));
     }
 }
