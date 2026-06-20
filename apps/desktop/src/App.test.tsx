@@ -3932,8 +3932,18 @@ describe('App', () => {
       ]
     };
     const updates: Array<Parameters<ProjectBridge['updateEncounterSlotField']>[0]> = [];
+    const firstUpdateRelease: { current: (() => void) | null } = { current: null };
+    let didHoldFirstUpdate = false;
     const updateEncounterSlotField: ProjectBridge['updateEncounterSlotField'] = async (request) => {
       updates.push(request);
+
+      if (!didHoldFirstUpdate) {
+        didHoldFirstUpdate = true;
+        await new Promise<void>((resolve) => {
+          firstUpdateRelease.current = resolve;
+        });
+      }
+
       workflow = {
         ...workflow,
         tables: workflow.tables.map((table) =>
@@ -4027,6 +4037,17 @@ describe('App', () => {
     expect(within(dialog).getByText(/from Symbol to Hidden/)).toBeInTheDocument();
     expect(within(dialog).getByText(/Skipped: Raining/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Apply to Hidden' }));
+
+    const progressDialog = await screen.findByRole('dialog', { name: 'Applying Encounter Copy' });
+    expect(
+      within(progressDialog).getByText('Updating Hidden Normal slot 1 Pokemon')
+    ).toBeInTheDocument();
+    expect(within(progressDialog).getByText('0%')).toBeInTheDocument();
+    if (!firstUpdateRelease.current) {
+      throw new Error('First encounter update did not start.');
+    }
+
+    firstUpdateRelease.current();
 
     await waitFor(() => expect(updates).toHaveLength(5));
     expect(updates.every((update) => update.tableId === 'sword:hidden:0:1122334455667788:0')).toBe(

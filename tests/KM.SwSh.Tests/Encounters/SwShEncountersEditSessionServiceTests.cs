@@ -2,6 +2,8 @@
 
 using KM.Core.Projects;
 using KM.Core.Diagnostics;
+using KM.Core.Editing;
+using KM.Core.Files;
 using KM.Formats.SwSh;
 using KM.SwSh.Encounters;
 using KM.SwSh.Tests.Items;
@@ -90,7 +92,79 @@ public sealed class SwShEncountersEditSessionServiceTests
             value: "9");
 
         Assert.Empty(result.Session.PendingEdits);
-        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("Zone", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("Symbol Normal slot 1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateLevelPairDiagnosticsNameEncounterTable()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+        var table = workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
+        var source = new ProjectFileReference(ProjectFileLayer.Base, table.Provenance.SourceFile);
+        var session = EditSession.Start()
+            .WithPendingEdit(new PendingEdit(
+                "workflow.encounters",
+                "Set invalid minimum level.",
+                [source],
+                SwShEncountersWorkflowService.CreateSlotRecordId(table.TableId, 1),
+                SwShEncountersWorkflowService.LevelMinField,
+                "9"))
+            .WithPendingEdit(new PendingEdit(
+                "workflow.encounters",
+                "Set invalid maximum level.",
+                [source],
+                SwShEncountersWorkflowService.CreateSlotRecordId(table.TableId, 1),
+                SwShEncountersWorkflowService.LevelMaxField,
+                "8"));
+        var service = new SwShEncountersEditSessionService();
+
+        var validation = service.Validate(temp.Paths, session);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("Zone", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("Symbol Normal", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("minimum level 9 greater than maximum level 8", StringComparison.Ordinal)
+            && !diagnostic.Message.Contains(table.TableId, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateFieldValueDiagnosticsNameEncounterSlot()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShEncounterTestFixtures.WriteBaseEncounters(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var project = new ProjectWorkspaceService().Open(temp.Paths);
+        var workflow = new SwShEncountersWorkflowService().Load(project);
+        var table = workflow.Tables.First(table => table.ArchiveMember == "encount_symbol_k.bin");
+        var source = new ProjectFileReference(ProjectFileLayer.Base, table.Provenance.SourceFile);
+        var session = EditSession.Start()
+            .WithPendingEdit(new PendingEdit(
+                "workflow.encounters",
+                "Set invalid species.",
+                [source],
+                SwShEncountersWorkflowService.CreateSlotRecordId(table.TableId, 1),
+                SwShEncountersWorkflowService.SpeciesIdField,
+                "99999"));
+        var service = new SwShEncountersEditSessionService();
+
+        var validation = service.Validate(temp.Paths, session);
+
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Diagnostics, diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error
+            && diagnostic.Message.Contains("Zone", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("Symbol Normal slot 1", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("speciesId must be between", StringComparison.Ordinal)
+            && !diagnostic.Message.Contains(table.TableId, StringComparison.Ordinal));
     }
 
     [Fact]
