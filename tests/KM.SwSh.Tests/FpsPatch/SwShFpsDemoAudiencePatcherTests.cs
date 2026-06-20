@@ -52,6 +52,11 @@ public sealed class SwShFpsDemoAudiencePatcherTests
         temp.WriteOutputFile(
             "romfs/bin/demo/sequence/d010.bseq",
             SwShFpsBseqPatcher.ConvertOpeningDemoD010(bseq, out _));
+        var genericDemoBseq = SwShFpsRomFsTestFixtures.CreateMoveBseq(frameCount: 10, startFrame: 2, endFrame: 4);
+        temp.WriteBaseRomFsFile("bin/demo/sequence/d030.bseq", genericDemoBseq);
+        temp.WriteOutputFile(
+            "romfs/bin/demo/sequence/d030.bseq",
+            SwShFpsBseqPatcher.Convert(genericDemoBseq, SwShFpsBseqPatcher.OpeningDemoTimelineScale, out _));
 
         var archive = CreateGfPak(
             (AudienceClipHash, CreateGfbanmClip(includeTranslateV0: true, CreateFlipbookValues())),
@@ -65,10 +70,12 @@ public sealed class SwShFpsDemoAudiencePatcherTests
         var service = new SwShFpsPatchService();
 
         Assert.True(service.IsGeneratedRomFsOutput(temp.Paths, "romfs/bin/demo/sequence/d010.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(temp.Paths, "romfs/bin/demo/sequence/d030.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(temp.Paths, "romfs/bin/archive/demo/share/anime/a_pl0110.gfpak"));
         Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/demo/sequence/d010.bseq"));
+        Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/demo/sequence/d030.bseq"));
         Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/battle/waza/sequence/d230.bseq"));
-        Assert.False(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/demo/sequence/d230.bseq"));
+        Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/demo/sequence/d230.bseq"));
         Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/battle/waza/sequence/ee411.bseq"));
         Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/battle/waza/sequence/eg_ball01.bseq"));
         Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/archive/demo/share/anime/a_pl0110.gfpak"));
