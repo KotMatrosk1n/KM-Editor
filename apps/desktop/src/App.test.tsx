@@ -2743,9 +2743,7 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     expect(screen.getByLabelText('Ability slot')).toHaveDisplayValue('Ability 1 - 065 Overgrow');
-    const giftIvPresetInput = screen.getByLabelText('IV preset');
-    await user.clear(giftIvPresetInput);
-    await user.type(giftIvPresetInput, 'Custom');
+    fireEvent.change(screen.getByLabelText('IV preset'), { target: { value: 'Custom' } });
     await waitFor(() => expect(screen.getByLabelText('HP IV')).not.toBeDisabled());
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('-4');
@@ -2798,9 +2796,7 @@ describe('App', () => {
     expect(screen.getByText('3 guaranteed perfect IVs')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
-    const tradeIvPresetInput = screen.getByLabelText('IV preset');
-    await user.clear(tradeIvPresetInput);
-    await user.type(tradeIvPresetInput, 'Custom');
+    fireEvent.change(screen.getByLabelText('IV preset'), { target: { value: 'Custom' } });
     await waitFor(() => expect(screen.getByLabelText('HP IV')).not.toBeDisabled());
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('-4');
@@ -2850,9 +2846,7 @@ describe('App', () => {
     expect(screen.getAllByText('Calyrex').length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
-    const staticIvPresetInput = screen.getByLabelText('IV preset');
-    await user.clear(staticIvPresetInput);
-    await user.type(staticIvPresetInput, 'Custom');
+    fireEvent.change(screen.getByLabelText('IV preset'), { target: { value: 'Custom' } });
     await waitFor(() => expect(screen.getByLabelText('HP IV')).not.toBeDisabled());
     const hpIvInput = screen.getByLabelText('HP IV');
     expect(hpIvInput).toHaveDisplayValue('31');
