@@ -29,6 +29,12 @@ public sealed record GiftPokemonIvsDto(
     int SpecialDefense,
     int Speed);
 
+public sealed record GiftPokemonMoveDto(
+    int Slot,
+    int MoveId,
+    string? Move,
+    int PointUps);
+
 public sealed record GiftPokemonRecordDto(
     int GiftIndex,
     string Label,
@@ -58,8 +64,25 @@ public sealed record GiftPokemonRecordDto(
     string IvSummary,
     GiftPokemonProvenanceDto Provenance)
 {
+    public string EditorFamily { get; init; } = "swsh";
+
     public IReadOnlyList<GiftPokemonEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<GiftPokemonEditableFieldOptionDto>();
+
+    public string? EventLabel { get; init; }
+
+    public IReadOnlyList<GiftPokemonMoveDto> Moves { get; init; } =
+        Array.Empty<GiftPokemonMoveDto>();
+
+    public int? TeraType { get; init; }
+
+    public string? TeraTypeLabel { get; init; }
+
+    public int? ScaleMode { get; init; }
+
+    public string? ScaleModeLabel { get; init; }
+
+    public int? ScaleValue { get; init; }
 }
 
 public sealed record GiftPokemonEditableFieldDto(
@@ -85,7 +108,10 @@ public sealed record GiftPokemonWorkflowDto(
     IReadOnlyList<GiftPokemonRecordDto> Gifts,
     IReadOnlyList<GiftPokemonEditableFieldDto> EditableFields,
     GiftPokemonWorkflowStatsDto Stats,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public string EditorFamily { get; init; } = "swsh";
+}
 
 public sealed record LoadGiftPokemonWorkflowResponse(GiftPokemonWorkflowDto Workflow);
 

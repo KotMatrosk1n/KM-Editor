@@ -966,6 +966,10 @@ const giftSpeciesFieldName = 'species';
 const giftBallItemIdFieldName = 'ballItemId';
 const giftShinyLockFieldName = 'shinyLock';
 const giftSpecialMoveIdFieldName = 'specialMoveId';
+const giftMoveFieldNames = ['move1Id', 'move2Id', 'move3Id', 'move4Id'] as const;
+const giftTeraTypeFieldName = 'teraType';
+const giftScaleModeFieldName = 'scaleMode';
+const giftScaleValueFieldName = 'scaleValue';
 const giftFlawlessIvCountFieldName = 'flawlessIvCount';
 const giftPokemonFieldNames = [
   giftSpeciesFieldName,
@@ -980,8 +984,12 @@ const giftPokemonFieldNames = [
   dynamaxLevelFieldName,
   canGigantamaxFieldName,
   giftSpecialMoveIdFieldName,
+  ...giftMoveFieldNames,
+  giftTeraTypeFieldName,
   ...ivFieldNames,
-  giftFlawlessIvCountFieldName
+  giftFlawlessIvCountFieldName,
+  giftScaleModeFieldName,
+  giftScaleValueFieldName
 ] as const;
 const tradeField03FieldName = 'field03';
 const tradeRequiredSpeciesFieldName = 'requiredSpecies';
@@ -14021,7 +14029,9 @@ function getPokemonInstanceFieldGroup(field: NumericEditableField) {
     field.field === levelFieldName ||
     field.field === heldItemIdFieldName ||
     field.field === giftBallItemIdFieldName ||
-    field.field === dynamaxAdventureBallItemIdFieldName
+    field.field === dynamaxAdventureBallItemIdFieldName ||
+    field.field === giftScaleModeFieldName ||
+    field.field === giftScaleValueFieldName
   ) {
     return 'Pokemon';
   }
@@ -14032,6 +14042,7 @@ function getPokemonInstanceFieldGroup(field: NumericEditableField) {
       field.field as (typeof staticEncounterMoveFieldNames)[number]
     ) ||
     tradeRelearnMoveFieldNames.includes(field.field as (typeof tradeRelearnMoveFieldNames)[number]) ||
+    giftMoveFieldNames.includes(field.field as (typeof giftMoveFieldNames)[number]) ||
     field.field === giftSpecialMoveIdFieldName
   ) {
     return 'Moves';
@@ -14058,6 +14069,7 @@ function getPokemonInstanceFieldGroup(field: NumericEditableField) {
     field.field === natureFieldName ||
     field.field === genderFieldName ||
     field.field === giftShinyLockFieldName ||
+    field.field === giftTeraTypeFieldName ||
     field.field === dynamaxLevelFieldName ||
     field.field === canGigantamaxFieldName ||
     field.field === dynamaxAdventureGigantamaxStateFieldName ||
@@ -14334,6 +14346,7 @@ function GiftPokemonSection({
     [filteredGifts, gifts, selectedGiftIndex]
   );
   const canEditGifts = workflow?.summary.availability === 'available';
+  const editorFamily = workflow?.editorFamily === 'sv' ? 'sv' : 'swsh';
   const pendingGiftIndexes = useMemo(() => getPendingGiftPokemonIndexes(editSession), [editSession]);
   const lockedGiftIndexes = useMemo(
     () => gifts.filter((gift) => gift.shinyLock !== 0).map((gift) => gift.giftIndex),
@@ -14439,6 +14452,7 @@ function GiftPokemonSection({
               canEditGifts={canEditGifts}
               editSession={editSession}
               editableFields={workflow.editableFields}
+              editorFamily={editorFamily}
               gift={selectedGift}
               isEditStarting={isEditStarting}
               isGiftPokemonUpdating={isGiftPokemonUpdating}
@@ -14477,6 +14491,7 @@ function SelectedGiftPokemonPanel({
   canEditGifts,
   editSession,
   editableFields,
+  editorFamily,
   gift,
   isEditStarting,
   isGiftPokemonUpdating,
@@ -14487,6 +14502,7 @@ function SelectedGiftPokemonPanel({
   canEditGifts: boolean;
   editSession: EditSession | null;
   editableFields: GiftPokemonEditableField[];
+  editorFamily: EditorUiFamily;
   gift: GiftPokemonRecord | null;
   isEditStarting: boolean;
   isGiftPokemonUpdating: boolean;
@@ -14563,9 +14579,9 @@ function SelectedGiftPokemonPanel({
       {gift ? (
         <>
           <PokemonSummaryCard
-            name={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId)}
+            name={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId, editorFamily)}
             subtitle={`Gift #${gift.giftIndex} | Lv. ${gift.level}`}
-            title={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId)}
+            title={formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId, editorFamily)}
           />
 
           <dl className="item-provenance-list">
@@ -14573,6 +14589,12 @@ function SelectedGiftPokemonPanel({
               <dt>Gift</dt>
               <dd>{gift.label}</dd>
             </div>
+            {editorFamily === 'sv' && gift.eventLabel ? (
+              <div>
+                <dt>Event label</dt>
+                <dd>{gift.eventLabel}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>Data file</dt>
               <dd>{gift.provenance.sourceFile}</dd>
@@ -14593,10 +14615,27 @@ function SelectedGiftPokemonPanel({
               <dt>Held item</dt>
               <dd>{gift.heldItem ?? 'None'}</dd>
             </div>
-            <div>
-              <dt>Special Move</dt>
-              <dd>{gift.specialMove ?? 'None'}</dd>
-            </div>
+            {editorFamily === 'sv' ? (
+              <>
+                <div>
+                  <dt>Moves</dt>
+                  <dd>{formatGiftPokemonMoves(gift)}</dd>
+                </div>
+                <div>
+                  <dt>Tera type</dt>
+                  <dd>{gift.teraTypeLabel ?? 'Default'}</dd>
+                </div>
+                <div>
+                  <dt>Scale</dt>
+                  <dd>{formatGiftPokemonScale(gift)}</dd>
+                </div>
+              </>
+            ) : (
+              <div>
+                <dt>Special Move</dt>
+                <dd>{gift.specialMove ?? 'None'}</dd>
+              </div>
+            )}
             <div>
               <dt>IV detail</dt>
               <dd>{formatGiftPokemonIvs(gift)}</dd>
@@ -14644,7 +14683,7 @@ function SelectedGiftPokemonPanel({
                           field={field}
                           formOptionContext={{
                             abilityOptions: gift.abilityOptions,
-                            gameFamily: 'swsh',
+                            gameFamily: editorFamily,
                             species: gift.species,
                             speciesId: gift.speciesId
                           }}
@@ -26974,6 +27013,7 @@ function filterGiftPokemon(gifts: GiftPokemonRecord[], searchText: string) {
       gift.giftIndex.toString(),
       (gift.giftIndex + 1).toString(),
       gift.label,
+      gift.eventLabel ?? '',
       gift.species,
       gift.speciesId.toString(),
       gift.form.toString(),
@@ -26995,6 +27035,16 @@ function filterGiftPokemon(gifts: GiftPokemonRecord[], searchText: string) {
       gift.canGigantamax ? 'gigantamax' : '',
       gift.specialMove ?? 'None',
       gift.specialMoveId.toString(),
+      ...gift.moves.flatMap((move) => [
+        move.move ?? '',
+        move.moveId.toString(),
+        move.pointUps.toString()
+      ]),
+      gift.teraTypeLabel ?? '',
+      gift.teraType?.toString() ?? '',
+      gift.scaleModeLabel ?? '',
+      gift.scaleMode?.toString() ?? '',
+      gift.scaleValue?.toString() ?? '',
       gift.ivSummary,
       formatGiftPokemonIvs(gift),
       gift.provenance.sourceFile
@@ -28218,6 +28268,16 @@ function getEditableGiftPokemonFieldValue(gift: GiftPokemonRecord, field: string
       return gift.canGigantamax ? 1 : 0;
     case giftSpecialMoveIdFieldName:
       return gift.specialMoveId;
+    case giftMoveFieldNames[0]:
+      return gift.moves[0]?.moveId ?? null;
+    case giftMoveFieldNames[1]:
+      return gift.moves[1]?.moveId ?? null;
+    case giftMoveFieldNames[2]:
+      return gift.moves[2]?.moveId ?? null;
+    case giftMoveFieldNames[3]:
+      return gift.moves[3]?.moveId ?? null;
+    case giftTeraTypeFieldName:
+      return gift.teraType;
     case ivFieldNames[0]:
       return gift.ivs.hp;
     case ivFieldNames[1]:
@@ -28232,6 +28292,10 @@ function getEditableGiftPokemonFieldValue(gift: GiftPokemonRecord, field: string
       return gift.ivs.speed;
     case giftFlawlessIvCountFieldName:
       return gift.flawlessIvCount;
+    case giftScaleModeFieldName:
+      return gift.scaleMode;
+    case giftScaleValueFieldName:
+      return gift.scaleValue;
     default:
       return null;
   }
@@ -30774,6 +30838,26 @@ function formatGiftPokemonIvs(gift: GiftPokemonRecord) {
     `SpD ${formatGiftPokemonIvValue(gift.ivs.specialDefense)}`,
     `Spe ${formatGiftPokemonIvValue(gift.ivs.speed)}`
   ].join(' / ');
+}
+
+function formatGiftPokemonMoves(gift: GiftPokemonRecord) {
+  const moves = gift.moves
+    .filter((move) => move.moveId > 0)
+    .map((move) => move.move ?? `Move ${move.moveId}`);
+
+  return moves.length > 0 ? moves.join(' / ') : 'None';
+}
+
+function formatGiftPokemonScale(gift: GiftPokemonRecord) {
+  if (gift.scaleModeLabel === null) {
+    return 'Default';
+  }
+
+  if (gift.scaleValue === null || gift.scaleValue === 0 || gift.scaleModeLabel !== 'Fixed value') {
+    return gift.scaleModeLabel;
+  }
+
+  return `${gift.scaleModeLabel}: ${gift.scaleValue}`;
 }
 
 function formatGiftPokemonIvValue(value: number) {

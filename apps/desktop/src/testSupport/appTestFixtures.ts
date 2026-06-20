@@ -1441,6 +1441,7 @@ export function createMockProjectBridge(
   };
   const giftPokemonWorkflow: GiftPokemonWorkflow = {
     diagnostics: [],
+    editorFamily: 'swsh',
     editableFields: [
       {
         field: 'species',
@@ -1644,6 +1645,8 @@ export function createMockProjectBridge(
         ballItemId: 4,
         canGigantamax: false,
         dynamaxLevel: 0,
+        editorFamily: 'swsh',
+        eventLabel: null,
         flawlessIvCount: 3,
         form: 0,
         gender: 0,
@@ -1663,6 +1666,7 @@ export function createMockProjectBridge(
         ivSummary: '3 guaranteed perfect IVs',
         label: 'Gift 001: Bulbasaur Lv. 5',
         level: 5,
+        moves: [],
         nature: 25,
         natureLabel: 'Random',
         provenance: {
@@ -1670,12 +1674,17 @@ export function createMockProjectBridge(
           sourceFile: 'romfs/bin/script_event_data/add_poke.bin',
           sourceLayer: 'base'
         },
+        scaleMode: null,
+        scaleModeLabel: null,
+        scaleValue: null,
         shinyLock: 1,
         shinyLockLabel: 'Never Shiny',
         specialMove: null,
         specialMoveId: 0,
         species: 'Bulbasaur',
-        speciesId: 1
+        speciesId: 1,
+        teraType: null,
+        teraTypeLabel: null
       }
     ],
     stats: {

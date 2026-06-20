@@ -132,6 +132,7 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'pokemon',
   'trainers',
   'encounters',
+  'giftPokemon',
   'placement',
   'hyperspaceBypass',
   'modMerger'

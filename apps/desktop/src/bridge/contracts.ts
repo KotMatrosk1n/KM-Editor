@@ -1173,20 +1173,11 @@ export const loadTrainersWorkflowResponseSchema = z.strictObject({
   workflow: trainersWorkflowSchema
 });
 
-export const giftPokemonProvenanceSchema = z.strictObject({
-  fileState: projectFileGraphEntryStateSchema,
-  sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
-});
+export const giftPokemonProvenanceSchema = z.strictObject({ fileState: projectFileGraphEntryStateSchema, sourceFile: z.string(), sourceLayer: projectFileLayerSchema });
 
-export const giftPokemonIvsSchema = z.strictObject({
-  attack: z.number().int(),
-  defense: z.number().int(),
-  hp: z.number().int(),
-  specialAttack: z.number().int(),
-  specialDefense: z.number().int(),
-  speed: z.number().int()
-});
+export const giftPokemonIvsSchema = z.strictObject({ attack: z.number().int(), defense: z.number().int(), hp: z.number().int(), specialAttack: z.number().int(), specialDefense: z.number().int(), speed: z.number().int() });
+
+export const giftPokemonMoveSchema = z.strictObject({ move: z.string().nullable(), moveId: z.number().int().nonnegative(), pointUps: z.number().int().nonnegative(), slot: z.number().int().nonnegative() });
 
 export const giftPokemonEditableFieldOptionSchema = z.strictObject({
   label: z.string(),
@@ -1210,6 +1201,8 @@ export const giftPokemonRecordSchema = z.strictObject({
   ballItemId: z.number().int().nonnegative(),
   canGigantamax: z.boolean(),
   dynamaxLevel: z.number().int().nonnegative(),
+  editorFamily: z.string().default('swsh'),
+  eventLabel: z.string().nullable().default(null),
   flawlessIvCount: z.number().int().nullable(),
   form: z.number().int().nonnegative(),
   gender: z.number().int().nonnegative(),
@@ -1222,15 +1215,21 @@ export const giftPokemonRecordSchema = z.strictObject({
   ivSummary: z.string(),
   label: z.string(),
   level: z.number().int().nonnegative(),
+  moves: z.array(giftPokemonMoveSchema).default([]),
   nature: z.number().int().nonnegative(),
   natureLabel: z.string(),
   provenance: giftPokemonProvenanceSchema,
+  scaleMode: z.number().int().nullable().default(null),
+  scaleModeLabel: z.string().nullable().default(null),
+  scaleValue: z.number().int().nullable().default(null),
   shinyLock: z.number().int().nonnegative(),
   shinyLockLabel: z.string(),
   specialMove: z.string().nullable(),
   specialMoveId: z.number().int().nonnegative(),
   species: z.string(),
-  speciesId: z.number().int().nonnegative()
+  speciesId: z.number().int().nonnegative(),
+  teraType: z.number().int().nullable().default(null),
+  teraTypeLabel: z.string().nullable().default(null)
 });
 
 export const giftPokemonWorkflowStatsSchema = z.strictObject({
@@ -1242,6 +1241,7 @@ export const giftPokemonWorkflowStatsSchema = z.strictObject({
 
 export const giftPokemonWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
+  editorFamily: z.string().default('swsh'),
   editableFields: z.array(giftPokemonEditableFieldSchema),
   gifts: z.array(giftPokemonRecordSchema),
   stats: giftPokemonWorkflowStatsSchema,

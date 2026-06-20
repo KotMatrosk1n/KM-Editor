@@ -8,6 +8,7 @@ using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.Gifts;
 using KM.Api.HyperspaceBypass;
 using KM.Api.Items;
 using KM.Api.Moves;
@@ -158,6 +159,69 @@ public sealed class ScarletVioletBridgeTests
             "request-sv-trinity-load");
         AssertSuccess(loaded);
         Assert.Equal(888, loaded.Payload!.Workflow.Items.Single(item => item.ItemId == 1).BuyPrice);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletGiftPokemonLoadsStagesAndOutputsForTrinityModManager(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loaded = Dispatch<LoadGiftPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadGiftPokemonWorkflow,
+            new LoadGiftPokemonWorkflowRequest(paths),
+            "request-sv-gift-load");
+        AssertSuccess(loaded);
+        Assert.Equal("sv", loaded.Payload!.Workflow.EditorFamily);
+        var gift = Assert.Single(loaded.Payload.Workflow.Gifts);
+        Assert.Equal(0, gift.GiftIndex);
+        Assert.Equal("Bulbasaur", gift.Species);
+        Assert.Equal("Normal", gift.TeraTypeLabel);
+        Assert.Equal(33, gift.Moves[0].MoveId);
+        Assert.Equal("Tackle", gift.Moves[0].Move);
+
+        var session = UpdateGiftPokemon(dispatcher, paths, gift.GiftIndex, "move1Id", "45");
+        session = UpdateGiftPokemon(
+            dispatcher,
+            paths,
+            session,
+            gift.GiftIndex,
+            "teraType",
+            ((int)global::GemType.FAIRY).ToString(CultureInfo.InvariantCulture));
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-gift-trinity-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var write = Assert.Single(plan.Payload.ChangePlan.Writes);
+        Assert.Equal(SvDataPaths.EventAddPokemonArray, write.TargetRelativePath);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-gift-trinity-apply");
+        AssertSuccess(apply);
+        Assert.Equal([SvDataPaths.EventAddPokemonArray], apply.Payload!.ApplyResult.WrittenFiles);
+        Assert.True(File.Exists(Path.Combine(temp.OutputRootPath, SvDataPaths.EventAddPokemonArray.Replace('/', Path.DirectorySeparatorChar))));
+
+        var output = ReadGiftPokemon(temp, giftIndex: 0);
+        Assert.True(output.PokedexRegistration);
+        Assert.NotNull(output.PokeData);
+        Assert.Equal(global::WazaType.MANUAL, output.PokeData!.Value.WazaType);
+        Assert.Equal((global::pml.common.WazaID)45, output.PokeData.Value.Waza1!.Value.WazaId);
+        Assert.Equal(global::GemType.FAIRY, output.PokeData.Value.GemType);
+        Assert.Equal(50, output.PokeData.Value.Friendship);
+        Assert.Equal((sbyte)5, output.PokeData.Value.WazaConfirmLevel);
     }
 
     [Theory]
@@ -342,13 +406,14 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "moves", "pokemon", "trainers", "encounters", "placement", "hyperspaceBypass", "modMerger"],
+            ["items", "moves", "pokemon", "trainers", "encounters", "giftPokemon", "placement", "hyperspaceBypass", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Moves");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trainers");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Wild Encounters");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Gift Pokemon");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Placement");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Hyperspace Bypass");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "S/V Mod Merger");
@@ -876,6 +941,7 @@ public sealed class ScarletVioletBridgeTests
                     SvDataPaths.PersonalArray,
                     SvDataPaths.TrainerDataArray,
                     SvDataPaths.WildEncounterArray,
+                    SvDataPaths.EventAddPokemonArray,
                 ]));
         temp.WriteBaseRomFsFile("arc/data.trpfs", "storage");
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(titleId));
@@ -889,6 +955,7 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(temp, SvDataPaths.PersonalArray, CreatePersonalArray());
         WriteSvOutput(temp, SvDataPaths.TrainerDataArray, CreateTrainerDataArray());
         WriteSvOutput(temp, SvDataPaths.WildEncounterArray, CreateEncounterArray());
+        WriteSvOutput(temp, SvDataPaths.EventAddPokemonArray, CreateEventAddPokemonArray());
         WriteSvOutput(temp, SvDataPaths.FixedSymbolTableArray, CreateFixedSymbolTableArray());
         WriteSvOutput(temp, SvDataPaths.EventBattlePokemonArray, CreateEventBattlePokemonArray());
         WriteSvOutput(temp, SvDataPaths.HiddenItemDataTableArray, CreateHiddenItemDataTableArray());
@@ -1082,6 +1149,36 @@ public sealed class ScarletVioletBridgeTests
         return response.Payload!.Session;
     }
 
+    private static EditSessionDto UpdateGiftPokemon(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        int giftIndex,
+        string field,
+        string value)
+    {
+        return UpdateGiftPokemon(dispatcher, paths, session: null, giftIndex, field, value);
+    }
+
+    private static EditSessionDto UpdateGiftPokemon(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        EditSessionDto? session,
+        int giftIndex,
+        string field,
+        string value)
+    {
+        var response = Dispatch<UpdateGiftPokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateGiftPokemonField,
+            new UpdateGiftPokemonFieldRequest(paths, session, giftIndex, field, value),
+            "request-sv-gift-update");
+
+        AssertSuccess(response);
+        Assert.Contains(response.Payload!.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.giftPokemon" && edit.NewValue == value);
+        return response.Payload.Session;
+    }
+
     private static EditSessionDto UpdatePlacement(
         ProjectBridgeDispatcher dispatcher,
         ProjectPathsDto paths,
@@ -1145,6 +1242,7 @@ public sealed class ScarletVioletBridgeTests
             SvDataPaths.PersonalArray,
             SvDataPaths.TrainerDataArray,
             SvDataPaths.WildEncounterArray,
+            SvDataPaths.EventAddPokemonArray,
         })
         {
             Assert.DoesNotContain(KM.Formats.SV.SvTrinityPathHasher.HashPath(path), activeHashes);
@@ -1258,6 +1356,15 @@ public sealed class ScarletVioletBridgeTests
         var encounter = table.Values(index);
         Assert.NotNull(encounter);
         return encounter.Value.Minlevel;
+    }
+
+    private static global::EventAddPokemon ReadGiftPokemon(TemporaryBridgeProject temp, int giftIndex)
+    {
+        var table = global::EventAddPokemonArray.GetRootAsEventAddPokemonArray(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.EventAddPokemonArray)));
+        var gift = table.Values(giftIndex);
+        Assert.NotNull(gift);
+        return gift.Value;
     }
 
     private static byte[] CreateItemDataArray()
@@ -1545,6 +1652,37 @@ public sealed class ScarletVioletBridgeTests
         return builder.SizedByteArray();
     }
 
+    private static byte[] CreateEventAddPokemonArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var label = builder.CreateString("test_gift_bulbasaur");
+        var pokemon = global::PokeDataFull.CreatePokeDataFull(
+            builder,
+            devId: (global::pml.common.DevID)1,
+            item: global::ItemID.ITEMID_NONE,
+            level: 5,
+            sex: global::SexType.DEFAULT,
+            seikaku: global::SeikakuType.DEFAULT,
+            tokusei: global::TokuseiType.SET_1,
+            rareType: global::RareType.NO_RARE,
+            talentType: global::TalentType.V_NUM,
+            talentVnum: 3,
+            friendship: 50,
+            wazaType: global::WazaType.DEFAULT,
+            ballId: global::BallType.MONSUTAABOORU,
+            gemType: global::GemType.NORMAL,
+            wazaConfirmLevel: 5);
+        var gift = global::EventAddPokemon.CreateEventAddPokemon(
+            builder,
+            label,
+            pokedexRegistration: true,
+            pokeDataOffset: pokemon);
+        var vector = global::EventAddPokemonArray.CreateValuesVector(builder, [gift]);
+        var root = global::EventAddPokemonArray.CreateEventAddPokemonArray(builder, vector);
+        global::EventAddPokemonArray.FinishEventAddPokemonArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
     private static byte[] CreateFixedSymbolTableArray(global::pml.common.DevID species = global::pml.common.DevID.DEV_HUSIGIDANE)
     {
         var builder = new FlatBufferBuilder(2048);
@@ -1677,6 +1815,14 @@ public sealed class ScarletVioletBridgeTests
 
     private static byte[] ReadSvOutput(TemporaryBridgeProject temp, string relativePath)
     {
+        var loosePath = Path.Combine(
+            temp.OutputRootPath,
+            relativePath.Replace('/', Path.DirectorySeparatorChar));
+        if (File.Exists(loosePath))
+        {
+            return File.ReadAllBytes(loosePath);
+        }
+
         return File.ReadAllBytes(Path.Combine(
             temp.OutputRootPath,
             "romfs",

@@ -2,6 +2,7 @@
 
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.Gifts;
 using KM.Api.HyperspaceBypass;
 using KM.Api.Items;
 using KM.Api.ModMerger;
@@ -13,6 +14,7 @@ using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.Core.Projects;
 using KM.SV.Encounters;
+using KM.SV.Gifts;
 using KM.SV.HyperspaceBypass;
 using KM.SV.Items;
 using KM.SV.ModMerger;
@@ -145,6 +147,23 @@ public static class SvBridgeMapper
 
         return new UpdateEncounterSlotFieldResponse(
             ToEncountersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadGiftPokemonWorkflowResponse ToDto(SvGiftPokemonWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadGiftPokemonWorkflowResponse(ToGiftPokemonWorkflowDto(workflow));
+    }
+
+    public static UpdateGiftPokemonFieldResponse ToDto(SvGiftPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateGiftPokemonFieldResponse(
+            ToGiftPokemonWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -300,6 +319,23 @@ public static class SvBridgeMapper
                 workflow.Stats.TotalSlotCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static GiftPokemonWorkflowDto ToGiftPokemonWorkflowDto(SvGiftPokemonWorkflow workflow)
+    {
+        return new GiftPokemonWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Gifts.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new GiftPokemonWorkflowStatsDto(
+                workflow.Stats.TotalGiftCount,
+                workflow.Stats.EggGiftCount,
+                workflow.Stats.FixedIvGiftCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            EditorFamily = "sv",
+        };
     }
 
     private static PlacementWorkflowDto ToPlacementWorkflowDto(SvPlacementWorkflow workflow)
@@ -814,6 +850,82 @@ public static class SvBridgeMapper
     private static EncounterEditableFieldOptionDto ToDto(SvEncounterEditableFieldOption option)
     {
         return new EncounterEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static GiftPokemonRecordDto ToDto(SvGiftPokemonEntry gift)
+    {
+        var firstMove = gift.Moves.FirstOrDefault(move => move.MoveId != 0)
+            ?? gift.Moves.FirstOrDefault();
+
+        return new GiftPokemonRecordDto(
+            gift.GiftIndex,
+            gift.Label,
+            gift.SpeciesId,
+            gift.Species,
+            gift.Form,
+            gift.Level,
+            gift.IsEgg,
+            gift.HeldItemId,
+            gift.HeldItem,
+            gift.BallId,
+            gift.Ball,
+            gift.Ability,
+            gift.AbilityLabel,
+            gift.Nature,
+            gift.NatureLabel,
+            gift.Gender,
+            gift.GenderLabel,
+            gift.ShinyLock,
+            gift.ShinyLockLabel,
+            0,
+            false,
+            firstMove?.MoveId ?? 0,
+            firstMove?.Move,
+            new GiftPokemonIvsDto(
+                gift.Ivs.HP,
+                gift.Ivs.Attack,
+                gift.Ivs.Defense,
+                gift.Ivs.SpecialAttack,
+                gift.Ivs.SpecialDefense,
+                gift.Ivs.Speed),
+            gift.FlawlessIvCount,
+            gift.IvSummary,
+            new GiftPokemonProvenanceDto(
+                gift.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(gift.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(gift.Provenance.FileState)))
+        {
+            EditorFamily = "sv",
+            AbilityOptions = gift.AbilityOptions.Select(ToDto).ToArray(),
+            EventLabel = gift.EventLabel,
+            Moves = gift.Moves.Select(ToDto).ToArray(),
+            TeraType = gift.TeraType,
+            TeraTypeLabel = gift.TeraTypeLabel,
+            ScaleMode = gift.ScaleMode,
+            ScaleModeLabel = gift.ScaleModeLabel,
+            ScaleValue = gift.ScaleValue,
+        };
+    }
+
+    private static GiftPokemonMoveDto ToDto(SvGiftPokemonMoveRecord move)
+    {
+        return new GiftPokemonMoveDto(move.Slot, move.MoveId, move.Move, move.PointUps);
+    }
+
+    private static GiftPokemonEditableFieldDto ToDto(SvGiftPokemonEditableField field)
+    {
+        return new GiftPokemonEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static GiftPokemonEditableFieldOptionDto ToDto(SvGiftPokemonEditableFieldOption option)
+    {
+        return new GiftPokemonEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static PlacedObjectRecordDto ToDto(SvPlacedObjectRecord placedObject)

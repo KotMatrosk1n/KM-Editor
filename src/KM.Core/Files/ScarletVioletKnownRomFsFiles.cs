@@ -30,6 +30,7 @@ public static class ScarletVioletKnownRomFsFiles
         "world/data/raid/raid_lottery_reward_slot/raid_lottery_reward_slot_array.bin",
         "world/data/event/eventTradeList/eventTradeList_array.bin",
         "world/data/event/eventTradePokemon/eventTradePokemon_array.bin",
+        "world/data/event/event_add_pokemon/eventAddPokemon/eventAddPokemon_array.bin",
         "world/data/field/fixed_symbol/fixed_symbol_table/fixed_symbol_table_array.bin",
         "world/data/field/fixed_symbol/fixed_symbol_manager/fixed_symbol_manager_data.bin",
         "world/data/ui/shop/shop_data/shop_data_array.bin",

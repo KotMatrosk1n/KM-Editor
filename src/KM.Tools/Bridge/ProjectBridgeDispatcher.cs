@@ -592,8 +592,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadGiftPokemonWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadGiftPokemonWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadGiftPokemon(ProjectBridgeMapper.ToCore(request.Payload.Paths));
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadGiftPokemon(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadGiftPokemon(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -604,13 +606,20 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = giftPokemonEditSessionService.UpdateField(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.GiftIndex,
-            request.Payload.Field,
-            request.Payload.Value);
-        var response = SwShBridgeMapper.ToDto(result);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateGiftPokemonField(
+                paths,
+                session,
+                request.Payload.GiftIndex,
+                request.Payload.Field,
+                request.Payload.Value))
+            : SwShBridgeMapper.ToDto(giftPokemonEditSessionService.UpdateField(
+                paths,
+                session,
+                request.Payload.GiftIndex,
+                request.Payload.Field,
+                request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2263,8 +2272,6 @@ public sealed class ProjectBridgeDispatcher
         return command is
             KmCommandNames.LoadTextWorkflow or
             KmCommandNames.UpdateTextEntry or
-            KmCommandNames.LoadGiftPokemonWorkflow or
-            KmCommandNames.UpdateGiftPokemonField or
             KmCommandNames.LoadTradePokemonWorkflow or
             KmCommandNames.UpdateTradePokemonField or
             KmCommandNames.LoadStaticEncountersWorkflow or
