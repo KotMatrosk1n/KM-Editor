@@ -220,12 +220,23 @@ export function WorkflowsSection({
           const Icon = definition.icon;
           const workflowAction = actions[definition.id];
           const isItemsWorkflow = definition.id === 'items';
+          const blockedReason =
+            workflowState.availability === 'disabled'
+              ? workflow?.diagnostics.find((diagnostic) => diagnostic.severity === 'error')
+                  ?.message ??
+                workflow?.diagnostics.find((diagnostic) => diagnostic.severity === 'warning')
+                  ?.message ??
+                workflow?.diagnostics[0]?.message
+              : null;
 
           return (
             <article className="workflow-row" key={definition.id}>
               <div>
                 <h3>{workflow?.label ?? definition.label}</h3>
                 <p>{workflow?.description ?? definition.description}</p>
+                {blockedReason ? (
+                  <p className="workflow-disabled-reason">{blockedReason}</p>
+                ) : null}
                 {isItemsWorkflow ? (
                   <span className="inline-metric">Pending changes: {pendingEditCount}</span>
                 ) : null}
@@ -239,6 +250,7 @@ export function WorkflowsSection({
                     className="secondary-button compact-button"
                     disabled={workflowState.availability === 'disabled' || workflowAction.isLoading}
                     onClick={workflowAction.onOpen}
+                    title={blockedReason ?? undefined}
                     type="button"
                   >
                     <Icon aria-hidden="true" size={16} />

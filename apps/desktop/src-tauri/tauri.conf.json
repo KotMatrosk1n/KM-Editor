@@ -33,9 +33,7 @@
     "externalBin": [
       "binaries/km-tools-bridge"
     ],
-    "resources": [
-      "resources/oodle/win-x64/oo2core_8_win64.dll"
-    ],
+    "resources": [],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

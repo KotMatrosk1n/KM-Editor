@@ -7,8 +7,19 @@ public sealed record ProjectPaths(
     string? BaseExeFsPath,
     string? OutputRootPath,
     string? SaveFilePath,
+    string? ScarletVioletSupportFolderPath,
     ProjectGame? SelectedGame)
 {
+    public ProjectPaths(
+        string? BaseRomFsPath,
+        string? BaseExeFsPath,
+        string? OutputRootPath,
+        string? SaveFilePath,
+        ProjectGame? SelectedGame)
+        : this(BaseRomFsPath, BaseExeFsPath, OutputRootPath, SaveFilePath, ScarletVioletSupportFolderPath: null, SelectedGame)
+    {
+    }
+
     public ProjectPaths(
         string? BaseRomFsPath,
         string? BaseExeFsPath,

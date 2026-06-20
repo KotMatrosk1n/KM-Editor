@@ -19,6 +19,7 @@ public enum ProjectPathRole
     BaseExeFs,
     OutputRoot,
     SaveFile,
+    ScarletVioletSupportFolder,
 }
 
 public enum ProjectPathStatus

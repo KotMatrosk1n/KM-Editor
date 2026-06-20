@@ -932,6 +932,7 @@ public sealed class ScarletVioletBridgeTests
     private static TemporaryBridgeProject CreateScarletVioletProject(ulong titleId)
     {
         var temp = TemporaryBridgeProject.Create();
+        temp.EnsureScarletVioletSupportFolder();
         temp.WriteBaseRomFsFile(
             "arc/data.trpfd",
             CreateTrinityDescriptor(

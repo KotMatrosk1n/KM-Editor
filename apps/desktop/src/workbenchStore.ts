@@ -83,6 +83,7 @@ export type ProjectPathDraft = {
   baseRomFsPath: string;
   outputRootPath: string;
   saveFilePath: string;
+  scarletVioletSupportFolderPath: string;
   selectedGame: ProjectGame | null;
 };
 export type ProjectPathFieldName = Exclude<keyof ProjectPathDraft, 'selectedGame'>;
@@ -1164,6 +1165,7 @@ function loadProjectPathDraft(): ProjectPathDraft {
       outputRootPath:
         typeof parsedValue.outputRootPath === 'string' ? parsedValue.outputRootPath : '',
       saveFilePath: typeof parsedValue.saveFilePath === 'string' ? parsedValue.saveFilePath : '',
+      scarletVioletSupportFolderPath: typeof parsedValue.scarletVioletSupportFolderPath === 'string' ? parsedValue.scarletVioletSupportFolderPath : '',
       selectedGame: null
     };
   } catch {
@@ -1227,10 +1229,7 @@ function saveProjectPathDraft(draftPaths: ProjectPathDraft) {
 
   try {
     const persistentDraftPaths = {
-      baseExeFsPath: draftPaths.baseExeFsPath,
-      baseRomFsPath: draftPaths.baseRomFsPath,
-      outputRootPath: draftPaths.outputRootPath,
-      saveFilePath: draftPaths.saveFilePath
+      baseExeFsPath: draftPaths.baseExeFsPath, baseRomFsPath: draftPaths.baseRomFsPath, outputRootPath: draftPaths.outputRootPath, saveFilePath: draftPaths.saveFilePath, scarletVioletSupportFolderPath: draftPaths.scarletVioletSupportFolderPath
     };
     window.localStorage.setItem(projectPathDraftStorageKey, JSON.stringify(persistentDraftPaths));
   } catch {
@@ -1267,7 +1266,8 @@ function createEmptyProjectPathDraftValues(): ProjectPathDraftValues {
     baseExeFsPath: '',
     baseRomFsPath: '',
     outputRootPath: '',
-    saveFilePath: ''
+    saveFilePath: '',
+    scarletVioletSupportFolderPath: ''
   };
 }
 
@@ -1283,7 +1283,8 @@ function coerceProjectPathDraftValues(
     baseRomFsPath: typeof draftPaths.baseRomFsPath === 'string' ? draftPaths.baseRomFsPath : '',
     outputRootPath:
       typeof draftPaths.outputRootPath === 'string' ? draftPaths.outputRootPath : '',
-    saveFilePath: typeof draftPaths.saveFilePath === 'string' ? draftPaths.saveFilePath : ''
+    saveFilePath: typeof draftPaths.saveFilePath === 'string' ? draftPaths.saveFilePath : '',
+    scarletVioletSupportFolderPath: typeof draftPaths.scarletVioletSupportFolderPath === 'string' ? draftPaths.scarletVioletSupportFolderPath : ''
   };
 }
 
@@ -1292,6 +1293,7 @@ function toProjectPathDraftValues(draftPaths: ProjectPathDraft): ProjectPathDraf
     baseExeFsPath: draftPaths.baseExeFsPath,
     baseRomFsPath: draftPaths.baseRomFsPath,
     outputRootPath: draftPaths.outputRootPath,
-    saveFilePath: draftPaths.saveFilePath
+    saveFilePath: draftPaths.saveFilePath,
+    scarletVioletSupportFolderPath: draftPaths.scarletVioletSupportFolderPath
   };
 }

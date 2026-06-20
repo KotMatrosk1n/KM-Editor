@@ -95,6 +95,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'sword'
       },
       editSession: null,
@@ -208,6 +209,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: null
       }
     });
@@ -287,6 +289,7 @@ describe('App', () => {
         baseRomFsPath: 'sword-romfs',
         outputRootPath: 'sword-output',
         saveFilePath: null,
+        scarletVioletSupportFolderPath: null,
         selectedGame: 'sword'
       }
     });
@@ -466,6 +469,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
     });
@@ -514,6 +518,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
     });
@@ -571,6 +576,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
     });
@@ -670,6 +676,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
     });
@@ -746,6 +753,7 @@ describe('App', () => {
         baseRomFsPath: 'base-romfs',
         outputRootPath: 'output',
         saveFilePath: null,
+        scarletVioletSupportFolderPath: null,
         selectedGame: 'sword'
       }
     });
@@ -767,6 +775,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       },
       workflows: [
@@ -920,6 +929,7 @@ describe('App', () => {
         baseRomFsPath: 'C:/old/romfs',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'sword'
       }
     });
@@ -978,6 +988,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'shield'
       }
     });
@@ -2451,6 +2462,7 @@ describe('App', () => {
         baseRomFsPath: 'base-romfs',
         outputRootPath: 'output',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
     });
@@ -5399,6 +5411,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'shield'
       }
     });
@@ -5425,6 +5438,7 @@ describe('App', () => {
         baseRomFsPath: 'C:\\SH\\romfs',
         outputRootPath: null,
         saveFilePath: null,
+        scarletVioletSupportFolderPath: null,
         selectedGame: 'shield'
       }
     });
@@ -5440,6 +5454,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'shield'
       }
     });

@@ -21,13 +21,25 @@ public sealed record ProjectPathsDto
         string? BaseExeFsPath,
         string? OutputRootPath,
         string? SaveFilePath,
+        string? ScarletVioletSupportFolderPath,
         ProjectGameDto? SelectedGame)
     {
         this.BaseRomFsPath = BaseRomFsPath;
         this.BaseExeFsPath = BaseExeFsPath;
         this.OutputRootPath = OutputRootPath;
         this.SaveFilePath = SaveFilePath;
+        this.ScarletVioletSupportFolderPath = ScarletVioletSupportFolderPath;
         this.SelectedGame = SelectedGame;
+    }
+
+    public ProjectPathsDto(
+        string? BaseRomFsPath,
+        string? BaseExeFsPath,
+        string? OutputRootPath,
+        string? SaveFilePath,
+        ProjectGameDto? SelectedGame)
+        : this(BaseRomFsPath, BaseExeFsPath, OutputRootPath, SaveFilePath, ScarletVioletSupportFolderPath: null, SelectedGame)
+    {
     }
 
     public ProjectPathsDto(
@@ -55,6 +67,8 @@ public sealed record ProjectPathsDto
 
     public string? SaveFilePath { get; init; }
 
+    public string? ScarletVioletSupportFolderPath { get; init; }
+
     public ProjectGameDto? SelectedGame { get; init; }
 }
 
@@ -78,6 +92,7 @@ public enum ProjectPathRoleDto
     BaseExeFs,
     OutputRoot,
     SaveFile,
+    ScarletVioletSupportFolder,
 }
 
 public enum ProjectPathStatusDto

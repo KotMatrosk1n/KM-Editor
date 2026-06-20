@@ -900,6 +900,11 @@ h2 {
   font-weight: 600;
 }
 
+.workflow-disabled-reason {
+  margin-top: 6px !important;
+  color: var(--color-warning) !important;
+}
+
 .inline-metric {
   display: inline-flex;
   margin-top: 8px;

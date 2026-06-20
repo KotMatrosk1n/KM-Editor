@@ -22,6 +22,7 @@ export type DesktopServices = {
   checkForNativeUpdate: () => Promise<NativeUpdate | null>;
   createDirectory: (path: string) => Promise<void>;
   exitApp: () => Promise<void>;
+  findScarletVioletSupportFolder: () => Promise<string | null>;
   isAvailable: boolean;
   openExternalUrl: (url: string) => Promise<void>;
   openPath: (path: string) => Promise<void>;
@@ -52,6 +53,7 @@ export const desktopServices: DesktopServices = {
   },
   createDirectory: (path) => invoke('create_directory', { path }),
   exitApp: () => invoke('exit_app'),
+  findScarletVioletSupportFolder: () => invoke('find_scarlet_violet_support_file'),
   isAvailable: hasTauriRuntime(),
   openExternalUrl: (url) => openExternal(url),
   openPath: (path) => invoke('open_path', { path }),

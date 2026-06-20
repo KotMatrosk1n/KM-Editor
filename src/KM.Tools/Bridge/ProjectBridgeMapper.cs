@@ -19,6 +19,7 @@ public static class ProjectBridgeMapper
             paths.BaseExeFsPath,
             paths.OutputRootPath,
             paths.SaveFilePath,
+            paths.ScarletVioletSupportFolderPath,
             ToCore(paths.SelectedGame));
     }
 
@@ -167,6 +168,7 @@ public static class ProjectBridgeMapper
             ProjectPathRole.BaseExeFs => ProjectPathRoleDto.BaseExeFs,
             ProjectPathRole.OutputRoot => ProjectPathRoleDto.OutputRoot,
             ProjectPathRole.SaveFile => ProjectPathRoleDto.SaveFile,
+            ProjectPathRole.ScarletVioletSupportFolder => ProjectPathRoleDto.ScarletVioletSupportFolder,
             _ => throw new ArgumentOutOfRangeException(nameof(role), role, null),
         };
     }

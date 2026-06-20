@@ -22,7 +22,15 @@ internal sealed class TemporaryBridgeProject : IDisposable
 
     public string OutputRootPath { get; }
 
-    public ProjectPathsDto Paths => new(BaseRomFsPath, BaseExeFsPath, OutputRootPath);
+    public string? ScarletVioletSupportFolderPath { get; private set; }
+
+    public ProjectPathsDto Paths => new(
+        BaseRomFsPath,
+        BaseExeFsPath,
+        OutputRootPath,
+        SaveFilePath: null,
+        ScarletVioletSupportFolderPath,
+        SelectedGame: null);
 
     public static TemporaryBridgeProject Create()
     {
@@ -60,6 +68,18 @@ internal sealed class TemporaryBridgeProject : IDisposable
     public void WriteOutputFile(string relativePath, byte[] contents)
     {
         WriteFile(OutputRootPath, relativePath, contents);
+    }
+
+    public string EnsureScarletVioletSupportFolder()
+    {
+        if (ScarletVioletSupportFolderPath is not null)
+        {
+            return ScarletVioletSupportFolderPath;
+        }
+
+        ScarletVioletSupportFolderPath = Directory.CreateDirectory(Path.Combine(RootPath, "sv-support")).FullName;
+        File.WriteAllBytes(Path.Combine(ScarletVioletSupportFolderPath, string.Concat("oo2", "core", "_8_", "win", "64", ".dll")), []);
+        return ScarletVioletSupportFolderPath;
     }
 
     public void Dispose()
