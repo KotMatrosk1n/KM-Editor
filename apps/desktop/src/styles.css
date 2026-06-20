@@ -2782,6 +2782,23 @@ h2 {
   background: #0b1120;
   border-style: dashed;
   opacity: 1;
+  text-overflow: ellipsis;
+}
+
+.placement-layout {
+  grid-template-columns: minmax(360px, 0.78fr) minmax(560px, 1.22fr);
+}
+
+.placement-field-groups {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+}
+
+.placement-field-groups .editable-field-group {
+  padding: 10px;
+}
+
+.placement-field-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 178px), 1fr));
 }
 
 .placement-object-row {
@@ -2973,6 +2990,14 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.raid-rewards-row.placement-object-row {
+  grid-template-columns: minmax(220px, 1.25fr) minmax(260px, 1.3fr) minmax(240px, 1fr);
+}
+
+.raid-rewards-row.placement-empty-row {
+  grid-template-columns: 1fr;
 }
 
 .flagwork-layout {
@@ -6219,7 +6244,10 @@ input {
   .encounter-inspector > .item-provenance-list,
   .compact-dl,
   .trainer-field-grid,
-  .encounter-field-grid {
+  .encounter-field-grid,
+  .placement-layout,
+  .placement-field-grid,
+  .placement-field-groups {
     grid-template-columns: 1fr;
   }
 

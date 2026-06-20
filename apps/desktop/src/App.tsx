@@ -20784,7 +20784,6 @@ type PlacementSectionProps = {
   editorFamily: EditorUiFamily;
   isEditStarting: boolean;
   isPlacementUpdating: boolean;
-  isScarletVioletProject: boolean;
   onSearchChange: (value: string) => void;
   onSelectObject: (objectId: string | null) => void;
   onStartEditSession: () => void;
@@ -20800,15 +20799,15 @@ type PlacementSectionProps = {
 
 type PlacementSectionPublicProps = Omit<
   PlacementSectionProps,
-  'editorFamily' | 'isScarletVioletProject'
+  'editorFamily'
 >;
 
 function SwShPlacementSection(props: PlacementSectionPublicProps) {
-  return <PlacementSection {...props} editorFamily="swsh" isScarletVioletProject={false} />;
+  return <PlacementSection {...props} editorFamily="swsh" />;
 }
 
 function SvPlacementSection(props: PlacementSectionPublicProps) {
-  return <PlacementSection {...props} editorFamily="sv" isScarletVioletProject />;
+  return <PlacementSection {...props} editorFamily="sv" />;
 }
 
 function PlacementSection({
@@ -20816,7 +20815,6 @@ function PlacementSection({
   editorFamily,
   isEditStarting,
   isPlacementUpdating,
-  isScarletVioletProject,
   onSearchChange,
   onSelectObject,
   onStartEditSession,
@@ -20827,8 +20825,10 @@ function PlacementSection({
   workflow
 }: PlacementSectionProps) {
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
-  const supportsPlacementCategories = isScarletVioletProject;
-  const placementCategories = supportsPlacementCategories ? getPlacementCategories(workflow) : [];
+  const placementCategories = getPlacementCategories(workflow);
+  const supportsPlacementCategories =
+    placementCategories.length > 0 &&
+    (workflow?.objects.some((placedObject) => placedObject.categoryId?.trim()) ?? false);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const activeCategoryId = supportsPlacementCategories
     ? placementCategories.find((category) => category.id === selectedCategoryId)?.id ??
@@ -20970,7 +20970,7 @@ function PlacementSection({
         ) : null}
 
         {workflow ? (
-          <div className="encounters-layout">
+          <div className="encounters-layout placement-layout">
             <div className="raid-rewards-table placement-object-table" role="table" aria-label="Placed objects">
               <div className="raid-rewards-row raid-rewards-row-heading placement-object-row" role="row">
                 <span role="columnheader">Object</span>
@@ -21187,11 +21187,11 @@ function SelectedPlacementPanel({
               </div>
             </dl>
 
-            <div className="editable-field-groups">
+            <div className="editable-field-groups placement-field-groups">
               {placementFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
                   <legend>{group.group}</legend>
-                  <div className="editable-field-grid">
+                  <div className="editable-field-grid placement-field-grid">
                     {group.fields.map((field) => {
                       const currentValue = getPlacementFieldValue(placedObject, field.field);
                       const draftValue = drafts[field.field] ?? '';
@@ -21201,13 +21201,26 @@ function SelectedPlacementPanel({
                       const isChanged = draftState.canSubmit;
                       const fieldOptions = field.options ?? [];
                       const isFieldReadOnly = field.isReadOnly;
+                      const isTextLikePlacementField =
+                        field.valueKind === 'text' ||
+                        field.valueKind === 'string' ||
+                        field.valueKind === 'hash' ||
+                        field.valueKind === 'boolean';
+                      const resolvedDisplayHint =
+                        field.displayValue &&
+                        field.displayValue !== field.value &&
+                        !isChanged &&
+                        !isInvalid
+                          ? field.displayValue
+                          : null;
                       const statusText = isInvalid
-                        ? `Allowed range: ${field.minimumValue}-${field.maximumValue}.`
+                        ? getPlacementFieldErrorText(field)
                         : isChanged
                           ? 'Changed'
                           : isFieldReadOnly
                             ? 'Read-only'
-                            : null;
+                            : resolvedDisplayHint;
+                      const fieldHelpText = field.description || getEditableFieldHelp(field);
 
                       return (
                         <label
@@ -21221,7 +21234,7 @@ function SelectedPlacementPanel({
                           title={
                             isFieldReadOnly
                               ? field.description || 'This Placement field is visible but not editable yet.'
-                              : getEditableFieldHelp(field)
+                              : fieldHelpText
                           }
                         >
                           <span>{field.label}</span>
@@ -21262,7 +21275,7 @@ function SelectedPlacementPanel({
                                 draftValue,
                                 `${field.label} ${draftValue}`
                               )}
-                              title={getEditableFieldHelp(field)}
+                              title={fieldHelpText}
                               value={draftValue}
                             />
                           ) : (
@@ -21275,8 +21288,6 @@ function SelectedPlacementPanel({
                                 isFieldReadOnly
                               }
                               id={`placement-field-${field.field}`}
-                              max={field.maximumValue}
-                              min={field.minimumValue}
                               onChange={(event) => {
                                 const nextDrafts = {
                                   ...drafts,
@@ -21292,8 +21303,10 @@ function SelectedPlacementPanel({
                                 );
                               }}
                               step={field.valueKind === 'integer' ? 1 : 'any'}
-                              title={getEditableFieldHelp(field)}
-                              type={field.valueKind === 'text' ? 'text' : 'number'}
+                              title={fieldHelpText}
+                              max={isTextLikePlacementField ? undefined : field.maximumValue}
+                              min={isTextLikePlacementField ? undefined : field.minimumValue}
+                              type={isTextLikePlacementField ? 'text' : 'number'}
                               value={draftValue}
                             />
                           )}
@@ -30796,7 +30809,12 @@ function getPlacementDraftState(
   field: PlacementFieldControl
 ) {
   const normalizedValue = draftValue.trim();
-  if (!normalizedValue) {
+  if (
+    !normalizedValue &&
+    field.valueKind !== 'text' &&
+    field.valueKind !== 'string' &&
+    field.valueKind !== 'hash'
+  ) {
     return {
       canSubmit: false,
       isValid: false,
@@ -30804,11 +30822,45 @@ function getPlacementDraftState(
     };
   }
 
-  if (field.isReadOnly || field.valueKind === 'text') {
+  if (field.isReadOnly) {
     return {
       canSubmit: false,
       isValid: true,
       normalizedValue: normalizedValue
+    };
+  }
+
+  if (field.valueKind === 'text' || field.valueKind === 'string') {
+    const byteLength = new TextEncoder().encode(normalizedValue).length;
+    const isValid = field.maximumValue <= 0 || byteLength <= field.maximumValue;
+
+    return {
+      canSubmit: isValid && normalizedValue !== (currentValue ?? ''),
+      isValid,
+      normalizedValue: isValid ? normalizedValue : null
+    };
+  }
+
+  if (field.valueKind === 'boolean') {
+    const parsedValue = parsePlacementBooleanDraft(normalizedValue);
+    const currentBoolean = parsePlacementBooleanDraft(currentValue ?? '');
+    const isChanged =
+      parsedValue !== null &&
+      (currentBoolean === null || parsedValue !== currentBoolean);
+
+    return {
+      canSubmit: isChanged,
+      isValid: parsedValue !== null,
+      normalizedValue: parsedValue === null ? null : parsedValue ? 'true' : 'false'
+    };
+  }
+
+  if (field.valueKind === 'hash') {
+    const isValid = isPlacementHashDraft(normalizedValue);
+    return {
+      canSubmit: isValid && normalizedValue !== (currentValue ?? ''),
+      isValid,
+      normalizedValue: isValid ? normalizedValue : null
     };
   }
 
@@ -30835,6 +30887,33 @@ function getPlacementDraftState(
     isValid: inRange,
     normalizedValue: inRange ? nextValue : null
   };
+}
+
+function parsePlacementBooleanDraft(value: string) {
+  const normalizedValue = value.trim().toLocaleLowerCase();
+  if (['true', '1', 'yes'].includes(normalizedValue)) return true;
+  if (['false', '0', 'no'].includes(normalizedValue)) return false;
+  return null;
+}
+
+function isPlacementHashDraft(value: string) {
+  const normalizedValue = value.trim();
+  if (normalizedValue.length === 0) return true;
+  if (['none', 'empty'].includes(normalizedValue.toLocaleLowerCase())) return true;
+  if (/^0x[0-9a-f]+$/i.test(normalizedValue)) return normalizedValue.length <= 18;
+  return /^\d+$/.test(normalizedValue);
+}
+
+function getPlacementFieldErrorText(field: PlacementFieldControl) {
+  if (field.valueKind === 'boolean') return 'Use true/false or 1/0.';
+  if (field.valueKind === 'hash') return 'Use None, decimal, or a 0x-prefixed 64-bit hash.';
+  if (field.valueKind === 'text' || field.valueKind === 'string') {
+    return field.maximumValue > 0
+      ? `Maximum length: ${field.maximumValue} UTF-8 bytes.`
+      : 'Text does not fit this placement field.';
+  }
+
+  return `Allowed range: ${field.minimumValue}-${field.maximumValue}.`;
 }
 
 function getPlacementDraftSummary(

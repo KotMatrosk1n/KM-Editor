@@ -30,7 +30,23 @@ public sealed record SwShPlacedObjectRecord(
     double Z,
     double RotationY,
     string? ScriptId,
-    SwShPlacementProvenance Provenance);
+    SwShPlacementProvenance Provenance,
+    string CategoryId = "",
+    string CategoryLabel = "",
+    IReadOnlyList<SwShPlacementFieldValue>? Fields = null);
+
+public sealed record SwShPlacementFieldValue(
+    string Field,
+    string Label,
+    string Group,
+    string Value,
+    string DisplayValue,
+    bool IsReadOnly,
+    string ValueKind = "text",
+    double MinimumValue = 0,
+    double MaximumValue = 0,
+    string Description = "",
+    IReadOnlyList<SwShPlacementEditableFieldOption>? Options = null);
 
 public sealed record SwShPlacementEditableField(
     string Field,
@@ -38,7 +54,10 @@ public sealed record SwShPlacementEditableField(
     string ValueKind,
     double MinimumValue,
     double MaximumValue,
-    IReadOnlyList<SwShPlacementEditableFieldOption> Options)
+    IReadOnlyList<SwShPlacementEditableFieldOption> Options,
+    string Group = "",
+    bool IsReadOnly = false,
+    string Description = "")
 {
     public SwShPlacementEditableField(
         string Field,
@@ -47,6 +66,18 @@ public sealed record SwShPlacementEditableField(
         double MinimumValue,
         double MaximumValue)
         : this(Field, Label, ValueKind, MinimumValue, MaximumValue, Array.Empty<SwShPlacementEditableFieldOption>())
+    {
+    }
+
+    public SwShPlacementEditableField(
+        string Field,
+        string Label,
+        string ValueKind,
+        double MinimumValue,
+        double MaximumValue,
+        string Group,
+        string Description = "")
+        : this(Field, Label, ValueKind, MinimumValue, MaximumValue, Array.Empty<SwShPlacementEditableFieldOption>(), Group, false, Description)
     {
     }
 }
@@ -60,9 +91,16 @@ public sealed record SwShPlacementWorkflowStats(
     int TotalAreaCount,
     int SourceFileCount);
 
+public sealed record SwShPlacementCategory(
+    string Id,
+    string Label,
+    string Description,
+    int ObjectCount);
+
 public sealed record SwShPlacementWorkflow(
     SwShWorkflowSummary Summary,
     IReadOnlyList<SwShPlacedObjectRecord> Objects,
     IReadOnlyList<SwShPlacementEditableField> EditableFields,
     SwShPlacementWorkflowStats Stats,
-    IReadOnlyList<ValidationDiagnostic> Diagnostics);
+    IReadOnlyList<ValidationDiagnostic> Diagnostics,
+    IReadOnlyList<SwShPlacementCategory> Categories);

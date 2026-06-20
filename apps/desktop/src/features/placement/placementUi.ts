@@ -30,7 +30,8 @@ export type PlacementFieldControl = {
 
 export function getPlacementCategories(workflow: PlacementWorkflow | null) {
   if (!workflow) return [];
-  if (workflow.categories?.length && hasStructuredPlacementFields(workflow)) {
+  const hasStructuredCategoryIds = workflow.objects.some((object) => object.categoryId?.trim());
+  if (workflow.categories?.length && hasStructuredCategoryIds) {
     return workflow.categories;
   }
 
@@ -66,18 +67,28 @@ export function getPlacementFieldControls(
   if (object.fields?.length) {
     return object.fields.map((value) => {
       const definition = editableFields.find((field) => field.field === value.field);
+      const hasFieldMetadata =
+        value.field.startsWith('raw.') ||
+        value.valueKind !== 'text' ||
+        value.minimumValue !== 0 ||
+        value.maximumValue !== 0 ||
+        value.description.trim().length > 0;
       return {
-        description: definition?.description,
+        description: value.description || definition?.description,
         displayValue: value.displayValue,
         field: value.field,
         group: value.group || definition?.group || 'Placement Data',
         isReadOnly: value.isReadOnly || definition?.isReadOnly === true,
         label: value.label || definition?.label || value.field,
-        maximumValue: definition?.maximumValue ?? Number.MAX_SAFE_INTEGER,
-        minimumValue: definition?.minimumValue ?? Number.MIN_SAFE_INTEGER,
+        maximumValue: hasFieldMetadata
+          ? value.maximumValue
+          : definition?.maximumValue ?? Number.MAX_SAFE_INTEGER,
+        minimumValue: hasFieldMetadata
+          ? value.minimumValue
+          : definition?.minimumValue ?? Number.MIN_SAFE_INTEGER,
         options: value.options ?? definition?.options ?? [],
         value: value.value,
-        valueKind: definition?.valueKind ?? 'text'
+        valueKind: hasFieldMetadata ? value.valueKind : definition?.valueKind ?? 'text'
       };
     });
   }
@@ -120,16 +131,33 @@ export function getPlacementFieldValue(object: PlacedObjectRecord, field: string
 
 export function formatPlacementPrimaryData(object: PlacedObjectRecord) {
   const fields = object.fields ?? [];
-  const species = fields.find((field) => field.field.endsWith('.speciesId'));
+  const species =
+    fields.find((field) => field.field.endsWith('.speciesId')) ??
+    fields.find((field) => field.field.endsWith('.Species'));
   if (species) return species.displayValue || species.value;
 
   const table =
     fields.find((field) => field.field.endsWith('.tableKey')) ??
-    fields.find((field) => field.field.endsWith('.label'));
-  if (table) return table.displayValue || table.value;
+    fields.find((field) => field.field.endsWith('.label') && hasUsefulPlacementDisplay(field)) ??
+    fields.find((field) => field.label.includes('Static Encounter') && hasUsefulPlacementDisplay(field)) ??
+    fields.find((field) => field.label.includes('Symbol Encounter') && hasUsefulPlacementDisplay(field)) ??
+    fields.find((field) => field.label.includes('Raid Table') && hasUsefulPlacementDisplay(field)) ??
+    fields.find((field) => field.label.includes('Trainer Battle') && hasUsefulPlacementDisplay(field)) ??
+    fields.find((field) => field.label.includes('Object Hash') && hasUsefulPlacementDisplay(field)) ??
+    fields.find((field) => field.label.includes('Model Hash') && hasUsefulPlacementDisplay(field)) ??
+    fields.find((field) => field.label.includes('Message Hash') && hasUsefulPlacementDisplay(field)) ??
+    fields.find((field) => field.group === 'References' && hasUsefulPlacementDisplay(field));
+  if (table) return getPlacementDisplayValue(table);
+
+  const model =
+    fields.find((field) => field.label === 'Model' && hasUsefulPlacementDisplay(field)) ??
+    fields.find((field) => field.label === 'Model Hash' && hasUsefulPlacementDisplay(field));
+  if (model) return getPlacementDisplayValue(model);
+
+  if (object.scriptId) return object.scriptId;
 
   return object.itemId === null
-    ? object.itemHash || object.itemName
+    ? object.itemHash || object.itemName || object.objectType
     : `${object.itemName} (${object.itemId})`;
 }
 
@@ -151,11 +179,7 @@ export function formatPlacementCoordinates(object: PlacedObjectRecord) {
 
 export function isPokemonPlacementObject(object: PlacedObjectRecord) {
   const categoryId = getPlacementCategoryId(object);
-  return categoryId === 'fixedSymbols' || categoryId === 'coinSymbols';
-}
-
-function hasStructuredPlacementFields(workflow: PlacementWorkflow) {
-  return workflow.objects.some((object) => (object.fields?.length ?? 0) > 0);
+  return categoryId === 'fixedSymbols' || categoryId === 'coinSymbols' || categoryId === 'pokemonEncounters';
 }
 
 function getPlacementCategoryLabel(object: PlacedObjectRecord, categoryId: string) {
@@ -193,4 +217,16 @@ function getLegacyPlacementFieldGroup(field: PlacementEditableField) {
 
 function formatCoordinate(value: number) {
   return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+}
+
+function getPlacementDisplayValue(field: { displayValue: string; value: string }) {
+  return field.displayValue || field.value;
+}
+
+function hasUsefulPlacementDisplay(field: { displayValue: string; value: string }) {
+  const value = getPlacementDisplayValue(field).trim();
+  return value.length > 0 &&
+    value !== 'None' &&
+    value !== 'None (empty hash)' &&
+    value !== '0xCBF29CE484222645';
 }

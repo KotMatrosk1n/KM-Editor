@@ -1436,7 +1436,7 @@ public static class SwShBridgeMapper
                 workflow.Stats.TotalAreaCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray(),
-            Array.Empty<PlacementCategoryDto>());
+            workflow.Categories.Select(ToDto).ToArray());
     }
 
     private static BehaviorWorkflowDto ToBehaviorWorkflowDto(SwShBehaviorWorkflow workflow)
@@ -2487,19 +2487,34 @@ public static class SwShBridgeMapper
             placedObject.RotationY,
             placedObject.ScriptId,
             ToDto(placedObject.Provenance),
-            ToPlacementCategoryId(placedObject),
-            ToPlacementCategoryLabel(placedObject),
-            Fields: Array.Empty<PlacementFieldValueDto>());
+            placedObject.CategoryId,
+            placedObject.CategoryLabel,
+            Fields: placedObject.Fields?.Select(ToDto).ToArray() ?? Array.Empty<PlacementFieldValueDto>());
     }
 
-    private static string ToPlacementCategoryId(SwShPlacedObjectRecord placedObject)
+    private static PlacementFieldValueDto ToDto(SwShPlacementFieldValue field)
     {
-        return placedObject.ObjectType == "HiddenItem" ? "hiddenItems" : "visibleItems";
+        return new PlacementFieldValueDto(
+            field.Field,
+            field.Label,
+            field.Group,
+            field.Value,
+            field.DisplayValue,
+            field.IsReadOnly,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Description,
+            field.Options?.Select(ToDto).ToArray());
     }
 
-    private static string ToPlacementCategoryLabel(SwShPlacedObjectRecord placedObject)
+    private static PlacementCategoryDto ToDto(SwShPlacementCategory category)
     {
-        return placedObject.ObjectType == "HiddenItem" ? "Hidden Items" : "Visible Items";
+        return new PlacementCategoryDto(
+            category.Id,
+            category.Label,
+            category.Description,
+            category.ObjectCount);
     }
 
     private static PlacementEditableFieldDto ToDto(SwShPlacementEditableField field)
@@ -2510,7 +2525,10 @@ public static class SwShBridgeMapper
             field.ValueKind,
             field.MinimumValue,
             field.MaximumValue,
-            field.Options.Select(ToDto).ToArray());
+            field.Options.Select(ToDto).ToArray(),
+            field.Group,
+            field.IsReadOnly,
+            field.Description);
     }
 
     private static PlacementEditableFieldOptionDto ToDto(SwShPlacementEditableFieldOption option)
