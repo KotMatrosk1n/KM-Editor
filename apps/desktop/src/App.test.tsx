@@ -761,7 +761,7 @@ describe('App', () => {
     });
     expect(await screen.findByText('Installed')).toBeInTheDocument();
     expect(screen.getByText('60FPS Patch is installed.')).toBeInTheDocument();
-    expect(screen.getByText('1,234/1,234')).toBeInTheDocument();
+    expect(screen.getByText('1,107/1,107')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Uninstall' }));
     await waitFor(() => expect(restoreFpsPatch).toHaveBeenCalledTimes(1));

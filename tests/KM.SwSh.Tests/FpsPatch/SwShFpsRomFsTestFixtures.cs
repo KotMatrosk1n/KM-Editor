@@ -20,6 +20,58 @@ internal static class SwShFpsRomFsTestFixtures
     public const string TrainerThrowArchiveRelativePath = "romfs/bin/archive/chara/data/tr/anm/tr0002_00_friend_tr0002_00_battle01.gfpak";
     public const string TrainerThrowArchiveClipName = "tr0002_00_ba0122_g_ballthrow01_end.gfbanm";
     public const string TrainerNonThrowArchiveClipName = "tr0002_00_ba0414_speak03_end.gfbanm";
+    private static readonly string[] RequiredSpecialBallSequenceNames =
+    [
+        "d230.bseq",
+        "ee101.bseq",
+        "ee102.bseq",
+        "ee103.bseq",
+        "ee104.bseq",
+        "ee105.bseq",
+        "ee106.bseq",
+        "ee107.bseq",
+        "ee108.bseq",
+        "ee109.bseq",
+        "ee110.bseq",
+        "ee111.bseq",
+        "ee112.bseq",
+        "ee113.bseq",
+        "ee311.bseq",
+        "ee312.bseq",
+        "ee315.bseq",
+        "ee316.bseq",
+        "ee326.bseq",
+        "ee327.bseq",
+        "ee328.bseq",
+        "ee330.bseq",
+        "ee331.bseq",
+        "ee332.bseq",
+        "ee333.bseq",
+        "ee340.bseq",
+        "ee341.bseq",
+        "ee343.bseq",
+        "ee344.bseq",
+        "ee347.bseq",
+        "ee349.bseq",
+        "ee350.bseq",
+        "ee351.bseq",
+        "ee354.bseq",
+        "ee400.bseq",
+        "ee401.bseq",
+        "ee402.bseq",
+        "ee403.bseq",
+        "ee404.bseq",
+        "ee405.bseq",
+        "ee406.bseq",
+        "ee407.bseq",
+        "ee408.bseq",
+        "ee409.bseq",
+        "ee411.bseq",
+        "ee412.bseq",
+        "ee420.bseq",
+        "ee502.bseq",
+        "ee630.bseq",
+    ];
 
     public static void WriteCompleteManagedBaseRomFs(TemporarySwShProject temp)
     {
@@ -33,14 +85,13 @@ internal static class SwShFpsRomFsTestFixtures
         temp.WriteBaseRomFsFile("bin/demo/sequence/d010.bseq", CreateOpeningDemoBseq());
         temp.WriteBaseRomFsFile("bin/demo/sequence/d030.bseq", moveBseq);
         temp.WriteBaseRomFsFile("bin/demo/sequence/r2d020.bseq", moveBseq);
-        temp.WriteBaseRomFsFile("bin/battle/waza/sequence/d230.bseq", moveBseq);
-        temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee316.bseq", moveBseq);
-        temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee326.bseq", moveBseq);
-        temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee328.bseq", moveBseq);
-        temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee411.bseq", moveBseq);
-        temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee412.bseq", moveBseq);
-        temp.WriteBaseRomFsFile("bin/battle/waza/sequence/ee502.bseq", moveBseq);
+        foreach (var sequenceName in RequiredSpecialBallSequenceNames)
+        {
+            temp.WriteBaseRomFsFile($"bin/battle/waza/sequence/{sequenceName}", moveBseq);
+        }
+
         temp.WriteBaseRomFsFile("bin/archive/demo/share/anime/a_pl0110.gfpak", CreateAudienceArchive());
+        temp.WriteBaseRomFsFile("bin/archive/field/model/unit_obj_pc_recovery01.gfpak", CreatePokemonCenterRecoveryArchive());
         temp.WriteBaseRomFsFile(
             TrainerThrowCameraRelativePath["romfs/".Length..],
             CreateGfAnimationClip(keyFrames: 143, frameRate: 60));
@@ -128,6 +179,26 @@ internal static class SwShFpsRomFsTestFixtures
                 new SwShGfPackNamedFile(
                     TrainerNonThrowArchiveClipName,
                     CreateGfAnimationClip(keyFrames: 80, frameRate: 60)),
+            ])
+            .Write();
+    }
+
+    public static byte[] CreatePokemonCenterRecoveryArchive()
+    {
+        return SwShGfPackFile.Create(
+            [
+                new SwShGfPackNamedFile(
+                    "unit_obj_pc_recovery01_main01_ballput.gfbanm",
+                    CreateGfAnimationClip(keyFrames: 108, frameRate: 30)),
+                new SwShGfPackNamedFile(
+                    "unit_obj_pc_recovery01_main01_recovery.gfbanm",
+                    CreateGfAnimationClip(keyFrames: 83, frameRate: 30)),
+                new SwShGfPackNamedFile(
+                    "unit_obj_pc_recovery01_ballflash01_recovery.gfbanm",
+                    CreateGfAnimationClip(keyFrames: 83, frameRate: 30)),
+                new SwShGfPackNamedFile(
+                    "unit_obj_pc_recovery01_text01_open.gfbanm",
+                    CreateGfAnimationClip(keyFrames: 6, frameRate: 30)),
             ])
             .Write();
     }

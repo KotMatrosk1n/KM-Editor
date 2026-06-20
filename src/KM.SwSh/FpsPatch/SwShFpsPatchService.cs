@@ -20,10 +20,10 @@ public sealed class SwShFpsPatchService
     private const string SequenceRootRelativePath = "romfs/bin/battle/waza/sequence";
     private const string DemoSequenceRootInsideRomFs = "bin/demo/sequence";
     private const string DemoSequenceRootRelativePath = "romfs/bin/demo/sequence";
-    private const string TrainerBattleArchiveRootInsideRomFs = "bin/archive/chara/data/tr/anm";
     private const string TrainerBallthrowCameraRootInsideRomFs = "bin/battle/waza/camera/ballthrow";
     private const string BattleModelAnimationRootInsideRomFs = "bin/battle/waza/model/anm";
-    private const string CharaTrainerRootInsideRomFs = "bin/chara/data/tr";
+    private const string LegacyTrainerBattleArchiveRootInsideRomFs = "bin/archive/chara/data/tr/anm";
+    private const string LegacyCharaTrainerRootInsideRomFs = "bin/chara/data/tr";
     private const string OpeningDemoBseqRelativePath = "romfs/bin/demo/sequence/d010.bseq";
     private const int ExpectedManagedBseqFileCount = 1010;
 
@@ -31,12 +31,54 @@ public sealed class SwShFpsPatchService
     private static readonly ManagedBseqTimingOverride[] RequiredManagedBseqFiles =
     [
         new("romfs/bin/battle/waza/sequence/d230.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee101.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee102.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee103.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee104.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee105.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee106.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee107.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee108.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee109.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee110.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee111.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee112.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee113.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee311.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee312.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee315.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee316.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee326.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee327.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee328.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee330.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee331.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee332.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee333.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee340.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee341.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee343.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee344.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee347.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee349.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee350.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee351.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee354.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee400.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee401.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee402.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee403.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee404.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee405.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee406.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee407.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee408.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee409.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee411.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee412.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee420.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee502.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee630.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
     ];
 
     private static readonly ManagedBseqTimingOverride[] OptionalManagedBseqScaleOverrides =
@@ -70,7 +112,10 @@ public sealed class SwShFpsPatchService
         return IsSpecialManagedRomFsPath(normalized)
             || IsManagedMoveEffectBseqPath(normalized)
             || IsManagedDemoSequenceBseqPath(normalized)
-            || SwShFpsTrainerThrowPatcher.IsManagedRomFsPath(normalized);
+            || string.Equals(
+                normalized,
+                SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath,
+                StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsGeneratedRomFsOutput(ProjectPaths paths, string relativePath)
@@ -150,6 +195,8 @@ public sealed class SwShFpsPatchService
             WriteOutputFile(paths.OutputRootPath!, preparedFile.RelativePath, preparedFile.Contents, diagnostics, writtenFiles);
         }
 
+        RemoveLegacyTrainerThrowOutputs(paths, diagnostics, writtenFiles);
+
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
             RecordManifest(paths, preparedMain is not null, preparedRomFsFiles, diagnostics);
@@ -184,6 +231,7 @@ public sealed class SwShFpsPatchService
 
         RestoreMain(paths, diagnostics, writtenFiles);
         RestoreRomFsFiles(paths, diagnostics, writtenFiles);
+        RemoveLegacyTrainerThrowOutputs(paths, diagnostics, writtenFiles);
         DeleteManifest(paths, diagnostics);
 
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -302,11 +350,7 @@ public sealed class SwShFpsPatchService
         }
 
         PrepareManagedRomFsFile(paths, SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath, preparedFiles, diagnostics);
-
-        foreach (var sourceFile in EnumerateManagedTrainerThrowFiles(paths.BaseRomFsPath, diagnostics))
-        {
-            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
-        }
+        PrepareManagedRomFsFile(paths, SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath, preparedFiles, diagnostics);
 
         return preparedFiles;
     }
@@ -538,6 +582,105 @@ public sealed class SwShFpsPatchService
         }
     }
 
+    private static void RemoveLegacyTrainerThrowOutputs(
+        ProjectPaths paths,
+        ICollection<ValidationDiagnostic> diagnostics,
+        ICollection<ProjectFileReference> writtenFiles)
+    {
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            return;
+        }
+
+        foreach (var sourceFile in EnumerateLegacyTrainerThrowFiles(paths.BaseRomFsPath, diagnostics))
+        {
+            var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
+            if (targetPath is null || !File.Exists(targetPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
+                var generated = SwShFpsLegacyTrainerThrowCleanupPatcher.ConvertLegacyOutput(
+                    sourceFile.RelativePath,
+                    sourceBytes);
+                var outputBytes = File.ReadAllBytes(targetPath);
+                if (!outputBytes.SequenceEqual(generated))
+                {
+                    continue;
+                }
+
+                File.Delete(targetPath);
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, sourceFile.RelativePath));
+            }
+            catch (IOException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"60FPS Patch could not remove a legacy trainer throw output: {exception.Message}",
+                    file: sourceFile.RelativePath,
+                    expected: "Deletable legacy 60FPS Patch trainer animation output"));
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"60FPS Patch could not remove a legacy trainer throw output: {exception.Message}",
+                    file: sourceFile.RelativePath,
+                    expected: "Deletable legacy 60FPS Patch trainer animation output"));
+            }
+            catch (InvalidDataException)
+            {
+                // If the legacy conversion cannot be reproduced, leave the file in place.
+            }
+        }
+
+        foreach (var sourceFile in EnumerateLegacyTrainerBallThrowTimingFiles(paths.BaseRomFsPath, diagnostics))
+        {
+            var targetPath = ResolveOutputPath(paths.OutputRootPath, sourceFile.RelativePath);
+            if (targetPath is null || !File.Exists(targetPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                var sourceBytes = File.ReadAllBytes(sourceFile.SourcePath);
+                var generated = SwShFpsTrainerThrowPatcher.ConvertAnimationToHalfSpeed(sourceBytes);
+                var outputBytes = File.ReadAllBytes(targetPath);
+                if (!outputBytes.SequenceEqual(generated))
+                {
+                    continue;
+                }
+
+                File.Delete(targetPath);
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, sourceFile.RelativePath));
+            }
+            catch (IOException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"60FPS Patch could not remove a legacy ball throw output: {exception.Message}",
+                    file: sourceFile.RelativePath,
+                    expected: "Deletable legacy 60FPS Patch ball throw output"));
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"60FPS Patch could not remove a legacy ball throw output: {exception.Message}",
+                    file: sourceFile.RelativePath,
+                    expected: "Deletable legacy 60FPS Patch ball throw output"));
+            }
+            catch (InvalidDataException)
+            {
+                // If the legacy conversion cannot be reproduced, leave the file in place.
+            }
+        }
+    }
+
     private MainStatus AnalyzeMain(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
     {
         if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
@@ -762,7 +905,11 @@ public sealed class SwShFpsPatchService
             SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath,
             files,
             diagnostics);
-        files.AddRange(EnumerateManagedTrainerThrowFiles(baseRomFsPath, diagnostics));
+        AddRequiredManagedRomFsFile(
+            baseRomFsPath,
+            SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath,
+            files,
+            diagnostics);
         return files
             .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -885,12 +1032,12 @@ public sealed class SwShFpsPatchService
         files.Add(new ManagedRomFsFile(sourcePath, NormalizeRelativePath(relativePath)));
     }
 
-    private static IReadOnlyList<ManagedRomFsFile> EnumerateManagedTrainerThrowFiles(
+    private static IReadOnlyList<ManagedRomFsFile> EnumerateLegacyTrainerBallThrowTimingFiles(
         string baseRomFsPath,
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var files = new List<ManagedRomFsFile>();
-        AddManagedTrainerThrowFiles(
+        AddLegacyTrainerBallThrowTimingFiles(
             baseRomFsPath,
             TrainerBallthrowCameraRootInsideRomFs,
             SwShFpsTrainerThrowPatcher.TrainerBallthrowCameraRootRelativePath,
@@ -898,7 +1045,7 @@ public sealed class SwShFpsPatchService
             SearchOption.TopDirectoryOnly,
             files,
             diagnostics);
-        AddManagedTrainerThrowFiles(
+        AddLegacyTrainerBallThrowTimingFiles(
             baseRomFsPath,
             BattleModelAnimationRootInsideRomFs,
             SwShFpsTrainerThrowPatcher.BattleModelAnimationRootRelativePath,
@@ -906,18 +1053,30 @@ public sealed class SwShFpsPatchService
             SearchOption.TopDirectoryOnly,
             files,
             diagnostics);
-        AddManagedTrainerThrowFiles(
+
+        return files
+            .DistinctBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<ManagedRomFsFile> EnumerateLegacyTrainerThrowFiles(
+        string baseRomFsPath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var files = new List<ManagedRomFsFile>();
+        AddLegacyTrainerThrowFiles(
             baseRomFsPath,
-            CharaTrainerRootInsideRomFs,
-            SwShFpsTrainerThrowPatcher.CharaTrainerRootRelativePath,
+            LegacyCharaTrainerRootInsideRomFs,
+            SwShFpsTrainerThrowPatcher.LegacyCharaTrainerRootRelativePath,
             "*.gfbanm",
             SearchOption.AllDirectories,
             files,
             diagnostics);
-        AddManagedTrainerThrowFiles(
+        AddLegacyTrainerThrowFiles(
             baseRomFsPath,
-            TrainerBattleArchiveRootInsideRomFs,
-            SwShFpsTrainerThrowPatcher.TrainerBattleArchiveRootRelativePath,
+            LegacyTrainerBattleArchiveRootInsideRomFs,
+            SwShFpsTrainerThrowPatcher.LegacyTrainerBattleArchiveRootRelativePath,
             "*_battle*.gfpak",
             SearchOption.TopDirectoryOnly,
             files,
@@ -929,7 +1088,7 @@ public sealed class SwShFpsPatchService
             .ToArray();
     }
 
-    private static void AddManagedTrainerThrowFiles(
+    private static void AddLegacyTrainerThrowFiles(
         string baseRomFsPath,
         string rootInsideRomFs,
         string rootRelativePath,
@@ -941,11 +1100,6 @@ public sealed class SwShFpsPatchService
         var root = Path.Combine(baseRomFsPath, rootInsideRomFs);
         if (!Directory.Exists(root))
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "60FPS Patch could not find a trainer throw animation folder.",
-                file: rootRelativePath,
-                expected: "Complete Sword/Shield Base RomFS trainer animation folders"));
             return;
         }
 
@@ -955,7 +1109,8 @@ public sealed class SwShFpsPatchService
             {
                 var relativePath = $"{rootRelativePath}/{Path.GetRelativePath(root, path).Replace('\\', '/')}";
                 var normalized = NormalizeRelativePath(relativePath);
-                if (!SwShFpsTrainerThrowPatcher.IsManagedRomFsPath(normalized))
+                if (!SwShFpsTrainerThrowPatcher.IsLegacyTrainerCharacterAnimationPath(normalized)
+                    && !SwShFpsTrainerThrowPatcher.IsLegacyTrainerBattleArchivePath(normalized))
                 {
                     continue;
                 }
@@ -966,16 +1121,63 @@ public sealed class SwShFpsPatchService
         catch (IOException exception)
         {
             diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"60FPS Patch could not scan trainer throw files: {exception.Message}",
+                DiagnosticSeverity.Warning,
+                $"60FPS Patch could not scan legacy trainer throw files: {exception.Message}",
+                file: rootRelativePath,
+                expected: "Readable legacy trainer animation folder"));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"60FPS Patch could not scan legacy trainer throw files: {exception.Message}",
+                file: rootRelativePath,
+                expected: "Readable legacy trainer animation folder"));
+        }
+    }
+
+    private static void AddLegacyTrainerBallThrowTimingFiles(
+        string baseRomFsPath,
+        string rootInsideRomFs,
+        string rootRelativePath,
+        string pattern,
+        SearchOption searchOption,
+        ICollection<ManagedRomFsFile> files,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var root = Path.Combine(baseRomFsPath, rootInsideRomFs);
+        if (!Directory.Exists(root))
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var path in Directory.EnumerateFiles(root, pattern, searchOption))
+            {
+                var relativePath = $"{rootRelativePath}/{Path.GetRelativePath(root, path).Replace('\\', '/')}";
+                var normalized = NormalizeRelativePath(relativePath);
+                if (!SwShFpsTrainerThrowPatcher.IsLegacyBallThrowTimingPath(normalized))
+                {
+                    continue;
+                }
+
+                files.Add(new ManagedRomFsFile(Path.GetFullPath(path), normalized));
+            }
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"60FPS Patch could not scan legacy trainer ball throw files: {exception.Message}",
                 file: rootRelativePath,
                 expected: "Readable trainer animation folder"));
         }
         catch (UnauthorizedAccessException exception)
         {
             diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                $"60FPS Patch could not scan trainer throw files: {exception.Message}",
+                DiagnosticSeverity.Warning,
+                $"60FPS Patch could not scan legacy trainer ball throw files: {exception.Message}",
                 file: rootRelativePath,
                 expected: "Readable trainer animation folder"));
         }
@@ -1012,14 +1214,12 @@ public sealed class SwShFpsPatchService
             return SwShFpsDemoAudiencePatcher.ConvertArchive(sourceBytes);
         }
 
-        if (SwShFpsTrainerThrowPatcher.IsTrainerBattleArchivePath(normalized))
+        if (string.Equals(
+            normalized,
+            SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath,
+            StringComparison.OrdinalIgnoreCase))
         {
-            return SwShFpsTrainerThrowPatcher.ConvertTrainerBattleArchive(sourceBytes, normalized);
-        }
-
-        if (SwShFpsTrainerThrowPatcher.IsTrainerThrowAnimationPath(normalized))
-        {
-            return SwShFpsTrainerThrowPatcher.ConvertAnimationToHalfSpeed(sourceBytes);
+            return SwShFpsPokemonCenterRecoveryPatcher.ConvertArchive(sourceBytes);
         }
 
         throw new InvalidDataException("60FPS Patch does not manage this ROMFS path.");
