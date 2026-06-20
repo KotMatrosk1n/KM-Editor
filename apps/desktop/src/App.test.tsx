@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { App } from './App';
+import tauriConfig from '../src-tauri/tauri.conf.json';
 import {
   createHealthForValidatedPaths,
   createMockDesktopServices,
@@ -57,6 +58,7 @@ import { type DesktopServices, type NativeUpdate } from './desktopServices';
 import { useWorkbenchStore } from './workbenchStore';
 
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
+const appVersion = tauriConfig.version;
 
 const tauriEventMock = vi.hoisted(() => {
   const listeners: Record<string, Array<() => void>> = {};
@@ -5249,6 +5251,7 @@ describe('App', () => {
   it('falls back to the GitHub release page when native update checks fail', async () => {
     const user = userEvent.setup();
     const openExternalUrl = vi.fn(async () => undefined);
+    const fallbackTag = 'v99.0.0';
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
@@ -5256,10 +5259,10 @@ describe('App', () => {
           JSON.stringify([
             {
               draft: false,
-              html_url: 'https://github.example/releases/tag/v1.5.1',
-              name: 'KM Editor v1.5.1',
+              html_url: `https://github.example/releases/tag/${fallbackTag}`,
+              name: `KM Editor ${fallbackTag}`,
               prerelease: false,
-              tag_name: 'v1.5.1'
+              tag_name: fallbackTag
             }
           ]),
           { headers: { 'Content-Type': 'application/json' }, status: 200 }
@@ -5287,13 +5290,14 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Open Release' }));
 
     await waitFor(() =>
-      expect(openExternalUrl).toHaveBeenCalledWith('https://github.example/releases/tag/v1.5.1')
+      expect(openExternalUrl).toHaveBeenCalledWith(`https://github.example/releases/tag/${fallbackTag}`)
     );
     expect(openExternalUrl).toHaveBeenCalledTimes(1);
   });
 
   it('reports when KM Editor is already up to date', async () => {
     const user = userEvent.setup();
+    const currentTag = `v${appVersion}`;
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
@@ -5302,9 +5306,9 @@ describe('App', () => {
             {
               assets: [],
               draft: false,
-              html_url: 'https://github.example/releases/tag/v1.5.0',
+              html_url: `https://github.example/releases/tag/${currentTag}`,
               prerelease: false,
-              tag_name: 'v1.5.0'
+              tag_name: currentTag
             }
           ]),
           { headers: { 'Content-Type': 'application/json' }, status: 200 }
@@ -5317,7 +5321,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Settings' }));
     await user.click(screen.getByRole('button', { name: 'Check for Updates' }));
 
-    expect(await screen.findByText('KM Editor v1.5.0 is up to date.')).toBeInTheDocument();
+    expect(await screen.findByText(`KM Editor v${appVersion} is up to date.`)).toBeInTheDocument();
     expect(screen.queryByRole('dialog', { name: 'Update Available' })).not.toBeInTheDocument();
   });
 
