@@ -5,6 +5,7 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SV.Encounters;
+using KM.SV.Gifts;
 using KM.SV.HyperspaceBypass;
 using KM.SV.Items;
 using KM.SV.ModMerger;
@@ -23,6 +24,7 @@ public sealed class SvWorkflowService
     private readonly SvPokemonWorkflowService pokemonWorkflowService;
     private readonly SvTrainersWorkflowService trainersWorkflowService;
     private readonly SvEncountersWorkflowService encountersWorkflowService;
+    private readonly SvGiftPokemonWorkflowService giftPokemonWorkflowService;
     private readonly SvPlacementWorkflowService placementWorkflowService;
     private readonly SvHyperspaceBypassWorkflowService hyperspaceBypassWorkflowService;
     private readonly SvModMergerWorkflowService modMergerWorkflowService;
@@ -31,6 +33,7 @@ public sealed class SvWorkflowService
     private readonly SvPokemonEditSessionService pokemonEditSessionService;
     private readonly SvTrainersEditSessionService trainersEditSessionService;
     private readonly SvEncountersEditSessionService encountersEditSessionService;
+    private readonly SvGiftPokemonEditSessionService giftPokemonEditSessionService;
     private readonly SvPlacementEditSessionService placementEditSessionService;
     private readonly SvHyperspaceBypassEditSessionService hyperspaceBypassEditSessionService;
 
@@ -43,6 +46,7 @@ public sealed class SvWorkflowService
         pokemonWorkflowService = new SvPokemonWorkflowService(fileSource);
         trainersWorkflowService = new SvTrainersWorkflowService(fileSource);
         encountersWorkflowService = new SvEncountersWorkflowService(fileSource);
+        giftPokemonWorkflowService = new SvGiftPokemonWorkflowService(fileSource);
         placementWorkflowService = new SvPlacementWorkflowService(fileSource);
         hyperspaceBypassWorkflowService = new SvHyperspaceBypassWorkflowService();
         modMergerWorkflowService = new SvModMergerWorkflowService(this.projectWorkspaceService);
@@ -51,6 +55,7 @@ public sealed class SvWorkflowService
         pokemonEditSessionService = new SvPokemonEditSessionService(this.projectWorkspaceService, fileSource, pokemonWorkflowService);
         trainersEditSessionService = new SvTrainersEditSessionService(this.projectWorkspaceService, fileSource, trainersWorkflowService);
         encountersEditSessionService = new SvEncountersEditSessionService(this.projectWorkspaceService, fileSource, encountersWorkflowService);
+        giftPokemonEditSessionService = new SvGiftPokemonEditSessionService(this.projectWorkspaceService, fileSource, giftPokemonWorkflowService);
         placementEditSessionService = new SvPlacementEditSessionService(this.projectWorkspaceService, fileSource, placementWorkflowService);
         hyperspaceBypassEditSessionService = new SvHyperspaceBypassEditSessionService(
             this.projectWorkspaceService,
@@ -74,6 +79,7 @@ public sealed class SvWorkflowService
             pokemonWorkflowService.CreateSummary(project),
             trainersWorkflowService.CreateSummary(project),
             encountersWorkflowService.CreateSummary(project),
+            giftPokemonWorkflowService.CreateSummary(project),
             placementWorkflowService.CreateSummary(project),
             hyperspaceBypassWorkflowService.CreateSummary(project),
             modMergerWorkflowService.CreateSummary(project),
@@ -118,6 +124,14 @@ public sealed class SvWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return encountersWorkflowService.Load(project);
+    }
+
+    public SvGiftPokemonWorkflow LoadGiftPokemon(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return giftPokemonWorkflowService.Load(project);
     }
 
     public SvPlacementWorkflow LoadPlacement(ProjectPaths paths)
@@ -255,6 +269,16 @@ public sealed class SvWorkflowService
         return encountersEditSessionService.UpdateSlotField(paths, session, tableId, slot, field, value);
     }
 
+    public SvGiftPokemonEditResult UpdateGiftPokemonField(
+        ProjectPaths paths,
+        EditSession? session,
+        int giftIndex,
+        string field,
+        string value)
+    {
+        return giftPokemonEditSessionService.UpdateField(paths, session, giftIndex, field, value);
+    }
+
     public SvPlacementEditResult UpdatePlacementObjectField(
         ProjectPaths paths,
         EditSession? session,
@@ -322,6 +346,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
+            SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
             SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
@@ -342,6 +367,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
@@ -363,6 +389,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
@@ -482,6 +509,7 @@ public sealed class SvWorkflowService
             [SvEditSessionSupport.PokemonDomain] => SvEditSessionDomain.Pokemon,
             [SvEditSessionSupport.TrainersDomain] => SvEditSessionDomain.Trainers,
             [SvEditSessionSupport.EncountersDomain] => SvEditSessionDomain.Encounters,
+            [SvEditSessionSupport.GiftPokemonDomain] => SvEditSessionDomain.GiftPokemon,
             [SvEditSessionSupport.PlacementDomain] => SvEditSessionDomain.Placement,
             [SvHyperspaceBypassEditSessionService.HyperspaceBypassEditDomain] => SvEditSessionDomain.HyperspaceBypass,
             _ => SvEditSessionDomain.Mixed,
@@ -507,9 +535,11 @@ public sealed class SvWorkflowService
         return domain switch
         {
             SvEditSessionSupport.ItemsDomain => SvEditSessionDomain.Items,
+            SvEditSessionSupport.MovesDomain => SvEditSessionDomain.Moves,
             SvEditSessionSupport.PokemonDomain => SvEditSessionDomain.Pokemon,
             SvEditSessionSupport.TrainersDomain => SvEditSessionDomain.Trainers,
             SvEditSessionSupport.EncountersDomain => SvEditSessionDomain.Encounters,
+            SvEditSessionSupport.GiftPokemonDomain => SvEditSessionDomain.GiftPokemon,
             SvEditSessionSupport.PlacementDomain => SvEditSessionDomain.Placement,
             SvHyperspaceBypassEditSessionService.HyperspaceBypassEditDomain => SvEditSessionDomain.HyperspaceBypass,
             null or "" => SvEditSessionDomain.None,
@@ -521,9 +551,11 @@ public sealed class SvWorkflowService
     {
         return domain is
             SvEditSessionDomain.Items or
+            SvEditSessionDomain.Moves or
             SvEditSessionDomain.Pokemon or
             SvEditSessionDomain.Trainers or
             SvEditSessionDomain.Encounters or
+            SvEditSessionDomain.GiftPokemon or
             SvEditSessionDomain.Placement;
     }
 
@@ -543,9 +575,11 @@ public sealed class SvWorkflowService
         return domain switch
         {
             SvEditSessionDomain.Items => SvEditSessionSupport.ItemsDomain,
+            SvEditSessionDomain.Moves => SvEditSessionSupport.MovesDomain,
             SvEditSessionDomain.Pokemon => SvEditSessionSupport.PokemonDomain,
             SvEditSessionDomain.Trainers => SvEditSessionSupport.TrainersDomain,
             SvEditSessionDomain.Encounters => SvEditSessionSupport.EncountersDomain,
+            SvEditSessionDomain.GiftPokemon => SvEditSessionSupport.GiftPokemonDomain,
             SvEditSessionDomain.Placement => SvEditSessionSupport.PlacementDomain,
             _ => string.Empty,
         };
@@ -621,6 +655,7 @@ public sealed class SvWorkflowService
         Pokemon,
         Trainers,
         Encounters,
+        GiftPokemon,
         Placement,
         HyperspaceBypass,
         Mixed,

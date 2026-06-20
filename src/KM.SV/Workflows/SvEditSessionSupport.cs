@@ -16,6 +16,7 @@ internal static class SvEditSessionSupport
     public const string PokemonDomain = "workflow.pokemon";
     public const string TrainersDomain = "workflow.trainers";
     public const string EncountersDomain = "workflow.encounters";
+    public const string GiftPokemonDomain = "workflow.giftPokemon";
     public const string PlacementDomain = "workflow.placement";
 
     public static bool CanEdit(
