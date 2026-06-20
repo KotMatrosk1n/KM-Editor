@@ -17,24 +17,24 @@ public struct EventAddPokemon : IFlatbufferObject
   public EventAddPokemon __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
 
   public string Label { get { int o = __p.__offset(4); return o != 0 ? __p.__string(o + __p.bb_pos) : null; } }
-  public bool PokedexRegistration { get { int o = __p.__offset(6); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
-  public global::PokeDataFull? PokeData { get { int o = __p.__offset(8); return o != 0 ? (global::PokeDataFull?)(new global::PokeDataFull()).__assign(__p.__indirect(o + __p.bb_pos), __p.bb) : null; } }
+  public global::PokeDataFull? PokeData { get { int o = __p.__offset(6); return o != 0 ? (global::PokeDataFull?)(new global::PokeDataFull()).__assign(__p.__indirect(o + __p.bb_pos), __p.bb) : null; } }
+  public bool PokedexRegistration { get { int o = __p.__offset(8); return o != 0 ? 0!=__p.bb.Get(o + __p.bb_pos) : (bool)false; } }
 
   public static Offset<global::EventAddPokemon> CreateEventAddPokemon(FlatBufferBuilder builder,
       StringOffset labelOffset = default(StringOffset),
-      bool pokedexRegistration = false,
-      Offset<global::PokeDataFull> pokeDataOffset = default(Offset<global::PokeDataFull>)) {
+      Offset<global::PokeDataFull> pokeDataOffset = default(Offset<global::PokeDataFull>),
+      bool pokedexRegistration = false) {
     builder.StartTable(3);
+    EventAddPokemon.AddPokedexRegistration(builder, pokedexRegistration);
     EventAddPokemon.AddPokeData(builder, pokeDataOffset);
     EventAddPokemon.AddLabel(builder, labelOffset);
-    EventAddPokemon.AddPokedexRegistration(builder, pokedexRegistration);
     return EventAddPokemon.EndEventAddPokemon(builder);
   }
 
   public static void StartEventAddPokemon(FlatBufferBuilder builder) { builder.StartTable(3); }
   public static void AddLabel(FlatBufferBuilder builder, StringOffset labelOffset) { builder.AddOffset(0, labelOffset.Value, 0); }
-  public static void AddPokedexRegistration(FlatBufferBuilder builder, bool pokedexRegistration) { builder.AddBool(1, pokedexRegistration, false); }
-  public static void AddPokeData(FlatBufferBuilder builder, Offset<global::PokeDataFull> pokeDataOffset) { builder.AddOffset(2, pokeDataOffset.Value, 0); }
+  public static void AddPokeData(FlatBufferBuilder builder, Offset<global::PokeDataFull> pokeDataOffset) { builder.AddOffset(1, pokeDataOffset.Value, 0); }
+  public static void AddPokedexRegistration(FlatBufferBuilder builder, bool pokedexRegistration) { builder.AddBool(2, pokedexRegistration, false); }
   public static Offset<global::EventAddPokemon> EndEventAddPokemon(FlatBufferBuilder builder) {
     int o = builder.EndTable();
     return new Offset<global::EventAddPokemon>(o);

@@ -789,6 +789,7 @@ h2 {
   display: grid;
   grid-template-columns: 80px minmax(0, 1fr);
   gap: 10px;
+  min-width: 0;
   min-height: 36px;
   align-items: center;
   padding: 8px 10px;
@@ -798,10 +799,13 @@ h2 {
 }
 
 .diagnostic strong {
+  min-width: 0;
   text-transform: capitalize;
 }
 
 .diagnostic span {
+  min-width: 0;
+  overflow-wrap: anywhere;
   white-space: pre-line;
 }
 

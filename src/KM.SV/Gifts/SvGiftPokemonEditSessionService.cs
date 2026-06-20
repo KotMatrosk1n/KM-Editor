@@ -630,8 +630,8 @@ internal sealed class SvGiftPokemonEditSessionService
             return global::EventAddPokemon.CreateEventAddPokemon(
                 builder,
                 labelOffset,
-                PokedexRegistration,
-                pokeDataOffset);
+                pokeDataOffset,
+                PokedexRegistration);
         }
     }
 

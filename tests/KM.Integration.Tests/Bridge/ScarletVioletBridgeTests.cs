@@ -1672,15 +1672,28 @@ public sealed class ScarletVioletBridgeTests
             ballId: global::BallType.MONSUTAABOORU,
             gemType: global::GemType.NORMAL,
             wazaConfirmLevel: 5);
-        var gift = global::EventAddPokemon.CreateEventAddPokemon(
+        var gift = CreateEventAddPokemonWithRealLayout(
             builder,
             label,
-            pokedexRegistration: true,
-            pokeDataOffset: pokemon);
+            pokemon,
+            pokedexRegistration: true);
         var vector = global::EventAddPokemonArray.CreateValuesVector(builder, [gift]);
         var root = global::EventAddPokemonArray.CreateEventAddPokemonArray(builder, vector);
         global::EventAddPokemonArray.FinishEventAddPokemonArrayBuffer(builder, root);
         return builder.SizedByteArray();
+    }
+
+    private static Offset<global::EventAddPokemon> CreateEventAddPokemonWithRealLayout(
+        FlatBufferBuilder builder,
+        StringOffset labelOffset,
+        Offset<global::PokeDataFull> pokeDataOffset,
+        bool pokedexRegistration)
+    {
+        builder.StartTable(3);
+        builder.AddBool(2, pokedexRegistration, false);
+        builder.AddOffset(1, pokeDataOffset.Value, 0);
+        builder.AddOffset(0, labelOffset.Value, 0);
+        return new Offset<global::EventAddPokemon>(builder.EndTable());
     }
 
     private static byte[] CreateFixedSymbolTableArray(global::pml.common.DevID species = global::pml.common.DevID.DEV_HUSIGIDANE)
