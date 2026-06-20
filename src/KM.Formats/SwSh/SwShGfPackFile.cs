@@ -388,10 +388,6 @@ public sealed class SwShGfPackFile
             var offsetPacked = ReadNonNegativeInt32(data, entryOffset + 0x10, "GFPAK packed file offset");
             EnsureRange(data, offsetPacked, sizeCompressed, "GFPAK packed file data");
             var compressedData = data.Slice(offsetPacked, sizeCompressed).ToArray();
-            var decompressedData = CanDecompress(compressionType)
-                ? Decompress(compressedData, sizeDecompressed, compressionType)
-                : null;
-
             entries.Add(new FileEntry(
                 Level: BinaryPrimitives.ReadUInt16LittleEndian(data.Slice(entryOffset, sizeof(ushort))),
                 CompressionType: compressionType,
@@ -402,7 +398,7 @@ public sealed class SwShGfPackFile
                 OffsetPacked: offsetPacked,
                 Unused: BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(entryOffset + 0x14, sizeof(uint))),
                 CompressedData: compressedData,
-                DecompressedData: decompressedData,
+                DecompressedData: null,
                 Modified: false));
         }
 

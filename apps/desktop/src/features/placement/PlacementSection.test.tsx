@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { App } from '../../App';
@@ -130,6 +130,68 @@ describe('PlacementSection', () => {
     expect(screen.queryByRole('tab', { name: /Hidden Items/ })).not.toBeInTheDocument();
     expect(within(table).getByText('Field item: Potion')).toBeInTheDocument();
     expect(within(table).getByText('Hidden item: Great Ball')).toBeInTheDocument();
+  });
+
+  it('sends only the changed SwSh placement field when saving an item row', async () => {
+    const user = userEvent.setup();
+    const workflow = createSwShPlacementWorkflowWithStaleStructuredCategories();
+    const loadPlacementWorkflow = vi.fn(async () => ({ workflow }));
+    const updatePlacementObjectField = vi.fn(async (request) => ({
+      diagnostics: [],
+      session: {
+        hasPendingChanges: true,
+        pendingEdits: [
+          {
+            domain: 'workflow.placement',
+            field: request.field,
+            newValue: request.value,
+            recordId: request.objectId,
+            sources: [
+              {
+                layer: 'base' as const,
+                relativePath: 'romfs/bin/archive/field/resident/placement.gfpak'
+              }
+            ],
+            summary: `Set ${request.field} to ${request.value}.`
+          }
+        ],
+        sessionId: 'session-1'
+      },
+      workflow
+    }));
+
+    useWorkbenchStore.setState((state) => ({
+      draftPaths: {
+        ...state.draftPaths,
+        selectedGame: 'sword'
+      }
+    }));
+
+    render(
+      <App bridge={createMockProjectBridge({ loadPlacementWorkflow, updatePlacementObjectField }, true)} />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(await screen.findByRole('button', { name: 'Placement' }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const quantityInput = await screen.findByLabelText('Quantity');
+    await user.clear(quantityInput);
+    await user.type(quantityInput, '7');
+    await user.click(screen.getByRole('button', { name: 'Save Object' }));
+
+    await waitFor(() => expect(updatePlacementObjectField).toHaveBeenCalledTimes(1));
+    expect(updatePlacementObjectField).toHaveBeenCalledWith(
+      expect.objectContaining({
+        field: 'quantity',
+        objectId: 'a_test.bin|0|fieldItem|0|-',
+        value: '7'
+      })
+    );
   });
 });
 

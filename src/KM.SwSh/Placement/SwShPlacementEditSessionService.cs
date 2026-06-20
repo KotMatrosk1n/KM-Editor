@@ -112,11 +112,21 @@ public sealed class SwShPlacementEditSessionService
 
     public ChangePlan CreateChangePlan(ProjectPaths paths, EditSession session)
     {
+        return CreateChangePlan(paths, session, validateSession: true);
+    }
+
+    private ChangePlan CreateChangePlan(ProjectPaths paths, EditSession session, bool validateSession)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
-        var validation = Validate(paths, session);
-        var diagnostics = validation.Diagnostics.ToList();
+        var diagnostics = validateSession
+            ? Validate(paths, session).Diagnostics.ToList()
+            : new List<ValidationDiagnostic>();
+        if (!validateSession)
+        {
+            ValidatePendingEditEnvelope(session.PendingEdits, diagnostics);
+        }
 
         if (session.PendingEdits.Count == 0)
         {
@@ -176,7 +186,7 @@ public sealed class SwShPlacementEditSessionService
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        var currentPlan = CreateChangePlan(paths, session);
+        var currentPlan = CreateChangePlan(paths, session, validateSession: false);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
@@ -213,8 +223,14 @@ public sealed class SwShPlacementEditSessionService
         try
         {
             var pack = SwShGfPackFile.Parse(File.ReadAllBytes(dataSource.AbsolutePath));
-            var itemHashes = LoadItemHashes(project, diagnostics);
-            var itemIdsByHash = itemHashes.ToDictionary(entry => entry.Value, entry => entry.Key);
+            var needsItemHashLookup = session.PendingEdits.Any(edit =>
+                string.Equals(edit.Field, SwShPlacementWorkflowService.ItemIdField, StringComparison.Ordinal));
+            var itemHashes = needsItemHashLookup
+                ? LoadItemHashes(project, diagnostics)
+                : new Dictionary<int, ulong>();
+            var itemIdsByHash = needsItemHashLookup
+                ? itemHashes.ToDictionary(entry => entry.Value, entry => entry.Key)
+                : new Dictionary<ulong, int>();
 
             foreach (var editGroup in session.PendingEdits.GroupBy(GetArchiveMemberFileName, StringComparer.Ordinal))
             {
@@ -256,6 +272,11 @@ public sealed class SwShPlacementEditSessionService
                 }
 
                 pack.SetFileByName(editGroup.Key, archive.WriteEdits(archiveEdits, rawFieldEdits));
+            }
+
+            if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                return CreateApplyResult(applyId, appliedAt, currentPlan, writtenFiles, diagnostics);
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
@@ -534,6 +555,31 @@ public sealed class SwShPlacementEditSessionService
         }
 
         ValidateFieldValue(paths, placedObject, edit.Field, edit.NewValue, diagnostics);
+    }
+
+    private static void ValidatePendingEditEnvelope(
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var edit in edits)
+        {
+            if (edit.Domain != PlacementEditDomain)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pending edit domain '{edit.Domain}' is not supported by Placement.",
+                    expected: PlacementEditDomain));
+                continue;
+            }
+
+            if (edit.RecordId is null || edit.Field is null || edit.NewValue is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending placement edit is missing record, field, or value metadata.",
+                    expected: "Complete placement pending edit"));
+            }
+        }
     }
 
     private static SwShPlacementObjectEdit? ToArchiveEdit(

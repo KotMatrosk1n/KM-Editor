@@ -121,11 +121,25 @@ internal sealed class SvPlacementEditSessionService
         EditSession session,
         SvOutputMode outputMode = SvOutputMode.Standalone)
     {
+        return CreateChangePlan(paths, session, outputMode, validateSession: true);
+    }
+
+    private ChangePlan CreateChangePlan(
+        ProjectPaths paths,
+        EditSession session,
+        SvOutputMode outputMode,
+        bool validateSession)
+    {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(session);
 
-        var validation = Validate(paths, session);
-        var diagnostics = validation.Diagnostics.ToList();
+        var diagnostics = validateSession
+            ? Validate(paths, session).Diagnostics.ToList()
+            : new List<ValidationDiagnostic>();
+        if (!validateSession)
+        {
+            ValidatePendingEditEnvelope(session.PendingEdits, diagnostics);
+        }
         if (session.PendingEdits.Count == 0)
         {
             diagnostics.Add(CreateDiagnostic(
@@ -200,7 +214,7 @@ internal sealed class SvPlacementEditSessionService
 
         var applyId = Guid.NewGuid().ToString("N");
         var appliedAt = DateTimeOffset.UtcNow;
-        var currentPlan = CreateChangePlan(paths, session, outputMode);
+        var currentPlan = CreateChangePlan(paths, session, outputMode, validateSession: false);
         var diagnostics = currentPlan.Diagnostics.ToList();
         var writtenFiles = new List<ProjectFileReference>();
 
@@ -521,6 +535,33 @@ internal sealed class SvPlacementEditSessionService
         }
 
         _ = ValidateValue(editableField, edit.NewValue ?? string.Empty, diagnostics);
+    }
+
+    private static void ValidatePendingEditEnvelope(
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var edit in edits)
+        {
+            if (!string.Equals(edit.Domain, SvEditSessionSupport.PlacementDomain, StringComparison.Ordinal))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Pending edit domain '{edit.Domain}' is not supported by Scarlet/Violet Placement.",
+                    expected: SvEditSessionSupport.PlacementDomain));
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(edit.RecordId)
+                || string.IsNullOrWhiteSpace(edit.Field)
+                || edit.NewValue is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pending Placement edit is missing record, field, or value metadata.",
+                    expected: "Complete Placement pending edit"));
+            }
+        }
     }
 
     private static bool ValidateValue(

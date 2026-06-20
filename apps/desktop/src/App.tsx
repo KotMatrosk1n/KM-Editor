@@ -31152,7 +31152,7 @@ function getPlacementDraftSummary(
 
     const normalizedValue = draftState.normalizedValue;
 
-    if (normalizedValue !== null) {
+    if (isChanged && normalizedValue !== null) {
       changedFields.push({
         field: field.field,
         label: field.label,
