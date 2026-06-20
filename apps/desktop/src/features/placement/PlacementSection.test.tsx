@@ -28,6 +28,7 @@ describe('PlacementSection', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       },
       editSession: null,

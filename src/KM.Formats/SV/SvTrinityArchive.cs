@@ -16,24 +16,30 @@ public sealed class SvTrinityArchive : IDisposable
     private readonly Dictionary<ulong, FileLocation> filesByHash;
     private readonly Dictionary<ulong, ulong> packOffsetsByHash;
     private readonly Dictionary<ulong, PackedArchiveCacheEntry> packCache = [];
-    private SvOodleLibrary? oodleLibrary;
-    private bool ownsOodleLibrary;
+    private readonly string? compressionSupportFolderPath;
+    private SvCompressionRuntimeLibrary? compressionLibrary;
+    private bool ownsCompressionLibrary;
     private bool disposed;
 
     private SvTrinityArchive(
         string trpfsPath,
         Dictionary<ulong, FileLocation> filesByHash,
         Dictionary<ulong, ulong> packOffsetsByHash,
-        SvOodleLibrary? oodleLibrary)
+        string? compressionSupportFolderPath,
+        SvCompressionRuntimeLibrary? compressionLibrary)
     {
         this.trpfsPath = trpfsPath;
         this.filesByHash = filesByHash;
         this.packOffsetsByHash = packOffsetsByHash;
-        this.oodleLibrary = oodleLibrary;
-        ownsOodleLibrary = oodleLibrary is null;
+        this.compressionSupportFolderPath = compressionSupportFolderPath;
+        this.compressionLibrary = compressionLibrary;
+        ownsCompressionLibrary = compressionLibrary is null;
     }
 
-    public static SvTrinityArchive Open(string romFsRoot, SvOodleLibrary? oodleLibrary = null)
+    public static SvTrinityArchive Open(
+        string romFsRoot,
+        string? compressionSupportFolderPath = null,
+        SvCompressionRuntimeLibrary? compressionLibrary = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(romFsRoot);
 
@@ -58,7 +64,8 @@ public sealed class SvTrinityArchive : IDisposable
             trpfsPath,
             BuildFileIndex(descriptor),
             BuildPackOffsetIndex(fileSystem),
-            oodleLibrary);
+            compressionSupportFolderPath,
+            compressionLibrary);
     }
 
     public bool ContainsFile(string virtualPath)
@@ -105,9 +112,9 @@ public sealed class SvTrinityArchive : IDisposable
             return;
         }
 
-        if (ownsOodleLibrary)
+        if (ownsCompressionLibrary)
         {
-            oodleLibrary?.Dispose();
+            compressionLibrary?.Dispose();
         }
 
         disposed = true;
@@ -258,18 +265,18 @@ public sealed class SvTrinityArchive : IDisposable
                 $"Packed file in '{packName}' is too large to decompress: {packedFile.FileSize} bytes.");
         }
 
-        return GetOodleLibrary().Decompress(payload, checked((int)packedFile.FileSize));
+        return GetCompressionLibrary().Decompress(payload, checked((int)packedFile.FileSize));
     }
 
-    private SvOodleLibrary GetOodleLibrary()
+    private SvCompressionRuntimeLibrary GetCompressionLibrary()
     {
-        if (oodleLibrary is not null)
+        if (compressionLibrary is not null)
         {
-            return oodleLibrary;
+            return compressionLibrary;
         }
 
-        oodleLibrary = SvOodleLibrary.LoadBundled();
-        return oodleLibrary;
+        compressionLibrary = SvCompressionRuntimeLibrary.LoadFromFolder(compressionSupportFolderPath);
+        return compressionLibrary;
     }
 
     private static string NormalizeVirtualPath(string virtualPath)

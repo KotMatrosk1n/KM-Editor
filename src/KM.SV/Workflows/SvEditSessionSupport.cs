@@ -38,6 +38,25 @@ internal static class SvEditSessionSupport
 
         if (!project.Health.CanOpenEditableWorkflows || summary.Availability != SvWorkflowAvailability.Available)
         {
+            var supportDiagnostics = summary.Diagnostics
+                .Where(diagnostic => diagnostic.Field == "scarletVioletSupportFolderPath")
+                .ToArray();
+            foreach (var diagnostic in supportDiagnostics)
+            {
+                diagnostics.Add(diagnostic);
+            }
+
+            if (supportDiagnostics.Length > 0)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "S/V data edits require the oo2core_8_win64.dll folder to be configured in Project Setup.",
+                    domain,
+                    field: "scarletVioletSupportFolderPath",
+                    expected: "Configured oo2core_8_win64.dll folder"));
+                return false;
+            }
+
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
                 "Scarlet/Violet edit sessions require valid base paths and a valid output root.",

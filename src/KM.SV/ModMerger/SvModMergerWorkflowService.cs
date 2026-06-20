@@ -1112,12 +1112,14 @@ public sealed class SvModMergerWorkflowService
     private sealed class BaseFileReader : IDisposable
     {
         private readonly string baseRomFsPath;
+        private readonly string? supportFolderPath;
         private readonly string looseBaseRoot;
         private SvTrinityArchive? archive;
 
-        private BaseFileReader(string baseRomFsPath)
+        private BaseFileReader(string baseRomFsPath, string? supportFolderPath)
         {
             this.baseRomFsPath = baseRomFsPath;
+            this.supportFolderPath = supportFolderPath;
             looseBaseRoot = ResolveBaseRomFsRoot(baseRomFsPath);
         }
 
@@ -1135,7 +1137,16 @@ public sealed class SvModMergerWorkflowService
                 return null;
             }
 
-            return new BaseFileReader(paths.BaseRomFsPath);
+            if (!SvCompressionRuntime.IsConfigured(paths.ScarletVioletSupportFolderPath))
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    "oo2core_8_win64.dll folder is not configured. Smart merge can still use loose base files, but packed vanilla comparisons may fall back to source priority.",
+                    field: "scarletVioletSupportFolderPath",
+                    expected: "Configured oo2core_8_win64.dll folder for packed vanilla comparisons"));
+            }
+
+            return new BaseFileReader(paths.BaseRomFsPath, paths.ScarletVioletSupportFolderPath);
         }
 
         public bool TryRead(string relativePath, out byte[] bytes)
@@ -1152,7 +1163,7 @@ public sealed class SvModMergerWorkflowService
 
             try
             {
-                archive ??= SvTrinityArchive.Open(baseRomFsPath);
+                archive ??= SvTrinityArchive.Open(baseRomFsPath, supportFolderPath);
                 return archive.TryReadFile(virtualPath, out bytes);
             }
             catch (Exception)

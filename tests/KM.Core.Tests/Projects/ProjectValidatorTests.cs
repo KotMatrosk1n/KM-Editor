@@ -86,6 +86,44 @@ public sealed class ProjectValidatorTests
     }
 
     [Fact]
+    public void ValidateKeepsScarletVioletSupportFolderOptional()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        temp.WriteBaseRomFsFile("arc/data.trpfd", "descriptor");
+        temp.WriteBaseRomFsFile("arc/data.trpfs", "storage");
+        WriteBaseExeFsBytes(temp, "main.npdm", CreateNpdm(ScarletTitleId));
+
+        var health = new ProjectValidator().Validate(temp.Paths with { SelectedGame = ProjectGame.Scarlet });
+
+        Assert.Equal(ProjectHealthState.EditableReady, health.State);
+        Assert.Contains(
+            health.Paths,
+            path => path.Role == ProjectPathRole.ScarletVioletSupportFolder
+                && path.Status == ProjectPathStatus.NotSet
+                && !path.IsRequired);
+    }
+
+    [Fact]
+    public void ValidateAcceptsScarletVioletSupportFolderWhenRequiredFileIsPresent()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        var supportFolder = Directory.CreateDirectory(Path.Combine(temp.RootPath, "sv-support")).FullName;
+        File.WriteAllBytes(Path.Combine(supportFolder, string.Concat("oo2", "core", "_8_", "win", "64", ".dll")), []);
+
+        var health = new ProjectValidator().Validate(
+            temp.Paths with
+            {
+                ScarletVioletSupportFolderPath = supportFolder,
+                SelectedGame = ProjectGame.Scarlet,
+            });
+
+        Assert.Contains(
+            health.Paths,
+            path => path.Role == ProjectPathRole.ScarletVioletSupportFolder
+                && path.Status == ProjectPathStatus.Valid);
+    }
+
+    [Fact]
     public void ValidateReturnsNeedsPathsWhenRequiredBasePathIsMissing()
     {
         using var temp = TemporaryProjectFolders.Create();

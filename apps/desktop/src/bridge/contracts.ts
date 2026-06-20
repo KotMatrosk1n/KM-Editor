@@ -202,16 +202,10 @@ export const apiErrorSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   message: z.string()
 });
-
 export const projectGameSchema = z.enum(['sword', 'shield', 'scarlet', 'violet']);
 export type ProjectGame = z.infer<typeof projectGameSchema>;
-
 export const projectPathsSchema = z.strictObject({
-  baseExeFsPath: z.string().nullable(),
-  baseRomFsPath: z.string().nullable(),
-  outputRootPath: z.string().nullable(),
-  saveFilePath: z.string().nullable(),
-  selectedGame: projectGameSchema.nullable().default(null)
+  baseExeFsPath: z.string().nullable(), baseRomFsPath: z.string().nullable(), outputRootPath: z.string().nullable(), saveFilePath: z.string().nullable(), scarletVioletSupportFolderPath: z.string().nullable().optional(), selectedGame: projectGameSchema.nullable().default(null)
 });
 
 export const openProjectRequestSchema = z.strictObject({
@@ -360,7 +354,13 @@ export const projectHealthStateSchema = z.enum([
   'blocked'
 ]);
 
-export const projectPathRoleSchema = z.enum(['baseRomFs', 'baseExeFs', 'outputRoot', 'saveFile']);
+export const projectPathRoleSchema = z.enum([
+  'baseRomFs',
+  'baseExeFs',
+  'outputRoot',
+  'saveFile',
+  'scarletVioletSupportFolder'
+]);
 
 export const projectPathStatusSchema = z.enum(['notSet', 'missing', 'wrongKind', 'valid', 'unsafe']);
 

@@ -4,25 +4,30 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
-use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
 
 const BRIDGE_SIDECAR_NAME: &str = "km-tools-bridge";
-const OODLE_RESOURCE_PATHS: [&str; 2] = [
-    "oodle/win-x64/oo2core_8_win64.dll",
-    "resources/oodle/win-x64/oo2core_8_win64.dll",
-];
-const OODLE_ENV_VAR: &str = "KM_EDITOR_BUNDLED_OODLE_PATH";
 const WINDOW_CLOSE_REQUESTED_EVENT: &str = "km-editor://window-close-requested";
+const SUPPORT_SEARCH_PROGRESS_EVENT: &str = "km-editor://sv-support-search-progress";
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 struct CloseGuardState {
     is_guarded: AtomicBool,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SupportSearchProgress {
+    current_root: String,
+    current_path: String,
+    searched_directories: u64,
+    searched_files: u64,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -110,8 +115,7 @@ fn resolve_bundled_bridge_command(
         .sidecar(BRIDGE_SIDECAR_NAME)
         .map_err(|error| format!("Could not resolve the bundled project bridge sidecar: {error}"))?
         .arg("bridge-once");
-    let mut command: Command = sidecar_command.into();
-    attach_bundled_oodle_path(app_handle, &mut command)?;
+    let command: Command = sidecar_command.into();
     let program_path = Path::new(command.get_program());
 
     if program_path.is_file() {
@@ -134,50 +138,8 @@ fn resolve_dev_bridge_command() -> Result<Command, String> {
             "bridge-once",
         ])
         .current_dir(repo_root);
-    attach_repo_oodle_path(&mut command)?;
 
     Ok(command)
-}
-
-fn attach_bundled_oodle_path(
-    app_handle: &tauri::AppHandle,
-    command: &mut Command,
-) -> Result<(), String> {
-    let mut fallback_path = None;
-    for candidate in OODLE_RESOURCE_PATHS {
-        let oodle_path = app_handle
-            .path()
-            .resolve(candidate, BaseDirectory::Resource)
-            .map_err(|error| format!("Could not resolve bundled Oodle resource path: {error}"))?;
-
-        if oodle_path.is_file() {
-            command.env(OODLE_ENV_VAR, oodle_path);
-            return Ok(());
-        }
-
-        fallback_path.get_or_insert(oodle_path);
-    }
-
-    if let Some(oodle_path) = fallback_path {
-        command.env(OODLE_ENV_VAR, oodle_path);
-    }
-
-    Ok(())
-}
-
-fn attach_repo_oodle_path(command: &mut Command) -> Result<(), String> {
-    let repo_root = resolve_repo_root()?;
-    let oodle_path = repo_root
-        .join("apps")
-        .join("desktop")
-        .join("src-tauri")
-        .join("resources")
-        .join("oodle")
-        .join("win-x64")
-        .join("oo2core_8_win64.dll");
-
-    command.env(OODLE_ENV_VAR, oodle_path);
-    Ok(())
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -220,6 +182,115 @@ fn create_directory(path: String) -> Result<(), String> {
     }
 
     std::fs::create_dir(&path).map_err(|error| format!("Could not create the folder: {error}"))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+async fn find_scarlet_violet_support_file(
+    app_handle: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || find_support_file_blocking(&app_handle))
+        .await
+        .map_err(|error| format!("S/V support file search task failed: {error}"))?
+}
+
+fn find_support_file_blocking(app_handle: &tauri::AppHandle) -> Result<Option<String>, String> {
+    let mut searched_directories = 0_u64;
+    let mut searched_files = 0_u64;
+    let mut last_emit = Instant::now()
+        .checked_sub(Duration::from_secs(1))
+        .unwrap_or_else(Instant::now);
+
+    for root in enumerate_filesystem_roots() {
+        let root_label = root.display().to_string();
+        let mut stack = vec![root.clone()];
+
+        while let Some(directory) = stack.pop() {
+            searched_directories = searched_directories.saturating_add(1);
+            if last_emit.elapsed() >= Duration::from_millis(200) {
+                emit_support_search_progress(
+                    app_handle,
+                    &root_label,
+                    &directory,
+                    searched_directories,
+                    searched_files,
+                );
+                last_emit = Instant::now();
+            }
+
+            let Ok(entries) = std::fs::read_dir(&directory) else {
+                continue;
+            };
+
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+
+                if file_type.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+
+                if !file_type.is_file() {
+                    continue;
+                }
+
+                searched_files = searched_files.saturating_add(1);
+                if is_required_support_file(&entry.file_name().to_string_lossy()) {
+                    emit_support_search_progress(
+                        app_handle,
+                        &root_label,
+                        &path,
+                        searched_directories,
+                        searched_files,
+                    );
+                    return Ok(path.parent().map(|parent| parent.display().to_string()));
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn emit_support_search_progress(
+    app_handle: &tauri::AppHandle,
+    current_root: &str,
+    current_path: &Path,
+    searched_directories: u64,
+    searched_files: u64,
+) {
+    let _ = app_handle.emit(
+        SUPPORT_SEARCH_PROGRESS_EVENT,
+        SupportSearchProgress {
+            current_root: current_root.to_owned(),
+            current_path: current_path.display().to_string(),
+            searched_directories,
+            searched_files,
+        },
+    );
+}
+
+fn is_required_support_file(file_name: &str) -> bool {
+    file_name.eq_ignore_ascii_case(&required_support_file_name())
+}
+
+fn required_support_file_name() -> String {
+    ["oo2", "core", "_8_", "win", "64", ".dll"].concat()
+}
+
+#[cfg(windows)]
+fn enumerate_filesystem_roots() -> Vec<PathBuf> {
+    ('A'..='Z')
+        .map(|drive| PathBuf::from(format!("{drive}:\\")))
+        .filter(|path| path.exists())
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn enumerate_filesystem_roots() -> Vec<PathBuf> {
+    vec![PathBuf::from("/")]
 }
 
 #[tauri::command]
@@ -273,6 +344,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             project_bridge_once,
             create_directory,
+            find_scarlet_violet_support_file,
             open_path,
             set_close_guard_enabled,
             exit_app

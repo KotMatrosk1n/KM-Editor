@@ -60,6 +60,7 @@ export function createMockDesktopServices(overrides: Partial<DesktopServices> = 
     checkForNativeUpdate: async () => null,
     createDirectory: async () => undefined,
     exitApp: async () => undefined,
+    findScarletVioletSupportFolder: async () => null,
     isAvailable: true,
     openExternalUrl: async () => undefined,
     openPath: async () => undefined,
@@ -73,7 +74,8 @@ export function createMockDesktopServices(overrides: Partial<DesktopServices> = 
 export function createHealthForValidatedPaths(
   baseRomFsPath: string, baseExeFsPath: string,
   outputRootPath: string,
-  saveFilePath: string | null
+  saveFilePath: string | null,
+  scarletVioletSupportFolderPath: string | null = null
 ): ProjectHealth {
   return {
     canOpenEditableWorkflows: true,
@@ -113,6 +115,13 @@ export function createHealthForValidatedPaths(
         path: saveFilePath,
         role: 'saveFile',
         status: saveFilePath ? 'valid' : 'notSet'
+      },
+      {
+        diagnostics: [],
+        isRequired: false,
+        path: scarletVioletSupportFolderPath,
+        role: 'scarletVioletSupportFolder',
+        status: scarletVioletSupportFolderPath ? 'valid' : 'notSet'
       }
     ],
     state: 'editableReady'

@@ -647,6 +647,7 @@ const pathFields: Array<{
   kind: 'directory' | 'file';
   label: string;
   role: ProjectPathRole;
+  scope?: 'scarletViolet';
 }> = [
   {
     field: 'baseRomFsPath',
@@ -671,6 +672,13 @@ const pathFields: Array<{
     kind: 'file',
     label: 'Save File (Optional)',
     role: 'saveFile'
+  },
+  {
+    field: 'scarletVioletSupportFolderPath',
+    kind: 'directory',
+    label: 'oo2core_8_win64.dll Folder (Optional)',
+    role: 'scarletVioletSupportFolder',
+    scope: 'scarletViolet'
   }
 ];
 type ProjectPathField = (typeof pathFields)[number];
@@ -893,6 +901,7 @@ const shinyFieldName = 'shiny';
 const canDynamaxFieldName = 'canDynamax';
 const trainerTeraTypeFieldName = 'teraType';
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
+const supportSearchProgressEvent = 'km-editor://sv-support-search-progress';
 const trainerDataFieldNames = [
   trainerClassIdFieldName,
   classBallIdFieldName,
@@ -966,6 +975,33 @@ function createIndeterminateWorkProgress(
     step: Math.min(activeIndex + 1, steps.length),
     steps: buildWorkProgressSteps(steps, activeIndex),
     totalSteps: steps.length
+  };
+}
+
+type SupportSearchProgressPayload = {
+  currentPath: string;
+  currentRoot: string;
+  searchedDirectories: number;
+  searchedFiles: number;
+};
+
+function createSupportSearchWorkProgress(
+  progress: SupportSearchProgressPayload | null
+): WorkProgressState {
+  const detail = progress
+    ? `${progress.currentPath} · ${progress.searchedDirectories.toLocaleString()} folders · ${progress.searchedFiles.toLocaleString()} files`
+    : 'Preparing local drive scan';
+
+  return {
+    detail,
+    label: 'Finding oo2core_8_win64.dll',
+    mode: 'indeterminate',
+    step: progress ? 2 : 1,
+    steps: buildWorkProgressSteps(
+      ['Confirm search', 'Scan local drives', 'Set folder'],
+      progress ? 1 : 0
+    ),
+    totalSteps: 3
   };
 }
 const giftSpeciesFieldName = 'species';
@@ -1614,7 +1650,12 @@ export function App({
   const gameScopedWorkflows = useMemo(() =>
     getGameScopedWorkflowSummaries(workflows, selectedGame), [selectedGame, workflows]);
   const availableWorkflowSectionIds = useMemo(
-    () => new Set<WorkbenchSection>(gameScopedWorkflows.map((workflow) => workflow.id as WorkbenchSection)),
+    () =>
+      new Set<WorkbenchSection>(
+        gameScopedWorkflows
+          .filter((workflow) => workflow.availability !== 'disabled')
+          .map((workflow) => workflow.id as WorkbenchSection)
+      ),
     [gameScopedWorkflows]
   );
   const activeSectionLabel = sections.find((section) => section.id === activeSection)?.label;
@@ -1721,6 +1762,8 @@ export function App({
   const [isFpsPatchApplying, setIsFpsPatchApplying] = useState(false);
   const [isRandomizerApplying, setIsRandomizerApplying] = useState(false);
   const [isOutputRootCreating, setIsOutputRootCreating] = useState(false);
+  const [isSupportSearchPermissionOpen, setIsSupportSearchPermissionOpen] = useState(false);
+  const [isSupportSearchRunning, setIsSupportSearchRunning] = useState(false);
   const [isChangePlanApplying, setIsChangePlanApplying] = useState(false);
   const [isChangePlanCreating, setIsChangePlanCreating] = useState(false);
   const [isSessionValidating, setIsSessionValidating] = useState(false);
@@ -2393,6 +2436,80 @@ export function App({
       setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not create the output root folder.'));
     } finally {
       setIsOutputRootCreating(false);
+    }
+  };
+
+  const handleRequestScarletVioletSupportSearch = () => {
+    if (!desktopServices.isAvailable) {
+      setBridgeDiagnostics([
+        {
+          domain: 'desktop',
+          message: 'This file search is only available in the desktop app.',
+          severity: 'warning'
+        }
+      ]);
+      return;
+    }
+
+    setIsSupportSearchPermissionOpen(true);
+  };
+
+  const handleConfirmScarletVioletSupportSearch = async () => {
+    setIsSupportSearchPermissionOpen(false);
+    setIsSupportSearchRunning(true);
+    setBridgeDiagnostics([]);
+    setWorkProgress(createSupportSearchWorkProgress(null));
+
+    let unlisten: (() => void) | null = null;
+
+    try {
+      unlisten = await listen<SupportSearchProgressPayload>(
+        supportSearchProgressEvent,
+        (event) => setWorkProgress(createSupportSearchWorkProgress(event.payload))
+      );
+
+      const folderPath = await desktopServices.findScarletVioletSupportFolder();
+
+      if (!folderPath) {
+        setBridgeDiagnostics([
+          {
+            domain: 'desktop',
+            message: 'No oo2core_8_win64.dll was found. You can still choose the folder manually.',
+            severity: 'warning'
+          }
+        ]);
+        return;
+      }
+
+      const nextDraftPaths: ProjectPathDraft = {
+        ...draftPathsRef.current,
+        scarletVioletSupportFolderPath: folderPath
+      };
+      const paths = toProjectPaths(nextDraftPaths);
+      setDraftPath('scarletVioletSupportFolderPath', folderPath);
+      setProjectStatus('validating');
+
+      const response = await bridge.validateProject({ paths });
+      if (response.health.canOpenEditableWorkflows) {
+        rememberValidatedProjectPaths(nextDraftPaths);
+      }
+      setProjectHealth(response.health);
+      setLazyLoadedWorkflowSections(new Set());
+      await refreshWorkflows(paths, response.health.canOpenEditableWorkflows);
+      setBridgeDiagnostics([
+        {
+          domain: 'desktop',
+          message: 'oo2core_8_win64.dll folder was found and project paths were refreshed.',
+          severity: 'info'
+        }
+      ]);
+    } catch (error) {
+      setProjectStatus('idle');
+      setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not find oo2core_8_win64.dll.'));
+    } finally {
+      unlisten?.();
+      setIsSupportSearchRunning(false);
+      setWorkProgress(null);
     }
   };
 
@@ -6924,10 +7041,12 @@ const resetModMergerPlan = () => {
               bridgeDiagnostics={bridgeDiagnostics}
               isBusy={isBusy}
               isOutputRootCreating={isOutputRootCreating}
+              isSupportSearchRunning={isSupportSearchRunning}
               onChangeGame={handleChangeGame}
               onCreateOutputRootFolder={handleCreateOutputRootFolder}
               onOpenOutputRoot={handleOpenOutputRoot}
               onPickProjectPath={handlePickProjectPath}
+              onRequestScarletVioletSupportSearch={handleRequestScarletVioletSupportSearch}
               onSetDraftPath={setDraftPath}
               onValidateProject={handleValidateProject}
               pendingEditCount={pendingEditCount}
@@ -7869,6 +7988,12 @@ const resetModMergerPlan = () => {
         </div>
       </section>
       {workProgress ? <WorkProgressModal progress={workProgress} /> : null}
+      {isSupportSearchPermissionOpen ? (
+        <SupportSearchConfirmationModal
+          onCancel={() => setIsSupportSearchPermissionOpen(false)}
+          onConfirm={() => void handleConfirmScarletVioletSupportSearch()}
+        />
+      ) : null}
       {svOutputConfirmation ? <SvOutputConfirmationModal isApplying={isChangePlanApplying} mode={svOutputConfirmation.mode} onCancel={() => setSvOutputConfirmation(null)} onConfirm={() => { const mode = svOutputConfirmation.mode; setSvOutputConfirmation(null); void handleSaveValidatedChanges(mode); }} outputRootPath={draftPaths.outputRootPath} /> : null}
       {exitPrompt ? (
         <ExitPromptModal
@@ -8052,10 +8177,12 @@ function HealthSection({
   isBusy,
   isDesktopAvailable,
   isOutputRootCreating,
+  isSupportSearchRunning,
   onChangeGame,
   onCreateOutputRootFolder,
   onOpenOutputRoot,
   onPickProjectPath,
+  onRequestScarletVioletSupportSearch,
   onSetDraftPath,
   onValidateProject,
   pendingEditCount,
@@ -8068,10 +8195,12 @@ function HealthSection({
   isBusy: boolean;
   isDesktopAvailable: boolean;
   isOutputRootCreating: boolean;
+  isSupportSearchRunning: boolean;
   onChangeGame: () => void;
   onCreateOutputRootFolder: () => void;
   onOpenOutputRoot: () => void;
   onPickProjectPath: (pathField: ProjectPathField) => void;
+  onRequestScarletVioletSupportSearch: () => void;
   onSetDraftPath: (field: ProjectPathFieldName, value: string) => void;
   onValidateProject: () => void;
   pendingEditCount: number;
@@ -8081,6 +8210,9 @@ function HealthSection({
   const outputRootPath = draftPaths.outputRootPath.trim();
   const gameDefinition = gameDefinitions[selectedGame];
   const GameIcon = gameDefinition.icon;
+  const visiblePathFields = pathFields.filter(
+    (pathField) => pathField.scope !== 'scarletViolet' || isScarletVioletGame(selectedGame)
+  );
 
   return (
     <>
@@ -8108,7 +8240,7 @@ function HealthSection({
         </div>
 
         <div className="path-form">
-          {pathFields.map((pathField) => {
+          {visiblePathFields.map((pathField) => {
             const pathValidation = health?.paths.find((path) => path.role === pathField.role);
             const inputId = `${pathField.field}-input`;
 
@@ -8194,6 +8326,24 @@ function HealthSection({
               size={18}
             />
           </button>
+          {isScarletVioletGame(selectedGame) ? (
+            <button
+              aria-busy={isSupportSearchRunning || undefined}
+              className="secondary-button"
+              disabled={!isDesktopAvailable || isBusy || isSupportSearchRunning}
+              onClick={onRequestScarletVioletSupportSearch}
+              title="Search local drives for oo2core_8_win64.dll and fill the folder."
+              type="button"
+            >
+              <BusyActionContent
+                busyLabel="Finding oo2core_8_win64.dll"
+                icon={<Search aria-hidden="true" size={18} />}
+                isBusy={isSupportSearchRunning}
+                label="Find oo2core_8_win64.dll"
+                size={18}
+              />
+            </button>
+          ) : null}
         </div>
       </section>
 
@@ -8217,7 +8367,7 @@ function HealthSection({
         </div>
       </section>
 
-      <PathStatusSection health={health} />
+      <PathStatusSection health={health} selectedGame={selectedGame} />
       <DiagnosticsSection diagnostics={[...bridgeDiagnostics, ...(health?.diagnostics ?? [])]} />
     </>
   );
@@ -25982,6 +26132,47 @@ function WorkProgressModal({ progress }: { progress: WorkProgressState }) {
   );
 }
 
+function SupportSearchConfirmationModal({
+  onCancel,
+  onConfirm
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="support-search-confirmation-heading"
+        aria-modal="true"
+        className="modal-panel"
+        role="dialog"
+      >
+        <div className="panel-heading">
+          <Search aria-hidden="true" size={18} />
+          <h2 id="support-search-confirmation-heading">Search for oo2core_8_win64.dll?</h2>
+        </div>
+        <p className="modal-copy">
+          KM Editor will scan local filesystem roots to find oo2core_8_win64.dll for S/V
+          project data. This can take a while on large drives.
+        </p>
+        <p className="modal-copy modal-copy-muted">
+          The search only fills the oo2core_8_win64.dll folder field when a match is found.
+        </p>
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onCancel} type="button">
+            <X aria-hidden="true" size={16} />
+            <span>Cancel</span>
+          </button>
+          <button className="primary-button" onClick={onConfirm} type="button">
+            <Search aria-hidden="true" size={16} />
+            <span>Start Search</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function PokemonYieldConfirmationModal({
   action,
   kind,
@@ -26280,7 +26471,17 @@ function ExitPromptModal({
   );
 }
 
-function PathStatusSection({ health }: { health: ProjectHealth | null }) {
+function PathStatusSection({
+  health,
+  selectedGame
+}: {
+  health: ProjectHealth | null;
+  selectedGame: ProjectGame;
+}) {
+  const visiblePathFields = pathFields.filter(
+    (pathField) => pathField.scope !== 'scarletViolet' || isScarletVioletGame(selectedGame)
+  );
+
   return (
     <section aria-labelledby="paths-heading" className="panel">
       <div className="panel-heading">
@@ -26289,7 +26490,7 @@ function PathStatusSection({ health }: { health: ProjectHealth | null }) {
       </div>
 
       <dl className="path-list">
-        {pathFields.map((pathField) => {
+        {visiblePathFields.map((pathField) => {
           const pathValidation = health?.paths.find((path) => path.role === pathField.role);
 
           return (
@@ -32003,6 +32204,9 @@ function toProjectPaths(draftPaths: ProjectPathDraft) {
     baseRomFsPath: normalizeDraftPath(draftPaths.baseRomFsPath),
     outputRootPath: normalizeDraftPath(draftPaths.outputRootPath),
     saveFilePath: normalizeDraftPath(draftPaths.saveFilePath),
+    scarletVioletSupportFolderPath: isScarletVioletGame(draftPaths.selectedGame)
+      ? normalizeDraftPath(draftPaths.scarletVioletSupportFolderPath)
+      : null,
     selectedGame: draftPaths.selectedGame
   };
 }

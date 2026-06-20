@@ -45,7 +45,7 @@ internal sealed class SvWorkflowFileSource
                     entry?.State ?? ProjectFileGraphEntryState.LayeredOverride);
             }
 
-            if (TryReadOutputArchive(project.Paths.OutputRootPath, normalizedVirtualPath, out var layeredArchiveBytes))
+            if (TryReadOutputArchive(project.Paths, normalizedVirtualPath, out var layeredArchiveBytes))
             {
                 return new SvWorkflowFile(
                     normalizedVirtualPath,
@@ -69,7 +69,9 @@ internal sealed class SvWorkflowFileSource
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
             }
 
-            using var archive = SvTrinityArchive.Open(project.Paths.BaseRomFsPath);
+            using var archive = SvTrinityArchive.Open(
+                project.Paths.BaseRomFsPath,
+                project.Paths.ScarletVioletSupportFolderPath);
             if (archive.TryReadFile(normalizedVirtualPath, out var archiveBytes))
             {
                 return new SvWorkflowFile(
@@ -106,7 +108,9 @@ internal sealed class SvWorkflowFileSource
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
             }
 
-            using var archive = SvTrinityArchive.Open(project.Paths.BaseRomFsPath);
+            using var archive = SvTrinityArchive.Open(
+                project.Paths.BaseRomFsPath,
+                project.Paths.ScarletVioletSupportFolderPath);
             if (archive.TryReadFile(normalizedVirtualPath, out var archiveBytes))
             {
                 return new SvWorkflowFile(
@@ -277,17 +281,25 @@ internal sealed class SvWorkflowFileSource
         return Path.Combine(rootPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
     }
 
-    private static bool TryReadOutputArchive(string outputRootPath, string virtualPath, out byte[] bytes)
+    private static bool TryReadOutputArchive(ProjectPaths paths, string virtualPath, out byte[] bytes)
     {
         bytes = [];
         try
         {
+            var outputRootPath = paths.OutputRootPath;
+            if (string.IsNullOrWhiteSpace(outputRootPath))
+            {
+                return false;
+            }
+
             if (!HasTrinityArchive(outputRootPath))
             {
                 return false;
             }
 
-            using var archive = SvTrinityArchive.Open(outputRootPath);
+            using var archive = SvTrinityArchive.Open(
+                outputRootPath,
+                paths.ScarletVioletSupportFolderPath);
             return archive.TryReadFile(virtualPath, out bytes);
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)

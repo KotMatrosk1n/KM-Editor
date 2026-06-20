@@ -118,6 +118,7 @@ public sealed class SvModMergerWorkflowServiceTests
     private static TemporaryBridgeProject CreateScarletProject(byte[] baseBytes)
     {
         var temp = TemporaryBridgeProject.Create();
+        temp.EnsureScarletVioletSupportFolder();
         temp.WriteBaseRomFsFile("arc/data.trpfd", CreateTrinityDescriptor([DataVirtualPath]));
         temp.WriteBaseRomFsFile("arc/data.trpfs", []);
         temp.WriteBaseRomFsFile(DataVirtualPath, baseBytes);
@@ -132,7 +133,8 @@ public sealed class SvModMergerWorkflowServiceTests
             temp.BaseExeFsPath,
             temp.OutputRootPath,
             SaveFilePath: null,
-            ProjectGame.Scarlet);
+            ScarletVioletSupportFolderPath: temp.ScarletVioletSupportFolderPath,
+            SelectedGame: ProjectGame.Scarlet);
     }
 
     private static string CreateFolderMod(TemporaryBridgeProject temp, string name, byte[] bytes)

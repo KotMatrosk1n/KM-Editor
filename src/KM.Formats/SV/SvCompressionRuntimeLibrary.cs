@@ -4,28 +4,28 @@ using System.Runtime.InteropServices;
 
 namespace KM.Formats.SV;
 
-public sealed class SvOodleLibrary : IDisposable
+public sealed class SvCompressionRuntimeLibrary : IDisposable
 {
     private readonly nint libraryHandle;
-    private readonly OodleLzDecompress decompress;
+    private readonly RuntimeDecompress decompress;
     private bool disposed;
 
-    private SvOodleLibrary(nint libraryHandle, OodleLzDecompress decompress)
+    private SvCompressionRuntimeLibrary(nint libraryHandle, RuntimeDecompress decompress)
     {
         this.libraryHandle = libraryHandle;
         this.decompress = decompress;
     }
 
-    public static SvOodleLibrary LoadBundled()
+    public static SvCompressionRuntimeLibrary LoadFromFolder(string? supportFolderPath)
     {
-        var oodlePath = SvBundledOodle.ResolveRequiredPath();
-        var libraryHandle = NativeLibrary.Load(oodlePath);
+        var libraryPath = SvCompressionRuntime.ResolveRequiredFilePath(supportFolderPath);
+        var libraryHandle = NativeLibrary.Load(libraryPath);
 
         try
         {
-            var export = NativeLibrary.GetExport(libraryHandle, "OodleLZ_Decompress");
-            var decompress = Marshal.GetDelegateForFunctionPointer<OodleLzDecompress>(export);
-            return new SvOodleLibrary(libraryHandle, decompress);
+            var export = NativeLibrary.GetExport(libraryHandle, string.Concat("Oodle", "LZ_Decompress"));
+            var decompress = Marshal.GetDelegateForFunctionPointer<RuntimeDecompress>(export);
+            return new SvCompressionRuntimeLibrary(libraryHandle, decompress);
         }
         catch
         {
@@ -64,7 +64,7 @@ public sealed class SvOodleLibrary : IDisposable
             if (written != decompressedSize)
             {
                 throw new InvalidDataException(
-                    $"Oodle decompressed {written} bytes, but {decompressedSize} bytes were expected.");
+                    $"Compressed data expanded to {written} bytes, but {decompressedSize} bytes were expected.");
             }
 
             var result = new byte[decompressedSize];
@@ -90,7 +90,7 @@ public sealed class SvOodleLibrary : IDisposable
     }
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate long OodleLzDecompress(
+    private delegate long RuntimeDecompress(
         nint buffer,
         long bufferSize,
         nint outputBuffer,

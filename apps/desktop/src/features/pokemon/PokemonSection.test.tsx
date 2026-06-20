@@ -26,6 +26,7 @@ describe('PokemonSection', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       },
       editSession: null,

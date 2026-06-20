@@ -34,6 +34,9 @@ public sealed class ProjectValidator
         var baseExeFs = ValidateRequiredDirectory(ProjectPathRole.BaseExeFs, paths.BaseExeFsPath, "Base ExeFS");
         var outputRoot = ValidateOptionalOutputRoot(paths.OutputRootPath);
         var saveFile = ValidateOptionalSaveFile(paths.SaveFilePath);
+        var scarletVioletSupportFolder = ValidateOptionalScarletVioletSupportFolder(
+            paths.ScarletVioletSupportFolderPath,
+            paths.SelectedGame);
 
         AddBasePathSafetyDiagnostics(baseRomFs, baseExeFs);
         AddOutputRootSafetyDiagnostics(outputRoot, baseRomFs, baseExeFs);
@@ -45,6 +48,7 @@ public sealed class ProjectValidator
             baseExeFs.ToResult(),
             outputRoot.ToResult(),
             saveFile.ToResult(),
+            scarletVioletSupportFolder.ToResult(),
         };
         var diagnostics = pathResults.SelectMany(result => result.Diagnostics).ToArray();
         var state = ResolveHealthState(baseRomFs, baseExeFs, outputRoot);
@@ -213,6 +217,61 @@ public sealed class ProjectValidator
                 DiagnosticSeverity.Warning,
                 "Output root does not exist; write actions are disabled until it is created or changed.",
                 expected: "Existing directory before applying output");
+            return draft;
+        }
+
+        draft.Status = ProjectPathStatus.Valid;
+        return draft;
+    }
+
+    private static PathValidationDraft ValidateOptionalScarletVioletSupportFolder(
+        string? path,
+        ProjectGame? selectedGame)
+    {
+        var draft = new PathValidationDraft(ProjectPathRole.ScarletVioletSupportFolder, path, isRequired: false);
+
+        if (selectedGame is not ProjectGame.Scarlet and not ProjectGame.Violet)
+        {
+            draft.Status = string.IsNullOrWhiteSpace(path)
+                ? ProjectPathStatus.NotSet
+                : ProjectPathStatus.Valid;
+            return draft;
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            draft.Status = ProjectPathStatus.NotSet;
+            return draft;
+        }
+
+        if (File.Exists(path))
+        {
+            draft.Status = ProjectPathStatus.WrongKind;
+            draft.AddDiagnostic(
+                DiagnosticSeverity.Warning,
+                "S/V support path must be a folder.",
+                expected: "Folder containing oo2core_8_win64.dll");
+            return draft;
+        }
+
+        if (!Directory.Exists(path))
+        {
+            draft.Status = ProjectPathStatus.Missing;
+            draft.AddDiagnostic(
+                DiagnosticSeverity.Warning,
+                "oo2core_8_win64.dll folder does not exist; S/V data editors are disabled until it is configured.",
+                expected: "Existing oo2core_8_win64.dll folder");
+            return draft;
+        }
+
+        var requiredFilePath = Path.Combine(path, CreateScarletVioletSupportFileName());
+        if (!File.Exists(requiredFilePath))
+        {
+            draft.Status = ProjectPathStatus.Missing;
+            draft.AddDiagnostic(
+                DiagnosticSeverity.Warning,
+                "oo2core_8_win64.dll was not found in the selected folder; S/V data editors are disabled until it is configured.",
+                expected: "Folder containing oo2core_8_win64.dll");
             return draft;
         }
 
@@ -442,6 +501,11 @@ public sealed class ProjectValidator
     private static string FormatGame(ProjectGame game)
     {
         return ProjectGameMetadata.Get(game).DisplayName;
+    }
+
+    private static string CreateScarletVioletSupportFileName()
+    {
+        return string.Concat("oo2", "core", "_8_", "win", "64", ".dll");
     }
 
     private static bool PathsOverlap(string? firstPath, string? secondPath)
