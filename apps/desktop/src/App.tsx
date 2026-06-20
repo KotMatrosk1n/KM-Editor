@@ -806,6 +806,12 @@ const randomizerRestoreProgressSteps = [
   'Completing'
 ] as const;
 
+const encounterAreaCopyProgressSteps = [
+  'Preparing encounter copy',
+  'Updating matching slots',
+  'Refreshing encounter tables'
+] as const;
+
 const buyPriceFieldName = 'buyPrice';
 const sellPriceFieldName = 'sellPrice';
 const wattsPriceFieldName = 'wattsPrice';
@@ -5659,9 +5665,30 @@ const resetModMergerPlan = () => {
       let nextSession = editSession;
       let nextWorkflow = encountersWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
+      const totalChanges = nonEmptyUpdates.reduce(
+        (total, update) => total + update.changes.length,
+        0
+      );
+      let completedChanges = 0;
+
+      setWorkProgress(createDeterminateWorkProgress(
+        'Applying Encounter Copy',
+        `Preparing ${nonEmptyUpdates.length} matching encounter slots`,
+        encounterAreaCopyProgressSteps,
+        0,
+        0
+      ));
 
       for (const update of nonEmptyUpdates) {
         for (const change of update.changes) {
+          setWorkProgress(createDeterminateWorkProgress(
+            'Applying Encounter Copy',
+            formatEncounterCopyProgressDetail(nextWorkflow, update, change.field),
+            encounterAreaCopyProgressSteps,
+            1,
+            Math.round((completedChanges / totalChanges) * 100)
+          ));
+
           const response = await bridge.updateEncounterSlotField({
             field: change.field,
             paths: toProjectPaths(draftPaths),
@@ -5673,8 +5700,25 @@ const resetModMergerPlan = () => {
           nextWorkflow = response.workflow;
           nextSession = response.session;
           nextDiagnostics = response.diagnostics;
+          completedChanges++;
+
+          setWorkProgress(createDeterminateWorkProgress(
+            'Applying Encounter Copy',
+            formatEncounterCopyProgressDetail(nextWorkflow, update, change.field),
+            encounterAreaCopyProgressSteps,
+            1,
+            Math.round((completedChanges / totalChanges) * 100)
+          ));
         }
       }
+
+      setWorkProgress(createDeterminateWorkProgress(
+        'Applying Encounter Copy',
+        'Refreshing encounter tables',
+        encounterAreaCopyProgressSteps,
+        2,
+        100
+      ));
 
       if (nextWorkflow) {
         setEncountersWorkflow(nextWorkflow);
@@ -5687,6 +5731,7 @@ const resetModMergerPlan = () => {
       return false;
     } finally {
       setIsEncounterUpdating(false);
+      setWorkProgress(null);
     }
   };
 
@@ -19014,10 +19059,10 @@ function SelectedEncounterPanel({
               isApplying={isEncounterUpdating}
               onCancel={() => setAreaCopyRequest(null)}
               onConfirm={async () => {
+                setAreaCopyRequest(null);
                 const didSave = await onUpdateEncounterSlotUpdates(areaCopyRequest.updates);
                 if (didSave) {
                   setDraftsBySlotKey({});
-                  setAreaCopyRequest(null);
                   onSelectTable(areaCopyRequest.targetTableId);
                 }
               }}
@@ -25782,7 +25827,11 @@ function ChangesSection({
         </div>
 
         {pendingEdits.length > 0 ? (
-          <ul className="pending-edit-list">
+          <ul
+            aria-label={`Pending changes (${pendingEdits.length})`}
+            className="pending-edit-list"
+            tabIndex={0}
+          >
             {pendingEdits.map((edit, index) => {
               const details = getPendingEditDisplayDetails(edit, pendingEditContext);
 
@@ -27457,6 +27506,38 @@ function createEncounterTableCopyUpdates(
       slot: slot.slot,
       tableId: targetTable.tableId
     }));
+}
+
+function formatEncounterCopyProgressDetail(
+  workflow: EncountersWorkflow | null,
+  update: EncounterSlotFieldUpdate,
+  field: string
+) {
+  const table = workflow?.tables.find((candidate) => candidate.tableId === update.tableId);
+  const fieldLabel = getEncounterCopyFieldLabel(field);
+
+  if (!table) {
+    return `Updating slot ${update.slot} ${fieldLabel}`;
+  }
+
+  return `Updating ${table.area} ${table.encounterType} slot ${update.slot} ${fieldLabel}`;
+}
+
+function getEncounterCopyFieldLabel(field: string) {
+  switch (field) {
+    case encounterSpeciesFieldName:
+      return 'Pokemon';
+    case encounterFormFieldName:
+      return 'form';
+    case encounterProbabilityFieldName:
+      return 'percentage';
+    case encounterLevelMinFieldName:
+      return 'minimum level';
+    case encounterLevelMaxFieldName:
+      return 'maximum level';
+    default:
+      return field;
+  }
 }
 
 function compareEncounterTablesForCopy(

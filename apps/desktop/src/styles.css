@@ -5425,11 +5425,21 @@ button.sv-encounter-condition-row:hover {
 }
 
 .pending-edit-list {
+  --pending-edit-row-height: 80px;
   display: grid;
   gap: 8px;
+  max-height: calc((var(--pending-edit-row-height) * 10) + (8px * 9));
   margin: 16px 0 0;
   padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   list-style: none;
+}
+
+.pending-edit-list:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
 }
 
 .pending-edit-list li {

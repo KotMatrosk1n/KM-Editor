@@ -60,7 +60,7 @@ public sealed class SwShEncountersEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Encounter table '{tableId}' is not present in the loaded workflow.",
+                $"Encounter table {FormatEncounterTableIdContext(tableId)} is not present in the loaded workflow.",
                 field: "tableId",
                 expected: "Existing encounter table"));
             return new SwShEncountersEditResult(workflow, currentSession, diagnostics);
@@ -71,7 +71,7 @@ public sealed class SwShEncountersEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Encounter table '{table.Location}' does not have slot {slot}.",
+                $"Encounter table {FormatEncounterTableContext(table)} does not have slot {slot}.",
                 field: "slot",
                 expected: "Existing encounter slot"));
             return new SwShEncountersEditResult(workflow, currentSession, diagnostics);
@@ -233,9 +233,10 @@ public sealed class SwShEncountersEditSessionService
             {
                 if (string.IsNullOrWhiteSpace(editGroup.Key))
                 {
+                    var targets = string.Join(", ", editGroup.Select(FormatPendingEditTarget).Take(3));
                     diagnostics.Add(CreateDiagnostic(
                         DiagnosticSeverity.Error,
-                        "Pending encounter edit does not include a valid archive member.",
+                        $"Pending encounter edits target invalid archive members: {targets}.",
                         expected: "Known Sword/Shield encounter member"));
                     continue;
                 }
@@ -335,24 +336,35 @@ public sealed class SwShEncountersEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Pending encounter edit targets an invalid slot.",
+                $"Pending encounter edit targets invalid encounter record '{edit.RecordId ?? "(missing)"}'.",
                 field: "slot",
                 expected: "Encounter slot"));
             return;
         }
 
         var table = workflow.Tables.FirstOrDefault(candidate => candidate.TableId == tableId);
-        if (table is null || table.Slots.All(candidate => candidate.Slot != slot))
+        if (table is null)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Pending encounter edit targets a slot that is not loaded.",
+                $"Pending encounter edit targets table {FormatEncounterTableIdContext(tableId)}, which is not loaded.",
+                field: "tableId",
+                expected: "Existing encounter table"));
+            return;
+        }
+
+        var slotRecord = table.Slots.FirstOrDefault(candidate => candidate.Slot == slot);
+        if (slotRecord is null)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Pending encounter edit targets {FormatEncounterTableContext(table)} slot {slot}, which is not loaded.",
                 field: "slot",
                 expected: "Existing encounter slot"));
             return;
         }
 
-        _ = TryParseValue(edit.Field, edit.NewValue, diagnostics);
+        _ = TryParseValue(edit.Field, edit.NewValue, diagnostics, FormatEncounterSlotContext(table, slotRecord));
     }
 
     private static void ValidatePendingLevelPairs(
@@ -365,7 +377,7 @@ public sealed class SwShEncountersEditSessionService
             table =>
             {
                 var firstSlot = table.Slots.FirstOrDefault();
-                return new LevelPair(firstSlot?.LevelMin ?? 0, firstSlot?.LevelMax ?? 0);
+                return new EncounterTableLevelState(table, firstSlot?.LevelMin ?? 0, firstSlot?.LevelMax ?? 0);
             },
             StringComparer.Ordinal);
 
@@ -403,7 +415,7 @@ public sealed class SwShEncountersEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Encounter table '{pair.Key}' has a minimum level greater than its maximum level.",
+                $"Encounter table {FormatEncounterTableContext(pair.Value.Table)} has minimum level {pair.Value.LevelMin} greater than maximum level {pair.Value.LevelMax}.",
                 field: "level",
                 expected: "Min level less than or equal to max level"));
         }
@@ -440,7 +452,7 @@ public sealed class SwShEncountersEditSessionService
 
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Encounter table '{table.Location}' {table.Area} {table.EncounterType} probabilities total {totalProbability}, but must total 100.",
+                $"Encounter table {FormatEncounterTableContext(table)} has probabilities totaling {totalProbability}, but they must total 100.",
                 field: SwShEncountersWorkflowService.ProbabilityField,
                 expected: "Slot probabilities total exactly 100"));
         }
@@ -473,7 +485,7 @@ public sealed class SwShEncountersEditSessionService
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Encounter table '{table.Location}' {table.Area} {table.EncounterType} slot {slot.Slot} is empty but has {slot.Weight}% probability.",
+                    $"Encounter table {FormatEncounterTableContext(table)} slot {slot.Slot} is empty but has {slot.Weight}% probability.",
                     field: SwShEncountersWorkflowService.SpeciesIdField,
                     expected: "Empty encounter slots must remain at 0% probability"));
             }
@@ -494,7 +506,7 @@ public sealed class SwShEncountersEditSessionService
             return null;
         }
 
-        var parsedValue = TryParseValue(normalizedField, value, diagnostics);
+        var parsedValue = TryParseValue(normalizedField, value, diagnostics, FormatEncounterSlotContext(table, slot));
         if (parsedValue is null)
         {
             return null;
@@ -504,7 +516,7 @@ public sealed class SwShEncountersEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Encounter minimum level cannot be greater than the current maximum level.",
+                $"Encounter table {FormatEncounterSlotContext(table, slot)} cannot set minimum level to {parsedValue.Value} because the current maximum level is {slot.LevelMax}.",
                 field: normalizedField,
                 expected: "Min level less than or equal to max level"));
             return null;
@@ -514,7 +526,7 @@ public sealed class SwShEncountersEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Encounter maximum level cannot be less than the current minimum level.",
+                $"Encounter table {FormatEncounterSlotContext(table, slot)} cannot set maximum level to {parsedValue.Value} because the current minimum level is {slot.LevelMin}.",
                 field: normalizedField,
                 expected: "Max level greater than or equal to min level"));
             return null;
@@ -554,13 +566,16 @@ public sealed class SwShEncountersEditSessionService
     private static int? TryParseValue(
         string? field,
         string? value,
-        ICollection<ValidationDiagnostic> diagnostics)
+        ICollection<ValidationDiagnostic> diagnostics,
+        string? targetContext = null)
     {
         if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedValue))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Encounter edit value must be an integer.",
+                targetContext is null
+                    ? "Encounter edit value must be an integer."
+                    : $"Encounter table {targetContext} {field} value must be an integer.",
                 field: field,
                 expected: "Integer value"));
             return null;
@@ -571,7 +586,9 @@ public sealed class SwShEncountersEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Encounter {field} must be between {minimum} and {maximum}.",
+                targetContext is null
+                    ? $"Encounter {field} must be between {minimum} and {maximum}."
+                    : $"Encounter table {targetContext} {field} must be between {minimum} and {maximum}.",
                 field: field,
                 expected: "Safe encounter value"));
             return null;
@@ -747,6 +764,57 @@ public sealed class SwShEncountersEditSessionService
             : option.Label;
     }
 
+    private static string FormatEncounterTableContext(SwShEncounterTableRecord table)
+    {
+        return $"{table.GameVersion} {table.Location} {table.Area} {table.EncounterType}";
+    }
+
+    private static string FormatEncounterTableIdContext(string tableId)
+    {
+        if (!SwShEncountersWorkflowService.TryParseTableId(
+                tableId,
+                out var member,
+                out var tableIndex,
+                out var zoneId,
+                out var subTableIndex))
+        {
+            return $"'{tableId}'";
+        }
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{member.GameLabel} {member.AreaLabel} table {tableIndex} zone 0x{zoneId:X16} subtable {subTableIndex}");
+    }
+
+    private static string FormatEncounterSlotContext(
+        SwShEncounterTableRecord table,
+        SwShEncounterSlotRecord slot)
+    {
+        return $"{FormatEncounterTableContext(table)} slot {slot.Slot}";
+    }
+
+    private static string FormatPendingEditTarget(PendingEdit edit)
+    {
+        if (!SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out var slot))
+        {
+            return edit.RecordId ?? "(missing encounter record)";
+        }
+
+        if (!SwShEncountersWorkflowService.TryParseTableId(
+                tableId,
+                out var member,
+                out var tableIndex,
+                out var zoneId,
+                out var subTableIndex))
+        {
+            return $"{tableId} slot {slot}";
+        }
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{member.GameLabel} {member.AreaLabel} table {tableIndex} zone 0x{zoneId:X16} subtable {subTableIndex} slot {slot}");
+    }
+
     private static string GetArchiveMemberFileName(PendingEdit edit)
     {
         if (!SwShEncountersWorkflowService.TryParseSlotRecordId(edit.RecordId, out var tableId, out _)
@@ -770,13 +838,17 @@ public sealed class SwShEncountersEditSessionService
                 out _,
                 out var tableIndex,
                 out var zoneId,
-                out var subTableIndex)
-            || TryParseValue(edit.Field, edit.NewValue, diagnostics) is not { } value)
+                out var subTableIndex))
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Pending encounter edit does not include a valid archive target.",
+                $"Pending encounter edit target '{FormatPendingEditTarget(edit)}' is not a valid archive target.",
                 expected: "Existing encounter archive target"));
+            return [];
+        }
+
+        if (TryParseValue(edit.Field, edit.NewValue, diagnostics, FormatPendingEditTarget(edit)) is not { } value)
+        {
             return [];
         }
 
@@ -786,7 +858,7 @@ public sealed class SwShEncountersEditSessionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Pending encounter edit target no longer matches the source archive.",
+                $"Pending encounter edit target {FormatPendingEditTarget(edit)} no longer matches the source archive.",
                 expected: "Current encounter archive target"));
             return [];
         }
@@ -805,7 +877,7 @@ public sealed class SwShEncountersEditSessionService
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    "Pending encounter level edit no longer matches an editable vanilla encounter section.",
+                    $"Pending encounter level edit target {FormatPendingEditTarget(edit)} no longer matches an editable vanilla encounter section.",
                     expected: "Vanilla-available encounter subtables"));
                 return [];
             }
@@ -984,5 +1056,8 @@ public sealed class SwShEncountersEditSessionService
             Expected: expected);
     }
 
-    private sealed record LevelPair(int LevelMin, int LevelMax);
+    private sealed record EncounterTableLevelState(
+        SwShEncounterTableRecord Table,
+        int LevelMin,
+        int LevelMax);
 }
