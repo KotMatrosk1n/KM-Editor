@@ -80,15 +80,13 @@ jobs:
         shell: pwsh
         run: pnpm install --frozen-lockfile
 
-      - name: Test backend
+      - name: Restore backend
         shell: pwsh
-        run: dotnet test .\KM.Editor.slnx
+        run: dotnet restore .\KM.Editor.slnx
 
-      - name: Test desktop
+      - name: Run full validation
         shell: pwsh
-        run: |
-          pnpm --filter @km-editor/desktop typecheck
-          pnpm --filter @km-editor/desktop test:run
+        run: pnpm test:full
 
       - name: Build desktop packages
         shell: pwsh
