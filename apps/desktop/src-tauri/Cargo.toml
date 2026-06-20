@@ -2,7 +2,7 @@
 
 [package]
 name = "km-editor-desktop"
-version = "1.5.0"
+version = "1.6.0"
 description = "KM Editor desktop shell"
 authors = []
 license = "GPL-3.0-only"
