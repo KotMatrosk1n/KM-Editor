@@ -302,7 +302,7 @@ internal sealed class SvGiftPokemonWorkflowService
         return move is null ? 0 : (int)move.Value.WazaId;
     }
 
-    private static IEnumerable<SvGiftPokemonEntry> LoadRecords(
+    internal static IEnumerable<SvGiftPokemonEntry> LoadRecords(
         SvWorkflowFile source,
         SvTextLabelLookup labels,
         SvGiftAbilityResolver abilityResolver,
@@ -578,7 +578,7 @@ internal sealed class SvGiftPokemonWorkflowService
             : $"Gift {giftNumber}: {species} Lv. {level.ToString(CultureInfo.InvariantCulture)}";
     }
 
-    private sealed class SvGiftAbilityResolver
+    internal sealed class SvGiftAbilityResolver
     {
         private readonly IReadOnlyDictionary<string, SvGiftAbilitySet> abilitiesBySpeciesForm;
 
@@ -643,7 +643,7 @@ internal sealed class SvGiftPokemonWorkflowService
         }
     }
 
-    private sealed record SvGiftAbilitySet(
+    internal sealed record SvGiftAbilitySet(
         string Ability1,
         string Ability2,
         string HiddenAbility)

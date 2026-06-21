@@ -226,6 +226,61 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletGiftPokemonPendingSpeciesEditsRefreshPreviewLabelsAndDerivedFields(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loaded = Dispatch<LoadGiftPokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadGiftPokemonWorkflow,
+            new LoadGiftPokemonWorkflowRequest(paths),
+            "request-sv-gift-refresh-load");
+        AssertSuccess(loaded);
+        var gift = Assert.Single(loaded.Payload!.Workflow.Gifts);
+        Assert.Equal("Bulbasaur", gift.Species);
+        Assert.Equal("Overgrow (Ability 1)", gift.AbilityLabel);
+
+        var updated = Dispatch<UpdateGiftPokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateGiftPokemonField,
+            new UpdateGiftPokemonFieldRequest(paths, Session: null, gift.GiftIndex, "species", "4"),
+            "request-sv-gift-refresh-species");
+        AssertSuccess(updated);
+
+        var updatedGift = Assert.Single(updated.Payload!.Workflow.Gifts);
+        Assert.Equal(4, updatedGift.SpeciesId);
+        Assert.Equal("Charmander", updatedGift.Species);
+        Assert.Equal("Gift 1: Charmander Lv. 5", updatedGift.Label);
+        Assert.Equal("Blaze (Ability 1)", updatedGift.AbilityLabel);
+        Assert.Contains(
+            updatedGift.AbilityOptions,
+            option => option.Value == (int)global::TokuseiType.SET_1 && option.Label == "Blaze (Ability 1)");
+
+        var updatedAbility = Dispatch<UpdateGiftPokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateGiftPokemonField,
+            new UpdateGiftPokemonFieldRequest(
+                paths,
+                updated.Payload.Session,
+                gift.GiftIndex,
+                "ability",
+                ((int)global::TokuseiType.SET_3).ToString(CultureInfo.InvariantCulture)),
+            "request-sv-gift-refresh-ability");
+        AssertSuccess(updatedAbility);
+
+        var updatedAbilityGift = Assert.Single(updatedAbility.Payload!.Workflow.Gifts);
+        Assert.Equal(4, updatedAbilityGift.SpeciesId);
+        Assert.Equal("Charmander", updatedAbilityGift.Species);
+        Assert.Equal("Solar Power (Hidden Ability)", updatedAbilityGift.AbilityLabel);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletHyperspaceBypassStagesStandaloneMainAndRejectsTrinityOutput(
         ProjectGameDto game,
         ulong titleId)
@@ -961,14 +1016,18 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(temp, SvDataPaths.EventBattlePokemonArray, CreateEventBattlePokemonArray());
         WriteSvOutput(temp, SvDataPaths.HiddenItemDataTableArray, CreateHiddenItemDataTableArray());
         WriteSvOutput(temp, SvDataPaths.RummagingItemDataTableArray, CreateRummagingItemDataTableArray());
-        temp.WriteBaseRomFsFile(SvDataPaths.EnglishPokemonNames, CreateTextTable(3, (1, "Bulbasaur"), (2, "Ivysaur")));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishPokemonNames,
+            CreateTextTable(5, (1, "Bulbasaur"), (2, "Ivysaur"), (4, "Charmander")));
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishItemNames,
             CreateTextTable(6, (1, "Master Ball"), (2, "TM001"), (3, "Legacy Move Record"), (4, "TM002"), (5, "TM100")));
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishMoveNames,
             CreateTextTable(350, (33, "Tackle"), (36, "Take Down"), (45, "Growl"), (349, "Dragon Dance")));
-        temp.WriteBaseRomFsFile(SvDataPaths.EnglishAbilityNames, CreateTextTable(66, (34, "Chlorophyll"), (65, "Overgrow")));
+        temp.WriteBaseRomFsFile(
+            SvDataPaths.EnglishAbilityNames,
+            CreateTextTable(95, (34, "Chlorophyll"), (65, "Overgrow"), (66, "Blaze"), (94, "Solar Power")));
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishPlaceNames,
             CreateTextTable(2, (0, "South Province (Area Two)"), (1, "South Province (Area Four)")));
@@ -1513,7 +1572,17 @@ public sealed class ScarletVioletBridgeTests
         var builder = new FlatBufferBuilder(2048);
         var empty = CreatePersonal(builder, species: 0, hp: 0, level: 0, evolutionLevel: 0);
         var bulbasaur = CreatePersonal(builder, species: 1, hp: 45, level: 1, evolutionLevel: 16);
-        var vector = global::personal_table.CreateEntryVector(builder, [empty, bulbasaur]);
+        var charmander = CreatePersonal(
+            builder,
+            species: 4,
+            hp: 39,
+            level: 1,
+            evolutionLevel: 16,
+            learnedMoves: [(Move: (ushort)33, Level: 1)],
+            ability1: 66,
+            ability2: 66,
+            hiddenAbility: 94);
+        var vector = global::personal_table.CreateEntryVector(builder, [empty, bulbasaur, charmander]);
         var root = global::personal_table.Createpersonal_table(builder, vector);
         global::personal_table.Finishpersonal_tableBuffer(builder, root);
         return builder.SizedByteArray();
@@ -1542,7 +1611,10 @@ public sealed class ScarletVioletBridgeTests
         byte hp,
         ushort level,
         ushort evolutionLevel,
-        IReadOnlyList<(ushort Move, ushort Level)>? learnedMoves = null)
+        IReadOnlyList<(ushort Move, ushort Level)>? learnedMoves = null,
+        ushort ability1 = 65,
+        ushort ability2 = 65,
+        ushort hiddenAbility = 34)
     {
         var tmMoves = global::personal.CreateTmMovesVector(builder, species == 0 ? [] : [(ushort)36]);
         var eggMoves = global::personal.CreateEggMovesVector(builder, []);
@@ -1591,9 +1663,9 @@ public sealed class ScarletVioletBridgeTests
         global::personal.AddGender(builder, global::gender_info.Creategender_info(builder, 0, 31));
         global::personal.AddCatchRate(builder, 45);
         global::personal.AddXpGrowth(builder, 3);
-        global::personal.AddAbilityHidden(builder, 34);
-        global::personal.AddAbility2(builder, 65);
-        global::personal.AddAbility1(builder, 65);
+        global::personal.AddAbilityHidden(builder, hiddenAbility);
+        global::personal.AddAbility2(builder, ability2);
+        global::personal.AddAbility1(builder, ability1);
         global::personal.AddType2(builder, 3);
         global::personal.AddType1(builder, 11);
         global::personal.AddPaldeaDex(builder, global::dex_data.Createdex_data(builder, species, 0));
