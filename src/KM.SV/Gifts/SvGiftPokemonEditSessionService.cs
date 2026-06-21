@@ -41,7 +41,7 @@ internal sealed class SvGiftPokemonEditSessionService
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
         var loadedWorkflow = giftPokemonWorkflowService.Load(project);
-        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
         if (!SvEditSessionSupport.CanEdit(
@@ -74,7 +74,7 @@ internal sealed class SvGiftPokemonEditSessionService
 
         var updatedSession = SvEditSessionSupport.ReplacePendingEdit(currentSession, pendingEdit);
         return new SvGiftPokemonEditResult(
-            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
             updatedSession,
             diagnostics);
     }
@@ -285,180 +285,80 @@ internal sealed class SvGiftPokemonEditSessionService
             diagnostics);
     }
 
-    private static SvGiftPokemonWorkflow OverlayPendingEdits(
+    private SvGiftPokemonWorkflow OverlayPendingEdits(
+        OpenedProject project,
         SvGiftPokemonWorkflow workflow,
-        IEnumerable<PendingEdit> edits)
+        IEnumerable<PendingEdit> edits,
+        ICollection<ValidationDiagnostic>? diagnostics = null)
     {
-        var updatedWorkflow = workflow;
-        foreach (var edit in edits)
-        {
-            updatedWorkflow = OverlayPendingEdit(updatedWorkflow, edit);
-        }
+        var pendingEdits = edits
+            .Where(edit =>
+                string.Equals(edit.Domain, SvEditSessionSupport.GiftPokemonDomain, StringComparison.Ordinal)
+                && SvGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out _)
+                && int.TryParse(
+                    edit.NewValue,
+                    NumberStyles.AllowLeadingSign,
+                    CultureInfo.InvariantCulture,
+                    out _))
+            .ToArray();
 
-        return updatedWorkflow;
-    }
-
-    private static SvGiftPokemonWorkflow OverlayPendingEdit(
-        SvGiftPokemonWorkflow workflow,
-        PendingEdit edit)
-    {
-        if (!string.Equals(edit.Domain, SvEditSessionSupport.GiftPokemonDomain, StringComparison.Ordinal)
-            || !SvGiftPokemonWorkflowService.TryParseGiftRecordId(edit.RecordId, out var giftIndex)
-            || SvEditSessionSupport.TryParseInt(
-                edit.NewValue,
-                int.MinValue,
-                int.MaxValue,
-                edit.Field,
-                SvEditSessionSupport.GiftPokemonDomain,
-                new List<ValidationDiagnostic>()) is not { } value)
+        if (pendingEdits.Length == 0)
         {
             return workflow;
         }
 
-        return workflow with
+        try
         {
-            Gifts = workflow.Gifts
-                .Select(gift => gift.GiftIndex == giftIndex ? OverlayGift(gift, edit.Field, value) : gift)
-                .ToArray(),
-        };
-    }
+            var overlayDiagnostics = new List<ValidationDiagnostic>();
+            var source = fileSource.Read(project, SvDataPaths.EventAddPokemonArray);
+            var labels = SvTextLabelLookup.Load(project, fileSource, overlayDiagnostics);
+            var abilityResolver = SvGiftPokemonWorkflowService.SvGiftAbilityResolver.Load(
+                project,
+                fileSource,
+                labels,
+                overlayDiagnostics);
+            var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, overlayDiagnostics);
+            var rows = ReadRows(source.Bytes);
+            foreach (var edit in pendingEdits)
+            {
+                ApplyEdit(rows, edit, moveResolver, overlayDiagnostics);
+            }
 
-    private static SvGiftPokemonEntry OverlayGift(
-        SvGiftPokemonEntry gift,
-        string? field,
-        int value)
-    {
-        return field switch
-        {
-            SvGiftPokemonWorkflowService.SpeciesField => gift with
+            if (overlayDiagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
-                SpeciesId = value,
-                Species = value == 0 ? "None" : SvLabels.Pokemon(value),
-                Label = CreateDisplayLabel(gift, value == 0 ? "None" : SvLabels.Pokemon(value), gift.Level, gift.IsEgg),
-            },
-            SvGiftPokemonWorkflowService.FormField => gift with { Form = value },
-            SvGiftPokemonWorkflowService.LevelField => gift with
-            {
-                Level = value,
-                Label = CreateDisplayLabel(gift, gift.Species, value, gift.IsEgg),
-            },
-            SvGiftPokemonWorkflowService.HeldItemIdField => gift with
-            {
-                HeldItemId = value,
-                HeldItem = value > 0 ? SvLabels.Item(value) : null,
-            },
-            SvGiftPokemonWorkflowService.BallItemIdField => gift with
-            {
-                BallId = value,
-                Ball = SvGiftPokemonWorkflowService.FormatBall((global::BallType)value),
-            },
-            SvGiftPokemonWorkflowService.AbilityField => gift with
-            {
-                Ability = value,
-                AbilityLabel = SvGiftPokemonWorkflowService.FormatAbilityMode((global::TokuseiType)value),
-            },
-            SvGiftPokemonWorkflowService.NatureField => gift with
-            {
-                Nature = value,
-                NatureLabel = SvGiftPokemonWorkflowService.FormatNature((global::SeikakuType)value),
-            },
-            SvGiftPokemonWorkflowService.GenderField => gift with
-            {
-                Gender = value,
-                GenderLabel = SvGiftPokemonWorkflowService.FormatGender((global::SexType)value),
-            },
-            SvGiftPokemonWorkflowService.ShinyLockField => gift with
-            {
-                ShinyLock = value,
-                ShinyLockLabel = SvGiftPokemonWorkflowService.FormatShinyMode((global::RareType)value),
-            },
-            SvGiftPokemonWorkflowService.TeraTypeField => gift with
-            {
-                TeraType = value,
-                TeraTypeLabel = SvGiftPokemonWorkflowService.FormatTeraType((global::GemType)value),
-            },
-            SvGiftPokemonWorkflowService.Move1IdField => OverlayMove(gift, 0, value),
-            SvGiftPokemonWorkflowService.Move2IdField => OverlayMove(gift, 1, value),
-            SvGiftPokemonWorkflowService.Move3IdField => OverlayMove(gift, 2, value),
-            SvGiftPokemonWorkflowService.Move4IdField => OverlayMove(gift, 3, value),
-            SvGiftPokemonWorkflowService.FlawlessIvCountField => OverlayIvPreset(gift, value),
-            SvGiftPokemonWorkflowService.IvHpField => OverlayIv(gift, ivs => ivs with { HP = value }),
-            SvGiftPokemonWorkflowService.IvAttackField => OverlayIv(gift, ivs => ivs with { Attack = value }),
-            SvGiftPokemonWorkflowService.IvDefenseField => OverlayIv(gift, ivs => ivs with { Defense = value }),
-            SvGiftPokemonWorkflowService.IvSpecialAttackField => OverlayIv(gift, ivs => ivs with { SpecialAttack = value }),
-            SvGiftPokemonWorkflowService.IvSpecialDefenseField => OverlayIv(gift, ivs => ivs with { SpecialDefense = value }),
-            SvGiftPokemonWorkflowService.IvSpeedField => OverlayIv(gift, ivs => ivs with { Speed = value }),
-            SvGiftPokemonWorkflowService.ScaleModeField => gift with
-            {
-                ScaleMode = value,
-                ScaleModeLabel = SvGiftPokemonWorkflowService.FormatScaleMode((global::SizeType)value),
-            },
-            SvGiftPokemonWorkflowService.ScaleValueField => gift with { ScaleValue = value },
-            _ => gift,
-        };
-    }
+                if (diagnostics is not null)
+                {
+                    foreach (var diagnostic in overlayDiagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+                    {
+                        diagnostics.Add(diagnostic);
+                    }
+                }
 
-    private static SvGiftPokemonEntry OverlayMove(SvGiftPokemonEntry gift, int slot, int moveId)
-    {
-        var moves = gift.Moves.ToList();
-        while (moves.Count <= slot)
-        {
-            moves.Add(new SvGiftPokemonMoveRecord(moves.Count, 0, null, 0));
+                return workflow;
+            }
+
+            var overlaySource = source with { Bytes = WriteRows(rows) };
+            var giftsByIndex = SvGiftPokemonWorkflowService
+                .LoadRecords(overlaySource, labels, abilityResolver, moveResolver)
+                .ToDictionary(gift => gift.GiftIndex);
+
+            return workflow with
+            {
+                Gifts = workflow.Gifts
+                    .Select(gift => giftsByIndex.TryGetValue(gift.GiftIndex, out var updatedGift) ? updatedGift : gift)
+                    .ToArray(),
+            };
         }
-
-        moves[slot] = moves[slot] with
+        catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException or OverflowException)
         {
-            MoveId = moveId,
-            Move = moveId == 0 ? null : SvLabels.Move(moveId),
-        };
-
-        return gift with { Moves = moves };
-    }
-
-    private static SvGiftPokemonEntry OverlayIvPreset(SvGiftPokemonEntry gift, int value)
-    {
-        return gift with
-        {
-            FlawlessIvCount = value,
-            Ivs = new SvGiftPokemonIvsRecord(0, 0, 0, 0, 0, 0),
-            IvSummary = value == 0
-                ? "Random IVs"
-                : value == 1
-                    ? "1 guaranteed perfect IV"
-                    : $"{value.ToString(CultureInfo.InvariantCulture)} guaranteed perfect IVs",
-        };
-    }
-
-    private static SvGiftPokemonEntry OverlayIv(
-        SvGiftPokemonEntry gift,
-        Func<SvGiftPokemonIvsRecord, SvGiftPokemonIvsRecord> update)
-    {
-        var ivs = update(gift.Ivs);
-        return gift with
-        {
-            Ivs = ivs,
-            FlawlessIvCount = null,
-            IvSummary = FormatExactIvSummary(ivs),
-        };
-    }
-
-    private static string FormatExactIvSummary(SvGiftPokemonIvsRecord ivs)
-    {
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"Fixed IVs: HP {ivs.HP}, Atk {ivs.Attack}, Def {ivs.Defense}, SpA {ivs.SpecialAttack}, SpD {ivs.SpecialDefense}, Spe {ivs.Speed}");
-    }
-
-    private static string CreateDisplayLabel(
-        SvGiftPokemonEntry gift,
-        string species,
-        int level,
-        bool isEgg)
-    {
-        var giftNumber = (gift.GiftIndex + 1).ToString(CultureInfo.InvariantCulture);
-        return isEgg
-            ? $"Gift {giftNumber}: {species} Egg"
-            : $"Gift {giftNumber}: {species} Lv. {level.ToString(CultureInfo.InvariantCulture)}";
+            diagnostics?.Add(SvEditSessionSupport.CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Gift Pokemon pending changes could not be previewed: {exception.Message}",
+                SvEditSessionSupport.GiftPokemonDomain,
+                file: $"romfs/{SvDataPaths.EventAddPokemonArray}",
+                expected: "Readable S/V gift Pokemon source"));
+            return workflow;
+        }
     }
 
     private static void ApplyEdit(
