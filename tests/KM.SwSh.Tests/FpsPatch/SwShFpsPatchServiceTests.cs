@@ -51,6 +51,8 @@ public sealed class SwShFpsPatchServiceTests
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/demo/sequence/d010.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/demo/sequence/d030.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/demo/sequence/r2d020.bseq"));
+        Assert.False(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.TitleDemoRelativePath));
+        Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.TitleDemoRelativePath));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/d230.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/archive/demo/share/anime/a_pl0110.gfpak"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath));
@@ -99,6 +101,9 @@ public sealed class SwShFpsPatchServiceTests
         Assert.False(File.Exists(Path.Combine(
             temp.OutputRootPath,
             SwShFpsRomFsTestFixtures.TrainerThrowArchiveRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.TitleDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
 
         var restore = service.Restore(paths);
 
@@ -117,6 +122,9 @@ public sealed class SwShFpsPatchServiceTests
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d010.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d030.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "r2d020.bseq")));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.TitleDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "d230.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "archive", "demo", "share", "anime", "a_pl0110.gfpak")));
         Assert.False(File.Exists(Path.Combine(
@@ -194,6 +202,51 @@ public sealed class SwShFpsPatchServiceTests
         Assert.Equal(45u, ReadAnimationFrameRate(Path.Combine(
             temp.OutputRootPath,
             SwShFpsRomFsTestFixtures.TrainerThrowCameraRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+    }
+
+    [Fact]
+    public void ApplyRemovesLegacyTitleDemoOutput()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        temp.WriteBaseExeFsFile("main", SwShFpsMainTestAnchors.CreateMain(ProjectGame.Sword));
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, ProjectGame.Sword);
+        SwShFpsRomFsTestFixtures.WriteCompleteManagedBaseRomFs(temp);
+        var titleDemoSource = SwShFpsRomFsTestFixtures.CreateMoveBseq(frameCount: 10, startFrame: 2, endFrame: 4);
+        var legacyTitleDemoOutput = SwShFpsBseqPatcher.Convert(
+            titleDemoSource,
+            SwShFpsBseqPatcher.OpeningDemoTimelineScale,
+            out _);
+        temp.WriteOutputFile(SwShFpsRomFsTestFixtures.TitleDemoRelativePath, legacyTitleDemoOutput);
+        var service = new SwShFpsPatchService();
+
+        var apply = service.Apply(paths);
+
+        Assert.DoesNotContain(apply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.TitleDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+    }
+
+    [Fact]
+    public void ApplyLeavesCustomTitleDemoOutputInPlace()
+    {
+        using var temp = TemporarySwShProject.Create();
+        var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
+        temp.WriteBaseExeFsFile("main", SwShFpsMainTestAnchors.CreateMain(ProjectGame.Sword));
+        SwShEncounterTestFixtures.WriteSelectedGameNpdm(temp, ProjectGame.Sword);
+        SwShFpsRomFsTestFixtures.WriteCompleteManagedBaseRomFs(temp);
+        temp.WriteOutputFile(
+            SwShFpsRomFsTestFixtures.TitleDemoRelativePath,
+            SwShFpsRomFsTestFixtures.CreateMoveBseq(frameCount: 123, startFrame: 5, endFrame: 9));
+        var service = new SwShFpsPatchService();
+
+        var apply = service.Apply(paths);
+
+        Assert.DoesNotContain(apply.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.True(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.TitleDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
     }
 
     private static uint ReadFrameCount(string path)

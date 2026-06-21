@@ -25,6 +25,7 @@ public sealed class SwShFpsPatchService
     private const string LegacyTrainerBattleArchiveRootInsideRomFs = "bin/archive/chara/data/tr/anm";
     private const string LegacyCharaTrainerRootInsideRomFs = "bin/chara/data/tr";
     private const string OpeningDemoBseqRelativePath = "romfs/bin/demo/sequence/d010.bseq";
+    private const string ExcludedTitleDemoBseqRelativePath = "romfs/bin/demo/sequence/sd9010_title.bseq";
     private const int ExpectedManagedBseqFileCount = 1010;
 
     private static readonly string[] ManagedBseqPrefixes = ["eg", "es", "et", "ew"];
@@ -196,6 +197,7 @@ public sealed class SwShFpsPatchService
         }
 
         RemoveLegacyTrainerThrowOutputs(paths, diagnostics, writtenFiles);
+        RemoveLegacyExcludedDemoSequenceOutput(paths, diagnostics, writtenFiles);
 
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
@@ -232,6 +234,7 @@ public sealed class SwShFpsPatchService
         RestoreMain(paths, diagnostics, writtenFiles);
         RestoreRomFsFiles(paths, diagnostics, writtenFiles);
         RemoveLegacyTrainerThrowOutputs(paths, diagnostics, writtenFiles);
+        RemoveLegacyExcludedDemoSequenceOutput(paths, diagnostics, writtenFiles);
         DeleteManifest(paths, diagnostics);
 
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -681,6 +684,58 @@ public sealed class SwShFpsPatchService
         }
     }
 
+    private static void RemoveLegacyExcludedDemoSequenceOutput(
+        ProjectPaths paths,
+        ICollection<ValidationDiagnostic> diagnostics,
+        ICollection<ProjectFileReference> writtenFiles)
+    {
+        if (string.IsNullOrWhiteSpace(paths.BaseRomFsPath) || string.IsNullOrWhiteSpace(paths.OutputRootPath))
+        {
+            return;
+        }
+
+        var sourcePath = ResolveBaseRomFsPath(paths.BaseRomFsPath, ExcludedTitleDemoBseqRelativePath);
+        var targetPath = ResolveOutputPath(paths.OutputRootPath, ExcludedTitleDemoBseqRelativePath);
+        if (sourcePath is null || targetPath is null || !File.Exists(sourcePath) || !File.Exists(targetPath))
+        {
+            return;
+        }
+
+        try
+        {
+            var sourceBytes = File.ReadAllBytes(sourcePath);
+            var generated = ConvertBseq(sourceBytes, SwShFpsBseqPatcher.OpeningDemoTimelineScale);
+            var outputBytes = File.ReadAllBytes(targetPath);
+            if (!outputBytes.SequenceEqual(generated))
+            {
+                return;
+            }
+
+            File.Delete(targetPath);
+            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExcludedTitleDemoBseqRelativePath));
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"60FPS Patch could not remove a legacy title demo output: {exception.Message}",
+                file: ExcludedTitleDemoBseqRelativePath,
+                expected: "Deletable legacy 60FPS Patch title demo output"));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Warning,
+                $"60FPS Patch could not remove a legacy title demo output: {exception.Message}",
+                file: ExcludedTitleDemoBseqRelativePath,
+                expected: "Deletable legacy 60FPS Patch title demo output"));
+        }
+        catch (InvalidDataException)
+        {
+            // If the legacy conversion cannot be reproduced, leave the file in place.
+        }
+    }
+
     private MainStatus AnalyzeMain(ProjectPaths paths, ICollection<ValidationDiagnostic> diagnostics)
     {
         if (string.IsNullOrWhiteSpace(paths.BaseExeFsPath))
@@ -986,6 +1041,7 @@ public sealed class SwShFpsPatchService
         {
             return Directory
                 .EnumerateFiles(sequenceRoot, "*.bseq", SearchOption.TopDirectoryOnly)
+                .Where(path => !IsExcludedDemoSequenceBseqFileName(Path.GetFileName(path)))
                 .Select(path => new ManagedRomFsFile(
                     Path.GetFullPath(path),
                     $"{DemoSequenceRootRelativePath}/{Path.GetFileName(path).Replace('\\', '/')}"))
@@ -1257,7 +1313,13 @@ public sealed class SwShFpsPatchService
     private static bool IsManagedDemoSequenceBseqPath(string normalizedRelativePath)
     {
         return normalizedRelativePath.StartsWith(DemoSequenceRootRelativePath + "/", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(normalizedRelativePath, ExcludedTitleDemoBseqRelativePath, StringComparison.OrdinalIgnoreCase)
             && normalizedRelativePath.EndsWith(".bseq", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsExcludedDemoSequenceBseqFileName(string fileName)
+    {
+        return string.Equals(fileName, Path.GetFileName(ExcludedTitleDemoBseqRelativePath), StringComparison.OrdinalIgnoreCase);
     }
 
     private static void ValidateEditableProject(

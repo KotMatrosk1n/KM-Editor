@@ -7,7 +7,7 @@ const fpsPatchStatus = {
   detectedGame: 'sword' as const,
   diagnostics: [],
   mainSiteCount: 15,
-  managedRomFsFileCount: 1107,
+  managedRomFsFileCount: 1106,
   message: '60FPS Patch is not installed.',
   patchedMainSiteCount: 0,
   patchedRomFsFileCount: 0,
@@ -18,7 +18,7 @@ const installedFpsPatchStatus = {
   ...fpsPatchStatus,
   message: '60FPS Patch is installed.',
   patchedMainSiteCount: 15,
-  patchedRomFsFileCount: 1107,
+  patchedRomFsFileCount: 1106,
   status: 'installed'
 };
 
@@ -32,7 +32,7 @@ export function createFpsPatchBridgeFixture(): Pick<
       Promise.resolve({
         applyResult: {
           applyId: 'fps-patch-apply-1',
-          diagnostics: [{ message: '60FPS Patch installed 1,108 output file(s).', severity: 'info' }],
+          diagnostics: [{ message: '60FPS Patch installed 1,107 output file(s).', severity: 'info' }],
           writtenFiles: [
             'exefs/main',
             'romfs/bin/battle/waza/sequence/ew052.bseq',
@@ -49,7 +49,7 @@ export function createFpsPatchBridgeFixture(): Pick<
       Promise.resolve({
         applyResult: {
           applyId: 'fps-patch-restore-1',
-          diagnostics: [{ message: '60FPS Patch uninstalled 1,108 owned output file(s).', severity: 'info' }],
+          diagnostics: [{ message: '60FPS Patch uninstalled 1,107 owned output file(s).', severity: 'info' }],
           writtenFiles: [
             'exefs/main',
             'romfs/bin/battle/waza/sequence/ew052.bseq',
