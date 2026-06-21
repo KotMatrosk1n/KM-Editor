@@ -14,6 +14,10 @@ public sealed record StageTypeChartRequest(
     EditSessionDto? Session,
     IReadOnlyList<int> Values);
 
+public sealed record StageTypeChartUninstallRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session);
+
 public sealed record TypeChartProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -59,6 +63,11 @@ public sealed record TypeChartWorkflowDto(
 public sealed record LoadTypeChartWorkflowResponse(TypeChartWorkflowDto Workflow);
 
 public sealed record StageTypeChartResponse(
+    TypeChartWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record StageTypeChartUninstallResponse(
     TypeChartWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

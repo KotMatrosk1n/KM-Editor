@@ -3494,7 +3494,7 @@ export function createMockProjectBridge(
   const { shinyRateWorkflow, shinyRateWorkflowSummary } = createShinyRateWorkflowFixture(canEdit);
   const typeChartWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'Advanced editor for the Sword/Shield type-effectiveness table in exefs/main.',
+    description: 'Advanced editor for the type-effectiveness table in exefs/main.',
     diagnostics: [],
     id: 'typeChart',
     label: 'Type Chart'
@@ -3530,7 +3530,7 @@ export function createMockProjectBridge(
     chartOffsetHex: 'main.ro+0x00743600',
     detectedGame: 'sword',
     diagnostics: [],
-    installMessage: 'Type Chart is using the vanilla Sword/Shield effectiveness table.',
+    installMessage: 'Type Chart is using the vanilla effectiveness table.',
     installStatus: canEdit ? 'available' : 'readOnly',
     source: {
       label: 'ExeFS main',
@@ -4778,6 +4778,54 @@ export function createMockProjectBridge(
             ...cell,
             effectiveness: request.values[index] ?? cell.effectiveness
           }))
+        }
+      }),
+    stageTypeChartUninstall: (request) =>
+      Promise.resolve({
+        diagnostics: [
+          {
+            message: 'Type Chart uninstall is staged for change-plan review.',
+            severity: 'info'
+          }
+        ],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.typeChart',
+              field: 'uninstall',
+              newValue: 'true',
+              recordId: 'sv-type-chart-v1-uninstall',
+              sources: [
+                {
+                  layer: 'generated',
+                  relativePath: 'exefs/main'
+                },
+                {
+                  layer: 'base',
+                  relativePath: 'exefs/main'
+                }
+              ],
+              summary: 'Stage Type Chart uninstall.'
+            }
+          ],
+          sessionId: request.session?.sessionId ?? 'session-type-chart-uninstall'
+        },
+        workflow: {
+          ...typeChartWorkflow,
+          detectedGame: 'scarlet',
+          installMessage: 'Type Chart contains custom effectiveness values.',
+          installStatus: 'modified',
+          source: typeChartWorkflow.source
+            ? {
+                ...typeChartWorkflow.source,
+                provenance: {
+                  ...typeChartWorkflow.source.provenance,
+                  fileState: 'layeredOverride',
+                  sourceLayer: 'layered'
+                }
+              }
+            : typeChartWorkflow.source
         }
       }),
     loadFairyGymBoostsWorkflow: () => Promise.resolve({ workflow: fairyGymBoostsWorkflow }),

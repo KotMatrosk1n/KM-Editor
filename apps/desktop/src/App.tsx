@@ -3216,6 +3216,27 @@ export function App({
     }
   };
 
+  const handleStageTypeChartUninstall = async () => {
+    setIsTypeChartStaging(true);
+    prepareScopedEditorPanelAction('typeChart');
+
+    try {
+      const response = await bridge.stageTypeChartUninstall({
+        paths: toProjectPaths(draftPaths),
+        session: editSession
+      });
+      setTypeChartWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditSessionSection(activeSectionIsEditor ? activeSection : null);
+      setScopedEditorPanelDiagnostics('typeChart', response.diagnostics);
+      registerEditorDraftDirty('typeChart', false);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTypeChartStaging(false);
+    }
+  };
+
   const handleOpenFairyGymBoostsWorkflow = async () => {
     setIsFairyGymBoostsLoading(true);
     setBridgeDiagnostics([]);
@@ -7653,6 +7674,7 @@ const resetModMergerPlan = () => {
                 onCreateChangePlan={() => void handleCreateScopedEditorChangePlan('typeChart')}
                 onDirtyChange={(isDirty) => registerEditorDraftDirty('typeChart', isDirty)}
                 onStageChart={handleStageTypeChart}
+                onStageUninstall={handleStageTypeChartUninstall}
                 panelOutput={getScopedEditorPanelOutput('typeChart')}
                 workflow={typeChartWorkflow}
               />

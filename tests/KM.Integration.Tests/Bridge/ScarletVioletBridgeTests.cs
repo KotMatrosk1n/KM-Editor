@@ -461,7 +461,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "moves", "pokemon", "trainers", "encounters", "giftPokemon", "placement", "hyperspaceBypass", "modMerger"],
+            ["items", "moves", "pokemon", "trainers", "encounters", "giftPokemon", "placement", "typeChart", "hyperspaceBypass", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
@@ -470,6 +470,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Wild Encounters");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Gift Pokemon");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Placement");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Type Chart");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Hyperspace Bypass");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "S/V Mod Merger");
     }

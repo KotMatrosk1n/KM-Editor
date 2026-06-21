@@ -82,8 +82,8 @@ import {
   type StageCatchCapUninstallResponse,
   type StageHyperTrainingRequest,
   type StageHyperTrainingResponse,
-  type StageTypeChartRequest,
-  type StageTypeChartResponse,
+  type StageTypeChartRequest, type StageTypeChartResponse,
+  type StageTypeChartUninstallRequest, type StageTypeChartUninstallResponse,
   type StageFashionUnlockInstallRequest,
   type StageFashionUnlockInstallResponse,
   type StageFashionUnlockUninstallRequest,
@@ -211,6 +211,7 @@ import {
   stageCatchCapUninstallResponseSchema,
   stageHyperTrainingResponseSchema,
   stageTypeChartResponseSchema,
+  stageTypeChartUninstallResponseSchema,
   stageFashionUnlockInstallResponseSchema,
   stageFashionUnlockUninstallResponseSchema,
   stageGymUniformRemovalInstallResponseSchema,
@@ -415,6 +416,7 @@ export type ProjectBridge = {
   stageTypeChart: (
     request: StageTypeChartRequest
   ) => Promise<StageTypeChartResponse>;
+  stageTypeChartUninstall: (request: StageTypeChartUninstallRequest) => Promise<StageTypeChartUninstallResponse>;
   loadFairyGymBoostsWorkflow: (
     request: LoadFairyGymBoostsWorkflowRequest
   ) => Promise<LoadFairyGymBoostsWorkflowResponse>;
@@ -683,6 +685,7 @@ export function createProjectBridge(
         request,
         stageTypeChartResponseSchema
       ),
+    stageTypeChartUninstall: (request) => sendProjectBridgeRequest(transport, kmCommandNames.stageTypeChartUninstall, request, stageTypeChartUninstallResponseSchema),
     loadFairyGymBoostsWorkflow: (request) =>
       sendProjectBridgeRequest(
         transport,

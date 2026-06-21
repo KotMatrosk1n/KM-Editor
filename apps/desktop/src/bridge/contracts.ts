@@ -53,7 +53,7 @@ export const kmCommandNameValues = [
   'shinyRate.load',
   'shinyRate.stage',
   'typeChart.load',
-  'typeChart.stage', 'fairyGymBoosts.load', 'fairyGymBoosts.stage',
+  'typeChart.stage', 'typeChart.uninstall.stage', 'fairyGymBoosts.load', 'fairyGymBoosts.stage',
   'fashionUnlock.load',
   'fashionUnlock.install.stage',
   'fashionUnlock.uninstall.stage',
@@ -147,6 +147,7 @@ export const kmCommandNames = {
   stageShinyRate: 'shinyRate.stage',
   loadTypeChartWorkflow: 'typeChart.load',
   stageTypeChart: 'typeChart.stage',
+  stageTypeChartUninstall: 'typeChart.uninstall.stage',
   loadFairyGymBoostsWorkflow: 'fairyGymBoosts.load', stageFairyGymBoosts: 'fairyGymBoosts.stage',
   loadFashionUnlockWorkflow: 'fashionUnlock.load',
   stageFashionUnlockInstall: 'fashionUnlock.install.stage',
@@ -2358,39 +2359,15 @@ export const stageHyperTrainingResponseSchema = z.strictObject({
   workflow: hyperTrainingWorkflowSchema
 });
 
-export const typeChartProvenanceSchema = z.strictObject({
-  fileState: projectFileGraphEntryStateSchema,
-  sourceFile: z.string(),
-  sourceLayer: projectFileLayerSchema
-});
+export const typeChartProvenanceSchema = z.strictObject({ fileState: projectFileGraphEntryStateSchema, sourceFile: z.string(), sourceLayer: projectFileLayerSchema });
 
-export const typeChartSourceRecordSchema = z.strictObject({
-  label: z.string(),
-  provenance: typeChartProvenanceSchema,
-  relativePath: z.string(),
-  sourceId: z.string(),
-  status: z.string()
-});
+export const typeChartSourceRecordSchema = z.strictObject({ label: z.string(), provenance: typeChartProvenanceSchema, relativePath: z.string(), sourceId: z.string(), status: z.string() });
 
-export const typeChartTypeDefinitionSchema = z.strictObject({
-  color: z.string(),
-  label: z.string(),
-  shortLabel: z.string(),
-  typeIndex: z.number().int().min(0)
-});
+export const typeChartTypeDefinitionSchema = z.strictObject({ color: z.string(), label: z.string(), shortLabel: z.string(), typeIndex: z.number().int().min(0) });
 
-export const typeChartCellSchema = z.strictObject({
-  attackTypeIndex: z.number().int().min(0),
-  defenseTypeIndex: z.number().int().min(0),
-  effectiveness: z.union([z.literal(0), z.literal(2), z.literal(4), z.literal(8)]),
-  vanillaEffectiveness: z.union([z.literal(0), z.literal(2), z.literal(4), z.literal(8)])
-});
+export const typeChartCellSchema = z.strictObject({ attackTypeIndex: z.number().int().min(0), defenseTypeIndex: z.number().int().min(0), effectiveness: z.union([z.literal(0), z.literal(2), z.literal(4), z.literal(8)]), vanillaEffectiveness: z.union([z.literal(0), z.literal(2), z.literal(4), z.literal(8)]) });
 
-export const typeChartWorkflowStatsSchema = z.strictObject({
-  chartCellCount: z.number().int().nonnegative(),
-  outputFileCount: z.number().int().nonnegative(),
-  sourceFileCount: z.number().int().nonnegative()
-});
+export const typeChartWorkflowStatsSchema = z.strictObject({ chartCellCount: z.number().int().nonnegative(), outputFileCount: z.number().int().nonnegative(), sourceFileCount: z.number().int().nonnegative() });
 
 export const typeChartWorkflowSchema = z.strictObject({
   buildId: z.string(),
@@ -2421,6 +2398,10 @@ export const stageTypeChartResponseSchema = z.strictObject({
   session: editSessionSchema,
   workflow: typeChartWorkflowSchema
 });
+
+export const stageTypeChartUninstallRequestSchema = z.strictObject({ paths: projectPathsSchema, session: editSessionSchema.nullable() });
+
+export const stageTypeChartUninstallResponseSchema = z.strictObject({ diagnostics: z.array(apiDiagnosticSchema), session: editSessionSchema, workflow: typeChartWorkflowSchema });
 
 export const fashionUnlockProvenanceSchema = z.strictObject({ fileState: projectFileGraphEntryStateSchema, sourceFile: z.string(), sourceLayer: projectFileLayerSchema });
 
@@ -3532,6 +3513,8 @@ export type LoadTypeChartWorkflowResponse = z.infer<
 >;
 export type StageTypeChartRequest = z.infer<typeof stageTypeChartRequestSchema>;
 export type StageTypeChartResponse = z.infer<typeof stageTypeChartResponseSchema>;
+export type StageTypeChartUninstallRequest = z.infer<typeof stageTypeChartUninstallRequestSchema>;
+export type StageTypeChartUninstallResponse = z.infer<typeof stageTypeChartUninstallResponseSchema>;
 export type LoadFashionUnlockWorkflowRequest = z.infer<
   typeof loadFashionUnlockWorkflowRequestSchema
 >;
