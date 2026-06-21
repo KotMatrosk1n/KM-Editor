@@ -18,6 +18,10 @@ public sealed class SwShFpsPatchService
     private const string ManifestRelativePath = ".km-editor/60fps-patch-manifest.json";
     private const string SequenceRootInsideRomFs = "bin/battle/waza/sequence";
     private const string SequenceRootRelativePath = "romfs/bin/battle/waza/sequence";
+    private const string BattleCameraRootInsideRomFs = "bin/battle/waza/camera";
+    private const string BattleCameraRootRelativePath = "romfs/bin/battle/waza/camera";
+    private const string BattleUiRootInsideRomFs = "bin/appli/battle/bin";
+    private const string BattleUiRootRelativePath = "romfs/bin/appli/battle/bin";
     private const string DemoSequenceRootInsideRomFs = "bin/demo/sequence";
     private const string DemoSequenceRootRelativePath = "romfs/bin/demo/sequence";
     private const string TrainerBallthrowCameraRootInsideRomFs = "bin/battle/waza/camera/ballthrow";
@@ -29,6 +33,28 @@ public sealed class SwShFpsPatchService
     private const int ExpectedManagedBseqFileCount = 1010;
 
     private static readonly string[] ManagedBseqPrefixes = ["eg", "es", "et", "ew"];
+    private static readonly string[] ExcludedBattleCameraDirectories =
+    [
+        "ballthrow",
+        "eg_ball",
+        "eg_hokaku",
+        "eg_land",
+        "hokaku",
+    ];
+    private static readonly string[] ManagedBattleUiArchiveFileNamePrefixes =
+    [
+        "battle_ballselect_00",
+        "battle_commandSelect_00",
+        "battle_commandSelect_01",
+        "battle_info_00",
+        "battle_kansen_00",
+        "battle_opponent_info_00",
+        "battle_result_boss_00",
+        "battle_skillSelect_00",
+        "battle_target_select_00",
+        "battle_top_00",
+    ];
+
     private static readonly ManagedBseqTimingOverride[] RequiredManagedBseqFiles =
     [
         new("romfs/bin/battle/waza/sequence/d230.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
@@ -112,6 +138,8 @@ public sealed class SwShFpsPatchService
         var normalized = NormalizeRelativePath(relativePath);
         return IsSpecialManagedRomFsPath(normalized)
             || IsManagedMoveEffectBseqPath(normalized)
+            || IsManagedBattleCameraPath(normalized)
+            || IsManagedBattleUiArchivePath(normalized)
             || IsManagedDemoSequenceBseqPath(normalized)
             || string.Equals(
                 normalized,
@@ -338,6 +366,16 @@ public sealed class SwShFpsPatchService
         }
 
         foreach (var sourceFile in moveEffectFiles)
+        {
+            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
+        }
+
+        foreach (var sourceFile in EnumerateManagedBattleCameraFiles(paths.BaseRomFsPath, diagnostics))
+        {
+            PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
+        }
+
+        foreach (var sourceFile in EnumerateManagedBattleUiArchives(paths.BaseRomFsPath, diagnostics))
         {
             PrepareManagedRomFsFile(paths, sourceFile, preparedFiles, diagnostics);
         }
@@ -949,6 +987,8 @@ public sealed class SwShFpsPatchService
         ICollection<ValidationDiagnostic> diagnostics)
     {
         var files = EnumerateManagedBseqFiles(baseRomFsPath, diagnostics).ToList();
+        files.AddRange(EnumerateManagedBattleCameraFiles(baseRomFsPath, diagnostics));
+        files.AddRange(EnumerateManagedBattleUiArchives(baseRomFsPath, diagnostics));
         files.AddRange(EnumerateManagedDemoBseqFiles(baseRomFsPath, diagnostics));
         foreach (var sourceFile in RequiredManagedBseqFiles)
         {
@@ -1020,6 +1060,103 @@ public sealed class SwShFpsPatchService
     {
         return fileName.EndsWith(".bseq", StringComparison.OrdinalIgnoreCase)
             && ManagedBseqPrefixes.Any(prefix => fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IReadOnlyList<ManagedRomFsFile> EnumerateManagedBattleCameraFiles(
+        string baseRomFsPath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var cameraRoot = Path.Combine(baseRomFsPath, BattleCameraRootInsideRomFs);
+        if (!Directory.Exists(cameraRoot))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch could not find the battle camera folder.",
+                file: BattleCameraRootRelativePath,
+                expected: "Sword/Shield Base RomFS battle camera folder"));
+            return [];
+        }
+
+        try
+        {
+            return Directory
+                .EnumerateFiles(cameraRoot, "*.gfbcama", SearchOption.AllDirectories)
+                .Select(path =>
+                {
+                    var relativeInsideCameraRoot = Path.GetRelativePath(cameraRoot, path).Replace('\\', '/');
+                    return new ManagedRomFsFile(
+                        Path.GetFullPath(path),
+                        $"{BattleCameraRootRelativePath}/{relativeInsideCameraRoot}");
+                })
+                .Where(file => IsManagedBattleCameraPath(file.RelativePath))
+                .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"60FPS Patch could not scan battle camera files: {exception.Message}",
+                file: BattleCameraRootRelativePath,
+                expected: "Readable battle camera folder"));
+            return [];
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"60FPS Patch could not scan battle camera files: {exception.Message}",
+                file: BattleCameraRootRelativePath,
+                expected: "Readable battle camera folder"));
+            return [];
+        }
+    }
+
+    private static IReadOnlyList<ManagedRomFsFile> EnumerateManagedBattleUiArchives(
+        string baseRomFsPath,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        var uiRoot = Path.Combine(baseRomFsPath, BattleUiRootInsideRomFs);
+        if (!Directory.Exists(uiRoot))
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                "60FPS Patch could not find the battle UI folder.",
+                file: BattleUiRootRelativePath,
+                expected: "Sword/Shield Base RomFS battle UI folder"));
+            return [];
+        }
+
+        try
+        {
+            return Directory
+                .EnumerateFiles(uiRoot, "*.arc", SearchOption.TopDirectoryOnly)
+                .Select(path => new ManagedRomFsFile(
+                    Path.GetFullPath(path),
+                    $"{BattleUiRootRelativePath}/{Path.GetFileName(path).Replace('\\', '/')}"))
+                .Where(file => IsManagedBattleUiArchivePath(file.RelativePath))
+                .Where(file => SwShFpsUiKeySelectPatcher.ContainsKeySelectAnimation(File.ReadAllBytes(file.SourcePath)))
+                .OrderBy(file => file.RelativePath, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (IOException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"60FPS Patch could not scan battle UI files: {exception.Message}",
+                file: BattleUiRootRelativePath,
+                expected: "Readable battle UI folder"));
+            return [];
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"60FPS Patch could not scan battle UI files: {exception.Message}",
+                file: BattleUiRootRelativePath,
+                expected: "Readable battle UI folder"));
+            return [];
+        }
     }
 
     private static IReadOnlyList<ManagedRomFsFile> EnumerateManagedDemoBseqFiles(
@@ -1252,6 +1389,16 @@ public sealed class SwShFpsPatchService
             return ConvertBseq(sourceBytes, SwShFpsBseqPatcher.MoveEffectTimelineScale);
         }
 
+        if (IsManagedBattleCameraPath(normalized))
+        {
+            return SwShFpsBattleCameraPatcher.ConvertAnimationToHalfSpeed(sourceBytes);
+        }
+
+        if (IsManagedBattleUiArchivePath(normalized))
+        {
+            return SwShFpsUiKeySelectPatcher.ConvertArchive(sourceBytes);
+        }
+
         if (string.Equals(normalized, OpeningDemoBseqRelativePath, StringComparison.OrdinalIgnoreCase))
         {
             return SwShFpsBseqPatcher.ConvertOpeningDemoD010(sourceBytes, out _);
@@ -1308,6 +1455,34 @@ public sealed class SwShFpsPatchService
         }
 
         return IsManagedBseqFileName(Path.GetFileName(normalizedRelativePath));
+    }
+
+    private static bool IsManagedBattleCameraPath(string normalizedRelativePath)
+    {
+        if (!normalizedRelativePath.StartsWith(BattleCameraRootRelativePath + "/", StringComparison.OrdinalIgnoreCase)
+            || !normalizedRelativePath.EndsWith(".gfbcama", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var relativeInsideCameraRoot = normalizedRelativePath[(BattleCameraRootRelativePath.Length + 1)..];
+        var firstSeparatorIndex = relativeInsideCameraRoot.IndexOf('/');
+        var cameraDirectory = firstSeparatorIndex < 0
+            ? string.Empty
+            : relativeInsideCameraRoot[..firstSeparatorIndex];
+        return !ExcludedBattleCameraDirectories.Contains(cameraDirectory, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool IsManagedBattleUiArchivePath(string normalizedRelativePath)
+    {
+        if (!normalizedRelativePath.StartsWith(BattleUiRootRelativePath + "/", StringComparison.OrdinalIgnoreCase)
+            || !normalizedRelativePath.EndsWith(".arc", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var fileName = Path.GetFileName(normalizedRelativePath);
+        return ManagedBattleUiArchiveFileNamePrefixes.Any(prefix => fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsManagedDemoSequenceBseqPath(string normalizedRelativePath)

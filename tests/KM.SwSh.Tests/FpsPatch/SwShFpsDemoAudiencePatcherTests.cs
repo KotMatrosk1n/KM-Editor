@@ -78,6 +78,9 @@ public sealed class SwShFpsDemoAudiencePatcherTests
         Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/demo/sequence/d230.bseq"));
         Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/battle/waza/sequence/ee411.bseq"));
         Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/battle/waza/sequence/eg_ball01.bseq"));
+        Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/battle/waza/camera/wait/ba_wait01_cam.gfbcama"));
+        Assert.False(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/battle/waza/camera/eg_ball/eg_ball01_cam.gfbcama"));
+        Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/appli/battle/bin/battle_commandSelect_00.arc"));
         Assert.True(SwShFpsPatchService.IsManagedRomFsPath("romfs/bin/archive/demo/share/anime/a_pl0110.gfpak"));
     }
 
