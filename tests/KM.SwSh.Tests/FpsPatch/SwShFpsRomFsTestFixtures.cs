@@ -12,6 +12,9 @@ internal static class SwShFpsRomFsTestFixtures
     public const ulong AudienceClipHash = 0xE46DE99F0E990642;
     public const ulong AudienceSubClipHash = 0xCD523A1B23139151;
     public const ulong AudienceSub02ClipHash = 0xC6A053DEED7A7E03;
+    public const string BattleCameraRelativePath = "romfs/bin/battle/waza/camera/wait/ba_wait01_cam.gfbcama";
+    public const string ExcludedBallSystemCameraRelativePath = "romfs/bin/battle/waza/camera/eg_ball/eg_ball01_cam.gfbcama";
+    public const string BattleUiArchiveRelativePath = "romfs/bin/appli/battle/bin/battle_commandSelect_00.arc";
     public const string TrainerThrowCameraRelativePath = "romfs/bin/battle/waza/camera/ballthrow/tr0002_00_ba_ballthrow01_cam.gfbcama";
     public const string PlayerThrowCameraRelativePath = "romfs/bin/battle/waza/camera/ballthrow/pc0001_00_ba_ballthrow01_cam.gfbcama";
     public const string TrainerThrowBattleModelRelativePath = "romfs/bin/battle/waza/model/anm/ob0304_00_tr0002_00_ba0120_g_ballthrow01_end.gfbanm";
@@ -94,6 +97,15 @@ internal static class SwShFpsRomFsTestFixtures
 
         temp.WriteBaseRomFsFile("bin/archive/demo/share/anime/a_pl0110.gfpak", CreateAudienceArchive());
         temp.WriteBaseRomFsFile("bin/archive/field/model/unit_obj_pc_recovery01.gfpak", CreatePokemonCenterRecoveryArchive());
+        temp.WriteBaseRomFsFile(
+            BattleCameraRelativePath["romfs/".Length..],
+            CreateGfAnimationClip(keyFrames: 91, frameRate: 60));
+        temp.WriteBaseRomFsFile(
+            ExcludedBallSystemCameraRelativePath["romfs/".Length..],
+            CreateGfAnimationClip(keyFrames: 72, frameRate: 60));
+        temp.WriteBaseRomFsFile(
+            BattleUiArchiveRelativePath["romfs/".Length..],
+            CreateBattleUiArchive());
         temp.WriteBaseRomFsFile(
             TrainerThrowCameraRelativePath["romfs/".Length..],
             CreateGfAnimationClip(keyFrames: 143, frameRate: 60));
@@ -205,6 +217,37 @@ internal static class SwShFpsRomFsTestFixtures
             .Write();
     }
 
+    public static byte[] CreateBattleUiArchive()
+    {
+        const string fileName = "anim/test_key_select.bflan";
+        var animation = CreateKeySelectBflan();
+        var nameBytes = Encoding.ASCII.GetBytes(fileName + '\0');
+        var dataOffset = Align(0x38 + nameBytes.Length, 0x80);
+        var output = new byte[dataOffset + animation.Length];
+
+        Encoding.ASCII.GetBytes("SARC").CopyTo(output, 0x00);
+        WriteU16(output, 0x04, 0x14);
+        WriteU16(output, 0x06, 0xFEFF);
+        WriteU32(output, 0x08, (uint)output.Length);
+        WriteU32(output, 0x0C, (uint)dataOffset);
+        WriteU16(output, 0x10, 0x100);
+
+        Encoding.ASCII.GetBytes("SFAT").CopyTo(output, 0x14);
+        WriteU16(output, 0x18, 0x0C);
+        WriteU16(output, 0x1A, 1);
+        WriteU32(output, 0x1C, 0x65);
+        WriteU32(output, 0x20, 0x12345678);
+        WriteU32(output, 0x24, 0x01000000);
+        WriteU32(output, 0x28, 0);
+        WriteU32(output, 0x2C, (uint)animation.Length);
+
+        Encoding.ASCII.GetBytes("SFNT").CopyTo(output, 0x30);
+        WriteU16(output, 0x34, 0x08);
+        nameBytes.CopyTo(output.AsSpan(0x38));
+        animation.CopyTo(output.AsSpan(dataOffset));
+        return output;
+    }
+
     public static float[] CreateFlipbookValues(float offset = 0.0f)
     {
         return Enumerable.Range(0, 33)
@@ -238,6 +281,49 @@ internal static class SwShFpsRomFsTestFixtures
                 $"bin/battle/waza/sequence/{prefix}{index:D3}.bseq",
                 contents);
         }
+    }
+
+    private static byte[] CreateKeySelectBflan()
+    {
+        const int patOffset = 0x14;
+        const int patSize = 0x50;
+        const int paiOffset = patOffset + patSize;
+        const int paiSize = 0x70;
+        const int flpaOffset = paiOffset + 0x30;
+        const int targetOffset = flpaOffset + 0x10;
+        const int keysOffset = targetOffset + 0x0C;
+        var output = new byte[paiOffset + paiSize];
+
+        Encoding.ASCII.GetBytes("FLAN").CopyTo(output, 0x00);
+        WriteU16(output, 0x04, 0xFEFF);
+        WriteU16(output, 0x06, 0x14);
+        WriteU32(output, 0x08, 0x09000000);
+        WriteU32(output, 0x0C, (uint)output.Length);
+        WriteU32(output, 0x10, 2);
+
+        Encoding.ASCII.GetBytes("pat1").CopyTo(output, patOffset);
+        WriteU32(output, patOffset + 0x04, patSize);
+        WriteU16(output, patOffset + 0x18, 2);
+        WriteU16(output, patOffset + 0x1A, 4);
+        Encoding.ASCII.GetBytes("key_select").CopyTo(output, patOffset + 0x20);
+
+        Encoding.ASCII.GetBytes("pai1").CopyTo(output, paiOffset);
+        WriteU32(output, paiOffset + 0x04, paiSize);
+        Encoding.ASCII.GetBytes("key_select").CopyTo(output, paiOffset + 0x18);
+
+        Encoding.ASCII.GetBytes("FLPA").CopyTo(output, flpaOffset);
+        WriteU32(output, flpaOffset + 0x04, 1);
+        WriteU32(output, flpaOffset + 0x08, 0x10);
+        WriteU32(output, targetOffset, 0x00020600);
+        WriteU32(output, targetOffset + 0x04, 2);
+        WriteU32(output, targetOffset + 0x08, 0x0C);
+        WriteF32(output, keysOffset, 0.0f);
+        WriteF32(output, keysOffset + 0x04, 0.7f);
+        WriteF32(output, keysOffset + 0x08, 0.0f);
+        WriteF32(output, keysOffset + 0x0C, 2.0f);
+        WriteF32(output, keysOffset + 0x10, 1.0f);
+        WriteF32(output, keysOffset + 0x14, 0.0f);
+        return output;
     }
 
     private static byte[] CreateGfbanmClip(
@@ -395,9 +481,24 @@ internal static class SwShFpsRomFsTestFixtures
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(offset, sizeof(uint)), value);
     }
 
+    private static void WriteU16(byte[] data, int offset, ushort value)
+    {
+        BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(offset, sizeof(ushort)), value);
+    }
+
+    private static void WriteF32(byte[] data, int offset, float value)
+    {
+        BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(offset, sizeof(float)), value);
+    }
+
     private static void WriteU64(byte[] data, int offset, ulong value)
     {
         BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(offset, sizeof(ulong)), value);
+    }
+
+    private static int Align(int value, int alignment)
+    {
+        return (value + alignment - 1) / alignment * alignment;
     }
 
     private sealed record FlatTable(int TableOffset, IReadOnlyDictionary<int, int> FieldLocations);

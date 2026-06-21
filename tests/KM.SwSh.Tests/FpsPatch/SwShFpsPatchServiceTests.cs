@@ -30,10 +30,10 @@ public sealed class SwShFpsPatchServiceTests
         Assert.Equal(ProjectGame.Shield, apply.Status.DetectedGame);
         Assert.Equal(15, apply.Status.PatchedMainSiteCount);
         Assert.Equal(15, apply.Status.MainSiteCount);
-        Assert.Equal(1064, apply.Status.PatchedRomFsFileCount);
-        Assert.Equal(1064, apply.Status.ManagedRomFsFileCount);
+        Assert.Equal(1066, apply.Status.PatchedRomFsFileCount);
+        Assert.Equal(1066, apply.Status.ManagedRomFsFileCount);
         Assert.Equal(0, apply.Status.ConflictingRomFsFileCount);
-        Assert.Equal(1065, apply.ApplyResult.WrittenFiles.Count);
+        Assert.Equal(1067, apply.ApplyResult.WrittenFiles.Count);
 
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         Assert.True(File.Exists(outputMainPath));
@@ -54,8 +54,11 @@ public sealed class SwShFpsPatchServiceTests
         Assert.False(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.TitleDemoRelativePath));
         Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.TitleDemoRelativePath));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/d230.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.BattleCameraRelativePath));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.BattleUiArchiveRelativePath));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/archive/demo/share/anime/a_pl0110.gfpak"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath));
+        Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.ExcludedBallSystemCameraRelativePath));
         Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.TrainerThrowCameraRelativePath));
         Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.TrainerThrowBattleModelRelativePath));
         Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.TrainerThrowLooseRelativePath));
@@ -70,6 +73,19 @@ public sealed class SwShFpsPatchServiceTests
         Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "eg_ball01.bseq")));
         Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "d230.bseq")));
         Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d030.bseq")));
+        var battleCameraInfo = SwShFpsBattleCameraPatcher.InspectAnimation(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.BattleCameraRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.Equal(91u, battleCameraInfo.KeyFrames);
+        Assert.Equal(30u, battleCameraInfo.FrameRate);
+        var battleUiArchive = File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.BattleUiArchiveRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var keySelectAnimation = Assert.Single(SwShFpsUiKeySelectPatcher.InspectArchive(battleUiArchive));
+        Assert.Equal(4, keySelectAnimation.StartFrame);
+        Assert.Equal(8, keySelectAnimation.EndFrame);
+        Assert.Contains(0.0f, keySelectAnimation.FrameKeys);
+        Assert.Contains(4.0f, keySelectAnimation.FrameKeys);
         var recoveryArchive = SwShGfPackFile.Parse(File.ReadAllBytes(Path.Combine(
             temp.OutputRootPath,
             SwShFpsPokemonCenterRecoveryPatcher.RecoveryArchiveRelativePath.Replace('/', Path.DirectorySeparatorChar))));
@@ -89,6 +105,9 @@ public sealed class SwShFpsPatchServiceTests
             30u,
             SwShFpsTrainerThrowPatcher.InspectAnimation(
                 recoveryArchive.GetFileByName("unit_obj_pc_recovery01_text01_open.gfbanm")).FrameRate);
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.ExcludedBallSystemCameraRelativePath.Replace('/', Path.DirectorySeparatorChar))));
         Assert.False(File.Exists(Path.Combine(
             temp.OutputRootPath,
             SwShFpsRomFsTestFixtures.TrainerThrowCameraRelativePath.Replace('/', Path.DirectorySeparatorChar))));
@@ -112,7 +131,7 @@ public sealed class SwShFpsPatchServiceTests
         Assert.Equal(ProjectGame.Shield, restore.Status.DetectedGame);
         Assert.Equal(0, restore.Status.PatchedMainSiteCount);
         Assert.Equal(0, restore.Status.PatchedRomFsFileCount);
-        Assert.Equal(1064, restore.Status.ManagedRomFsFileCount);
+        Assert.Equal(1066, restore.Status.ManagedRomFsFileCount);
         Assert.False(File.Exists(outputMainPath));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ew052.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "eg_ball01.bseq")));
@@ -122,6 +141,12 @@ public sealed class SwShFpsPatchServiceTests
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d010.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d030.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "r2d020.bseq")));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.BattleCameraRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.BattleUiArchiveRelativePath.Replace('/', Path.DirectorySeparatorChar))));
         Assert.False(File.Exists(Path.Combine(
             temp.OutputRootPath,
             SwShFpsRomFsTestFixtures.TitleDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
