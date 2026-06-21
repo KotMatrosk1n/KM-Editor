@@ -1,6 +1,6 @@
 {
   "name": "km-editor",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "private": true,
   "packageManager": "pnpm@11.5.2",
   "engines": {

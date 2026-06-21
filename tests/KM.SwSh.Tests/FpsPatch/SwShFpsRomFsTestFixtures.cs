@@ -18,6 +18,7 @@ internal static class SwShFpsRomFsTestFixtures
     public const string PlayerThrowBattleModelRelativePath = "romfs/bin/battle/waza/model/anm/ob0304_00_pc0002_00_ba0120_g_ballthrow01_end.gfbanm";
     public const string TrainerThrowLooseRelativePath = "romfs/bin/chara/data/tr/tr0165_00_wife/anm/tr0165_00_ba0120_g_ballthrow01_loop.gfbanm";
     public const string TrainerThrowArchiveRelativePath = "romfs/bin/archive/chara/data/tr/anm/tr0002_00_friend_tr0002_00_battle01.gfpak";
+    public const string TitleDemoRelativePath = "romfs/bin/demo/sequence/sd9010_title.bseq";
     public const string TrainerThrowArchiveClipName = "tr0002_00_ba0122_g_ballthrow01_end.gfbanm";
     public const string TrainerNonThrowArchiveClipName = "tr0002_00_ba0414_speak03_end.gfbanm";
     private static readonly string[] RequiredSpecialBallSequenceNames =
@@ -85,6 +86,7 @@ internal static class SwShFpsRomFsTestFixtures
         temp.WriteBaseRomFsFile("bin/demo/sequence/d010.bseq", CreateOpeningDemoBseq());
         temp.WriteBaseRomFsFile("bin/demo/sequence/d030.bseq", moveBseq);
         temp.WriteBaseRomFsFile("bin/demo/sequence/r2d020.bseq", moveBseq);
+        temp.WriteBaseRomFsFile(TitleDemoRelativePath["romfs/".Length..], moveBseq);
         foreach (var sequenceName in RequiredSpecialBallSequenceNames)
         {
             temp.WriteBaseRomFsFile($"bin/battle/waza/sequence/{sequenceName}", moveBseq);
