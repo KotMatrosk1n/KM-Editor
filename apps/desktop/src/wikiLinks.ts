@@ -55,7 +55,8 @@ const scarletVioletWikiSlugs: Partial<Record<WorkbenchSection, string>> = {
   moves: 'Scarlet-and-Violet-Moves-Editor',
   placement: 'Scarlet-and-Violet-Placement-Editor',
   pokemon: 'Scarlet-and-Violet-Pokemon-Editor',
-  trainers: 'Scarlet-and-Violet-Trainers-Editor'
+  trainers: 'Scarlet-and-Violet-Trainers-Editor',
+  typeChart: 'Scarlet-and-Violet-Type-Chart'
 };
 
 export function getSectionWikiUrl(section: WorkbenchSection, selectedGame: ProjectGame | null) {

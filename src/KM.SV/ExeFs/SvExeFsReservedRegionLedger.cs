@@ -36,10 +36,20 @@ internal sealed record SvExeFsReservedRegion(
 internal static class SvExeFsReservedRegionLedger
 {
     public const string OwnerHyperspaceBypass = "Hyperspace Bypass";
+    public const string OwnerTypeChart = "Type Chart";
     public const string ExeFsMainPath = "exefs/main";
 
     private static readonly SvExeFsReservedRegion[] regions =
     [
+        new(
+            OwnerTypeChart,
+            "type-chart-sv",
+            ExeFsMainPath,
+            "main.ro",
+            0x0082286C,
+            0x144,
+            "Scarlet/Violet type-effectiveness table",
+            "do-not-overwrite"),
         new(
             OwnerHyperspaceBypass,
             "hyperspace-hoopa-runtime-gate",
@@ -58,6 +68,17 @@ internal static class SvExeFsReservedRegionLedger
         return regions
             .Where(region => string.Equals(region.RelativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(region.Area, "main.text", StringComparison.Ordinal)
+                && string.Equals(region.Owner, owner, StringComparison.Ordinal)
+                && region.StartOffset is not null
+                && region.Length is not null)
+            .ToArray();
+    }
+
+    public static IReadOnlyList<SvExeFsReservedRegion> MainRoRegionsForOwner(string owner)
+    {
+        return regions
+            .Where(region => string.Equals(region.RelativePath, ExeFsMainPath, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(region.Area, "main.ro", StringComparison.Ordinal)
                 && string.Equals(region.Owner, owner, StringComparison.Ordinal)
                 && region.StartOffset is not null
                 && region.Length is not null)

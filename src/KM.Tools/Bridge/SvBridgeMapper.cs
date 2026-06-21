@@ -11,6 +11,7 @@ using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Trainers;
+using KM.Api.TypeChart;
 using KM.Api.Workflows;
 using KM.Core.Projects;
 using KM.SV.Encounters;
@@ -22,6 +23,7 @@ using KM.SV.Moves;
 using KM.SV.Placement;
 using KM.SV.Pokemon;
 using KM.SV.Trainers;
+using KM.SV.TypeChart;
 using KM.SV.Workflows;
 
 namespace KM.Tools.Bridge;
@@ -182,6 +184,13 @@ public static class SvBridgeMapper
         return new LoadHyperspaceBypassWorkflowResponse(ToHyperspaceBypassWorkflowDto(workflow));
     }
 
+    public static LoadTypeChartWorkflowResponse ToDto(SvTypeChartWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTypeChartWorkflowResponse(ToTypeChartWorkflowDto(workflow));
+    }
+
     public static UpdatePlacementObjectFieldResponse ToDto(SvPlacementEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -210,6 +219,26 @@ public static class SvBridgeMapper
 
         return new StageHyperspaceBypassUninstallResponse(
             ToHyperspaceBypassWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageTypeChartResponse ToDto(SvTypeChartEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageTypeChartResponse(
+            ToTypeChartWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageTypeChartUninstallResponse ToTypeChartUninstallDto(SvTypeChartEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageTypeChartUninstallResponse(
+            ToTypeChartWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -368,6 +397,25 @@ public static class SvBridgeMapper
             new HyperspaceBypassWorkflowStatsDto(
                 workflow.Stats.ReservedMainTextRegionCount,
                 workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TypeChartWorkflowDto ToTypeChartWorkflowDto(SvTypeChartWorkflow workflow)
+    {
+        return new TypeChartWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.BuildId,
+            workflow.ChartOffsetHex,
+            ToProjectGameDto(workflow.DetectedGame),
+            workflow.Source is null ? null : ToDto(workflow.Source),
+            workflow.Types.Select(ToDto).ToArray(),
+            workflow.Cells.Select(ToDto).ToArray(),
+            new TypeChartWorkflowStatsDto(
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.OutputFileCount,
+                workflow.Stats.ChartCellCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -1008,6 +1056,42 @@ public static class SvBridgeMapper
             region.StartOffset,
             region.Length,
             region.Rule);
+    }
+
+    private static TypeChartSourceRecordDto ToDto(SvTypeChartSourceRecord source)
+    {
+        return new TypeChartSourceRecordDto(
+            source.SourceId,
+            source.Label,
+            source.RelativePath,
+            source.Status,
+            ToDto(source.Provenance));
+    }
+
+    private static TypeChartProvenanceDto ToDto(SvTypeChartProvenance provenance)
+    {
+        return new TypeChartProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static TypeChartTypeDefinitionDto ToDto(SvTypeChartTypeDefinition type)
+    {
+        return new TypeChartTypeDefinitionDto(
+            type.TypeIndex,
+            type.Label,
+            type.ShortLabel,
+            type.Color);
+    }
+
+    private static TypeChartCellDto ToDto(SvTypeChartCell cell)
+    {
+        return new TypeChartCellDto(
+            cell.AttackTypeIndex,
+            cell.DefenseTypeIndex,
+            cell.Effectiveness,
+            cell.VanillaEffectiveness);
     }
 
     private static PlacementProvenanceDto ToDto(SvPlacementProvenance provenance)

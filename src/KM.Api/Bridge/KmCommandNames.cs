@@ -64,6 +64,7 @@ public static class KmCommandNames
     public const string StageShinyRate = "shinyRate.stage";
     public const string LoadTypeChartWorkflow = "typeChart.load";
     public const string StageTypeChart = "typeChart.stage";
+    public const string StageTypeChartUninstall = "typeChart.uninstall.stage";
     public const string LoadFairyGymBoostsWorkflow = "fairyGymBoosts.load";
     public const string StageFairyGymBoosts = "fairyGymBoosts.stage";
     public const string LoadFashionUnlockWorkflow = "fashionUnlock.load";

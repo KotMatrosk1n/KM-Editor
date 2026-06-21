@@ -281,6 +281,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.StageShinyRate => DispatchStageShinyRate(requestJson),
                 KmCommandNames.LoadTypeChartWorkflow => DispatchLoadTypeChartWorkflow(requestJson),
                 KmCommandNames.StageTypeChart => DispatchStageTypeChart(requestJson),
+                KmCommandNames.StageTypeChartUninstall => DispatchStageTypeChartUninstall(requestJson),
                 KmCommandNames.LoadFairyGymBoostsWorkflow => DispatchLoadFairyGymBoostsWorkflow(requestJson),
                 KmCommandNames.StageFairyGymBoosts => DispatchStageFairyGymBoosts(requestJson),
                 KmCommandNames.LoadFashionUnlockWorkflow => DispatchLoadFashionUnlockWorkflow(requestJson),
@@ -1166,7 +1167,16 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadTypeChartWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadTypeChartWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadTypeChart(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (IsScarletViolet(paths))
+        {
+            var svWorkflow = svWorkflowService.LoadTypeChart(paths);
+            var svResponse = SvBridgeMapper.ToDto(svWorkflow);
+
+            return SerializeSuccess(svResponse, request.RequestId);
+        }
+
+        var workflow = swShWorkflowService.LoadTypeChart(paths);
         var response = SwShBridgeMapper.ToDto(workflow);
 
         return SerializeSuccess(response, request.RequestId);
@@ -1208,11 +1218,37 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (IsScarletViolet(paths))
+        {
+            var svResult = svWorkflowService.StageTypeChart(
+                paths,
+                request.Payload.Values,
+                session);
+            var svResponse = SvBridgeMapper.ToDto(svResult);
+
+            return SerializeSuccess(svResponse, request.RequestId);
+        }
+
         var result = typeChartEditSessionService.StageChart(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            paths,
             request.Payload.Values,
             session);
         var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageTypeChartUninstall(string requestJson)
+    {
+        var request = DeserializeRequest<StageTypeChartUninstallRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = svWorkflowService.StageTypeChartUninstall(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session);
+        var response = SvBridgeMapper.ToTypeChartUninstallDto(result);
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2305,8 +2341,6 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.StageHyperTraining or
             KmCommandNames.LoadShinyRateWorkflow or
             KmCommandNames.StageShinyRate or
-            KmCommandNames.LoadTypeChartWorkflow or
-            KmCommandNames.StageTypeChart or
             KmCommandNames.LoadFairyGymBoostsWorkflow or
             KmCommandNames.StageFairyGymBoosts or
             KmCommandNames.LoadFashionUnlockWorkflow or
@@ -2342,6 +2376,7 @@ public sealed class ProjectBridgeDispatcher
     private static bool IsScarletVioletOnlyCommand(string command)
     {
         return command is
+            KmCommandNames.StageTypeChartUninstall or
             KmCommandNames.LoadHyperspaceBypassWorkflow or
             KmCommandNames.StageHyperspaceBypassInstall or
             KmCommandNames.StageHyperspaceBypassUninstall or

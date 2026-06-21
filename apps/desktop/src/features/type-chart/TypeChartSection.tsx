@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { ClipboardCheck, RotateCcw, Save, Swords } from 'lucide-react';
+import { ClipboardCheck, RotateCcw, Save, Swords, Trash2 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   type EditSession,
@@ -37,6 +37,7 @@ export function TypeChartSection({
   onCreateChangePlan,
   onDirtyChange,
   onStageChart,
+  onStageUninstall,
   panelOutput,
   workflow
 }: {
@@ -48,6 +49,7 @@ export function TypeChartSection({
   onCreateChangePlan: () => void;
   onDirtyChange: (isDirty: boolean) => void;
   onStageChart: (values: TypeChartEffectivenessValue[]) => void;
+  onStageUninstall: () => void;
   panelOutput: WorkflowPanelOutput;
   workflow: TypeChartWorkflow | null;
 }) {
@@ -60,6 +62,7 @@ export function TypeChartSection({
     () => decodeTypeChartPendingValues(stagedTypeChartEdit?.newValue),
     [stagedTypeChartEdit?.newValue]
   );
+  const isUninstallStaged = stagedTypeChartEdit?.recordId === 'sv-type-chart-v1-uninstall';
   const cleanValues = stagedValues ?? workflowValues ?? createDefaultTypeChartValues();
   const cleanValuesKey = cleanValues.join(',');
   const [draftValues, setDraftValues] =
@@ -70,13 +73,23 @@ export function TypeChartSection({
   }, [cleanValuesKey]);
 
   const isDirty = !areTypeChartValuesEqual(draftValues, cleanValues);
-  const hasStagedChange = stagedValues !== null;
+  const hasStagedChange = stagedValues !== null || isUninstallStaged;
+  const supportsUninstall =
+    workflow?.detectedGame === 'scarlet' || workflow?.detectedGame === 'violet';
   const canEdit =
     workflow?.summary.availability === 'available' &&
     workflow.installStatus !== 'blocked' &&
+    !isUninstallStaged &&
     !isStaging &&
     !isChangePlanApplying;
   const canStage = canEdit && isDirty;
+  const canStageUninstall =
+    supportsUninstall &&
+    workflow?.summary.availability === 'available' &&
+    workflow.installStatus === 'modified' &&
+    !isDirty &&
+    !isStaging &&
+    !isChangePlanApplying;
   const canResetToVanilla =
     canEdit &&
     vanillaValues !== null &&
@@ -186,7 +199,7 @@ export function TypeChartSection({
                     setDraftValues(vanillaValues);
                   }
                 }}
-                title="Reset the draft chart to the vanilla Sword/Shield type-effectiveness values."
+                title="Reset the draft chart to the vanilla type-effectiveness values."
                 type="button"
               >
                 <RotateCcw aria-hidden="true" size={16} />
@@ -201,6 +214,18 @@ export function TypeChartSection({
                 <Save aria-hidden="true" size={16} />
                 <span>{isStaging ? 'Staging' : 'Stage Type Chart'}</span>
               </button>
+              {supportsUninstall ? (
+                <button
+                  className="danger-button"
+                  disabled={!canStageUninstall}
+                  onClick={onStageUninstall}
+                  title="Restore only the Type Chart-owned bytes from base exefs/main."
+                  type="button"
+                >
+                  <Trash2 aria-hidden="true" size={16} />
+                  <span>{isStaging ? 'Staging' : 'Stage Uninstall'}</span>
+                </button>
+              ) : null}
               <button
                 className="secondary-button"
                 disabled={!canReviewPlan}

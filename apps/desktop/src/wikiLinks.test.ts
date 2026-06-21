@@ -23,6 +23,9 @@ describe('wiki links', () => {
     expect(getSectionWikiUrl('hyperspaceBypass', 'scarlet')).toBe(
       'https://github.com/KotMatrosk1n/KM-Editor/wiki/Hyperspace-Bypass'
     );
+    expect(getSectionWikiUrl('typeChart', 'violet')).toBe(
+      'https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Type-Chart'
+    );
   });
 
   it('hides the button for sections without a wiki page', () => {

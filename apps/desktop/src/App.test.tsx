@@ -510,7 +510,7 @@ describe('App', () => {
         ['items', 'Items'], ['pokemon', 'Pokemon Data'], ['moves', 'Moves'], ['text', 'Text and Dialogue Map'],
         ['trainers', 'Trainers'], ['encounters', 'Wild Encounters'], ['placement', 'Placement'],
         ['raidBattles', 'Raid Battles'], ['flagworkSave', 'Flagwork and Save Inspectors'],
-        ['bagHook', 'Bag Hook'], ['royalCandy', 'Royal Candy Workflows'], ['shinyRate', 'Shiny Rate'],
+        ['bagHook', 'Bag Hook'], ['royalCandy', 'Royal Candy Workflows'], ['shinyRate', 'Shiny Rate'], ['typeChart', 'Type Chart'],
         ['spreadsheetImport', 'Spreadsheet Import'], ['randomizer', 'Randomizer'], ['modMerger', 'S/V Mod Merger']
       ].map(([id, label]) => createWorkflowSummary(id, label))
     }));
@@ -537,7 +537,7 @@ describe('App', () => {
       .map((button) => button.textContent);
 
     expect(topLevelLabels).toEqual([
-      'Project Setup', 'Editors', 'Encounters & Pokemon Sources', 'Tools', 'Changes', 'Settings'
+      'Project Setup', 'Editors', 'Encounters & Pokemon Sources', 'Tools', 'Advanced Editors', 'Changes', 'Settings'
     ]);
 
     await user.click(screen.getByRole('button', { name: 'Editors' }));
@@ -566,8 +566,12 @@ describe('App', () => {
     ).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('button', { name: 'Randomizer' })).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('button', { name: 'Hooks' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    expect(within(navigation).getByRole('button', { name: 'Type Chart' })).toBeInTheDocument();
+    expect(within(navigation).queryByRole('button', { name: 'Shiny Rate' })).not.toBeInTheDocument();
     expect(
-      within(navigation).queryByRole('button', { name: 'Advanced Editors' })
+      within(navigation).queryByRole('button', { name: 'Royal Candy' })
     ).not.toBeInTheDocument();
   });
 
@@ -843,6 +847,75 @@ describe('App', () => {
     await waitFor(() => expect(stageTypeChart).toHaveBeenCalledTimes(1));
     const request = stageTypeChart.mock.calls[0]?.[0];
     expect(request?.values[0]).toBe(4);
+  });
+
+  it('stages Scarlet/Violet Type Chart uninstall from Advanced Editors', async () => {
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
+        selectedGame: 'scarlet'
+      },
+      typeChartWorkflow: null
+    });
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge({}, true);
+    const stageTypeChartUninstall = vi.fn(baseBridge.stageTypeChartUninstall);
+    const loadTypeChartWorkflow = vi.fn(async (request) => {
+      const response = await baseBridge.loadTypeChartWorkflow(request);
+      return {
+        workflow: {
+          ...response.workflow,
+          cells: response.workflow.cells.map((cell, index) =>
+            index === 0
+              ? {
+                  ...cell,
+                  effectiveness: 8 as const,
+                  vanillaEffectiveness: 4 as const
+                }
+              : cell
+          ),
+          detectedGame: 'scarlet' as const,
+          installMessage: 'Type Chart contains custom effectiveness values.',
+          installStatus: 'modified',
+          source: response.workflow.source
+            ? {
+                ...response.workflow.source,
+                provenance: {
+                  ...response.workflow.source.provenance,
+                  fileState: 'layeredOverride' as const,
+                  sourceLayer: 'layered' as const
+                }
+              }
+            : response.workflow.source
+        }
+      };
+    });
+
+    render(
+      <App
+        bridge={{
+          ...baseBridge,
+          loadTypeChartWorkflow,
+          stageTypeChartUninstall
+        }}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Advanced Editors' }));
+    await user.click(screen.getByRole('button', { name: 'Type Chart' }));
+
+    const uninstallButton = await screen.findByRole('button', { name: 'Stage Uninstall' });
+    expect(uninstallButton).toBeEnabled();
+    await user.click(uninstallButton);
+
+    await waitFor(() => expect(stageTypeChartUninstall).toHaveBeenCalledTimes(1));
+    expect(stageTypeChartUninstall.mock.calls[0]?.[0].paths.selectedGame).toBe('scarlet');
+    expect(await screen.findByText('Type Chart uninstall is staged for change-plan review.')).toBeInTheDocument();
   });
 
   it('shows clear Randomizer controls and applies shared seeds directly', async () => {

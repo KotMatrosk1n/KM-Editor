@@ -134,6 +134,7 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'encounters',
   'giftPokemon',
   'placement',
+  'typeChart',
   'hyperspaceBypass',
   'modMerger'
 ]);
@@ -141,10 +142,12 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
 export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch', 'randomizer']);
 
 export const scarletVioletAdvancedEditorSectionIds = new Set<WorkbenchSection>([
+  'typeChart',
   'hyperspaceBypass'
 ]);
 
 export const scarletVioletAdvancedEditorDomains = new Set([
+  'workflow.typeChart',
   'workflow.hyperspaceBypass'
 ]);
 

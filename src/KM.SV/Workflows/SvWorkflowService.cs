@@ -13,6 +13,7 @@ using KM.SV.Moves;
 using KM.SV.Placement;
 using KM.SV.Pokemon;
 using KM.SV.Trainers;
+using KM.SV.TypeChart;
 
 namespace KM.SV.Workflows;
 
@@ -26,6 +27,7 @@ public sealed class SvWorkflowService
     private readonly SvEncountersWorkflowService encountersWorkflowService;
     private readonly SvGiftPokemonWorkflowService giftPokemonWorkflowService;
     private readonly SvPlacementWorkflowService placementWorkflowService;
+    private readonly SvTypeChartWorkflowService typeChartWorkflowService;
     private readonly SvHyperspaceBypassWorkflowService hyperspaceBypassWorkflowService;
     private readonly SvModMergerWorkflowService modMergerWorkflowService;
     private readonly SvItemsEditSessionService itemsEditSessionService;
@@ -35,6 +37,7 @@ public sealed class SvWorkflowService
     private readonly SvEncountersEditSessionService encountersEditSessionService;
     private readonly SvGiftPokemonEditSessionService giftPokemonEditSessionService;
     private readonly SvPlacementEditSessionService placementEditSessionService;
+    private readonly SvTypeChartEditSessionService typeChartEditSessionService;
     private readonly SvHyperspaceBypassEditSessionService hyperspaceBypassEditSessionService;
 
     public SvWorkflowService(ProjectWorkspaceService? projectWorkspaceService = null)
@@ -48,6 +51,7 @@ public sealed class SvWorkflowService
         encountersWorkflowService = new SvEncountersWorkflowService(fileSource);
         giftPokemonWorkflowService = new SvGiftPokemonWorkflowService(fileSource);
         placementWorkflowService = new SvPlacementWorkflowService(fileSource);
+        typeChartWorkflowService = new SvTypeChartWorkflowService();
         hyperspaceBypassWorkflowService = new SvHyperspaceBypassWorkflowService();
         modMergerWorkflowService = new SvModMergerWorkflowService(this.projectWorkspaceService);
         itemsEditSessionService = new SvItemsEditSessionService(this.projectWorkspaceService, fileSource, itemsWorkflowService);
@@ -57,6 +61,9 @@ public sealed class SvWorkflowService
         encountersEditSessionService = new SvEncountersEditSessionService(this.projectWorkspaceService, fileSource, encountersWorkflowService);
         giftPokemonEditSessionService = new SvGiftPokemonEditSessionService(this.projectWorkspaceService, fileSource, giftPokemonWorkflowService);
         placementEditSessionService = new SvPlacementEditSessionService(this.projectWorkspaceService, fileSource, placementWorkflowService);
+        typeChartEditSessionService = new SvTypeChartEditSessionService(
+            this.projectWorkspaceService,
+            typeChartWorkflowService);
         hyperspaceBypassEditSessionService = new SvHyperspaceBypassEditSessionService(
             this.projectWorkspaceService,
             hyperspaceBypassWorkflowService);
@@ -81,6 +88,7 @@ public sealed class SvWorkflowService
             encountersWorkflowService.CreateSummary(project),
             giftPokemonWorkflowService.CreateSummary(project),
             placementWorkflowService.CreateSummary(project),
+            typeChartWorkflowService.CreateSummary(project),
             hyperspaceBypassWorkflowService.CreateSummary(project),
             modMergerWorkflowService.CreateSummary(project),
         ]);
@@ -148,6 +156,14 @@ public sealed class SvWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return hyperspaceBypassWorkflowService.Load(project);
+    }
+
+    public SvTypeChartWorkflow LoadTypeChart(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return typeChartWorkflowService.Load(project);
     }
 
     public SvModMergerWorkflow LoadModMerger(
@@ -296,6 +312,21 @@ public sealed class SvWorkflowService
         return hyperspaceBypassEditSessionService.StageInstall(paths, session);
     }
 
+    public SvTypeChartEditResult StageTypeChart(
+        ProjectPaths paths,
+        IReadOnlyList<int> values,
+        EditSession? session)
+    {
+        return typeChartEditSessionService.StageChart(paths, values, session);
+    }
+
+    public SvTypeChartEditResult StageTypeChartUninstall(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        return typeChartEditSessionService.StageUninstall(paths, session);
+    }
+
     public SvHyperspaceBypassEditResult StageHyperspaceBypassUninstall(
         ProjectPaths paths,
         EditSession? session)
@@ -348,6 +379,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
+            SvEditSessionDomain.TypeChart => typeChartEditSessionService.Validate(paths, session),
             SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
             _ => itemsEditSessionService.Validate(paths, session),
@@ -369,6 +401,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.TypeChart => typeChartEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
             _ => itemsEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -391,6 +424,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.TypeChart => typeChartEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
             _ => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
@@ -511,6 +545,7 @@ public sealed class SvWorkflowService
             [SvEditSessionSupport.EncountersDomain] => SvEditSessionDomain.Encounters,
             [SvEditSessionSupport.GiftPokemonDomain] => SvEditSessionDomain.GiftPokemon,
             [SvEditSessionSupport.PlacementDomain] => SvEditSessionDomain.Placement,
+            [SvTypeChartEditSessionService.TypeChartEditDomain] => SvEditSessionDomain.TypeChart,
             [SvHyperspaceBypassEditSessionService.HyperspaceBypassEditDomain] => SvEditSessionDomain.HyperspaceBypass,
             _ => SvEditSessionDomain.Mixed,
         };
@@ -541,6 +576,7 @@ public sealed class SvWorkflowService
             SvEditSessionSupport.EncountersDomain => SvEditSessionDomain.Encounters,
             SvEditSessionSupport.GiftPokemonDomain => SvEditSessionDomain.GiftPokemon,
             SvEditSessionSupport.PlacementDomain => SvEditSessionDomain.Placement,
+            SvTypeChartEditSessionService.TypeChartEditDomain => SvEditSessionDomain.TypeChart,
             SvHyperspaceBypassEditSessionService.HyperspaceBypassEditDomain => SvEditSessionDomain.HyperspaceBypass,
             null or "" => SvEditSessionDomain.None,
             _ => SvEditSessionDomain.Mixed,
@@ -581,6 +617,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Encounters => SvEditSessionSupport.EncountersDomain,
             SvEditSessionDomain.GiftPokemon => SvEditSessionSupport.GiftPokemonDomain,
             SvEditSessionDomain.Placement => SvEditSessionSupport.PlacementDomain,
+            SvEditSessionDomain.TypeChart => SvTypeChartEditSessionService.TypeChartEditDomain,
             _ => string.Empty,
         };
     }
@@ -657,6 +694,7 @@ public sealed class SvWorkflowService
         Encounters,
         GiftPokemon,
         Placement,
+        TypeChart,
         HyperspaceBypass,
         Mixed,
     }
