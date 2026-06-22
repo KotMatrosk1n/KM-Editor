@@ -1323,7 +1323,7 @@ export const tradePokemonRecordSchema = z.strictObject({
   otGenderLabel: z.string(),
   provenance: tradePokemonProvenanceSchema,
   relearnMoves: z.array(tradePokemonMoveSchema),
-  requiredForm: z.number().int().nonnegative(),
+  requiredForm: z.number().int(),
   requiredNature: z.number().int().nonnegative(),
   requiredNatureLabel: z.string(),
   requiredSpecies: z.string(),

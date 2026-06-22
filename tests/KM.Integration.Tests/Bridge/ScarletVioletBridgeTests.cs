@@ -302,6 +302,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal(0, trade.TradeIndex);
         Assert.Equal("Bulbasaur", trade.Species);
         Assert.Equal("Ivysaur", trade.RequiredSpecies);
+        Assert.Equal(-1, trade.RequiredForm);
         Assert.Equal("Normal", trade.TeraTypeLabel);
         Assert.Equal("Fixed value", trade.ScaleModeLabel);
         Assert.Equal(123, trade.ScaleValue);
@@ -309,6 +310,9 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal("Tackle", trade.Moves[0].Move);
         Assert.Contains(loaded.Payload.Workflow.EditableFields, field => field.Field == "move1Id");
         Assert.Contains(loaded.Payload.Workflow.EditableFields, field => field.Field == "requiredSpecies");
+        Assert.Contains(
+            loaded.Payload.Workflow.EditableFields,
+            field => field.Field == "requiredForm" && field.MinimumValue == short.MinValue);
         Assert.DoesNotContain(loaded.Payload.Workflow.EditableFields, field => field.Field == "relearnMove0");
 
         var session = UpdateTradePokemon(dispatcher, paths, trade.TradeIndex, "move1Id", "45");
@@ -347,6 +351,7 @@ public sealed class ScarletVioletBridgeTests
         var outputList = ReadTradeList(temp, index: 0);
         Assert.Equal("test_trade_bulbasaur", outputList.ReceivePoke);
         Assert.Equal((global::pml.common.DevID)4, outputList.SendPokeDevId);
+        Assert.Equal(-1, outputList.SendPokeFormId);
 
         var outputPokemon = ReadTradePokemon(temp, tradeIndex: 0);
         Assert.Equal("test_trade_bulbasaur", outputPokemon.Label);
@@ -2055,7 +2060,8 @@ public sealed class ScarletVioletBridgeTests
             builder,
             label,
             receivePoke,
-            (global::pml.common.DevID)2);
+            (global::pml.common.DevID)2,
+            sendPokeFormId: -1);
         var vector = global::EventTradeListArray.CreateValuesVector(builder, [trade]);
         var root = global::EventTradeListArray.CreateEventTradeListArray(builder, vector);
         global::EventTradeListArray.FinishEventTradeListArrayBuffer(builder, root);

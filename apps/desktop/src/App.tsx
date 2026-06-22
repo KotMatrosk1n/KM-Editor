@@ -30013,6 +30013,10 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['iron-thorns', 'ironthorns'],
   ['iron-treads', 'irontreads'],
   ['iron-valiant', 'ironvaliant'],
+  ['deerling-spring-form', 'deerling'],
+  ['deerling-summer-form', 'deerling-summer'],
+  ['deerling-autumn-form', 'deerling-autumn'],
+  ['deerling-winter-form', 'deerling-winter'],
   ['lycanroc-midday-form', 'lycanroc'],
   ['lycanroc-midnight-form', 'lycanroc-midnight'],
   ['lycanroc-dusk-form', 'lycanroc-dusk'],
@@ -30037,6 +30041,10 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['poltchageist-counterfeit-form', 'poltchageist'],
   ['raging-bolt', 'ragingbolt'],
   ['roaring-moon', 'roaringmoon'],
+  ['sawsbuck-spring-form', 'sawsbuck'],
+  ['sawsbuck-summer-form', 'sawsbuck-summer'],
+  ['sawsbuck-autumn-form', 'sawsbuck-autumn'],
+  ['sawsbuck-winter-form', 'sawsbuck-winter'],
   ['sandy-shocks', 'sandyshocks'],
   ['sinistcha-masterpiece-form', 'sinistcha-masterpiece'],
   ['sinistcha-unremarkable-form', 'sinistcha'],
@@ -31653,6 +31661,18 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
     [1, 'Blue-Striped'],
     [2, 'White-Striped']
   ], undefined, 'sv'),
+  createFormLabelDefinition(585, ['deerling'], [
+    [0, 'Spring Form'],
+    [1, 'Summer Form'],
+    [2, 'Autumn Form'],
+    [3, 'Winter Form']
+  ], undefined, 'sv'),
+  createFormLabelDefinition(586, ['sawsbuck'], [
+    [0, 'Spring Form'],
+    [1, 'Summer Form'],
+    [2, 'Autumn Form'],
+    [3, 'Winter Form']
+  ], undefined, 'sv'),
   createFormLabelDefinition(570, ['zorua'], [[1, 'Hisuian']], 'Unovan', 'sv'),
   createFormLabelDefinition(571, ['zoroark'], [[1, 'Hisuian']], 'Unovan', 'sv'),
   createFormLabelDefinition(628, ['braviary'], [[1, 'Hisuian']], 'Unovan', 'sv'),
@@ -31877,6 +31897,10 @@ export function formatSpeciesFormLabel(
   speciesId?: number,
   gameFamily?: EditorUiFamily
 ) {
+  if (form < 0) {
+    return species;
+  }
+
   const formLabel = resolveSpeciesFormLabel(species, form, speciesId, gameFamily);
   const displaySpecies =
     formLabel === undefined ? species : stripTrailingGenericFormLabel(species, form);
