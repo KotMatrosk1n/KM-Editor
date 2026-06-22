@@ -193,6 +193,86 @@ describe('PlacementSection', () => {
       })
     );
   });
+
+  it('saves S/V hidden item pool slot fields from the structured editor', async () => {
+    const user = userEvent.setup();
+    const workflow = createSvPlacementWorkflow();
+    const loadPlacementWorkflow = vi.fn(async () => ({ workflow }));
+    const updatePlacementObjectField = vi.fn(async (request) => ({
+      diagnostics: [],
+      session: {
+        hasPendingChanges: true,
+        pendingEdits: [
+          ...(request.session?.pendingEdits ?? []),
+          {
+            domain: 'workflow.placement',
+            field: request.field,
+            newValue: request.value,
+            recordId: request.objectId,
+            sources: [
+              {
+                layer: 'layered' as const,
+                relativePath: 'romfs/world/data/item/hiddenItemDataTable/hiddenItemDataTable_array.bin'
+              }
+            ],
+            summary: `Set hidden item ${request.field} to ${request.value}.`
+          }
+        ],
+        sessionId: 'session-1'
+      },
+      workflow
+    }));
+
+    render(
+      <App bridge={createMockProjectBridge({ loadPlacementWorkflow, updatePlacementObjectField }, true)} />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(await screen.findByRole('button', { name: 'Placement' }));
+    await user.click(screen.getByRole('tab', { name: /Hidden Items/ }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const itemInput = screen.getByLabelText('Item 1');
+    await user.clear(itemInput);
+    await user.type(itemInput, '5');
+    const chanceInput = screen.getByLabelText('Emerge value 1');
+    await user.clear(chanceInput);
+    await user.type(chanceInput, '175');
+    const countInput = screen.getByLabelText('Drop count 1');
+    await user.clear(countInput);
+    await user.type(countInput, '4');
+    await user.click(screen.getByRole('button', { name: 'Save Object' }));
+
+    await waitFor(() => expect(updatePlacementObjectField).toHaveBeenCalledTimes(3));
+    expect(updatePlacementObjectField).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        field: 'hidden.item1.itemId',
+        objectId: 'hidden-items:paldea:0',
+        value: '5'
+      })
+    );
+    expect(updatePlacementObjectField).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        field: 'hidden.item1.chance',
+        objectId: 'hidden-items:paldea:0',
+        value: '175'
+      })
+    );
+    expect(updatePlacementObjectField).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        field: 'hidden.item1.count',
+        objectId: 'hidden-items:paldea:0',
+        value: '4'
+      })
+    );
+  });
 });
 
 function createSvPlacementWorkflow(): PlacementWorkflow {
@@ -209,6 +289,12 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
         id: 'visibleItems',
         label: 'Visible Items',
         objectCount: 0
+      },
+      {
+        description: 'Hidden item pool tables.',
+        id: 'hiddenItems',
+        label: 'Hidden Items',
+        objectCount: 1
       }
     ],
     diagnostics: [],
@@ -243,6 +329,36 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
           { label: '2 Overgrow (Ability 1)', value: 2 },
           { label: '4 Chlorophyll (Hidden Ability)', value: 4 }
         ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'hidden.item1.itemId',
+        group: 'Hidden Item Slot 1',
+        label: 'Item 1',
+        maximumValue: 2147483647,
+        minimumValue: 0,
+        options: [
+          { label: '1 Master Ball', value: 1 },
+          { label: '5 Potion', value: 5 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'hidden.item1.chance',
+        group: 'Hidden Item Slot 1',
+        label: 'Emerge value 1',
+        maximumValue: 2147483647,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'integer'
+      },
+      {
+        field: 'hidden.item1.count',
+        group: 'Hidden Item Slot 1',
+        label: 'Drop count 1',
+        maximumValue: 2147483647,
+        minimumValue: 0,
+        options: [],
         valueKind: 'integer'
       }
     ],
@@ -315,12 +431,77 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
         y: 0,
         zoneIndex: 0,
         z: 0
+      },
+      {
+        archiveMember: 'romfs/world/data/item/hiddenItemDataTable/hiddenItemDataTable_array.bin',
+        categoryId: 'hiddenItems',
+        categoryLabel: 'Hidden Items',
+        chance: null,
+        chanceIndex: null,
+        fields: [
+          {
+            description: '',
+            displayValue: '1 Master Ball',
+            field: 'hidden.item1.itemId',
+            group: 'Hidden Item Slot 1',
+            isReadOnly: false,
+            label: 'Item 1',
+            maximumValue: 0,
+            minimumValue: 0,
+            value: '1',
+            valueKind: 'text'
+          },
+          {
+            description: '',
+            displayValue: '200',
+            field: 'hidden.item1.chance',
+            group: 'Hidden Item Slot 1',
+            isReadOnly: false,
+            label: 'Emerge value 1',
+            maximumValue: 0,
+            minimumValue: 0,
+            value: '200',
+            valueKind: 'text'
+          },
+          {
+            description: '',
+            displayValue: '1',
+            field: 'hidden.item1.count',
+            group: 'Hidden Item Slot 1',
+            isReadOnly: false,
+            label: 'Drop count 1',
+            maximumValue: 0,
+            minimumValue: 0,
+            value: '1',
+            valueKind: 'text'
+          }
+        ],
+        itemHash: '1001',
+        itemId: null,
+        itemName: '1001',
+        label: '1001',
+        map: 'Hidden Items - Paldea',
+        objectId: 'hidden-items:paldea:0',
+        objectIndex: 0,
+        objectType: 'HiddenItemPool',
+        provenance: {
+          fileState: 'layeredOverride',
+          sourceFile: 'romfs/world/data/item/hiddenItemDataTable/hiddenItemDataTable_array.bin',
+          sourceLayer: 'layered'
+        },
+        quantity: 0,
+        rotationY: 0,
+        scriptId: '1001',
+        x: 0,
+        y: 0,
+        zoneIndex: 0,
+        z: 0
       }
     ],
     stats: {
-      sourceFileCount: 1,
-      totalAreaCount: 1,
-      totalObjectCount: 1
+      sourceFileCount: 2,
+      totalAreaCount: 2,
+      totalObjectCount: 2
     },
     summary: {
       availability: 'available',
