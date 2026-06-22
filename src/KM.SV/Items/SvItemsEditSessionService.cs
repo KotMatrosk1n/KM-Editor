@@ -80,6 +80,73 @@ internal sealed class SvItemsEditSessionService
             diagnostics);
     }
 
+    public SvItemsEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvItemFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = itemsWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!SvEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                SvEditSessionSupport.ItemsDomain,
+                diagnostics))
+        {
+            return new SvItemsEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = currentSession;
+        var effectiveWorkflow = workflow;
+        foreach (var update in updates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Item batch update is missing a field or value.",
+                    SvEditSessionSupport.ItemsDomain,
+                    field: "updates",
+                    expected: "Complete item field update"));
+                continue;
+            }
+
+            var item = effectiveWorkflow.Items.FirstOrDefault(candidate => candidate.ItemId == update.ItemId);
+            if (item is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Item {update.ItemId} is not present in the loaded Items workflow.",
+                    SvEditSessionSupport.ItemsDomain,
+                    field: "itemId",
+                    expected: "Existing item record"));
+                continue;
+            }
+
+            var pendingEdit = CreatePendingEdit(effectiveWorkflow, item, update.Field, update.Value, diagnostics);
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            updatedSession = SvEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+        }
+
+        return new SvItemsEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);

@@ -122,7 +122,23 @@ public sealed record UpdateTrainerFieldRequest(
     string Field,
     string Value);
 
+public sealed record TrainerFieldUpdateDto(
+    int TrainerId,
+    int? Slot,
+    string Field,
+    string Value);
+
+public sealed record UpdateTrainerFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<TrainerFieldUpdateDto> Updates);
+
 public sealed record UpdateTrainerFieldResponse(
+    TrainersWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateTrainerFieldsResponse(
     TrainersWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

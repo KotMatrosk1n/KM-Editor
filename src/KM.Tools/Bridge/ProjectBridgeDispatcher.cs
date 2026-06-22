@@ -230,20 +230,26 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.ListWorkflows => DispatchListWorkflows(requestJson),
                 KmCommandNames.LoadItemsWorkflow => DispatchLoadItemsWorkflow(requestJson),
                 KmCommandNames.UpdateItemField => DispatchUpdateItemField(requestJson),
+                KmCommandNames.UpdateItemFields => DispatchUpdateItemFields(requestJson),
                 KmCommandNames.LoadPokemonWorkflow => DispatchLoadPokemonWorkflow(requestJson),
                 KmCommandNames.UpdatePokemonField => DispatchUpdatePokemonField(requestJson),
+                KmCommandNames.UpdatePokemonFields => DispatchUpdatePokemonFields(requestJson),
                 KmCommandNames.UpdatePokemonLearnset => DispatchUpdatePokemonLearnset(requestJson),
                 KmCommandNames.UpdatePokemonEvolution => DispatchUpdatePokemonEvolution(requestJson),
                 KmCommandNames.LoadMovesWorkflow => DispatchLoadMovesWorkflow(requestJson),
                 KmCommandNames.UpdateMoveField => DispatchUpdateMoveField(requestJson),
+                KmCommandNames.UpdateMoveFields => DispatchUpdateMoveFields(requestJson),
                 KmCommandNames.LoadTextWorkflow => DispatchLoadTextWorkflow(requestJson),
                 KmCommandNames.UpdateTextEntry => DispatchUpdateTextEntry(requestJson),
                 KmCommandNames.LoadTrainersWorkflow => DispatchLoadTrainersWorkflow(requestJson),
                 KmCommandNames.UpdateTrainerField => DispatchUpdateTrainerField(requestJson),
+                KmCommandNames.UpdateTrainerFields => DispatchUpdateTrainerFields(requestJson),
                 KmCommandNames.LoadGiftPokemonWorkflow => DispatchLoadGiftPokemonWorkflow(requestJson),
                 KmCommandNames.UpdateGiftPokemonField => DispatchUpdateGiftPokemonField(requestJson),
+                KmCommandNames.UpdateGiftPokemonFields => DispatchUpdateGiftPokemonFields(requestJson),
                 KmCommandNames.LoadTradePokemonWorkflow => DispatchLoadTradePokemonWorkflow(requestJson),
                 KmCommandNames.UpdateTradePokemonField => DispatchUpdateTradePokemonField(requestJson),
+                KmCommandNames.UpdateTradePokemonFields => DispatchUpdateTradePokemonFields(requestJson),
                 KmCommandNames.LoadStaticEncountersWorkflow => DispatchLoadStaticEncountersWorkflow(requestJson),
                 KmCommandNames.UpdateStaticEncounterField => DispatchUpdateStaticEncounterField(requestJson),
                 KmCommandNames.LoadRentalPokemonWorkflow => DispatchLoadRentalPokemonWorkflow(requestJson),
@@ -258,6 +264,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateShopInventoryItem => DispatchUpdateShopInventoryItem(requestJson),
                 KmCommandNames.LoadEncountersWorkflow => DispatchLoadEncountersWorkflow(requestJson),
                 KmCommandNames.UpdateEncounterSlotField => DispatchUpdateEncounterSlotField(requestJson),
+                KmCommandNames.UpdateEncounterSlotFields => DispatchUpdateEncounterSlotFields(requestJson),
                 KmCommandNames.LoadRaidBattlesWorkflow => DispatchLoadRaidBattlesWorkflow(requestJson),
                 KmCommandNames.UpdateRaidBattleSlotField => DispatchUpdateRaidBattleSlotField(requestJson),
                 KmCommandNames.LoadRaidRewardsWorkflow => DispatchLoadRaidRewardsWorkflow(requestJson),
@@ -266,6 +273,7 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateRaidBonusRewardField => DispatchUpdateRaidBonusRewardField(requestJson),
                 KmCommandNames.LoadPlacementWorkflow => DispatchLoadPlacementWorkflow(requestJson),
                 KmCommandNames.UpdatePlacementObjectField => DispatchUpdatePlacementObjectField(requestJson),
+                KmCommandNames.UpdatePlacementObjectFields => DispatchUpdatePlacementObjectFields(requestJson),
                 KmCommandNames.LoadBehaviorWorkflow => DispatchLoadBehaviorWorkflow(requestJson),
                 KmCommandNames.UpdateBehaviorEntryField => DispatchUpdateBehaviorEntryField(requestJson),
                 KmCommandNames.LoadFlagworkSaveWorkflow => DispatchLoadFlagworkSaveWorkflow(requestJson),
@@ -422,6 +430,22 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchUpdatePokemonFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdatePokemonFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var updates = request.Payload.Updates
+            .Select(update => new SvPokemonFieldUpdate(update.PersonalId, update.Field, update.Value))
+            .ToArray();
+        var response = SvBridgeMapper.ToPokemonFieldsDto(
+            svWorkflowService.UpdatePokemonFields(paths, session, updates));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchUpdatePokemonLearnset(string requestJson)
     {
         var request = DeserializeRequest<UpdatePokemonLearnsetRequest>(requestJson);
@@ -519,6 +543,22 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchUpdateMoveFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateMoveFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var updates = request.Payload.Updates
+            .Select(update => new SvMoveFieldUpdate(update.MoveId, update.Field, update.Value))
+            .ToArray();
+        var response = SvBridgeMapper.ToMoveFieldsDto(
+            svWorkflowService.UpdateMoveFields(paths, session, updates));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadTextWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadTextWorkflowRequest>(requestJson);
@@ -581,6 +621,22 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchUpdateTrainerFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateTrainerFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var updates = request.Payload.Updates
+            .Select(update => new SvTrainerFieldUpdate(update.TrainerId, update.Slot, update.Field, update.Value))
+            .ToArray();
+        var response = SvBridgeMapper.ToTrainerFieldsDto(
+            svWorkflowService.UpdateTrainerFields(paths, session, updates));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadShopsWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadShopsWorkflowRequest>(requestJson);
@@ -625,6 +681,22 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchUpdateGiftPokemonFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateGiftPokemonFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var updates = request.Payload.Updates
+            .Select(update => new SvGiftPokemonFieldUpdate(update.GiftIndex, update.Field, update.Value))
+            .ToArray();
+        var response = SvBridgeMapper.ToGiftPokemonFieldsDto(
+            svWorkflowService.UpdateGiftPokemonFields(paths, session, updates));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadTradePokemonWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadTradePokemonWorkflowRequest>(requestJson);
@@ -656,6 +728,22 @@ public sealed class ProjectBridgeDispatcher
                 request.Payload.TradeIndex,
                 request.Payload.Field,
                 request.Payload.Value));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateTradePokemonFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateTradePokemonFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var updates = request.Payload.Updates
+            .Select(update => new SvTradePokemonFieldUpdate(update.TradeIndex, update.Field, update.Value))
+            .ToArray();
+        var response = SvBridgeMapper.ToTradePokemonFieldsDto(
+            svWorkflowService.UpdateTradePokemonFields(paths, session, updates));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -882,6 +970,26 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchUpdateEncounterSlotFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateEncounterSlotFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var updates = request.Payload.Updates
+            .Select(update => new SvEncounterSlotFieldUpdate(
+                update.TableId,
+                update.Slot,
+                update.Field,
+                update.Value))
+            .ToArray();
+        var response = SvBridgeMapper.ToEncounterSlotFieldsDto(
+            svWorkflowService.UpdateEncounterSlotFields(paths, session, updates));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadRaidBattlesWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadRaidBattlesWorkflowRequest>(requestJson);
@@ -1008,6 +1116,22 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.Field,
             request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdatePlacementObjectFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdatePlacementObjectFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var updates = request.Payload.Updates
+            .Select(update => new SvPlacementObjectFieldUpdate(update.ObjectId, update.Field, update.Value))
+            .ToArray();
+        var response = SvBridgeMapper.ToPlacementObjectFieldsDto(
+            svWorkflowService.UpdatePlacementObjectFields(paths, session, updates));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1712,6 +1836,22 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchUpdateItemFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateItemFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var updates = request.Payload.Updates
+            .Select(update => new SvItemFieldUpdate(update.ItemId, update.Field, update.Value))
+            .ToArray();
+        var response = SvBridgeMapper.ToItemFieldsDto(
+            svWorkflowService.UpdateItemFields(paths, session, updates));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchStartEditSession(string requestJson)
     {
         var request = DeserializeRequest<StartEditSessionRequest>(requestJson);
@@ -2383,6 +2523,14 @@ public sealed class ProjectBridgeDispatcher
     private static bool IsScarletVioletOnlyCommand(string command)
     {
         return command is
+            KmCommandNames.UpdateItemFields or
+            KmCommandNames.UpdatePokemonFields or
+            KmCommandNames.UpdateMoveFields or
+            KmCommandNames.UpdateTrainerFields or
+            KmCommandNames.UpdateGiftPokemonFields or
+            KmCommandNames.UpdateTradePokemonFields or
+            KmCommandNames.UpdateEncounterSlotFields or
+            KmCommandNames.UpdatePlacementObjectFields or
             KmCommandNames.StageTypeChartUninstall or
             KmCommandNames.LoadHyperspaceBypassWorkflow or
             KmCommandNames.StageHyperspaceBypassInstall or

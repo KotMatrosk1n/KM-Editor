@@ -85,6 +85,79 @@ internal sealed class SvTrainersEditSessionService
             diagnostics);
     }
 
+    public SvTrainersEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvTrainerFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = trainersWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!SvEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                SvEditSessionSupport.TrainersDomain,
+                diagnostics))
+        {
+            return new SvTrainersEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = currentSession;
+        var effectiveWorkflow = workflow;
+        foreach (var update in updates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Trainer batch update is missing a field or value.",
+                    SvEditSessionSupport.TrainersDomain,
+                    field: "updates",
+                    expected: "Complete trainer field update"));
+                continue;
+            }
+
+            var trainer = effectiveWorkflow.Trainers.FirstOrDefault(candidate => candidate.TrainerId == update.TrainerId);
+            if (trainer is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Trainer {update.TrainerId} is not present in the loaded Trainers workflow.",
+                    SvEditSessionSupport.TrainersDomain,
+                    field: "trainerId",
+                    expected: "Existing trainer record"));
+                continue;
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                effectiveWorkflow,
+                trainer,
+                update.Slot,
+                update.Field,
+                update.Value,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            updatedSession = SvEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+        }
+
+        return new SvTrainersEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);

@@ -4666,17 +4666,32 @@ const resetModMergerPlan = () => {
       let nextWorkflow = itemsWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateItemField({
-          field: change.field,
-          itemId,
+      if (isScarletVioletGame(selectedGame)) {
+        const response = await bridge.updateItemFields({
           paths: toProjectPaths(draftPaths),
-          session: nextSession,
-          value: change.value
+          session: editSession,
+          updates: changes.map((change) => ({
+            field: change.field,
+            itemId,
+            value: change.value
+          }))
         });
         nextSession = response.session;
         nextWorkflow = response.workflow;
         nextDiagnostics = response.diagnostics;
+      } else {
+        for (const change of changes) {
+          const response = await bridge.updateItemField({
+            field: change.field,
+            itemId,
+            paths: toProjectPaths(draftPaths),
+            session: nextSession,
+            value: change.value
+          });
+          nextSession = response.session;
+          nextWorkflow = response.workflow;
+          nextDiagnostics = response.diagnostics;
+        }
       }
 
       if (nextWorkflow) {
@@ -4735,17 +4750,32 @@ const resetModMergerPlan = () => {
       let nextWorkflow = pokemonWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updatePokemonField({
-          field: change.field,
+      if (changes.length > 0 && isScarletVioletGame(selectedGame)) {
+        const response = await bridge.updatePokemonFields({
           paths: toProjectPaths(draftPaths),
-          personalId,
-          session: nextSession,
-          value: change.value
+          session: editSession,
+          updates: changes.map((change) => ({
+            field: change.field,
+            personalId,
+            value: change.value
+          }))
         });
         nextSession = response.session;
         nextWorkflow = response.workflow;
         nextDiagnostics = response.diagnostics;
+      } else {
+        for (const change of changes) {
+          const response = await bridge.updatePokemonField({
+            field: change.field,
+            paths: toProjectPaths(draftPaths),
+            personalId,
+            session: nextSession,
+            value: change.value
+          });
+          nextSession = response.session;
+          nextWorkflow = response.workflow;
+          nextDiagnostics = response.diagnostics;
+        }
       }
 
       for (const evolutionChange of evolutionChanges) {
@@ -4903,17 +4933,32 @@ const resetModMergerPlan = () => {
       let nextWorkflow = movesWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateMoveField({
-          field: change.field,
-          moveId,
+      if (isScarletVioletGame(selectedGame)) {
+        const response = await bridge.updateMoveFields({
           paths: toProjectPaths(draftPaths),
-          session: nextSession,
-          value: change.value
+          session: editSession,
+          updates: changes.map((change) => ({
+            field: change.field,
+            moveId,
+            value: change.value
+          }))
         });
         nextSession = response.session;
         nextWorkflow = response.workflow;
         nextDiagnostics = response.diagnostics;
+      } else {
+        for (const change of changes) {
+          const response = await bridge.updateMoveField({
+            field: change.field,
+            moveId,
+            paths: toProjectPaths(draftPaths),
+            session: nextSession,
+            value: change.value
+          });
+          nextSession = response.session;
+          nextWorkflow = response.workflow;
+          nextDiagnostics = response.diagnostics;
+        }
       }
 
       if (nextWorkflow) {
@@ -5001,18 +5046,34 @@ const resetModMergerPlan = () => {
       let nextWorkflow = trainersWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateTrainerField({
-          field: change.field,
+      if (isScarletVioletGame(selectedGame)) {
+        const response = await bridge.updateTrainerFields({
           paths: toProjectPaths(draftPaths),
-          session: nextSession,
-          slot,
-          trainerId,
-          value: change.value
+          session: editSession,
+          updates: changes.map((change) => ({
+            field: change.field,
+            slot,
+            trainerId,
+            value: change.value
+          }))
         });
         nextSession = response.session;
         nextWorkflow = response.workflow;
         nextDiagnostics = response.diagnostics;
+      } else {
+        for (const change of changes) {
+          const response = await bridge.updateTrainerField({
+            field: change.field,
+            paths: toProjectPaths(draftPaths),
+            session: nextSession,
+            slot,
+            trainerId,
+            value: change.value
+          });
+          nextSession = response.session;
+          nextWorkflow = response.workflow;
+          nextDiagnostics = response.diagnostics;
+        }
       }
 
       if (nextWorkflow) {
@@ -5073,17 +5134,32 @@ const resetModMergerPlan = () => {
       let nextWorkflow = giftPokemonWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateGiftPokemonField({
-          field: change.field,
-          giftIndex,
+      if (isScarletVioletGame(selectedGame)) {
+        const response = await bridge.updateGiftPokemonFields({
           paths: toProjectPaths(draftPaths),
-          session: nextSession,
-          value: change.value
+          session: editSession,
+          updates: changes.map((change) => ({
+            field: change.field,
+            giftIndex,
+            value: change.value
+          }))
         });
         nextSession = response.session;
         nextWorkflow = response.workflow;
         nextDiagnostics = response.diagnostics;
+      } else {
+        for (const change of changes) {
+          const response = await bridge.updateGiftPokemonField({
+            field: change.field,
+            giftIndex,
+            paths: toProjectPaths(draftPaths),
+            session: nextSession,
+            value: change.value
+          });
+          nextSession = response.session;
+          nextWorkflow = response.workflow;
+          nextDiagnostics = response.diagnostics;
+        }
       }
 
       if (nextWorkflow) {
@@ -5114,17 +5190,32 @@ const resetModMergerPlan = () => {
       let nextWorkflow = giftPokemonWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const giftIndex of giftIndexes) {
-        const response = await bridge.updateGiftPokemonField({
-          field: giftShinyLockFieldName,
-          giftIndex,
+      if (isScarletVioletGame(selectedGame)) {
+        const response = await bridge.updateGiftPokemonFields({
           paths: toProjectPaths(draftPaths),
-          session: nextSession,
-          value: '0'
+          session: editSession,
+          updates: giftIndexes.map((giftIndex) => ({
+            field: giftShinyLockFieldName,
+            giftIndex,
+            value: '0'
+          }))
         });
         nextSession = response.session;
         nextWorkflow = response.workflow;
         nextDiagnostics = response.diagnostics;
+      } else {
+        for (const giftIndex of giftIndexes) {
+          const response = await bridge.updateGiftPokemonField({
+            field: giftShinyLockFieldName,
+            giftIndex,
+            paths: toProjectPaths(draftPaths),
+            session: nextSession,
+            value: '0'
+          });
+          nextSession = response.session;
+          nextWorkflow = response.workflow;
+          nextDiagnostics = response.diagnostics;
+        }
       }
 
       if (nextWorkflow) {
@@ -5185,17 +5276,32 @@ const resetModMergerPlan = () => {
       let nextWorkflow = tradePokemonWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateTradePokemonField({
-          field: change.field,
+      if (isScarletVioletGame(selectedGame)) {
+        const response = await bridge.updateTradePokemonFields({
           paths: toProjectPaths(draftPaths),
-          session: nextSession,
-          tradeIndex,
-          value: change.value
+          session: editSession,
+          updates: changes.map((change) => ({
+            field: change.field,
+            tradeIndex,
+            value: change.value
+          }))
         });
         nextSession = response.session;
         nextWorkflow = response.workflow;
         nextDiagnostics = response.diagnostics;
+      } else {
+        for (const change of changes) {
+          const response = await bridge.updateTradePokemonField({
+            field: change.field,
+            paths: toProjectPaths(draftPaths),
+            session: nextSession,
+            tradeIndex,
+            value: change.value
+          });
+          nextSession = response.session;
+          nextWorkflow = response.workflow;
+          nextDiagnostics = response.diagnostics;
+        }
       }
 
       if (nextWorkflow) {
@@ -5226,17 +5332,32 @@ const resetModMergerPlan = () => {
       let nextWorkflow = tradePokemonWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const tradeIndex of tradeIndexes) {
-        const response = await bridge.updateTradePokemonField({
-          field: giftShinyLockFieldName,
+      if (isScarletVioletGame(selectedGame)) {
+        const response = await bridge.updateTradePokemonFields({
           paths: toProjectPaths(draftPaths),
-          session: nextSession,
-          tradeIndex,
-          value: '0'
+          session: editSession,
+          updates: tradeIndexes.map((tradeIndex) => ({
+            field: giftShinyLockFieldName,
+            tradeIndex,
+            value: '0'
+          }))
         });
         nextSession = response.session;
         nextWorkflow = response.workflow;
         nextDiagnostics = response.diagnostics;
+      } else {
+        for (const tradeIndex of tradeIndexes) {
+          const response = await bridge.updateTradePokemonField({
+            field: giftShinyLockFieldName,
+            paths: toProjectPaths(draftPaths),
+            session: nextSession,
+            tradeIndex,
+            value: '0'
+          });
+          nextSession = response.session;
+          nextWorkflow = response.workflow;
+          nextDiagnostics = response.diagnostics;
+        }
       }
 
       if (nextWorkflow) {
@@ -5765,18 +5886,34 @@ const resetModMergerPlan = () => {
       let nextWorkflow = encountersWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updateEncounterSlotField({
-          field: change.field,
+      if (isScarletVioletGame(selectedGame)) {
+        const response = await bridge.updateEncounterSlotFields({
           paths: toProjectPaths(draftPaths),
-          session: nextSession,
-          slot,
-          tableId,
-          value: change.value
+          session: editSession,
+          updates: changes.map((change) => ({
+            field: change.field,
+            slot,
+            tableId,
+            value: change.value
+          }))
         });
         nextWorkflow = response.workflow;
         nextSession = response.session;
         nextDiagnostics = response.diagnostics;
+      } else {
+        for (const change of changes) {
+          const response = await bridge.updateEncounterSlotField({
+            field: change.field,
+            paths: toProjectPaths(draftPaths),
+            session: nextSession,
+            slot,
+            tableId,
+            value: change.value
+          });
+          nextWorkflow = response.workflow;
+          nextSession = response.session;
+          nextDiagnostics = response.diagnostics;
+        }
       }
 
       if (nextWorkflow) {
@@ -5821,36 +5958,62 @@ const resetModMergerPlan = () => {
         0
       ));
 
-      for (const update of nonEmptyUpdates) {
-        for (const change of update.changes) {
-          setWorkProgress(createDeterminateWorkProgress(
-            'Applying Encounter Copy',
-            formatEncounterCopyProgressDetail(nextWorkflow, update, change.field),
-            encounterAreaCopyProgressSteps,
-            1,
-            Math.round((completedChanges / totalChanges) * 100)
-          ));
+      if (isScarletVioletGame(selectedGame)) {
+        setWorkProgress(createDeterminateWorkProgress(
+          'Applying Encounter Copy',
+          `Applying ${totalChanges} slot field updates`,
+          encounterAreaCopyProgressSteps,
+          1,
+          50
+        ));
 
-          const response = await bridge.updateEncounterSlotField({
-            field: change.field,
-            paths: toProjectPaths(draftPaths),
-            session: nextSession,
-            slot: update.slot,
-            tableId: update.tableId,
-            value: change.value
-          });
-          nextWorkflow = response.workflow;
-          nextSession = response.session;
-          nextDiagnostics = response.diagnostics;
-          completedChanges++;
+        const response = await bridge.updateEncounterSlotFields({
+          paths: toProjectPaths(draftPaths),
+          session: editSession,
+          updates: nonEmptyUpdates.flatMap((update) =>
+            update.changes.map((change) => ({
+              field: change.field,
+              slot: update.slot,
+              tableId: update.tableId,
+              value: change.value
+            }))
+          )
+        });
+        nextWorkflow = response.workflow;
+        nextSession = response.session;
+        nextDiagnostics = response.diagnostics;
+      } else {
+        for (const update of nonEmptyUpdates) {
+          for (const change of update.changes) {
+            setWorkProgress(createDeterminateWorkProgress(
+              'Applying Encounter Copy',
+              formatEncounterCopyProgressDetail(nextWorkflow, update, change.field),
+              encounterAreaCopyProgressSteps,
+              1,
+              Math.round((completedChanges / totalChanges) * 100)
+            ));
 
-          setWorkProgress(createDeterminateWorkProgress(
-            'Applying Encounter Copy',
-            formatEncounterCopyProgressDetail(nextWorkflow, update, change.field),
-            encounterAreaCopyProgressSteps,
-            1,
-            Math.round((completedChanges / totalChanges) * 100)
-          ));
+            const response = await bridge.updateEncounterSlotField({
+              field: change.field,
+              paths: toProjectPaths(draftPaths),
+              session: nextSession,
+              slot: update.slot,
+              tableId: update.tableId,
+              value: change.value
+            });
+            nextWorkflow = response.workflow;
+            nextSession = response.session;
+            nextDiagnostics = response.diagnostics;
+            completedChanges++;
+
+            setWorkProgress(createDeterminateWorkProgress(
+              'Applying Encounter Copy',
+              formatEncounterCopyProgressDetail(nextWorkflow, update, change.field),
+              encounterAreaCopyProgressSteps,
+              1,
+              Math.round((completedChanges / totalChanges) * 100)
+            ));
+          }
         }
       }
 
@@ -6146,17 +6309,32 @@ const resetModMergerPlan = () => {
       let nextWorkflow = placementWorkflow;
       let nextDiagnostics: ApiDiagnostic[] = [];
 
-      for (const change of changes) {
-        const response = await bridge.updatePlacementObjectField({
-          field: change.field,
-          objectId,
+      if (isScarletVioletGame(selectedGame)) {
+        const response = await bridge.updatePlacementObjectFields({
           paths: toProjectPaths(draftPaths),
-          session: nextSession,
-          value: change.value
+          session: editSession,
+          updates: changes.map((change) => ({
+            field: change.field,
+            objectId,
+            value: change.value
+          }))
         });
         nextWorkflow = response.workflow;
         nextSession = response.session;
         nextDiagnostics = response.diagnostics;
+      } else {
+        for (const change of changes) {
+          const response = await bridge.updatePlacementObjectField({
+            field: change.field,
+            objectId,
+            paths: toProjectPaths(draftPaths),
+            session: nextSession,
+            value: change.value
+          });
+          nextWorkflow = response.workflow;
+          nextSession = response.session;
+          nextDiagnostics = response.diagnostics;
+        }
       }
 
       if (nextWorkflow) {

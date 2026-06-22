@@ -16,6 +16,16 @@ public sealed record UpdateTradePokemonFieldRequest(
     string Field,
     string Value);
 
+public sealed record TradePokemonFieldUpdateDto(
+    int TradeIndex,
+    string Field,
+    string Value);
+
+public sealed record UpdateTradePokemonFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<TradePokemonFieldUpdateDto> Updates);
+
 public sealed record TradePokemonProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -121,6 +131,11 @@ public sealed record TradePokemonWorkflowDto(
 public sealed record LoadTradePokemonWorkflowResponse(TradePokemonWorkflowDto Workflow);
 
 public sealed record UpdateTradePokemonFieldResponse(
+    TradePokemonWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateTradePokemonFieldsResponse(
     TradePokemonWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

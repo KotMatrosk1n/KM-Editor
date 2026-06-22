@@ -16,7 +16,22 @@ public sealed record UpdateItemFieldRequest(
     string Field,
     string Value);
 
+public sealed record ItemFieldUpdateDto(
+    int ItemId,
+    string Field,
+    string Value);
+
+public sealed record UpdateItemFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<ItemFieldUpdateDto> Updates);
+
 public sealed record UpdateItemFieldResponse(
+    ItemsWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateItemFieldsResponse(
     ItemsWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

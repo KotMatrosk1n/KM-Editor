@@ -67,6 +67,16 @@ public static class SvBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateItemFieldsResponse ToItemFieldsDto(SvItemsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateItemFieldsResponse(
+            ToItemsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadMovesWorkflowResponse ToDto(SvMovesWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -84,6 +94,16 @@ public static class SvBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateMoveFieldsResponse ToMoveFieldsDto(SvMovesEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateMoveFieldsResponse(
+            ToMovesWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadPokemonWorkflowResponse ToDto(SvPokemonWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -96,6 +116,16 @@ public static class SvBridgeMapper
         ArgumentNullException.ThrowIfNull(result);
 
         return new UpdatePokemonFieldResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdatePokemonFieldsResponse ToPokemonFieldsDto(SvPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonFieldsResponse(
             ToPokemonWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
@@ -138,6 +168,16 @@ public static class SvBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateTrainerFieldsResponse ToTrainerFieldsDto(SvTrainersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTrainerFieldsResponse(
+            ToTrainersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadEncountersWorkflowResponse ToDto(SvEncountersWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -150,6 +190,16 @@ public static class SvBridgeMapper
         ArgumentNullException.ThrowIfNull(result);
 
         return new UpdateEncounterSlotFieldResponse(
+            ToEncountersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateEncounterSlotFieldsResponse ToEncounterSlotFieldsDto(SvEncountersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateEncounterSlotFieldsResponse(
             ToEncountersWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
@@ -172,6 +222,16 @@ public static class SvBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static UpdateGiftPokemonFieldsResponse ToGiftPokemonFieldsDto(SvGiftPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateGiftPokemonFieldsResponse(
+            ToGiftPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static LoadTradePokemonWorkflowResponse ToDto(SvTradePokemonWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -184,6 +244,16 @@ public static class SvBridgeMapper
         ArgumentNullException.ThrowIfNull(result);
 
         return new UpdateTradePokemonFieldResponse(
+            ToTradePokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateTradePokemonFieldsResponse ToTradePokemonFieldsDto(SvTradePokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTradePokemonFieldsResponse(
             ToTradePokemonWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
@@ -215,6 +285,16 @@ public static class SvBridgeMapper
         ArgumentNullException.ThrowIfNull(result);
 
         return new UpdatePlacementObjectFieldResponse(
+            ToPlacementWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdatePlacementObjectFieldsResponse ToPlacementObjectFieldsDto(SvPlacementEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePlacementObjectFieldsResponse(
             ToPlacementWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());

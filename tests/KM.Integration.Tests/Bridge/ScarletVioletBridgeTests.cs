@@ -605,6 +605,184 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletBatchFieldCommandsSharePendingEditSession(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var itemBatch = Dispatch<UpdateItemFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateItemFields,
+            new UpdateItemFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new ItemFieldUpdateDto(1, "buyPrice", "777"),
+                    new ItemFieldUpdateDto(1, "healAmount", "25"),
+                ]),
+            "request-sv-item-fields-update");
+        AssertSuccess(itemBatch);
+        var session = itemBatch.Payload!.Session;
+        var item = itemBatch.Payload.Workflow.Items.Single(entry => entry.ItemId == 1);
+        Assert.Equal(777, item.BuyPrice);
+        Assert.Equal(25, item.Metadata.HealAmount);
+
+        var pokemonBatch = Dispatch<UpdatePokemonFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePokemonFields,
+            new UpdatePokemonFieldsRequest(
+                paths,
+                session,
+                [
+                    new PokemonFieldUpdateDto(1, "hp", "48"),
+                    new PokemonFieldUpdateDto(1, "attack", "49"),
+                ]),
+            "request-sv-pokemon-fields-update");
+        AssertSuccess(pokemonBatch);
+        session = pokemonBatch.Payload!.Session;
+        var pokemon = pokemonBatch.Payload.Workflow.Pokemon.Single(entry => entry.PersonalId == 1);
+        Assert.Equal(48, pokemon.BaseStats.HP);
+        Assert.Equal(49, pokemon.BaseStats.Attack);
+
+        var moveBatch = Dispatch<UpdateMoveFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateMoveFields,
+            new UpdateMoveFieldsRequest(
+                paths,
+                session,
+                [
+                    new MoveFieldUpdateDto(33, "power", "50"),
+                    new MoveFieldUpdateDto(33, "accuracy", "90"),
+                ]),
+            "request-sv-move-fields-update");
+        AssertSuccess(moveBatch);
+        session = moveBatch.Payload!.Session;
+        var move = moveBatch.Payload.Workflow.Moves.Single(entry => entry.MoveId == 33);
+        Assert.Equal(50, move.Power);
+        Assert.Equal(90, move.Accuracy);
+
+        var trainerBatch = Dispatch<UpdateTrainerFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTrainerFields,
+            new UpdateTrainerFieldsRequest(
+                paths,
+                session,
+                [
+                    new TrainerFieldUpdateDto(0, 0, "level", "12"),
+                    new TrainerFieldUpdateDto(0, 0, "teraType", ((int)global::GemType.FAIRY).ToString(CultureInfo.InvariantCulture)),
+                ]),
+            "request-sv-trainer-fields-update");
+        AssertSuccess(trainerBatch);
+        session = trainerBatch.Payload!.Session;
+        var trainerPokemon = trainerBatch.Payload.Workflow.Trainers.Single(entry => entry.TrainerId == 0).Team.Single(entry => entry.Slot == 0);
+        Assert.Equal(12, trainerPokemon.Level);
+        Assert.Equal((int)global::GemType.FAIRY, trainerPokemon.TeraType);
+
+        var encounters = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-sv-encounter-fields-load");
+        AssertSuccess(encounters);
+        var encounterTableId = Assert.Single(encounters.Payload!.Workflow.Tables).TableId;
+        var encounterBatch = Dispatch<UpdateEncounterSlotFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotFields,
+            new UpdateEncounterSlotFieldsRequest(
+                paths,
+                session,
+                [
+                    new EncounterSlotFieldUpdateDto(encounterTableId, 0, "levelMin", "9"),
+                    new EncounterSlotFieldUpdateDto(encounterTableId, 0, "levelMax", "20"),
+                ]),
+            "request-sv-encounter-slot-fields-update");
+        AssertSuccess(encounterBatch);
+        session = encounterBatch.Payload!.Session;
+        var encounterSlot = Assert.Single(encounterBatch.Payload.Workflow.Tables).Slots.Single(entry => entry.Slot == 0);
+        Assert.Equal(9, encounterSlot.LevelMin);
+        Assert.Equal(20, encounterSlot.LevelMax);
+
+        var giftBatch = Dispatch<UpdateGiftPokemonFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateGiftPokemonFields,
+            new UpdateGiftPokemonFieldsRequest(
+                paths,
+                session,
+                [
+                    new GiftPokemonFieldUpdateDto(0, "species", "4"),
+                    new GiftPokemonFieldUpdateDto(0, "shinyLock", "0"),
+                ]),
+            "request-sv-gift-pokemon-fields-update");
+        AssertSuccess(giftBatch);
+        session = giftBatch.Payload!.Session;
+        var gift = Assert.Single(giftBatch.Payload.Workflow.Gifts);
+        Assert.Equal(4, gift.SpeciesId);
+        Assert.Equal(0, gift.ShinyLock);
+
+        var tradeBatch = Dispatch<UpdateTradePokemonFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTradePokemonFields,
+            new UpdateTradePokemonFieldsRequest(
+                paths,
+                session,
+                [
+                    new TradePokemonFieldUpdateDto(0, "species", "4"),
+                    new TradePokemonFieldUpdateDto(0, "shinyLock", "0"),
+                ]),
+            "request-sv-trade-pokemon-fields-update");
+        AssertSuccess(tradeBatch);
+        session = tradeBatch.Payload!.Session;
+        var trade = Assert.Single(tradeBatch.Payload.Workflow.Trades);
+        Assert.Equal(4, trade.SpeciesId);
+        Assert.Equal(0, trade.ShinyLock);
+
+        var placement = Dispatch<LoadPlacementWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(paths),
+            "request-sv-placement-fields-load");
+        AssertSuccess(placement);
+        var fixedSymbol = placement.Payload!.Workflow.Objects.Single(entry => entry.CategoryId == "fixedSymbols");
+        var placementBatch = Dispatch<UpdatePlacementObjectFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePlacementObjectFields,
+            new UpdatePlacementObjectFieldsRequest(
+                paths,
+                session,
+                [
+                    new PlacementObjectFieldUpdateDto(fixedSymbol.ObjectId, "fixed.speciesId", "4"),
+                    new PlacementObjectFieldUpdateDto(fixedSymbol.ObjectId, "fixed.level", "20"),
+                ]),
+            "request-sv-placement-object-fields-update");
+        AssertSuccess(placementBatch);
+        session = placementBatch.Payload!.Session;
+        var stagedFixedSymbol = placementBatch.Payload.Workflow.Objects.Single(entry => entry.ObjectId == fixedSymbol.ObjectId);
+        Assert.Equal("4", stagedFixedSymbol.Fields!.Single(field => field.Field == "fixed.speciesId").Value);
+        Assert.Equal("20", stagedFixedSymbol.Fields!.Single(field => field.Field == "fixed.level").Value);
+
+        var expectedDomains = new[]
+        {
+            "workflow.items",
+            "workflow.pokemon",
+            "workflow.moves",
+            "workflow.trainers",
+            "workflow.encounters",
+            "workflow.giftPokemon",
+            "workflow.tradePokemon",
+            "workflow.placement",
+        };
+        foreach (var domain in expectedDomains)
+        {
+            Assert.Contains(session.PendingEdits, edit => edit.Domain == domain);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletProjectExposesBasicEditorWorkflows(
         ProjectGameDto game,
         ulong titleId)
