@@ -11,12 +11,16 @@ It works through a safer LayeredFS flow: choose a supported game, validate clean
 - Validates clean base RomFS, base ExeFS, output root, and selected game before editors open.
 - Shows where records came from: base files, layered overrides, generated output, or pending edits.
 - Edits Sword and Shield Pokemon, trainers, moves, items, encounters, raids, shops, placement objects, and behavior data.
-- Edits Scarlet and Violet Pokemon, gift Pokemon, trainers, moves, items, placement data, and wild encounters.
+- Edits Scarlet and Violet Pokemon, gift Pokemon, trade Pokemon, trainers, moves, items, placement data, wild encounters, and the type chart.
 - Includes viewers for game text, flagwork metadata, and save-related inspection.
 - Stages changes into an edit session so you can remove mistakes before applying.
 - Uses reviewed change plans for higher-risk output, including hook-backed workflows.
 - Supports Bag Hook, Royal Candy, Starting Items, Catch Cap, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, Hyperspace Bypass, and 60FPS Patch through documented ownership rules.
 - Supports optional S/V project support setup for editors that need deeper Scarlet and Violet data access.
+- Adds Scarlet and Violet data cache controls for faster repeated editor loads.
+- Supports English and Spanish UI language selection.
+- Exports supported editor data through Game Dump.
+- Imports supported Sword and Shield dump files through Dump Importer.
 - Includes a reproducible Randomizer for Pokemon data, encounters, raid rewards, and type chart output.
 - Checks for native app updates from Settings on updater-enabled builds.
 
@@ -48,7 +52,10 @@ Installer and updater release builds also need Tauri updater signing secrets. Se
 - [Project Setup](https://github.com/KotMatrosk1n/KM-Editor/wiki/Project-Setup)
 - [Editing Workflow](https://github.com/KotMatrosk1n/KM-Editor/wiki/Editing-Workflow)
 - [Hook Architecture](https://github.com/KotMatrosk1n/KM-Editor/wiki/Hook-Architecture)
+- [Language Settings](https://github.com/KotMatrosk1n/KM-Editor/wiki/Language-Settings)
+- [Game Dump](https://github.com/KotMatrosk1n/KM-Editor/wiki/Game-Dump)
+- [Dump Importer](https://github.com/KotMatrosk1n/KM-Editor/wiki/Dump-Importer)
 - [Desktop app notes](apps/desktop/README.md)
 - [Backend test notes](tests/README.md)
 
-Royal Candy, Starting Items, Catch Cap Editor, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, and Hyperspace Bypass are available as Advanced Editors with documented ownership rules. 60FPS Patch, Randomizer, and Mod Merger are available under Tools, with shareable seeds for Randomizer, one-sided file copy support for SwSh mod merging, and Scarlet and Violet archive or folder merging support. Scarlet and Violet projects can also use optional project support setup for data editors that need expanded archive access. Rental Pokemon remains hidden as work in progress until its runtime safety work is finished. See the [Hook Architecture wiki page](https://github.com/KotMatrosk1n/KM-Editor/wiki/Hook-Architecture), [60FPS Patch](https://github.com/KotMatrosk1n/KM-Editor/wiki/60FPS-Patch), [Randomizer](https://github.com/KotMatrosk1n/KM-Editor/wiki/Randomizer), [Type Chart](https://github.com/KotMatrosk1n/KM-Editor/wiki/Type-Chart), [Fairy Gym Boosts](https://github.com/KotMatrosk1n/KM-Editor/wiki/Fairy-Gym-Boosts), [Fashion Unlock](https://github.com/KotMatrosk1n/KM-Editor/wiki/Fashion-Unlock), [Gym Uniform Removal](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gym-Uniform-Removal), [Rental Pokemon Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Rental-Pokemon-Editor), [Dynamax Adventures](https://github.com/KotMatrosk1n/KM-Editor/wiki/Dynamax-Adventures), and [Hyperspace Bypass](https://github.com/KotMatrosk1n/KM-Editor/wiki/Hyperspace-Bypass).
+Royal Candy, Starting Items, Catch Cap Editor, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, and Hyperspace Bypass are available as Advanced Editors with documented ownership rules. 60FPS Patch, Randomizer, Game Dump, Dump Importer, and Mod Merger are available under Tools, with shareable seeds for Randomizer, reviewed export files for Game Dump, reviewed Sword and Shield imports for Dump Importer, one-sided file copy support for SwSh mod merging, and Scarlet and Violet archive or folder merging support. Scarlet and Violet projects can also use optional project support setup and data cache controls for data editors that need expanded archive access. Rental Pokemon remains hidden as work in progress until its runtime safety work is finished. See the [Hook Architecture wiki page](https://github.com/KotMatrosk1n/KM-Editor/wiki/Hook-Architecture), [60FPS Patch](https://github.com/KotMatrosk1n/KM-Editor/wiki/60FPS-Patch), [Randomizer](https://github.com/KotMatrosk1n/KM-Editor/wiki/Randomizer), [Game Dump](https://github.com/KotMatrosk1n/KM-Editor/wiki/Game-Dump), [Dump Importer](https://github.com/KotMatrosk1n/KM-Editor/wiki/Dump-Importer), [Type Chart](https://github.com/KotMatrosk1n/KM-Editor/wiki/Type-Chart), [Scarlet and Violet Type Chart](https://github.com/KotMatrosk1n/KM-Editor/wiki/Scarlet-and-Violet-Type-Chart), [Fairy Gym Boosts](https://github.com/KotMatrosk1n/KM-Editor/wiki/Fairy-Gym-Boosts), [Fashion Unlock](https://github.com/KotMatrosk1n/KM-Editor/wiki/Fashion-Unlock), [Gym Uniform Removal](https://github.com/KotMatrosk1n/KM-Editor/wiki/Gym-Uniform-Removal), [Rental Pokemon Editor](https://github.com/KotMatrosk1n/KM-Editor/wiki/Rental-Pokemon-Editor), [Dynamax Adventures](https://github.com/KotMatrosk1n/KM-Editor/wiki/Dynamax-Adventures), and [Hyperspace Bypass](https://github.com/KotMatrosk1n/KM-Editor/wiki/Hyperspace-Bypass).
