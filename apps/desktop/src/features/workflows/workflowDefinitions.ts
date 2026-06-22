@@ -9,7 +9,6 @@ import {
   Candy,
   Dna,
   Dumbbell,
-  FileSpreadsheet,
   Gift,
   GitMerge,
   HandCoins,
@@ -28,6 +27,7 @@ import {
   Store,
   Table2,
   Trees,
+  Upload,
   UsersRound,
   Waypoints,
   Zap,
@@ -236,9 +236,9 @@ export const workflowDefinitions: Array<{
   },
   {
     id: 'spreadsheetImport',
-    label: 'Spreadsheet Import',
-    description: 'CSV and TSV import profiles that execute through backend edit sessions.',
-    icon: FileSpreadsheet
+    label: 'Dump Importer',
+    description: 'CSV, TSV, and JSON import profiles that execute through backend edit sessions.',
+    icon: Upload
   },
   {
     id: 'modMerger',

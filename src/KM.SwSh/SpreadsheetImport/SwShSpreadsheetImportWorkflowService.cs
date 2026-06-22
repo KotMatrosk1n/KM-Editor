@@ -29,7 +29,7 @@ public sealed class SwShSpreadsheetImportWorkflowService
                 SwShWorkflowAvailability.Disabled,
                 CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    "Spreadsheet Import requires valid base RomFS and base ExeFS paths before it can load.",
+                    "Dump Importer requires valid base RomFS and base ExeFS paths before it can load.",
                     expected: "Readable project paths"));
         }
 
@@ -61,7 +61,7 @@ public sealed class SwShSpreadsheetImportWorkflowService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Warning,
-                "Items price import is not executable because item data is not available.",
+                "Items price dump import is not executable because item data is not available.",
                 expected: SwShItemsWorkflowService.ItemDataPath));
         }
 
@@ -95,11 +95,11 @@ public sealed class SwShSpreadsheetImportWorkflowService
 
         return new SwShSpreadsheetImportProfileRecord(
             ItemsPriceProfileId,
-            "Items Price CSV/TSV",
-            "csv/tsv",
+            "Items Price Dump",
+            "csv/tsv/json",
             SwShWorkflowIds.Items,
             status,
-            "Imports item price columns into the Items workflow for change-plan review.",
+            "Imports supported item price dump files into the Items workflow for change-plan review.",
             [
                 new SwShSpreadsheetImportColumnRecord(
                     1,
@@ -174,8 +174,8 @@ public sealed class SwShSpreadsheetImportWorkflowService
     {
         return new SwShWorkflowSummary(
             SwShWorkflowIds.SpreadsheetImport,
-            "Spreadsheet Import",
-            "CSV and TSV import profiles that execute through backend edit sessions.",
+            "Dump Importer",
+            "CSV, TSV, and JSON import profiles that execute through backend edit sessions.",
             availability,
             diagnostics);
     }

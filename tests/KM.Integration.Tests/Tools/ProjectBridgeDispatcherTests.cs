@@ -9,6 +9,7 @@ using KM.Api.Encounters;
 using KM.Api.ExeFs;
 using KM.Api.FashionUnlock;
 using KM.Api.Flagwork;
+using KM.Api.GameDump;
 using KM.Api.GymUniformRemoval;
 using KM.Api.Items;
 using KM.Api.IvScreen;
@@ -189,6 +190,45 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.DoesNotContain(
             bagHook.Diagnostics,
             diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void DispatchRunGameDumpWritesSelectedCategoryFiles()
+    {
+        using var temp = TemporaryBridgeProject.Create();
+        SwShItemBridgeFixtures.WriteBaseItems(temp);
+        temp.WriteBaseRomFsFile(
+            "bin/message/English/common/wazaname.dat",
+            SwShItemBridgeFixtures.CreateItemNames("None"));
+        temp.WriteBaseExeFsFile("main", "base-main");
+        temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(0x0100ABF008968000));
+        var destinationFolder = Path.Combine(temp.RootPath, "dump");
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Sword };
+        var requestJson = SerializeRequest(
+            KmCommandNames.RunGameDump,
+            new RunGameDumpRequest(
+                paths,
+                destinationFolder,
+                [new GameDumpSelectionDto("items", GameDumpFormatDto.Tsv)]),
+            requestId: "request-game-dump");
+
+        var responseJson = new ProjectBridgeDispatcher().Dispatch(requestJson);
+        var response = DeserializeResponse<RunGameDumpResponse>(responseJson);
+
+        Assert.Null(response.Error);
+        Assert.Equal("request-game-dump", response.RequestId);
+        Assert.NotNull(response.Payload);
+        Assert.True(
+            response.Payload.Result.Succeeded,
+            string.Join(Environment.NewLine, response.Payload.Result.Diagnostics.Select(diagnostic => diagnostic.Message)));
+        Assert.Contains(
+            response.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "items" && file.RelativePath == Path.Combine("Items", "items.tsv"));
+        Assert.Contains(
+            response.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "manifest" && file.RelativePath == "manifest.json");
+        Assert.True(File.Exists(Path.Combine(destinationFolder, "Items", "items.tsv")));
+        Assert.True(File.Exists(Path.Combine(destinationFolder, "manifest.json")));
     }
 
     [Fact]
@@ -3091,8 +3131,8 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.NotNull(response.Payload);
         var profile = Assert.Single(response.Payload.Workflow.Profiles);
         Assert.Equal("items-price-csv", profile.ProfileId);
-        Assert.Equal("Items Price CSV/TSV", profile.Name);
-        Assert.Equal("csv/tsv", profile.SourceKind);
+        Assert.Equal("Items Price Dump", profile.Name);
+        Assert.Equal("csv/tsv/json", profile.SourceKind);
         Assert.Equal("items", profile.TargetWorkflow);
         Assert.Equal(ProjectFileLayerDto.Base, profile.Provenance.SourceLayer);
         Assert.Equal("romfs/bin/pml/item/item.dat", profile.Provenance.SourceFile);

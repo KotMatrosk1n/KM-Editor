@@ -3,6 +3,7 @@
 import { Activity, CheckCircle, ClipboardCheck } from 'lucide-react';
 import { type ApiDiagnostic, type ApplyResult, type ChangePlan } from '../bridge/contracts';
 import { formatDiagnosticMessage } from '../diagnostics';
+import { useLocalization } from '../localization';
 
 export type WorkflowPanelOutput = {
   actionDiagnostics: ApiDiagnostic[];
@@ -20,6 +21,8 @@ export function Metric({ label, value }: { label: string; value: string }) {
 }
 
 export function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }) {
+  const { translateLiteral } = useLocalization();
+
   return (
     <section aria-labelledby="apply-result-heading" className="panel wide-panel">
       <div className="panel-heading">
@@ -35,11 +38,13 @@ export function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }
       {applyResult.writtenFiles.length > 0 ? (
         <ul className="written-file-list">
           {applyResult.writtenFiles.map((writtenFile) => (
-            <li key={writtenFile}>{writtenFile}</li>
+            <li data-localization-ignore="true" key={writtenFile}>
+              {writtenFile}
+            </li>
           ))}
         </ul>
       ) : (
-        <p className="empty-copy">No files were written.</p>
+        <p className="empty-copy">{translateLiteral('No files were written.')}</p>
       )}
     </section>
   );
@@ -74,6 +79,8 @@ export function WorkflowPanelOutputSections({
 }
 
 export function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
+  const { translateLiteral } = useLocalization();
+
   return (
     <section aria-labelledby="change-plan-heading" className="panel wide-panel">
       <div className="panel-heading">
@@ -91,21 +98,26 @@ export function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
           {changePlan.writes.map((write) => (
             <li key={write.targetRelativePath}>
               <div>
-                <strong>{write.targetRelativePath}</strong>
+                <strong data-localization-ignore="true">{write.targetRelativePath}</strong>
                 <span>{write.reason}</span>
               </div>
               <dl>
                 <div>
                   <dt>Output state</dt>
                   <dd>
-                    {write.replacesExistingOutput ? 'Replaces output file' : 'Creates output file'}
+                    {translateLiteral(
+                      write.replacesExistingOutput ? 'Replaces output file' : 'Creates output file'
+                    )}
                   </dd>
                 </div>
                 <div>
                   <dt>Sources</dt>
                   <dd>
                     {write.sources
-                      .map((source) => `${formatProjectFileLayer(source.layer)} ${source.relativePath}`)
+                      .map(
+                        (source) =>
+                          `${translateLiteral(formatProjectFileLayer(source.layer))} ${source.relativePath}`
+                      )
                       .join(', ')}
                   </dd>
                 </div>
@@ -114,7 +126,7 @@ export function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
           ))}
         </ul>
       ) : (
-        <p className="empty-copy">No target files in this plan.</p>
+        <p className="empty-copy">{translateLiteral('No target files in this plan.')}</p>
       )}
     </section>
   );
@@ -128,6 +140,7 @@ export function DiagnosticsSection({
   scrollAfterEntries?: number;
 }) {
   const isScrollable = scrollAfterEntries !== undefined && diagnostics.length > scrollAfterEntries;
+  const { translateLiteral } = useLocalization();
 
   return (
     <section aria-labelledby="diagnostics-heading" className="panel">
@@ -143,8 +156,10 @@ export function DiagnosticsSection({
               className={`diagnostic diagnostic-${diagnostic.severity}`}
               key={`${diagnostic.severity}-${diagnostic.message}-${index}`}
             >
-              <strong>{formatDiagnosticSeverity(diagnostic.severity)}</strong>
-              <span>{formatDiagnosticMessage(diagnostic)}</span>
+              <strong>
+                {translateLiteral(formatDiagnosticSeverity(diagnostic.severity))}
+              </strong>
+              <span>{formatDiagnosticMessage(diagnostic, translateLiteral)}</span>
             </li>
           ))}
         </ul>

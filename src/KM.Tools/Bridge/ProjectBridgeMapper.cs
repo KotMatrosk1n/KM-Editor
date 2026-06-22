@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Diagnostics;
+using KM.Api.GameDump;
 using KM.Api.Projects;
 using KM.Core.Diagnostics;
 using KM.Core.Files;
+using KM.Core.GameDump;
 using KM.Core.Projects;
 
 namespace KM.Tools.Bridge;
@@ -64,6 +66,98 @@ public static class ProjectBridgeMapper
             diagnostic.Domain,
             diagnostic.Field,
             diagnostic.Expected);
+    }
+
+    public static GameDumpWorkflowDto ToDto(GameDumpWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new GameDumpWorkflowDto(
+            workflow.Categories.Select(ToDto).ToArray(),
+            workflow.Diagnostics.Select(ToDto).ToArray());
+    }
+
+    public static GameDumpResultDto ToDto(GameDumpResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new GameDumpResultDto(
+            result.DestinationFolder,
+            result.WrittenFiles.Select(ToDto).ToArray(),
+            result.Diagnostics.Select(ToDto).ToArray(),
+            result.Succeeded);
+    }
+
+    public static IReadOnlyList<GameDumpSelection> ToCore(IReadOnlyList<GameDumpSelectionDto> selections)
+    {
+        ArgumentNullException.ThrowIfNull(selections);
+
+        return selections
+            .Select(selection => new GameDumpSelection(
+                selection.CategoryId,
+                ToCore(selection.Format)))
+            .ToArray();
+    }
+
+    private static GameDumpCategoryDto ToDto(GameDumpCategory category)
+    {
+        return new GameDumpCategoryDto(
+            category.Id,
+            category.Label,
+            category.Description,
+            ToDto(category.Kind),
+            category.Formats.Select(ToDto).ToArray(),
+            ToDto(category.DefaultFormat),
+            category.IsAvailable,
+            category.Diagnostics.Select(ToDto).ToArray());
+    }
+
+    private static GameDumpWrittenFileDto ToDto(GameDumpWrittenFile file)
+    {
+        return new GameDumpWrittenFileDto(file.CategoryId, file.RelativePath, file.SizeBytes);
+    }
+
+    private static GameDumpCategoryKindDto ToDto(GameDumpCategoryKind kind)
+    {
+        return kind switch
+        {
+            GameDumpCategoryKind.Table => GameDumpCategoryKindDto.Table,
+            GameDumpCategoryKind.Text => GameDumpCategoryKindDto.Text,
+            GameDumpCategoryKind.Raw => GameDumpCategoryKindDto.Raw,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
+    }
+
+    private static GameDumpFormatDto ToDto(GameDumpFormat format)
+    {
+        return format switch
+        {
+            GameDumpFormat.Tsv => GameDumpFormatDto.Tsv,
+            GameDumpFormat.Csv => GameDumpFormatDto.Csv,
+            GameDumpFormat.Json => GameDumpFormatDto.Json,
+            GameDumpFormat.TsvAndJson => GameDumpFormatDto.TsvAndJson,
+            GameDumpFormat.Txt => GameDumpFormatDto.Txt,
+            GameDumpFormat.TxtAndJson => GameDumpFormatDto.TxtAndJson,
+            GameDumpFormat.Raw => GameDumpFormatDto.Raw,
+            GameDumpFormat.RawAndJson => GameDumpFormatDto.RawAndJson,
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, null),
+        };
+    }
+
+    private static GameDumpFormat ToCore(GameDumpFormatDto format)
+    {
+        return format switch
+        {
+            GameDumpFormatDto.Tsv => GameDumpFormat.Tsv,
+            GameDumpFormatDto.Csv => GameDumpFormat.Csv,
+            GameDumpFormatDto.Json => GameDumpFormat.Json,
+            GameDumpFormatDto.TsvAndJson => GameDumpFormat.TsvAndJson,
+            GameDumpFormatDto.Txt => GameDumpFormat.Txt,
+            GameDumpFormatDto.TxtAndJson => GameDumpFormat.TxtAndJson,
+            GameDumpFormatDto.Raw => GameDumpFormat.Raw,
+            GameDumpFormatDto.RawAndJson => GameDumpFormat.RawAndJson,
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, null),
+        };
     }
 
     private static ProjectFileGraphEntryDto ToDto(ProjectFileGraphEntry entry)

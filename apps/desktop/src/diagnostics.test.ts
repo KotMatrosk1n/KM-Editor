@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiDiagnostic } from './bridge/contracts';
 import { formatDiagnosticMessage } from './diagnostics';
+import { translateLiteralForLanguage } from './localization';
 
 describe('diagnostics', () => {
   it('formats available diagnostic metadata as plain text', () => {
@@ -39,5 +40,20 @@ describe('diagnostics', () => {
         severity: 'info'
       })
     ).toBe('Pending move change is valid.');
+  });
+
+  it('localizes diagnostic chrome while preserving raw technical values', () => {
+    const diagnostic: ApiDiagnostic = {
+      domain: 'workflow.modMerger',
+      expected: 'Select matching RomFS files on both sides.',
+      field: 'selectedFiles',
+      file: 'romfs/bin/appli/shop/bin/shop_data.bin',
+      message: 'Selected files must match on both sides',
+      severity: 'error'
+    };
+
+    expect(formatDiagnosticMessage(diagnostic, (literal) => translateLiteralForLanguage('es', literal))).toBe(
+      'Selected files must match on both sides. Área: Fusionador de mods. Archivo: romfs/bin/appli/shop/bin/shop_data.bin. Campo: Archivos seleccionados. Esperado: Select matching RomFS files on both sides.'
+    );
   });
 });

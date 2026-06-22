@@ -1546,15 +1546,15 @@ describe('bridge contracts', () => {
               valueKind: 'integer'
             }
           ],
-          description: 'Imports item price columns into the Items workflow for change-plan review.',
-          name: 'Items Price CSV/TSV',
+          description: 'Imports supported item price dump files into the Items workflow for change-plan review.',
+          name: 'Items Price Dump',
           profileId: 'items-price-csv',
           provenance: {
             fileState: 'baseOnly',
             sourceFile: 'romfs/bin/pml/item/item.dat',
             sourceLayer: 'base'
           },
-          sourceKind: 'csv/tsv',
+          sourceKind: 'csv/tsv/json',
           status: 'available',
           targetWorkflow: 'items'
         }
@@ -1566,10 +1566,10 @@ describe('bridge contracts', () => {
       },
       summary: {
         availability: 'readOnly',
-        description: 'CSV and TSV import profiles that execute through backend edit sessions.',
+        description: 'CSV, TSV, and JSON import profiles that execute through backend edit sessions.',
         diagnostics: [],
         id: 'spreadsheetImport',
-        label: 'Spreadsheet Import'
+        label: 'Dump Importer'
       }
     } as const;
 

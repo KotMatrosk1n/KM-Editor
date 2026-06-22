@@ -2,6 +2,7 @@
 
 import { ListChecks } from 'lucide-react';
 import { type ProjectHealth, type WorkflowSummary } from '../../bridge/contracts';
+import { useLocalization } from '../../localization';
 import { workflowDefinitions } from './workflowDefinitions';
 
 type WorkflowActionConfig = {
@@ -152,6 +153,7 @@ export function WorkflowsSection({
   pendingEditCount: number;
   workflows: WorkflowSummary[];
 }) {
+  const { translateLiteral } = useLocalization();
   const visibleWorkflowDefinitions = workflowDefinitions.filter((definition) =>
     workflows.some((workflow) => workflow.id === definition.id)
   );
@@ -232,18 +234,20 @@ export function WorkflowsSection({
           return (
             <article className="workflow-row" key={definition.id}>
               <div>
-                <h3>{workflow?.label ?? definition.label}</h3>
-                <p>{workflow?.description ?? definition.description}</p>
+                <h3>{translateLiteral(workflow?.label ?? definition.label)}</h3>
+                <p>{translateLiteral(workflow?.description ?? definition.description)}</p>
                 {blockedReason ? (
                   <p className="workflow-disabled-reason">{blockedReason}</p>
                 ) : null}
                 {isItemsWorkflow ? (
-                  <span className="inline-metric">Pending changes: {pendingEditCount}</span>
+                  <span className="inline-metric">
+                    {translateLiteral(`Pending changes: ${pendingEditCount}`)}
+                  </span>
                 ) : null}
               </div>
               <div className="workflow-actions">
                 <span className={`status-pill ${workflowState.statusClass}`}>
-                  {workflowState.label}
+                  {translateLiteral(workflowState.label)}
                 </span>
                 {workflowAction ? (
                   <button
@@ -256,8 +260,8 @@ export function WorkflowsSection({
                     <Icon aria-hidden="true" size={16} />
                     <span>
                       {workflowAction.isLoading
-                        ? workflowAction.loadingLabel ?? 'Loading'
-                        : workflowAction.iconLabel}
+                        ? translateLiteral(workflowAction.loadingLabel ?? 'Loading')
+                        : translateLiteral(workflowAction.iconLabel)}
                     </span>
                   </button>
                 ) : null}

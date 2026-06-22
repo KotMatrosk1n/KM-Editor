@@ -12,6 +12,7 @@ using KM.Api.FairyGymBoosts;
 using KM.Api.FashionUnlock;
 using KM.Api.Flagwork;
 using KM.Api.FpsPatch;
+using KM.Api.GameDump;
 using KM.Api.Gifts;
 using KM.Api.GymUniformRemoval;
 using KM.Api.HyperspaceBypass;
@@ -53,6 +54,7 @@ using KM.SwSh.FairyGymBoosts;
 using KM.SwSh.FashionUnlock;
 using KM.SwSh.Gifts;
 using KM.SwSh.FpsPatch;
+using KM.SwSh.GameDump;
 using KM.SwSh.GymUniformRemoval;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.Items;
@@ -77,6 +79,7 @@ using KM.SwSh.Trades;
 using KM.SwSh.TypeChart;
 using KM.SwSh.Workflows;
 using KM.SV.ModMerger;
+using KM.SV.GameDump;
 using KM.SV.Workflows;
 using System.Globalization;
 using System.Text.Json;
@@ -117,6 +120,8 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShModMergerWorkflowService modMergerWorkflowService;
     private readonly SwShFpsPatchService fpsPatchService;
     private readonly SwShRandomizerService randomizerService;
+    private readonly SwShGameDumpService swShGameDumpService;
+    private readonly SvGameDumpService svGameDumpService;
     private readonly SwShStaticEncountersEditSessionService staticEncountersEditSessionService;
     private readonly SwShTextEditSessionService textEditSessionService;
     private readonly SwShTrainersEditSessionService trainersEditSessionService;
@@ -157,6 +162,8 @@ public sealed class ProjectBridgeDispatcher
         SwShModMergerWorkflowService? modMergerWorkflowService = null,
         SwShFpsPatchService? fpsPatchService = null,
         SwShRandomizerService? randomizerService = null,
+        SwShGameDumpService? swShGameDumpService = null,
+        SvGameDumpService? svGameDumpService = null,
         SwShStaticEncountersEditSessionService? staticEncountersEditSessionService = null,
         SwShTextEditSessionService? textEditSessionService = null,
         SwShTrainersEditSessionService? trainersEditSessionService = null,
@@ -204,6 +211,8 @@ public sealed class ProjectBridgeDispatcher
             this.projectWorkspaceService,
             modMergerWorkflowService: this.modMergerWorkflowService);
         this.svWorkflowService = svWorkflowService ?? new SvWorkflowService(this.projectWorkspaceService);
+        this.swShGameDumpService = swShGameDumpService ?? new SwShGameDumpService(this.swShWorkflowService);
+        this.svGameDumpService = svGameDumpService ?? new SvGameDumpService(this.svWorkflowService);
     }
 
     public string Dispatch(string requestJson)
@@ -331,6 +340,8 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.ImportRandomizerSeed => DispatchImportRandomizerSeed(requestJson),
                 KmCommandNames.ApplyRandomizer => DispatchApplyRandomizer(requestJson),
                 KmCommandNames.RestoreRandomizer => DispatchRestoreRandomizer(requestJson),
+                KmCommandNames.LoadGameDumpWorkflow => DispatchLoadGameDumpWorkflow(requestJson),
+                KmCommandNames.RunGameDump => DispatchRunGameDump(requestJson),
                 KmCommandNames.StartEditSession => DispatchStartEditSession(requestJson),
                 KmCommandNames.ValidateEditSession => DispatchValidateEditSession(requestJson),
                 KmCommandNames.CreateChangePlan => DispatchCreateChangePlan(requestJson),
@@ -385,6 +396,31 @@ public sealed class ProjectBridgeDispatcher
         var response = IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.List(paths))
             : SwShBridgeMapper.ToDto(swShWorkflowService.List(paths));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadGameDumpWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadGameDumpWorkflowRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var workflow = IsScarletViolet(paths)
+            ? svGameDumpService.Load(paths)
+            : swShGameDumpService.Load(paths);
+        var response = new LoadGameDumpWorkflowResponse(ProjectBridgeMapper.ToDto(workflow));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchRunGameDump(string requestJson)
+    {
+        var request = DeserializeRequest<RunGameDumpRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var selections = ProjectBridgeMapper.ToCore(request.Payload.Selections);
+        var result = IsScarletViolet(paths)
+            ? svGameDumpService.Run(paths, request.Payload.DestinationFolder, selections)
+            : swShGameDumpService.Run(paths, request.Payload.DestinationFolder, selections);
+        var response = new RunGameDumpResponse(ProjectBridgeMapper.ToDto(result));
 
         return SerializeSuccess(response, request.RequestId);
     }

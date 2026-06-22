@@ -980,6 +980,187 @@ h2 {
   border-color: #8a3438;
 }
 
+.game-dump-section {
+  display: grid;
+  gap: 16px;
+}
+
+.game-dump-destination-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.game-dump-destination-field {
+  min-width: 0;
+}
+
+.game-dump-destination-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px 40px 40px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.game-dump-metrics {
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+}
+
+.game-dump-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.game-dump-progress-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: rgb(6 12 28 / 42%);
+  border: 1px solid rgb(120 143 198 / 24%);
+  border-radius: 8px;
+}
+
+.game-dump-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.game-dump-progress-header strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.game-dump-progress-header span {
+  color: var(--color-gold);
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.game-dump-category-list {
+  display: grid;
+  gap: 10px;
+}
+
+.game-dump-category {
+  align-items: start;
+  background: rgb(6 12 28 / 42%);
+  border: 1px solid rgb(120 143 198 / 24%);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px;
+}
+
+.game-dump-category.is-selected {
+  border-color: rgb(122 94 255 / 72%);
+  box-shadow: inset 3px 0 0 var(--color-gold);
+}
+
+.game-dump-category-check {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.game-dump-category-check input {
+  margin-top: 4px;
+}
+
+.game-dump-category-check span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.game-dump-category-check small {
+  color: var(--color-text-muted);
+  line-height: 1.35;
+}
+
+.game-dump-category-controls {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(180px, 220px);
+}
+
+.game-dump-format-field {
+  min-width: 0;
+}
+
+.game-dump-format-field span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.game-dump-format-field select {
+  width: 100%;
+}
+
+.game-dump-result {
+  background: rgb(6 12 28 / 42%);
+  border: 1px solid rgb(120 143 198 / 24%);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.game-dump-result h3 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.game-dump-result p {
+  color: var(--color-text-muted);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.game-dump-file-list {
+  display: grid;
+  gap: 4px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.game-dump-file-list span {
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+
+.game-dump-confirm-details {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.game-dump-confirm-details div {
+  display: grid;
+  gap: 3px;
+}
+
+.game-dump-confirm-details dt {
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.game-dump-confirm-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+}
+
 .items-toolbar {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(140px, 180px));
@@ -4751,18 +4932,19 @@ h2 {
 }
 
 .spreadsheet-import-toolbar {
-  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(120px, 160px));
+  grid-template-columns: repeat(3, minmax(120px, 160px));
+  justify-content: end;
 }
 
-.spreadsheet-profile-row {
-  grid-template-columns: minmax(180px, 1.2fr) minmax(92px, 0.45fr) minmax(96px, 0.45fr) minmax(96px, 0.45fr) minmax(72px, 0.35fr);
+.spreadsheet-import-layout:not(.spreadsheet-import-layout-previewed) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .spreadsheet-preview-row {
   grid-template-columns: 72px minmax(92px, 0.45fr) minmax(96px, 0.45fr) minmax(240px, 1.5fr);
 }
 
-.spreadsheet-source-row {
+.spreadsheet-source-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
@@ -4771,6 +4953,17 @@ h2 {
   background: #0b1120;
   border: 1px solid #26344d;
   border-radius: 8px;
+}
+
+.spreadsheet-source-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.spreadsheet-preview-button {
+  min-width: 160px;
 }
 
 .exefs-row:last-child {
@@ -5507,6 +5700,10 @@ button.sv-encounter-condition-row:hover {
   text-transform: uppercase;
 }
 
+.sv-cache-mode-selected-label {
+  margin-left: auto;
+}
+
 .sv-cache-mode-option p {
   margin: 0;
   color: var(--color-text-muted);
@@ -5516,6 +5713,69 @@ button.sv-encounter-condition-row:hover {
 
 .sv-cache-mode-option-selected p {
   color: var(--color-text-soft);
+}
+
+.language-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.language-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  min-width: 0;
+  min-height: 92px;
+  align-items: center;
+  padding: 12px;
+  color: var(--color-text-soft);
+  background: #0b1120;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.language-option:hover:not(:disabled),
+.language-option-selected {
+  color: var(--color-text);
+  background: rgb(79 70 229 / 18%);
+  border-color: rgb(109 115 255 / 62%);
+}
+
+.language-option-flag {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.language-option-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.language-option-copy strong {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.language-option-copy span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.language-option-selected .language-option-copy span {
+  color: var(--color-text-soft);
+}
+
+.language-option-selected-label {
+  align-self: start;
+  color: var(--color-gold);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .sv-cache-settings-row {
@@ -6222,7 +6482,7 @@ input {
 .pending-edit-list li,
 .change-plan-list li,
 .written-file-list li,
-.spreadsheet-source-row {
+.spreadsheet-source-panel {
   background: #0d1424;
   border-color: var(--color-border);
 }
@@ -6288,6 +6548,7 @@ input {
     grid-template-columns: 1fr;
   }
 
+  .language-options,
   .sv-cache-mode-options {
     grid-template-columns: 1fr;
   }
@@ -6375,7 +6636,7 @@ input {
   .items-toolbar,
   .moves-toolbar,
   .spreadsheet-import-toolbar,
-  .spreadsheet-source-row,
+  .spreadsheet-source-panel,
   .randomizer-category-bar,
   .randomizer-option-grid,
   .mod-merger-output-note,
@@ -6533,7 +6794,6 @@ input {
 
   .exefs-row,
   .exefs-check-row,
-  .spreadsheet-profile-row,
   .spreadsheet-preview-row {
     grid-template-columns: minmax(120px, 1fr) minmax(92px, 0.6fr) minmax(120px, 1fr);
   }
@@ -6560,5 +6820,21 @@ input {
   .text-row span:nth-child(4),
   .text-row span:nth-child(5) {
     display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .spreadsheet-source-panel,
+  .game-dump-category,
+  .game-dump-category-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .spreadsheet-source-input-row {
+    grid-template-columns: minmax(0, 1fr) 40px;
+  }
+
+  .game-dump-metrics {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
 }

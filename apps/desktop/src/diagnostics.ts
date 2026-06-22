@@ -2,17 +2,24 @@
 
 import type { ApiDiagnostic } from './bridge/contracts';
 
-export function formatDiagnosticMessage(diagnostic: ApiDiagnostic) {
-  const message = normalizeSentence(diagnostic.message);
+type DiagnosticTranslator = (literal: string) => string;
+
+const identityTranslator: DiagnosticTranslator = (literal) => literal;
+
+export function formatDiagnosticMessage(
+  diagnostic: ApiDiagnostic,
+  translateLiteral: DiagnosticTranslator = identityTranslator
+) {
+  const message = normalizeSentence(translateLiteral(diagnostic.message));
 
   if (diagnostic.severity === 'info') {
     return message;
   }
 
   const valueDetails = [
-    formatLabeledDetail('File', diagnostic.file),
-    formatLabeledDetail('Field', formatFieldName(diagnostic.field)),
-    formatLabeledDetail('Expected', diagnostic.expected)
+    formatLabeledDetail('File', diagnostic.file, translateLiteral),
+    formatLabeledDetail('Field', formatFieldName(diagnostic.field), translateLiteral),
+    formatLabeledDetail('Expected', diagnostic.expected, translateLiteral)
   ].filter((detail): detail is string => detail !== null);
 
   if (valueDetails.length === 0) {
@@ -20,31 +27,56 @@ export function formatDiagnosticMessage(diagnostic: ApiDiagnostic) {
   }
 
   const details = [
-    formatDomainDetail(diagnostic.domain),
+    formatDomainDetail(diagnostic.domain, translateLiteral),
     ...valueDetails
   ].filter((detail): detail is string => detail !== null);
 
   return `${message} ${details.join(' ')}`;
 }
 
-function formatDomainDetail(domain: string | null | undefined) {
+function formatDomainDetail(
+  domain: string | null | undefined,
+  translateLiteral: DiagnosticTranslator
+) {
   if (!domain) {
     return null;
   }
 
   const readableDomain = formatDomainName(domain);
 
-  return readableDomain ? `Area: ${readableDomain}.` : null;
+  return readableDomain
+    ? `${translateLiteral('Area')}: ${translateLiteral(readableDomain)}.`
+    : null;
 }
 
-function formatLabeledDetail(label: string, value: string | null | undefined) {
+function formatLabeledDetail(
+  label: string,
+  value: string | null | undefined,
+  translateLiteral: DiagnosticTranslator
+) {
   if (!value) {
     return null;
   }
 
   const trimmed = value.trim();
 
-  return trimmed.length > 0 ? `${label}: ${normalizeSentence(trimmed)}` : null;
+  return trimmed.length > 0
+    ? `${translateLiteral(label)}: ${normalizeSentence(
+        translateDiagnosticDetail(label, trimmed, translateLiteral)
+      )}`
+    : null;
+}
+
+function translateDiagnosticDetail(
+  label: string,
+  value: string,
+  translateLiteral: DiagnosticTranslator
+) {
+  if (label === 'Field') {
+    return translateLiteral(value);
+  }
+
+  return value;
 }
 
 function formatDomainName(domain: string) {

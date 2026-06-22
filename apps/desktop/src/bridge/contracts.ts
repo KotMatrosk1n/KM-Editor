@@ -83,6 +83,8 @@ export const kmCommandNameValues = [
   'randomizer.seed.import',
   'randomizer.apply',
   'randomizer.restore',
+  'gameDump.load',
+  'gameDump.run',
   'editSession.start',
   'editSession.get',
   'editSession.discard',
@@ -187,6 +189,7 @@ export const kmCommandNames = {
   importRandomizerSeed: 'randomizer.seed.import',
   applyRandomizer: 'randomizer.apply',
   restoreRandomizer: 'randomizer.restore',
+  loadGameDumpWorkflow: 'gameDump.load', runGameDump: 'gameDump.run',
   openProject: 'project.open',
   refreshFileGraph: 'project.fileGraph.refresh',
   startEditSession: 'editSession.start',
@@ -220,19 +223,15 @@ export const projectPathsSchema = z.strictObject({
 export const openProjectRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
-
 export const validateProjectRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
-
 export const refreshFileGraphRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
-
 export const listWorkflowsRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
-
 export const loadItemsWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });

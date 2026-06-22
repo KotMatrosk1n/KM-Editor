@@ -269,10 +269,10 @@ describe('projectBridge', () => {
               {
                 availability: 'readOnly',
                 description:
-                  'Spreadsheet import profiles, target workflows, columns, and source provenance.',
+                  'CSV, TSV, and JSON import profiles that execute through backend edit sessions.',
                 diagnostics: [],
                 id: 'spreadsheetImport',
-                label: 'Spreadsheet Import'
+                label: 'Dump Importer'
               }
             ]
           }
@@ -1418,15 +1418,15 @@ describe('projectBridge', () => {
                       valueKind: 'integer'
                     }
                   ],
-                  description: 'Import item price columns from a workbook fixture.',
-                  name: 'Items Price CSV/TSV',
+                  description: 'Imports supported item price dump files into the Items workflow for change-plan review.',
+                  name: 'Items Price Dump',
                   profileId: 'items-price-csv',
                   provenance: {
                     fileState: 'baseOnly',
                     sourceFile: 'romfs/bin/pml/item/item.dat',
                     sourceLayer: 'base'
                   },
-                  sourceKind: 'csv/tsv',
+                  sourceKind: 'csv/tsv/json',
                   status: 'available',
                   targetWorkflow: 'items'
                 }
@@ -1439,10 +1439,10 @@ describe('projectBridge', () => {
               summary: {
                 availability: 'readOnly',
                 description:
-                  'CSV and TSV import profiles that execute through backend edit sessions.',
+                  'CSV, TSV, and JSON import profiles that execute through backend edit sessions.',
                 diagnostics: [],
                 id: 'spreadsheetImport',
-                label: 'Spreadsheet Import'
+                label: 'Dump Importer'
               }
             }
           }
@@ -1594,10 +1594,10 @@ describe('projectBridge', () => {
     expect(exeFsPatches.workflow.patches[0]?.targetFile).toBe('exefs/main');
     expect(royalCandy.workflow.workflows[0]?.name).toBe('Unlimited Royal Candy');
     expect(royalCandy.workflow.outputs[0]?.relativePath).toBe('romfs/bin/pml/item/item.dat');
-    expect(spreadsheetImport.workflow.profiles[0]?.name).toBe('Items Price CSV/TSV');
+    expect(spreadsheetImport.workflow.profiles[0]?.name).toBe('Items Price Dump');
   });
 
-  it('sends Spreadsheet Import previews through the configured transport', async () => {
+  it('sends Dump Importer previews through the configured transport', async () => {
     let capturedRequest: unknown;
     const spreadsheetImportWorkflow = {
       diagnostics: [],
@@ -1612,15 +1612,15 @@ describe('projectBridge', () => {
               valueKind: 'integer'
             }
           ],
-          description: 'Imports item price columns into the Items workflow for change-plan review.',
-          name: 'Items Price CSV/TSV',
+          description: 'Imports supported item price dump files into the Items workflow for change-plan review.',
+          name: 'Items Price Dump',
           profileId: 'items-price-csv',
           provenance: {
             fileState: 'baseOnly',
             sourceFile: 'romfs/bin/pml/item/item.dat',
             sourceLayer: 'base'
           },
-          sourceKind: 'csv/tsv',
+          sourceKind: 'csv/tsv/json',
           status: 'available',
           targetWorkflow: 'items'
         }
@@ -1632,10 +1632,10 @@ describe('projectBridge', () => {
       },
       summary: {
         availability: 'available',
-        description: 'CSV and TSV import profiles that execute through backend edit sessions.',
+        description: 'CSV, TSV, and JSON import profiles that execute through backend edit sessions.',
         diagnostics: [],
         id: 'spreadsheetImport',
-        label: 'Spreadsheet Import'
+        label: 'Dump Importer'
       }
     } as const;
     const bridge = createProjectBridge(async (requestJson) => {
@@ -1646,7 +1646,7 @@ describe('projectBridge', () => {
         payload: {
           diagnostics: [
             {
-              message: 'Spreadsheet import preview accepted 1 row and rejected 0.',
+              message: 'Dump Importer preview accepted 1 row and rejected 0.',
               severity: 'info'
             }
           ],

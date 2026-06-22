@@ -65,7 +65,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
     sectionIds: ['encounters', 'staticEncounters', 'giftPokemon', 'tradePokemon', 'raidBattles']
   },
   { id: 'economy', label: 'Economy', sectionIds: ['shops', 'raidRewards', 'raidBonusRewards'] },
-  { id: 'tools', label: 'Tools', sectionIds: ['fpsPatch', 'randomizer', 'modMerger', 'spreadsheetImport'] },
+  { id: 'tools', label: 'Tools', sectionIds: ['fpsPatch', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
   { id: 'hooks', label: 'Hooks', sectionIds: ['bagHook'] },
   {
     id: 'advancedEditors',
@@ -123,7 +123,8 @@ const swordShieldWorkflowSectionIds = new Set<WorkbenchSection>([
   'spreadsheetImport',
   'modMerger',
   'fpsPatch',
-  'randomizer'
+  'randomizer',
+  'gameDump'
 ]);
 
 const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
@@ -137,10 +138,11 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'placement',
   'typeChart',
   'hyperspaceBypass',
-  'modMerger'
+  'modMerger',
+  'gameDump'
 ]);
 
-export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch', 'randomizer']);
+export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch', 'randomizer', 'gameDump']);
 
 export const scarletVioletAdvancedEditorSectionIds = new Set<WorkbenchSection>([
   'typeChart',
