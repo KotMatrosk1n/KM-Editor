@@ -1082,8 +1082,12 @@ const tradePokemonFieldNames = [
   tradeMemoryFeelFieldName,
   tradeMemoryIntensityFieldName,
   ...tradeRelearnMoveFieldNames,
+  ...giftMoveFieldNames,
+  giftTeraTypeFieldName,
   ...ivFieldNames,
-  giftFlawlessIvCountFieldName
+  giftFlawlessIvCountFieldName,
+  giftScaleModeFieldName,
+  giftScaleValueFieldName
 ] as const;
 const staticEncounterScenarioFieldName = 'encounterScenario';
 const staticEncounterMoveFieldNames = ['move0Id', 'move1Id', 'move2Id', 'move3Id'] as const;
@@ -15071,6 +15075,7 @@ function TradePokemonSection({
 }) {
   const [isShinyLockConfirmationOpen, setIsShinyLockConfirmationOpen] = useState(false);
   const trades = workflow?.trades ?? [];
+  const editorFamily: EditorUiFamily = workflow?.editorFamily === 'sv' ? 'sv' : 'swsh';
   const filteredTrades = useMemo(
     () => filterTradePokemon(trades, searchText),
     [searchText, trades]
@@ -15186,11 +15191,12 @@ function TradePokemonSection({
                       {formatSpeciesFormLabel(
                         trade.requiredSpecies,
                         trade.requiredForm,
-                        trade.requiredSpeciesId
+                        trade.requiredSpeciesId,
+                        editorFamily
                       )}
                     </span>
                     <span role="cell">
-                      {formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId)}
+                      {formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)}
                     </span>
                     <span role="cell">{trade.level}</span>
                     <span role="cell">{trade.ivSummary}</span>
@@ -15205,6 +15211,7 @@ function TradePokemonSection({
               canEditTrades={canEditTrades}
               editSession={editSession}
               editableFields={workflow.editableFields}
+              editorFamily={editorFamily}
               isEditStarting={isEditStarting}
               isTradePokemonUpdating={isTradePokemonUpdating}
               onStartEditSession={onStartEditSession}
@@ -15243,6 +15250,7 @@ function SelectedTradePokemonPanel({
   canEditTrades,
   editSession,
   editableFields,
+  editorFamily,
   isEditStarting,
   isTradePokemonUpdating,
   onStartEditSession,
@@ -15253,6 +15261,7 @@ function SelectedTradePokemonPanel({
   canEditTrades: boolean;
   editSession: EditSession | null;
   editableFields: TradePokemonEditableField[];
+  editorFamily: EditorUiFamily;
   isEditStarting: boolean;
   isTradePokemonUpdating: boolean;
   onStartEditSession: () => void;
@@ -15335,19 +15344,21 @@ function SelectedTradePokemonPanel({
               name={formatSpeciesFormLabel(
                 trade.requiredSpecies,
                 trade.requiredForm,
-                trade.requiredSpeciesId
+                trade.requiredSpeciesId,
+                editorFamily
               )}
               subtitle="Requested"
               title={formatSpeciesFormLabel(
                 trade.requiredSpecies,
                 trade.requiredForm,
-                trade.requiredSpeciesId
+                trade.requiredSpeciesId,
+                editorFamily
               )}
             />
             <PokemonSummaryCard
-              name={formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId)}
+              name={formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)}
               subtitle={`Received | Lv. ${trade.level}`}
-              title={formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId)}
+              title={formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)}
             />
           </div>
 
@@ -15374,13 +15385,14 @@ function SelectedTradePokemonPanel({
                 {formatSpeciesFormLabel(
                   trade.requiredSpecies,
                   trade.requiredForm,
-                  trade.requiredSpeciesId
+                  trade.requiredSpeciesId,
+                  editorFamily
                 )}
               </dd>
             </div>
             <div>
               <dt>Received</dt>
-              <dd>{`${formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId)} Lv. ${trade.level}`}</dd>
+              <dd>{`${formatSpeciesFormLabel(trade.species, trade.form, trade.speciesId, editorFamily)} Lv. ${trade.level}`}</dd>
             </div>
             <div>
               <dt>Ball</dt>
@@ -15391,17 +15403,36 @@ function SelectedTradePokemonPanel({
               <dd>{trade.heldItem ?? 'None'}</dd>
             </div>
             <div>
-              <dt>Relearn moves</dt>
+              <dt>{editorFamily === 'sv' ? 'Moves' : 'Relearn moves'}</dt>
               <dd>{formatTradePokemonRelearnMoves(trade)}</dd>
             </div>
-            <div>
-              <dt>Memory</dt>
-              <dd>{formatTradePokemonMemory(trade)}</dd>
-            </div>
-            <div>
-              <dt>Identifiers</dt>
-              <dd>{`${trade.hash0} / ${trade.hash1} / ${trade.hash2}`}</dd>
-            </div>
+            {editorFamily === 'sv' ? (
+              <>
+                <div>
+                  <dt>Event label</dt>
+                  <dd>{trade.eventLabel ?? 'None'}</dd>
+                </div>
+                <div>
+                  <dt>Tera type</dt>
+                  <dd>{trade.teraTypeLabel ?? 'Default'}</dd>
+                </div>
+                <div>
+                  <dt>Scale</dt>
+                  <dd>{formatTradePokemonScale(trade)}</dd>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <dt>Memory</dt>
+                  <dd>{formatTradePokemonMemory(trade)}</dd>
+                </div>
+                <div>
+                  <dt>Identifiers</dt>
+                  <dd>{`${trade.hash0} / ${trade.hash1} / ${trade.hash2}`}</dd>
+                </div>
+              </>
+            )}
             <div>
               <dt>IV detail</dt>
               <dd>{formatTradePokemonIvs(trade)}</dd>
@@ -15456,13 +15487,13 @@ function SelectedTradePokemonPanel({
                           formOptionContext={
                             field.field === tradeRequiredFormFieldName
                               ? {
-                                  gameFamily: 'swsh',
+                                  gameFamily: editorFamily,
                                   species: trade.requiredSpecies,
                                   speciesId: trade.requiredSpeciesId
                                 }
                               : {
                                   abilityOptions: trade.abilityOptions,
-                                  gameFamily: 'swsh',
+                                  gameFamily: editorFamily,
                                   species: trade.species,
                                   speciesId: trade.speciesId
                                 }
@@ -27349,6 +27380,7 @@ function filterTradePokemon(trades: TradePokemonRecord[], searchText: string) {
       trade.tradeIndex.toString(),
       (trade.tradeIndex + 1).toString(),
       trade.label,
+      trade.eventLabel ?? '',
       trade.species,
       trade.speciesId.toString(),
       trade.form.toString(),
@@ -27382,6 +27414,15 @@ function filterTradePokemon(trades: TradePokemonRecord[], searchText: string) {
       trade.hash0,
       trade.hash1,
       trade.hash2,
+      ...(trade.moves ?? []).flatMap((move) => [
+        move.move ?? '',
+        move.moveId.toString()
+      ]),
+      trade.teraTypeLabel ?? '',
+      trade.teraType?.toString() ?? '',
+      trade.scaleModeLabel ?? '',
+      trade.scaleMode?.toString() ?? '',
+      trade.scaleValue?.toString() ?? '',
       trade.ivSummary,
       formatTradePokemonIvs(trade),
       formatTradePokemonRelearnMoves(trade),
@@ -28672,6 +28713,16 @@ function getEditableTradePokemonFieldValue(trade: TradePokemonRecord, field: str
       return trade.relearnMoves[2]?.moveId ?? null;
     case tradeRelearnMoveFieldNames[3]:
       return trade.relearnMoves[3]?.moveId ?? null;
+    case giftMoveFieldNames[0]:
+      return trade.moves[0]?.moveId ?? null;
+    case giftMoveFieldNames[1]:
+      return trade.moves[1]?.moveId ?? null;
+    case giftMoveFieldNames[2]:
+      return trade.moves[2]?.moveId ?? null;
+    case giftMoveFieldNames[3]:
+      return trade.moves[3]?.moveId ?? null;
+    case giftTeraTypeFieldName:
+      return trade.teraType;
     case ivFieldNames[0]:
       return trade.ivs.hp;
     case ivFieldNames[1]:
@@ -28686,6 +28737,10 @@ function getEditableTradePokemonFieldValue(trade: TradePokemonRecord, field: str
       return trade.ivs.speed;
     case giftFlawlessIvCountFieldName:
       return trade.flawlessIvCount;
+    case giftScaleModeFieldName:
+      return trade.scaleMode;
+    case giftScaleValueFieldName:
+      return trade.scaleValue;
     default:
       return null;
   }
@@ -31266,11 +31321,24 @@ function formatTradePokemonIvs(trade: TradePokemonRecord) {
 }
 
 function formatTradePokemonRelearnMoves(trade: TradePokemonRecord) {
-  const moves = trade.relearnMoves
+  const sourceMoves = trade.moves.length > 0 ? trade.moves : trade.relearnMoves;
+  const moves = sourceMoves
     .filter((move) => move.moveId > 0)
     .map((move) => move.move ?? `Move ${move.moveId}`);
 
   return moves.length > 0 ? moves.join(' / ') : 'None';
+}
+
+function formatTradePokemonScale(trade: TradePokemonRecord) {
+  if (trade.scaleModeLabel === null) {
+    return 'Default';
+  }
+
+  if (trade.scaleValue === null || trade.scaleValue === 0 || trade.scaleModeLabel !== 'Fixed value') {
+    return trade.scaleModeLabel;
+  }
+
+  return `${trade.scaleModeLabel}: ${trade.scaleValue}`;
 }
 
 function formatTradePokemonMemory(trade: TradePokemonRecord) {

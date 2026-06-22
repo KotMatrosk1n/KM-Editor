@@ -1999,6 +1999,7 @@ export function createMockProjectBridge(
         valueKind: 'integer'
       }
     ],
+    editorFamily: 'swsh',
     stats: {
       fixedIvTradeCount: 0,
       sourceFileCount: 1,
@@ -2014,6 +2015,8 @@ export function createMockProjectBridge(
         ballItemId: 4,
         canGigantamax: false,
         dynamaxLevel: 0,
+        editorFamily: 'swsh',
+        eventLabel: null,
         field03: 7,
         flawlessIvCount: 3,
         form: 1,
@@ -2039,6 +2042,7 @@ export function createMockProjectBridge(
         memoryFeel: 3,
         memoryIntensity: 4,
         memoryTextVariable: 99,
+        moves: [],
         nature: 25,
         natureLabel: 'Random',
         otGender: 0,
@@ -2063,6 +2067,11 @@ export function createMockProjectBridge(
         shinyLockLabel: 'Never Shiny',
         species: 'Farfetch’d',
         speciesId: 83,
+        scaleMode: null,
+        scaleModeLabel: null,
+        scaleValue: null,
+        teraType: null,
+        teraTypeLabel: null,
         tradeIndex: 0,
         trainerId: 12345,
         unknownRequirement: 0

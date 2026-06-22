@@ -73,6 +73,15 @@ public sealed record TradePokemonRecordDto(
     string IvSummary,
     TradePokemonProvenanceDto Provenance)
 {
+    public string EditorFamily { get; init; } = "swsh";
+    public string? EventLabel { get; init; }
+    public IReadOnlyList<TradePokemonMoveRecordDto> Moves { get; init; } =
+        Array.Empty<TradePokemonMoveRecordDto>();
+    public int? TeraType { get; init; }
+    public string? TeraTypeLabel { get; init; }
+    public int? ScaleMode { get; init; }
+    public string? ScaleModeLabel { get; init; }
+    public int? ScaleValue { get; init; }
     public IReadOnlyList<TradePokemonEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<TradePokemonEditableFieldOptionDto>();
 }
@@ -104,7 +113,10 @@ public sealed record TradePokemonWorkflowDto(
     IReadOnlyList<TradePokemonRecordDto> Trades,
     IReadOnlyList<TradePokemonEditableFieldDto> EditableFields,
     TradePokemonWorkflowStatsDto Stats,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public string EditorFamily { get; init; } = "swsh";
+}
 
 public sealed record LoadTradePokemonWorkflowResponse(TradePokemonWorkflowDto Workflow);
 

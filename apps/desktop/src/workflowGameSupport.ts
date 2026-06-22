@@ -133,6 +133,7 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'trainers',
   'encounters',
   'giftPokemon',
+  'tradePokemon',
   'placement',
   'typeChart',
   'hyperspaceBypass',

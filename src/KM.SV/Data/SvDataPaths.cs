@@ -12,6 +12,8 @@ public static class SvDataPaths
     public const string FixedSymbolTableArray = "world/data/field/fixed_symbol/fixed_symbol_table/fixed_symbol_table_array.bin";
     public const string EventBattlePokemonArray = "world/data/battle/eventBattlePokemon/eventBattlePokemon_array.bin";
     public const string EventAddPokemonArray = "world/data/event/event_add_pokemon/eventAddPokemon/eventAddPokemon_array.bin";
+    public const string EventTradeListArray = "world/data/event/eventTradeList/eventTradeList_array.bin";
+    public const string EventTradePokemonArray = "world/data/event/eventTradePokemon/eventTradePokemon_array.bin";
     public const string HiddenItemDataTableArray = "world/data/item/hiddenItemDataTable/hiddenItemDataTable_array.bin";
     public const string HiddenItemDataTableSu1Array = "world/data/item/hiddenItemDataTable_su1/hiddenItemDataTable_su1_array.bin";
     public const string HiddenItemDataTableSu2Array = "world/data/item/hiddenItemDataTable_su2/hiddenItemDataTable_su2_array.bin";

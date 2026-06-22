@@ -1296,6 +1296,8 @@ export const tradePokemonRecordSchema = z.strictObject({
   ballItemId: z.number().int().nonnegative(),
   canGigantamax: z.boolean(),
   dynamaxLevel: z.number().int().nonnegative(),
+  editorFamily: z.enum(['swsh', 'sv']).default('swsh'),
+  eventLabel: z.string().nullable().default(null),
   field03: z.number().int().nonnegative(),
   flawlessIvCount: z.number().int().nullable(),
   form: z.number().int().nonnegative(),
@@ -1314,6 +1316,7 @@ export const tradePokemonRecordSchema = z.strictObject({
   memoryFeel: z.number().int().nonnegative(),
   memoryIntensity: z.number().int().nonnegative(),
   memoryTextVariable: z.number().int().nonnegative(),
+  moves: z.array(tradePokemonMoveSchema).default([]),
   nature: z.number().int().nonnegative(),
   natureLabel: z.string(),
   otGender: z.number().int().nonnegative(),
@@ -1329,6 +1332,11 @@ export const tradePokemonRecordSchema = z.strictObject({
   shinyLockLabel: z.string(),
   species: z.string(),
   speciesId: z.number().int().nonnegative(),
+  scaleMode: z.number().int().nullable().default(null),
+  scaleModeLabel: z.string().nullable().default(null),
+  scaleValue: z.number().int().nullable().default(null),
+  teraType: z.number().int().nullable().default(null),
+  teraTypeLabel: z.string().nullable().default(null),
   tradeIndex: z.number().int().nonnegative(),
   trainerId: z.number().int().nonnegative(),
   unknownRequirement: z.number().int().nonnegative()
@@ -1343,6 +1351,7 @@ export const tradePokemonWorkflowStatsSchema = z.strictObject({
 export const tradePokemonWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(tradePokemonEditableFieldSchema),
+  editorFamily: z.enum(['swsh', 'sv']).default('swsh'),
   stats: tradePokemonWorkflowStatsSchema,
   summary: workflowSummarySchema,
   trades: z.array(tradePokemonRecordSchema)
