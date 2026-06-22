@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { App } from '../../App';
 import { type PlacementWorkflow } from '../../bridge/contracts';
+import { type UpdatePlacementObjectFieldsRequest } from '../../bridge/svBatchFieldContracts';
 import { createMockProjectBridge } from '../../testSupport/appTestFixtures';
 import { useWorkbenchStore } from '../../workbenchStore';
 import { getPlacementCategories, getPlacementCategoryId } from './placementUi';
@@ -198,25 +199,25 @@ describe('PlacementSection', () => {
     const user = userEvent.setup();
     const workflow = createSvPlacementWorkflow();
     const loadPlacementWorkflow = vi.fn(async () => ({ workflow }));
-    const updatePlacementObjectField = vi.fn(async (request) => ({
+    const updatePlacementObjectFields = vi.fn(async (request: UpdatePlacementObjectFieldsRequest) => ({
       diagnostics: [],
       session: {
         hasPendingChanges: true,
         pendingEdits: [
           ...(request.session?.pendingEdits ?? []),
-          {
+          ...request.updates.map((update) => ({
             domain: 'workflow.placement',
-            field: request.field,
-            newValue: request.value,
-            recordId: request.objectId,
+            field: update.field,
+            newValue: update.value,
+            recordId: update.objectId,
             sources: [
               {
                 layer: 'layered' as const,
                 relativePath: 'romfs/world/data/item/hiddenItemDataTable/hiddenItemDataTable_array.bin'
               }
             ],
-            summary: `Set hidden item ${request.field} to ${request.value}.`
-          }
+            summary: `Set hidden item ${update.field} to ${update.value}.`
+          }))
         ],
         sessionId: 'session-1'
       },
@@ -224,7 +225,7 @@ describe('PlacementSection', () => {
     }));
 
     render(
-      <App bridge={createMockProjectBridge({ loadPlacementWorkflow, updatePlacementObjectField }, true)} />
+      <App bridge={createMockProjectBridge({ loadPlacementWorkflow, updatePlacementObjectFields }, true)} />
     );
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
@@ -247,29 +248,26 @@ describe('PlacementSection', () => {
     await user.type(countInput, '4');
     await user.click(screen.getByRole('button', { name: 'Save Object' }));
 
-    await waitFor(() => expect(updatePlacementObjectField).toHaveBeenCalledTimes(3));
-    expect(updatePlacementObjectField).toHaveBeenNthCalledWith(
-      1,
+    await waitFor(() => expect(updatePlacementObjectFields).toHaveBeenCalledTimes(1));
+    expect(updatePlacementObjectFields).toHaveBeenCalledWith(
       expect.objectContaining({
-        field: 'hidden.item1.itemId',
-        objectId: 'hidden-items:paldea:0',
-        value: '5'
-      })
-    );
-    expect(updatePlacementObjectField).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        field: 'hidden.item1.chance',
-        objectId: 'hidden-items:paldea:0',
-        value: '175'
-      })
-    );
-    expect(updatePlacementObjectField).toHaveBeenNthCalledWith(
-      3,
-      expect.objectContaining({
-        field: 'hidden.item1.count',
-        objectId: 'hidden-items:paldea:0',
-        value: '4'
+        updates: [
+          {
+            field: 'hidden.item1.itemId',
+            objectId: 'hidden-items:paldea:0',
+            value: '5'
+          },
+          {
+            field: 'hidden.item1.chance',
+            objectId: 'hidden-items:paldea:0',
+            value: '175'
+          },
+          {
+            field: 'hidden.item1.count',
+            objectId: 'hidden-items:paldea:0',
+            value: '4'
+          }
+        ]
       })
     );
   });

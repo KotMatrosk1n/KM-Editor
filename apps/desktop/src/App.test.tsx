@@ -1037,6 +1037,20 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Check for Updates' })).toBeInTheDocument();
   });
 
+  it('keeps S/V cache settings out of SwSh settings', async () => {
+    const user = userEvent.setup();
+    const getSvCacheStatus = vi.fn(async () => ({ status: createSvCacheStatusFixture() }));
+
+    render(<App bridge={createMockProjectBridge({ getSvCacheStatus })} />);
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Scarlet/Violet Data Cache' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Clear Cache/ })).not.toBeInTheDocument();
+    expect(getSvCacheStatus).not.toHaveBeenCalled();
+  });
+
   it('shows S/V cache settings and confirms cache clearing', async () => {
     const user = userEvent.setup();
     const updateSvCacheSettings = vi.fn(async (request: Parameters<ProjectBridge['updateSvCacheSettings']>[0]) => ({
@@ -1056,6 +1070,13 @@ describe('App', () => {
       })
     }));
 
+    useWorkbenchStore.setState((state) => ({
+      draftPaths: {
+        ...state.draftPaths,
+        selectedGame: 'scarlet'
+      }
+    }));
+
     render(
       <App
         bridge={createMockProjectBridge({
@@ -1071,13 +1092,19 @@ describe('App', () => {
       await screen.findByRole('heading', { name: 'Scarlet/Violet Data Cache' })
     ).toBeInTheDocument();
     expect(screen.getByText('4 MB')).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Maximum cache size')).getAllByRole('option')
+        .map((option) => option.textContent)
+    ).toEqual(['1 GB', '5 GB', '10 GB', '25 GB', '50 GB']);
 
     await user.click(screen.getByRole('radio', { name: /Performance/ }));
 
     expect(updateSvCacheSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'performance',
-        paths: null
+        paths: expect.objectContaining({
+          selectedGame: 'scarlet'
+        })
       })
     );
 
@@ -1085,7 +1112,68 @@ describe('App', () => {
     const dialog = screen.getByRole('dialog', { name: 'Clear S/V Cache?' });
     await user.click(within(dialog).getByRole('button', { name: 'Clear Cache' }));
 
-    expect(clearSvCache).toHaveBeenCalledWith({ activePaths: null });
+    expect(clearSvCache).toHaveBeenCalledWith({
+      activePaths: expect.objectContaining({
+        selectedGame: 'scarlet'
+      })
+    });
+  });
+
+  it('shows refresh feedback when the S/V cache size stays the same', async () => {
+    const user = userEvent.setup();
+    const refreshedStatus = createSvCacheStatusFixture();
+    let resolveRefresh:
+      | ((value: { status: ReturnType<typeof createSvCacheStatusFixture> }) => void)
+      | null = null;
+    const getSvCacheStatus = vi.fn()
+      .mockResolvedValueOnce({ status: createSvCacheStatusFixture() })
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ status: ReturnType<typeof createSvCacheStatusFixture> }>((resolve) => {
+            resolveRefresh = resolve;
+          })
+      );
+
+    useWorkbenchStore.setState((state) => ({
+      draftPaths: {
+        ...state.draftPaths,
+        selectedGame: 'scarlet'
+      }
+    }));
+
+    render(<App bridge={createMockProjectBridge({ getSvCacheStatus })} />);
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Scarlet/Violet Data Cache' })
+    ).toBeInTheDocument();
+    const originalCacheSize = await screen.findByText('4 MB');
+
+    await user.click(screen.getByRole('button', { name: 'Refresh Cache Size' }));
+
+    expect(screen.getByRole('button', { name: 'Refreshing' })).toHaveAttribute(
+      'aria-busy',
+      'true'
+    );
+    expect(getSvCacheStatus).toHaveBeenCalledTimes(2);
+    expect(getSvCacheStatus.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        paths: expect.objectContaining({
+          selectedGame: 'scarlet'
+        })
+      })
+    );
+
+    act(() => {
+      resolveRefresh?.({ status: refreshedStatus });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Refresh Cache Size' })).toBeEnabled()
+    );
+    await waitFor(() => expect(screen.getByText('4 MB')).not.toBe(originalCacheSize));
+    expect(screen.getByText('4 MB')).toHaveClass('sv-cache-size-value-refreshed');
   });
 
   it('validates and opens a read-only project shell state', async () => {

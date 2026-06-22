@@ -671,7 +671,7 @@ const svCacheModeOptions: Array<{
 ];
 
 const svCacheLimitOptions = [
-  { bytes: 2 * 1024 ** 3, label: '2 GB' },
+  { bytes: 1 * 1024 ** 3, label: '1 GB' },
   { bytes: 5 * 1024 ** 3, label: '5 GB' },
   { bytes: 10 * 1024 ** 3, label: '10 GB' },
   { bytes: 25 * 1024 ** 3, label: '25 GB' },
@@ -1828,6 +1828,8 @@ export function App({
   const [workProgress, setWorkProgress] = useState<WorkProgressState | null>(null);
   const [svCacheStatus, setSvCacheStatus] = useState<SvCacheStatus | null>(null);
   const [isSvCacheWarming, setIsSvCacheWarming] = useState(false);
+  const [isSvCacheRefreshing, setIsSvCacheRefreshing] = useState(false);
+  const [svCacheRefreshTick, setSvCacheRefreshTick] = useState(0);
   const [isSvCacheClearing, setIsSvCacheClearing] = useState(false);
   const [isSvCacheClearConfirmOpen, setIsSvCacheClearConfirmOpen] = useState(false);
   const [svOutputConfirmation, setSvOutputConfirmation] =
@@ -2300,6 +2302,16 @@ export function App({
   }, [activeSection, activeSectionCanStayMounted, setActiveSection]);
 
   useEffect(() => {
+    if (!isScarletVioletGame(selectedGame)) {
+      svCacheWarmupRunRef.current += 1;
+      setIsSvCacheWarming(false);
+      setIsSvCacheRefreshing(false);
+      setIsSvCacheClearing(false);
+      setIsSvCacheClearConfirmOpen(false);
+      setSvCacheStatus(null);
+      return;
+    }
+
     let isDisposed = false;
 
     void bridge.getSvCacheStatus({ paths: null })
@@ -2317,7 +2329,7 @@ export function App({
     return () => {
       isDisposed = true;
     };
-  }, [bridge]);
+  }, [bridge, selectedGame]);
 
   const startSvCacheWarmup = useCallback(
     async (paths: ReturnType<typeof toProjectPaths>, health: ProjectHealth) => {
@@ -2418,15 +2430,20 @@ export function App({
   );
 
   const handleRefreshSvCacheStatus = useCallback(async () => {
-    const paths = isScarletVioletGame(selectedGame)
-      ? toProjectPaths(draftPathsRef.current)
-      : null;
+    if (!isScarletVioletGame(selectedGame)) {
+      return;
+    }
 
+    const paths = toProjectPaths(draftPathsRef.current);
+    setIsSvCacheRefreshing(true);
     try {
       const response = await bridge.getSvCacheStatus({ paths });
       setSvCacheStatus(response.status);
+      setSvCacheRefreshTick((currentTick) => currentTick + 1);
     } catch (error) {
       setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsSvCacheRefreshing(false);
     }
   }, [bridge, selectedGame]);
 
@@ -8383,13 +8400,16 @@ const resetModMergerPlan = () => {
             <SettingsSection
               appVersion={appVersion}
               isSvCacheClearing={isSvCacheClearing}
+              isSvCacheRefreshing={isSvCacheRefreshing}
               isSvCacheWarming={isSvCacheWarming}
               onChangeSvCacheLimit={handleChangeSvCacheLimit}
               onChangeSvCacheMode={handleChangeSvCacheMode}
               onCheckForUpdates={handleCheckForUpdates}
               onClearSvCache={() => setIsSvCacheClearConfirmOpen(true)}
               onRefreshSvCacheStatus={() => void handleRefreshSvCacheStatus()}
+              selectedGame={selectedGame}
               status={updateCheckStatus}
+              svCacheRefreshTick={svCacheRefreshTick}
               svCacheStatus={svCacheStatus}
             />
           ) : null}
@@ -26327,24 +26347,30 @@ type PendingEditContext = {
 function SettingsSection({
   appVersion,
   isSvCacheClearing,
+  isSvCacheRefreshing,
   isSvCacheWarming,
   onChangeSvCacheLimit,
   onChangeSvCacheMode,
   onCheckForUpdates,
   onClearSvCache,
   onRefreshSvCacheStatus,
+  selectedGame,
   status,
+  svCacheRefreshTick,
   svCacheStatus
 }: {
   appVersion: string;
   isSvCacheClearing: boolean;
+  isSvCacheRefreshing: boolean;
   isSvCacheWarming: boolean;
   onChangeSvCacheLimit: (maxCacheSizeBytes: number) => void;
   onChangeSvCacheMode: (mode: SvCacheMode) => void;
   onCheckForUpdates: () => void;
   onClearSvCache: () => void;
   onRefreshSvCacheStatus: () => void;
+  selectedGame: ProjectGame;
   status: UpdateCheckStatus;
+  svCacheRefreshTick: number;
   svCacheStatus: SvCacheStatus | null;
 }) {
   const isBusy =
@@ -26356,7 +26382,8 @@ function SettingsSection({
   const activeCacheMode = svCacheStatus?.settings.mode ?? 'balanced';
   const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? (10 * 1024 ** 3);
   const cacheSizeLabel = formatByteSize(svCacheStatus?.cacheSizeBytes ?? 0);
-  const isCacheControlBusy = isSvCacheClearing || isSvCacheWarming;
+  const isCacheControlBusy = isSvCacheClearing || isSvCacheRefreshing || isSvCacheWarming;
+  const canShowSvCacheSettings = isScarletVioletGame(selectedGame);
 
   return (
     <section aria-labelledby="settings-heading" className="panel wide-panel">
@@ -26392,86 +26419,101 @@ function SettingsSection({
         </p>
       </div>
 
-      <section aria-labelledby="sv-cache-settings-heading" className="settings-subsection">
-        <div className="settings-subsection-heading">
-          <Layers aria-hidden="true" size={18} />
-          <div>
-            <h3 id="sv-cache-settings-heading">Scarlet/Violet Data Cache</h3>
-            <p>Controls how aggressively S/V Trinity data is cached between editor loads.</p>
+      {canShowSvCacheSettings ? (
+        <section aria-labelledby="sv-cache-settings-heading" className="settings-subsection">
+          <div className="settings-subsection-heading">
+            <Layers aria-hidden="true" size={18} />
+            <div>
+              <h3 id="sv-cache-settings-heading">Scarlet/Violet Data Cache</h3>
+              <p>Controls how aggressively S/V Trinity data is cached between editor loads.</p>
+            </div>
           </div>
-        </div>
 
-        <div className="sv-cache-mode-options" role="radiogroup" aria-label="S/V cache mode">
-          {svCacheModeOptions.map((option) => {
-            const isSelected = option.id === activeCacheMode;
+          <div className="sv-cache-mode-options" role="radiogroup" aria-label="S/V cache mode">
+            {svCacheModeOptions.map((option) => {
+              const isSelected = option.id === activeCacheMode;
 
-            return (
-              <button
-                aria-checked={isSelected}
-                className={`sv-cache-mode-option${isSelected ? ' sv-cache-mode-option-selected' : ''}`}
-                disabled={isCacheControlBusy || isSelected}
-                key={option.id}
-                onClick={() => onChangeSvCacheMode(option.id)}
-                role="radio"
-                type="button"
+              return (
+                <button
+                  aria-checked={isSelected}
+                  className={`sv-cache-mode-option${isSelected ? ' sv-cache-mode-option-selected' : ''}`}
+                  disabled={isCacheControlBusy || isSelected}
+                  key={option.id}
+                  onClick={() => onChangeSvCacheMode(option.id)}
+                  role="radio"
+                  type="button"
+                >
+                  <span>
+                    {option.label}
+                    {option.recommended ? <small>Recommended</small> : null}
+                  </span>
+                  <p>{option.description}</p>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="sv-cache-settings-row">
+            <label className="path-field sv-cache-limit-field">
+              <span>Maximum cache size</span>
+              <select
+                disabled={isSvCacheClearing}
+                onChange={(event) => onChangeSvCacheLimit(Number(event.target.value))}
+                value={activeCacheLimit}
               >
-                <span>
-                  {option.label}
-                  {option.recommended ? <small>Recommended</small> : null}
-                </span>
-                <p>{option.description}</p>
-              </button>
-            );
-          })}
-        </div>
+                {svCacheLimitOptions.map((option) => (
+                  <option key={option.bytes} value={option.bytes}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        <div className="sv-cache-settings-row">
-          <label className="path-field sv-cache-limit-field">
-            <span>Maximum cache size</span>
-            <select
-              disabled={isSvCacheClearing}
-              onChange={(event) => onChangeSvCacheLimit(Number(event.target.value))}
-              value={activeCacheLimit}
+            <div aria-live="polite" className="metric sv-cache-size-metric">
+              <span className="metric-label">Current cache size</span>
+              <span
+                className={`metric-value metric-value-small sv-cache-size-value${
+                  svCacheRefreshTick > 0 ? ' sv-cache-size-value-refreshed' : ''
+                }`}
+                key={svCacheRefreshTick}
+              >
+                {cacheSizeLabel}
+              </span>
+            </div>
+
+            <button
+              aria-busy={isSvCacheRefreshing || undefined}
+              className="secondary-button sv-cache-refresh-button"
+              disabled={isSvCacheClearing || isSvCacheRefreshing}
+              onClick={onRefreshSvCacheStatus}
+              type="button"
             >
-              {svCacheLimitOptions.map((option) => (
-                <option key={option.bytes} value={option.bytes}>
-                  {option.label}
-                </option>
-              ))}
-              {svCacheLimitOptions.some((option) => option.bytes === activeCacheLimit) ? null : (
-                <option value={activeCacheLimit}>{formatByteSize(activeCacheLimit)}</option>
-              )}
-            </select>
-          </label>
-
-          <Metric label="Current cache size" value={cacheSizeLabel} />
-
-          <button
-            className="secondary-button"
-            disabled={isSvCacheClearing}
-            onClick={onRefreshSvCacheStatus}
-            type="button"
-          >
-            <RefreshCw aria-hidden="true" size={18} />
-            <span>Refresh Cache Size</span>
-          </button>
-          <button
-            aria-busy={isSvCacheClearing || undefined}
-            className="danger-button"
-            disabled={isSvCacheClearing}
-            onClick={onClearSvCache}
-            type="button"
-          >
-            <BusyActionContent
-              busyLabel="Clearing Cache"
-              icon={<Trash2 aria-hidden="true" size={18} />}
-              isBusy={isSvCacheClearing}
-              label={`Clear Cache (${cacheSizeLabel})`}
-              size={18}
-            />
-          </button>
-        </div>
-      </section>
+              <BusyActionContent
+                busyLabel="Refreshing"
+                icon={<RefreshCw aria-hidden="true" size={18} />}
+                isBusy={isSvCacheRefreshing}
+                label="Refresh Cache Size"
+                size={18}
+              />
+            </button>
+            <button
+              aria-busy={isSvCacheClearing || undefined}
+              className="danger-button"
+              disabled={isSvCacheClearing}
+              onClick={onClearSvCache}
+              type="button"
+            >
+              <BusyActionContent
+                busyLabel="Clearing Cache"
+                icon={<Trash2 aria-hidden="true" size={18} />}
+                isBusy={isSvCacheClearing}
+                label={`Clear Cache (${cacheSizeLabel})`}
+                size={18}
+              />
+            </button>
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }
