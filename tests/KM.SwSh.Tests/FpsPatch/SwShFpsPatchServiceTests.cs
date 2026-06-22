@@ -30,10 +30,10 @@ public sealed class SwShFpsPatchServiceTests
         Assert.Equal(ProjectGame.Shield, apply.Status.DetectedGame);
         Assert.Equal(15, apply.Status.PatchedMainSiteCount);
         Assert.Equal(15, apply.Status.MainSiteCount);
-        Assert.Equal(1066, apply.Status.PatchedRomFsFileCount);
-        Assert.Equal(1066, apply.Status.ManagedRomFsFileCount);
+        Assert.Equal(1074, apply.Status.PatchedRomFsFileCount);
+        Assert.Equal(1074, apply.Status.ManagedRomFsFileCount);
         Assert.Equal(0, apply.Status.ConflictingRomFsFileCount);
-        Assert.Equal(1067, apply.ApplyResult.WrittenFiles.Count);
+        Assert.Equal(1075, apply.ApplyResult.WrittenFiles.Count);
 
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         Assert.True(File.Exists(outputMainPath));
@@ -44,6 +44,12 @@ public sealed class SwShFpsPatchServiceTests
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ew052.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/eg_ball01.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee101.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee004.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee004_g.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee005.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee005_g.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee006.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee006_g.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee316.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee400.bseq"));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/ee411.bseq"));
@@ -53,7 +59,13 @@ public sealed class SwShFpsPatchServiceTests
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/demo/sequence/r2d020.bseq"));
         Assert.False(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.TitleDemoRelativePath));
         Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.TitleDemoRelativePath));
+        Assert.False(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.EvolutionDemoRelativePath));
+        Assert.False(SwShFpsPatchService.IsManagedRomFsPath(SwShFpsRomFsTestFixtures.EvolutionAfterDemoRelativePath));
+        Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.EvolutionDemoRelativePath));
+        Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.EvolutionAfterDemoRelativePath));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/battle/waza/sequence/d230.bseq"));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.ItemKinomiAnimationRelativePath));
+        Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.BerryKinomiAnimationRelativePath));
         Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.BattleCameraRelativePath));
         Assert.True(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.BattleUiArchiveRelativePath));
         Assert.True(service.IsGeneratedRomFsOutput(paths, "romfs/bin/archive/demo/share/anime/a_pl0110.gfpak"));
@@ -66,6 +78,9 @@ public sealed class SwShFpsPatchServiceTests
         Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.PlayerThrowCameraRelativePath));
         Assert.False(service.IsGeneratedRomFsOutput(paths, SwShFpsRomFsTestFixtures.PlayerThrowBattleModelRelativePath));
         Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee101.bseq")));
+        Assert.Equal(23u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee004.bseq")));
+        Assert.Equal(23u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee005.bseq")));
+        Assert.Equal(23u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee006.bseq")));
         Assert.Equal(23u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee316.bseq")));
         Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee400.bseq")));
         Assert.Equal(20u, ReadFrameCount(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee411.bseq")));
@@ -103,6 +118,16 @@ public sealed class SwShFpsPatchServiceTests
                 recoveryArchive.GetFileByName("unit_obj_pc_recovery01_ballflash01_recovery.gfbanm")).FrameRate);
         Assert.Equal(
             30u,
+            SwShFpsTrainerThrowPatcher.InspectAnimation(File.ReadAllBytes(Path.Combine(
+                temp.OutputRootPath,
+                SwShFpsRomFsTestFixtures.ItemKinomiAnimationRelativePath.Replace('/', Path.DirectorySeparatorChar)))).FrameRate);
+        Assert.Equal(
+            30u,
+            SwShFpsTrainerThrowPatcher.InspectAnimation(File.ReadAllBytes(Path.Combine(
+                temp.OutputRootPath,
+                SwShFpsRomFsTestFixtures.BerryKinomiAnimationRelativePath.Replace('/', Path.DirectorySeparatorChar)))).FrameRate);
+        Assert.Equal(
+            30u,
             SwShFpsTrainerThrowPatcher.InspectAnimation(
                 recoveryArchive.GetFileByName("unit_obj_pc_recovery01_text01_open.gfbanm")).FrameRate);
         Assert.False(File.Exists(Path.Combine(
@@ -123,6 +148,12 @@ public sealed class SwShFpsPatchServiceTests
         Assert.False(File.Exists(Path.Combine(
             temp.OutputRootPath,
             SwShFpsRomFsTestFixtures.TitleDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.EvolutionDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.EvolutionAfterDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
 
         var restore = service.Restore(paths);
 
@@ -131,11 +162,14 @@ public sealed class SwShFpsPatchServiceTests
         Assert.Equal(ProjectGame.Shield, restore.Status.DetectedGame);
         Assert.Equal(0, restore.Status.PatchedMainSiteCount);
         Assert.Equal(0, restore.Status.PatchedRomFsFileCount);
-        Assert.Equal(1066, restore.Status.ManagedRomFsFileCount);
+        Assert.Equal(1074, restore.Status.ManagedRomFsFileCount);
         Assert.False(File.Exists(outputMainPath));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ew052.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "eg_ball01.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee101.bseq")));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee004.bseq")));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee005.bseq")));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee006.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee411.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "ee630.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "demo", "sequence", "d010.bseq")));
@@ -150,6 +184,18 @@ public sealed class SwShFpsPatchServiceTests
         Assert.False(File.Exists(Path.Combine(
             temp.OutputRootPath,
             SwShFpsRomFsTestFixtures.TitleDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.EvolutionDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.EvolutionAfterDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.ItemKinomiAnimationRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.BerryKinomiAnimationRelativePath.Replace('/', Path.DirectorySeparatorChar))));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "battle", "waza", "sequence", "d230.bseq")));
         Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "bin", "archive", "demo", "share", "anime", "a_pl0110.gfpak")));
         Assert.False(File.Exists(Path.Combine(
@@ -230,7 +276,7 @@ public sealed class SwShFpsPatchServiceTests
     }
 
     [Fact]
-    public void ApplyRemovesLegacyTitleDemoOutput()
+    public void ApplyRemovesLegacyExcludedDemoOutputs()
     {
         using var temp = TemporarySwShProject.Create();
         var paths = temp.Paths with { SelectedGame = ProjectGame.Sword };
@@ -243,6 +289,8 @@ public sealed class SwShFpsPatchServiceTests
             SwShFpsBseqPatcher.OpeningDemoTimelineScale,
             out _);
         temp.WriteOutputFile(SwShFpsRomFsTestFixtures.TitleDemoRelativePath, legacyTitleDemoOutput);
+        temp.WriteOutputFile(SwShFpsRomFsTestFixtures.EvolutionDemoRelativePath, legacyTitleDemoOutput);
+        temp.WriteOutputFile(SwShFpsRomFsTestFixtures.EvolutionAfterDemoRelativePath, legacyTitleDemoOutput);
         var service = new SwShFpsPatchService();
 
         var apply = service.Apply(paths);
@@ -251,6 +299,12 @@ public sealed class SwShFpsPatchServiceTests
         Assert.False(File.Exists(Path.Combine(
             temp.OutputRootPath,
             SwShFpsRomFsTestFixtures.TitleDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.EvolutionDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            SwShFpsRomFsTestFixtures.EvolutionAfterDemoRelativePath.Replace('/', Path.DirectorySeparatorChar))));
     }
 
     [Fact]

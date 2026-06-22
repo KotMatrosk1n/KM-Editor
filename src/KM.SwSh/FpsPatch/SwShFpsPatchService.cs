@@ -24,6 +24,7 @@ public sealed class SwShFpsPatchService
     private const string BattleUiRootRelativePath = "romfs/bin/appli/battle/bin";
     private const string DemoSequenceRootInsideRomFs = "bin/demo/sequence";
     private const string DemoSequenceRootRelativePath = "romfs/bin/demo/sequence";
+    private const string BattleModelAnimationRootRelativePath = "romfs/bin/battle/waza/model/anm";
     private const string TrainerBallthrowCameraRootInsideRomFs = "bin/battle/waza/camera/ballthrow";
     private const string BattleModelAnimationRootInsideRomFs = "bin/battle/waza/model/anm";
     private const string LegacyTrainerBattleArchiveRootInsideRomFs = "bin/archive/chara/data/tr/anm";
@@ -54,10 +55,22 @@ public sealed class SwShFpsPatchService
         "battle_target_select_00",
         "battle_top_00",
     ];
+    private static readonly string[] ExcludedDemoSequenceBseqRelativePaths =
+    [
+        ExcludedTitleDemoBseqRelativePath,
+        "romfs/bin/demo/sequence/sd9110_evolution.bseq",
+        "romfs/bin/demo/sequence/sd9111_evolution_after.bseq",
+    ];
 
     private static readonly ManagedBseqTimingOverride[] RequiredManagedBseqFiles =
     [
         new("romfs/bin/battle/waza/sequence/d230.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee004.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee004_g.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee005.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee005_g.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee006.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
+        new("romfs/bin/battle/waza/sequence/ee006_g.bseq", SwShFpsBseqPatcher.MoveEffectTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee101.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee102.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
         new("romfs/bin/battle/waza/sequence/ee103.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
@@ -118,6 +131,12 @@ public sealed class SwShFpsPatchService
         new("romfs/bin/battle/waza/sequence/eg_ball03_crw.bseq", SwShFpsBseqPatcher.DynamaxBallTimelineScale),
     ];
 
+    private static readonly string[] RequiredManagedBattleModelAnimationFiles =
+    [
+        "romfs/bin/battle/waza/model/anm/ee006_kinomi.gfbanm",
+        "romfs/bin/battle/waza/model/anm/ew752_kinomi.gfbanm",
+    ];
+
     private static readonly IReadOnlyDictionary<string, double> ManagedBseqTimelineScales = RequiredManagedBseqFiles
         .Concat(OptionalManagedBseqScaleOverrides)
         .ToDictionary(file => file.RelativePath, file => file.Scale, StringComparer.OrdinalIgnoreCase);
@@ -140,6 +159,7 @@ public sealed class SwShFpsPatchService
             || IsManagedMoveEffectBseqPath(normalized)
             || IsManagedBattleCameraPath(normalized)
             || IsManagedBattleUiArchivePath(normalized)
+            || IsManagedBattleModelAnimationPath(normalized)
             || IsManagedDemoSequenceBseqPath(normalized)
             || string.Equals(
                 normalized,
@@ -225,7 +245,7 @@ public sealed class SwShFpsPatchService
         }
 
         RemoveLegacyTrainerThrowOutputs(paths, diagnostics, writtenFiles);
-        RemoveLegacyExcludedDemoSequenceOutput(paths, diagnostics, writtenFiles);
+        RemoveLegacyExcludedDemoSequenceOutputs(paths, diagnostics, writtenFiles);
 
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
         {
@@ -262,7 +282,7 @@ public sealed class SwShFpsPatchService
         RestoreMain(paths, diagnostics, writtenFiles);
         RestoreRomFsFiles(paths, diagnostics, writtenFiles);
         RemoveLegacyTrainerThrowOutputs(paths, diagnostics, writtenFiles);
-        RemoveLegacyExcludedDemoSequenceOutput(paths, diagnostics, writtenFiles);
+        RemoveLegacyExcludedDemoSequenceOutputs(paths, diagnostics, writtenFiles);
         DeleteManifest(paths, diagnostics);
 
         if (!diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
@@ -388,6 +408,11 @@ public sealed class SwShFpsPatchService
         foreach (var sourceFile in RequiredManagedBseqFiles)
         {
             PrepareManagedRomFsFile(paths, sourceFile.RelativePath, preparedFiles, diagnostics);
+        }
+
+        foreach (var relativePath in RequiredManagedBattleModelAnimationFiles)
+        {
+            PrepareManagedRomFsFile(paths, relativePath, preparedFiles, diagnostics);
         }
 
         PrepareManagedRomFsFile(paths, SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath, preparedFiles, diagnostics);
@@ -722,7 +747,7 @@ public sealed class SwShFpsPatchService
         }
     }
 
-    private static void RemoveLegacyExcludedDemoSequenceOutput(
+    private static void RemoveLegacyExcludedDemoSequenceOutputs(
         ProjectPaths paths,
         ICollection<ValidationDiagnostic> diagnostics,
         ICollection<ProjectFileReference> writtenFiles)
@@ -732,45 +757,48 @@ public sealed class SwShFpsPatchService
             return;
         }
 
-        var sourcePath = ResolveBaseRomFsPath(paths.BaseRomFsPath, ExcludedTitleDemoBseqRelativePath);
-        var targetPath = ResolveOutputPath(paths.OutputRootPath, ExcludedTitleDemoBseqRelativePath);
-        if (sourcePath is null || targetPath is null || !File.Exists(sourcePath) || !File.Exists(targetPath))
+        foreach (var relativePath in ExcludedDemoSequenceBseqRelativePaths)
         {
-            return;
-        }
-
-        try
-        {
-            var sourceBytes = File.ReadAllBytes(sourcePath);
-            var generated = ConvertBseq(sourceBytes, SwShFpsBseqPatcher.OpeningDemoTimelineScale);
-            var outputBytes = File.ReadAllBytes(targetPath);
-            if (!outputBytes.SequenceEqual(generated))
+            var sourcePath = ResolveBaseRomFsPath(paths.BaseRomFsPath, relativePath);
+            var targetPath = ResolveOutputPath(paths.OutputRootPath, relativePath);
+            if (sourcePath is null || targetPath is null || !File.Exists(sourcePath) || !File.Exists(targetPath))
             {
-                return;
+                continue;
             }
 
-            File.Delete(targetPath);
-            writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, ExcludedTitleDemoBseqRelativePath));
-        }
-        catch (IOException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"60FPS Patch could not remove a legacy title demo output: {exception.Message}",
-                file: ExcludedTitleDemoBseqRelativePath,
-                expected: "Deletable legacy 60FPS Patch title demo output"));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Warning,
-                $"60FPS Patch could not remove a legacy title demo output: {exception.Message}",
-                file: ExcludedTitleDemoBseqRelativePath,
-                expected: "Deletable legacy 60FPS Patch title demo output"));
-        }
-        catch (InvalidDataException)
-        {
-            // If the legacy conversion cannot be reproduced, leave the file in place.
+            try
+            {
+                var sourceBytes = File.ReadAllBytes(sourcePath);
+                var generated = ConvertBseq(sourceBytes, SwShFpsBseqPatcher.OpeningDemoTimelineScale);
+                var outputBytes = File.ReadAllBytes(targetPath);
+                if (!outputBytes.SequenceEqual(generated))
+                {
+                    continue;
+                }
+
+                File.Delete(targetPath);
+                writtenFiles.Add(new ProjectFileReference(ProjectFileLayer.Layered, relativePath));
+            }
+            catch (IOException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"60FPS Patch could not remove a legacy excluded demo output: {exception.Message}",
+                    file: relativePath,
+                    expected: "Deletable legacy 60FPS Patch demo output"));
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    $"60FPS Patch could not remove a legacy excluded demo output: {exception.Message}",
+                    file: relativePath,
+                    expected: "Deletable legacy 60FPS Patch demo output"));
+            }
+            catch (InvalidDataException)
+            {
+                // If the legacy conversion cannot be reproduced, leave the file in place.
+            }
         }
     }
 
@@ -993,6 +1021,11 @@ public sealed class SwShFpsPatchService
         foreach (var sourceFile in RequiredManagedBseqFiles)
         {
             AddRequiredManagedRomFsFile(baseRomFsPath, sourceFile.RelativePath, files, diagnostics);
+        }
+
+        foreach (var relativePath in RequiredManagedBattleModelAnimationFiles)
+        {
+            AddRequiredManagedRomFsFile(baseRomFsPath, relativePath, files, diagnostics);
         }
 
         AddRequiredManagedRomFsFile(
@@ -1399,6 +1432,11 @@ public sealed class SwShFpsPatchService
             return SwShFpsUiKeySelectPatcher.ConvertArchive(sourceBytes);
         }
 
+        if (IsManagedBattleModelAnimationPath(normalized))
+        {
+            return SwShFpsBattleModelAnimationPatcher.ConvertAnimationToHalfSpeed(sourceBytes);
+        }
+
         if (string.Equals(normalized, OpeningDemoBseqRelativePath, StringComparison.OrdinalIgnoreCase))
         {
             return SwShFpsBseqPatcher.ConvertOpeningDemoD010(sourceBytes, out _);
@@ -1440,6 +1478,7 @@ public sealed class SwShFpsPatchService
     {
         return string.Equals(normalizedRelativePath, OpeningDemoBseqRelativePath, StringComparison.OrdinalIgnoreCase)
             || ManagedBseqTimelineScales.ContainsKey(normalizedRelativePath)
+            || IsManagedBattleModelAnimationPath(normalizedRelativePath)
             || string.Equals(
                 normalizedRelativePath,
                 SwShFpsDemoAudiencePatcher.AudienceArchiveRelativePath,
@@ -1485,16 +1524,24 @@ public sealed class SwShFpsPatchService
         return ManagedBattleUiArchiveFileNamePrefixes.Any(prefix => fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
+    private static bool IsManagedBattleModelAnimationPath(string normalizedRelativePath)
+    {
+        return normalizedRelativePath.StartsWith(BattleModelAnimationRootRelativePath + "/", StringComparison.OrdinalIgnoreCase)
+            && normalizedRelativePath.EndsWith(".gfbanm", StringComparison.OrdinalIgnoreCase)
+            && RequiredManagedBattleModelAnimationFiles.Contains(normalizedRelativePath, StringComparer.OrdinalIgnoreCase);
+    }
+
     private static bool IsManagedDemoSequenceBseqPath(string normalizedRelativePath)
     {
         return normalizedRelativePath.StartsWith(DemoSequenceRootRelativePath + "/", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(normalizedRelativePath, ExcludedTitleDemoBseqRelativePath, StringComparison.OrdinalIgnoreCase)
+            && !ExcludedDemoSequenceBseqRelativePaths.Contains(normalizedRelativePath, StringComparer.OrdinalIgnoreCase)
             && normalizedRelativePath.EndsWith(".bseq", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsExcludedDemoSequenceBseqFileName(string fileName)
     {
-        return string.Equals(fileName, Path.GetFileName(ExcludedTitleDemoBseqRelativePath), StringComparison.OrdinalIgnoreCase);
+        return ExcludedDemoSequenceBseqRelativePaths.Any(
+            relativePath => string.Equals(fileName, Path.GetFileName(relativePath), StringComparison.OrdinalIgnoreCase));
     }
 
     private static void ValidateEditableProject(
