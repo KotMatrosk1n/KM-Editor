@@ -113,6 +113,8 @@ public static class KmCommandNames
     public const string ImportRandomizerSeed = "randomizer.seed.import";
     public const string ApplyRandomizer = "randomizer.apply";
     public const string RestoreRandomizer = "randomizer.restore";
+    public const string LoadGameDumpWorkflow = "gameDump.load";
+    public const string RunGameDump = "gameDump.run";
     public const string StartEditSession = "editSession.start";
     public const string GetEditSession = "editSession.get";
     public const string DiscardEditSession = "editSession.discard";

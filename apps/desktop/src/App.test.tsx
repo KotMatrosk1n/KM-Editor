@@ -56,6 +56,7 @@ import {
 } from './bridge/contracts';
 import { type ProjectBridge } from './bridge/projectBridge';
 import { type DesktopServices, type NativeUpdate } from './desktopServices';
+import { LocalizationProvider, languageStorageKey } from './localization';
 import { useWorkbenchStore } from './workbenchStore';
 
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
@@ -388,15 +389,16 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Tools' }));
     expect(screen.getByRole('button', { name: '60FPS Patch' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Randomizer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Game Dump' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mod Merger' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Spreadsheet Import' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dump Importer' })).toBeInTheDocument();
     expect(
       within(navigation)
         .getAllByRole('button')
         .filter((button) => button.classList.contains('nav-child-button'))
         .map((button) => button.textContent)
-        .slice(-4)
-    ).toEqual(['60FPS Patch', 'Randomizer', 'Mod Merger', 'Spreadsheet Import']);
+        .slice(-5)
+    ).toEqual(['60FPS Patch', 'Randomizer', 'Game Dump', 'Dump Importer', 'Mod Merger']);
 
     await user.click(screen.getByRole('button', { name: 'Hooks' }));
     expect(screen.getByRole('button', { name: 'Bag Hook' })).toBeInTheDocument();
@@ -512,7 +514,7 @@ describe('App', () => {
         ['trainers', 'Trainers'], ['encounters', 'Wild Encounters'], ['placement', 'Placement'],
         ['raidBattles', 'Raid Battles'], ['flagworkSave', 'Flagwork and Save Inspectors'],
         ['bagHook', 'Bag Hook'], ['royalCandy', 'Royal Candy Workflows'], ['shinyRate', 'Shiny Rate'], ['typeChart', 'Type Chart'],
-        ['spreadsheetImport', 'Spreadsheet Import'], ['randomizer', 'Randomizer'], ['modMerger', 'S/V Mod Merger']
+        ['spreadsheetImport', 'Dump Importer'], ['randomizer', 'Randomizer'], ['modMerger', 'S/V Mod Merger']
       ].map(([id, label]) => createWorkflowSummary(id, label))
     }));
     useWorkbenchStore.setState({
@@ -558,12 +560,13 @@ describe('App', () => {
     ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Tools' }));
+    expect(within(navigation).getByRole('button', { name: 'Game Dump' })).toBeInTheDocument();
     expect(within(navigation).getByRole('button', { name: 'Mod Merger' })).toBeInTheDocument();
     expect(
       within(navigation).queryByRole('button', { name: '60FPS Patch' })
     ).not.toBeInTheDocument();
     expect(
-      within(navigation).queryByRole('button', { name: 'Spreadsheet Import' })
+      within(navigation).queryByRole('button', { name: 'Dump Importer' })
     ).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('button', { name: 'Randomizer' })).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('button', { name: 'Hooks' })).not.toBeInTheDocument();
@@ -997,6 +1000,75 @@ describe('App', () => {
     expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
   });
 
+  it('generates game dump files from Tools after destination confirmation', async () => {
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge({}, true);
+    let resolveRunGameDump!: (
+      response: Awaited<ReturnType<typeof baseBridge.runGameDump>>
+    ) => void;
+    const runGameDump = vi.fn<ProjectBridge['runGameDump']>(
+      (_request) =>
+        new Promise<Awaited<ReturnType<typeof baseBridge.runGameDump>>>((resolve) => {
+          resolveRunGameDump = resolve;
+        })
+    );
+    const pickFolder = vi.fn(async () => 'C:/dumps/km');
+
+    render(
+      <App
+        bridge={{ ...baseBridge, runGameDump }}
+        desktopServices={createMockDesktopServices({ pickFolder })}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(await screen.findByRole('button', { name: 'Tools' }));
+    await user.click(screen.getByRole('button', { name: 'Game Dump' }));
+
+    expect(await screen.findByText('Items')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Browse for destination folder' }));
+    expect(pickFolder).toHaveBeenCalledWith({
+      defaultPath: undefined,
+      title: 'Select Game Dump destination'
+    });
+    expect(screen.getByLabelText('Destination folder')).toHaveValue('C:/dumps/km');
+
+    await user.click(screen.getByRole('button', { name: 'Generate Dump Files' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Generate Dump Files' });
+    expect(within(dialog).getByText(/will be overwritten/i)).toBeInTheDocument();
+    expect(within(dialog).getByText('Selected categories')).toBeInTheDocument();
+    expect(within(dialog).getByText('Destination')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Generate Dump Files' }));
+
+    await waitFor(() => expect(runGameDump).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('progressbar', { name: 'Game Dump progress' })).toBeInTheDocument();
+    expect(screen.getByText('Writing selected dump files.')).toBeInTheDocument();
+    expect(runGameDump.mock.calls[0]?.[0]).toMatchObject({
+      destinationFolder: 'C:/dumps/km',
+      selections: [
+        { categoryId: 'items', format: 'tsvAndJson' },
+        { categoryId: 'pokemon', format: 'tsvAndJson' }
+      ]
+    });
+    resolveRunGameDump({
+      result: {
+        destinationFolder: 'C:/dumps/km',
+        diagnostics: [],
+        succeeded: true,
+        writtenFiles: [
+          { categoryId: 'items', relativePath: 'Items/items.tsv', sizeBytes: 128 },
+          { categoryId: 'manifest', relativePath: 'manifest.json', sizeBytes: 256 }
+        ]
+      }
+    });
+    expect(await screen.findByRole('heading', { name: 'Dump files generated' })).toBeInTheDocument();
+    expect(screen.getByText('Dump files are ready in the selected destination.')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Game Dump progress' })).toHaveAttribute(
+      'aria-valuenow',
+      '100'
+    );
+  });
+
   it('replaces existing editable field contents when typing after click', async () => {
     const user = userEvent.setup();
     useWorkbenchStore.setState({
@@ -1048,6 +1120,34 @@ describe('App', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Scarlet/Violet Data Cache' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Clear Cache/ })).not.toBeInTheDocument();
+    expect(getSvCacheStatus).not.toHaveBeenCalled();
+  });
+
+  it('switches the Settings language without showing S/V-only cache controls for SwSh', async () => {
+    const user = userEvent.setup();
+    const getSvCacheStatus = vi.fn(async () => ({ status: createSvCacheStatusFixture() }));
+
+    render(
+      <LocalizationProvider>
+        <App bridge={createMockProjectBridge({ getSvCacheStatus })} />
+      </LocalizationProvider>
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(
+      screen.getByRole('heading', { name: 'Language and Localization' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Scarlet/Violet Data Cache' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: /Español/ }));
+
+    expect(window.localStorage.getItem(languageStorageKey)).toBe('es');
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Configuración' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Idioma y localización' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Caché de datos de Scarlet/Violet' })).not.toBeInTheDocument();
     expect(getSvCacheStatus).not.toHaveBeenCalled();
   });
 
@@ -2187,26 +2287,41 @@ describe('App', () => {
     expect(loadItemsCount).toBe(1);
   });
 
-  it('previews a spreadsheet import into an Items edit session', async () => {
+  it('previews a dump import into an Items edit session', async () => {
     const user = userEvent.setup();
-    render(<App bridge={createMockProjectBridge({}, true)} />);
+    const pickFile = vi.fn(async () => 'C:/dumps/items.json');
+    render(
+      <App
+        bridge={createMockProjectBridge({}, true)}
+        desktopServices={createMockDesktopServices({ pickFile })}
+      />
+    );
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
     await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Tools' }));
-    await user.click(screen.getByRole('button', { name: 'Spreadsheet Import' }));
+    await user.click(screen.getByRole('button', { name: 'Dump Importer' }));
 
     expect(
-      await screen.findByRole('heading', { level: 2, name: 'Spreadsheet Import' })
+      await screen.findByRole('heading', { level: 2, name: 'Dump Importer' })
     ).toBeInTheDocument();
-    expect(screen.getAllByText('Items Price CSV/TSV').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Items Price Dump')).not.toBeInTheDocument();
 
-    await user.type(screen.getByLabelText('CSV or TSV source path'), 'items.csv');
+    await user.click(screen.getByRole('button', { name: 'Browse for dump import source file' }));
+    expect(pickFile).toHaveBeenCalledWith({
+      defaultPath: undefined,
+      title: 'Select Dump Import source file'
+    });
+    expect(screen.getByLabelText('CSV, TSV, or JSON source path')).toHaveValue(
+      'C:/dumps/items.json'
+    );
+
     await user.click(screen.getByRole('button', { name: 'Preview Import' }));
 
     expect(await screen.findByText('Potion: Buy price -> 450.')).toBeInTheDocument();
+    expect(screen.getByText('Items Price Dump')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Changes' }));
     expect(screen.getByText('Set Potion buy price to 450.')).toBeInTheDocument();
   });

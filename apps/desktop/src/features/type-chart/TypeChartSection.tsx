@@ -12,6 +12,7 @@ import {
   WorkflowPanelOutputSections,
   type WorkflowPanelOutput
 } from '../../components/workflowPanels';
+import { useLocalization } from '../../localization';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
@@ -53,6 +54,7 @@ export function TypeChartSection({
   panelOutput: WorkflowPanelOutput;
   workflow: TypeChartWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const workflowValues = useMemo(() => getTypeChartWorkflowValues(workflow), [workflow]);
   const vanillaValues = useMemo(() => getTypeChartVanillaValues(workflow), [workflow]);
   const stagedTypeChartEdit = editSession?.pendingEdits.find(
@@ -151,11 +153,11 @@ export function TypeChartSection({
               <div className="type-chart-grid">
                 <div className="type-chart-axis-label">
                   <span className="type-chart-axis-line">
-                    <span>Defending</span>
+                    <span>{translateLiteral('Defending')}</span>
                     <span aria-hidden="true">→</span>
                   </span>
                   <span className="type-chart-axis-line">
-                    <span>Attacking</span>
+                    <span>{translateLiteral('Attacking')}</span>
                     <span aria-hidden="true">↓</span>
                   </span>
                 </div>
@@ -249,7 +251,9 @@ export function TypeChartSection({
             <TypeChartSourceSummary source={workflow.source} />
           </div>
         ) : (
-          <p className="empty-copy">Open Type Chart from Advanced Editors to inspect the type-effectiveness table.</p>
+          <p className="empty-copy">
+            Open Type Chart from Advanced Editors to inspect the type-effectiveness table.
+          </p>
         )}
       </section>
 
@@ -268,13 +272,21 @@ function TypeChartTypeBadge({
   isRowHeader?: boolean;
   type: TypeChartWorkflow['types'][number];
 }) {
+  const { translateLiteral } = useLocalization();
+  const localizedTypeLabel = translateLiteral(type.label);
+  const displayLabel = isRowHeader
+    ? localizedTypeLabel.toLocaleUpperCase()
+    : translateLiteral(type.shortLabel);
+
   return (
     <div
-      className={isRowHeader ? 'type-chart-type-badge type-chart-row-badge' : 'type-chart-type-badge'}
+      className={
+        isRowHeader ? 'type-chart-type-badge type-chart-row-badge' : 'type-chart-type-badge'
+      }
       style={{ backgroundColor: type.color }}
-      title={type.label}
+      title={localizedTypeLabel}
     >
-      {isRowHeader ? type.label.toLocaleUpperCase() : type.shortLabel}
+      {displayLabel}
     </div>
   );
 }
@@ -292,8 +304,11 @@ function TypeChartCellControl({
   onChange: (value: TypeChartEffectivenessValue) => void;
   value: TypeChartEffectivenessValue;
 }) {
+  const { translateLiteral } = useLocalization();
   const option = getTypeChartEffectivenessOption(value);
-  const label = `${attackTypeLabel} attacking ${defenseTypeLabel}: ${option.label}`;
+  const label = `${translateLiteral(attackTypeLabel)} ${translateLiteral('attacking')} ${translateLiteral(
+    defenseTypeLabel
+  )}: ${translateLiteral(option.label)}`;
 
   return (
     <label
@@ -314,7 +329,7 @@ function TypeChartCellControl({
       >
         {typeChartEffectivenessOptions.map((candidate) => (
           <option key={candidate.value} value={candidate.value}>
-            {candidate.label}
+            {translateLiteral(candidate.label)}
           </option>
         ))}
       </select>
@@ -331,7 +346,7 @@ function TypeChartSourceSummary({ source }: { source: TypeChartSourceRecord | nu
     <dl className="type-chart-source-summary">
       <div>
         <dt>Source</dt>
-        <dd>{source.relativePath}</dd>
+        <dd data-localization-ignore="true">{source.relativePath}</dd>
       </div>
       <div>
         <dt>Layer</dt>

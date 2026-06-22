@@ -27,8 +27,8 @@ public sealed class SwShSpreadsheetImportWorkflowServiceTests
         Assert.Equal(SwShWorkflowAvailability.ReadOnly, workflow.Summary.Availability);
         var profile = Assert.Single(workflow.Profiles);
         Assert.Equal(SwShSpreadsheetImportWorkflowService.ItemsPriceProfileId, profile.ProfileId);
-        Assert.Equal("Items Price CSV/TSV", profile.Name);
-        Assert.Equal("csv/tsv", profile.SourceKind);
+        Assert.Equal("Items Price Dump", profile.Name);
+        Assert.Equal("csv/tsv/json", profile.SourceKind);
         Assert.Equal("items", profile.TargetWorkflow);
         Assert.Equal("readOnly", profile.Status);
         Assert.Equal(5, profile.Columns.Count);
@@ -109,6 +109,148 @@ public sealed class SwShSpreadsheetImportWorkflowServiceTests
     }
 
     [Fact]
+    public void PreviewItemsPriceJsonDumpCreatesItemsEditSession()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShItemsWorkflowServiceTests.WriteBaseItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var sourcePath = Path.Combine(temp.RootPath, "items.json");
+        File.WriteAllText(
+            sourcePath,
+            """
+            [
+              {
+                "itemId": 1,
+                "name": "Potion",
+                "buyPrice": 450,
+                "sellPrice": 150,
+                "wattsPrice": 20,
+                "alternatePrice": 9
+              }
+            ]
+            """);
+        var importService = new SwShSpreadsheetImportExecutionService();
+
+        var result = importService.Preview(
+            temp.Paths,
+            SwShSpreadsheetImportWorkflowService.ItemsPriceProfileId,
+            sourcePath,
+            session: null);
+
+        Assert.Equal(1, result.Preview.AcceptedRowCount);
+        Assert.Equal(0, result.Preview.RejectedRowCount);
+        Assert.Equal(3, result.Session.PendingEdits.Count);
+        Assert.DoesNotContain(result.Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void PreviewAcceptsFullDumpWhenOnlyOneSharedPriceColumnChanged()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShItemsWorkflowServiceTests.WriteBaseItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var sourcePath = Path.Combine(temp.RootPath, "items.tsv");
+        File.WriteAllText(
+            sourcePath,
+            """
+            ItemId	Name	BuyPrice	SellPrice
+            1	Potion	450	150
+            """);
+        var importService = new SwShSpreadsheetImportExecutionService();
+
+        var result = importService.Preview(
+            temp.Paths,
+            SwShSpreadsheetImportWorkflowService.ItemsPriceProfileId,
+            sourcePath,
+            session: null);
+
+        Assert.Equal(1, result.Preview.AcceptedRowCount);
+        Assert.Equal(0, result.Preview.RejectedRowCount);
+        Assert.Single(result.Session.PendingEdits);
+        Assert.Equal(SwShItemsWorkflowService.BuyPriceField, result.Session.PendingEdits[0].Field);
+    }
+
+    [Fact]
+    public void PreviewAcceptsFullDumpWhenSharedPriceColumnsMatchTheStoredValue()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShItemsWorkflowServiceTests.WriteBaseItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var sourcePath = Path.Combine(temp.RootPath, "items.tsv");
+        File.WriteAllText(
+            sourcePath,
+            """
+            ItemId	Name	BuyPrice	SellPrice
+            1	Potion	450	225
+            """);
+        var importService = new SwShSpreadsheetImportExecutionService();
+
+        var result = importService.Preview(
+            temp.Paths,
+            SwShSpreadsheetImportWorkflowService.ItemsPriceProfileId,
+            sourcePath,
+            session: null);
+
+        Assert.Equal(1, result.Preview.AcceptedRowCount);
+        Assert.Equal(0, result.Preview.RejectedRowCount);
+        Assert.Single(result.Session.PendingEdits);
+        Assert.Equal(SwShItemsWorkflowService.BuyPriceField, result.Session.PendingEdits[0].Field);
+    }
+
+    [Fact]
+    public void PreviewRejectsFullDumpWhenBothSharedPriceColumnsChanged()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShItemsWorkflowServiceTests.WriteBaseItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var sourcePath = Path.Combine(temp.RootPath, "items.tsv");
+        File.WriteAllText(
+            sourcePath,
+            """
+            ItemId	Name	BuyPrice	SellPrice
+            1	Potion	450	180
+            """);
+        var importService = new SwShSpreadsheetImportExecutionService();
+
+        var result = importService.Preview(
+            temp.Paths,
+            SwShSpreadsheetImportWorkflowService.ItemsPriceProfileId,
+            sourcePath,
+            session: null);
+
+        Assert.Equal(0, result.Preview.AcceptedRowCount);
+        Assert.Equal(1, result.Preview.RejectedRowCount);
+        Assert.Empty(result.Session.PendingEdits);
+        Assert.Contains(
+            result.Preview.Rows.SelectMany(row => row.Diagnostics),
+            diagnostic => diagnostic.Message.Contains("Row 2: BuyPrice and SellPrice both changed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PreviewRejectsMalformedJsonWithReadableLocation()
+    {
+        using var temp = TemporarySwShProject.Create();
+        SwShItemsWorkflowServiceTests.WriteBaseItems(temp);
+        temp.WriteBaseExeFsFile("main", "base-main");
+        var sourcePath = Path.Combine(temp.RootPath, "items.json");
+        File.WriteAllText(sourcePath, """[{ "itemId": 1, "buyPrice": }]""");
+        var importService = new SwShSpreadsheetImportExecutionService();
+
+        var result = importService.Preview(
+            temp.Paths,
+            SwShSpreadsheetImportWorkflowService.ItemsPriceProfileId,
+            sourcePath,
+            session: null);
+
+        Assert.Equal(0, result.Preview.TotalRowCount);
+        Assert.Empty(result.Session.PendingEdits);
+        Assert.Contains(
+            result.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.Contains("Dump Importer source could not be parsed at line", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void PreviewRejectsInvalidRowsAndSkipsUnchangedRows()
     {
         using var temp = TemporarySwShProject.Create();
@@ -139,6 +281,7 @@ public sealed class SwShSpreadsheetImportWorkflowServiceTests
         Assert.Contains(result.Preview.Rows, row => row.Status == "skipped");
         Assert.Contains(
             result.Preview.Rows.SelectMany(row => row.Diagnostics),
-            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Error
+                && diagnostic.Message.StartsWith("Row ", StringComparison.Ordinal));
     }
 }

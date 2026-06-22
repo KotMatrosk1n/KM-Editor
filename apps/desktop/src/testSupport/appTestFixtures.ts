@@ -44,6 +44,7 @@ import { type ProjectBridge } from '../bridge/projectBridge';
 import { type DesktopServices, type NativeUpdate } from '../desktopServices';
 import { getApplyMessage, getValidationMessage } from './appTestFixtureMessages';
 import { createFairyGymBoostsWorkflowFixture } from './fairyGymBoostsTestFixtures'; import { createFpsPatchBridgeFixture } from './fpsPatchTestFixtures';
+import { createGameDumpBridgeFixture } from './gameDumpTestFixtures';
 import { createHyperspaceBypassBridgeFixture } from './hyperspaceBypassTestFixtures';
 import { createNpcItemGiftBridgeFixture, createNpcItemGiftWorkflowFixture } from './npcItemGiftTestFixtures';
 import { createShinyRateWorkflowFixture, createStageShinyRateFixtureResponse } from './shinyRateTestFixtures';
@@ -3828,10 +3829,10 @@ export function createMockProjectBridge(
   ];
   const spreadsheetImportWorkflowSummary: WorkflowSummary = {
     availability: canEdit ? 'available' : 'readOnly',
-    description: 'CSV and TSV import profiles that execute through backend edit sessions.',
+    description: 'CSV, TSV, and JSON import profiles that execute through backend edit sessions.',
     diagnostics: [],
     id: 'spreadsheetImport',
-    label: 'Spreadsheet Import'
+    label: 'Dump Importer'
   };
   const spreadsheetImportWorkflow: SpreadsheetImportWorkflow = {
     diagnostics: [],
@@ -3860,15 +3861,15 @@ export function createMockProjectBridge(
             valueKind: 'integer'
           }
         ],
-        description: 'Imports item price columns into the Items workflow for change-plan review.',
-        name: 'Items Price CSV/TSV',
+        description: 'Imports supported item price dump files into the Items workflow for change-plan review.',
+        name: 'Items Price Dump',
         profileId: 'items-price-csv',
         provenance: {
           fileState: 'baseOnly',
           sourceFile: 'romfs/bin/pml/item/item.dat',
           sourceLayer: 'base'
         },
-        sourceKind: 'csv/tsv',
+        sourceKind: 'csv/tsv/json',
         status: canEdit ? 'available' : 'readOnly',
         targetWorkflow: 'items'
       }
@@ -5518,11 +5519,12 @@ export function createMockProjectBridge(
           writtenFiles: ['romfs/bin/pml/personal/personal_total.bin']
         }
       }),
+    ...createGameDumpBridgeFixture(),
     previewSpreadsheetImport: (request) =>
       Promise.resolve({
         diagnostics: [
           {
-            message: 'Spreadsheet import preview accepted 1 row and rejected 0.',
+            message: 'Dump Importer preview accepted 1 row and rejected 0.',
             severity: 'info'
           }
         ],

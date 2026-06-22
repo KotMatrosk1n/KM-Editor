@@ -5,6 +5,7 @@ using KM.Core.Editing;
 using KM.Core.Projects;
 using KM.SwSh.Items;
 using System.Globalization;
+using System.Text.Json;
 
 namespace KM.SwSh.SpreadsheetImport;
 
@@ -66,7 +67,7 @@ public sealed class SwShSpreadsheetImportExecutionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Spreadsheet import profile '{profileId}' is not supported.",
+                $"Dump Importer profile '{profileId}' is not supported.",
                 field: "profileId",
                 expected: SwShSpreadsheetImportWorkflowService.ItemsPriceProfileId));
             return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
@@ -88,7 +89,7 @@ public sealed class SwShSpreadsheetImportExecutionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Spreadsheet import execution requires valid base paths and a valid output root.",
+                "Dump Importer execution requires valid base paths and a valid output root.",
                 expected: "Editable project paths"));
             return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
         }
@@ -97,9 +98,9 @@ public sealed class SwShSpreadsheetImportExecutionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Spreadsheet import source file could not be found.",
+                "Dump Importer source file could not be found.",
                 field: "sourcePath",
-                expected: "Readable CSV or TSV file"));
+                expected: "Readable CSV, TSV, or JSON file"));
             return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
         }
 
@@ -108,14 +109,14 @@ public sealed class SwShSpreadsheetImportExecutionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Spreadsheet import execution could not load Items workflow data.",
+                "Dump Importer execution could not load Items workflow data.",
                 expected: SwShItemsWorkflowService.ItemDataPath));
             return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
         }
 
         try
         {
-            var table = DelimitedTextTable.Parse(File.ReadAllText(sourceDisplayPath), GetDelimiter(sourceDisplayPath));
+            var table = DelimitedTextTable.ParseFile(sourceDisplayPath);
             var headerMap = BuildHeaderMap(table.Headers, diagnostics);
             if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
@@ -136,7 +137,7 @@ public sealed class SwShSpreadsheetImportExecutionService
             var previewResult = CreatePreview(profileId, sourceDisplayPath, rowPreviews);
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                $"Spreadsheet import preview accepted {previewResult.AcceptedRowCount} row{(previewResult.AcceptedRowCount == 1 ? string.Empty : "s")} and rejected {previewResult.RejectedRowCount}."));
+                $"Dump Importer preview accepted {previewResult.AcceptedRowCount} row{(previewResult.AcceptedRowCount == 1 ? string.Empty : "s")} and rejected {previewResult.RejectedRowCount}."));
             var updatedWorkflow = workflowService.Load(project);
 
             return new SwShSpreadsheetImportExecutionResult(updatedWorkflow, currentSession, previewResult, diagnostics);
@@ -145,27 +146,36 @@ public sealed class SwShSpreadsheetImportExecutionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Spreadsheet import source could not be parsed: {exception.Message}",
+                $"Dump Importer source could not be parsed: {exception.Message}",
                 field: "sourcePath",
-                expected: "CSV or TSV with a header row"));
+                expected: "CSV, TSV, or JSON with importable row data"));
+            return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
+        }
+        catch (JsonException exception)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Dump Importer source could not be parsed{FormatJsonLocation(exception)}: {exception.Message}",
+                field: "sourcePath",
+                expected: "CSV, TSV, or JSON with importable row data"));
             return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
         }
         catch (IOException exception)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Spreadsheet import source could not be read: {exception.Message}",
+                $"Dump Importer source could not be read: {exception.Message}",
                 field: "sourcePath",
-                expected: "Readable CSV or TSV file"));
+                expected: "Readable CSV, TSV, or JSON file"));
             return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
         }
         catch (UnauthorizedAccessException exception)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                $"Spreadsheet import source could not be read: {exception.Message}",
+                $"Dump Importer source could not be read: {exception.Message}",
                 field: "sourcePath",
-                expected: "Readable CSV or TSV file"));
+                expected: "Readable CSV, TSV, or JSON file"));
             return new SwShSpreadsheetImportExecutionResult(workflow, currentSession, emptyPreview, diagnostics);
         }
     }
@@ -197,7 +207,8 @@ public sealed class SwShSpreadsheetImportExecutionService
             || !int.TryParse(itemIdText, NumberStyles.None, CultureInfo.InvariantCulture, out var itemId)
             || itemId < 0)
         {
-            diagnostics.Add(CreateDiagnostic(
+            diagnostics.Add(CreateRowDiagnostic(
+                row,
                 DiagnosticSeverity.Error,
                 "ItemId must be a non-negative integer.",
                 field: "ItemId",
@@ -209,7 +220,8 @@ public sealed class SwShSpreadsheetImportExecutionService
         var item = itemsWorkflow.Items.FirstOrDefault(candidate => candidate.ItemId == itemId);
         if (item is null)
         {
-            diagnostics.Add(CreateDiagnostic(
+            diagnostics.Add(CreateRowDiagnostic(
+                row,
                 DiagnosticSeverity.Error,
                 $"Item {itemId} is not present in the loaded Items workflow.",
                 field: "ItemId",
@@ -276,14 +288,34 @@ public sealed class SwShSpreadsheetImportExecutionService
         var requestedEdits = new List<RequestedItemEdit>();
         var hasBuyPrice = HasNonBlankCell(row, headerMap, SwShItemsWorkflowService.BuyPriceField);
         var hasSellPrice = HasNonBlankCell(row, headerMap, SwShItemsWorkflowService.SellPriceField);
+        var hasConflictingStoredPriceEdit = false;
+        var sharedPriceFieldToSkip = string.Empty;
 
         if (hasBuyPrice && hasSellPrice)
         {
-            diagnostics.Add(CreateDiagnostic(
-                DiagnosticSeverity.Error,
-                "BuyPrice and SellPrice both target the same stored item-table field. Provide one value.",
-                field: "BuyPrice/SellPrice",
-                expected: "One stored price edit"));
+            var buyPrice = 0;
+            var sellPrice = 0;
+            var buyParsed = TryReadCell(row, headerMap, SwShItemsWorkflowService.BuyPriceField, out var buyPriceText)
+                && int.TryParse(buyPriceText, NumberStyles.None, CultureInfo.InvariantCulture, out buyPrice);
+            var sellParsed = TryReadCell(row, headerMap, SwShItemsWorkflowService.SellPriceField, out var sellPriceText)
+                && int.TryParse(sellPriceText, NumberStyles.None, CultureInfo.InvariantCulture, out sellPrice);
+            var buyChanged = buyParsed && buyPrice != item.BuyPrice;
+            var sellChanged = sellParsed && sellPrice != item.SellPrice;
+
+            if (buyChanged && sellChanged && (long)sellPrice * 2L == buyPrice)
+            {
+                sharedPriceFieldToSkip = SwShItemsWorkflowService.SellPriceField;
+            }
+            else if (buyChanged && sellChanged)
+            {
+                hasConflictingStoredPriceEdit = true;
+                diagnostics.Add(CreateRowDiagnostic(
+                    row,
+                    DiagnosticSeverity.Error,
+                    "BuyPrice and SellPrice both changed to incompatible values, but they target the same stored item-table field. Change one value, or keep BuyPrice equal to SellPrice multiplied by 2.",
+                    field: "BuyPrice/SellPrice",
+                    expected: "One stored price edit"));
+            }
         }
 
         foreach (var field in itemsWorkflow.EditableFields)
@@ -293,13 +325,28 @@ public sealed class SwShSpreadsheetImportExecutionService
                 continue;
             }
 
+            if (hasConflictingStoredPriceEdit
+                && (string.Equals(field.Field, SwShItemsWorkflowService.BuyPriceField, StringComparison.Ordinal)
+                    || string.Equals(field.Field, SwShItemsWorkflowService.SellPriceField, StringComparison.Ordinal)))
+            {
+                cells.Add(CreateCell(field.Label.Replace(" ", string.Empty, StringComparison.Ordinal), field.Field, valueText, "rejected", "Conflicting shared price edit."));
+                continue;
+            }
+
+            if (string.Equals(sharedPriceFieldToSkip, field.Field, StringComparison.Ordinal))
+            {
+                cells.Add(CreateCell(field.Label.Replace(" ", string.Empty, StringComparison.Ordinal), field.Field, valueText, "skipped", "Covered by paired price edit."));
+                continue;
+            }
+
             if (!int.TryParse(valueText, NumberStyles.None, CultureInfo.InvariantCulture, out var value)
                 || value < (field.MinimumValue ?? 0)
                 || value > (field.MaximumValue ?? int.MaxValue))
             {
-                diagnostics.Add(CreateDiagnostic(
+                diagnostics.Add(CreateRowDiagnostic(
+                    row,
                     DiagnosticSeverity.Error,
-                    $"{field.Label} must be between {field.MinimumValue ?? 0} and {field.MaximumValue ?? int.MaxValue}.",
+                    $"{field.Label} value '{valueText}' must be between {field.MinimumValue ?? 0} and {field.MaximumValue ?? int.MaxValue}.",
                     field: field.Label,
                     expected: "Safe item price value"));
                 cells.Add(CreateCell(field.Label.Replace(" ", string.Empty, StringComparison.Ordinal), field.Field, valueText, "rejected", "Out of range."));
@@ -337,7 +384,7 @@ public sealed class SwShSpreadsheetImportExecutionService
             {
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
-                    $"Spreadsheet import source has more than one '{field}' column.",
+                    $"Dump Importer source has more than one '{field}' column.",
                     field: headers[index],
                     expected: "Unique import column headers"));
                 continue;
@@ -350,7 +397,7 @@ public sealed class SwShSpreadsheetImportExecutionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Spreadsheet import source is missing the ItemId column.",
+                "Dump Importer source is missing the ItemId column.",
                 field: "ItemId",
                 expected: "ItemId column"));
         }
@@ -359,7 +406,7 @@ public sealed class SwShSpreadsheetImportExecutionService
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Spreadsheet import source does not include any editable item price columns.",
+                "Dump Importer source does not include any editable item price columns.",
                 expected: "BuyPrice, SellPrice, WattsPrice, or AlternatePrice"));
         }
 
@@ -394,13 +441,6 @@ public sealed class SwShSpreadsheetImportExecutionService
             rows.Count(row => string.Equals(row.Status, "rejected", StringComparison.Ordinal)),
             rows.Count(row => string.Equals(row.Status, "skipped", StringComparison.Ordinal)),
             rows);
-    }
-
-    private static char GetDelimiter(string sourcePath)
-    {
-        return Path.GetExtension(sourcePath).Equals(".tsv", StringComparison.OrdinalIgnoreCase)
-            ? '\t'
-            : ',';
     }
 
     private static bool TryReadCell(
@@ -470,12 +510,51 @@ public sealed class SwShSpreadsheetImportExecutionService
             expected);
     }
 
+    private static ValidationDiagnostic CreateRowDiagnostic(
+        DelimitedTextRow row,
+        DiagnosticSeverity severity,
+        string message,
+        string? field = null,
+        string? expected = null)
+    {
+        return CreateDiagnostic(
+            severity,
+            $"Row {row.RowNumber}: {message}",
+            field: field,
+            expected: expected);
+    }
+
+    private static string FormatJsonLocation(JsonException exception)
+    {
+        if (exception.LineNumber is null || exception.BytePositionInLine is null)
+        {
+            return string.Empty;
+        }
+
+        return FormattableString.Invariant(
+            $" at line {exception.LineNumber.Value + 1}, byte {exception.BytePositionInLine.Value + 1}");
+    }
+
     private sealed record RequestedItemEdit(string Field, string Label, int Value);
 
     private sealed record DelimitedTextTable(
         IReadOnlyList<string> Headers,
         IReadOnlyList<DelimitedTextRow> Rows)
     {
+        public static DelimitedTextTable ParseFile(string sourcePath)
+        {
+            var text = File.ReadAllText(sourcePath);
+            if (Path.GetExtension(sourcePath).Equals(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                return ParseJson(text);
+            }
+
+            var delimiter = Path.GetExtension(sourcePath).Equals(".tsv", StringComparison.OrdinalIgnoreCase)
+                ? '\t'
+                : ',';
+            return Parse(text, delimiter);
+        }
+
         public static DelimitedTextTable Parse(string text, char delimiter)
         {
             var rows = ParseRows(text, delimiter);
@@ -549,6 +628,76 @@ public sealed class SwShSpreadsheetImportExecutionService
             }
 
             return rows;
+        }
+
+        private static DelimitedTextTable ParseJson(string text)
+        {
+            using var document = JsonDocument.Parse(text);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                throw new InvalidDataException("A JSON array of row objects is required.");
+            }
+
+            var headers = new List<string>();
+            var headerIndexes = new Dictionary<string, int>(StringComparer.Ordinal);
+            var rowDictionaries = new List<Dictionary<string, string>>();
+            var rowNumber = 1;
+
+            foreach (var element in document.RootElement.EnumerateArray())
+            {
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    throw new InvalidDataException($"JSON row {rowNumber} must be an object.");
+                }
+
+                var values = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (values.ContainsKey(property.Name))
+                    {
+                        throw new InvalidDataException($"JSON row {rowNumber} contains more than one '{property.Name}' property.");
+                    }
+
+                    if (!headerIndexes.ContainsKey(property.Name))
+                    {
+                        headerIndexes[property.Name] = headers.Count;
+                        headers.Add(property.Name);
+                    }
+
+                    values[property.Name] = FormatJsonCell(property.Value);
+                }
+
+                rowDictionaries.Add(values);
+                rowNumber++;
+            }
+
+            if (headers.Count == 0)
+            {
+                throw new InvalidDataException("At least one JSON row object is required.");
+            }
+
+            var rows = rowDictionaries
+                .Select((values, index) =>
+                    new DelimitedTextRow(
+                        index + 1,
+                        headers.Select(header => values.TryGetValue(header, out var value) ? value : string.Empty).ToArray()))
+                .ToArray();
+
+            return new DelimitedTextTable(headers, rows);
+        }
+
+        private static string FormatJsonCell(JsonElement element)
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString() ?? string.Empty,
+                JsonValueKind.Number => element.GetRawText(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                JsonValueKind.Null => string.Empty,
+                JsonValueKind.Undefined => string.Empty,
+                _ => element.GetRawText(),
+            };
         }
     }
 
