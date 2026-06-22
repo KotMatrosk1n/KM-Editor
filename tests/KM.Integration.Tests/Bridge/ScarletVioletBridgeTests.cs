@@ -16,6 +16,7 @@ using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Trainers;
+using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.SV.Data;
 using KM.SV.Trainers;
@@ -281,6 +282,161 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletTradePokemonLoadsStagesAndOutputsForTrinityModManager(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loaded = Dispatch<LoadTradePokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTradePokemonWorkflow,
+            new LoadTradePokemonWorkflowRequest(paths),
+            "request-sv-trade-load");
+        AssertSuccess(loaded);
+        Assert.Equal("sv", loaded.Payload!.Workflow.EditorFamily);
+        var trade = Assert.Single(loaded.Payload.Workflow.Trades);
+        Assert.Equal(0, trade.TradeIndex);
+        Assert.Equal("Bulbasaur", trade.Species);
+        Assert.Equal("Ivysaur", trade.RequiredSpecies);
+        Assert.Equal("Normal", trade.TeraTypeLabel);
+        Assert.Equal("Fixed value", trade.ScaleModeLabel);
+        Assert.Equal(123, trade.ScaleValue);
+        Assert.Equal(33, trade.Moves[0].MoveId);
+        Assert.Equal("Tackle", trade.Moves[0].Move);
+        Assert.Contains(loaded.Payload.Workflow.EditableFields, field => field.Field == "move1Id");
+        Assert.Contains(loaded.Payload.Workflow.EditableFields, field => field.Field == "requiredSpecies");
+        Assert.DoesNotContain(loaded.Payload.Workflow.EditableFields, field => field.Field == "relearnMove0");
+
+        var session = UpdateTradePokemon(dispatcher, paths, trade.TradeIndex, "move1Id", "45");
+        session = UpdateTradePokemon(
+            dispatcher,
+            paths,
+            session,
+            trade.TradeIndex,
+            "teraType",
+            ((int)global::GemType.FAIRY).ToString(CultureInfo.InvariantCulture));
+        session = UpdateTradePokemon(dispatcher, paths, session, trade.TradeIndex, "requiredSpecies", "4");
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-trade-trinity-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Equal(2, plan.Payload.ChangePlan.Writes.Count);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == SvDataPaths.EventTradeListArray);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == SvDataPaths.EventTradePokemonArray);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-trade-trinity-apply");
+        AssertSuccess(apply);
+        Assert.Equal(
+            [SvDataPaths.EventTradeListArray, SvDataPaths.EventTradePokemonArray],
+            apply.Payload!.ApplyResult.WrittenFiles);
+        Assert.True(File.Exists(Path.Combine(temp.OutputRootPath, SvDataPaths.EventTradeListArray.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.True(File.Exists(Path.Combine(temp.OutputRootPath, SvDataPaths.EventTradePokemonArray.Replace('/', Path.DirectorySeparatorChar))));
+
+        var outputList = ReadTradeList(temp, index: 0);
+        Assert.Equal("test_trade_bulbasaur", outputList.ReceivePoke);
+        Assert.Equal((global::pml.common.DevID)4, outputList.SendPokeDevId);
+
+        var outputPokemon = ReadTradePokemon(temp, tradeIndex: 0);
+        Assert.Equal("test_trade_bulbasaur", outputPokemon.Label);
+        Assert.NotNull(outputPokemon.PokeData);
+        Assert.Equal(global::WazaType.MANUAL, outputPokemon.PokeData!.Value.WazaType);
+        Assert.Equal((global::pml.common.WazaID)45, outputPokemon.PokeData.Value.Waza1!.Value.WazaId);
+        Assert.Equal(global::GemType.FAIRY, outputPokemon.PokeData.Value.GemType);
+        Assert.Equal(123, outputPokemon.PokeData.Value.ScaleValue);
+        Assert.Equal(123456, outputPokemon.PokeData.Value.TrainerId);
+        Assert.Equal(global::SexType.FEMALE, outputPokemon.PokeData.Value.ParentSex);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletTradePokemonPendingSpeciesEditsRefreshPreviewLabelsAndDerivedFields(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loaded = Dispatch<LoadTradePokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTradePokemonWorkflow,
+            new LoadTradePokemonWorkflowRequest(paths),
+            "request-sv-trade-refresh-load");
+        AssertSuccess(loaded);
+        var trade = Assert.Single(loaded.Payload!.Workflow.Trades);
+        Assert.Equal("Bulbasaur", trade.Species);
+        Assert.Equal("Ivysaur", trade.RequiredSpecies);
+        Assert.Equal("Overgrow (Ability 1)", trade.AbilityLabel);
+
+        var updatedSpecies = Dispatch<UpdateTradePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTradePokemonField,
+            new UpdateTradePokemonFieldRequest(paths, Session: null, trade.TradeIndex, "species", "4"),
+            "request-sv-trade-refresh-species");
+        AssertSuccess(updatedSpecies);
+
+        var speciesTrade = Assert.Single(updatedSpecies.Payload!.Workflow.Trades);
+        Assert.Equal(4, speciesTrade.SpeciesId);
+        Assert.Equal("Charmander", speciesTrade.Species);
+        Assert.Equal("Trade 1: Ivysaur -> Charmander Lv. 15", speciesTrade.Label);
+        Assert.Equal("Blaze (Ability 1)", speciesTrade.AbilityLabel);
+        Assert.Contains(
+            speciesTrade.AbilityOptions,
+            option => option.Value == (int)global::TokuseiType.SET_1 && option.Label == "Blaze (Ability 1)");
+
+        var updatedRequest = Dispatch<UpdateTradePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTradePokemonField,
+            new UpdateTradePokemonFieldRequest(
+                paths,
+                updatedSpecies.Payload.Session,
+                trade.TradeIndex,
+                "requiredSpecies",
+                "1"),
+            "request-sv-trade-refresh-request");
+        AssertSuccess(updatedRequest);
+
+        var requestedTrade = Assert.Single(updatedRequest.Payload!.Workflow.Trades);
+        Assert.Equal(4, requestedTrade.SpeciesId);
+        Assert.Equal("Charmander", requestedTrade.Species);
+        Assert.Equal(1, requestedTrade.RequiredSpeciesId);
+        Assert.Equal("Bulbasaur", requestedTrade.RequiredSpecies);
+        Assert.Equal("Trade 1: Bulbasaur -> Charmander Lv. 15", requestedTrade.Label);
+
+        var updatedAbility = Dispatch<UpdateTradePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTradePokemonField,
+            new UpdateTradePokemonFieldRequest(
+                paths,
+                updatedRequest.Payload.Session,
+                trade.TradeIndex,
+                "ability",
+                ((int)global::TokuseiType.SET_3).ToString(CultureInfo.InvariantCulture)),
+            "request-sv-trade-refresh-ability");
+        AssertSuccess(updatedAbility);
+
+        var updatedAbilityTrade = Assert.Single(updatedAbility.Payload!.Workflow.Trades);
+        Assert.Equal(4, updatedAbilityTrade.SpeciesId);
+        Assert.Equal("Charmander", updatedAbilityTrade.Species);
+        Assert.Equal("Bulbasaur", updatedAbilityTrade.RequiredSpecies);
+        Assert.Equal("Solar Power (Hidden Ability)", updatedAbilityTrade.AbilityLabel);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletHyperspaceBypassStagesStandaloneMainAndRejectsTrinityOutput(
         ProjectGameDto game,
         ulong titleId)
@@ -461,7 +617,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "moves", "pokemon", "trainers", "encounters", "giftPokemon", "placement", "typeChart", "hyperspaceBypass", "modMerger"],
+            ["items", "moves", "pokemon", "trainers", "encounters", "giftPokemon", "tradePokemon", "placement", "typeChart", "hyperspaceBypass", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
@@ -469,6 +625,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trainers");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Wild Encounters");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Gift Pokemon");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trade Pokemon");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Placement");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Type Chart");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Hyperspace Bypass");
@@ -1053,6 +1210,8 @@ public sealed class ScarletVioletBridgeTests
                     SvDataPaths.TrainerDataArray,
                     SvDataPaths.WildEncounterArray,
                     SvDataPaths.EventAddPokemonArray,
+                    SvDataPaths.EventTradeListArray,
+                    SvDataPaths.EventTradePokemonArray,
                 ]));
         temp.WriteBaseRomFsFile("arc/data.trpfs", "storage");
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(titleId));
@@ -1067,6 +1226,8 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(temp, SvDataPaths.TrainerDataArray, CreateTrainerDataArray());
         WriteSvOutput(temp, SvDataPaths.WildEncounterArray, CreateEncounterArray());
         WriteSvOutput(temp, SvDataPaths.EventAddPokemonArray, CreateEventAddPokemonArray());
+        WriteSvOutput(temp, SvDataPaths.EventTradeListArray, CreateEventTradeListArray());
+        WriteSvOutput(temp, SvDataPaths.EventTradePokemonArray, CreateEventTradePokemonArray());
         WriteSvOutput(temp, SvDataPaths.FixedSymbolTableArray, CreateFixedSymbolTableArray());
         WriteSvOutput(temp, SvDataPaths.EventBattlePokemonArray, CreateEventBattlePokemonArray());
         WriteSvOutput(temp, SvDataPaths.HiddenItemDataTableArray, CreateHiddenItemDataTableArray());
@@ -1294,6 +1455,36 @@ public sealed class ScarletVioletBridgeTests
         return response.Payload.Session;
     }
 
+    private static EditSessionDto UpdateTradePokemon(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        int tradeIndex,
+        string field,
+        string value)
+    {
+        return UpdateTradePokemon(dispatcher, paths, session: null, tradeIndex, field, value);
+    }
+
+    private static EditSessionDto UpdateTradePokemon(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        EditSessionDto? session,
+        int tradeIndex,
+        string field,
+        string value)
+    {
+        var response = Dispatch<UpdateTradePokemonFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTradePokemonField,
+            new UpdateTradePokemonFieldRequest(paths, session, tradeIndex, field, value),
+            "request-sv-trade-update");
+
+        AssertSuccess(response);
+        Assert.Contains(response.Payload!.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.tradePokemon" && edit.NewValue == value);
+        return response.Payload.Session;
+    }
+
     private static EditSessionDto UpdatePlacement(
         ProjectBridgeDispatcher dispatcher,
         ProjectPathsDto paths,
@@ -1369,6 +1560,8 @@ public sealed class ScarletVioletBridgeTests
             SvDataPaths.TrainerDataArray,
             SvDataPaths.WildEncounterArray,
             SvDataPaths.EventAddPokemonArray,
+            SvDataPaths.EventTradeListArray,
+            SvDataPaths.EventTradePokemonArray,
         })
         {
             Assert.DoesNotContain(KM.Formats.SV.SvTrinityPathHasher.HashPath(path), activeHashes);
@@ -1491,6 +1684,24 @@ public sealed class ScarletVioletBridgeTests
         var gift = table.Values(giftIndex);
         Assert.NotNull(gift);
         return gift.Value;
+    }
+
+    private static global::EventTradeList ReadTradeList(TemporaryBridgeProject temp, int index)
+    {
+        var table = global::EventTradeListArray.GetRootAsEventTradeListArray(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.EventTradeListArray)));
+        var trade = table.Values(index);
+        Assert.NotNull(trade);
+        return trade.Value;
+    }
+
+    private static global::EventTradePokemon ReadTradePokemon(TemporaryBridgeProject temp, int tradeIndex)
+    {
+        var table = global::EventTradePokemonArray.GetRootAsEventTradePokemonArray(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.EventTradePokemonArray)));
+        var trade = table.Values(tradeIndex);
+        Assert.NotNull(trade);
+        return trade.Value;
     }
 
     private static byte[] CreateItemDataArray()
@@ -1833,6 +2044,51 @@ public sealed class ScarletVioletBridgeTests
         builder.AddOffset(1, pokeDataOffset.Value, 0);
         builder.AddOffset(0, labelOffset.Value, 0);
         return new Offset<global::EventAddPokemon>(builder.EndTable());
+    }
+
+    private static byte[] CreateEventTradeListArray()
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var label = builder.CreateString("test_trade_request");
+        var receivePoke = builder.CreateString("test_trade_bulbasaur");
+        var trade = global::EventTradeList.CreateEventTradeList(
+            builder,
+            label,
+            receivePoke,
+            (global::pml.common.DevID)2);
+        var vector = global::EventTradeListArray.CreateValuesVector(builder, [trade]);
+        var root = global::EventTradeListArray.CreateEventTradeListArray(builder, vector);
+        global::EventTradeListArray.FinishEventTradeListArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateEventTradePokemonArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var label = builder.CreateString("test_trade_bulbasaur");
+        var pokemon = global::PokeDataTrade.CreatePokeDataTrade(
+            builder,
+            devId: (global::pml.common.DevID)1,
+            level: 15,
+            sex: global::SexType.DEFAULT,
+            tokusei: global::TokuseiType.SET_1,
+            gemType: global::GemType.NORMAL,
+            rareType: global::RareType.NO_RARE,
+            scaleType: global::SizeType.VALUE,
+            scaleValue: 123,
+            talentType: global::TalentType.V_NUM,
+            talentVnum: 2,
+            item: (global::ItemID)1,
+            seikaku: global::SeikakuType.DEFAULT,
+            wazaType: global::WazaType.DEFAULT,
+            ballId: global::BallType.MONSUTAABOORU,
+            trainerId: 123456,
+            parentSex: global::SexType.FEMALE);
+        var trade = global::EventTradePokemon.CreateEventTradePokemon(builder, label, pokemon);
+        var vector = global::EventTradePokemonArray.CreateValuesVector(builder, [trade]);
+        var root = global::EventTradePokemonArray.CreateEventTradePokemonArray(builder, vector);
+        global::EventTradePokemonArray.FinishEventTradePokemonArrayBuffer(builder, root);
+        return builder.SizedByteArray();
     }
 
     private static byte[] CreateFixedSymbolTableArray(global::pml.common.DevID species = global::pml.common.DevID.DEV_HUSIGIDANE)

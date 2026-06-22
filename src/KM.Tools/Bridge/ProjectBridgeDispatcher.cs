@@ -628,8 +628,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadTradePokemonWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadTradePokemonWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadTradePokemon(ProjectBridgeMapper.ToCore(request.Payload.Paths));
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadTradePokemon(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadTradePokemon(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -640,13 +642,20 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = tradePokemonEditSessionService.UpdateField(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.TradeIndex,
-            request.Payload.Field,
-            request.Payload.Value);
-        var response = SwShBridgeMapper.ToDto(result);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateTradePokemonField(
+                paths,
+                session,
+                request.Payload.TradeIndex,
+                request.Payload.Field,
+                request.Payload.Value))
+            : SwShBridgeMapper.ToDto(tradePokemonEditSessionService.UpdateField(
+                paths,
+                session,
+                request.Payload.TradeIndex,
+                request.Payload.Field,
+                request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2308,8 +2317,6 @@ public sealed class ProjectBridgeDispatcher
         return command is
             KmCommandNames.LoadTextWorkflow or
             KmCommandNames.UpdateTextEntry or
-            KmCommandNames.LoadTradePokemonWorkflow or
-            KmCommandNames.UpdateTradePokemonField or
             KmCommandNames.LoadStaticEncountersWorkflow or
             KmCommandNames.UpdateStaticEncounterField or
             KmCommandNames.LoadRentalPokemonWorkflow or
