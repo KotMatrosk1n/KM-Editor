@@ -308,10 +308,8 @@ import {
 } from './hyperspaceBypassContracts';
 export { ProjectBridgeError } from './projectBridgeError';
 import { sendProjectBridgeRequest, type ProjectBridgeTransport } from './projectBridgeRequest';
-import {
-  createSvBatchFieldProjectBridgeApi,
-  type SvBatchFieldProjectBridgeApi
-} from './svBatchFieldProjectBridge';
+import { createSvBatchFieldProjectBridgeApi, type SvBatchFieldProjectBridgeApi } from './svBatchFieldProjectBridge';
+import { createSvCacheProjectBridgeApi, type SvCacheProjectBridgeApi } from './svCacheProjectBridge';
 
 export type ProjectBridge = {
   applyChangePlan: (request: ApplyChangePlanRequest) => Promise<ApplyChangePlanResponse>;
@@ -558,7 +556,7 @@ export type ProjectBridge = {
     request: ValidateEditSessionRequest
   ) => Promise<ValidateEditSessionResponse>;
   validateProject: (request: ValidateProjectRequest) => Promise<ValidateProjectResponse>;
-} & SvBatchFieldProjectBridgeApi;
+} & SvBatchFieldProjectBridgeApi & SvCacheProjectBridgeApi;
 
 const tauriProjectBridgeTransport: ProjectBridgeTransport = (requestJson) => {
   if (!hasTauriRuntime()) {
@@ -1224,6 +1222,7 @@ export function createProjectBridge(
         updateTrainerFieldResponseSchema
       ),
     ...createSvBatchFieldProjectBridgeApi(transport),
+    ...createSvCacheProjectBridgeApi(transport),
     validateEditSession: (request) =>
       sendProjectBridgeRequest(
         transport,

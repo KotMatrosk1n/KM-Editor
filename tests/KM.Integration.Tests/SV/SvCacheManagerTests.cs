@@ -2,77 +2,69 @@
 
 using System.Buffers.Binary;
 using Google.FlatBuffers;
+using KM.Core.Projects;
 using KM.Formats.SV;
 using KM.Formats.SV.Trinity;
+using KM.SV.Workflows;
+using TrinityFileSystem = KM.Formats.SV.Trinity.FileSystem;
 using Xunit;
 
-namespace KM.Formats.Tests.SV;
+namespace KM.Integration.Tests.SV;
 
-public sealed class SvTrinityArchiveTests
+public sealed class SvCacheManagerTests
 {
     [Fact]
-    public void OpenReadsUncompressedFilesFromSyntheticTrinityArchive()
+    public void BalancedWarmupWritesMetadataAndClearPreservesActiveProject()
     {
         using var temp = TemporaryFolder.Create();
-        var romFsRoot = Path.Combine(temp.Path, "romfs");
-        Directory.CreateDirectory(Path.Combine(romFsRoot, "arc"));
         WriteSyntheticArchive(
-            romFsRoot,
-            [
-                ("avalon/data/personal_array.bin", [0x01, 0x02, 0x03]),
-                ("world/data/item/itemdata/itemdata_array.bin", [0x04, 0x05]),
-            ]);
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x10, 0x20])]);
+        var paths = temp.CreatePaths(ProjectGame.Scarlet);
+        var cache = new SvCacheManager(temp.CacheRootPath);
 
-        using var archive = SvTrinityArchive.Open(temp.Path);
+        cache.UpdateSettings(SvCacheMode.Balanced, 2L * 1024 * 1024 * 1024, paths);
+        var warmup = cache.WarmupStep(paths, stepIndex: 0);
 
-        Assert.True(archive.ContainsFile("romfs/avalon/data/personal_array.bin"));
-        Assert.True(archive.TryReadFile("avalon\\data\\personal_array.bin", out var personal));
-        Assert.Equal([0x01, 0x02, 0x03], personal);
-        Assert.Equal([0x04, 0x05], archive.ReadFile("world/data/item/itemdata/itemdata_array.bin"));
-        Assert.False(archive.TryReadFile("missing/file.bin", out var missing));
-        Assert.Empty(missing);
+        Assert.Equal(SvCacheMode.Balanced, warmup.Settings.Mode);
+        Assert.Equal(SvCacheManager.WarmupVirtualPaths.Count, warmup.WarmupTotal);
+        Assert.Equal(1, warmup.WarmupCompleted);
+        Assert.True(warmup.CacheSizeBytes > 0);
+
+        var cleared = cache.Clear(paths);
+
+        Assert.True(cleared.IsActiveProjectPreserved);
+        Assert.Equal(1, cleared.WarmupCompleted);
+        Assert.True(cleared.CacheSizeBytes > 0);
     }
 
     [Fact]
-    public void OpenCanReuseSerializableIndex()
+    public void PerformanceWarmupCachesTheDecompressedPayload()
     {
         using var temp = TemporaryFolder.Create();
-        var romFsRoot = Path.Combine(temp.Path, "romfs");
-        Directory.CreateDirectory(Path.Combine(romFsRoot, "arc"));
         WriteSyntheticArchive(
-            romFsRoot,
-            [
-                ("avalon/data/personal_array.bin", [0x10, 0x20]),
-                ("world/data/item/itemdata/itemdata_array.bin", [0x30]),
-            ]);
+            temp.BaseRomFsPath,
+            [(SvCacheManager.WarmupVirtualPaths[0], [0x7A, 0x7B, 0x7C])]);
+        var paths = temp.CreatePaths(ProjectGame.Violet);
+        var cache = new SvCacheManager(temp.CacheRootPath);
 
-        var index = SvTrinityArchive.BuildIndex(temp.Path);
+        cache.UpdateSettings(SvCacheMode.Performance, 2L * 1024 * 1024 * 1024, paths);
+        var warmup = cache.WarmupStep(paths, stepIndex: 0);
+        var bytes = cache.ReadBaseTrinityFile(paths, SvCacheManager.WarmupVirtualPaths[0]);
 
-        Assert.Equal(SvTrinityArchive.IndexSchemaVersion, index.SchemaVersion);
-        Assert.Equal(2, index.Files.Count);
-        Assert.Single(index.Packs);
-        using var archive = SvTrinityArchive.Open(temp.Path, index: index);
-
-        Assert.Equal([0x10, 0x20], archive.ReadFile("avalon/data/personal_array.bin"));
-        Assert.Equal([0x30], archive.ReadFile("world/data/item/itemdata/itemdata_array.bin"));
-    }
-
-    [Fact]
-    public void OpenRejectsTruncatedFileSystemHeader()
-    {
-        using var temp = TemporaryFolder.Create();
-        Directory.CreateDirectory(Path.Combine(temp.Path, "arc"));
-        File.WriteAllBytes(Path.Combine(temp.Path, "arc", "data.trpfd"), CreateDescriptor("pack/test.trpak", 0, []));
-        File.WriteAllBytes(Path.Combine(temp.Path, "arc", "data.trpfs"), [0x00, 0x01]);
-
-        var exception = Assert.Throws<InvalidDataException>(() => SvTrinityArchive.Open(temp.Path));
-        Assert.Contains("header is truncated", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(SvCacheMode.Performance, warmup.Settings.Mode);
+        Assert.Equal(1, warmup.WarmupCompleted);
+        Assert.Equal(
+            (int)Math.Round(100.0 / SvCacheManager.WarmupVirtualPaths.Count, MidpointRounding.AwayFromZero),
+            warmup.ProgressPercent);
+        Assert.Equal([0x7A, 0x7B, 0x7C], bytes);
     }
 
     private static void WriteSyntheticArchive(
         string romFsRoot,
         IReadOnlyList<(string VirtualPath, byte[] Bytes)> files)
     {
+        Directory.CreateDirectory(Path.Combine(romFsRoot, "arc"));
         const string packName = "pack/test.trpak";
         var packedArchive = CreatePackedArchive(files);
         var descriptor = CreateDescriptor(packName, packedArchive.Length, files.Select(file => file.VirtualPath).ToArray());
@@ -114,9 +106,9 @@ public sealed class SvTrinityArchiveTests
     private static byte[] CreateFileSystem(string packName, ulong packOffset)
     {
         var builder = new FlatBufferBuilder(128);
-        var hashes = FileSystem.CreateFileHashesVector(builder, [SvTrinityPathHasher.HashPath(packName)]);
-        var offsets = FileSystem.CreateFileOffsetsVector(builder, [packOffset]);
-        var root = FileSystem.CreateFileSystem(builder, hashes, offsets);
+        var hashes = TrinityFileSystem.CreateFileHashesVector(builder, [SvTrinityPathHasher.HashPath(packName)]);
+        var offsets = TrinityFileSystem.CreateFileOffsetsVector(builder, [packOffset]);
+        var root = TrinityFileSystem.CreateFileSystem(builder, hashes, offsets);
         builder.Finish(root.Value);
         return builder.SizedByteArray();
     }
@@ -148,23 +140,46 @@ public sealed class SvTrinityArchiveTests
     {
         private TemporaryFolder(string path)
         {
-            Path = path;
+            RootPath = path;
+            BaseRomFsPath = Directory.CreateDirectory(Path.Combine(path, "romfs")).FullName;
+            BaseExeFsPath = Directory.CreateDirectory(Path.Combine(path, "exefs")).FullName;
+            OutputRootPath = Directory.CreateDirectory(Path.Combine(path, "output")).FullName;
+            CacheRootPath = Path.Combine(path, "cache");
         }
 
-        public string Path { get; }
+        public string BaseExeFsPath { get; }
+
+        public string BaseRomFsPath { get; }
+
+        public string CacheRootPath { get; }
+
+        public string OutputRootPath { get; }
+
+        public string RootPath { get; }
 
         public static TemporaryFolder Create()
         {
-            var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "km-sv-trinity-tests", Guid.NewGuid().ToString("N"));
+            var path = Path.Combine(Path.GetTempPath(), "km-sv-cache-tests", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(path);
             return new TemporaryFolder(path);
         }
 
+        public ProjectPaths CreatePaths(ProjectGame game)
+        {
+            return new ProjectPaths(
+                BaseRomFsPath,
+                BaseExeFsPath,
+                OutputRootPath,
+                SaveFilePath: null,
+                ScarletVioletSupportFolderPath: null,
+                SelectedGame: game);
+        }
+
         public void Dispose()
         {
-            if (Directory.Exists(Path))
+            if (Directory.Exists(RootPath))
             {
-                Directory.Delete(Path, recursive: true);
+                Directory.Delete(RootPath, recursive: true);
             }
         }
     }

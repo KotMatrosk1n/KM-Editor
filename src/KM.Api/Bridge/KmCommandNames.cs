@@ -103,6 +103,10 @@ public static class KmCommandNames
     public const string LoadSvModMergerWorkflow = "svModMerger.load";
     public const string StageSvModMerge = "svModMerger.stage";
     public const string ApplySvModMerge = "svModMerger.apply";
+    public const string GetSvCacheStatus = "svCache.status";
+    public const string UpdateSvCacheSettings = "svCache.settings.update";
+    public const string ClearSvCache = "svCache.clear";
+    public const string WarmupSvCacheStep = "svCache.warmup.step";
     public const string LoadFpsPatch = "fpsPatch.load";
     public const string ApplyFpsPatch = "fpsPatch.apply";
     public const string RestoreFpsPatch = "fpsPatch.restore";

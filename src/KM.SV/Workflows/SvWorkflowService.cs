@@ -21,6 +21,7 @@ namespace KM.SV.Workflows;
 public sealed class SvWorkflowService
 {
     private readonly ProjectWorkspaceService projectWorkspaceService;
+    private readonly SvCacheManager cacheManager;
     private readonly SvItemsWorkflowService itemsWorkflowService;
     private readonly SvMovesWorkflowService movesWorkflowService;
     private readonly SvPokemonWorkflowService pokemonWorkflowService;
@@ -43,10 +44,13 @@ public sealed class SvWorkflowService
     private readonly SvTypeChartEditSessionService typeChartEditSessionService;
     private readonly SvHyperspaceBypassEditSessionService hyperspaceBypassEditSessionService;
 
-    public SvWorkflowService(ProjectWorkspaceService? projectWorkspaceService = null)
+    public SvWorkflowService(
+        ProjectWorkspaceService? projectWorkspaceService = null,
+        SvCacheManager? cacheManager = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
-        var fileSource = new SvWorkflowFileSource();
+        this.cacheManager = cacheManager ?? new SvCacheManager();
+        var fileSource = new SvWorkflowFileSource(this.cacheManager);
         itemsWorkflowService = new SvItemsWorkflowService(fileSource);
         movesWorkflowService = new SvMovesWorkflowService(fileSource);
         pokemonWorkflowService = new SvPokemonWorkflowService(fileSource);
@@ -72,6 +76,30 @@ public sealed class SvWorkflowService
         hyperspaceBypassEditSessionService = new SvHyperspaceBypassEditSessionService(
             this.projectWorkspaceService,
             hyperspaceBypassWorkflowService);
+    }
+
+    public SvCacheStatus GetCacheStatus(ProjectPaths? paths = null)
+    {
+        return cacheManager.GetStatus(paths);
+    }
+
+    public SvCacheStatus UpdateCacheSettings(
+        SvCacheMode mode,
+        long maxCacheSizeBytes,
+        ProjectPaths? activePaths = null)
+    {
+        cacheManager.UpdateSettings(mode, maxCacheSizeBytes, activePaths);
+        return cacheManager.GetStatus(activePaths);
+    }
+
+    public SvCacheStatus ClearCache(ProjectPaths? activePaths = null)
+    {
+        return cacheManager.Clear(activePaths);
+    }
+
+    public SvCacheStatus WarmupCacheStep(ProjectPaths paths, int stepIndex)
+    {
+        return cacheManager.WarmupStep(paths, stepIndex);
     }
 
     public SvWorkflowList List(ProjectPaths paths)

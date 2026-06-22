@@ -10,6 +10,7 @@ using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
+using KM.Api.SvCache;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.TypeChart;
@@ -32,6 +33,43 @@ namespace KM.Tools.Bridge;
 
 public static class SvBridgeMapper
 {
+    public static SvCacheMode ToCore(SvCacheModeDto mode)
+    {
+        return mode switch
+        {
+            SvCacheModeDto.Minimal => SvCacheMode.Minimal,
+            SvCacheModeDto.Balanced => SvCacheMode.Balanced,
+            SvCacheModeDto.Performance => SvCacheMode.Performance,
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
+        };
+    }
+
+    public static SvCacheStatusResponse ToDto(SvCacheStatus status)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+
+        return new SvCacheStatusResponse(new SvCacheStatusDto(
+            new SvCacheSettingsDto(ToDto(status.Settings.Mode), status.Settings.MaxCacheSizeBytes),
+            status.CacheSizeBytes,
+            status.WarmupCompleted,
+            status.WarmupTotal,
+            status.ProgressPercent,
+            status.Phase,
+            status.Message,
+            status.IsActiveProjectPreserved));
+    }
+
+    private static SvCacheModeDto ToDto(SvCacheMode mode)
+    {
+        return mode switch
+        {
+            SvCacheMode.Minimal => SvCacheModeDto.Minimal,
+            SvCacheMode.Balanced => SvCacheModeDto.Balanced,
+            SvCacheMode.Performance => SvCacheModeDto.Performance,
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
+        };
+    }
+
     public static SvOutputMode ToCore(ChangePlanOutputModeDto? outputMode)
     {
         return outputMode switch

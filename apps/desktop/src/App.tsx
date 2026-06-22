@@ -207,6 +207,10 @@ import {
   type ProjectBridge
 } from './bridge/projectBridge';
 import {
+  type SvCacheMode,
+  type SvCacheStatus
+} from './bridge/svCacheContracts';
+import {
   createGameScopedProjectBridge,
   isStaleProjectScopeError
 } from './bridge/gameScopedProjectBridge';
@@ -641,6 +645,38 @@ const modMergerModeOptions: Array<{
     label: 'Mod 2 Priority'
   }
 ];
+
+const svCacheModeOptions: Array<{
+  description: string;
+  id: SvCacheMode;
+  label: string;
+  recommended?: boolean;
+}> = [
+  {
+    description: 'Turns off persistent S/V data caching and uses the least disk space.',
+    id: 'minimal',
+    label: 'Minimal'
+  },
+  {
+    description: 'Keeps reusable Trinity metadata across launches without storing full payloads.',
+    id: 'balanced',
+    label: 'Balanced',
+    recommended: true
+  },
+  {
+    description: 'Keeps decompressed S/V payloads for the fastest repeated editor loads.',
+    id: 'performance',
+    label: 'Performance'
+  }
+];
+
+const svCacheLimitOptions = [
+  { bytes: 2 * 1024 ** 3, label: '2 GB' },
+  { bytes: 5 * 1024 ** 3, label: '5 GB' },
+  { bytes: 10 * 1024 ** 3, label: '10 GB' },
+  { bytes: 25 * 1024 ** 3, label: '25 GB' },
+  { bytes: 50 * 1024 ** 3, label: '50 GB' }
+] as const;
 
 const pathFields: Array<{
   field: ProjectPathFieldName;
@@ -1790,6 +1826,10 @@ export function App({
   const [dynamaxAdventureApplyResult, setDynamaxAdventureApplyResult] =
     useState<ApplyResult | null>(null);
   const [workProgress, setWorkProgress] = useState<WorkProgressState | null>(null);
+  const [svCacheStatus, setSvCacheStatus] = useState<SvCacheStatus | null>(null);
+  const [isSvCacheWarming, setIsSvCacheWarming] = useState(false);
+  const [isSvCacheClearing, setIsSvCacheClearing] = useState(false);
+  const [isSvCacheClearConfirmOpen, setIsSvCacheClearConfirmOpen] = useState(false);
   const [svOutputConfirmation, setSvOutputConfirmation] =
     useState<SvOutputConfirmationState | null>(null);
   const [exitPrompt, setExitPrompt] = useState<ExitPromptState | null>(null);
@@ -1808,6 +1848,7 @@ export function App({
   >(() => new Set());
   const editSessionRef = useRef<EditSession | null>(editSession);
   const exitPromptRef = useRef<ExitPromptState | null>(exitPrompt);
+  const svCacheWarmupRunRef = useRef(0);
   const cancelDiscardActionRef = useRef<(() => void) | null>(null);
   const pendingEditCount = editSession?.pendingEdits.length ?? 0;
   const currentEditSessionSignature = useMemo(
@@ -2258,6 +2299,156 @@ export function App({
     setActiveSection('health');
   }, [activeSection, activeSectionCanStayMounted, setActiveSection]);
 
+  useEffect(() => {
+    let isDisposed = false;
+
+    void bridge.getSvCacheStatus({ paths: null })
+      .then((response) => {
+        if (!isDisposed) {
+          setSvCacheStatus(response.status);
+        }
+      })
+      .catch((error) => {
+        if (!isDisposed && !isStaleProjectScopeError(error)) {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        }
+      });
+
+    return () => {
+      isDisposed = true;
+    };
+  }, [bridge]);
+
+  const startSvCacheWarmup = useCallback(
+    async (paths: ReturnType<typeof toProjectPaths>, health: ProjectHealth) => {
+      if (!isScarletVioletGame(paths.selectedGame) || !hasValidScarletVioletSupportFolder(health)) {
+        return;
+      }
+
+      const runId = svCacheWarmupRunRef.current + 1;
+      svCacheWarmupRunRef.current = runId;
+
+      try {
+        const initialStatus = await bridge.getSvCacheStatus({ paths });
+        if (svCacheWarmupRunRef.current !== runId) {
+          return;
+        }
+
+        setSvCacheStatus(initialStatus.status);
+        if (
+          initialStatus.status.settings.mode === 'minimal' ||
+          initialStatus.status.warmupTotal === 0 ||
+          initialStatus.status.warmupCompleted >= initialStatus.status.warmupTotal
+        ) {
+          return;
+        }
+
+        setIsSvCacheWarming(true);
+        for (let stepIndex = 0; stepIndex < initialStatus.status.warmupTotal; stepIndex += 1) {
+          if (svCacheWarmupRunRef.current !== runId) {
+            return;
+          }
+
+          const response = await bridge.warmupSvCacheStep({ paths, stepIndex });
+          if (svCacheWarmupRunRef.current !== runId) {
+            return;
+          }
+
+          setSvCacheStatus(response.status);
+        }
+      } catch (error) {
+        if (!isStaleProjectScopeError(error)) {
+          setBridgeDiagnostics(toBridgeDiagnostics(error));
+        }
+      } finally {
+        if (svCacheWarmupRunRef.current === runId) {
+          setIsSvCacheWarming(false);
+        }
+      }
+    },
+    [bridge]
+  );
+
+  const handleChangeSvCacheMode = useCallback(
+    async (mode: SvCacheMode) => {
+      svCacheWarmupRunRef.current += 1;
+      setIsSvCacheWarming(false);
+
+      const paths = isScarletVioletGame(selectedGame)
+        ? toProjectPaths(draftPathsRef.current)
+        : null;
+      const maxCacheSizeBytes = svCacheStatus?.settings.maxCacheSizeBytes ?? (10 * 1024 ** 3);
+
+      try {
+        const response = await bridge.updateSvCacheSettings({
+          maxCacheSizeBytes,
+          mode,
+          paths
+        });
+        setSvCacheStatus(response.status);
+        if (paths && health) {
+          void startSvCacheWarmup(paths, health);
+        }
+      } catch (error) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
+    },
+    [bridge, health, selectedGame, startSvCacheWarmup, svCacheStatus?.settings.maxCacheSizeBytes]
+  );
+
+  const handleChangeSvCacheLimit = useCallback(
+    async (maxCacheSizeBytes: number) => {
+      const paths = isScarletVioletGame(selectedGame)
+        ? toProjectPaths(draftPathsRef.current)
+        : null;
+      const mode = svCacheStatus?.settings.mode ?? 'balanced';
+
+      try {
+        const response = await bridge.updateSvCacheSettings({
+          maxCacheSizeBytes,
+          mode,
+          paths
+        });
+        setSvCacheStatus(response.status);
+      } catch (error) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      }
+    },
+    [bridge, selectedGame, svCacheStatus?.settings.mode]
+  );
+
+  const handleRefreshSvCacheStatus = useCallback(async () => {
+    const paths = isScarletVioletGame(selectedGame)
+      ? toProjectPaths(draftPathsRef.current)
+      : null;
+
+    try {
+      const response = await bridge.getSvCacheStatus({ paths });
+      setSvCacheStatus(response.status);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    }
+  }, [bridge, selectedGame]);
+
+  const handleConfirmClearSvCache = useCallback(async () => {
+    setIsSvCacheClearConfirmOpen(false);
+    svCacheWarmupRunRef.current += 1;
+    setIsSvCacheWarming(false);
+    setIsSvCacheClearing(true);
+
+    try {
+      const activePaths = isScarletVioletGame(selectedGame)
+        ? toProjectPaths(draftPathsRef.current)
+        : null;
+      const response = await bridge.clearSvCache({ activePaths });
+      setSvCacheStatus(response.status);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsSvCacheClearing(false);
+    }
+  }, [bridge, selectedGame]);
+
   const handleValidateProject = async () => {
     setProjectStatus('validating');
     setBridgeDiagnostics([]);
@@ -2271,6 +2462,7 @@ export function App({
       setProjectHealth(response.health);
       setLazyLoadedWorkflowSections(new Set());
       await refreshWorkflows(paths, response.health.canOpenEditableWorkflows);
+      void startSvCacheWarmup(paths, response.health);
     } catch (error) {
       setProjectStatus('idle');
       setBridgeDiagnostics(toBridgeDiagnostics(error));
@@ -2435,6 +2627,7 @@ export function App({
       setProjectHealth(nextResponse.health);
       setLazyLoadedWorkflowSections(new Set());
       await refreshWorkflows(nextPaths, nextResponse.health.canOpenEditableWorkflows);
+      void startSvCacheWarmup(nextPaths, nextResponse.health);
     } catch (error) {
       setProjectStatus('idle');
       setBridgeDiagnostics(toDesktopDiagnostics(error, 'Could not create the output root folder.'));
@@ -2500,6 +2693,7 @@ export function App({
       setProjectHealth(response.health);
       setLazyLoadedWorkflowSections(new Set());
       await refreshWorkflows(paths, response.health.canOpenEditableWorkflows);
+      void startSvCacheWarmup(paths, response.health);
       setBridgeDiagnostics([
         {
           domain: 'desktop',
@@ -7047,6 +7241,8 @@ const resetModMergerPlan = () => {
 
   const handleSelectGame = useCallback(
     (nextGame: ProjectGame) => {
+      svCacheWarmupRunRef.current += 1;
+      setIsSvCacheWarming(false);
       clearPendingEditState();
       clearLoadedWorkflowData();
       setBridgeDiagnostics([]);
@@ -7063,6 +7259,8 @@ const resetModMergerPlan = () => {
   );
 
   const handleChangeGame = useCallback(() => {
+    svCacheWarmupRunRef.current += 1;
+    setIsSvCacheWarming(false);
     clearPendingEditState();
     clearLoadedWorkflowData();
     setBridgeDiagnostics([]);
@@ -7244,6 +7442,7 @@ const resetModMergerPlan = () => {
               bridgeDiagnostics={bridgeDiagnostics}
               isBusy={isBusy}
               isOutputRootCreating={isOutputRootCreating}
+              isSvCacheWarming={isSvCacheWarming}
               isSupportSearchRunning={isSupportSearchRunning}
               onChangeGame={handleChangeGame}
               onCreateOutputRootFolder={handleCreateOutputRootFolder}
@@ -7255,6 +7454,7 @@ const resetModMergerPlan = () => {
               pendingEditCount={pendingEditCount}
               projectStatus={projectStatus}
               selectedGame={selectedGame}
+              svCacheStatus={svCacheStatus}
             />
           ) : null}
           {activeSection === 'workflows' ? (
@@ -8182,8 +8382,15 @@ const resetModMergerPlan = () => {
           {activeSection === 'settings' ? (
             <SettingsSection
               appVersion={appVersion}
+              isSvCacheClearing={isSvCacheClearing}
+              isSvCacheWarming={isSvCacheWarming}
+              onChangeSvCacheLimit={handleChangeSvCacheLimit}
+              onChangeSvCacheMode={handleChangeSvCacheMode}
               onCheckForUpdates={handleCheckForUpdates}
+              onClearSvCache={() => setIsSvCacheClearConfirmOpen(true)}
+              onRefreshSvCacheStatus={() => void handleRefreshSvCacheStatus()}
               status={updateCheckStatus}
+              svCacheStatus={svCacheStatus}
             />
           ) : null}
           {activeSection !== 'health' && bridgeDiagnostics.length > 0 ? (
@@ -8196,6 +8403,14 @@ const resetModMergerPlan = () => {
         <SupportSearchConfirmationModal
           onCancel={() => setIsSupportSearchPermissionOpen(false)}
           onConfirm={() => void handleConfirmScarletVioletSupportSearch()}
+        />
+      ) : null}
+      {isSvCacheClearConfirmOpen ? (
+        <SvCacheClearConfirmationModal
+          cacheSizeLabel={formatByteSize(svCacheStatus?.cacheSizeBytes ?? 0)}
+          isClearing={isSvCacheClearing}
+          onCancel={() => setIsSvCacheClearConfirmOpen(false)}
+          onConfirm={() => void handleConfirmClearSvCache()}
         />
       ) : null}
       {svOutputConfirmation ? <SvOutputConfirmationModal isApplying={isChangePlanApplying} mode={svOutputConfirmation.mode} onCancel={() => setSvOutputConfirmation(null)} onConfirm={() => { const mode = svOutputConfirmation.mode; setSvOutputConfirmation(null); void handleSaveValidatedChanges(mode); }} outputRootPath={draftPaths.outputRootPath} /> : null}
@@ -8381,6 +8596,7 @@ function HealthSection({
   isBusy,
   isDesktopAvailable,
   isOutputRootCreating,
+  isSvCacheWarming,
   isSupportSearchRunning,
   onChangeGame,
   onCreateOutputRootFolder,
@@ -8391,7 +8607,8 @@ function HealthSection({
   onValidateProject,
   pendingEditCount,
   projectStatus,
-  selectedGame
+  selectedGame,
+  svCacheStatus
 }: {
   bridgeDiagnostics: ApiDiagnostic[];
   draftPaths: ProjectPathDraft;
@@ -8399,6 +8616,7 @@ function HealthSection({
   isBusy: boolean;
   isDesktopAvailable: boolean;
   isOutputRootCreating: boolean;
+  isSvCacheWarming: boolean;
   isSupportSearchRunning: boolean;
   onChangeGame: () => void;
   onCreateOutputRootFolder: () => void;
@@ -8410,12 +8628,20 @@ function HealthSection({
   pendingEditCount: number;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
   selectedGame: ProjectGame;
+  svCacheStatus: SvCacheStatus | null;
 }) {
   const outputRootPath = draftPaths.outputRootPath.trim();
   const gameDefinition = gameDefinitions[selectedGame];
   const GameIcon = gameDefinition.icon;
   const visiblePathFields = pathFields.filter(
     (pathField) => pathField.scope !== 'scarletViolet' || isScarletVioletGame(selectedGame)
+  );
+  const canShowSvCacheProgress = Boolean(
+    health &&
+      isScarletVioletGame(selectedGame) &&
+      health.canOpenEditableWorkflows &&
+      hasValidScarletVioletSupportFolder(health) &&
+      svCacheStatus
   );
 
   return (
@@ -8549,6 +8775,10 @@ function HealthSection({
             </button>
           ) : null}
         </div>
+
+        {canShowSvCacheProgress && svCacheStatus ? (
+          <SvCacheProgressPanel isWarming={isSvCacheWarming} status={svCacheStatus} />
+        ) : null}
       </section>
 
       <section aria-labelledby="health-heading" className="panel">
@@ -8574,6 +8804,72 @@ function HealthSection({
       <PathStatusSection health={health} selectedGame={selectedGame} />
       <DiagnosticsSection diagnostics={[...bridgeDiagnostics, ...(health?.diagnostics ?? [])]} />
     </>
+  );
+}
+
+function SvCacheProgressPanel({
+  isWarming,
+  status
+}: {
+  isWarming: boolean;
+  status: SvCacheStatus;
+}) {
+  const isMinimal = status.settings.mode === 'minimal';
+  const percent = Math.max(0, Math.min(100, status.progressPercent));
+  const phaseLabel = isMinimal
+    ? 'Off'
+    : isWarming
+      ? 'Building'
+      : percent >= 100
+        ? 'Ready'
+        : status.warmupCompleted > 0
+          ? 'Partially built'
+          : 'Ready to build';
+  const message = isMinimal
+    ? 'Persistent S/V cache warmup is off in Minimal mode.'
+    : status.message;
+
+  return (
+    <div className="sv-cache-progress-panel" role="status">
+      <div className="sv-cache-progress-header">
+        <div>
+          <Layers aria-hidden="true" size={18} />
+          <strong>S/V Data Cache</strong>
+        </div>
+        <span className="status-pill status-pill-info">{phaseLabel}</span>
+      </div>
+      {!isMinimal ? (
+        <div
+          aria-label="S/V data cache build progress"
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={percent}
+          className="work-progress-track"
+          role="progressbar"
+        >
+          <div className="work-progress-fill" style={{ width: `${percent}%` }} />
+        </div>
+      ) : null}
+      <dl className="work-progress-detail">
+        <div>
+          <dt>Mode</dt>
+          <dd>{formatSvCacheModeLabel(status.settings.mode)}</dd>
+        </div>
+        {!isMinimal ? (
+          <div>
+            <dt>Progress</dt>
+            <dd>
+              {percent}% ({status.warmupCompleted} of {status.warmupTotal})
+            </dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Cache size</dt>
+          <dd>{formatByteSize(status.cacheSizeBytes)}</dd>
+        </div>
+      </dl>
+      <p className="sv-cache-progress-message">{message}</p>
+    </div>
   );
 }
 
@@ -26030,12 +26326,26 @@ type PendingEditContext = {
 
 function SettingsSection({
   appVersion,
+  isSvCacheClearing,
+  isSvCacheWarming,
+  onChangeSvCacheLimit,
+  onChangeSvCacheMode,
   onCheckForUpdates,
-  status
+  onClearSvCache,
+  onRefreshSvCacheStatus,
+  status,
+  svCacheStatus
 }: {
   appVersion: string;
+  isSvCacheClearing: boolean;
+  isSvCacheWarming: boolean;
+  onChangeSvCacheLimit: (maxCacheSizeBytes: number) => void;
+  onChangeSvCacheMode: (mode: SvCacheMode) => void;
   onCheckForUpdates: () => void;
+  onClearSvCache: () => void;
+  onRefreshSvCacheStatus: () => void;
   status: UpdateCheckStatus;
+  svCacheStatus: SvCacheStatus | null;
 }) {
   const isBusy =
     status.kind === 'checking' ||
@@ -26043,6 +26353,10 @@ function SettingsSection({
     status.kind === 'installing' ||
     status.kind === 'opening' ||
     status.kind === 'restarting';
+  const activeCacheMode = svCacheStatus?.settings.mode ?? 'balanced';
+  const activeCacheLimit = svCacheStatus?.settings.maxCacheSizeBytes ?? (10 * 1024 ** 3);
+  const cacheSizeLabel = formatByteSize(svCacheStatus?.cacheSizeBytes ?? 0);
+  const isCacheControlBusy = isSvCacheClearing || isSvCacheWarming;
 
   return (
     <section aria-labelledby="settings-heading" className="panel wide-panel">
@@ -26077,6 +26391,87 @@ function SettingsSection({
           {status.message}
         </p>
       </div>
+
+      <section aria-labelledby="sv-cache-settings-heading" className="settings-subsection">
+        <div className="settings-subsection-heading">
+          <Layers aria-hidden="true" size={18} />
+          <div>
+            <h3 id="sv-cache-settings-heading">Scarlet/Violet Data Cache</h3>
+            <p>Controls how aggressively S/V Trinity data is cached between editor loads.</p>
+          </div>
+        </div>
+
+        <div className="sv-cache-mode-options" role="radiogroup" aria-label="S/V cache mode">
+          {svCacheModeOptions.map((option) => {
+            const isSelected = option.id === activeCacheMode;
+
+            return (
+              <button
+                aria-checked={isSelected}
+                className={`sv-cache-mode-option${isSelected ? ' sv-cache-mode-option-selected' : ''}`}
+                disabled={isCacheControlBusy || isSelected}
+                key={option.id}
+                onClick={() => onChangeSvCacheMode(option.id)}
+                role="radio"
+                type="button"
+              >
+                <span>
+                  {option.label}
+                  {option.recommended ? <small>Recommended</small> : null}
+                </span>
+                <p>{option.description}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="sv-cache-settings-row">
+          <label className="path-field sv-cache-limit-field">
+            <span>Maximum cache size</span>
+            <select
+              disabled={isSvCacheClearing}
+              onChange={(event) => onChangeSvCacheLimit(Number(event.target.value))}
+              value={activeCacheLimit}
+            >
+              {svCacheLimitOptions.map((option) => (
+                <option key={option.bytes} value={option.bytes}>
+                  {option.label}
+                </option>
+              ))}
+              {svCacheLimitOptions.some((option) => option.bytes === activeCacheLimit) ? null : (
+                <option value={activeCacheLimit}>{formatByteSize(activeCacheLimit)}</option>
+              )}
+            </select>
+          </label>
+
+          <Metric label="Current cache size" value={cacheSizeLabel} />
+
+          <button
+            className="secondary-button"
+            disabled={isSvCacheClearing}
+            onClick={onRefreshSvCacheStatus}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={18} />
+            <span>Refresh Cache Size</span>
+          </button>
+          <button
+            aria-busy={isSvCacheClearing || undefined}
+            className="danger-button"
+            disabled={isSvCacheClearing}
+            onClick={onClearSvCache}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Clearing Cache"
+              icon={<Trash2 aria-hidden="true" size={18} />}
+              isBusy={isSvCacheClearing}
+              label={`Clear Cache (${cacheSizeLabel})`}
+              size={18}
+            />
+          </button>
+        </div>
+      </section>
     </section>
   );
 }
@@ -26399,6 +26794,60 @@ function SupportSearchConfirmationModal({
           <button className="primary-button" onClick={onConfirm} type="button">
             <Search aria-hidden="true" size={16} />
             <span>Start Search</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SvCacheClearConfirmationModal({
+  cacheSizeLabel,
+  isClearing,
+  onCancel,
+  onConfirm
+}: {
+  cacheSizeLabel: string;
+  isClearing: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-labelledby="sv-cache-clear-confirmation-heading"
+        aria-modal="true"
+        className="modal-panel"
+        role="dialog"
+      >
+        <div className="panel-heading">
+          <Trash2 aria-hidden="true" size={18} />
+          <h2 id="sv-cache-clear-confirmation-heading">Clear S/V Cache?</h2>
+        </div>
+        <p className="modal-copy">
+          This removes cached Scarlet/Violet Trinity data that is not reserved for the currently
+          active S/V project. The next S/V validation can rebuild it.
+        </p>
+        <p className="modal-copy modal-copy-muted">Current cache size: {cacheSizeLabel}</p>
+        <div className="modal-actions">
+          <button
+            aria-busy={isClearing || undefined}
+            className="danger-button"
+            disabled={isClearing}
+            onClick={onConfirm}
+            type="button"
+          >
+            <BusyActionContent
+              busyLabel="Clearing Cache"
+              icon={<Trash2 aria-hidden="true" size={16} />}
+              isBusy={isClearing}
+              label="Clear Cache"
+              size={16}
+            />
+          </button>
+          <button className="secondary-button" disabled={isClearing} onClick={onCancel} type="button">
+            <X aria-hidden="true" size={16} />
+            <span>Cancel</span>
           </button>
         </div>
       </section>
@@ -32545,6 +32994,34 @@ function resolveOutputRootCreationPath(
 
 function formatByteCount(value: number) {
   return `${value.toLocaleString()} bytes`;
+}
+
+function formatByteSize(value: number) {
+  const absoluteValue = Math.max(0, value);
+  if (absoluteValue < 1024) {
+    return `${absoluteValue.toLocaleString()} B`;
+  }
+
+  const units = ['KB', 'MB', 'GB', 'TB'] as const;
+  let size = absoluteValue / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  const maximumFractionDigits = size >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${size.toLocaleString(undefined, { maximumFractionDigits })} ${units[unitIndex]}`;
+}
+
+function formatSvCacheModeLabel(mode: SvCacheMode) {
+  return svCacheModeOptions.find((option) => option.id === mode)?.label ?? mode;
+}
+
+function hasValidScarletVioletSupportFolder(health: ProjectHealth) {
+  return health.paths.some(
+    (path) => path.role === 'scarletVioletSupportFolder' && path.status === 'valid'
+  );
 }
 
 function normalizeDraftPath(path: string) {
