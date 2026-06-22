@@ -529,7 +529,7 @@ internal sealed class SvTradePokemonWorkflowService
             CreateField(ScaleModeField, "Scale mode", 0, 6, SizeModeOptions),
             CreateField(ScaleValueField, "Scale value", short.MinValue, short.MaxValue),
             CreateField(RequiredSpeciesField, "Requested species", 0, MaximumOptionValue(speciesOptions, ushort.MaxValue), speciesOptions),
-            CreateField(RequiredFormField, "Requested form", 0, short.MaxValue),
+            CreateField(RequiredFormField, "Requested form", short.MinValue, short.MaxValue),
             CreateField(TrainerIdField, "Trainer ID", 0, int.MaxValue),
             CreateField(OtGenderField, "OT gender", 0, 2, GenderOptions),
         ];

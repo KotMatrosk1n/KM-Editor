@@ -993,7 +993,7 @@ describe('bridge contracts', () => {
               slot: 0
             }
           ],
-          requiredForm: 0,
+          requiredForm: -1,
           requiredNature: 25,
           requiredNatureLabel: 'Random',
           requiredSpecies: 'Eevee',

@@ -98,6 +98,14 @@ describe('Pokemon sprite ids', () => {
     expect(getPokemonSpriteId('Raging Bolt')).toBe('ragingbolt');
     expect(getPokemonSpriteId('Iron Boulder')).toBe('ironboulder');
     expect(getPokemonSpriteId('Iron Crown')).toBe('ironcrown');
+    expect(getPokemonSpriteId('Deerling (Spring Form)')).toBe('deerling');
+    expect(getPokemonSpriteId('Deerling (Summer Form)')).toBe('deerling-summer');
+    expect(getPokemonSpriteId('Deerling (Autumn Form)')).toBe('deerling-autumn');
+    expect(getPokemonSpriteId('Deerling (Winter Form)')).toBe('deerling-winter');
+    expect(getPokemonSpriteId('Sawsbuck (Spring Form)')).toBe('sawsbuck');
+    expect(getPokemonSpriteId('Sawsbuck (Summer Form)')).toBe('sawsbuck-summer');
+    expect(getPokemonSpriteId('Sawsbuck (Autumn Form)')).toBe('sawsbuck-autumn');
+    expect(getPokemonSpriteId('Sawsbuck (Winter Form)')).toBe('sawsbuck-winter');
     expect(getPokemonSpriteId('Lycanroc (Midday Form)')).toBe('lycanroc');
     expect(getPokemonSpriteId('Lycanroc (Midnight Form)')).toBe('lycanroc-midnight');
     expect(getPokemonSpriteId('Lycanroc (Dusk Form)')).toBe('lycanroc-dusk');
@@ -164,6 +172,14 @@ describe('Pokemon sprite ids', () => {
       'Raging Bolt',
       'Iron Boulder',
       'Iron Crown',
+      'Deerling (Spring Form)',
+      'Deerling (Summer Form)',
+      'Deerling (Autumn Form)',
+      'Deerling (Winter Form)',
+      'Sawsbuck (Spring Form)',
+      'Sawsbuck (Summer Form)',
+      'Sawsbuck (Autumn Form)',
+      'Sawsbuck (Winter Form)',
       'Lycanroc (Midday Form)',
       'Lycanroc (Midnight Form)',
       'Lycanroc (Dusk Form)',
@@ -223,12 +239,19 @@ describe('Pokemon sprite ids', () => {
     expect(formatSpeciesFormLabel('Lycanroc (Midnight Form)', 1, 745, 'sv')).toBe(
       'Lycanroc (Midnight Form)'
     );
+    expect(formatSpeciesFormLabel('Deerling (Form 1)', 1, 585, 'sv')).toBe(
+      'Deerling (Summer Form)'
+    );
+    expect(formatSpeciesFormLabel('Sawsbuck (Form 3)', 3, 586, 'sv')).toBe(
+      'Sawsbuck (Winter Form)'
+    );
   });
 
   it('keeps unknown forms and Sword Shield form fallbacks unchanged', () => {
     expect(formatSpeciesFormLabel('Pokemon 999 (Form 7)', 7, 999, 'sv')).toBe(
       'Pokemon 999 (Form 7)'
     );
+    expect(formatSpeciesFormLabel('Eevee', -1, 133, 'sv')).toBe('Eevee');
     expect(formatSpeciesFormLabel('Eevee', 1, 133, 'swsh')).toBe('Eevee (Form 1)');
   });
 });

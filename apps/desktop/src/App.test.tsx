@@ -3543,7 +3543,7 @@ describe('App', () => {
       ],
       stats: {
         sourceFileCount: 1,
-        totalSlotCount: 1,
+        totalSlotCount: 3,
         totalTableCount: 1
       },
       summary: {
@@ -3576,6 +3576,28 @@ describe('App', () => {
               timeOfDay: 'Morning, Noon, Evening, Night',
               weather: 'Cave',
               weight: 20
+            },
+            {
+              form: 1,
+              levelMax: 32,
+              levelMin: 16,
+              slot: 3,
+              species: 'Deerling (Form 1)',
+              speciesId: 585,
+              timeOfDay: 'Morning, Noon, Evening, Night',
+              weather: 'Grass',
+              weight: 60
+            },
+            {
+              form: 3,
+              levelMax: 55,
+              levelMin: 34,
+              slot: 4,
+              species: 'Sawsbuck (Form 3)',
+              speciesId: 586,
+              timeOfDay: 'Morning, Noon, Evening, Night',
+              weather: 'Grass',
+              weight: 40
             }
           ],
           tableId: 'sv:area-zero-cave:land'
@@ -3596,6 +3618,7 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
     await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
     await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
     await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
     await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
@@ -3605,6 +3628,23 @@ describe('App', () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText('Lycanroc (Midnight Form)').length).toBeGreaterThan(0);
     expect(screen.queryByText('Lycanroc (Form 1) (Midnight Form)')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /#585.*Deerling \(Summer Form\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /#586.*Sawsbuck \(Winter Form\)/ })).toBeInTheDocument();
+    expect(screen.queryByText('Deerling (Form 1) (Summer Form)')).not.toBeInTheDocument();
+    expect(screen.queryByText('Sawsbuck (Form 3) (Winter Form)')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /#585.*Deerling \(Summer Form\)/ }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByLabelText('Form')).toHaveDisplayValue('Summer Form');
+
+    await user.click(screen.getByRole('button', { name: 'Show Form options' }));
+
+    expect(screen.getByRole('option', { name: 'Spring Form' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Summer Form' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Autumn Form' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Winter Form' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Form 1' })).not.toBeInTheDocument();
   });
 
   it('labels Slowbro SwSh Galarian form without showing the reserved form slot', async () => {
