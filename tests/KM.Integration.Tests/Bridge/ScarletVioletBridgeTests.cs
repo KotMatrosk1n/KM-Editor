@@ -875,6 +875,60 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletPlacementHiddenItemsStageAndApplyItemSlots(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        WriteSvOutput(
+            temp,
+            SvDataPaths.HiddenItemDataTableSu1Array,
+            CreateHiddenItemDataTableArray(tableId: "kitakami_hidden", firstItemId: 4, firstEmergePercent: 80, firstDropCount: 3));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var placement = Dispatch<LoadPlacementWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(paths),
+            "request-sv-placement-hidden-items-load");
+        AssertSuccess(placement);
+        Assert.NotNull(placement.Payload!.Workflow.Categories);
+        Assert.Equal(2, placement.Payload.Workflow.Categories.Single(category => category.Id == "hiddenItems").ObjectCount);
+        var hiddenItem = placement.Payload.Workflow.Objects.Single(entry =>
+            entry.CategoryId == "hiddenItems"
+            && string.Equals(entry.Map, "Hidden Items - Paldea", StringComparison.Ordinal));
+        Assert.Equal("1 Master Ball", hiddenItem.Fields!.Single(field => field.Field == "hidden.item1.itemId").DisplayValue);
+        Assert.Equal("200", hiddenItem.Fields!.Single(field => field.Field == "hidden.item1.chance").DisplayValue);
+        Assert.Equal("1", hiddenItem.Fields!.Single(field => field.Field == "hidden.item1.count").DisplayValue);
+
+        var session = UpdatePlacement(dispatcher, paths, hiddenItem.ObjectId, field: "hidden.item1.itemId", value: "5");
+        session = UpdatePlacement(dispatcher, paths, session, hiddenItem.ObjectId, field: "hidden.item1.chance", value: "175");
+        session = UpdatePlacement(dispatcher, paths, session, hiddenItem.ObjectId, field: "hidden.item1.count", value: "4");
+        Apply(dispatcher, paths, session);
+
+        var paldeaOutput = HiddenItemDataTableArray.GetRootAsHiddenItemDataTableArray(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.HiddenItemDataTableArray)));
+        var editedSlot = paldeaOutput.Values(0)!.Value.Item(0)!.Value;
+        Assert.Equal(5, editedSlot.ItemId);
+        Assert.Equal(175, editedSlot.EmergePercent);
+        Assert.Equal(4, editedSlot.DropCount);
+        var untouchedSlot = paldeaOutput.Values(0)!.Value.Item(1)!.Value;
+        Assert.Equal(2, untouchedSlot.ItemId);
+        Assert.Equal(50, untouchedSlot.EmergePercent);
+        Assert.Equal(2, untouchedSlot.DropCount);
+
+        var kitakamiOutput = HiddenItemDataTableArray.GetRootAsHiddenItemDataTableArray(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.HiddenItemDataTableSu1Array)));
+        var kitakamiSlot = kitakamiOutput.Values(0)!.Value.Item(0)!.Value;
+        Assert.Equal(4, kitakamiSlot.ItemId);
+        Assert.Equal(80, kitakamiSlot.EmergePercent);
+        Assert.Equal(3, kitakamiSlot.DropCount);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletPokemonBaseExperienceAndYieldButtonsUsePersonalTableSemantics(
         ProjectGameDto game,
         ulong titleId)
@@ -1247,10 +1301,21 @@ public sealed class ScarletVioletBridgeTests
         string field,
         string value)
     {
+        return UpdatePlacement(dispatcher, paths, session: null, objectId, field, value);
+    }
+
+    private static EditSessionDto UpdatePlacement(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        EditSessionDto? session,
+        string objectId,
+        string field,
+        string value)
+    {
         var response = Dispatch<UpdatePlacementObjectFieldResponse>(
             dispatcher,
             KmCommandNames.UpdatePlacementObjectField,
-            new UpdatePlacementObjectFieldRequest(paths, Session: null, objectId, field, value),
+            new UpdatePlacementObjectFieldRequest(paths, session, objectId, field, value),
             "request-sv-placement-update");
 
         AssertSuccess(response);
@@ -1815,21 +1880,25 @@ public sealed class ScarletVioletBridgeTests
         return builder.SizedByteArray();
     }
 
-    private static byte[] CreateHiddenItemDataTableArray()
+    private static byte[] CreateHiddenItemDataTableArray(
+        string tableId = "1001",
+        int firstItemId = 1,
+        int firstEmergePercent = 200,
+        int firstDropCount = 1)
     {
         var builder = new FlatBufferBuilder(2048);
-        var tableId = builder.CreateString("1001");
+        var tableIdOffset = builder.CreateString(tableId);
         var item1 = HiddenItemDataTableInfo.CreateHiddenItemDataTableInfo(
             builder,
-            itemId: 1,
-            emergePercent: 200,
-            dropCount: 1);
+            itemId: firstItemId,
+            emergePercent: firstEmergePercent,
+            dropCount: firstDropCount);
         var item2 = HiddenItemDataTableInfo.CreateHiddenItemDataTableInfo(
             builder,
             itemId: 2,
             emergePercent: 50,
             dropCount: 2);
-        var hiddenItem = HiddenItemDataTable.CreateHiddenItemDataTable(builder, tableId, [item1, item2]);
+        var hiddenItem = HiddenItemDataTable.CreateHiddenItemDataTable(builder, tableIdOffset, [item1, item2]);
 
         var vector = HiddenItemDataTableArray.CreateValuesVector(builder, [hiddenItem]);
         var root = HiddenItemDataTableArray.CreateHiddenItemDataTableArray(builder, vector);
