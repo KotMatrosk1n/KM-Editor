@@ -968,6 +968,12 @@ h2 {
   border-color: #8d6a24;
 }
 
+.status-pill-info {
+  color: #dbe4ff;
+  background: rgb(79 70 229 / 22%);
+  border-color: rgb(109 115 255 / 42%);
+}
+
 .status-blocked {
   color: #ff6b6b;
   background: #32181b;
@@ -5427,6 +5433,137 @@ button.sv-encounter-condition-row:hover {
   margin-top: 16px;
 }
 
+.settings-subsection {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgb(93 113 151 / 24%);
+}
+
+.settings-subsection-heading {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.settings-subsection-heading svg {
+  flex: 0 0 auto;
+  color: var(--color-gold);
+  margin-top: 2px;
+}
+
+.settings-subsection-heading h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.settings-subsection-heading p {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sv-cache-mode-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sv-cache-mode-option {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  min-height: 104px;
+  padding: 12px;
+  color: var(--color-text-soft);
+  background: #0b1120;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sv-cache-mode-option:hover:not(:disabled),
+.sv-cache-mode-option-selected {
+  color: var(--color-text);
+  background: rgb(79 70 229 / 18%);
+  border-color: rgb(109 115 255 / 62%);
+}
+
+.sv-cache-mode-option span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-weight: 900;
+}
+
+.sv-cache-mode-option small {
+  color: var(--color-gold);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.sv-cache-mode-option p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sv-cache-mode-option-selected p {
+  color: var(--color-text-soft);
+}
+
+.sv-cache-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.sv-cache-limit-field {
+  min-width: 220px;
+}
+
+.sv-cache-progress-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px;
+  background: #0b1120;
+  border: 1px solid #26344d;
+  border-radius: 8px;
+}
+
+.sv-cache-progress-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sv-cache-progress-header div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sv-cache-progress-header svg {
+  color: var(--color-gold);
+}
+
+.sv-cache-progress-message {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .update-status {
   min-width: min(100%, 360px);
   margin: 0;
@@ -6100,6 +6237,10 @@ input {
   .mod-merger-conflict-values,
   .shiny-rate-current,
   .shiny-rate-custom {
+    grid-template-columns: 1fr;
+  }
+
+  .sv-cache-mode-options {
     grid-template-columns: 1fr;
   }
 

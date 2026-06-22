@@ -33,6 +33,7 @@ using KM.Api.ShinyRate;
 using KM.Api.SpreadsheetImport;
 using KM.Api.StartingItems;
 using KM.Api.StaticEncounters;
+using KM.Api.SvCache;
 using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Trades;
@@ -320,6 +321,10 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadSvModMergerWorkflow => DispatchLoadSvModMergerWorkflow(requestJson),
                 KmCommandNames.StageSvModMerge => DispatchStageSvModMerge(requestJson),
                 KmCommandNames.ApplySvModMerge => DispatchApplySvModMerge(requestJson),
+                KmCommandNames.GetSvCacheStatus => DispatchGetSvCacheStatus(requestJson),
+                KmCommandNames.UpdateSvCacheSettings => DispatchUpdateSvCacheSettings(requestJson),
+                KmCommandNames.ClearSvCache => DispatchClearSvCache(requestJson),
+                KmCommandNames.WarmupSvCacheStep => DispatchWarmupSvCacheStep(requestJson),
                 KmCommandNames.LoadFpsPatch => DispatchLoadFpsPatch(requestJson),
                 KmCommandNames.ApplyFpsPatch => DispatchApplyFpsPatch(requestJson),
                 KmCommandNames.RestoreFpsPatch => DispatchRestoreFpsPatch(requestJson),
@@ -1747,6 +1752,52 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchGetSvCacheStatus(string requestJson)
+    {
+        var request = DeserializeRequest<GetSvCacheStatusRequest>(requestJson);
+        var paths = request.Payload.Paths is null
+            ? null
+            : ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = SvBridgeMapper.ToDto(svWorkflowService.GetCacheStatus(paths));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateSvCacheSettings(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateSvCacheSettingsRequest>(requestJson);
+        var paths = request.Payload.Paths is null
+            ? null
+            : ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = SvBridgeMapper.ToDto(svWorkflowService.UpdateCacheSettings(
+            SvBridgeMapper.ToCore(request.Payload.Mode),
+            request.Payload.MaxCacheSizeBytes,
+            paths));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchClearSvCache(string requestJson)
+    {
+        var request = DeserializeRequest<ClearSvCacheRequest>(requestJson);
+        var paths = request.Payload.ActivePaths is null
+            ? null
+            : ProjectBridgeMapper.ToCore(request.Payload.ActivePaths);
+        var response = SvBridgeMapper.ToDto(svWorkflowService.ClearCache(paths));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchWarmupSvCacheStep(string requestJson)
+    {
+        var request = DeserializeRequest<WarmupSvCacheStepRequest>(requestJson);
+        var response = SvBridgeMapper.ToDto(svWorkflowService.WarmupCacheStep(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.StepIndex));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadFpsPatch(string requestJson)
     {
         var request = DeserializeRequest<LoadFpsPatchRequest>(requestJson);
@@ -2537,7 +2588,11 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.StageHyperspaceBypassUninstall or
             KmCommandNames.LoadSvModMergerWorkflow or
             KmCommandNames.StageSvModMerge or
-            KmCommandNames.ApplySvModMerge;
+            KmCommandNames.ApplySvModMerge or
+            KmCommandNames.GetSvCacheStatus or
+            KmCommandNames.UpdateSvCacheSettings or
+            KmCommandNames.ClearSvCache or
+            KmCommandNames.WarmupSvCacheStep;
     }
 
     private static SwShEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)

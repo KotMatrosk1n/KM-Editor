@@ -12,6 +12,13 @@ internal sealed class SvWorkflowFileSource
 {
     public const string DescriptorVirtualPath = SvTrinityDescriptorPatcher.DescriptorVirtualPath;
 
+    private readonly SvCacheManager cacheManager;
+
+    public SvWorkflowFileSource(SvCacheManager? cacheManager = null)
+    {
+        this.cacheManager = cacheManager ?? new SvCacheManager();
+    }
+
     public SvWorkflowFile Read(OpenedProject project, string virtualRomFsPath)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -69,17 +76,18 @@ internal sealed class SvWorkflowFileSource
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
             }
 
-            using var archive = SvTrinityArchive.Open(
-                project.Paths.BaseRomFsPath,
-                project.Paths.ScarletVioletSupportFolderPath);
-            if (archive.TryReadFile(normalizedVirtualPath, out var archiveBytes))
+            try
             {
+                var archiveBytes = cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new SvWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
                     archiveBytes,
                     ProjectFileLayer.Base,
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
+            }
+            catch (FileNotFoundException)
+            {
             }
         }
 
@@ -108,17 +116,18 @@ internal sealed class SvWorkflowFileSource
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
             }
 
-            using var archive = SvTrinityArchive.Open(
-                project.Paths.BaseRomFsPath,
-                project.Paths.ScarletVioletSupportFolderPath);
-            if (archive.TryReadFile(normalizedVirtualPath, out var archiveBytes))
+            try
             {
+                var archiveBytes = cacheManager.ReadBaseTrinityFile(project.Paths, normalizedVirtualPath);
                 return new SvWorkflowFile(
                     normalizedVirtualPath,
                     relativePath,
                     archiveBytes,
                     ProjectFileLayer.Base,
                     entry?.State ?? ProjectFileGraphEntryState.BaseOnly);
+            }
+            catch (FileNotFoundException)
+            {
             }
         }
 

@@ -48,6 +48,7 @@ import { createHyperspaceBypassBridgeFixture } from './hyperspaceBypassTestFixtu
 import { createNpcItemGiftBridgeFixture, createNpcItemGiftWorkflowFixture } from './npcItemGiftTestFixtures';
 import { createShinyRateWorkflowFixture, createStageShinyRateFixtureResponse } from './shinyRateTestFixtures';
 import { createSvBatchFieldBridgeFixtureMethods } from './svBatchFieldBridgeFixture';
+import { createSvCacheBridgeFixture } from './svCacheTestFixtures';
 export function createNativeUpdate(overrides: Partial<NativeUpdate> = {}): NativeUpdate {
   return {
     close: async () => undefined,
@@ -56,6 +57,7 @@ export function createNativeUpdate(overrides: Partial<NativeUpdate> = {}): Nativ
     ...overrides
   };
 }
+
 export function createMockDesktopServices(overrides: Partial<DesktopServices> = {}): DesktopServices {
   return {
     checkForNativeUpdate: async () => null,
@@ -5448,6 +5450,7 @@ export function createMockProjectBridge(
         writtenFiles: preview.canApply ? preview.files.map((file) => file.relativePath) : []
       });
     },
+    ...createSvCacheBridgeFixture(),
     loadSvModMergerWorkflow: (request) =>
       Promise.resolve({
         workflow: createSvModMergerWorkflow(request.modSources, request.paths.outputRootPath)

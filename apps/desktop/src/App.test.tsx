@@ -12,6 +12,7 @@ import {
   createNativeUpdate,
   createWrongGameHealth
 } from './testSupport/appTestFixtures';
+import { createSvCacheStatusFixture } from './testSupport/svCacheTestFixtures';
 import {
   type BagHookWorkflow,
   type BehaviorWorkflow,
@@ -1034,6 +1035,57 @@ describe('App', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Check for Updates' })).toBeInTheDocument();
+  });
+
+  it('shows S/V cache settings and confirms cache clearing', async () => {
+    const user = userEvent.setup();
+    const updateSvCacheSettings = vi.fn(async (request: Parameters<ProjectBridge['updateSvCacheSettings']>[0]) => ({
+      status: createSvCacheStatusFixture({
+        settings: {
+          maxCacheSizeBytes: request.maxCacheSizeBytes,
+          mode: request.mode
+        }
+      })
+    }));
+    const clearSvCache = vi.fn(async () => ({
+      status: createSvCacheStatusFixture({
+        cacheSizeBytes: 0,
+        message: 'S/V cache cleared.',
+        progressPercent: 0,
+        warmupCompleted: 0
+      })
+    }));
+
+    render(
+      <App
+        bridge={createMockProjectBridge({
+          clearSvCache,
+          updateSvCacheSettings
+        })}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Scarlet/Violet Data Cache' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('4 MB')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: /Performance/ }));
+
+    expect(updateSvCacheSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'performance',
+        paths: null
+      })
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Clear Cache (4 MB)' }));
+    const dialog = screen.getByRole('dialog', { name: 'Clear S/V Cache?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Clear Cache' }));
+
+    expect(clearSvCache).toHaveBeenCalledWith({ activePaths: null });
   });
 
   it('validates and opens a read-only project shell state', async () => {

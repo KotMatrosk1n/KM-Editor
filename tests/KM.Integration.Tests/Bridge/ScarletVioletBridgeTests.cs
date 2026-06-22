@@ -15,10 +15,12 @@ using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
+using KM.Api.SvCache;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.SV.Data;
+using KM.SV.Workflows;
 using KM.SV.Trainers;
 using KM.Integration.Tests.Tools;
 using KM.Formats.SV.Placement;
@@ -37,6 +39,63 @@ public sealed class ScarletVioletBridgeTests
     {
         yield return [ProjectGameDto.Scarlet, ScarletTitleId];
         yield return [ProjectGameDto.Violet, VioletTitleId];
+    }
+
+    [Fact]
+    public void ScarletVioletCacheBridgeCommandsReturnStatusAndSettings()
+    {
+        using var temp = CreateScarletVioletProject(ScarletTitleId);
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Scarlet };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+
+        var initial = Dispatch<SvCacheStatusResponse>(
+            dispatcher,
+            KmCommandNames.GetSvCacheStatus,
+            new GetSvCacheStatusRequest(paths),
+            "request-sv-cache-status");
+
+        AssertSuccess(initial);
+        Assert.Equal(SvCacheModeDto.Balanced, initial.Payload!.Status.Settings.Mode);
+        Assert.True(initial.Payload.Status.WarmupTotal > 0);
+
+        var updated = Dispatch<SvCacheStatusResponse>(
+            dispatcher,
+            KmCommandNames.UpdateSvCacheSettings,
+            new UpdateSvCacheSettingsRequest(
+                SvCacheModeDto.Performance,
+                2L * 1024 * 1024 * 1024,
+                paths),
+            "request-sv-cache-settings");
+
+        AssertSuccess(updated);
+        Assert.Equal(SvCacheModeDto.Performance, updated.Payload!.Status.Settings.Mode);
+        Assert.Equal(2L * 1024 * 1024 * 1024, updated.Payload.Status.Settings.MaxCacheSizeBytes);
+
+        var cleared = Dispatch<SvCacheStatusResponse>(
+            dispatcher,
+            KmCommandNames.ClearSvCache,
+            new ClearSvCacheRequest(paths),
+            "request-sv-cache-clear");
+
+        AssertSuccess(cleared);
+        Assert.Equal(SvCacheModeDto.Performance, cleared.Payload!.Status.Settings.Mode);
+    }
+
+    [Fact]
+    public void ScarletVioletCacheBridgeCommandsRejectSwordProjectPaths()
+    {
+        using var temp = CreateScarletVioletProject(ScarletTitleId);
+        var paths = temp.Paths with { SelectedGame = ProjectGameDto.Sword };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+
+        var response = Dispatch<SvCacheStatusResponse>(
+            dispatcher,
+            KmCommandNames.GetSvCacheStatus,
+            new GetSvCacheStatusRequest(paths),
+            "request-sv-cache-mismatch");
+
+        Assert.NotNull(response.Error);
+        Assert.Equal("bridge.gameMismatch", response.Error.Code);
     }
 
     [Fact]
@@ -1399,6 +1458,13 @@ public sealed class ScarletVioletBridgeTests
         temp.WriteBaseRomFsFile("arc/data.trpfs", "storage");
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(titleId));
         return temp;
+    }
+
+    private static ProjectBridgeDispatcher CreateDispatcherWithSvCache(TemporaryBridgeProject temp)
+    {
+        return new ProjectBridgeDispatcher(
+            svWorkflowService: new SvWorkflowService(
+                cacheManager: new SvCacheManager(Path.Combine(temp.RootPath, "sv-cache"))));
     }
 
     private static void WriteScarletFixtures(TemporaryBridgeProject temp)

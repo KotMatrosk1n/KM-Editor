@@ -8,6 +8,8 @@ namespace KM.Formats.SV;
 
 public sealed class SvTrinityArchive : IDisposable
 {
+    public const int IndexSchemaVersion = 1;
+
     private const string DescriptorRelativePath = "arc/data.trpfd";
     private const string FileSystemRelativePath = "arc/data.trpfs";
     private const int OneFileHeaderSize = 16;
@@ -39,7 +41,8 @@ public sealed class SvTrinityArchive : IDisposable
     public static SvTrinityArchive Open(
         string romFsRoot,
         string? compressionSupportFolderPath = null,
-        SvCompressionRuntimeLibrary? compressionLibrary = null)
+        SvCompressionRuntimeLibrary? compressionLibrary = null,
+        SvTrinityArchiveIndex? index = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(romFsRoot);
 
@@ -57,15 +60,35 @@ public sealed class SvTrinityArchive : IDisposable
             throw new FileNotFoundException("Scarlet/Violet Trinity file system was not found.", trpfsPath);
         }
 
-        var descriptor = FileDescriptor.GetRootAsFileDescriptor(new ByteBuffer(File.ReadAllBytes(descriptorPath)));
-        var fileSystem = ReadFileSystem(trpfsPath);
+        var archiveIndex = index ?? BuildIndexFromFiles(descriptorPath, trpfsPath);
 
         return new SvTrinityArchive(
             trpfsPath,
-            BuildFileIndex(descriptor),
-            BuildPackOffsetIndex(fileSystem),
+            BuildFileIndex(archiveIndex),
+            BuildPackOffsetIndex(archiveIndex),
             compressionSupportFolderPath,
             compressionLibrary);
+    }
+
+    public static SvTrinityArchiveIndex BuildIndex(string romFsRoot)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(romFsRoot);
+
+        var normalizedRoot = ResolveRomFsRoot(romFsRoot);
+        var descriptorPath = Path.Combine(normalizedRoot, DescriptorRelativePath);
+        var trpfsPath = Path.Combine(normalizedRoot, FileSystemRelativePath);
+
+        if (!File.Exists(descriptorPath))
+        {
+            throw new FileNotFoundException("Scarlet/Violet Trinity descriptor was not found.", descriptorPath);
+        }
+
+        if (!File.Exists(trpfsPath))
+        {
+            throw new FileNotFoundException("Scarlet/Violet Trinity file system was not found.", trpfsPath);
+        }
+
+        return BuildIndexFromFiles(descriptorPath, trpfsPath);
     }
 
     public bool ContainsFile(string virtualPath)
@@ -167,9 +190,39 @@ public sealed class SvTrinityArchive : IDisposable
         return FileSystem.GetRootAsFileSystem(new ByteBuffer(buffer));
     }
 
-    private static Dictionary<ulong, FileLocation> BuildFileIndex(FileDescriptor descriptor)
+    private static SvTrinityArchiveIndex BuildIndexFromFiles(string descriptorPath, string trpfsPath)
     {
-        var result = new Dictionary<ulong, FileLocation>(descriptor.FileHashesLength);
+        var descriptor = FileDescriptor.GetRootAsFileDescriptor(new ByteBuffer(File.ReadAllBytes(descriptorPath)));
+        var fileSystem = ReadFileSystem(trpfsPath);
+        return new SvTrinityArchiveIndex(
+            IndexSchemaVersion,
+            BuildFileIndexEntries(descriptor),
+            BuildPackIndexEntries(fileSystem));
+    }
+
+    private static Dictionary<ulong, FileLocation> BuildFileIndex(SvTrinityArchiveIndex index)
+    {
+        if (index.SchemaVersion != IndexSchemaVersion)
+        {
+            throw new InvalidDataException(
+                $"Scarlet/Violet Trinity cache index schema {index.SchemaVersion} is not supported.");
+        }
+
+        var result = new Dictionary<ulong, FileLocation>(index.Files.Count);
+        foreach (var file in index.Files)
+        {
+            result[file.FileHash] = new FileLocation(
+                file.PackName,
+                file.PackHash,
+                file.PackSize);
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<SvTrinityArchiveFileIndexEntry> BuildFileIndexEntries(FileDescriptor descriptor)
+    {
+        var result = new List<SvTrinityArchiveFileIndexEntry>(descriptor.FileHashesLength);
 
         for (var index = 0; index < descriptor.FileHashesLength; index++)
         {
@@ -188,16 +241,34 @@ public sealed class SvTrinityArchive : IDisposable
             var pack = descriptor.Packs(packIndex)
                 ?? throw new InvalidDataException($"Trinity descriptor pack entry {packIndex} is missing.");
 
-            result[hash] = new FileLocation(
-                PackName: packName,
-                PackHash: SvTrinityPathHasher.HashPath(packName),
-                PackSize: checked((long)pack.FileSize));
+            result.Add(new SvTrinityArchiveFileIndexEntry(
+                hash,
+                packName,
+                SvTrinityPathHasher.HashPath(packName),
+                checked((long)pack.FileSize)));
         }
 
         return result;
     }
 
-    private static Dictionary<ulong, ulong> BuildPackOffsetIndex(FileSystem fileSystem)
+    private static Dictionary<ulong, ulong> BuildPackOffsetIndex(SvTrinityArchiveIndex index)
+    {
+        if (index.SchemaVersion != IndexSchemaVersion)
+        {
+            throw new InvalidDataException(
+                $"Scarlet/Violet Trinity cache index schema {index.SchemaVersion} is not supported.");
+        }
+
+        var result = new Dictionary<ulong, ulong>(index.Packs.Count);
+        foreach (var pack in index.Packs)
+        {
+            result[pack.PackHash] = pack.Offset;
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<SvTrinityArchivePackIndexEntry> BuildPackIndexEntries(FileSystem fileSystem)
     {
         if (fileSystem.FileHashesLength != fileSystem.FileOffsetsLength)
         {
@@ -205,10 +276,12 @@ public sealed class SvTrinityArchive : IDisposable
                 $"Trinity file system has {fileSystem.FileHashesLength} hashes but {fileSystem.FileOffsetsLength} offsets.");
         }
 
-        var result = new Dictionary<ulong, ulong>(fileSystem.FileHashesLength);
+        var result = new List<SvTrinityArchivePackIndexEntry>(fileSystem.FileHashesLength);
         for (var index = 0; index < fileSystem.FileHashesLength; index++)
         {
-            result[fileSystem.FileHashes(index)] = fileSystem.FileOffsets(index);
+            result.Add(new SvTrinityArchivePackIndexEntry(
+                fileSystem.FileHashes(index),
+                fileSystem.FileOffsets(index)));
         }
 
         return result;

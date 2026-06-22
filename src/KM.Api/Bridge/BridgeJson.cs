@@ -3,6 +3,7 @@
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Projects;
+using KM.Api.SvCache;
 using KM.Api.Workflows;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -30,6 +31,7 @@ public static class BridgeJson
         options.Converters.Add(new JsonStringEnumConverter<ProjectFileLayerDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<ProjectPathRoleDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<ProjectPathStatusDto>(JsonNamingPolicy.CamelCase));
+        options.Converters.Add(new JsonStringEnumConverter<SvCacheModeDto>(JsonNamingPolicy.CamelCase));
         options.Converters.Add(new JsonStringEnumConverter<WorkflowAvailabilityDto>(JsonNamingPolicy.CamelCase));
 
         return options;
