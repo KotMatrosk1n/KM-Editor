@@ -22,11 +22,21 @@ internal static class SwShFpsRomFsTestFixtures
     public const string TrainerThrowLooseRelativePath = "romfs/bin/chara/data/tr/tr0165_00_wife/anm/tr0165_00_ba0120_g_ballthrow01_loop.gfbanm";
     public const string TrainerThrowArchiveRelativePath = "romfs/bin/archive/chara/data/tr/anm/tr0002_00_friend_tr0002_00_battle01.gfpak";
     public const string TitleDemoRelativePath = "romfs/bin/demo/sequence/sd9010_title.bseq";
+    public const string EvolutionDemoRelativePath = "romfs/bin/demo/sequence/sd9110_evolution.bseq";
+    public const string EvolutionAfterDemoRelativePath = "romfs/bin/demo/sequence/sd9111_evolution_after.bseq";
+    public const string ItemKinomiAnimationRelativePath = "romfs/bin/battle/waza/model/anm/ee006_kinomi.gfbanm";
+    public const string BerryKinomiAnimationRelativePath = "romfs/bin/battle/waza/model/anm/ew752_kinomi.gfbanm";
     public const string TrainerThrowArchiveClipName = "tr0002_00_ba0122_g_ballthrow01_end.gfbanm";
     public const string TrainerNonThrowArchiveClipName = "tr0002_00_ba0414_speak03_end.gfbanm";
     private static readonly string[] RequiredSpecialBallSequenceNames =
     [
         "d230.bseq",
+        "ee004.bseq",
+        "ee004_g.bseq",
+        "ee005.bseq",
+        "ee005_g.bseq",
+        "ee006.bseq",
+        "ee006_g.bseq",
         "ee101.bseq",
         "ee102.bseq",
         "ee103.bseq",
@@ -90,6 +100,8 @@ internal static class SwShFpsRomFsTestFixtures
         temp.WriteBaseRomFsFile("bin/demo/sequence/d030.bseq", moveBseq);
         temp.WriteBaseRomFsFile("bin/demo/sequence/r2d020.bseq", moveBseq);
         temp.WriteBaseRomFsFile(TitleDemoRelativePath["romfs/".Length..], moveBseq);
+        temp.WriteBaseRomFsFile(EvolutionDemoRelativePath["romfs/".Length..], moveBseq);
+        temp.WriteBaseRomFsFile(EvolutionAfterDemoRelativePath["romfs/".Length..], moveBseq);
         foreach (var sequenceName in RequiredSpecialBallSequenceNames)
         {
             temp.WriteBaseRomFsFile($"bin/battle/waza/sequence/{sequenceName}", moveBseq);
@@ -124,6 +136,12 @@ internal static class SwShFpsRomFsTestFixtures
         temp.WriteBaseRomFsFile(
             TrainerThrowArchiveRelativePath["romfs/".Length..],
             CreateTrainerThrowArchive());
+        temp.WriteBaseRomFsFile(
+            ItemKinomiAnimationRelativePath["romfs/".Length..],
+            CreateGfAnimationClip(keyFrames: 120, frameRate: 60));
+        temp.WriteBaseRomFsFile(
+            BerryKinomiAnimationRelativePath["romfs/".Length..],
+            CreateGfAnimationClip(keyFrames: 120, frameRate: 60));
     }
 
     public static byte[] CreateMoveBseq(uint frameCount, uint startFrame, uint endFrame)
