@@ -79,6 +79,71 @@ internal sealed class SvGiftPokemonEditSessionService
             diagnostics);
     }
 
+    public SvGiftPokemonEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvGiftPokemonFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = giftPokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!SvEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                SvEditSessionSupport.GiftPokemonDomain,
+                diagnostics))
+        {
+            return new SvGiftPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = currentSession;
+        foreach (var update in updates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Gift Pokemon batch update is missing a field or value.",
+                    SvEditSessionSupport.GiftPokemonDomain,
+                    field: "updates",
+                    expected: "Complete gift Pokemon field update"));
+                continue;
+            }
+
+            var gift = workflow.Gifts.FirstOrDefault(candidate => candidate.GiftIndex == update.GiftIndex);
+            if (gift is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Gift Pokemon index {update.GiftIndex} is not present in the loaded workflow.",
+                    SvEditSessionSupport.GiftPokemonDomain,
+                    field: "giftIndex",
+                    expected: "Existing gift Pokemon record"));
+                continue;
+            }
+
+            var pendingEdit = CreatePendingEdit(workflow, gift, update.Field, update.Value, diagnostics);
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            updatedSession = SvEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
+        }
+
+        return new SvGiftPokemonEditResult(
+            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
+            updatedSession,
+            diagnostics);
+    }
+
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);

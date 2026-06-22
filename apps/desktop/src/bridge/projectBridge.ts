@@ -307,18 +307,17 @@ import {
   stageHyperspaceBypassUninstallResponseSchema
 } from './hyperspaceBypassContracts';
 export { ProjectBridgeError } from './projectBridgeError';
+import { sendProjectBridgeRequest, type ProjectBridgeTransport } from './projectBridgeRequest';
 import {
-  sendProjectBridgeRequest,
-  type ProjectBridgeTransport
-} from './projectBridgeRequest';
+  createSvBatchFieldProjectBridgeApi,
+  type SvBatchFieldProjectBridgeApi
+} from './svBatchFieldProjectBridge';
 
 export type ProjectBridge = {
   applyChangePlan: (request: ApplyChangePlanRequest) => Promise<ApplyChangePlanResponse>;
   createChangePlan: (request: CreateChangePlanRequest) => Promise<CreateChangePlanResponse>;
   listWorkflows: (request: ListWorkflowsRequest) => Promise<ListWorkflowsResponse>;
-  loadEncountersWorkflow: (
-    request: LoadEncountersWorkflowRequest
-  ) => Promise<LoadEncountersWorkflowResponse>;
+  loadEncountersWorkflow: (request: LoadEncountersWorkflowRequest) => Promise<LoadEncountersWorkflowResponse>;
   loadExeFsPatchWorkflow: (
     request: LoadExeFsPatchWorkflowRequest
   ) => Promise<LoadExeFsPatchWorkflowResponse>;
@@ -559,7 +558,7 @@ export type ProjectBridge = {
     request: ValidateEditSessionRequest
   ) => Promise<ValidateEditSessionResponse>;
   validateProject: (request: ValidateProjectRequest) => Promise<ValidateProjectResponse>;
-};
+} & SvBatchFieldProjectBridgeApi;
 
 const tauriProjectBridgeTransport: ProjectBridgeTransport = (requestJson) => {
   if (!hasTauriRuntime()) {
@@ -1224,6 +1223,7 @@ export function createProjectBridge(
         request,
         updateTrainerFieldResponseSchema
       ),
+    ...createSvBatchFieldProjectBridgeApi(transport),
     validateEditSession: (request) =>
       sendProjectBridgeRequest(
         transport,

@@ -79,6 +79,75 @@ internal sealed class SvMovesEditSessionService
             diagnostics);
     }
 
+    public SvMovesEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvMoveFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = movesWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!SvEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                SvEditSessionSupport.MovesDomain,
+                diagnostics))
+        {
+            return new SvMovesEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = currentSession;
+        var effectiveWorkflow = workflow;
+        foreach (var update in updates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Move batch update is missing a field or value.",
+                    SvEditSessionSupport.MovesDomain,
+                    field: "updates",
+                    expected: "Complete move field update"));
+                continue;
+            }
+
+            var move = effectiveWorkflow.Moves.FirstOrDefault(candidate => candidate.MoveId == update.MoveId);
+            if (move is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Move {update.MoveId} is not present in the loaded Moves workflow.",
+                    SvEditSessionSupport.MovesDomain,
+                    field: "moveId",
+                    expected: "Existing S/V move record"));
+                continue;
+            }
+
+            var pendingEdit = CreatePendingEdit(move, update.Field, update.Value, diagnostics);
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            updatedSession = SvEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+        }
+
+        ValidatePendingPairs(loadedWorkflow, updatedSession.PendingEdits, diagnostics);
+
+        return new SvMovesEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);

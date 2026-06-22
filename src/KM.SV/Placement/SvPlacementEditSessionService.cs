@@ -83,6 +83,73 @@ internal sealed class SvPlacementEditSessionService
             diagnostics);
     }
 
+    public SvPlacementEditResult UpdateObjectFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvPlacementObjectFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = placementWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!SvEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                SvEditSessionSupport.PlacementDomain,
+                diagnostics))
+        {
+            return new SvPlacementEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = currentSession;
+        var effectiveWorkflow = workflow;
+        foreach (var update in updates)
+        {
+            if (string.IsNullOrWhiteSpace(update.ObjectId)
+                || string.IsNullOrWhiteSpace(update.Field)
+                || update.Value is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Placement batch update is missing an object, field, or value.",
+                    field: "updates",
+                    expected: "Complete Placement object field update"));
+                continue;
+            }
+
+            var placedObject = effectiveWorkflow.Objects.FirstOrDefault(candidate => candidate.ObjectId == update.ObjectId);
+            if (placedObject is null)
+            {
+                diagnostics.Add(CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Placement edit targets an object that is not loaded.",
+                    field: "objectId",
+                    expected: "Existing placement object"));
+                continue;
+            }
+
+            var pendingEdit = CreatePendingEdit(effectiveWorkflow, placedObject, update.Field, update.Value, diagnostics);
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            updatedSession = ReplacePendingPlacementEdit(updatedSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+        }
+
+        return new SvPlacementEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);

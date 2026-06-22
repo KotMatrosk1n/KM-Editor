@@ -17,6 +17,17 @@ public sealed record UpdateEncounterSlotFieldRequest(
     string Field,
     string Value);
 
+public sealed record EncounterSlotFieldUpdateDto(
+    string TableId,
+    int Slot,
+    string Field,
+    string Value);
+
+public sealed record UpdateEncounterSlotFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<EncounterSlotFieldUpdateDto> Updates);
+
 public sealed record EncounterProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -70,6 +81,11 @@ public sealed record EncountersWorkflowDto(
 public sealed record LoadEncountersWorkflowResponse(EncountersWorkflowDto Workflow);
 
 public sealed record UpdateEncounterSlotFieldResponse(
+    EncountersWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateEncounterSlotFieldsResponse(
     EncountersWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

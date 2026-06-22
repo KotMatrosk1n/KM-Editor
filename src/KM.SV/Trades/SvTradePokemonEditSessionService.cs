@@ -79,6 +79,71 @@ internal sealed class SvTradePokemonEditSessionService
             diagnostics);
     }
 
+    public SvTradePokemonEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvTradePokemonFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = tradePokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(project, loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!SvEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                SvEditSessionSupport.TradePokemonDomain,
+                diagnostics))
+        {
+            return new SvTradePokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = currentSession;
+        foreach (var update in updates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Trade Pokemon batch update is missing a field or value.",
+                    SvEditSessionSupport.TradePokemonDomain,
+                    field: "updates",
+                    expected: "Complete trade Pokemon field update"));
+                continue;
+            }
+
+            var trade = workflow.Trades.FirstOrDefault(candidate => candidate.TradeIndex == update.TradeIndex);
+            if (trade is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    $"Trade Pokemon index {update.TradeIndex} is not present in the loaded workflow.",
+                    SvEditSessionSupport.TradePokemonDomain,
+                    field: "tradeIndex",
+                    expected: "Existing trade Pokemon record"));
+                continue;
+            }
+
+            var pendingEdit = CreatePendingEdit(workflow, trade, update.Field, update.Value, diagnostics);
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            updatedSession = SvEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
+        }
+
+        return new SvTradePokemonEditResult(
+            OverlayPendingEdits(project, loadedWorkflow, updatedSession.PendingEdits, diagnostics),
+            updatedSession,
+            diagnostics);
+    }
+
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);

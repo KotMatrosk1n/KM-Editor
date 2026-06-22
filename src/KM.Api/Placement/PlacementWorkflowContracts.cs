@@ -94,7 +94,22 @@ public sealed record UpdatePlacementObjectFieldRequest(
     string Field,
     string Value);
 
+public sealed record PlacementObjectFieldUpdateDto(
+    string ObjectId,
+    string Field,
+    string Value);
+
+public sealed record UpdatePlacementObjectFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<PlacementObjectFieldUpdateDto> Updates);
+
 public sealed record UpdatePlacementObjectFieldResponse(
+    PlacementWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdatePlacementObjectFieldsResponse(
     PlacementWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

@@ -220,6 +220,14 @@ public sealed class SvWorkflowService
         return itemsEditSessionService.UpdateField(paths, session, itemId, field, value);
     }
 
+    public SvItemsEditResult UpdateItemFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvItemFieldUpdate> updates)
+    {
+        return itemsEditSessionService.UpdateFields(paths, session, updates);
+    }
+
     public SvMovesEditResult UpdateMoveField(
         ProjectPaths paths,
         EditSession? session,
@@ -230,6 +238,14 @@ public sealed class SvWorkflowService
         return movesEditSessionService.UpdateField(paths, session, moveId, field, value);
     }
 
+    public SvMovesEditResult UpdateMoveFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvMoveFieldUpdate> updates)
+    {
+        return movesEditSessionService.UpdateFields(paths, session, updates);
+    }
+
     public SvPokemonEditResult UpdatePokemonField(
         ProjectPaths paths,
         EditSession? session,
@@ -238,6 +254,14 @@ public sealed class SvWorkflowService
         string value)
     {
         return pokemonEditSessionService.UpdateField(paths, session, personalId, field, value);
+    }
+
+    public SvPokemonEditResult UpdatePokemonFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvPokemonFieldUpdate> updates)
+    {
+        return pokemonEditSessionService.UpdateFields(paths, session, updates);
     }
 
     public SvPokemonEditResult UpdatePokemonLearnset(
@@ -288,6 +312,14 @@ public sealed class SvWorkflowService
         return trainersEditSessionService.UpdateField(paths, session, trainerId, slot, field, value);
     }
 
+    public SvTrainersEditResult UpdateTrainerFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvTrainerFieldUpdate> updates)
+    {
+        return trainersEditSessionService.UpdateFields(paths, session, updates);
+    }
+
     public SvEncountersEditResult UpdateEncounterSlotField(
         ProjectPaths paths,
         EditSession? session,
@@ -297,6 +329,14 @@ public sealed class SvWorkflowService
         string value)
     {
         return encountersEditSessionService.UpdateSlotField(paths, session, tableId, slot, field, value);
+    }
+
+    public SvEncountersEditResult UpdateEncounterSlotFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvEncounterSlotFieldUpdate> updates)
+    {
+        return encountersEditSessionService.UpdateSlotFields(paths, session, updates);
     }
 
     public SvGiftPokemonEditResult UpdateGiftPokemonField(
@@ -309,6 +349,14 @@ public sealed class SvWorkflowService
         return giftPokemonEditSessionService.UpdateField(paths, session, giftIndex, field, value);
     }
 
+    public SvGiftPokemonEditResult UpdateGiftPokemonFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvGiftPokemonFieldUpdate> updates)
+    {
+        return giftPokemonEditSessionService.UpdateFields(paths, session, updates);
+    }
+
     public SvTradePokemonEditResult UpdateTradePokemonField(
         ProjectPaths paths,
         EditSession? session,
@@ -319,6 +367,14 @@ public sealed class SvWorkflowService
         return tradePokemonEditSessionService.UpdateField(paths, session, tradeIndex, field, value);
     }
 
+    public SvTradePokemonEditResult UpdateTradePokemonFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvTradePokemonFieldUpdate> updates)
+    {
+        return tradePokemonEditSessionService.UpdateFields(paths, session, updates);
+    }
+
     public SvPlacementEditResult UpdatePlacementObjectField(
         ProjectPaths paths,
         EditSession? session,
@@ -327,6 +383,14 @@ public sealed class SvWorkflowService
         string value)
     {
         return placementEditSessionService.UpdateObjectField(paths, session, objectId, field, value);
+    }
+
+    public SvPlacementEditResult UpdatePlacementObjectFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvPlacementObjectFieldUpdate> updates)
+    {
+        return placementEditSessionService.UpdateObjectFields(paths, session, updates);
     }
 
     public SvHyperspaceBypassEditResult StageHyperspaceBypassInstall(

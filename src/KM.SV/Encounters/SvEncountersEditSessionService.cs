@@ -84,6 +84,82 @@ internal sealed class SvEncountersEditSessionService
             diagnostics);
     }
 
+    public SvEncountersEditResult UpdateSlotFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvEncounterSlotFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = encountersWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!SvEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                SvEditSessionSupport.EncountersDomain,
+                diagnostics))
+        {
+            return new SvEncountersEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = currentSession;
+        var effectiveWorkflow = workflow;
+        foreach (var update in updates)
+        {
+            if (string.IsNullOrWhiteSpace(update.TableId)
+                || string.IsNullOrWhiteSpace(update.Field)
+                || update.Value is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Encounter batch update is missing a table, field, or value.",
+                    SvEditSessionSupport.EncountersDomain,
+                    field: "updates",
+                    expected: "Complete encounter slot field update"));
+                continue;
+            }
+
+            var table = effectiveWorkflow.Tables.FirstOrDefault(candidate => candidate.TableId == update.TableId);
+            var slotRecord = table?.Slots.FirstOrDefault(candidate => candidate.Slot == update.Slot);
+            if (table is null || slotRecord is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Encounter edit targets a table or slot that is not loaded.",
+                    SvEditSessionSupport.EncountersDomain,
+                    field: "slot",
+                    expected: "Existing encounter table slot"));
+                continue;
+            }
+
+            var pendingEdit = CreatePendingEdit(
+                effectiveWorkflow,
+                table,
+                slotRecord,
+                update.Field,
+                update.Value,
+                diagnostics);
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            updatedSession = SvEditSessionSupport.ReplacePendingEdit(updatedSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdit(effectiveWorkflow, pendingEdit);
+        }
+
+        return new SvEncountersEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
     public SvEditSessionValidation Validate(ProjectPaths paths, EditSession session)
     {
         ArgumentNullException.ThrowIfNull(paths);

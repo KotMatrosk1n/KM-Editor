@@ -16,6 +16,16 @@ public sealed record UpdateMoveFieldRequest(
     string Field,
     string Value);
 
+public sealed record MoveFieldUpdateDto(
+    int MoveId,
+    string Field,
+    string Value);
+
+public sealed record UpdateMoveFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<MoveFieldUpdateDto> Updates);
+
 public sealed record MoveProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -96,6 +106,11 @@ public sealed record MovesWorkflowDto(
 public sealed record LoadMovesWorkflowResponse(MovesWorkflowDto Workflow);
 
 public sealed record UpdateMoveFieldResponse(
+    MovesWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateMoveFieldsResponse(
     MovesWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);

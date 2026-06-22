@@ -121,6 +121,82 @@ internal sealed class SvPokemonEditSessionService
             diagnostics);
     }
 
+    public SvPokemonEditResult UpdateFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvPokemonFieldUpdate> updates)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentNullException.ThrowIfNull(updates);
+
+        var currentSession = session ?? EditSession.Start();
+        var project = projectWorkspaceService.Open(paths);
+        var loadedWorkflow = pokemonWorkflowService.Load(project);
+        var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
+        var diagnostics = new List<ValidationDiagnostic>();
+
+        if (!SvEditSessionSupport.CanEdit(
+                project,
+                workflow.Summary,
+                workflow.Diagnostics,
+                SvEditSessionSupport.PokemonDomain,
+                diagnostics))
+        {
+            return new SvPokemonEditResult(workflow, currentSession, diagnostics);
+        }
+
+        var updatedSession = currentSession;
+        var effectiveWorkflow = workflow;
+        foreach (var update in updates)
+        {
+            if (string.IsNullOrWhiteSpace(update.Field) || update.Value is null)
+            {
+                diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                    DiagnosticSeverity.Error,
+                    "Pokemon Data batch update is missing a field or value.",
+                    SvEditSessionSupport.PokemonDomain,
+                    field: "updates",
+                    expected: "Complete Pokemon Data field update"));
+                continue;
+            }
+
+            PendingEdit? pendingEdit;
+            if (IsGlobalYieldField(update.Field))
+            {
+                pendingEdit = CreateGlobalYieldPendingEdit(update.Field, update.Value, diagnostics);
+            }
+            else
+            {
+                var pokemon = effectiveWorkflow.Pokemon.FirstOrDefault(candidate => candidate.PersonalId == update.PersonalId);
+                if (pokemon is null)
+                {
+                    diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
+                        DiagnosticSeverity.Error,
+                        $"Pokemon personal record {update.PersonalId} is not present in the loaded Pokemon Data workflow.",
+                        SvEditSessionSupport.PokemonDomain,
+                        field: "personalId",
+                        expected: "Existing Pokemon personal record"));
+                    continue;
+                }
+
+                pendingEdit = CreateFieldPendingEdit(effectiveWorkflow, pokemon, update.Field, update.Value, diagnostics);
+            }
+
+            if (pendingEdit is null)
+            {
+                continue;
+            }
+
+            updatedSession = ReplacePendingPokemonEdit(updatedSession, pendingEdit);
+            effectiveWorkflow = OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits);
+        }
+
+        return new SvPokemonEditResult(
+            OverlayPendingEdits(loadedWorkflow, updatedSession.PendingEdits),
+            updatedSession,
+            diagnostics);
+    }
+
     public SvPokemonEditResult UpdateLearnset(
         ProjectPaths paths,
         EditSession? session,

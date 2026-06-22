@@ -47,6 +47,7 @@ import { createFairyGymBoostsWorkflowFixture } from './fairyGymBoostsTestFixture
 import { createHyperspaceBypassBridgeFixture } from './hyperspaceBypassTestFixtures';
 import { createNpcItemGiftBridgeFixture, createNpcItemGiftWorkflowFixture } from './npcItemGiftTestFixtures';
 import { createShinyRateWorkflowFixture, createStageShinyRateFixtureResponse } from './shinyRateTestFixtures';
+import { createSvBatchFieldBridgeFixtureMethods } from './svBatchFieldBridgeFixture';
 export function createNativeUpdate(overrides: Partial<NativeUpdate> = {}): NativeUpdate {
   return {
     close: async () => undefined,
@@ -5661,6 +5662,26 @@ export function createMockProjectBridge(
           sessionId: 'session-1'
         }
       }),
+    ...createSvBatchFieldBridgeFixtureMethods({
+      createItemDetailGroups,
+      encountersWorkflow,
+      getGiftPokemonWorkflow: () => currentGiftPokemonWorkflow,
+      getMockPokemonCompatibilityLabel: (workflow, personalId, field) =>
+        getMockPokemonCompatibilityLabel(workflow, personalId, field) ?? null,
+      getTradePokemonWorkflow: () => currentTradePokemonWorkflow,
+      itemsWorkflow,
+      ivFieldToKey,
+      movesWorkflow,
+      placementWorkflow,
+      pokemonWorkflow,
+      setGiftPokemonWorkflow: (workflow) => {
+        currentGiftPokemonWorkflow = workflow;
+      },
+      setTradePokemonWorkflow: (workflow) => {
+        currentTradePokemonWorkflow = workflow;
+      },
+      trainersWorkflow
+    }),
     updateItemField: (request) => {
       const fieldLabels: Record<string, string> = {
         buyPrice: 'buy price',

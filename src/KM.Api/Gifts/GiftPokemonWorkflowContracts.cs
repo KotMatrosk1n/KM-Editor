@@ -16,6 +16,16 @@ public sealed record UpdateGiftPokemonFieldRequest(
     string Field,
     string Value);
 
+public sealed record GiftPokemonFieldUpdateDto(
+    int GiftIndex,
+    string Field,
+    string Value);
+
+public sealed record UpdateGiftPokemonFieldsRequest(
+    ProjectPathsDto Paths,
+    EditSessionDto? Session,
+    IReadOnlyList<GiftPokemonFieldUpdateDto> Updates);
+
 public sealed record GiftPokemonProvenanceDto(
     string SourceFile,
     ProjectFileLayerDto SourceLayer,
@@ -116,6 +126,11 @@ public sealed record GiftPokemonWorkflowDto(
 public sealed record LoadGiftPokemonWorkflowResponse(GiftPokemonWorkflowDto Workflow);
 
 public sealed record UpdateGiftPokemonFieldResponse(
+    GiftPokemonWorkflowDto Workflow,
+    EditSessionDto Session,
+    IReadOnlyList<ApiDiagnostic> Diagnostics);
+
+public sealed record UpdateGiftPokemonFieldsResponse(
     GiftPokemonWorkflowDto Workflow,
     EditSessionDto Session,
     IReadOnlyList<ApiDiagnostic> Diagnostics);
