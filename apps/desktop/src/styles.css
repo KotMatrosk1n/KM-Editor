@@ -5525,6 +5525,34 @@ button.sv-encounter-condition-row:hover {
   align-items: center;
 }
 
+.sv-cache-size-metric {
+  min-width: 170px;
+}
+
+.sv-cache-size-value {
+  display: inline-block;
+}
+
+.sv-cache-size-value-refreshed {
+  animation: sv-cache-size-refresh 640ms ease;
+}
+
+.sv-cache-refresh-button {
+  transition:
+    color 140ms ease,
+    background 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 90ms ease;
+}
+
+.sv-cache-refresh-button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
+  box-shadow:
+    0 0 0 3px rgb(109 115 255 / 18%),
+    var(--shadow-inset);
+}
+
 .sv-cache-limit-field {
   min-width: 220px;
 }
@@ -5899,6 +5927,26 @@ button.sv-encounter-condition-row:hover {
 @keyframes km-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes sv-cache-size-refresh {
+  0% {
+    color: var(--color-text);
+    text-shadow: 0 0 0 rgb(214 168 66 / 0%);
+    transform: translateY(0);
+  }
+
+  35% {
+    color: var(--color-gold);
+    text-shadow: 0 0 16px rgb(214 168 66 / 42%);
+    transform: translateY(-1px);
+  }
+
+  100% {
+    color: var(--color-text);
+    text-shadow: 0 0 0 rgb(214 168 66 / 0%);
+    transform: translateY(0);
   }
 }
 
