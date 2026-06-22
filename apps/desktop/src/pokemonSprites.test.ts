@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
 import { describe, expect, it } from 'vitest';
-import { getPokemonSpriteId, getPokemonSpriteIds } from './App';
+import { formatSpeciesFormLabel, getPokemonSpriteId, getPokemonSpriteIds } from './App';
 
 const bundledStaticSpriteIds = new Set(
   Object.keys(import.meta.glob('../public/sprites/gen5/*.png', { eager: true })).map((filePath) =>
@@ -98,6 +98,9 @@ describe('Pokemon sprite ids', () => {
     expect(getPokemonSpriteId('Raging Bolt')).toBe('ragingbolt');
     expect(getPokemonSpriteId('Iron Boulder')).toBe('ironboulder');
     expect(getPokemonSpriteId('Iron Crown')).toBe('ironcrown');
+    expect(getPokemonSpriteId('Lycanroc (Midday Form)')).toBe('lycanroc');
+    expect(getPokemonSpriteId('Lycanroc (Midnight Form)')).toBe('lycanroc-midnight');
+    expect(getPokemonSpriteId('Lycanroc (Dusk Form)')).toBe('lycanroc-dusk');
     expect(getPokemonSpriteId('Wo-Chien')).toBe('wochien');
     expect(getPokemonSpriteId('Chien-Pao')).toBe('chienpao');
     expect(getPokemonSpriteId('Ting-Lu')).toBe('tinglu');
@@ -161,6 +164,9 @@ describe('Pokemon sprite ids', () => {
       'Raging Bolt',
       'Iron Boulder',
       'Iron Crown',
+      'Lycanroc (Midday Form)',
+      'Lycanroc (Midnight Form)',
+      'Lycanroc (Dusk Form)',
       'Wo-Chien',
       'Chien-Pao',
       'Ting-Lu',
@@ -207,5 +213,22 @@ describe('Pokemon sprite ids', () => {
     for (const label of labels) {
       expect(hasBundledStaticSprite(label), label).toBe(true);
     }
+  });
+
+  it('uses Scarlet and Violet friendly form labels instead of duplicate generic labels', () => {
+    expect(formatSpeciesFormLabel('Lycanroc (Form 1)', 1, 745, 'sv')).toBe(
+      'Lycanroc (Midnight Form)'
+    );
+    expect(formatSpeciesFormLabel('Lycanroc', 2, 745, 'sv')).toBe('Lycanroc (Dusk Form)');
+    expect(formatSpeciesFormLabel('Lycanroc (Midnight Form)', 1, 745, 'sv')).toBe(
+      'Lycanroc (Midnight Form)'
+    );
+  });
+
+  it('keeps unknown forms and Sword Shield form fallbacks unchanged', () => {
+    expect(formatSpeciesFormLabel('Pokemon 999 (Form 7)', 7, 999, 'sv')).toBe(
+      'Pokemon 999 (Form 7)'
+    );
+    expect(formatSpeciesFormLabel('Eevee', 1, 133, 'swsh')).toBe('Eevee (Form 1)');
   });
 });
