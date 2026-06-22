@@ -3520,6 +3520,93 @@ describe('App', () => {
     expect(screen.queryByText('Slowbro (Galarian) (Galarian)')).not.toBeInTheDocument();
   });
 
+  it('replaces Scarlet Violet wild encounter generic form suffixes with friendly labels', async () => {
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
+        selectedGame: 'scarlet'
+      }
+    });
+    const user = userEvent.setup();
+    const workflow: EncountersWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        { field: 'speciesId', label: 'Species', maximumValue: 65535, minimumValue: 0, valueKind: 'integer' },
+        { field: 'form', label: 'Form', maximumValue: 255, minimumValue: 0, valueKind: 'integer' },
+        { field: 'probability', label: 'Lot weight', maximumValue: 1000, minimumValue: 0, valueKind: 'integer' },
+        { field: 'levelMin', label: 'Min Level', maximumValue: 100, minimumValue: 0, valueKind: 'integer' },
+        { field: 'levelMax', label: 'Max Level', maximumValue: 100, minimumValue: 0, valueKind: 'integer' }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalSlotCount: 1,
+        totalTableCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
+        diagnostics: [],
+        id: 'encounters',
+        label: 'Wild Encounters'
+      },
+      tables: [
+        {
+          archiveMember: 'world/data/encount/pokedata/pokedata/pokedata_array.bin',
+          area: 'Biome-based',
+          encounterType: 'Land',
+          gameVersion: 'Scarlet/Violet',
+          location: 'Area Zero Cave',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'world/data/encount/pokedata/pokedata/pokedata_array.bin',
+            sourceLayer: 'base'
+          },
+          slots: [
+            {
+              form: 1,
+              levelMax: 40,
+              levelMin: 34,
+              slot: 2,
+              species: 'Lycanroc (Form 1)',
+              speciesId: 745,
+              timeOfDay: 'Morning, Noon, Evening, Night',
+              weather: 'Cave',
+              weight: 20
+            }
+          ],
+          tableId: 'sv:area-zero-cave:land'
+        }
+      ]
+    };
+
+    render(
+      <App
+        bridge={createMockProjectBridge(
+          {
+            loadEncountersWorkflow: () => Promise.resolve({ workflow })
+          },
+          true
+        )}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Encounters & Pokemon Sources' }));
+    await user.click(screen.getByRole('button', { name: 'Wild Encounters' }));
+
+    expect(
+      await screen.findByRole('button', { name: /#745.*Lycanroc \(Midnight Form\)/ })
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Lycanroc (Midnight Form)').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Lycanroc (Form 1) (Midnight Form)')).not.toBeInTheDocument();
+  });
+
   it('labels Slowbro SwSh Galarian form without showing the reserved form slot', async () => {
     const user = userEvent.setup();
     const workflow: EncountersWorkflow = {

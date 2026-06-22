@@ -277,7 +277,7 @@ import { getSectionWikiUrl } from './wikiLinks';
 
 const appVersion = tauriConfig.version;
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
-type EditorUiFamily = 'swsh' | 'sv';
+export type EditorUiFamily = 'swsh' | 'sv';
 
 const textControlInserts = [
   {
@@ -14660,7 +14660,9 @@ function GiftPokemonSection({
                   >
                     <span role="cell">{gift.giftIndex + 1}</span>
                     <span role="cell">{gift.label}</span>
-                    <span role="cell">{gift.species}</span>
+                    <span role="cell">
+                      {formatSpeciesFormLabel(gift.species, gift.form, gift.speciesId, editorFamily)}
+                    </span>
                     <span role="cell">{gift.level}</span>
                     <span role="cell">{gift.ivSummary}</span>
                     <span role="cell">{formatSourceLayer(gift.provenance.sourceLayer)}</span>
@@ -30011,6 +30013,9 @@ const pokemonSpriteIdOverrides = new Map<string, string>([
   ['iron-thorns', 'ironthorns'],
   ['iron-treads', 'irontreads'],
   ['iron-valiant', 'ironvaliant'],
+  ['lycanroc-midday-form', 'lycanroc'],
+  ['lycanroc-midnight-form', 'lycanroc-midnight'],
+  ['lycanroc-dusk-form', 'lycanroc-dusk'],
   ['maushold-family-of-four', 'maushold-four'],
   ['maushold-family-of-three', 'maushold'],
   ['oinkologne-female', 'oinkologne-f'],
@@ -31866,26 +31871,36 @@ function createSilvallyFormLabels(): Array<readonly [number, string]> {
   ].map((label, form) => [form, label] as const);
 }
 
-function formatSpeciesFormLabel(
+export function formatSpeciesFormLabel(
   species: string,
   form: number,
   speciesId?: number,
   gameFamily?: EditorUiFamily
 ) {
   const formLabel = resolveSpeciesFormLabel(species, form, speciesId, gameFamily);
+  const displaySpecies =
+    formLabel === undefined ? species : stripTrailingGenericFormLabel(species, form);
   if (form === 0) {
-    return formLabel === undefined || speciesAlreadyIncludesFormLabel(species, formLabel)
-      ? species
-      : `${species} (${formLabel})`;
+    return formLabel === undefined || speciesAlreadyIncludesFormLabel(displaySpecies, formLabel)
+      ? displaySpecies
+      : `${displaySpecies} (${formLabel})`;
   }
 
   const displayLabel =
     formLabel ??
     `Form ${form}`;
 
-  return speciesAlreadyIncludesFormLabel(species, displayLabel)
-    ? species
-    : `${species} (${displayLabel})`;
+  return speciesAlreadyIncludesFormLabel(displaySpecies, displayLabel)
+    ? displaySpecies
+    : `${displaySpecies} (${displayLabel})`;
+}
+
+function stripTrailingGenericFormLabel(species: string, form: number) {
+  if (form < 0) {
+    return species;
+  }
+
+  return species.replace(new RegExp(`\\s*\\(Form\\s+${form}\\)\\s*$`, 'i'), '').trim();
 }
 
 function formatSpeciesFormOptionLabel(form: number, context: SpeciesFormOptionContext) {
