@@ -223,6 +223,55 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletChangePlansCanOutputForTrinityBypass(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+        var session = UpdateItem(dispatcher, paths, itemId: 1, field: "buyPrice", value: "889");
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, session, ChangePlanOutputModeDto.TrinityBypass),
+            "request-sv-trinity-bypass-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var write = Assert.Single(plan.Payload.ChangePlan.Writes);
+        var bypassRelativePath = $"romfs/{SvDataPaths.ItemDataArray}";
+        Assert.Equal(bypassRelativePath, write.TargetRelativePath);
+        Assert.DoesNotContain(plan.Payload.ChangePlan.Writes, candidate =>
+            string.Equals(candidate.TargetRelativePath, "romfs/arc/data.trpfd", StringComparison.Ordinal));
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityBypass),
+            "request-sv-trinity-bypass-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal([bypassRelativePath], apply.Payload.ApplyResult.WrittenFiles);
+        Assert.True(File.Exists(Path.Combine(
+            temp.OutputRootPath,
+            bypassRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "arc", "data.trpfd")));
+
+        var loaded = Dispatch<LoadItemsWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadItemsWorkflow,
+            new LoadItemsWorkflowRequest(paths),
+            "request-sv-trinity-bypass-load");
+        AssertSuccess(loaded);
+        Assert.Equal(889, loaded.Payload!.Workflow.Items.Single(item => item.ItemId == 1).BuyPrice);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletGiftPokemonLoadsStagesAndOutputsForTrinityModManager(
         ProjectGameDto game,
         ulong titleId)
@@ -539,17 +588,24 @@ public sealed class ScarletVioletBridgeTests
         AssertSuccess(validation);
         Assert.True(validation.Payload!.IsValid);
 
-        var trinityPlan = Dispatch<CreateChangePlanResponse>(
-            dispatcher,
-            KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(paths, stage.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
-            "request-sv-hyperspace-trinity-plan");
-        AssertSuccess(trinityPlan);
-        Assert.False(trinityPlan.Payload!.ChangePlan.CanApply);
-        Assert.Empty(trinityPlan.Payload.ChangePlan.Writes);
-        Assert.Contains(
-            trinityPlan.Payload.ChangePlan.Diagnostics,
-            diagnostic => diagnostic.Message.Contains("outside Trinity Mod Manager RomFS output", StringComparison.Ordinal));
+        foreach (var outputMode in new[]
+        {
+            ChangePlanOutputModeDto.TrinityModManager,
+            ChangePlanOutputModeDto.TrinityBypass,
+        })
+        {
+            var romFsPlan = Dispatch<CreateChangePlanResponse>(
+                dispatcher,
+                KmCommandNames.CreateChangePlan,
+                new CreateChangePlanRequest(paths, stage.Payload.Session, outputMode),
+                $"request-sv-hyperspace-{outputMode}-plan");
+            AssertSuccess(romFsPlan);
+            Assert.False(romFsPlan.Payload!.ChangePlan.CanApply);
+            Assert.Empty(romFsPlan.Payload.ChangePlan.Writes);
+            Assert.Contains(
+                romFsPlan.Payload.ChangePlan.Diagnostics,
+                diagnostic => diagnostic.Message.Contains("outside Scarlet/Violet RomFS output modes", StringComparison.Ordinal));
+        }
 
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,

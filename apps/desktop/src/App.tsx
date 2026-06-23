@@ -12987,6 +12987,11 @@ function TrainerDraftField({
   const effectiveDisabledReason = disabledReason ?? formDisabledReason ?? undefined;
   const effectiveDisabled = disabled || Boolean(effectiveDisabledReason);
   const statusText = draftState.error ?? (draftState.isChanged ? 'Changed' : null);
+  const { translateLiteral } = useLocalization();
+  const localizedFieldLabel = translateLiteral(field.label);
+  const localizedFieldHelpText = translateLiteral(
+    effectiveDisabledReason ?? getEditableFieldHelp(field)
+  );
 
   return (
     <label
@@ -12996,19 +13001,19 @@ function TrainerDraftField({
         effectiveDisabledReason ? 'editable-field-disabled' : ''
       }`}
       htmlFor={inputId}
-      title={effectiveDisabledReason ?? getEditableFieldHelp(field)}
+      title={localizedFieldHelpText}
     >
       <span className="editable-field-label-row">
-        <span>{field.label}</span>
+        <span>{localizedFieldLabel}</span>
         {labelAdornment}
       </span>
       {field.valueKind === 'boolean' ? (
         <select
-          aria-label={field.label}
+          aria-label={localizedFieldLabel}
           disabled={effectiveDisabled}
           id={inputId}
           onChange={(event) => onChange(event.target.value)}
-          title={effectiveDisabledReason ?? getEditableFieldHelp(field)}
+          title={localizedFieldHelpText}
           value={draftValue === '1' ? '1' : '0'}
         >
           <option value="1">Yes</option>
@@ -13021,27 +13026,27 @@ function TrainerDraftField({
           id={inputId}
           onChange={onChange}
           options={options}
-          title={effectiveDisabledReason ?? getEditableFieldHelp(field)}
+          title={localizedFieldHelpText}
           value={draftValue}
         />
       ) : (
         <input
-          aria-label={field.label}
+          aria-label={localizedFieldLabel}
           disabled={effectiveDisabled}
           id={inputId}
           max={field.maximumValue ?? undefined}
           min={field.minimumValue ?? undefined}
           onChange={(event) => onChange(event.target.value)}
-          title={effectiveDisabledReason ?? getEditableFieldHelp(field)}
+          title={localizedFieldHelpText}
           type="number"
           value={draftValue}
         />
       )}
       {effectiveDisabledReason ? (
-        <small className="editable-field-status">{effectiveDisabledReason}</small>
+        <small className="editable-field-status">{translateLiteral(effectiveDisabledReason)}</small>
       ) : statusText ? (
         <small className={draftState.error ? 'editable-field-error' : 'editable-field-status'}>
-          {statusText}
+          {translateLiteral(statusText)}
         </small>
       ) : null}
     </label>
@@ -14931,6 +14936,11 @@ function GiftPokemonDraftField({
   const effectiveDisabledReason = disabledReason ?? formDisabledReason ?? undefined;
   const effectiveDisabled = disabled || Boolean(effectiveDisabledReason);
   const statusText = draftState.error ?? (draftState.isChanged ? 'Changed' : null);
+  const { translateLiteral } = useLocalization();
+  const localizedFieldLabel = translateLiteral(field.label);
+  const localizedFieldHelpText = translateLiteral(
+    effectiveDisabledReason ?? getEditableFieldHelp(field)
+  );
 
   return (
     <label
@@ -14940,16 +14950,16 @@ function GiftPokemonDraftField({
         effectiveDisabledReason ? 'editable-field-disabled' : ''
       }`}
       htmlFor={inputId}
-      title={effectiveDisabledReason ?? getEditableFieldHelp(field)}
+      title={localizedFieldHelpText}
     >
-      <span>{field.label}</span>
+      <span>{localizedFieldLabel}</span>
       {field.valueKind === 'boolean' ? (
         <select
-          aria-label={field.label}
+          aria-label={localizedFieldLabel}
           disabled={effectiveDisabled}
           id={inputId}
           onChange={(event) => onChange(event.target.value)}
-          title={effectiveDisabledReason ?? getEditableFieldHelp(field)}
+          title={localizedFieldHelpText}
           value={draftValue === '1' ? '1' : '0'}
         >
           <option value="1">Yes</option>
@@ -14962,27 +14972,27 @@ function GiftPokemonDraftField({
           id={inputId}
           onChange={onChange}
           options={addCurrentPokemonFieldOption(options, draftValue, field.label)}
-          title={effectiveDisabledReason ?? getEditableFieldHelp(field)}
+          title={localizedFieldHelpText}
           value={draftValue}
         />
       ) : (
         <input
-          aria-label={field.label}
+          aria-label={localizedFieldLabel}
           disabled={effectiveDisabled}
           id={inputId}
           max={field.maximumValue ?? undefined}
           min={field.minimumValue ?? undefined}
           onChange={(event) => onChange(event.target.value)}
-          title={effectiveDisabledReason ?? getEditableFieldHelp(field)}
+          title={localizedFieldHelpText}
           type="number"
           value={draftValue}
         />
       )}
       {effectiveDisabledReason ? (
-        <small className="editable-field-status">{effectiveDisabledReason}</small>
+        <small className="editable-field-status">{translateLiteral(effectiveDisabledReason)}</small>
       ) : statusText ? (
         <small className={draftState.error ? 'editable-field-error' : 'editable-field-status'}>
-          {statusText}
+          {translateLiteral(statusText)}
         </small>
       ) : null}
     </label>
@@ -15541,13 +15551,16 @@ function GiftPokemonFieldInput({
   onChange: (value: string) => void;
 }) {
   const options = getContextualFieldOptions(field, formOptionContext);
+  const { translateLiteral } = useLocalization();
+  const localizedFieldLabel = translateLiteral(field.label);
+  const localizedFieldHelpText = translateLiteral(getEditableFieldHelp(field));
 
   if (options.length > 0) {
     return (
       <SearchableOptionInput
-        ariaLabel={field.label}
+        ariaLabel={localizedFieldLabel}
         disabled={disabled}
-        title={getEditableFieldHelp(field)}
+        title={localizedFieldHelpText}
         onChange={onChange}
         options={addDraftFallbackOption(
           options,
@@ -15561,11 +15574,11 @@ function GiftPokemonFieldInput({
 
   return (
     <input
-      aria-label={field.label}
+      aria-label={localizedFieldLabel}
       disabled={disabled}
       max={field.maximumValue ?? undefined}
       min={field.minimumValue ?? undefined}
-      title={getEditableFieldHelp(field)}
+      title={localizedFieldHelpText}
       onChange={(event) => onChange(event.target.value)}
       type="number"
       value={draftValue}
@@ -16131,13 +16144,16 @@ function TradePokemonFieldInput({
   onChange: (value: string) => void;
 }) {
   const options = getContextualFieldOptions(field, formOptionContext);
+  const { translateLiteral } = useLocalization();
+  const localizedFieldLabel = translateLiteral(field.label);
+  const localizedFieldHelpText = translateLiteral(getEditableFieldHelp(field));
 
   if (options.length > 0) {
     return (
       <SearchableOptionInput
-        ariaLabel={field.label}
+        ariaLabel={localizedFieldLabel}
         disabled={disabled}
-        title={getEditableFieldHelp(field)}
+        title={localizedFieldHelpText}
         onChange={onChange}
         options={addDraftFallbackOption(
           options,
@@ -16151,11 +16167,11 @@ function TradePokemonFieldInput({
 
   return (
     <input
-      aria-label={field.label}
+      aria-label={localizedFieldLabel}
       disabled={disabled}
       max={field.maximumValue ?? undefined}
       min={field.minimumValue ?? undefined}
-      title={getEditableFieldHelp(field)}
+      title={localizedFieldHelpText}
       onChange={(event) => onChange(event.target.value)}
       type="number"
       value={draftValue}
@@ -16628,13 +16644,16 @@ function RentalPokemonFieldInput({
   onChange: (value: string) => void;
 }) {
   const options = getContextualFieldOptions(field, formOptionContext);
+  const { translateLiteral } = useLocalization();
+  const localizedFieldLabel = translateLiteral(field.label);
+  const localizedFieldHelpText = translateLiteral(getEditableFieldHelp(field));
 
   if (options.length > 0) {
     return (
       <SearchableOptionInput
-        ariaLabel={field.label}
+        ariaLabel={localizedFieldLabel}
         disabled={disabled}
-        title={getEditableFieldHelp(field)}
+        title={localizedFieldHelpText}
         onChange={onChange}
         options={addDraftFallbackOption(
           options,
@@ -16648,11 +16667,11 @@ function RentalPokemonFieldInput({
 
   return (
     <input
-      aria-label={field.label}
+      aria-label={localizedFieldLabel}
       disabled={disabled}
       max={field.maximumValue ?? undefined}
       min={field.minimumValue ?? undefined}
-      title={getEditableFieldHelp(field)}
+      title={localizedFieldHelpText}
       onChange={(event) => onChange(event.target.value)}
       type="number"
       value={draftValue}
@@ -17791,13 +17810,16 @@ function StaticEncounterFieldInput({
   onChange: (value: string) => void;
 }) {
   const options = getContextualFieldOptions(field, formOptionContext);
+  const { translateLiteral } = useLocalization();
+  const localizedFieldLabel = translateLiteral(field.label);
+  const localizedFieldHelpText = translateLiteral(getEditableFieldHelp(field));
 
   if (options.length > 0) {
     return (
       <SearchableOptionInput
-        ariaLabel={field.label}
+        ariaLabel={localizedFieldLabel}
         disabled={disabled}
-        title={getEditableFieldHelp(field)}
+        title={localizedFieldHelpText}
         onChange={onChange}
         options={addDraftFallbackOption(
           options,
@@ -17811,11 +17833,11 @@ function StaticEncounterFieldInput({
 
   return (
     <input
-      aria-label={field.label}
+      aria-label={localizedFieldLabel}
       disabled={disabled}
       max={field.maximumValue ?? undefined}
       min={field.minimumValue ?? undefined}
-      title={getEditableFieldHelp(field)}
+      title={localizedFieldHelpText}
       onChange={(event) => onChange(event.target.value)}
       type="number"
       value={draftValue}
@@ -21231,6 +21253,7 @@ function SelectedBehaviorPanel({
   const [draftsByEntryId, setDraftsByEntryId] = useState<
     Record<string, Record<string, string>>
   >({});
+  const { translateLiteral } = useLocalization();
   const cancelActiveEditSession = useCancelActiveEditSession();
   const behaviorFieldGroups = useMemo(() => groupBehaviorFields(fields), [fields]);
   const behaviorDraftDefaults = useMemo(
@@ -21262,65 +21285,68 @@ function SelectedBehaviorPanel({
   }, [entry, behaviorDraftDefaults]);
 
   return (
-    <aside aria-label="Selected behavior entry provenance" className="encounter-inspector">
+    <aside
+      aria-label={translateLiteral('Selected behavior entry provenance')}
+      className="encounter-inspector"
+    >
       <div className="panel-heading">
         <Activity aria-hidden="true" size={18} />
-        <h3>Selected Behavior</h3>
+        <h3>{translateLiteral('Selected Behavior')}</h3>
       </div>
 
       {entry ? (
         <>
           <dl className="item-provenance-list">
             <div>
-              <dt>Pokemon</dt>
+              <dt>{translateLiteral('Pokemon')}</dt>
               <dd>{formatBehaviorSpecies(entry)}</dd>
             </div>
             <div>
-              <dt>Behavior</dt>
-              <dd>{entry.behaviorLabel}</dd>
+              <dt>{translateLiteral('Behavior')}</dt>
+              <dd>{translateLiteral(entry.behaviorLabel)}</dd>
             </div>
             <div>
-              <dt>Model anchor</dt>
-              <dd>{entry.modelPart || 'n/a'}</dd>
+              <dt>{translateLiteral('Model anchor')}</dt>
+              <dd>{translateLiteral(entry.modelPart || 'n/a')}</dd>
             </div>
             <div>
-              <dt>Source file</dt>
+              <dt>{translateLiteral('Source file')}</dt>
               <dd>{entry.provenance.sourceFile}</dd>
             </div>
             <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(entry.provenance.sourceLayer)}</dd>
+              <dt>{translateLiteral('Layer')}</dt>
+              <dd>{translateLiteral(formatSourceLayer(entry.provenance.sourceLayer))}</dd>
             </div>
             <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(entry.provenance.fileState)}</dd>
+              <dt>{translateLiteral('File state')}</dt>
+              <dd>{translateLiteral(formatFileState(entry.provenance.fileState))}</dd>
             </div>
           </dl>
 
           <div className="encounter-edit-form">
             <dl className="encounter-slot-detail">
               <div>
-                <dt>Hitbox radius</dt>
+                <dt>{translateLiteral('Hitbox radius')}</dt>
                 <dd>{formatBehaviorNumber(entry.hitboxRadius)}</dd>
               </div>
               <div>
-                <dt>Grass shake radius</dt>
+                <dt>{translateLiteral('Grass shake radius')}</dt>
                 <dd>{formatBehaviorNumber(entry.grassShakeRadius)}</dd>
               </div>
               <div>
-                <dt>Internal name</dt>
-                <dd>{entry.internalSpeciesName || 'n/a'}</dd>
+                <dt>{translateLiteral('Internal name')}</dt>
+                <dd>{translateLiteral(entry.internalSpeciesName || 'n/a')}</dd>
               </div>
               <div>
-                <dt>Hash 1</dt>
+                <dt>{translateLiteral('Hash 1')}</dt>
                 <dd>{entry.hash1}</dd>
               </div>
               <div>
-                <dt>Hash 2</dt>
+                <dt>{translateLiteral('Hash 2')}</dt>
                 <dd>{entry.hash2}</dd>
               </div>
               <div>
-                <dt>Entry</dt>
+                <dt>{translateLiteral('Entry')}</dt>
                 <dd>#{entry.index}</dd>
               </div>
             </dl>
@@ -21328,7 +21354,7 @@ function SelectedBehaviorPanel({
             <div className="editable-field-groups behavior-field-groups">
               {behaviorFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{group.group}</legend>
+                  <legend>{translateLiteral(group.group)}</legend>
                   <div className="editable-field-grid">
                     {group.fields.map((field) => {
                       const currentValue = getBehaviorEntryFieldValue(entry, field.field);
@@ -21362,10 +21388,10 @@ function SelectedBehaviorPanel({
                           htmlFor={`behavior-field-${field.field}`}
                           key={field.field}
                         >
-                          <span>{field.label}</span>
+                          <span>{translateLiteral(field.label)}</span>
                           {field.options && field.options.length > 0 ? (
                             <select
-                              aria-label={field.label}
+                              aria-label={translateLiteral(field.label)}
                               disabled={isDisabled}
                               id={`behavior-field-${field.field}`}
                               onChange={(event) => {
@@ -21382,7 +21408,7 @@ function SelectedBehaviorPanel({
                                   )
                                 );
                               }}
-                              title={field.description}
+                              title={translateLiteral(field.description)}
                               value={draftValue}
                             >
                               {addBehaviorDraftFallbackOption(
@@ -21391,13 +21417,13 @@ function SelectedBehaviorPanel({
                                 currentValue
                               ).map((option) => (
                                 <option key={`${field.field}-${option.value}`} value={option.value}>
-                                  {option.label}
+                                  {translateLiteral(option.label)}
                                 </option>
                               ))}
                             </select>
                           ) : (
                             <input
-                              aria-label={field.label}
+                              aria-label={translateLiteral(field.label)}
                               disabled={isDisabled}
                               id={`behavior-field-${field.field}`}
                               max={field.valueKind === 'string' ? undefined : field.maximumValue}
@@ -21417,7 +21443,7 @@ function SelectedBehaviorPanel({
                                 );
                               }}
                               step={field.valueKind === 'integer' ? 1 : 'any'}
-                              title={field.description}
+                              title={translateLiteral(field.description)}
                               type={field.valueKind === 'string' || field.valueKind === 'hash' ? 'text' : 'number'}
                               value={draftValue}
                             />
@@ -21428,7 +21454,7 @@ function SelectedBehaviorPanel({
                                 isInvalid ? 'editable-field-error' : 'editable-field-status'
                               }
                             >
-                              {statusText}
+                              {translateLiteral(statusText)}
                             </small>
                           ) : null}
                         </label>
@@ -21792,6 +21818,7 @@ function SelectedPlacementPanel({
   const [draftsByObjectId, setDraftsByObjectId] = useState<
     Record<string, Record<string, string>>
   >({});
+  const { translateLiteral } = useLocalization();
   const cancelActiveEditSession = useCancelActiveEditSession();
   const visibleFields = useMemo(
     () => (placedObject ? getPlacementFieldControls(placedObject, editableFields) : []),
@@ -21954,6 +21981,7 @@ function SelectedPlacementPanel({
                             ? 'Read-only'
                             : resolvedDisplayHint;
                       const fieldHelpText = field.description || getEditableFieldHelp(field);
+                      const localizedFieldHelpText = translateLiteral(fieldHelpText);
 
                       return (
                         <label
@@ -21966,18 +21994,21 @@ function SelectedPlacementPanel({
                           key={field.field}
                           title={
                             isFieldReadOnly
-                              ? field.description || 'This Placement field is visible but not editable yet.'
-                              : fieldHelpText
+                              ? translateLiteral(
+                                  field.description ||
+                                    'This Placement field is visible but not editable yet.'
+                                )
+                              : localizedFieldHelpText
                           }
                         >
-                          <span>{field.label}</span>
+                          <span>{translateLiteral(field.label)}</span>
                           {isFieldReadOnly ? (
                             <input
-                              aria-label={field.label}
+                              aria-label={translateLiteral(field.label)}
                               disabled
                               id={`placement-field-${field.field}`}
                               type="text"
-                              value={field.displayValue || field.value}
+                              value={translateLiteral(field.displayValue || field.value)}
                             />
                           ) : fieldOptions.length > 0 ? (
                             <SearchableOptionInput
@@ -22008,12 +22039,12 @@ function SelectedPlacementPanel({
                                 draftValue,
                                 `${field.label} ${draftValue}`
                               )}
-                              title={fieldHelpText}
+                              title={localizedFieldHelpText}
                               value={draftValue}
                             />
                           ) : (
                             <input
-                              aria-label={field.label}
+                              aria-label={translateLiteral(field.label)}
                               disabled={
                                 !canEditPlacement ||
                                 editSession === null ||
@@ -22036,7 +22067,7 @@ function SelectedPlacementPanel({
                                 );
                               }}
                               step={field.valueKind === 'integer' ? 1 : 'any'}
-                              title={fieldHelpText}
+                              title={localizedFieldHelpText}
                               max={isTextLikePlacementField ? undefined : field.maximumValue}
                               min={isTextLikePlacementField ? undefined : field.minimumValue}
                               type={isTextLikePlacementField ? 'text' : 'number'}
@@ -22049,7 +22080,7 @@ function SelectedPlacementPanel({
                                 isInvalid ? 'editable-field-error' : 'editable-field-status'
                               }
                             >
-                              {statusText}
+                              {translateLiteral(statusText)}
                             </small>
                           ) : null}
                         </label>
@@ -26689,6 +26720,21 @@ function ChangesSection({
                   size={18}
                 />
               </button>
+              <button
+                aria-busy={isChangePlanApplying || undefined}
+                className="secondary-button"
+                disabled={!canSaveValidatedChanges}
+                onClick={() => onRequestSvOutput('trinityBypass')}
+                type="button"
+              >
+                <BusyActionContent
+                  busyLabel="Outputting"
+                  icon={<ShieldCheck aria-hidden="true" size={18} />}
+                  isBusy={isChangePlanApplying}
+                  label="Output for Trinity Bypass"
+                  size={18}
+                />
+              </button>
             </>
           ) : (
             <button
@@ -29948,13 +29994,15 @@ function PokemonPersonalFieldInput({
   onChange: (value: string) => void;
 }) {
   const inputId = `pokemon-personal-${field.field}`;
-  const helpText = disabledReason ?? getEditableFieldHelp(field);
   const statusText = draftState.error ?? (draftState.isChanged ? 'Changed' : null);
   const { options } = useContextualSpeciesFormOptions(
     field,
     formOptionContext,
     currentValue
   );
+  const { translateLiteral } = useLocalization();
+  const localizedFieldLabel = translateLiteral(field.label);
+  const localizedHelpText = translateLiteral(disabledReason ?? getEditableFieldHelp(field));
 
   return (
     <label
@@ -29965,14 +30013,14 @@ function PokemonPersonalFieldInput({
       }`}
       htmlFor={inputId}
     >
-      <span>{field.label}</span>
+      <span>{localizedFieldLabel}</span>
       {field.valueKind === 'boolean' ? (
         <select
-          aria-label={field.label}
+          aria-label={localizedFieldLabel}
           disabled={disabled}
           id={inputId}
           onChange={(event) => onChange(event.target.value)}
-          title={helpText}
+          title={localizedHelpText}
           value={draftValue === '1' ? '1' : '0'}
         >
           <option value="1">Yes</option>
@@ -29985,27 +30033,27 @@ function PokemonPersonalFieldInput({
           id={inputId}
           onChange={onChange}
           options={addCurrentPokemonFieldOption(options, draftValue, field.label)}
-          title={helpText}
+          title={localizedHelpText}
           value={draftValue}
         />
       ) : (
         <input
-          aria-label={field.label}
+          aria-label={localizedFieldLabel}
           disabled={disabled}
           id={inputId}
           max={field.maximumValue ?? undefined}
           min={field.minimumValue ?? undefined}
           onChange={(event) => onChange(event.target.value)}
-          title={helpText}
+          title={localizedHelpText}
           type="number"
           value={draftValue}
         />
       )}
       {disabledReason ? (
-        <small className="editable-field-status">{disabledReason}</small>
+        <small className="editable-field-status">{translateLiteral(disabledReason)}</small>
       ) : statusText ? (
         <small className={draftState.error ? 'editable-field-error' : 'editable-field-status'}>
-          {statusText}
+          {translateLiteral(statusText)}
         </small>
       ) : null}
     </label>
@@ -30170,24 +30218,33 @@ function SearchableOptionInput({
   title?: string;
   value: string;
 }) {
+  const { translateLiteral } = useLocalization();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const localizedAriaLabel = translateLiteral(ariaLabel);
+  const localizedEmptyOptionLabel =
+    emptyOptionLabel !== undefined ? translateLiteral(emptyOptionLabel) : undefined;
+  const localizedTitle = title !== undefined ? translateLiteral(title) : undefined;
+  const localizedOptions = useMemo(
+    () => options.map((option) => ({ ...option, label: translateLiteral(option.label) })),
+    [options, translateLiteral]
+  );
   const formattedValue = useMemo(
-    () => formatOptionInputValue(value, options, emptyOptionLabel),
-    [emptyOptionLabel, options, value]
+    () => formatOptionInputValue(value, localizedOptions, localizedEmptyOptionLabel),
+    [localizedEmptyOptionLabel, localizedOptions, value]
   );
   const [query, setQuery] = useState(formattedValue);
   const [hasUserQuery, setHasUserQuery] = useState(false);
   const optionQuery = hasUserQuery ? query : '';
   const trimmedOptionQuery = optionQuery.trim().toLocaleLowerCase();
-  const hasEmptyOption = emptyOptionLabel !== undefined;
+  const hasEmptyOption = localizedEmptyOptionLabel !== undefined;
   const emptyOptionMatches =
     hasEmptyOption &&
     (trimmedOptionQuery.length === 0 ||
-      emptyOptionLabel.toLocaleLowerCase().includes(trimmedOptionQuery));
+      localizedEmptyOptionLabel.toLocaleLowerCase().includes(trimmedOptionQuery));
   const filteredOptions = useMemo(
-    () => getSmartOptionMatches(optionQuery, options),
-    [optionQuery, options]
+    () => getSmartOptionMatches(optionQuery, localizedOptions),
+    [localizedOptions, optionQuery]
   );
   const hasMenu = isOpen && !disabled && (emptyOptionMatches || filteredOptions.length > 0);
 
@@ -30228,7 +30285,7 @@ function SearchableOptionInput({
 
   const selectEmptyOption = () => {
     onChange('');
-    setQuery(emptyOptionLabel ?? '');
+    setQuery(localizedEmptyOptionLabel ?? '');
     setHasUserQuery(false);
     setIsOpen(false);
   };
@@ -30236,8 +30293,8 @@ function SearchableOptionInput({
   const commitTypedOption = () => {
     const trimmedQuery = query.trim();
     if (
-      emptyOptionLabel !== undefined &&
-      trimmedQuery.toLocaleLowerCase() === emptyOptionLabel.toLocaleLowerCase()
+      localizedEmptyOptionLabel !== undefined &&
+      trimmedQuery.toLocaleLowerCase() === localizedEmptyOptionLabel.toLocaleLowerCase()
     ) {
       selectEmptyOption();
       return;
@@ -30259,7 +30316,9 @@ function SearchableOptionInput({
     setQuery(nextValue);
     setHasUserQuery(true);
     setIsOpen(true);
-    onChange(normalizeExactOptionInputValue(nextValue, options, emptyOptionLabel));
+    onChange(
+      normalizeExactOptionInputValue(nextValue, localizedOptions, localizedEmptyOptionLabel)
+    );
   };
 
   return (
@@ -30270,7 +30329,7 @@ function SearchableOptionInput({
       <input
         aria-describedby={ariaDescribedBy}
         aria-expanded={hasMenu}
-        aria-label={ariaLabel}
+        aria-label={localizedAriaLabel}
         aria-haspopup="listbox"
         aria-invalid={ariaInvalid}
         autoComplete="off"
@@ -30296,12 +30355,12 @@ function SearchableOptionInput({
             selectOption(filteredOptions[0]);
           }
         }}
-        title={title}
+        title={localizedTitle}
         type="text"
         value={query}
       />
       <button
-        aria-label={`Show ${ariaLabel} options`}
+        aria-label={translateLiteral(`Show ${ariaLabel} options`)}
         className="searchable-option-toggle"
         disabled={disabled}
         onMouseDown={(event) => {
@@ -30328,7 +30387,7 @@ function SearchableOptionInput({
               role="option"
               type="button"
             >
-              <span>{emptyOptionLabel}</span>
+              <span>{localizedEmptyOptionLabel}</span>
             </button>
           ) : null}
           {filteredOptions.map((option) => (

@@ -270,6 +270,7 @@ internal sealed class SvWorkflowFileSource
         {
             SvOutputMode.Standalone => ToRelativePath(normalizedVirtualPath),
             SvOutputMode.TrinityModManager => normalizedVirtualPath,
+            SvOutputMode.TrinityBypass => ToRelativePath(normalizedVirtualPath),
             _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
         };
     }

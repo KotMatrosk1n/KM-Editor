@@ -3597,7 +3597,7 @@ describe('bridge contracts', () => {
         command: kmCommandNames.applyChangePlan,
         payload: {
           changePlan,
-          outputMode: 'standalone',
+          outputMode: 'trinityBypass',
           paths: {
             baseExeFsPath: 'base-exefs',
             baseRomFsPath: 'base-romfs',

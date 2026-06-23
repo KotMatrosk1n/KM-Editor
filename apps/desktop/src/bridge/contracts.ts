@@ -420,7 +420,7 @@ export const validateEditSessionRequestSchema = z.strictObject({
   session: editSessionSchema
 });
 
-export const changePlanOutputModeSchema = z.enum(['standalone', 'trinityModManager']);
+export const changePlanOutputModeSchema = z.enum(['standalone', 'trinityModManager', 'trinityBypass']);
 
 export const createChangePlanRequestSchema = z.strictObject({ outputMode: changePlanOutputModeSchema.optional(), paths: projectPathsSchema, session: editSessionSchema });
 

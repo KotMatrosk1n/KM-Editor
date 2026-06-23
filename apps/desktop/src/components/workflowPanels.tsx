@@ -12,10 +12,12 @@ export type WorkflowPanelOutput = {
 };
 
 export function Metric({ label, value }: { label: string; value: string }) {
+  const { translateLiteral } = useLocalization();
+
   return (
     <div className="metric">
-      <span className="metric-label">{label}</span>
-      <span className="metric-value metric-value-small">{value}</span>
+      <span className="metric-label">{translateLiteral(label)}</span>
+      <span className="metric-value metric-value-small">{translateLiteral(value)}</span>
     </div>
   );
 }
@@ -27,7 +29,7 @@ export function ApplyResultSection({ applyResult }: { applyResult: ApplyResult }
     <section aria-labelledby="apply-result-heading" className="panel wide-panel">
       <div className="panel-heading">
         <CheckCircle aria-hidden="true" size={18} />
-        <h2 id="apply-result-heading">Save Result</h2>
+        <h2 id="apply-result-heading">{translateLiteral('Save Result')}</h2>
       </div>
 
       <div className="change-plan-status">
@@ -85,7 +87,7 @@ export function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
     <section aria-labelledby="change-plan-heading" className="panel wide-panel">
       <div className="panel-heading">
         <ClipboardCheck aria-hidden="true" size={18} />
-        <h2 id="change-plan-heading">Output Plan</h2>
+        <h2 id="change-plan-heading">{translateLiteral('Output Plan')}</h2>
       </div>
 
       <div className="change-plan-status">
@@ -99,11 +101,11 @@ export function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
             <li key={write.targetRelativePath}>
               <div>
                 <strong data-localization-ignore="true">{write.targetRelativePath}</strong>
-                <span>{write.reason}</span>
+                <span>{translateLiteral(write.reason)}</span>
               </div>
               <dl>
                 <div>
-                  <dt>Output state</dt>
+                  <dt>{translateLiteral('Output state')}</dt>
                   <dd>
                     {translateLiteral(
                       write.replacesExistingOutput ? 'Replaces output file' : 'Creates output file'
@@ -111,7 +113,7 @@ export function ChangePlanSection({ changePlan }: { changePlan: ChangePlan }) {
                   </dd>
                 </div>
                 <div>
-                  <dt>Sources</dt>
+                  <dt>{translateLiteral('Sources')}</dt>
                   <dd>
                     {write.sources
                       .map(
@@ -146,7 +148,7 @@ export function DiagnosticsSection({
     <section aria-labelledby="diagnostics-heading" className="panel">
       <div className="panel-heading">
         <Activity aria-hidden="true" size={18} />
-        <h2 id="diagnostics-heading">Diagnostics</h2>
+        <h2 id="diagnostics-heading">{translateLiteral('Diagnostics')}</h2>
       </div>
 
       {diagnostics.length > 0 ? (
@@ -164,7 +166,7 @@ export function DiagnosticsSection({
           ))}
         </ul>
       ) : (
-        <p className="empty-copy">No diagnostics.</p>
+        <p className="empty-copy">{translateLiteral('No diagnostics.')}</p>
       )}
     </section>
   );

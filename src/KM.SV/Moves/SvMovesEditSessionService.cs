@@ -258,9 +258,7 @@ internal sealed class SvMovesEditSessionService
 
             diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                outputMode == SvOutputMode.Standalone
-                    ? "Applied Moves change plan as standalone Scarlet/Violet output and patched the Trinity descriptor."
-                    : "Applied Moves change plan for Trinity Mod Manager. Run this output folder through Trinity Mod Manager before installing.",
+                SvEditSessionSupport.CreateApplyOutputMessage("Moves", outputMode),
                 SvEditSessionSupport.MovesDomain));
         }
         catch (Exception exception)

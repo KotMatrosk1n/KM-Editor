@@ -79,4 +79,5 @@ public enum ChangePlanOutputModeDto
 {
     Standalone,
     TrinityModManager,
+    TrinityBypass,
 }

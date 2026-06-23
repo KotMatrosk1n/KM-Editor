@@ -6,4 +6,5 @@ public enum SvOutputMode
 {
     Standalone,
     TrinityModManager,
+    TrinityBypass,
 }

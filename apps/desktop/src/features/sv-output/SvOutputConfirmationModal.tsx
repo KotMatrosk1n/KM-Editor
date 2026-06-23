@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 
-import { GitMerge, Package, X } from 'lucide-react';
+import { GitMerge, Package, ShieldCheck, X } from 'lucide-react';
 import { type ChangePlanOutputMode } from '../../bridge/contracts';
 
 type SvOutputConfirmationModalProps = {
@@ -19,19 +19,21 @@ export function SvOutputConfirmationModal({
   outputRootPath
 }: SvOutputConfirmationModalProps) {
   const isStandalone = mode === 'standalone';
+  const isTrinityBypass = mode === 'trinityBypass';
   const headingId = 'sv-output-confirmation-heading';
-  const title = isStandalone ? 'Output as Standalone?' : 'Output for Trinity Mod Manager?';
+  const title = isStandalone
+    ? 'Output as Standalone?'
+    : isTrinityBypass
+      ? 'Output for Trinity Bypass?'
+      : 'Output for Trinity Mod Manager?';
   const outputRootLabel = outputRootPath?.trim() || 'the configured Output Root';
+  const OutputIcon = isStandalone ? Package : isTrinityBypass ? ShieldCheck : GitMerge;
 
   return (
     <div aria-labelledby={headingId} aria-modal="true" className="modal-backdrop" role="dialog">
       <section className="modal-panel">
         <div className="panel-heading">
-          {isStandalone ? (
-            <Package aria-hidden="true" size={18} />
-          ) : (
-            <GitMerge aria-hidden="true" size={18} />
-          )}
+          <OutputIcon aria-hidden="true" size={18} />
           <h2 id={headingId}>{title}</h2>
         </div>
         {isStandalone ? (
@@ -44,6 +46,18 @@ export function SvOutputConfirmationModal({
               This will create or replace loose files under <code>romfs/</code> and patch{' '}
               <code>romfs/arc/data.trpfd</code> so the output can be installed directly without
               Trinity Mod Manager.
+            </p>
+          </>
+        ) : isTrinityBypass ? (
+          <>
+            <p className="modal-copy">
+              KM Editor will write the edited Scarlet/Violet files under{' '}
+              <strong>{outputRootLabel}</strong> as loose LayeredFS RomFS files for Trinity Bypass.
+            </p>
+            <p className="modal-copy modal-copy-muted">
+              This creates or replaces files under <code>romfs/</code> and does not patch{' '}
+              <code>romfs/arc/data.trpfd</code>. Use this only when Trinity Bypass is already
+              installed for the selected game.
             </p>
           </>
         ) : (
@@ -69,11 +83,7 @@ export function SvOutputConfirmationModal({
             <span>Cancel</span>
           </button>
           <button className="primary-button" disabled={isApplying} onClick={onConfirm} type="button">
-            {isStandalone ? (
-              <Package aria-hidden="true" size={16} />
-            ) : (
-              <GitMerge aria-hidden="true" size={16} />
-            )}
+            <OutputIcon aria-hidden="true" size={16} />
             <span>{isApplying ? 'Outputting' : 'Confirm Output'}</span>
           </button>
         </div>

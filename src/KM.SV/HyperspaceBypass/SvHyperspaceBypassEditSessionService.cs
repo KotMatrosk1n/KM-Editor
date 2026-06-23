@@ -175,11 +175,11 @@ public sealed class SvHyperspaceBypassEditSessionService
 
         var validation = Validate(paths, session);
         var diagnostics = validation.Diagnostics.ToList();
-        if (outputMode == SvOutputMode.TrinityModManager)
+        if (outputMode != SvOutputMode.Standalone)
         {
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Error,
-                "Hyperspace Bypass edits exefs/main, which is outside Trinity Mod Manager RomFS output. Use standalone LayeredFS output for this editor.",
+                "Hyperspace Bypass edits exefs/main, which is outside Scarlet/Violet RomFS output modes. Use standalone LayeredFS output for this editor.",
                 expected: "Standalone LayeredFS output mode"));
         }
 
