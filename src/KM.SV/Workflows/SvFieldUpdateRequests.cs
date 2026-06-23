@@ -17,3 +17,5 @@ public sealed record SvGiftPokemonFieldUpdate(int GiftIndex, string Field, strin
 public sealed record SvTradePokemonFieldUpdate(int TradeIndex, string Field, string Value);
 
 public sealed record SvPlacementObjectFieldUpdate(string ObjectId, string Field, string Value);
+
+public sealed record SvTeraRaidFieldUpdate(string RecordId, string Field, string Value);

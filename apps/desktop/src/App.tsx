@@ -19,6 +19,7 @@ import {
   Dumbbell,
   ExternalLink,
   FolderOpen,
+  Gem,
   Gift,
   GitMerge,
   GripVertical,
@@ -187,6 +188,11 @@ import {
   type StaticEncounterEditableField,
   type StaticEncounterRecord,
   type StaticEncountersWorkflow,
+  type TeraRaidEditableField,
+  type TeraRaidRecord,
+  type TeraRaidRewardItem,
+  type TeraRaidRewardTable,
+  type TeraRaidsWorkflow,
   type TextEditableField,
   type TextEntryRecord,
   type TextWorkflow,
@@ -1401,6 +1407,8 @@ export function App({
   const pokemonSearchText = useWorkbenchStore((state) => state.pokemonSearchText);
   const pokemonWorkflow = useWorkbenchStore((state) => state.pokemonWorkflow);
   const projectStatus = useWorkbenchStore((state) => state.projectStatus);
+  const teraRaidSearchText = useWorkbenchStore((state) => state.teraRaidSearchText);
+  const teraRaidsWorkflow = useWorkbenchStore((state) => state.teraRaidsWorkflow);
   const raidBattleSearchText = useWorkbenchStore((state) => state.raidBattleSearchText);
   const raidBattlesWorkflow = useWorkbenchStore((state) => state.raidBattlesWorkflow);
   const raidRewardSearchText = useWorkbenchStore((state) => state.raidRewardSearchText);
@@ -1427,6 +1435,9 @@ export function App({
   const selectedMoveId = useWorkbenchStore((state) => state.selectedMoveId);
   const selectedPokemonPersonalId = useWorkbenchStore(
     (state) => state.selectedPokemonPersonalId
+  );
+  const selectedTeraRaidRecordId = useWorkbenchStore(
+    (state) => state.selectedTeraRaidRecordId
   );
   const selectedRaidBattleTableId = useWorkbenchStore(
     (state) => state.selectedRaidBattleTableId
@@ -1578,6 +1589,8 @@ export function App({
   const setPokemonWorkflow = useWorkbenchStore((state) => state.setPokemonWorkflow);
   const setProjectHealth = useWorkbenchStore((state) => state.setProjectHealth);
   const setProjectStatus = useWorkbenchStore((state) => state.setProjectStatus);
+  const setTeraRaidSearchText = useWorkbenchStore((state) => state.setTeraRaidSearchText);
+  const setTeraRaidsWorkflow = useWorkbenchStore((state) => state.setTeraRaidsWorkflow);
   const setRaidBattleSearchText = useWorkbenchStore((state) => state.setRaidBattleSearchText);
   const setRaidBattlesWorkflow = useWorkbenchStore((state) => state.setRaidBattlesWorkflow);
   const setRaidRewardSearchText = useWorkbenchStore((state) => state.setRaidRewardSearchText);
@@ -1624,6 +1637,9 @@ export function App({
   );
   const setSelectedEncounterTableId = useWorkbenchStore(
     (state) => state.setSelectedEncounterTableId
+  );
+  const setSelectedTeraRaidRecordId = useWorkbenchStore(
+    (state) => state.setSelectedTeraRaidRecordId
   );
   const setSelectedExeFsCheckId = useWorkbenchStore(
     (state) => state.setSelectedExeFsCheckId
@@ -1726,6 +1742,8 @@ export function App({
   const [isEncountersLoading, setIsEncountersLoading] = useState(false);
   const [isEncounterUpdating, setIsEncounterUpdating] = useState(false);
   const [isRaidBattlesLoading, setIsRaidBattlesLoading] = useState(false);
+  const [isTeraRaidsLoading, setIsTeraRaidsLoading] = useState(false);
+  const [isTeraRaidUpdating, setIsTeraRaidUpdating] = useState(false);
   const [isRaidBattleUpdating, setIsRaidBattleUpdating] = useState(false);
   const [isRaidRewardsLoading, setIsRaidRewardsLoading] = useState(false);
   const [isRaidRewardUpdating, setIsRaidRewardUpdating] = useState(false);
@@ -1893,7 +1911,8 @@ export function App({
     placementWorkflow, pokemonWorkflow, raidBattlesWorkflow, raidBonusRewardsWorkflow,
     raidRewardsWorkflow, rentalPokemonWorkflow, royalCandyWorkflow, selectedGame, shinyRateWorkflow,
     shopsWorkflow, spreadsheetImportWorkflow, startingItemsWorkflow, staticEncountersWorkflow,
-    svModMergerWorkflow, textWorkflow, tradePokemonWorkflow, trainersWorkflow, typeChartWorkflow
+    svModMergerWorkflow, teraRaidsWorkflow, textWorkflow, tradePokemonWorkflow,
+    trainersWorkflow, typeChartWorkflow
   });
   const activeSectionCanStayMounted =
     isWorkflowNavigationVisibleForGame(activeSection, selectedGame, availableWorkflowSectionIds) ||
@@ -2001,6 +2020,7 @@ export function App({
       behaviorWorkflow: null,
       placementWorkflow: null,
       pokemonWorkflow: null,
+      teraRaidsWorkflow: null,
       raidBattlesWorkflow: null,
       raidRewardsWorkflow: null,
       raidBonusRewardsWorkflow: null,
@@ -3113,6 +3133,20 @@ export function App({
     }
   };
 
+  const handleOpenTeraRaidsWorkflow = async () => {
+    setIsTeraRaidsLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadTeraRaidsWorkflow({ paths: toProjectPaths(draftPaths) });
+      setTeraRaidsWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsTeraRaidsLoading(false);
+    }
+  };
+
   const handleOpenRaidBattlesWorkflow = async () => {
     setIsRaidBattlesLoading(true);
     setBridgeDiagnostics([]);
@@ -3975,6 +4009,12 @@ export function App({
         if (!encountersWorkflow && !isEncountersLoading) {
           markLazyLoadStarted();
           void handleOpenEncountersWorkflow();
+        }
+        break;
+      case 'teraRaids':
+        if (!teraRaidsWorkflow && !isTeraRaidsLoading) {
+          markLazyLoadStarted();
+          void handleOpenTeraRaidsWorkflow();
         }
         break;
       case 'raidBattles':
@@ -6504,6 +6544,69 @@ export function App({
     }
   };
 
+  const handleUpdateTeraRaidField = async (
+    recordId: string,
+    field: string,
+    value: string
+  ) => {
+    setIsTeraRaidUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateTeraRaidField({
+        field,
+        paths: toProjectPaths(draftPaths),
+        recordId,
+        session: editSession,
+        value
+      });
+      setTeraRaidsWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+      return true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsTeraRaidUpdating(false);
+    }
+  };
+
+  const handleUpdateTeraRaidFields = async (
+    recordId: string,
+    changes: Array<{ field: string; value: string }>
+  ) => {
+    if (changes.length === 0) {
+      return false;
+    }
+
+    setIsTeraRaidUpdating(true);
+    setBridgeDiagnostics([]);
+    setEditValidationDiagnostics([]);
+
+    try {
+      const response = await bridge.updateTeraRaidFields({
+        paths: toProjectPaths(draftPaths),
+        session: editSession,
+        updates: changes.map((change) => ({
+          field: change.field,
+          recordId,
+          value: change.value
+        }))
+      });
+      setTeraRaidsWorkflow(response.workflow);
+      setEditSession(response.session);
+      setEditValidationDiagnostics(response.diagnostics);
+      return true;
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+      return false;
+    } finally {
+      setIsTeraRaidUpdating(false);
+    }
+  };
+
   const handleUpdatePlacementObjectField = async (
     objectId: string,
     field: string,
@@ -6967,6 +7070,14 @@ export function App({
         async () => {
           const response = await bridge.loadEncountersWorkflow({ paths });
           setEncountersWorkflow(response.workflow);
+        }
+      );
+    }
+    if (teraRaidsWorkflow) {
+      reloadTasks.push(
+        async () => {
+          const response = await bridge.loadTeraRaidsWorkflow({ paths });
+          setTeraRaidsWorkflow(response.workflow);
         }
       );
     }
@@ -7874,6 +7985,25 @@ export function App({
               />
             )
           ) : null}
+          {activeSection === 'teraRaids' ? (
+            isTeraRaidsLoading && !teraRaidsWorkflow ? (
+              <WorkflowLoadingPanel label="Tera Raids" />
+            ) : (
+              <TeraRaidsSection
+                editSession={getEditSessionForSection('teraRaids')}
+                isEditStarting={isEditStarting}
+                isTeraRaidUpdating={isTeraRaidUpdating}
+                onSearchChange={setTeraRaidSearchText}
+                onSelectRaid={setSelectedTeraRaidRecordId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateTeraRaidField={handleUpdateTeraRaidField}
+                onUpdateTeraRaidFields={handleUpdateTeraRaidFields}
+                searchText={teraRaidSearchText}
+                selectedRaidRecordId={selectedTeraRaidRecordId}
+                workflow={teraRaidsWorkflow}
+              />
+            )
+          ) : null}
           {activeSection === 'raidRewards' ? (
             isRaidRewardsLoading && !raidRewardsWorkflow ? (
               <WorkflowLoadingPanel label="Raid Rewards" />
@@ -8412,6 +8542,7 @@ export function App({
                 shopsWorkflow,
                 startingItemsWorkflow,
                 staticEncountersWorkflow,
+                teraRaidsWorkflow,
                 textWorkflow,
                 shinyRateWorkflow,
                 typeChartWorkflow,
@@ -8564,24 +8695,31 @@ function BusyActionContent({
 }
 
 function WorkflowLoadingPanel({ label }: { label: string }) {
+  const { translateLiteral } = useLocalization();
+  const localizedLabel = translateLiteral(label);
+
   return (
     <section aria-labelledby="workflow-loading-heading" className="panel wide-panel">
       <div className="panel-heading">
         <RefreshCw aria-hidden="true" size={18} />
-        <h2 id="workflow-loading-heading">{label}</h2>
+        <h2 id="workflow-loading-heading">{localizedLabel}</h2>
       </div>
 
       <div aria-live="polite" className="workflow-loading-body" role="status">
         <div className="workflow-loading-status">
           <RefreshCw aria-hidden="true" className="workflow-loading-spinner" size={20} />
-          <p>Loading backend workflow data.</p>
+          <p>{translateLiteral('Loading backend workflow data.')}</p>
         </div>
-        <div aria-label={`${label} loading progress`} className="workflow-loading-track" role="progressbar">
+        <div
+          aria-label={`${localizedLabel} ${translateLiteral('loading progress')}`}
+          className="workflow-loading-track"
+          role="progressbar"
+        >
           <div className="workflow-loading-fill" />
         </div>
         <ol className="workflow-loading-steps">
           {workflowLoadingSteps.map((step) => (
-            <li key={step}>{step}</li>
+            <li key={step}>{translateLiteral(step)}</li>
           ))}
         </ol>
       </div>
@@ -13703,6 +13841,7 @@ function formatPendingEditDomain(domain: string) {
     'workflow.raidBattles': 'Raid Battles',
     'workflow.raidBonusRewards': 'Raid Bonus Rewards',
     'workflow.raidRewards': 'Raid Rewards',
+    'workflow.teraRaids': 'Tera Raids',
     'workflow.rentalPokemon': 'Rental Pokemon',
     'workflow.royalCandy': 'Royal Candy',
     'workflow.shops': 'Shops',
@@ -13873,6 +14012,8 @@ function getPendingEditDisplayDetails(
       return getShopPendingEditDisplayDetails(edit, context, editorLabel);
     case 'workflow.encounters':
       return getEncounterPendingEditDisplayDetails(edit, context, editorLabel);
+    case 'workflow.teraRaids':
+      return getTeraRaidPendingEditDisplayDetails(edit, context, editorLabel);
     case 'workflow.raidBattles':
       return getRaidBattlePendingEditDisplayDetails(edit, context, editorLabel);
     case 'workflow.raidRewards':
@@ -14334,6 +14475,54 @@ function getRaidBattlePendingEditDisplayDetails(
       table && slotRecord
         ? `${table.displayName} slot #${slotRecord.slot}: ${slotRecord.species}`
         : table?.displayName
+  });
+}
+
+function getTeraRaidPendingEditDisplayDetails(
+  edit: PendingEdit,
+  context: PendingEditContext,
+  editorLabel: string
+) {
+  const field = findPendingEditableField(context.teraRaidsWorkflow?.editableFields, edit.field);
+  const recordId = edit.recordId ?? '';
+  const [kind] = recordId.split(':');
+
+  if (kind === 'raid') {
+    const raid = context.teraRaidsWorkflow?.raids.find(
+      (candidate) => candidate.recordId === recordId
+    );
+
+    return createPendingEditDisplayDetails(edit, {
+      editorLabel,
+      fieldLabel: field?.label,
+      newValueLabel: formatPendingEditValue(edit.newValue, field),
+      recordLabel: raid
+        ? `${raid.region} ${raid.starLabel}: ${formatSpeciesFormLabel(
+            raid.species,
+            raid.form,
+            raid.speciesId
+          )}`
+        : undefined
+    });
+  }
+
+  const rewardTables =
+    kind === 'fixed'
+      ? context.teraRaidsWorkflow?.fixedRewardTables
+      : kind === 'lottery'
+        ? context.teraRaidsWorkflow?.lotteryRewardTables
+        : undefined;
+  const reward = rewardTables
+    ?.flatMap((table) => table.rewards)
+    .find((candidate) => candidate.recordId === recordId);
+
+  return createPendingEditDisplayDetails(edit, {
+    editorLabel,
+    fieldLabel: field?.label,
+    newValueLabel: formatPendingEditValue(edit.newValue, field),
+    recordLabel: reward
+      ? `${reward.rewardKindLabel} table ${reward.tableIndex} slot #${reward.slot}: ${reward.itemName}`
+      : undefined
   });
 }
 
@@ -19960,6 +20149,677 @@ function EncounterAreaCopyConfirmationModal({
         </div>
       </section>
     </div>
+  );
+}
+
+function TeraRaidsSection({
+  editSession,
+  isEditStarting,
+  isTeraRaidUpdating,
+  onSearchChange,
+  onSelectRaid,
+  onStartEditSession,
+  onUpdateTeraRaidField,
+  onUpdateTeraRaidFields,
+  searchText,
+  selectedRaidRecordId,
+  workflow
+}: {
+  editSession: EditSession | null;
+  isEditStarting: boolean;
+  isTeraRaidUpdating: boolean;
+  onSearchChange: (value: string) => void;
+  onSelectRaid: (recordId: string | null) => void;
+  onStartEditSession: () => void;
+  onUpdateTeraRaidField: (
+    recordId: string,
+    field: string,
+    value: string
+  ) => Promise<boolean>;
+  onUpdateTeraRaidFields: (
+    recordId: string,
+    changes: Array<{ field: string; value: string }>
+  ) => Promise<boolean>;
+  searchText: string;
+  selectedRaidRecordId: string | null;
+  workflow: TeraRaidsWorkflow | null;
+}) {
+  const { translateLiteral } = useLocalization();
+  const [draftsByRecordId, setDraftsByRecordId] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [rewardKind, setRewardKind] = useState<'fixed' | 'lottery'>('fixed');
+  const [selectedRewardRecordId, setSelectedRewardRecordId] = useState<string | null>(null);
+  const normalizedSearch = searchText.trim().toLocaleLowerCase();
+  const filteredRaids =
+    workflow?.raids.filter((raid) => {
+      if (!normalizedSearch) {
+        return true;
+      }
+
+      return [
+        raid.recordId,
+        raid.region,
+        raid.starLabel,
+        raid.versionLabel,
+        raid.raidNo.toString(),
+        raid.species,
+        raid.speciesId.toString(),
+        raid.teraTypeLabel,
+        raid.fixedRewardPreview,
+        raid.lotteryRewardPreview,
+        raid.provenance.sourceFile
+      ]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(normalizedSearch);
+    }) ?? [];
+  const selectedRaid =
+    filteredRaids.find((raid) => raid.recordId === selectedRaidRecordId) ??
+    workflow?.raids.find((raid) => raid.recordId === selectedRaidRecordId) ??
+    filteredRaids[0] ??
+    workflow?.raids[0] ??
+    null;
+  const canEditTeraRaids = workflow?.summary.availability === 'available';
+  const pendingTeraRaidRecordIds = getPendingTeraRaidRecordIds(editSession);
+  const raidFields = useMemo(
+    () =>
+      (workflow?.editableFields ?? [])
+        .filter(isTeraRaidBossField)
+        .map((field) =>
+          toNumericEditableControlField(
+            field,
+            field.field === abilityFieldName && selectedRaid
+              ? selectedRaid.abilityOptions
+              : undefined
+          )
+        ),
+    [selectedRaid?.abilityOptions, workflow?.editableFields]
+  );
+  const fixedRewardFields = useMemo(
+    () =>
+      (workflow?.editableFields ?? [])
+        .filter(isTeraRaidFixedRewardField)
+        .map((field) => toNumericEditableControlField(field)),
+    [workflow?.editableFields]
+  );
+  const lotteryRewardFields = useMemo(
+    () =>
+      (workflow?.editableFields ?? [])
+        .filter(isTeraRaidLotteryRewardField)
+        .map((field) => toNumericEditableControlField(field)),
+    [workflow?.editableFields]
+  );
+  const fixedRewardTable = selectedRaid
+    ? findTeraRaidRewardTableByHash(
+        workflow?.fixedRewardTables ?? [],
+        selectedRaid.fixedRewardTableHash
+      )
+    : null;
+  const lotteryRewardTable = selectedRaid
+    ? findTeraRaidRewardTableByHash(
+        workflow?.lotteryRewardTables ?? [],
+        selectedRaid.lotteryRewardTableHash
+      )
+    : null;
+  const activeRewardTable = rewardKind === 'fixed' ? fixedRewardTable : lotteryRewardTable;
+  const activeRewardFields = rewardKind === 'fixed' ? fixedRewardFields : lotteryRewardFields;
+  const selectedReward =
+    activeRewardTable?.rewards.find((reward) => reward.recordId === selectedRewardRecordId) ??
+    activeRewardTable?.rewards[0] ??
+    null;
+
+  useRegisterEditorDraftDirty('teraRaids', countFieldDraftRecords(draftsByRecordId) > 0);
+
+  useEffect(() => {
+    if (selectedRaid && selectedRaid.recordId !== selectedRaidRecordId) {
+      onSelectRaid(selectedRaid.recordId);
+    }
+  }, [onSelectRaid, selectedRaid?.recordId, selectedRaidRecordId]);
+
+  useEffect(() => {
+    if (selectedReward && selectedReward.recordId !== selectedRewardRecordId) {
+      setSelectedRewardRecordId(selectedReward.recordId);
+    }
+  }, [selectedReward?.recordId, selectedRewardRecordId]);
+
+  return (
+    <>
+      <section aria-labelledby="tera-raids-heading" className="panel wide-panel">
+        <div className="panel-heading">
+          <Gem aria-hidden="true" size={18} />
+          <h2 id="tera-raids-heading">{translateLiteral('Tera Raids')}</h2>
+        </div>
+
+        <div className="items-toolbar encounters-toolbar">
+          <label className="search-box items-search">
+            <Search aria-hidden="true" size={18} />
+            <input
+              aria-label={translateLiteral('Search Tera raids')}
+              disabled={!workflow}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder={translateLiteral('Search Tera raids')}
+              type="search"
+              value={searchText}
+            />
+          </label>
+          <Metric
+            label="Loaded raids"
+            value={workflow ? workflow.stats.totalRaidCount.toString() : '0'}
+          />
+          <Metric
+            label="Reward tables"
+            value={workflow ? workflow.stats.totalRewardTableCount.toString() : '0'}
+          />
+          <Metric
+            label="Reward rows"
+            value={workflow ? workflow.stats.totalRewardItemCount.toString() : '0'}
+          />
+          <Metric
+            label="Sources"
+            value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
+          />
+          <Metric
+            label="Pending changes"
+            value={(editSession?.pendingEdits.length ?? 0).toString()}
+          />
+        </div>
+
+        {workflow ? (
+          <div className="encounters-layout">
+            <div
+              className="raid-rewards-table"
+              role="table"
+              aria-label={translateLiteral('Tera raid rows')}
+            >
+              <div className="raid-rewards-row raid-rewards-row-heading" role="row">
+                <span role="columnheader">{translateLiteral('Region')}</span>
+                <span role="columnheader">{translateLiteral('Stars')}</span>
+                <span role="columnheader">{translateLiteral('Game')}</span>
+                <span role="columnheader">{translateLiteral('Pokemon')}</span>
+              </div>
+              {filteredRaids.map((raid) => {
+                const raidLabel = formatSpeciesFormLabel(raid.species, raid.form, raid.speciesId);
+
+                return (
+                  <button
+                    className={`raid-rewards-row ${
+                      selectedRaid?.recordId === raid.recordId ? 'raid-rewards-row-selected' : ''
+                    } ${
+                      pendingTeraRaidRecordIds.has(raid.recordId) ? 'raid-rewards-row-pending' : ''
+                    }`}
+                    key={raid.recordId}
+                    onClick={() => onSelectRaid(raid.recordId)}
+                    role="row"
+                    type="button"
+                  >
+                    <span role="cell">{raid.region}</span>
+                    <span role="cell">{raid.starLabel}</span>
+                    <span role="cell">{raid.versionLabel}</span>
+                    <span role="cell">{raidLabel}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <aside
+              aria-label={translateLiteral('Selected Tera raid')}
+              className="encounter-inspector"
+            >
+              <div className="panel-heading">
+                <Gem aria-hidden="true" size={18} />
+                <h3>{translateLiteral('Selected Raid')}</h3>
+              </div>
+
+              {selectedRaid ? (
+                <>
+                  <dl className="item-provenance-list">
+                    <div>
+                      <dt>{translateLiteral('Pokemon')}</dt>
+                      <dd data-localization-ignore="true">
+                        {formatSpeciesFormLabel(
+                          selectedRaid.species,
+                          selectedRaid.form,
+                          selectedRaid.speciesId
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{translateLiteral('Region')}</dt>
+                      <dd>{translateLiteral(selectedRaid.region)}</dd>
+                    </div>
+                    <div>
+                      <dt>{translateLiteral('Stars')}</dt>
+                      <dd>{translateLiteral(selectedRaid.starLabel)}</dd>
+                    </div>
+                    <div>
+                      <dt>{translateLiteral('Game')}</dt>
+                      <dd>{translateLiteral(selectedRaid.versionLabel)}</dd>
+                    </div>
+                    <div>
+                      <dt>{translateLiteral('Source file')}</dt>
+                      <dd data-localization-ignore="true">{selectedRaid.provenance.sourceFile}</dd>
+                    </div>
+                    <div>
+                      <dt>{translateLiteral('Layer')}</dt>
+                      <dd>{translateLiteral(formatSourceLayer(selectedRaid.provenance.sourceLayer))}</dd>
+                    </div>
+                    <div>
+                      <dt>{translateLiteral('File state')}</dt>
+                      <dd>{translateLiteral(formatFileState(selectedRaid.provenance.fileState))}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="encounter-edit-form">
+                    <div
+                      className="encounter-slot-tabs"
+                      aria-label={translateLiteral('Selected Tera raid summary')}
+                    >
+                      <div className="slot-tab-button slot-tab-button-readonly">
+                        <PokemonSprite
+                          className="slot-tab-sprite"
+                          name={formatSpeciesFormLabel(
+                            selectedRaid.species,
+                            selectedRaid.form,
+                            selectedRaid.speciesId
+                          )}
+                          preferStatic
+                        />
+                        <strong>{selectedRaid.starLabel}</strong>
+                        <span data-localization-ignore="true">
+                          {formatSpeciesFormLabel(
+                            selectedRaid.species,
+                            selectedRaid.form,
+                            selectedRaid.speciesId
+                          )}
+                        </span>
+                        <small>
+                          {`${translateLiteral(selectedRaid.teraTypeLabel)} ${translateLiteral('Tera')}`}
+                        </small>
+                      </div>
+                    </div>
+
+                    <dl className="encounter-slot-detail">
+                      <div>
+                        <dt>{translateLiteral('Level')}</dt>
+                        <dd>{selectedRaid.level}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Tera type')}</dt>
+                        <dd>{translateLiteral(selectedRaid.teraTypeLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Ability')}</dt>
+                        <dd>{translateLiteral(selectedRaid.abilityLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Nature')}</dt>
+                        <dd>{translateLiteral(selectedRaid.natureLabel)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('IVs')}</dt>
+                        <dd>{translateLiteral(selectedRaid.ivSummary)}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Fixed rewards')}</dt>
+                        <dd data-localization-ignore="true">{selectedRaid.fixedRewardPreview}</dd>
+                      </div>
+                      <div>
+                        <dt>{translateLiteral('Lottery rewards')}</dt>
+                        <dd data-localization-ignore="true">{selectedRaid.lotteryRewardPreview}</dd>
+                      </div>
+                    </dl>
+
+                    {editSession ? (
+                      <TeraRaidDraftPanel
+                        canEdit={canEditTeraRaids}
+                        disabled={isTeraRaidUpdating}
+                        draftKey={selectedRaid.recordId}
+                        draftsByRecordId={draftsByRecordId}
+                        fields={raidFields}
+                        formOptionContext={createTeraRaidFormOptionContext(
+                          selectedRaid,
+                          raidFields,
+                          draftsByRecordId[selectedRaid.recordId]
+                        )}
+                        getGroup={getTeraRaidEditableFieldGroup}
+                        getValue={(field) =>
+                          getEditableTeraRaidFieldValue(
+                            selectedRaid,
+                            field,
+                            workflow.fixedRewardTables,
+                            workflow.lotteryRewardTables
+                          )
+                        }
+                        isBusy={isTeraRaidUpdating}
+                        onChangeDrafts={setDraftsByRecordId}
+                        onUpdateField={onUpdateTeraRaidField}
+                        onUpdateFields={onUpdateTeraRaidFields}
+                        saveLabel="Save Raid"
+                      />
+                    ) : (
+                      <button
+                        aria-busy={isEditStarting || undefined}
+                        className="secondary-button"
+                        disabled={!canEditTeraRaids || isEditStarting}
+                        onClick={onStartEditSession}
+                        type="button"
+                      >
+                        <BusyActionContent
+                          busyLabel={translateLiteral('Starting')}
+                          icon={<Pencil aria-hidden="true" size={16} />}
+                          isBusy={isEditStarting}
+                          label={translateLiteral('Edit')}
+                        />
+                      </button>
+                    )}
+
+                    <div className="encounter-slot-header">
+                      <strong>{translateLiteral('Rewards')}</strong>
+                      <select
+                        aria-label={translateLiteral('Tera raid reward kind')}
+                        onChange={(event) => {
+                          setRewardKind(event.target.value === 'lottery' ? 'lottery' : 'fixed');
+                          setSelectedRewardRecordId(null);
+                        }}
+                        value={rewardKind}
+                      >
+                        <option value="fixed">{translateLiteral('Fixed rewards')}</option>
+                        <option value="lottery">{translateLiteral('Lottery rewards')}</option>
+                      </select>
+                    </div>
+
+                    {activeRewardTable ? (
+                      <>
+                        <dl className="encounter-slot-detail">
+                          <div>
+                            <dt>{translateLiteral('Table')}</dt>
+                            <dd>{activeRewardTable.tableHash}</dd>
+                          </div>
+                          <div>
+                            <dt>{translateLiteral('Reward rows')}</dt>
+                            <dd>{activeRewardTable.rewardItemCount}</dd>
+                          </div>
+                          <div>
+                            <dt>{translateLiteral('Preview')}</dt>
+                            <dd data-localization-ignore="true">{activeRewardTable.preview}</dd>
+                          </div>
+                        </dl>
+
+                        <div
+                          className="encounter-slot-tabs"
+                          aria-label={translateLiteral('Tera raid reward rows')}
+                        >
+                          {activeRewardTable.rewards.map((reward) => (
+                            <button
+                              aria-pressed={reward.recordId === selectedReward?.recordId}
+                              className={`slot-tab-button ${
+                                pendingTeraRaidRecordIds.has(reward.recordId)
+                                  ? 'slot-tab-button-pending'
+                                  : ''
+                              }`}
+                              key={reward.recordId}
+                              onClick={() => setSelectedRewardRecordId(reward.recordId)}
+                              type="button"
+                            >
+                              <strong>{`#${reward.slot}`}</strong>
+                              <span data-localization-ignore="true">{reward.itemName}</span>
+                              <small>
+                                {rewardKind === 'lottery' && reward.rate !== null
+                                  ? `${reward.count} ${translateLiteral('at')} ${reward.rate}`
+                                  : `${translateLiteral('Count')} ${reward.count}`}
+                              </small>
+                            </button>
+                          ))}
+                        </div>
+
+                        {selectedReward ? (
+                          <>
+                            <dl className="encounter-slot-detail">
+                              <div>
+                                <dt>{translateLiteral('Item')}</dt>
+                                <dd data-localization-ignore="true">{selectedReward.itemName}</dd>
+                              </div>
+                              <div>
+                                <dt>{translateLiteral('Category')}</dt>
+                                <dd>{translateLiteral(selectedReward.categoryLabel)}</dd>
+                              </div>
+                              <div>
+                                <dt>{translateLiteral('Subject')}</dt>
+                                <dd>
+                                  {translateLiteral(selectedReward.subjectTypeLabel ?? 'n/a')}
+                                </dd>
+                              </div>
+                              <div>
+                                <dt>{translateLiteral('Count')}</dt>
+                                <dd>{selectedReward.count}</dd>
+                              </div>
+                              {selectedReward.rate !== null ? (
+                                <div>
+                                  <dt>{translateLiteral('Rate')}</dt>
+                                  <dd>{selectedReward.rate}</dd>
+                                </div>
+                              ) : null}
+                            </dl>
+
+                            {editSession ? (
+                              <TeraRaidDraftPanel
+                                canEdit={canEditTeraRaids}
+                                disabled={isTeraRaidUpdating}
+                                draftKey={selectedReward.recordId}
+                                draftsByRecordId={draftsByRecordId}
+                                fields={activeRewardFields}
+                                getGroup={getTeraRaidEditableFieldGroup}
+                                getValue={(field) =>
+                                  getEditableTeraRaidRewardFieldValue(selectedReward, field)
+                                }
+                                isBusy={isTeraRaidUpdating}
+                                onChangeDrafts={setDraftsByRecordId}
+                                onUpdateField={onUpdateTeraRaidField}
+                                onUpdateFields={onUpdateTeraRaidFields}
+                                saveLabel="Save Reward"
+                              />
+                            ) : null}
+                          </>
+                        ) : (
+                          <p className="empty-copy">
+                            {translateLiteral('No reward row selected.')}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="empty-copy">
+                        {translateLiteral('No linked reward table found for this raid.')}
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="empty-copy">{translateLiteral('No Tera raid selected.')}</p>
+              )}
+            </aside>
+          </div>
+        ) : (
+          <p className="empty-copy">
+            {translateLiteral('Open Tera Raids from Workflows to load backend raid data.')}
+          </p>
+        )}
+      </section>
+
+      <DiagnosticsSection diagnostics={workflow?.diagnostics ?? []} />
+    </>
+  );
+}
+
+function TeraRaidDraftPanel({
+  canEdit,
+  disabled,
+  draftKey,
+  draftsByRecordId,
+  fields,
+  formOptionContext,
+  getGroup,
+  getValue,
+  isBusy,
+  onChangeDrafts,
+  onUpdateField,
+  onUpdateFields,
+  saveLabel
+}: {
+  canEdit: boolean;
+  disabled: boolean;
+  draftKey: string;
+  draftsByRecordId: Record<string, Record<string, string>>;
+  fields: NumericEditableField[];
+  formOptionContext?: SpeciesFormOptionContext;
+  getGroup: (field: NumericEditableField) => string;
+  getValue: (field: string) => number | null;
+  isBusy: boolean;
+  onChangeDrafts: (
+    updater: (
+      currentDrafts: Record<string, Record<string, string>>
+    ) => Record<string, Record<string, string>>
+  ) => void;
+  onUpdateField: (recordId: string, field: string, value: string) => Promise<boolean>;
+  onUpdateFields: (
+    recordId: string,
+    changes: Array<{ field: string; value: string }>
+  ) => Promise<boolean>;
+  saveLabel: string;
+}) {
+  const { translateLiteral } = useLocalization();
+  const cancelActiveEditSession = useCancelActiveEditSession();
+  const currentValueSignature = fields
+    .map((field) => `${field.field}:${getValue(field.field) ?? ''}`)
+    .join('|');
+  const draftDefaults = useMemo(
+    () => createTrainerDrafts(fields, getValue),
+    [currentValueSignature, fields, getValue]
+  );
+  const drafts = draftsByRecordId[draftKey] ?? draftDefaults;
+  const draftSummary = useMemo(
+    () => getTrainerDraftSummary(fields, drafts, getValue),
+    [drafts, fields, getValue]
+  );
+  const fieldGroups = useMemo(
+    () => groupNumericEditableFields(fields, getGroup),
+    [fields, getGroup]
+  );
+  const canSave =
+    canEdit &&
+    !disabled &&
+    draftSummary.changedFields.length > 0 &&
+    draftSummary.invalidFields.length === 0;
+
+  useEffect(() => {
+    onChangeDrafts((currentDrafts) =>
+      pruneFieldDraftRecord(currentDrafts, draftKey, draftDefaults)
+    );
+  }, [draftDefaults, draftKey, onChangeDrafts]);
+
+  if (fields.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      <div className="editable-field-groups">
+        {fieldGroups.map((group) => (
+          <fieldset className="editable-field-group" key={group.group}>
+            <legend>{translateLiteral(group.group)}</legend>
+            <div className="editable-field-grid">
+              {group.fields.map((field) => {
+                const currentValue = getValue(field.field);
+                const draftValue = drafts[field.field] ?? '';
+                const draftState = getTrainerFieldDraftState(
+                  draftValue,
+                  currentValue,
+                  field
+                );
+
+                return (
+                  <TrainerDraftField
+                    currentValue={currentValue}
+                    disabled={!canEdit || disabled}
+                    draftState={draftState}
+                    draftValue={draftValue}
+                    field={field}
+                    formOptionContext={formOptionContext}
+                    idPrefix="tera-raid-field"
+                    key={field.field}
+                    onChange={(value) => {
+                      const nextDrafts = {
+                        ...drafts,
+                        [field.field]: value
+                      };
+                      onChangeDrafts((currentDrafts) =>
+                        setFieldDraftRecord(
+                          currentDrafts,
+                          draftKey,
+                          nextDrafts,
+                          draftDefaults
+                        )
+                      );
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </fieldset>
+        ))}
+      </div>
+
+      <div className="draft-action-row">
+        <button
+          aria-busy={isBusy || undefined}
+          className="primary-button"
+          disabled={!canSave}
+          onClick={async () => {
+            const changes = draftSummary.changedFields.map((change) => ({
+              field: change.field,
+              value: change.value
+            }));
+            const firstChange = changes[0];
+            const didSave =
+              changes.length === 1 && firstChange
+                ? await onUpdateField(draftKey, firstChange.field, firstChange.value)
+                : await onUpdateFields(draftKey, changes);
+
+            if (didSave) {
+              onChangeDrafts((currentDrafts) =>
+                deleteFieldDraftRecord(currentDrafts, draftKey)
+              );
+            }
+          }}
+          type="button"
+        >
+          <BusyActionContent
+            busyLabel={translateLiteral('Saving')}
+            icon={<Save aria-hidden="true" size={16} />}
+            isBusy={isBusy}
+            label={translateLiteral(saveLabel)}
+          />
+        </button>
+        <button
+          className="danger-button"
+          disabled={disabled}
+          onClick={() =>
+            cancelActiveEditSession(() =>
+              onChangeDrafts((currentDrafts) =>
+                deleteFieldDraftRecord(currentDrafts, draftKey)
+              )
+            )
+          }
+          type="button"
+        >
+          <X aria-hidden="true" size={16} />
+          <span>{translateLiteral('Cancel')}</span>
+        </button>
+        <span className="draft-action-summary">
+          {translateLiteral(formatDraftSummary(draftSummary))}
+        </span>
+      </div>
+    </>
   );
 }
 
@@ -26372,6 +27232,7 @@ type PendingEditContext = {
   shopsWorkflow: ShopsWorkflow | null;
   startingItemsWorkflow: StartingItemsWorkflow | null;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
+  teraRaidsWorkflow: TeraRaidsWorkflow | null;
   textWorkflow: TextWorkflow | null;
   typeChartWorkflow: TypeChartWorkflow | null;
   tradePokemonWorkflow: TradePokemonWorkflow | null;
@@ -31484,6 +32345,14 @@ function getPendingEncounterTableIds(editSession: EditSession | null) {
   );
 }
 
+function getPendingTeraRaidRecordIds(editSession: EditSession | null) {
+  return new Set(
+    (editSession?.pendingEdits ?? [])
+      .filter((edit) => edit.domain === 'workflow.teraRaids' && edit.recordId)
+      .map((edit) => edit.recordId!)
+  );
+}
+
 function getPendingRaidRewardTableIds(editSession: EditSession | null, domain: string) {
   return new Set(
     (editSession?.pendingEdits ?? [])
@@ -31830,6 +32699,282 @@ function getImportStatusClassName(status: string) {
       return 'status-blocked';
     default:
       return getExeFsStatusClassName(status);
+  }
+}
+
+const teraRaidRewardTableFieldNames = ['fixedRewardTable', 'lotteryRewardTable'] as const;
+const teraRaidFixedRewardFieldNames = [
+  'fixedCategory',
+  'fixedSubject',
+  'fixedItemId',
+  'fixedCount'
+] as const;
+const teraRaidLotteryRewardFieldNames = [
+  'lotteryCategory',
+  'lotteryItemId',
+  'lotteryCount',
+  'lotteryRate',
+  'lotteryRareFlag'
+] as const;
+const teraRaidMoveFieldNames = ['move1Id', 'move2Id', 'move3Id', 'move4Id'] as const;
+const teraRaidIvFieldNames = [
+  'flawlessIvCount',
+  'ivHp',
+  'ivAttack',
+  'ivDefense',
+  'ivSpeed',
+  'ivSpecialAttack',
+  'ivSpecialDefense'
+] as const;
+const teraRaidSizeFieldNames = [
+  'scaleMode',
+  'scaleValue',
+  'heightMode',
+  'heightValue',
+  'weightMode',
+  'weightValue'
+] as const;
+const teraRaidBossBehaviorFieldNames = [
+  'hpMultiplier',
+  'shieldTriggerHp',
+  'shieldTriggerTime',
+  'doubleActionHp',
+  'doubleActionTime',
+  'doubleActionRate'
+] as const;
+const teraRaidSetupFieldNames = [
+  'version',
+  'difficulty',
+  'deliveryGroupId',
+  'spawnRate',
+  'captureRate',
+  'captureLevel'
+] as const;
+const teraRaidPokemonFieldNames = [
+  'species',
+  'form',
+  'level',
+  'heldItemId',
+  'ballItemId',
+  'ability',
+  'nature',
+  'gender',
+  'shinyLock',
+  'teraType',
+  'moveMode'
+] as const;
+
+function isTeraRaidBossField(field: TeraRaidEditableField) {
+  return !isTeraRaidFixedRewardField(field) && !isTeraRaidLotteryRewardField(field);
+}
+
+function isTeraRaidFixedRewardField(field: TeraRaidEditableField) {
+  return teraRaidFixedRewardFieldNames.includes(
+    field.field as (typeof teraRaidFixedRewardFieldNames)[number]
+  );
+}
+
+function isTeraRaidLotteryRewardField(field: TeraRaidEditableField) {
+  return teraRaidLotteryRewardFieldNames.includes(
+    field.field as (typeof teraRaidLotteryRewardFieldNames)[number]
+  );
+}
+
+function getTeraRaidEditableFieldGroup(field: NumericEditableField) {
+  if (
+    teraRaidSetupFieldNames.includes(
+      field.field as (typeof teraRaidSetupFieldNames)[number]
+    )
+  ) {
+    return 'Raid Setup';
+  }
+
+  if (
+    teraRaidPokemonFieldNames.includes(
+      field.field as (typeof teraRaidPokemonFieldNames)[number]
+    )
+  ) {
+    return 'Pokemon';
+  }
+
+  if (
+    teraRaidMoveFieldNames.includes(field.field as (typeof teraRaidMoveFieldNames)[number])
+  ) {
+    return 'Moves';
+  }
+
+  if (teraRaidIvFieldNames.includes(field.field as (typeof teraRaidIvFieldNames)[number])) {
+    return 'Stats - IVs';
+  }
+
+  if (
+    teraRaidSizeFieldNames.includes(field.field as (typeof teraRaidSizeFieldNames)[number])
+  ) {
+    return 'Size';
+  }
+
+  if (
+    teraRaidBossBehaviorFieldNames.includes(
+      field.field as (typeof teraRaidBossBehaviorFieldNames)[number]
+    )
+  ) {
+    return 'Boss Behavior';
+  }
+
+  if (
+    teraRaidRewardTableFieldNames.includes(
+      field.field as (typeof teraRaidRewardTableFieldNames)[number]
+    )
+  ) {
+    return 'Rewards';
+  }
+
+  return 'Reward Data';
+}
+
+function findTeraRaidRewardTableByHash(
+  tables: readonly TeraRaidRewardTable[],
+  tableHash: string
+) {
+  return tables.find((table) => table.tableHash === tableHash) ?? null;
+}
+
+function createTeraRaidFormOptionContext(
+  raid: TeraRaidRecord,
+  fields: readonly NumericEditableField[],
+  drafts: Record<string, string> | undefined
+): SpeciesFormOptionContext {
+  const speciesField = fields.find((field) => field.field === giftSpeciesFieldName);
+  const draftedSpeciesId = parseOptionalInteger(drafts?.[giftSpeciesFieldName]);
+  const speciesId = draftedSpeciesId ?? raid.speciesId;
+  const speciesOption = speciesField?.options.find((option) => option.value === speciesId);
+  const species = speciesOption?.label.replace(/^\d+\s+/, '') ?? raid.species;
+
+  return {
+    abilityOptions: raid.abilityOptions,
+    gameFamily: 'sv',
+    species,
+    speciesId
+  };
+}
+
+function getEditableTeraRaidFieldValue(
+  raid: TeraRaidRecord,
+  field: string,
+  fixedRewardTables: readonly TeraRaidRewardTable[],
+  lotteryRewardTables: readonly TeraRaidRewardTable[]
+) {
+  switch (field) {
+    case 'version':
+      return raid.version;
+    case 'difficulty':
+      return raid.difficulty;
+    case 'deliveryGroupId':
+      return raid.deliveryGroupId;
+    case 'spawnRate':
+      return raid.spawnRate;
+    case 'captureRate':
+      return raid.captureRate;
+    case 'captureLevel':
+      return raid.captureLevel;
+    case 'species':
+      return raid.speciesId;
+    case 'form':
+      return raid.form;
+    case 'level':
+      return raid.level;
+    case 'heldItemId':
+      return raid.heldItemId;
+    case 'ballItemId':
+      return raid.ballItemId;
+    case 'ability':
+      return raid.ability;
+    case 'nature':
+      return raid.nature;
+    case 'gender':
+      return raid.gender;
+    case 'shinyLock':
+      return raid.shinyLock;
+    case 'teraType':
+      return raid.teraType;
+    case 'moveMode':
+      return raid.moveMode;
+    case 'move1Id':
+      return raid.moves[0]?.moveId ?? 0;
+    case 'move2Id':
+      return raid.moves[1]?.moveId ?? 0;
+    case 'move3Id':
+      return raid.moves[2]?.moveId ?? 0;
+    case 'move4Id':
+      return raid.moves[3]?.moveId ?? 0;
+    case 'flawlessIvCount':
+      return raid.flawlessIvCount;
+    case 'ivHp':
+      return raid.ivs.hp;
+    case 'ivAttack':
+      return raid.ivs.attack;
+    case 'ivDefense':
+      return raid.ivs.defense;
+    case 'ivSpeed':
+      return raid.ivs.speed;
+    case 'ivSpecialAttack':
+      return raid.ivs.specialAttack;
+    case 'ivSpecialDefense':
+      return raid.ivs.specialDefense;
+    case 'scaleMode':
+      return raid.scaleMode;
+    case 'scaleValue':
+      return raid.scaleValue;
+    case 'heightMode':
+      return raid.heightMode;
+    case 'heightValue':
+      return raid.heightValue;
+    case 'weightMode':
+      return raid.weightMode;
+    case 'weightValue':
+      return raid.weightValue;
+    case 'hpMultiplier':
+      return raid.hpMultiplier;
+    case 'shieldTriggerHp':
+      return raid.shieldTriggerHp;
+    case 'shieldTriggerTime':
+      return raid.shieldTriggerTime;
+    case 'doubleActionHp':
+      return raid.doubleActionHp;
+    case 'doubleActionTime':
+      return raid.doubleActionTime;
+    case 'doubleActionRate':
+      return raid.doubleActionRate;
+    case 'fixedRewardTable':
+      return findTeraRaidRewardTableByHash(fixedRewardTables, raid.fixedRewardTableHash)
+        ?.tableIndex ?? null;
+    case 'lotteryRewardTable':
+      return findTeraRaidRewardTableByHash(lotteryRewardTables, raid.lotteryRewardTableHash)
+        ?.tableIndex ?? null;
+    default:
+      return null;
+  }
+}
+
+function getEditableTeraRaidRewardFieldValue(reward: TeraRaidRewardItem, field: string) {
+  switch (field) {
+    case 'fixedCategory':
+    case 'lotteryCategory':
+      return reward.category;
+    case 'fixedSubject':
+      return reward.subjectType ?? 0;
+    case 'fixedItemId':
+    case 'lotteryItemId':
+      return reward.itemId;
+    case 'fixedCount':
+    case 'lotteryCount':
+      return reward.count;
+    case 'lotteryRate':
+      return reward.rate ?? 0;
+    case 'lotteryRareFlag':
+      return reward.rareItemFlag ? 1 : 0;
+    default:
+      return null;
   }
 }
 

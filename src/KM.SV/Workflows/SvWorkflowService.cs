@@ -12,6 +12,7 @@ using KM.SV.ModMerger;
 using KM.SV.Moves;
 using KM.SV.Placement;
 using KM.SV.Pokemon;
+using KM.SV.Raids;
 using KM.SV.Trainers;
 using KM.SV.Trades;
 using KM.SV.TypeChart;
@@ -27,6 +28,7 @@ public sealed class SvWorkflowService
     private readonly SvPokemonWorkflowService pokemonWorkflowService;
     private readonly SvTrainersWorkflowService trainersWorkflowService;
     private readonly SvEncountersWorkflowService encountersWorkflowService;
+    private readonly SvTeraRaidsWorkflowService teraRaidsWorkflowService;
     private readonly SvGiftPokemonWorkflowService giftPokemonWorkflowService;
     private readonly SvTradePokemonWorkflowService tradePokemonWorkflowService;
     private readonly SvPlacementWorkflowService placementWorkflowService;
@@ -38,6 +40,7 @@ public sealed class SvWorkflowService
     private readonly SvPokemonEditSessionService pokemonEditSessionService;
     private readonly SvTrainersEditSessionService trainersEditSessionService;
     private readonly SvEncountersEditSessionService encountersEditSessionService;
+    private readonly SvTeraRaidsEditSessionService teraRaidsEditSessionService;
     private readonly SvGiftPokemonEditSessionService giftPokemonEditSessionService;
     private readonly SvTradePokemonEditSessionService tradePokemonEditSessionService;
     private readonly SvPlacementEditSessionService placementEditSessionService;
@@ -56,6 +59,7 @@ public sealed class SvWorkflowService
         pokemonWorkflowService = new SvPokemonWorkflowService(fileSource);
         trainersWorkflowService = new SvTrainersWorkflowService(fileSource);
         encountersWorkflowService = new SvEncountersWorkflowService(fileSource);
+        teraRaidsWorkflowService = new SvTeraRaidsWorkflowService(fileSource);
         giftPokemonWorkflowService = new SvGiftPokemonWorkflowService(fileSource);
         tradePokemonWorkflowService = new SvTradePokemonWorkflowService(fileSource);
         placementWorkflowService = new SvPlacementWorkflowService(fileSource);
@@ -67,6 +71,7 @@ public sealed class SvWorkflowService
         pokemonEditSessionService = new SvPokemonEditSessionService(this.projectWorkspaceService, fileSource, pokemonWorkflowService);
         trainersEditSessionService = new SvTrainersEditSessionService(this.projectWorkspaceService, fileSource, trainersWorkflowService);
         encountersEditSessionService = new SvEncountersEditSessionService(this.projectWorkspaceService, fileSource, encountersWorkflowService);
+        teraRaidsEditSessionService = new SvTeraRaidsEditSessionService(this.projectWorkspaceService, fileSource, teraRaidsWorkflowService);
         giftPokemonEditSessionService = new SvGiftPokemonEditSessionService(this.projectWorkspaceService, fileSource, giftPokemonWorkflowService);
         tradePokemonEditSessionService = new SvTradePokemonEditSessionService(this.projectWorkspaceService, fileSource, tradePokemonWorkflowService);
         placementEditSessionService = new SvPlacementEditSessionService(this.projectWorkspaceService, fileSource, placementWorkflowService);
@@ -119,6 +124,7 @@ public sealed class SvWorkflowService
             pokemonWorkflowService.CreateSummary(project),
             trainersWorkflowService.CreateSummary(project),
             encountersWorkflowService.CreateSummary(project),
+            teraRaidsWorkflowService.CreateSummary(project),
             giftPokemonWorkflowService.CreateSummary(project),
             tradePokemonWorkflowService.CreateSummary(project),
             placementWorkflowService.CreateSummary(project),
@@ -166,6 +172,14 @@ public sealed class SvWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return encountersWorkflowService.Load(project);
+    }
+
+    public SvTeraRaidsWorkflow LoadTeraRaids(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return teraRaidsWorkflowService.Load(project);
     }
 
     public SvGiftPokemonWorkflow LoadGiftPokemon(ProjectPaths paths)
@@ -367,6 +381,24 @@ public sealed class SvWorkflowService
         return encountersEditSessionService.UpdateSlotFields(paths, session, updates);
     }
 
+    public SvTeraRaidsEditResult UpdateTeraRaidField(
+        ProjectPaths paths,
+        EditSession? session,
+        string recordId,
+        string field,
+        string value)
+    {
+        return teraRaidsEditSessionService.UpdateField(paths, session, recordId, field, value);
+    }
+
+    public SvTeraRaidsEditResult UpdateTeraRaidFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<SvTeraRaidFieldUpdate> updates)
+    {
+        return teraRaidsEditSessionService.UpdateFields(paths, session, updates);
+    }
+
     public SvGiftPokemonEditResult UpdateGiftPokemonField(
         ProjectPaths paths,
         EditSession? session,
@@ -493,6 +525,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Trainers => trainersEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Encounters => encountersEditSessionService.Validate(paths, session),
+            SvEditSessionDomain.TeraRaids => teraRaidsEditSessionService.Validate(paths, session),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
@@ -516,6 +549,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Trainers => trainersEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Encounters => encountersEditSessionService.CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.TeraRaids => teraRaidsEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -540,6 +574,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Trainers => trainersEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Encounters => encountersEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.TeraRaids => teraRaidsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.GiftPokemon => giftPokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
@@ -662,6 +697,7 @@ public sealed class SvWorkflowService
             [SvEditSessionSupport.PokemonDomain] => SvEditSessionDomain.Pokemon,
             [SvEditSessionSupport.TrainersDomain] => SvEditSessionDomain.Trainers,
             [SvEditSessionSupport.EncountersDomain] => SvEditSessionDomain.Encounters,
+            [SvEditSessionSupport.TeraRaidsDomain] => SvEditSessionDomain.TeraRaids,
             [SvEditSessionSupport.GiftPokemonDomain] => SvEditSessionDomain.GiftPokemon,
             [SvEditSessionSupport.TradePokemonDomain] => SvEditSessionDomain.TradePokemon,
             [SvEditSessionSupport.PlacementDomain] => SvEditSessionDomain.Placement,
@@ -694,6 +730,7 @@ public sealed class SvWorkflowService
             SvEditSessionSupport.PokemonDomain => SvEditSessionDomain.Pokemon,
             SvEditSessionSupport.TrainersDomain => SvEditSessionDomain.Trainers,
             SvEditSessionSupport.EncountersDomain => SvEditSessionDomain.Encounters,
+            SvEditSessionSupport.TeraRaidsDomain => SvEditSessionDomain.TeraRaids,
             SvEditSessionSupport.GiftPokemonDomain => SvEditSessionDomain.GiftPokemon,
             SvEditSessionSupport.TradePokemonDomain => SvEditSessionDomain.TradePokemon,
             SvEditSessionSupport.PlacementDomain => SvEditSessionDomain.Placement,
@@ -712,6 +749,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Pokemon or
             SvEditSessionDomain.Trainers or
             SvEditSessionDomain.Encounters or
+            SvEditSessionDomain.TeraRaids or
             SvEditSessionDomain.GiftPokemon or
             SvEditSessionDomain.TradePokemon or
             SvEditSessionDomain.Placement;
@@ -737,6 +775,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.Pokemon => SvEditSessionSupport.PokemonDomain,
             SvEditSessionDomain.Trainers => SvEditSessionSupport.TrainersDomain,
             SvEditSessionDomain.Encounters => SvEditSessionSupport.EncountersDomain,
+            SvEditSessionDomain.TeraRaids => SvEditSessionSupport.TeraRaidsDomain,
             SvEditSessionDomain.GiftPokemon => SvEditSessionSupport.GiftPokemonDomain,
             SvEditSessionDomain.TradePokemon => SvEditSessionSupport.TradePokemonDomain,
             SvEditSessionDomain.Placement => SvEditSessionSupport.PlacementDomain,
@@ -815,6 +854,7 @@ public sealed class SvWorkflowService
         Pokemon,
         Trainers,
         Encounters,
+        TeraRaids,
         GiftPokemon,
         TradePokemon,
         Placement,

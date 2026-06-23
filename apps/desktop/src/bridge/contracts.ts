@@ -33,6 +33,8 @@ export const kmCommandNameValues = [
   'encounters.slot.update', 'encounters.slots.update',
   'raidBattles.load',
   'raidBattles.slot.update',
+  'teraRaids.load',
+  'teraRaids.field.update', 'teraRaids.fields.update',
   'raidRewards.load',
   'raidRewards.reward.update',
   'raidBonusRewards.load',
@@ -136,6 +138,9 @@ export const kmCommandNames = {
   updateEncounterSlotFields: 'encounters.slots.update',
   loadRaidBattlesWorkflow: 'raidBattles.load',
   updateRaidBattleSlotField: 'raidBattles.slot.update',
+  loadTeraRaidsWorkflow: 'teraRaids.load',
+  updateTeraRaidField: 'teraRaids.field.update',
+  updateTeraRaidFields: 'teraRaids.fields.update',
   loadRaidRewardsWorkflow: 'raidRewards.load',
   updateRaidRewardField: 'raidRewards.reward.update',
   loadRaidBonusRewardsWorkflow: 'raidBonusRewards.load',
@@ -284,6 +289,10 @@ export const loadEncountersWorkflowRequestSchema = z.strictObject({
 });
 
 export const loadRaidBattlesWorkflowRequestSchema = z.strictObject({
+  paths: projectPathsSchema
+});
+
+export const loadTeraRaidsWorkflowRequestSchema = z.strictObject({
   paths: projectPathsSchema
 });
 
@@ -1869,6 +1878,154 @@ export const loadRaidBattlesWorkflowResponseSchema = z.strictObject({
   workflow: raidBattlesWorkflowSchema
 });
 
+export const teraRaidProvenanceSchema = z.strictObject({
+  fileState: projectFileGraphEntryStateSchema,
+  sourceFile: z.string(),
+  sourceLayer: projectFileLayerSchema
+});
+
+export const teraRaidEditableFieldOptionSchema = z.strictObject({
+  label: z.string(),
+  value: z.number().int()
+});
+
+export const teraRaidEditableFieldSchema = z.strictObject({
+  field: z.string(),
+  label: z.string(),
+  maximumValue: z.number().int().nullable(),
+  minimumValue: z.number().int().nullable(),
+  options: z.array(teraRaidEditableFieldOptionSchema),
+  valueKind: z.string()
+});
+
+export const teraRaidMoveSchema = z.strictObject({
+  move: z.string().nullable(),
+  moveId: z.number().int().nonnegative(),
+  pointUps: z.number().int().nonnegative(),
+  slot: z.number().int().nonnegative()
+});
+
+export const teraRaidIvsSchema = z.strictObject({
+  attack: z.number().int(),
+  defense: z.number().int(),
+  hp: z.number().int(),
+  specialAttack: z.number().int(),
+  specialDefense: z.number().int(),
+  speed: z.number().int()
+});
+
+export const teraRaidRewardItemSchema = z.strictObject({
+  category: z.number().int(),
+  categoryLabel: z.string(),
+  count: z.number().int(),
+  itemId: z.number().int(),
+  itemName: z.string(),
+  provenance: teraRaidProvenanceSchema,
+  rareItemFlag: z.boolean().nullable(),
+  rate: z.number().int().nullable(),
+  recordId: z.string(),
+  rewardKind: z.string(),
+  rewardKindLabel: z.string(),
+  slot: z.number().int().nonnegative(),
+  subjectType: z.number().int().nullable(),
+  subjectTypeLabel: z.string().nullable(),
+  tableHash: z.string(),
+  tableIndex: z.number().int().nonnegative()
+});
+
+export const teraRaidRewardTableSchema = z.strictObject({
+  preview: z.string(),
+  provenance: teraRaidProvenanceSchema,
+  recordId: z.string(),
+  rewardItemCount: z.number().int().nonnegative(),
+  rewardKind: z.string(),
+  rewardKindLabel: z.string(),
+  rewards: z.array(teraRaidRewardItemSchema),
+  tableHash: z.string(),
+  tableIndex: z.number().int().nonnegative()
+});
+
+export const teraRaidRecordSchema = z.strictObject({
+  ability: z.number().int(),
+  abilityLabel: z.string(),
+  abilityOptions: z.array(teraRaidEditableFieldOptionSchema).default([]),
+  ballItem: z.string(),
+  ballItemId: z.number().int(),
+  captureLevel: z.number().int(),
+  captureRate: z.number().int(),
+  deliveryGroupId: z.number().int(),
+  difficulty: z.number().int(),
+  doubleActionHp: z.number().int(),
+  doubleActionRate: z.number().int(),
+  doubleActionTime: z.number().int(),
+  fixedRewardPreview: z.string(),
+  fixedRewardTableHash: z.string(),
+  flawlessIvCount: z.number().int().nullable(),
+  form: z.number().int(),
+  gender: z.number().int(),
+  genderLabel: z.string(),
+  heldItem: z.string().nullable(),
+  heldItemId: z.number().int(),
+  heightMode: z.number().int(),
+  heightModeLabel: z.string(),
+  heightValue: z.number().int(),
+  hpMultiplier: z.number().int(),
+  ivSummary: z.string(),
+  ivs: teraRaidIvsSchema,
+  level: z.number().int(),
+  lotteryRewardPreview: z.string(),
+  lotteryRewardTableHash: z.string(),
+  moveMode: z.number().int(),
+  moveModeLabel: z.string(),
+  moves: z.array(teraRaidMoveSchema),
+  nature: z.number().int(),
+  natureLabel: z.string(),
+  provenance: teraRaidProvenanceSchema,
+  raidNo: z.number().int(),
+  recordId: z.string(),
+  region: z.string(),
+  scaleMode: z.number().int(),
+  scaleModeLabel: z.string(),
+  scaleValue: z.number().int(),
+  shieldTriggerHp: z.number().int(),
+  shieldTriggerTime: z.number().int(),
+  shinyLock: z.number().int(),
+  shinyLockLabel: z.string(),
+  spawnRate: z.number().int(),
+  species: z.string(),
+  speciesId: z.number().int(),
+  starLabel: z.string(),
+  starRank: z.number().int().nullable(),
+  teraType: z.number().int(),
+  teraTypeLabel: z.string(),
+  version: z.number().int(),
+  versionLabel: z.string(),
+  weightMode: z.number().int(),
+  weightModeLabel: z.string(),
+  weightValue: z.number().int()
+});
+
+export const teraRaidsWorkflowStatsSchema = z.strictObject({
+  sourceFileCount: z.number().int().nonnegative(),
+  totalRaidCount: z.number().int().nonnegative(),
+  totalRewardItemCount: z.number().int().nonnegative(),
+  totalRewardTableCount: z.number().int().nonnegative()
+});
+
+export const teraRaidsWorkflowSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  editableFields: z.array(teraRaidEditableFieldSchema),
+  fixedRewardTables: z.array(teraRaidRewardTableSchema),
+  lotteryRewardTables: z.array(teraRaidRewardTableSchema),
+  raids: z.array(teraRaidRecordSchema),
+  stats: teraRaidsWorkflowStatsSchema,
+  summary: workflowSummarySchema
+});
+
+export const loadTeraRaidsWorkflowResponseSchema = z.strictObject({
+  workflow: teraRaidsWorkflowSchema
+});
+
 export const raidRewardProvenanceSchema = z.strictObject({
   fileState: projectFileGraphEntryStateSchema,
   sourceFile: z.string(),
@@ -3103,6 +3260,38 @@ export const updateRaidBattleSlotFieldResponseSchema = z.strictObject({
   workflow: raidBattlesWorkflowSchema
 });
 
+export const updateTeraRaidFieldRequestSchema = z.strictObject({
+  field: z.string(),
+  paths: projectPathsSchema,
+  recordId: z.string(),
+  session: editSessionSchema.nullable(),
+  value: z.string()
+});
+
+export const teraRaidFieldUpdateSchema = z.strictObject({
+  field: z.string(),
+  recordId: z.string(),
+  value: z.string()
+});
+
+export const updateTeraRaidFieldsRequestSchema = z.strictObject({
+  paths: projectPathsSchema,
+  session: editSessionSchema.nullable(),
+  updates: z.array(teraRaidFieldUpdateSchema)
+});
+
+export const updateTeraRaidFieldResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: teraRaidsWorkflowSchema
+});
+
+export const updateTeraRaidFieldsResponseSchema = z.strictObject({
+  diagnostics: z.array(apiDiagnosticSchema),
+  session: editSessionSchema,
+  workflow: teraRaidsWorkflowSchema
+});
+
 export const updateRaidRewardFieldRequestSchema = z.strictObject({
   field: z.string(),
   paths: projectPathsSchema,
@@ -3328,6 +3517,13 @@ export type RaidBattleEditableFieldOption = z.infer<typeof raidBattleEditableFie
 export type RaidBattleSlotRecord = z.infer<typeof raidBattleSlotRecordSchema>;
 export type RaidBattleTableRecord = z.infer<typeof raidBattleTableRecordSchema>;
 export type RaidBattlesWorkflow = z.infer<typeof raidBattlesWorkflowSchema>;
+export type TeraRaidEditableField = z.infer<typeof teraRaidEditableFieldSchema>;
+export type TeraRaidEditableFieldOption = z.infer<typeof teraRaidEditableFieldOptionSchema>;
+export type TeraRaidMoveRecord = z.infer<typeof teraRaidMoveSchema>;
+export type TeraRaidRecord = z.infer<typeof teraRaidRecordSchema>;
+export type TeraRaidRewardItem = z.infer<typeof teraRaidRewardItemSchema>;
+export type TeraRaidRewardTable = z.infer<typeof teraRaidRewardTableSchema>;
+export type TeraRaidsWorkflow = z.infer<typeof teraRaidsWorkflowSchema>;
 export type RaidRewardEditableField = z.infer<typeof raidRewardEditableFieldSchema>;
 export type RaidRewardItemRecord = z.infer<typeof raidRewardItemRecordSchema>;
 export type RaidRewardTableRecord = z.infer<typeof raidRewardTableRecordSchema>;
@@ -3461,6 +3657,12 @@ export type LoadRaidBattlesWorkflowRequest = z.infer<
 export type LoadRaidBattlesWorkflowResponse = z.infer<
   typeof loadRaidBattlesWorkflowResponseSchema
 >;
+export type LoadTeraRaidsWorkflowRequest = z.infer<
+  typeof loadTeraRaidsWorkflowRequestSchema
+>;
+export type LoadTeraRaidsWorkflowResponse = z.infer<
+  typeof loadTeraRaidsWorkflowResponseSchema
+>;
 export type LoadRaidRewardsWorkflowRequest = z.infer<typeof loadRaidRewardsWorkflowRequestSchema>;
 export type LoadRaidRewardsWorkflowResponse = z.infer<typeof loadRaidRewardsWorkflowResponseSchema>;
 export type LoadRaidBonusRewardsWorkflowRequest = z.infer<
@@ -3474,6 +3676,19 @@ export type UpdateRaidBattleSlotFieldRequest = z.infer<
 >;
 export type UpdateRaidBattleSlotFieldResponse = z.infer<
   typeof updateRaidBattleSlotFieldResponseSchema
+>;
+export type TeraRaidFieldUpdate = z.infer<typeof teraRaidFieldUpdateSchema>;
+export type UpdateTeraRaidFieldRequest = z.infer<
+  typeof updateTeraRaidFieldRequestSchema
+>;
+export type UpdateTeraRaidFieldResponse = z.infer<
+  typeof updateTeraRaidFieldResponseSchema
+>;
+export type UpdateTeraRaidFieldsRequest = z.infer<
+  typeof updateTeraRaidFieldsRequestSchema
+>;
+export type UpdateTeraRaidFieldsResponse = z.infer<
+  typeof updateTeraRaidFieldsResponseSchema
 >;
 export type UpdateRaidRewardFieldRequest = z.infer<typeof updateRaidRewardFieldRequestSchema>;
 export type UpdateRaidRewardFieldResponse = z.infer<typeof updateRaidRewardFieldResponseSchema>;

@@ -10,6 +10,7 @@ using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
+using KM.Api.Raids;
 using KM.Api.SvCache;
 using KM.Api.Trainers;
 using KM.Api.Trades;
@@ -24,6 +25,7 @@ using KM.SV.ModMerger;
 using KM.SV.Moves;
 using KM.SV.Placement;
 using KM.SV.Pokemon;
+using KM.SV.Raids;
 using KM.SV.Trainers;
 using KM.SV.Trades;
 using KM.SV.TypeChart;
@@ -240,6 +242,33 @@ public static class SvBridgeMapper
 
         return new UpdateEncounterSlotFieldsResponse(
             ToEncountersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static LoadTeraRaidsWorkflowResponse ToDto(SvTeraRaidsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTeraRaidsWorkflowResponse(ToTeraRaidsWorkflowDto(workflow));
+    }
+
+    public static UpdateTeraRaidFieldResponse ToDto(SvTeraRaidsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTeraRaidFieldResponse(
+            ToTeraRaidsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateTeraRaidFieldsResponse ToTeraRaidFieldsDto(SvTeraRaidsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTeraRaidFieldsResponse(
+            ToTeraRaidsWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -484,6 +513,22 @@ public static class SvBridgeMapper
             new EncountersWorkflowStatsDto(
                 workflow.Stats.TotalTableCount,
                 workflow.Stats.TotalSlotCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TeraRaidsWorkflowDto ToTeraRaidsWorkflowDto(SvTeraRaidsWorkflow workflow)
+    {
+        return new TeraRaidsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Raids.Select(ToDto).ToArray(),
+            workflow.FixedRewardTables.Select(ToDto).ToArray(),
+            workflow.LotteryRewardTables.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new TeraRaidsWorkflowStatsDto(
+                workflow.Stats.TotalRaidCount,
+                workflow.Stats.TotalRewardTableCount,
+                workflow.Stats.TotalRewardItemCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -1052,6 +1097,141 @@ public static class SvBridgeMapper
     private static EncounterEditableFieldOptionDto ToDto(SvEncounterEditableFieldOption option)
     {
         return new EncounterEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static TeraRaidRecordDto ToDto(SvTeraRaidEntry raid)
+    {
+        return new TeraRaidRecordDto(
+            raid.RecordId,
+            raid.Region,
+            raid.StarRank,
+            raid.StarLabel,
+            raid.EntryIndex,
+            raid.RaidNo,
+            raid.Version,
+            raid.VersionLabel,
+            raid.DeliveryGroupId,
+            raid.Difficulty,
+            raid.SpawnRate,
+            raid.CaptureRate,
+            raid.CaptureLevel,
+            raid.SpeciesId,
+            raid.Species,
+            raid.Form,
+            raid.Level,
+            raid.HeldItemId,
+            raid.HeldItem,
+            raid.BallItemId,
+            raid.BallItem,
+            raid.Ability,
+            raid.AbilityLabel,
+            raid.Nature,
+            raid.NatureLabel,
+            raid.Gender,
+            raid.GenderLabel,
+            raid.ShinyLock,
+            raid.ShinyLockLabel,
+            raid.TeraType,
+            raid.TeraTypeLabel,
+            raid.MoveMode,
+            raid.MoveModeLabel,
+            raid.Moves.Select(ToDto).ToArray(),
+            new TeraRaidIvsDto(
+                raid.Ivs.HP,
+                raid.Ivs.Attack,
+                raid.Ivs.Defense,
+                raid.Ivs.SpecialAttack,
+                raid.Ivs.SpecialDefense,
+                raid.Ivs.Speed),
+            raid.FlawlessIvCount,
+            raid.IvSummary,
+            raid.ScaleMode,
+            raid.ScaleModeLabel,
+            raid.ScaleValue,
+            raid.HeightMode,
+            raid.HeightModeLabel,
+            raid.HeightValue,
+            raid.WeightMode,
+            raid.WeightModeLabel,
+            raid.WeightValue,
+            raid.HpMultiplier,
+            raid.ShieldTriggerHp,
+            raid.ShieldTriggerTime,
+            raid.DoubleActionHp,
+            raid.DoubleActionTime,
+            raid.DoubleActionRate,
+            raid.FixedRewardTableHash,
+            raid.LotteryRewardTableHash,
+            raid.FixedRewardPreview,
+            raid.LotteryRewardPreview,
+            ToDto(raid.Provenance))
+        {
+            AbilityOptions = raid.AbilityOptions.Select(ToDto).ToArray(),
+        };
+    }
+
+    private static TeraRaidMoveDto ToDto(SvTeraRaidMoveRecord move)
+    {
+        return new TeraRaidMoveDto(move.Slot, move.MoveId, move.Move, move.PointUps);
+    }
+
+    private static TeraRaidRewardTableDto ToDto(SvTeraRaidRewardTableRecord table)
+    {
+        return new TeraRaidRewardTableDto(
+            table.RecordId,
+            table.RewardKind,
+            table.RewardKindLabel,
+            table.TableIndex,
+            table.TableHash,
+            table.RewardItemCount,
+            table.Preview,
+            table.Rewards.Select(ToDto).ToArray(),
+            ToDto(table.Provenance));
+    }
+
+    private static TeraRaidRewardItemDto ToDto(SvTeraRaidRewardItemRecord reward)
+    {
+        return new TeraRaidRewardItemDto(
+            reward.RecordId,
+            reward.RewardKind,
+            reward.RewardKindLabel,
+            reward.TableIndex,
+            reward.TableHash,
+            reward.Slot,
+            reward.Category,
+            reward.CategoryLabel,
+            reward.SubjectType,
+            reward.SubjectTypeLabel,
+            reward.ItemId,
+            reward.ItemName,
+            reward.Count,
+            reward.Rate,
+            reward.RareItemFlag,
+            ToDto(reward.Provenance));
+    }
+
+    private static TeraRaidEditableFieldDto ToDto(SvTeraRaidEditableField field)
+    {
+        return new TeraRaidEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static TeraRaidEditableFieldOptionDto ToDto(SvTeraRaidEditableFieldOption option)
+    {
+        return new TeraRaidEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static TeraRaidProvenanceDto ToDto(SvTeraRaidProvenance provenance)
+    {
+        return new TeraRaidProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
     }
 
     private static GiftPokemonRecordDto ToDto(SvGiftPokemonEntry gift)

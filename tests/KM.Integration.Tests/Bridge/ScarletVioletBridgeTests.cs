@@ -15,6 +15,7 @@ using KM.Api.Moves;
 using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
+using KM.Api.Raids;
 using KM.Api.SvCache;
 using KM.Api.Trainers;
 using KM.Api.Trades;
@@ -34,6 +35,31 @@ public sealed class ScarletVioletBridgeTests
 {
     private const ulong ScarletTitleId = 0x0100A3D008C5C000;
     private const ulong VioletTitleId = 0x01008F6008C5E000;
+    private const ulong TeraRaidFixedRewardTableHash = 0x1111222233334444;
+    private const ulong TeraRaidLotteryRewardTableHash = 0x5555666677778888;
+
+    private static readonly string[] TeraRaidEnemyPaths =
+    [
+        SvDataPaths.TeraRaidEnemyPaldea1,
+        SvDataPaths.TeraRaidEnemyPaldea2,
+        SvDataPaths.TeraRaidEnemyPaldea3,
+        SvDataPaths.TeraRaidEnemyPaldea4,
+        SvDataPaths.TeraRaidEnemyPaldea5,
+        SvDataPaths.TeraRaidEnemyPaldea6,
+        SvDataPaths.TeraRaidEnemyKitakami1,
+        SvDataPaths.TeraRaidEnemyKitakami2,
+        SvDataPaths.TeraRaidEnemyKitakami3,
+        SvDataPaths.TeraRaidEnemyKitakami4,
+        SvDataPaths.TeraRaidEnemyKitakami5,
+        SvDataPaths.TeraRaidEnemyKitakami6,
+        SvDataPaths.TeraRaidEnemyBlueberry1,
+        SvDataPaths.TeraRaidEnemyBlueberry2,
+        SvDataPaths.TeraRaidEnemyBlueberry3,
+        SvDataPaths.TeraRaidEnemyBlueberry4,
+        SvDataPaths.TeraRaidEnemyBlueberry5,
+        SvDataPaths.TeraRaidEnemyBlueberry6,
+        SvDataPaths.TeraRaidEnemyDelivery,
+    ];
 
     public static IEnumerable<object[]> ScarletVioletGames()
     {
@@ -915,19 +941,107 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "moves", "pokemon", "trainers", "encounters", "giftPokemon", "tradePokemon", "placement", "typeChart", "hyperspaceBypass", "modMerger"],
+            ["items", "moves", "pokemon", "trainers", "encounters", "teraRaids", "giftPokemon", "tradePokemon", "placement", "typeChart", "hyperspaceBypass", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Moves");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trainers");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Wild Encounters");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Tera Raids");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Gift Pokemon");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trade Pokemon");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Placement");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Type Chart");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Hyperspace Bypass");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "S/V Mod Merger");
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletProjectLoadsAndStagesTeraRaidsWorkflow(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loaded = Dispatch<LoadTeraRaidsWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTeraRaidsWorkflow,
+            new LoadTeraRaidsWorkflowRequest(paths),
+            "request-sv-tera-raids-load");
+
+        AssertSuccess(loaded);
+        Assert.DoesNotContain(
+            loaded.Payload!.Workflow.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        var raid = Assert.Single(loaded.Payload.Workflow.Raids);
+        Assert.Equal("Paldea", raid.Region);
+        Assert.Equal(5, raid.StarRank);
+        Assert.Equal("5 Star", raid.StarLabel);
+        Assert.Equal(25, raid.RaidNo);
+        Assert.Equal(1, raid.SpeciesId);
+        Assert.Equal("Bulbasaur", raid.Species);
+        Assert.Equal(30, raid.Level);
+        Assert.Equal((int)global::GemType.KUSA, raid.TeraType);
+        Assert.Equal("Grass", raid.TeraTypeLabel);
+        Assert.Equal("0x1111222233334444", raid.FixedRewardTableHash);
+        Assert.Equal("0x5555666677778888", raid.LotteryRewardTableHash);
+        var fixedReward = Assert.Single(Assert.Single(loaded.Payload.Workflow.FixedRewardTables).Rewards);
+        Assert.Equal(1, fixedReward.ItemId);
+        Assert.Equal(2, fixedReward.Count);
+        var lotteryReward = Assert.Single(Assert.Single(loaded.Payload.Workflow.LotteryRewardTables).Rewards);
+        Assert.Equal(2, lotteryReward.ItemId);
+        Assert.Equal(25, lotteryReward.Rate);
+
+        var updatedRaid = Dispatch<UpdateTeraRaidFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTeraRaidField,
+            new UpdateTeraRaidFieldRequest(paths, Session: null, raid.RecordId, "species", "4"),
+            "request-sv-tera-raid-species-update");
+        AssertSuccess(updatedRaid);
+        var session = updatedRaid.Payload!.Session;
+        Assert.Contains(session.PendingEdits, edit =>
+            edit.Domain == "workflow.teraRaids" && edit.RecordId == raid.RecordId && edit.Field == "species" && edit.NewValue == "4");
+        Assert.Equal(4, Assert.Single(updatedRaid.Payload.Workflow.Raids).SpeciesId);
+
+        var updatedReward = Dispatch<UpdateTeraRaidFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTeraRaidField,
+            new UpdateTeraRaidFieldRequest(paths, session, fixedReward.RecordId, "fixedCount", "3"),
+            "request-sv-tera-raid-reward-update");
+        AssertSuccess(updatedReward);
+        session = updatedReward.Payload!.Session;
+        Assert.Contains(session.PendingEdits, edit =>
+            edit.Domain == "workflow.teraRaids" && edit.RecordId == fixedReward.RecordId && edit.Field == "fixedCount" && edit.NewValue == "3");
+        Assert.Equal(3, Assert.Single(Assert.Single(updatedReward.Payload.Workflow.FixedRewardTables).Rewards).Count);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, session),
+            "request-sv-tera-raids-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write =>
+            write.TargetRelativePath == $"romfs/{SvDataPaths.TeraRaidEnemyPaldea5}");
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write =>
+            write.TargetRelativePath == $"romfs/{SvDataPaths.TeraRaidFixedRewardItemArray}");
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, session, plan.Payload.ChangePlan),
+            "request-sv-tera-raids-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal((global::pml.common.DevID)4, ReadTeraRaidBossSpecies(temp));
+        Assert.Equal(3, ReadTeraRaidFixedRewardCount(temp));
     }
 
     [Theory]
@@ -1510,6 +1624,9 @@ public sealed class ScarletVioletBridgeTests
                     SvDataPaths.EventAddPokemonArray,
                     SvDataPaths.EventTradeListArray,
                     SvDataPaths.EventTradePokemonArray,
+                    .. TeraRaidEnemyPaths,
+                    SvDataPaths.TeraRaidFixedRewardItemArray,
+                    SvDataPaths.TeraRaidLotteryRewardItemArray,
                 ]));
         temp.WriteBaseRomFsFile("arc/data.trpfs", "storage");
         temp.WriteBaseExeFsFile("main.npdm", CreateNpdm(titleId));
@@ -1537,6 +1654,7 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(temp, SvDataPaths.EventBattlePokemonArray, CreateEventBattlePokemonArray());
         WriteSvOutput(temp, SvDataPaths.HiddenItemDataTableArray, CreateHiddenItemDataTableArray());
         WriteSvOutput(temp, SvDataPaths.RummagingItemDataTableArray, CreateRummagingItemDataTableArray());
+        WriteTeraRaidFixtures(temp);
         temp.WriteBaseRomFsFile(
             SvDataPaths.EnglishPokemonNames,
             CreateTextTable(5, (1, "Bulbasaur"), (2, "Ivysaur"), (4, "Charmander")));
@@ -2007,6 +2125,30 @@ public sealed class ScarletVioletBridgeTests
         var trade = table.Values(tradeIndex);
         Assert.NotNull(trade);
         return trade.Value;
+    }
+
+    private static global::pml.common.DevID ReadTeraRaidBossSpecies(TemporaryBridgeProject temp)
+    {
+        var table = global::RaidEnemyTable01Array.GetRootAsRaidEnemyTable01Array(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.TeraRaidEnemyPaldea5)));
+        var row = table.Values(0);
+        Assert.NotNull(row);
+        var info = row.Value.RaidEnemyInfo;
+        Assert.NotNull(info);
+        var boss = info.Value.BossPokePara;
+        Assert.NotNull(boss);
+        return boss.Value.DevId;
+    }
+
+    private static int ReadTeraRaidFixedRewardCount(TemporaryBridgeProject temp)
+    {
+        var table = global::RaidFixedRewardItemArray.GetRootAsRaidFixedRewardItemArray(
+            new ByteBuffer(ReadSvOutput(temp, SvDataPaths.TeraRaidFixedRewardItemArray)));
+        var row = table.Values(0);
+        Assert.NotNull(row);
+        var reward = row.Value.RewardItem00;
+        Assert.NotNull(reward);
+        return reward.Value.Num;
     }
 
     private static byte[] CreateItemDataArray()
@@ -2481,6 +2623,119 @@ public sealed class ScarletVioletBridgeTests
         var vector = RummagingItemDataTableArray.CreateValuesVector(builder, [rummaging]);
         var root = RummagingItemDataTableArray.CreateRummagingItemDataTableArray(builder, vector);
         RummagingItemDataTableArray.FinishRummagingItemDataTableArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static void WriteTeraRaidFixtures(TemporaryBridgeProject temp)
+    {
+        var emptyRaidArray = CreateEmptyTeraRaidEnemyArray();
+        foreach (var path in TeraRaidEnemyPaths)
+        {
+            WriteSvOutput(
+                temp,
+                path,
+                path == SvDataPaths.TeraRaidEnemyPaldea5 ? CreateTeraRaidEnemyArray() : emptyRaidArray);
+        }
+
+        WriteSvOutput(temp, SvDataPaths.TeraRaidFixedRewardItemArray, CreateTeraRaidFixedRewardItemArray());
+        WriteSvOutput(temp, SvDataPaths.TeraRaidLotteryRewardItemArray, CreateTeraRaidLotteryRewardItemArray());
+    }
+
+    private static byte[] CreateEmptyTeraRaidEnemyArray()
+    {
+        var builder = new FlatBufferBuilder(128);
+        var vector = global::RaidEnemyTable01Array.CreateValuesVector(builder, []);
+        var root = global::RaidEnemyTable01Array.CreateRaidEnemyTable01Array(builder, vector);
+        global::RaidEnemyTable01Array.FinishRaidEnemyTable01ArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateTeraRaidEnemyArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var move = global::WazaSet.CreateWazaSet(builder, (global::pml.common.WazaID)33, pointUp: 0);
+        var ivs = global::ParamSet.CreateParamSet(builder, 31, 31, 31, 31, 31, 31);
+        var bossPokemon = global::PokeDataBattle.CreatePokeDataBattle(
+            builder,
+            devId: (global::pml.common.DevID)1,
+            level: 30,
+            item: global::ItemID.ITEMID_MASUTAABOORU,
+            ballId: global::BallType.MONSUTAABOORU,
+            wazaType: global::WazaType.MANUAL,
+            waza1Offset: move,
+            gemType: global::GemType.KUSA,
+            tokusei: global::TokuseiType.SET_1,
+            talentType: global::TalentType.VALUE,
+            talentValueOffset: ivs,
+            rareType: global::RareType.NO_RARE);
+        var size = global::RaidBossSizeData.CreateRaidBossSizeData(
+            builder,
+            scaleType: global::SizeType.VALUE,
+            scaleValue: 128);
+        var boss = global::RaidBossData.CreateRaidBossData(
+            builder,
+            hpCoef: 20,
+            powerChargeTrigerHp: 80,
+            powerChargeTrigerTime: 60,
+            doubleActionTrigerHp: 50,
+            doubleActionTrigerTime: 30,
+            doubleActionRate: 10);
+        var raidInfo = global::RaidEnemyInfo.CreateRaidEnemyInfo(
+            builder,
+            romVer: global::RaidRomType.BOTH,
+            no: 25,
+            difficulty: 5,
+            rate: 10,
+            dropTableFix: TeraRaidFixedRewardTableHash,
+            dropTableRandom: TeraRaidLotteryRewardTableHash,
+            captureRate: 45,
+            captureLv: 30,
+            bossPokeParaOffset: bossPokemon,
+            bossPokeSizeOffset: size,
+            bossDescOffset: boss);
+        var raid = global::RaidEnemyTable05.CreateRaidEnemyTable05(builder, raidInfo);
+        var vector = global::RaidEnemyTable05Array.CreateValuesVector(builder, [raid]);
+        var root = global::RaidEnemyTable05Array.CreateRaidEnemyTable05Array(builder, vector);
+        global::RaidEnemyTable05Array.FinishRaidEnemyTable05ArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateTeraRaidFixedRewardItemArray()
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var reward = global::RaidFixedRewardItemInfo.CreateRaidFixedRewardItemInfo(
+            builder,
+            category: global::RaidRewardItemCategoryType.ITEM,
+            subject_type: global::RaidRewardItemSubjectType.ALL,
+            itemID: global::ItemID.ITEMID_MASUTAABOORU,
+            num: 2);
+        var table = global::RaidFixedRewardItem.CreateRaidFixedRewardItem(
+            builder,
+            table_name: TeraRaidFixedRewardTableHash,
+            reward_item_00Offset: reward);
+        var vector = global::RaidFixedRewardItemArray.CreateValuesVector(builder, [table]);
+        var root = global::RaidFixedRewardItemArray.CreateRaidFixedRewardItemArray(builder, vector);
+        global::RaidFixedRewardItemArray.FinishRaidFixedRewardItemArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateTeraRaidLotteryRewardItemArray()
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var reward = global::RaidLotteryRewardItemInfo.CreateRaidLotteryRewardItemInfo(
+            builder,
+            category: global::RaidRewardItemCategoryType.ITEM,
+            itemID: global::ItemID.ITEMID_HAIPAABOORU,
+            num: 1,
+            rate: 25,
+            rare_item_flag: true);
+        var table = global::RaidLotteryRewardItem.CreateRaidLotteryRewardItem(
+            builder,
+            table_name: TeraRaidLotteryRewardTableHash,
+            reward_item_00Offset: reward);
+        var vector = global::RaidLotteryRewardItemArray.CreateValuesVector(builder, [table]);
+        var root = global::RaidLotteryRewardItemArray.CreateRaidLotteryRewardItemArray(builder, vector);
+        global::RaidLotteryRewardItemArray.FinishRaidLotteryRewardItemArrayBuffer(builder, root);
         return builder.SizedByteArray();
     }
 

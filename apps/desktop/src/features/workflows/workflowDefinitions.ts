@@ -9,6 +9,7 @@ import {
   Candy,
   Dna,
   Dumbbell,
+  Gem,
   Gift,
   GitMerge,
   HandCoins,
@@ -99,6 +100,12 @@ export const workflowDefinitions: Array<{
     label: 'Wild Encounters',
     description: 'Encounter tables, wild slots, levels, weather, and source provenance.',
     icon: Trees
+  },
+  {
+    id: 'teraRaids',
+    label: 'Tera Raids',
+    description: 'Tera raid Pokemon, stars, Tera types, boss settings, rewards, and source provenance.',
+    icon: Gem
   },
   {
     id: 'raidBattles',
