@@ -73,8 +73,11 @@ describe('PlacementSection', () => {
 
     await user.click(screen.getByRole('tab', { name: /Visible Items/ }));
 
-    expect(screen.getByText('No entries in Visible Items.')).toBeInTheDocument();
-    expect(screen.getByText('No placement object selected.')).toBeInTheDocument();
+    expect(screen.queryByText('No entries in Visible Items.')).not.toBeInTheDocument();
+    expect(within(table).getByText('5 TM100')).toBeInTheDocument();
+    expect(within(table).getByText('12.5, 20, -7.25')).toBeInTheDocument();
+    expect(screen.getAllByText('itemball_test_1').length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText('Item 1')).not.toBeInTheDocument();
   });
 
   it('keeps SwSh legacy placement rows out of S/V category metadata', () => {
@@ -280,7 +283,7 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
         description: 'Visible item placement records.',
         id: 'visibleItems',
         label: 'Visible Items',
-        objectCount: 0
+        objectCount: 1
       },
       {
         description: 'Hidden item pool tables.',
@@ -291,6 +294,39 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
     ],
     diagnostics: [],
     editableFields: [
+      {
+        description: 'Scene-only visible item property sheet.',
+        field: 'visible.pointType',
+        group: 'Visible Item',
+        isReadOnly: true,
+        label: 'Point type',
+        maximumValue: 0,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'text'
+      },
+      {
+        description: 'Scene-only visible item id.',
+        field: 'visible.itemId',
+        group: 'Visible Item',
+        isReadOnly: true,
+        label: 'Item',
+        maximumValue: 0,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'text'
+      },
+      {
+        description: 'Scene-only visible item quantity.',
+        field: 'visible.quantity',
+        group: 'Visible Item',
+        isReadOnly: true,
+        label: 'Quantity',
+        maximumValue: 0,
+        minimumValue: 0,
+        options: [],
+        valueKind: 'text'
+      },
       {
         field: 'hidden.item1.itemId',
         group: 'Hidden Item Slot 1',
@@ -323,6 +359,119 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
       }
     ],
     objects: [
+      {
+        archiveMember: 'romfs/world/scene/parts/field/streaming_event/world_item_/world_item_0.trscn',
+        categoryId: 'visibleItems',
+        categoryLabel: 'Visible Items',
+        chance: null,
+        chanceIndex: null,
+        fields: [
+          {
+            description: 'Scene-only point name.',
+            displayValue: 'itemball_test_1',
+            field: 'point.name',
+            group: 'Scene Placement',
+            isReadOnly: true,
+            label: 'Point name',
+            maximumValue: 0,
+            minimumValue: 0,
+            value: 'itemball_test_1',
+            valueKind: 'text'
+          },
+          {
+            description: 'Scene-only visible item property sheet.',
+            displayValue: 'event_category_item',
+            field: 'visible.pointType',
+            group: 'Visible Item',
+            isReadOnly: true,
+            label: 'Point type',
+            maximumValue: 0,
+            minimumValue: 0,
+            value: 'event_category_item',
+            valueKind: 'text'
+          },
+          {
+            description: 'Scene-only visible item id.',
+            displayValue: '5 TM100',
+            field: 'visible.itemId',
+            group: 'Visible Item',
+            isReadOnly: true,
+            label: 'Item',
+            maximumValue: 0,
+            minimumValue: 0,
+            value: '5',
+            valueKind: 'text'
+          },
+          {
+            description: 'Scene-only visible item quantity.',
+            displayValue: '3',
+            field: 'visible.quantity',
+            group: 'Visible Item',
+            isReadOnly: true,
+            label: 'Quantity',
+            maximumValue: 0,
+            minimumValue: 0,
+            value: '3',
+            valueKind: 'text'
+          },
+          {
+            description: 'Scene-only TRSCN coordinate.',
+            displayValue: '12.5',
+            field: 'point.positionX',
+            group: 'Scene Placement',
+            isReadOnly: true,
+            label: 'Position X',
+            maximumValue: 0,
+            minimumValue: 0,
+            value: '12.5',
+            valueKind: 'text'
+          },
+          {
+            description: 'Scene-only TRSCN coordinate.',
+            displayValue: '20',
+            field: 'point.positionY',
+            group: 'Scene Placement',
+            isReadOnly: true,
+            label: 'Position Y',
+            maximumValue: 0,
+            minimumValue: 0,
+            value: '20',
+            valueKind: 'text'
+          },
+          {
+            description: 'Scene-only TRSCN coordinate.',
+            displayValue: '-7.25',
+            field: 'point.positionZ',
+            group: 'Scene Placement',
+            isReadOnly: true,
+            label: 'Position Z',
+            maximumValue: 0,
+            minimumValue: 0,
+            value: '-7.25',
+            valueKind: 'text'
+          }
+        ],
+        itemHash: '5',
+        itemId: 5,
+        itemName: 'TM100',
+        label: '5 TM100',
+        map: 'Visible Items - Paldea',
+        objectId: 'visible-items:paldea:0',
+        objectIndex: 0,
+        objectType: 'VisibleItemScenePoint',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/world/scene/parts/field/streaming_event/world_item_/world_item_0.trscn',
+          sourceLayer: 'base'
+        },
+        quantity: 3,
+        rotationY: 1.5,
+        scriptId: 'itemball_test_1',
+        x: 12.5,
+        y: 20,
+        zoneIndex: 0,
+        z: -7.25
+      },
       {
         archiveMember: 'romfs/world/data/item/hiddenItemDataTable/hiddenItemDataTable_array.bin',
         categoryId: 'hiddenItems',

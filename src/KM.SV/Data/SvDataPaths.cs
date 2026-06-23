@@ -40,6 +40,12 @@ public static class SvDataPaths
     public const string HiddenItemDataTableSu2Array = "world/data/item/hiddenItemDataTable_su2/hiddenItemDataTable_su2_array.bin";
     public const string HiddenItemDataTableLcArray = "world/data/item/hiddenItemDataTable_lc/hiddenItemDataTable_lc_array.bin";
     public const string RummagingItemDataTableArray = "world/data/item/rummagingItemDataTable/rummagingItemDataTable_array.bin";
+    public const string VisibleItemScenePaldeaScarlet = "world/scene/parts/field/streaming_event/world_item_/world_item_0.trscn";
+    public const string VisibleItemScenePaldeaViolet = "world/scene/parts/field/streaming_event/world_item_/world_item_1.trscn";
+    public const string VisibleItemSceneKitakamiScarlet = "world/scene/parts/field/streaming_event/su1_world_item_/su1_world_item_0.trscn";
+    public const string VisibleItemSceneKitakamiViolet = "world/scene/parts/field/streaming_event/su1_world_item_/su1_world_item_1.trscn";
+    public const string VisibleItemSceneBlueberryScarlet = "world/scene/parts/field/streaming_event/su2_world_item_/su2_world_item_0.trscn";
+    public const string VisibleItemSceneBlueberryViolet = "world/scene/parts/field/streaming_event/su2_world_item_/su2_world_item_1.trscn";
     public const string EnglishItemNames = "message/dat/English/common/itemname.dat";
     public const string EnglishMoveNames = "message/dat/English/common/wazaname.dat";
     public const string EnglishPokemonNames = "message/dat/English/common/monsname.dat";
