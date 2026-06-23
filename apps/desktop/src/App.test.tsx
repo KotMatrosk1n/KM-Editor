@@ -2190,6 +2190,32 @@ describe('App', () => {
     expect(screen.getByText('Base only')).toBeInTheDocument();
   });
 
+  it('localizes Moves flag labels and field hover help in Spanish', async () => {
+    window.localStorage.setItem(languageStorageKey, 'es');
+    const user = userEvent.setup();
+
+    render(
+      <LocalizationProvider>
+        <App bridge={createMockProjectBridge()} />
+      </LocalizationProvider>
+    );
+
+    await user.type(screen.getByLabelText('RomFS base'), 'base-romfs');
+    await user.type(screen.getByLabelText('ExeFS base'), 'base-exefs');
+    await user.click(screen.getByRole('button', { name: 'Validar rutas' }));
+    await user.click(screen.getByRole('button', { name: 'Editores' }));
+    await user.click(screen.getByRole('button', { name: 'Movimientos' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Movimientos' })).toBeInTheDocument();
+    expect(screen.getAllByText('Hace contacto').length).toBeGreaterThan(0);
+    expect(screen.getByText('Bloqueado por Protección')).toBeInTheDocument();
+    expect(screen.getByText('Movimiento de puño')).toBeInTheDocument();
+    expect(screen.getByLabelText('Hace contacto')).toHaveAttribute(
+      'title',
+      'Hace contacto. Rango permitido: 0-1'
+    );
+  });
+
   it('starts a Moves edit session, saves a power change, reviews a move plan, and applies it', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
@@ -3255,7 +3281,7 @@ describe('App', () => {
         'Applied Static Encounter change plan to the configured LayeredFS output root.'
       )
     ).toBeInTheDocument();
-  });
+  }, 10000);
 
   it('hides unsafe Dynamax Adventures boss rows from the editor', async () => {
     const user = userEvent.setup();

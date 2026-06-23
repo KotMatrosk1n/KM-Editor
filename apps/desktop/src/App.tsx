@@ -13016,8 +13016,8 @@ function TrainerDraftField({
           title={localizedFieldHelpText}
           value={draftValue === '1' ? '1' : '0'}
         >
-          <option value="1">Yes</option>
-          <option value="0">No</option>
+          <option value="1">{translateLiteral('Yes')}</option>
+          <option value="0">{translateLiteral('No')}</option>
         </select>
       ) : options.length > 0 ? (
         <SearchableOptionInput
@@ -14962,8 +14962,8 @@ function GiftPokemonDraftField({
           title={localizedFieldHelpText}
           value={draftValue === '1' ? '1' : '0'}
         >
-          <option value="1">Yes</option>
-          <option value="0">No</option>
+          <option value="1">{translateLiteral('Yes')}</option>
+          <option value="0">{translateLiteral('No')}</option>
         </select>
       ) : options.length > 0 ? (
         <SearchableOptionInput
@@ -26419,11 +26419,20 @@ function SettingsSection({
   const isCacheControlBusy = isSvCacheClearing || isSvCacheRefreshing || isSvCacheWarming;
   const canShowSvCacheSettings = isScarletVioletGame(selectedGame);
   const { language, setLanguage, t } = useLocalization();
-  const languageOptions = supportedLanguages.map((option) => ({
-    ...option,
-    description: t(`settings.language.${option.code === 'en' ? 'english' : 'spanish'}.description`),
-    label: t(`settings.language.${option.code === 'en' ? 'english' : 'spanish'}`)
-  }));
+  const languageKeyByCode: Record<LanguageCode, string> = {
+    en: 'english',
+    es: 'spanish',
+    fr: 'french'
+  };
+  const languageOptions = supportedLanguages.map((option) => {
+    const languageKey = languageKeyByCode[option.code];
+
+    return {
+      ...option,
+      description: t(`settings.language.${languageKey}.description`),
+      label: t(`settings.language.${languageKey}`)
+    };
+  });
 
   return (
     <section aria-labelledby="settings-heading" className="panel wide-panel">
@@ -30023,8 +30032,8 @@ function PokemonPersonalFieldInput({
           title={localizedHelpText}
           value={draftValue === '1' ? '1' : '0'}
         >
-          <option value="1">Yes</option>
-          <option value="0">No</option>
+          <option value="1">{translateLiteral('Yes')}</option>
+          <option value="0">{translateLiteral('No')}</option>
         </select>
       ) : options.length > 0 ? (
         <SearchableOptionInput
