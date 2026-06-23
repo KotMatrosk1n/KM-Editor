@@ -18,6 +18,7 @@ public static class SvWorkflowIds
     public const string TradePokemon = "tradePokemon";
     public const string Placement = "placement";
     public const string TypeChart = "typeChart";
+    public const string FashionUnlock = "fashionUnlock";
     public const string HyperspaceBypass = "hyperspaceBypass";
     public const string ModMerger = "modMerger";
 }

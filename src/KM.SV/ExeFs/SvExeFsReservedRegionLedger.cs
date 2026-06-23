@@ -35,6 +35,7 @@ internal sealed record SvExeFsReservedRegion(
 
 internal static class SvExeFsReservedRegionLedger
 {
+    public const string OwnerFashionUnlock = "Fashion Unlock";
     public const string OwnerHyperspaceBypass = "Hyperspace Bypass";
     public const string OwnerTypeChart = "Type Chart";
     public const string ExeFsMainPath = "exefs/main";
@@ -49,6 +50,15 @@ internal static class SvExeFsReservedRegionLedger
             0x0082286C,
             0x144,
             "Scarlet/Violet type-effectiveness table",
+            "do-not-overwrite"),
+        new(
+            OwnerFashionUnlock,
+            "fashion-unlock-sv-dressup-ownership-check",
+            ExeFsMainPath,
+            "main.text",
+            0x00EAE95C,
+            0x08,
+            "Scarlet/Violet dress-up ownership check",
             "do-not-overwrite"),
         new(
             OwnerHyperspaceBypass,

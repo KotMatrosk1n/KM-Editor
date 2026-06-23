@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using Google.FlatBuffers;
-using pkNX.Structures.FlatBuffers.SV.Trinity;
+using KM.Formats.SV.Generated.TrinityScene;
 using System.Globalization;
 
 namespace KM.SV.Placement;
@@ -162,8 +162,8 @@ internal static class SvVisibleItemSceneReader
         string objectTemplateName,
         string objectTemplatePath)
     {
-        var position = sceneObject.ObjectPosition?.Field02 ?? new pkNX.Structures.FlatBuffers.PackedVec3fT();
-        var rotation = sceneObject.ObjectPosition?.Field01 ?? new pkNX.Structures.FlatBuffers.PackedVec3fT();
+        var position = sceneObject.ObjectPosition?.Field02 ?? new PackedVec3fT();
+        var rotation = sceneObject.ObjectPosition?.Field01 ?? new PackedVec3fT();
         return new ScenePointInfo(
             sceneObject.ObjectName ?? objectTemplateName,
             objectTemplateName,
@@ -179,7 +179,7 @@ internal static class SvVisibleItemSceneReader
         string objectTemplateName,
         string objectTemplatePath)
     {
-        var position = scenePoint.Position ?? new pkNX.Structures.FlatBuffers.PackedVec3fT();
+        var position = scenePoint.Position ?? new PackedVec3fT();
         return new ScenePointInfo(
             scenePoint.Name ?? objectTemplateName,
             objectTemplateName,

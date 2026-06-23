@@ -3807,9 +3807,11 @@ export function createMockProjectBridge(
     detectedGame: 'sword',
     diagnostics: [],
     directGetterOffsetHex: 'main.text+0x0143A2B0',
+    editorFamily: 'swsh',
     installMessage: 'Fashion Unlock is not installed. Installing makes clothing ownership checks return unlocked without editing the save file.',
     installStatus: canEdit ? 'available' : 'readOnly',
     mappedGetterOffsetHex: 'main.text+0x0143A300',
+    ownershipCheckOffsetHex: '',
     provenance: { fileState: 'baseOnly', sourceFile: 'exefs/main', sourceLayer: 'base' },
     reservedRegions: [
       { label: 'Fashion Unlock Sword direct ownership getter', length: 8, offsetLabel: 'text+0x143A2B0..0x143A2B7', regionId: 'fashion-unlock-sword-direct-owned-getter', rule: 'do-not-overwrite', startOffset: 0x0143a2b0 },

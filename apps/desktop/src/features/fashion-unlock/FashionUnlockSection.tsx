@@ -11,6 +11,7 @@ import {
   type FashionUnlockWorkflow,
   type ProjectGame
 } from '../../bridge/contracts';
+import { useLocalization } from '../../localization';
 import { formatBagHookStatus, formatFileState, formatSourceLayer } from '../../utils/workflowFormatters';
 
 export function FashionUnlockSection({
@@ -36,9 +37,11 @@ export function FashionUnlockSection({
   panelOutput: WorkflowPanelOutput;
   workflow: FashionUnlockWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const stagedEdit = editSession?.pendingEdits.find((edit) => edit.domain === 'workflow.fashionUnlock');
   const isInstallStaged = stagedEdit?.recordId === 'fashion-unlock-v1-install';
   const isUninstallStaged = stagedEdit?.recordId === 'fashion-unlock-v1-uninstall';
+  const isScarletViolet = workflow?.editorFamily === 'sv';
   const hasStagedChange = isInstallStaged || isUninstallStaged;
   const canStageInstall = workflow?.summary.availability === 'available' && workflow.installStatus !== 'blocked';
   const canStageUninstall = workflow?.summary.availability === 'available' && workflow.installStatus === 'installed';
@@ -50,6 +53,10 @@ export function FashionUnlockSection({
     panelOutput.changePlan.writes.length > 0 &&
     !isChangePlanApplying;
   const installLabel = workflow?.installStatus === 'installed' ? 'Stage Reinstall' : 'Stage Install';
+  const primaryOffsetLabel = isScarletViolet ? 'Ownership check' : 'Direct getter';
+  const primaryOffsetValue = isScarletViolet
+    ? workflow?.ownershipCheckOffsetHex
+    : workflow?.directGetterOffsetHex;
 
   return (
     <>
@@ -59,15 +66,19 @@ export function FashionUnlockSection({
           <h2 id="fashion-unlock-heading">Fashion Unlock</h2>
         </div>
         <p className="workflow-description">
-          Fashion Unlock makes Sword/Shield fashion ownership checks return unlocked at runtime, without importing a PKHeX save block.
+          {isScarletViolet
+            ? 'Fashion Unlock makes Scarlet/Violet dress-up ownership checks return unlocked at runtime, without editing the save file.'
+            : 'Fashion Unlock makes Sword/Shield fashion ownership checks return unlocked at runtime, without importing a PKHeX save block.'}
         </p>
         <p className="workflow-description">
-          KM edits only the verified ownership getter bytes in exefs/main; gender is not selected because the check result is forced after the save has already loaded.
+          {isScarletViolet
+            ? 'KM edits only the verified dress-up ownership check bytes in exefs/main; acquired clothing data in the save file stays untouched.'
+            : 'KM edits only the verified ownership getter bytes in exefs/main; gender is not selected because the check result is forced after the save has already loaded.'}
         </p>
 
         <div className="items-toolbar exefs-toolbar">
           <Metric label="Install" value={workflow ? formatBagHookStatus(workflow.installStatus) : 'Not loaded'} />
-          <Metric label="Direct getter" value={workflow?.directGetterOffsetHex ?? 'Not loaded'} />
+          <Metric label={primaryOffsetLabel} value={primaryOffsetValue ?? 'Not loaded'} />
           <Metric label="Reserved regions" value={workflow ? workflow.stats.reservedMainTextRegionCount.toString() : '0'} />
         </div>
 
@@ -81,11 +92,15 @@ export function FashionUnlockSection({
                 </div>
                 <div className="exefs-row iv-screen-range-row" role="row">
                   <span role="cell">Not installed</span>
-                  <span role="cell">Fashion ownership comes from the player save.</span>
+                  <span role="cell">{isScarletViolet ? 'Dress-up ownership comes from the player save.' : 'Fashion ownership comes from the player save.'}</span>
                 </div>
                 <div className="exefs-row iv-screen-range-row" role="row">
                   <span role="cell">Installed</span>
-                  <span role="cell">Direct and mapped ownership getters return unlocked.</span>
+                  <span role="cell">
+                    {isScarletViolet
+                      ? 'The dress-up ownership check returns unlocked.'
+                      : 'Direct and mapped ownership getters return unlocked.'}
+                  </span>
                 </div>
               </div>
 
@@ -111,10 +126,16 @@ export function FashionUnlockSection({
 
               <dl className="item-provenance-list">
                 <div><dt>Install status</dt><dd>{formatBagHookStatus(workflow.installStatus)}</dd></div>
-                <div><dt>Game</dt><dd>{formatProjectGame(workflow.detectedGame)}</dd></div>
+                <div><dt>Game</dt><dd>{formatProjectGame(workflow.detectedGame, translateLiteral)}</dd></div>
                 <div><dt>Build ID</dt><dd>{workflow.buildId}</dd></div>
-                <div><dt>Direct getter</dt><dd>{workflow.directGetterOffsetHex}</dd></div>
-                <div><dt>Mapped getter</dt><dd>{workflow.mappedGetterOffsetHex}</dd></div>
+                {isScarletViolet ? (
+                  <div><dt>Ownership check</dt><dd>{workflow.ownershipCheckOffsetHex}</dd></div>
+                ) : (
+                  <>
+                    <div><dt>Direct getter</dt><dd>{workflow.directGetterOffsetHex}</dd></div>
+                    <div><dt>Mapped getter</dt><dd>{workflow.mappedGetterOffsetHex}</dd></div>
+                  </>
+                )}
                 <div><dt>Stub</dt><dd>{workflow.stubKind}</dd></div>
                 <div><dt>Source file</dt><dd>{workflow.provenance.sourceFile}</dd></div>
                 <div><dt>Layer</dt><dd>{formatSourceLayer(workflow.provenance.sourceLayer)}</dd></div>
@@ -147,7 +168,14 @@ export function FashionUnlockSection({
                     <dt>Staged change</dt>
                     <dd>{isInstallStaged ? 'Install or refresh' : isUninstallStaged ? 'Uninstall' : 'None'}</dd>
                   </div>
-                  <div><dt>Uninstall</dt><dd>Restores only Fashion Unlock-owned bytes and keeps other exefs/main edits.</dd></div>
+                  <div>
+                    <dt>Uninstall</dt>
+                    <dd>
+                      {isScarletViolet
+                        ? 'Restores only the Fashion Unlock-owned dress-up ownership bytes and keeps other exefs/main edits.'
+                        : 'Restores only Fashion Unlock-owned bytes and keeps other exefs/main edits.'}
+                    </dd>
+                  </div>
                 </dl>
               </div>
             </aside>
@@ -165,12 +193,12 @@ export function FashionUnlockSection({
   );
 }
 
-function formatProjectGame(game: ProjectGame | null) {
+function formatProjectGame(game: ProjectGame | null, translateLiteral: (literal: string) => string) {
   switch (game) {
-    case 'sword': return 'Pokemon Sword';
-    case 'shield': return 'Pokemon Shield';
-    case 'scarlet': return 'Pokemon Scarlet';
-    case 'violet': return 'Pokemon Violet';
-    default: return 'Unknown';
+    case 'sword': return translateLiteral('Pokemon Sword');
+    case 'shield': return translateLiteral('Pokemon Shield');
+    case 'scarlet': return translateLiteral('Pokemon Scarlet');
+    case 'violet': return translateLiteral('Pokemon Violet');
+    default: return translateLiteral('Unknown');
   }
 }

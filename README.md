@@ -8,21 +8,21 @@ It works through a safer LayeredFS flow: choose a supported game, validate clean
 
 ## What It Does
 
-- Validates clean base RomFS, base ExeFS, output root, and selected game before editors open.
-- Shows where records came from: base files, layered overrides, generated output, or pending edits.
-- Edits Sword and Shield Pokemon, trainers, moves, items, encounters, raids, shops, placement objects, and behavior data.
-- Edits Scarlet and Violet Pokemon, gift Pokemon, trade Pokemon, trainers, moves, items, placement data, wild encounters, and the type chart.
-- Includes viewers for game text, flagwork metadata, and save-related inspection.
-- Stages changes into an edit session so you can remove mistakes before applying.
-- Uses reviewed change plans for higher-risk output, including hook-backed workflows.
-- Supports Bag Hook, Royal Candy, Starting Items, Catch Cap, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, Hyperspace Bypass, and 60FPS Patch through documented ownership rules.
-- Supports optional S/V project support setup for editors that need deeper Scarlet and Violet data access.
-- Adds Scarlet and Violet data cache controls for faster repeated editor loads.
-- Supports English and Spanish UI language selection.
-- Exports supported editor data through Game Dump.
-- Imports supported Sword and Shield dump files through Dump Importer.
-- Includes a reproducible Randomizer for Pokemon data, encounters, raid rewards, and type chart output.
-- Checks for native app updates from Settings on updater-enabled builds.
+KM Editor is a desktop editor for Pokémon Sword, Shield, Scarlet, and Violet modding. It is built to make ROM editing cleaner, safer, and less annoying than jumping between a bunch of separate tools and hoping everything lines up correctly.
+
+Before the editors open, KM Editor checks your selected game, clean base RomFS, base ExeFS, and output folder. This helps prevent edits for the wrong game, mismatched files, and the usual “why did this break” nonsense that happens when a project is pointed at the wrong dump.
+
+Once a project is loaded, the app keeps track of where your data is coming from. It can show whether something came from the clean base files, layered overrides, generated output, or pending edits in your current session. That makes it much easier to understand what you are actually changing before you apply anything.
+
+For Sword and Shield, KM Editor supports Pokémon data, trainers, moves, items, encounters, raids, shops, placement objects, behavior data, and several advanced tools. That includes things like Bag Hook, Royal Candy, Starting Items, Catch Cap, Hyper Training, Type Chart, Fairy Gym Boosts, Fashion Unlock, IV Screen, Gym Uniform Removal, Dynamax Adventures, Hyperspace Bypass, and the 60FPS Patch.
+
+For Scarlet and Violet, KM Editor supports Pokémon data, gift Pokémon, trade Pokémon, trainers, moves, items, placement data, wild encounters, and the type chart. Optional S/V project support is available for editors that need deeper access to Scarlet and Violet data, and the S/V cache system helps repeated editor loads feel a lot less painful.
+
+KM Editor stages your changes before applying them. That means you can review edits, remove mistakes, validate the session, and check the planned output before anything gets written. For higher risk edits, especially ExeFS or hook based workflows, the app uses reviewed change plans instead of blindly throwing files into output and hoping for the best.
+
+The app also includes viewers for game text, flagwork metadata, and save inspection. It has a reproducible Randomizer for Pokémon data, encounters, raid rewards, and type chart output. Game Dump can export supported editor data, and Dump Importer can bring supported Sword and Shield dump files back in through CSV, TSV, or JSON.
+
+KM Editor also supports English and Spanish UI language selection, app update checks on supported builds, and diagnostics that try to explain what actually happened instead of just handing you a vague error and walking away.
 
 ## Build Requirements
 
