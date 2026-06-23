@@ -374,6 +374,9 @@ internal sealed class SvPlacementEditSessionService
             case SvPlacementWorkflowService.RummagingPointsCategory:
                 ApplyRummaging(project, paths, sourcePath, edits, diagnostics, writtenFiles, outputMode);
                 break;
+            case SvPlacementWorkflowService.VisibleItemsCategory:
+                ApplyVisibleItems(project, paths, sourcePath, edits, diagnostics, writtenFiles, outputMode);
+                break;
             default:
                 diagnostics.Add(CreateDiagnostic(
                     DiagnosticSeverity.Error,
@@ -518,6 +521,81 @@ internal sealed class SvPlacementEditSessionService
         }
 
         SvWorkflowFileSource.Write(paths, sourcePath, WriteRummagingRows(rows), outputMode);
+        writtenFiles.Add(SvEditSessionSupport.GeneratedReference(sourcePath, outputMode));
+    }
+
+    private void ApplyVisibleItems(
+        OpenedProject project,
+        ProjectPaths paths,
+        string sourcePath,
+        IReadOnlyList<PendingEdit> edits,
+        ICollection<ValidationDiagnostic> diagnostics,
+        ICollection<ProjectFileReference> writtenFiles,
+        SvOutputMode outputMode)
+    {
+        var source = fileSource.Read(project, sourcePath);
+        var editBuilders = new Dictionary<int, VisibleItemSceneEditBuilder>();
+        // A visible item row can stage the item id and quantity separately. Collapse
+        // those field edits into one scene write so both values update atomically.
+        foreach (var edit in edits)
+        {
+            if (!SvPlacementWorkflowService.TryParseRecordId(edit.RecordId, out _, out _, out var index)
+                || index < 0)
+            {
+                diagnostics.Add(CreateInvalidApplyDiagnostic(edit));
+                continue;
+            }
+
+            if (!TryParseInt(edit.NewValue, out var integer) || integer < 0)
+            {
+                diagnostics.Add(CreateInvalidApplyDiagnostic(edit));
+                continue;
+            }
+
+            if (!editBuilders.TryGetValue(index, out var builder))
+            {
+                builder = new VisibleItemSceneEditBuilder();
+                editBuilders[index] = builder;
+            }
+
+            switch (edit.Field)
+            {
+                case SvPlacementWorkflowService.VisibleItemIdField:
+                    builder.ItemId = integer;
+                    break;
+                case SvPlacementWorkflowService.VisibleQuantityField:
+                    builder.Quantity = integer;
+                    break;
+                default:
+                    diagnostics.Add(CreateInvalidApplyDiagnostic(edit));
+                    break;
+            }
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return;
+        }
+
+        var sceneEdits = editBuilders
+            .Select(pair => new SvVisibleItemSceneEdit(pair.Key, pair.Value.ItemId, pair.Value.Quantity))
+            .ToArray();
+        var writeResult = SvVisibleItemSceneWriter.Write(source.Bytes, sceneEdits);
+        foreach (var failure in writeResult.Failures)
+        {
+            diagnostics.Add(CreateDiagnostic(
+                DiagnosticSeverity.Error,
+                $"Visible item scene point {failure.Index + 1} could not be edited: {failure.Message}",
+                field: string.IsNullOrWhiteSpace(failure.Field) ? null : failure.Field,
+                expected: "Editable visible item scene field"));
+        }
+
+        if (diagnostics.Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+        {
+            return;
+        }
+
+        SvWorkflowFileSource.Write(paths, sourcePath, writeResult.Bytes, outputMode);
         writtenFiles.Add(SvEditSessionSupport.GeneratedReference(sourcePath, outputMode));
     }
 
@@ -1268,6 +1346,12 @@ internal sealed class SvPlacementEditSessionService
             field,
             expected,
             file);
+    }
+
+    private sealed class VisibleItemSceneEditBuilder
+    {
+        public int? ItemId { get; set; }
+        public int? Quantity { get; set; }
     }
 
     private sealed class FixedSymbolRow

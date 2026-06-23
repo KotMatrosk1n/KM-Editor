@@ -3587,6 +3587,141 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('keeps S/V shop badge unlock fields in valid dropdown ranges', async () => {
+    const user = userEvent.setup();
+    const svShopsWorkflow: ShopsWorkflow = {
+      diagnostics: [],
+      editableFields: [
+        {
+          field: 'itemId',
+          label: 'Item',
+          maximumValue: 65535,
+          minimumValue: 0,
+          options: [{ itemName: 'Potion', label: '0001 Potion', price: 300, value: 1 }],
+          valueKind: 'integer'
+        },
+        {
+          field: 'conditionKind',
+          label: 'Unlock condition',
+          maximumValue: 3,
+          minimumValue: 0,
+          options: [
+            { itemName: '', label: 'None', price: 0, value: 0 },
+            { itemName: '', label: 'System flag', price: 0, value: 1 },
+            { itemName: '', label: 'Scenario', price: 0, value: 2 },
+            { itemName: '', label: 'Gym badge count', price: 0, value: 3 }
+          ],
+          valueKind: 'integer'
+        },
+        {
+          field: 'conditionValue',
+          label: 'Condition value',
+          maximumValue: null,
+          minimumValue: null,
+          options: [],
+          valueKind: 'text'
+        },
+        {
+          field: 'gymBadgeCount',
+          label: 'Gym badges',
+          maximumValue: 8,
+          minimumValue: 0,
+          options: [],
+          valueKind: 'integer'
+        }
+      ],
+      editorFamily: 'sv',
+      shops: [
+        {
+          canEditInventoryOrder: true,
+          currency: 'Money',
+          editorFamily: 'sv',
+          inventory: [
+            {
+              canEditPrice: false,
+              fieldDisplayValues: {
+                conditionKind: 'Gym badge count',
+                conditionValue: 'BADGE3',
+                gymBadgeCount: '3'
+              },
+              fieldValues: {
+                conditionKind: '3',
+                conditionValue: 'BADGE3',
+                gymBadgeCount: '3'
+              },
+              isKnownItem: true,
+              itemId: 1,
+              itemName: 'Potion',
+              price: 300,
+              priceField: null,
+              slot: 1,
+              stockLimit: null,
+              supportedFields: ['conditionKind', 'conditionValue', 'gymBadgeCount']
+            }
+          ],
+          inventoryCount: 1,
+          inventoryIndex: 1,
+          inventoryLabel: 'Badge inventory',
+          inventorySummary: 'Potion',
+          kind: 'Poke Mart',
+          location: 'Paldea',
+          name: 'Poke Mart',
+          provenance: {
+            fileState: 'baseOnly',
+            sourceFile: 'romfs/world/data/shop/shopdata_array.bin',
+            sourceLayer: 'base'
+          },
+          shopId: 'lineup:shop_pokemart_lineup',
+          sourceHash: '0x1234'
+        }
+      ],
+      stats: {
+        sourceFileCount: 1,
+        totalInventoryItemCount: 1,
+        totalShopCount: 1
+      },
+      summary: {
+        availability: 'available',
+        description: 'Shop inventories, item metadata, and source provenance.',
+        diagnostics: [],
+        id: 'shops',
+        label: 'Shops'
+      }
+    };
+
+    render(
+      <App
+        bridge={createMockProjectBridge(
+          {
+            loadShopsWorkflow: () => Promise.resolve({ workflow: svShopsWorkflow })
+          },
+          true
+        )}
+      />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Economy' }));
+    await user.click(screen.getByRole('button', { name: 'Shops' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+
+    const conditionValueSelect = screen.getByLabelText('Condition value');
+    const badgeCountSelect = screen.getByLabelText('Gym badges');
+
+    expect(conditionValueSelect).toHaveValue('BADGE3');
+    expect(badgeCountSelect).toHaveValue('3');
+
+    await user.selectOptions(conditionValueSelect, 'BADGE5');
+    expect(badgeCountSelect).toHaveValue('5');
+
+    await user.click(screen.getByRole('button', { name: 'Show Gym badges options' }));
+    await user.click(screen.getByRole('option', { name: '2' }));
+    expect(conditionValueSelect).toHaveValue('BADGE2');
+  });
+
   it('reorders shop inventory rows before saving', async () => {
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);

@@ -1206,8 +1206,22 @@ const dynamaxAdventureFieldNames = [
 ] as const;
 const shopItemIdFieldName = 'itemId';
 const shopSetInventoryFieldName = 'setInventory';
+const shopConditionKindFieldName = 'conditionKind';
+const shopConditionValueFieldName = 'conditionValue';
+const shopGymBadgeCountFieldName = 'gymBadgeCount';
+const shopGymBadgeConditionKindValue = '3';
 const shopNoneItemId = 0;
 const maximumShopItemPrice = 999_999;
+const shopGymBadgeOptions: ShopEditableFieldOption[] = Array.from({ length: 9 }, (_, value) => ({
+  itemName: '',
+  label: value.toString(),
+  price: 0,
+  value
+}));
+const shopGymBadgeConditionValueOptions = shopGymBadgeOptions.map((option) => ({
+  label: `BADGE${option.value}`,
+  value: `BADGE${option.value}`
+}));
 const shopPriceEditableField: ShopEditableField = {
   field: buyPriceFieldName,
   label: 'Price',
@@ -17661,7 +17675,10 @@ function StaticEncountersSection({
 
   return (
     <>
-      <section aria-labelledby="static-encounters-heading" className="panel wide-panel">
+      <section
+        aria-labelledby="static-encounters-heading"
+        className={`panel wide-panel static-encounters-section ${editorFamily}-static-encounters-section`}
+      >
         <div className="panel-heading">
           <MapPin aria-hidden="true" size={18} />
           <h2 id="static-encounters-heading">{translateLiteral('Static Encounters')}</h2>
@@ -18231,18 +18248,18 @@ function ShopsSection({
     () => filterShops(workflow?.shops ?? [], searchText),
     [searchText, workflow?.shops]
   );
+  const isSvShops = workflow?.editorFamily === 'sv';
   const badgeShops = useMemo(
-    () => filteredShops.filter(isBadgeShopRecord),
-    [filteredShops]
+    () => (isSvShops ? [] : filteredShops.filter(isBadgeShopRecord)),
+    [filteredShops, isSvShops]
   );
   const miscellaneousShops = useMemo(
-    () => filteredShops.filter((shop) => !isBadgeShopRecord(shop)),
-    [filteredShops]
+    () => (isSvShops ? filteredShops : filteredShops.filter((shop) => !isBadgeShopRecord(shop))),
+    [filteredShops, isSvShops]
   );
   const selectedShop =
     workflow?.shops.find((shop) => shop.shopId === selectedShopId) ??
-    badgeShops[0] ??
-    miscellaneousShops[0] ??
+    (isSvShops ? filteredShops[0] : badgeShops[0] ?? miscellaneousShops[0]) ??
     null;
   const canEditShops = workflow?.summary.availability === 'available';
   const pendingShopIds = getPendingShopIds(editSession);
@@ -18335,10 +18352,16 @@ function ShopsSection({
         </div>
 
         {workflow ? (
-          <div className="shops-layout">
+          <div className={`shops-layout ${isSvShops ? 'sv-shops-layout' : 'swsh-shops-layout'}`}>
             <div className="shops-table-stack">
-              {renderShopTable('Badge Shops', badgeShops)}
-              {renderShopTable('Miscellaneous Shops', miscellaneousShops)}
+              {isSvShops ? (
+                renderShopTable('Shops', filteredShops)
+              ) : (
+                <>
+                  {renderShopTable('Badge Shops', badgeShops)}
+                  {renderShopTable('Miscellaneous Shops', miscellaneousShops)}
+                </>
+              )}
             </div>
 
             <SelectedShopPanel
@@ -19078,26 +19101,26 @@ function SelectedShopPanel({
                 </div>
                 <div className="editable-field-grid shop-row-field-grid">
                   {selectedRowFields.map((field) => {
+                    const rowField = getContextualShopRowField(
+                      field,
+                      selectedInventoryItem,
+                      currentShopDraft
+                    );
                     const originalValue = selectedInventoryItem.fieldValues[field.field] ?? '';
                     const draftValue =
                       currentShopDraft.fieldDrafts[selectedInventoryItem.slot]?.[field.field] ??
                       originalValue;
-                    const isInvalid = isShopRowFieldDraftInvalid(field, draftValue);
+                    const isInvalid = isShopRowFieldDraftInvalid(rowField, draftValue);
 
                     return (
                       <label
-                        className={`editable-field-control ${
+                        className={`path-field shop-slot-detail-field ${
                           draftValue !== originalValue ? 'editable-field-changed' : ''
                         } ${isInvalid ? 'editable-field-invalid' : ''}`}
                         key={field.field}
                       >
                         <span className="editable-field-label-row">
-                          <span>{translateLiteral(field.label)}</span>
-                          {selectedInventoryItem.fieldDisplayValues[field.field] ? (
-                            <span className="field-current-value">
-                              {translateLiteral(selectedInventoryItem.fieldDisplayValues[field.field])}
-                            </span>
-                          ) : null}
+                          <span>{translateLiteral(rowField.label)}</span>
                         </span>
                         <ShopRowFieldInput
                           disabled={
@@ -19107,19 +19130,18 @@ function SelectedShopPanel({
                             isItemUpdating
                           }
                           draftValue={draftValue}
-                          field={field}
+                          field={rowField}
                           onChange={(value) =>
-                            updateCurrentShopDraft((currentDraft) => ({
-                              ...currentDraft,
-                              fieldDrafts: {
-                                ...currentDraft.fieldDrafts,
-                                [selectedInventoryItem.slot]: {
-                                  ...(currentDraft.fieldDrafts[selectedInventoryItem.slot] ?? {}),
-                                  [field.field]: value
-                                }
-                              }
-                            }))
+                            updateCurrentShopDraft((currentDraft) =>
+                              updateShopRowFieldDraft(
+                                currentDraft,
+                                selectedInventoryItem,
+                                field.field,
+                                value
+                              )
+                            )
                           }
+                          textOptions={getShopRowTextOptions(rowField, selectedInventoryItem, currentShopDraft)}
                         />
                         {isInvalid ? (
                           <small className="editable-field-error">
@@ -19220,17 +19242,37 @@ function ShopRowFieldInput({
   disabled,
   draftValue,
   field,
-  onChange
+  onChange,
+  textOptions
 }: {
   disabled: boolean;
   draftValue: string;
   field: ShopEditableField;
   onChange: (value: string) => void;
+  textOptions?: Array<{ label: string; value: string }>;
 }) {
   const options = field.options ?? [];
   const { translateLiteral } = useLocalization();
   const localizedFieldLabel = translateLiteral(field.label);
   const localizedFieldHelpText = translateLiteral(getEditableFieldHelp(field));
+
+  if (textOptions && textOptions.length > 0) {
+    return (
+      <select
+        aria-label={localizedFieldLabel}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        title={localizedFieldHelpText}
+        value={draftValue}
+      >
+        {textOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {translateLiteral(option.label)}
+          </option>
+        ))}
+      </select>
+    );
+  }
 
   if (options.length > 0) {
     return (
@@ -19257,6 +19299,116 @@ function ShopRowFieldInput({
       value={draftValue}
     />
   );
+}
+
+function getContextualShopRowField(
+  field: ShopEditableField,
+  row: ShopInventoryRecord,
+  draft: ShopInventoryDraftState
+): ShopEditableField {
+  if (
+    field.field === shopGymBadgeCountFieldName &&
+    getShopRowConditionKindDraft(row, draft) === shopGymBadgeConditionKindValue
+  ) {
+    return {
+      ...field,
+      options: shopGymBadgeOptions
+    };
+  }
+
+  return field;
+}
+
+function getShopRowTextOptions(
+  field: ShopEditableField,
+  row: ShopInventoryRecord,
+  draft: ShopInventoryDraftState
+) {
+  return field.field === shopConditionValueFieldName &&
+    getShopRowConditionKindDraft(row, draft) === shopGymBadgeConditionKindValue
+    ? shopGymBadgeConditionValueOptions
+    : undefined;
+}
+
+function updateShopRowFieldDraft(
+  draft: ShopInventoryDraftState,
+  row: ShopInventoryRecord,
+  field: string,
+  value: string
+): ShopInventoryDraftState {
+  const currentRowDrafts = draft.fieldDrafts[row.slot] ?? {};
+  const nextRowDrafts = {
+    ...currentRowDrafts,
+    [field]: value
+  };
+  const nextConditionKind =
+    field === shopConditionKindFieldName
+      ? value
+      : nextRowDrafts[shopConditionKindFieldName] ??
+        row.fieldValues[shopConditionKindFieldName] ??
+        '';
+
+  if (nextConditionKind === shopGymBadgeConditionKindValue) {
+    // S/V badge-gated shop rows store the same gate as both BADGE# and a
+    // numeric badge count. Keep the pair synchronized so staged rows stay valid.
+    if (field === shopConditionValueFieldName) {
+      const badgeCount = parseShopBadgeConditionValue(value);
+      if (badgeCount !== null) {
+        nextRowDrafts[shopGymBadgeCountFieldName] = badgeCount.toString();
+      }
+    }
+
+    if (field === shopGymBadgeCountFieldName) {
+      const badgeCount = parseShopBadgeCount(value);
+      if (badgeCount !== null) {
+        nextRowDrafts[shopConditionValueFieldName] = `BADGE${badgeCount}`;
+      }
+    }
+
+    const conditionValue =
+      nextRowDrafts[shopConditionValueFieldName] ??
+      row.fieldValues[shopConditionValueFieldName] ??
+      '';
+    if (parseShopBadgeConditionValue(conditionValue) === null) {
+      nextRowDrafts[shopConditionValueFieldName] = 'BADGE0';
+    }
+
+    const badgeCount =
+      nextRowDrafts[shopGymBadgeCountFieldName] ??
+      row.fieldValues[shopGymBadgeCountFieldName] ??
+      '';
+    if (parseShopBadgeCount(badgeCount) === null) {
+      nextRowDrafts[shopGymBadgeCountFieldName] = '0';
+    }
+  }
+
+  return {
+    ...draft,
+    fieldDrafts: {
+      ...draft.fieldDrafts,
+      [row.slot]: nextRowDrafts
+    }
+  };
+}
+
+function getShopRowConditionKindDraft(
+  row: ShopInventoryRecord,
+  draft: ShopInventoryDraftState
+) {
+  return (
+    draft.fieldDrafts[row.slot]?.[shopConditionKindFieldName] ??
+    row.fieldValues[shopConditionKindFieldName] ??
+    ''
+  );
+}
+
+function parseShopBadgeConditionValue(value: string) {
+  const match = /^BADGE([0-8])$/i.exec(value.trim());
+  return match ? Number.parseInt(match[1]!, 10) : null;
+}
+
+function parseShopBadgeCount(value: string) {
+  return /^[0-8]$/.test(value.trim()) ? Number.parseInt(value, 10) : null;
 }
 
 function formatShopItemFallbackOption(
@@ -22379,6 +22531,7 @@ function BehaviorSection({
   selectedEntryId: string | null;
   workflow: BehaviorWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const normalizedSearch = searchText.trim().toLocaleLowerCase();
   const filteredEntries =
     workflow?.entries.filter((entry) => {
@@ -22417,46 +22570,46 @@ function BehaviorSection({
 
   return (
     <>
-      <section aria-labelledby="behavior-heading" className="panel wide-panel">
+      <section aria-labelledby="behavior-heading" className="panel wide-panel swsh-behavior-section">
         <div className="panel-heading">
           <Activity aria-hidden="true" size={18} />
-          <h2 id="behavior-heading">Behavior</h2>
+          <h2 id="behavior-heading">{translateLiteral('Behavior')}</h2>
         </div>
 
         <div className="items-toolbar encounters-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
-              aria-label="Search behavior"
+              aria-label={translateLiteral('Search behavior')}
               disabled={!workflow}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search behavior"
+              placeholder={translateLiteral('Search behavior')}
               type="search"
               value={searchText}
             />
           </label>
           <Metric
-            label="Loaded entries"
+            label={translateLiteral('Loaded entries')}
             value={workflow ? workflow.stats.totalEntryCount.toString() : '0'}
           />
           <Metric
-            label="Profiles"
+            label={translateLiteral('Profiles')}
             value={workflow ? workflow.stats.totalBehaviorCount.toString() : '0'}
           />
           <Metric
-            label="Pending changes"
+            label={translateLiteral('Pending changes')}
             value={(editSession?.pendingEdits.length ?? 0).toString()}
           />
         </div>
 
         {workflow ? (
-          <div className="encounters-layout">
-            <div className="raid-rewards-table" role="table" aria-label="Behavior entries">
+          <div className="encounters-layout behavior-layout">
+            <div className="raid-rewards-table" role="table" aria-label={translateLiteral('Behavior entries')}>
               <div className="raid-rewards-row raid-rewards-row-heading" role="row">
-                <span role="columnheader">Pokemon</span>
-                <span role="columnheader">Behavior</span>
-                <span role="columnheader">Anchor</span>
-                <span role="columnheader">Range</span>
+                <span role="columnheader">{translateLiteral('Pokemon')}</span>
+                <span role="columnheader">{translateLiteral('Behavior')}</span>
+                <span role="columnheader">{translateLiteral('Anchor')}</span>
+                <span role="columnheader">{translateLiteral('Range')}</span>
               </div>
               {filteredEntries.map((entry) => (
                 <button
@@ -22473,9 +22626,9 @@ function BehaviorSection({
                   type="button"
                 >
                   <span role="cell">{formatBehaviorSpecies(entry)}</span>
-                  <span role="cell">{entry.behaviorLabel}</span>
-                  <span role="cell">{entry.modelPart || 'n/a'}</span>
-                  <span role="cell">{formatBehaviorRanges(entry)}</span>
+                  <span role="cell">{translateLiteral(entry.behaviorLabel)}</span>
+                  <span role="cell">{translateLiteral(entry.modelPart || 'n/a')}</span>
+                  <span role="cell">{translateLiteral(formatBehaviorRanges(entry))}</span>
                 </button>
               ))}
             </div>
@@ -22492,7 +22645,9 @@ function BehaviorSection({
             />
           </div>
         ) : (
-          <p className="empty-copy">Open Behavior from Workflows to load symbol behavior data.</p>
+          <p className="empty-copy">
+            {translateLiteral('Open Behavior from Workflows to load symbol behavior data.')}
+          </p>
         )}
       </section>
 
@@ -31447,6 +31602,8 @@ type ShopItemPriceChange = {
   itemId: number;
   value: string;
 };
+
+type ShopInventoryRecord = ShopRecord['inventory'][number];
 
 type ShopInventoryDraftState = {
   addedRows: Array<{ draftId: number; itemIdDraft: string; priceDraft?: string }>;

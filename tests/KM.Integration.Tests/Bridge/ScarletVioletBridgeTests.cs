@@ -1924,7 +1924,49 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal("event_category_item", visibleFields.Single(field => field.Field == "visible.pointType").DisplayValue);
         Assert.Equal("5 TM100", visibleFields.Single(field => field.Field == "visible.itemId").DisplayValue);
         Assert.Equal("3", visibleFields.Single(field => field.Field == "visible.quantity").DisplayValue);
-        Assert.All(visibleFields, field => Assert.True(field.IsReadOnly, field.Field));
+        Assert.True(visibleFields.Single(field => field.Field == "point.name").IsReadOnly);
+        Assert.True(visibleFields.Single(field => field.Field == "visible.pointType").IsReadOnly);
+        Assert.False(visibleFields.Single(field => field.Field == "visible.itemId").IsReadOnly);
+        Assert.False(visibleFields.Single(field => field.Field == "visible.quantity").IsReadOnly);
+        Assert.True(visibleFields.Single(field => field.Field == "point.positionX").IsReadOnly);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletPlacementVisibleItemsStageAndApplySceneItemFields(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var placement = Dispatch<LoadPlacementWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(paths),
+            "request-sv-placement-visible-items-apply-load");
+
+        AssertSuccess(placement);
+        var visibleItem = Assert.Single(
+            placement.Payload!.Workflow.Objects,
+            entry => entry.CategoryId == "visibleItems");
+
+        var session = UpdatePlacement(dispatcher, paths, visibleItem.ObjectId, field: "visible.itemId", value: "2");
+        session = UpdatePlacement(dispatcher, paths, session, visibleItem.ObjectId, field: "visible.quantity", value: "7");
+        Apply(dispatcher, paths, session);
+
+        var scenePath = game == ProjectGameDto.Violet
+            ? SvDataPaths.VisibleItemScenePaldeaViolet
+            : SvDataPaths.VisibleItemScenePaldeaScarlet;
+        var points = KM.SV.Placement.SvVisibleItemSceneReader.Read(ReadSvOutput(temp, scenePath), scenePath);
+        var editedPoint = Assert.Single(points);
+        Assert.Equal(2, editedPoint.ItemId);
+        Assert.Equal(7, editedPoint.Quantity);
+        Assert.Equal(12.5f, editedPoint.X);
+        Assert.Equal(20, editedPoint.Y);
+        Assert.Equal(-7.25f, editedPoint.Z);
     }
 
     [Theory]

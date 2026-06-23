@@ -116,7 +116,7 @@ internal sealed class SvPlacementWorkflowService
 
     private static readonly IReadOnlyList<CategorySeed> CategorySeeds =
     [
-        new(VisibleItemsCategory, "Visible Items", "Visible overworld item scene placements. Scene values are read-only until TRSCN writing is supported."),
+        new(VisibleItemsCategory, "Visible Items", "Visible overworld item scene placements. Item and quantity fields are editable when the scene exposes them."),
         new(HiddenItemsCategory, "Hidden Items", "Hidden item pool tables used by hidden item points."),
         new(RummagingPointsCategory, "Rummaging Points", "Rummaging point item-pool category and pattern tables."),
     ];
@@ -306,6 +306,7 @@ internal sealed class SvPlacementWorkflowService
         ISet<string> sourceFiles,
         ICollection<ValidationDiagnostic> diagnostics)
     {
+        var itemOptions = CreateIndexedOptions(labels.ItemNameCount, labels.Item, includeNone: true);
         foreach (var path in GetVisibleItemScenePaths(project.Paths.SelectedGame))
         {
             try
@@ -315,7 +316,7 @@ internal sealed class SvPlacementWorkflowService
                 var scenePoints = SvVisibleItemSceneReader.Read(source.Bytes, source.VirtualPath);
                 for (var index = 0; index < scenePoints.Count; index++)
                 {
-                    objects.Add(ToVisibleItemObject(index, scenePoints[index], labels, source));
+                    objects.Add(ToVisibleItemObject(index, scenePoints[index], labels, itemOptions, source));
                 }
             }
             catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
@@ -396,6 +397,7 @@ internal sealed class SvPlacementWorkflowService
         int index,
         SvVisibleItemScenePoint point,
         SvTextLabelLookup labels,
+        IReadOnlyList<SvPlacementEditableFieldOption> itemOptions,
         SvWorkflowFile source)
     {
         var itemName = point.ItemId is { } itemId
@@ -413,8 +415,9 @@ internal sealed class SvPlacementWorkflowService
                 VisibleItemIdField,
                 point.ItemId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
                 point.ItemId is { } fieldItemId ? $"{fieldItemId.ToString(CultureInfo.InvariantCulture)} {itemName}" : "Scene-only",
-                isReadOnly: true),
-            Field(VisibleQuantityField, point.Quantity, point.Quantity.ToString(CultureInfo.InvariantCulture), isReadOnly: true),
+                isReadOnly: point.ItemFieldName is null,
+                options: itemOptions),
+            Field(VisibleQuantityField, point.Quantity, point.Quantity.ToString(CultureInfo.InvariantCulture), isReadOnly: point.QuantityFieldName is null),
             Field(PositionXField, point.X, isReadOnly: true),
             Field(PositionYField, point.Y, isReadOnly: true),
             Field(PositionZField, point.Z, isReadOnly: true),
@@ -822,8 +825,8 @@ internal sealed class SvPlacementWorkflowService
             ReadOnly(PointUseTeraAuraField, "Use Tera aura", "Scene Placement", "Scene-only aura flag."),
             ReadOnly(PointRainbowAuraField, "Rainbow aura", "Scene Placement", "Scene-only aura flag."),
             ReadOnly(VisiblePointTypeField, "Point type", "Visible Item", "Scene-only visible item property sheet."),
-            ReadOnly(VisibleItemIdField, "Item", "Visible Item", "Scene-only visible item id."),
-            ReadOnly(VisibleQuantityField, "Quantity", "Visible Item", "Scene-only visible item quantity."),
+            Integer(VisibleItemIdField, "Item", "Visible Item", 0, int.MaxValue, itemOptions, "Visible item id stored in the scene property sheet."),
+            Integer(VisibleQuantityField, "Quantity", "Visible Item", 0, int.MaxValue, description: "Visible item quantity stored in the scene property sheet."),
             ReadOnly(FixedTableKeyField, "Pokemon data key", "Fixed Symbol Pokemon", "Primary fixed-symbol table key."),
             Integer(FixedSpeciesIdField, "Species", "Fixed Symbol Pokemon", 0, ushort.MaxValue, speciesOptions),
             Integer(FixedFormField, "Form", "Fixed Symbol Pokemon", short.MinValue, short.MaxValue),
