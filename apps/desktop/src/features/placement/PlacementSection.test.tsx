@@ -41,7 +41,7 @@ describe('PlacementSection', () => {
     });
   });
 
-  it('shows S/V Pokemon data by category without stale selections', async () => {
+  it('shows S/V placement data by category without stale selections', async () => {
     const user = userEvent.setup();
     const loadPlacementWorkflow = vi.fn(async () => ({ workflow: createSvPlacementWorkflow() }));
 
@@ -62,13 +62,13 @@ describe('PlacementSection', () => {
     const table = await screen.findByRole('table', { name: 'Placed objects' });
     expect(within(table).queryByRole('columnheader', { name: 'Category' })).not.toBeInTheDocument();
     expect(within(table).getByRole('columnheader', { name: 'Pokemon / Data' })).toBeInTheDocument();
-    expect(within(table).getAllByText('1 Bulbasaur').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('1 Bulbasaur').length).toBeGreaterThan(1);
+    await user.click(screen.getByRole('tab', { name: /Hidden Items/ }));
+    expect(within(table).getByText('Hidden Items - Paldea')).toBeInTheDocument();
+    expect(within(table).getAllByText('1001').length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
 
-    expect(screen.getByLabelText('Pokemon data key')).toBeDisabled();
-    expect(screen.getByText('Read-only')).toBeInTheDocument();
+    expect(screen.getByLabelText('Item 1')).not.toBeDisabled();
     expect(screen.queryByText(/Allowed range:/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: /Visible Items/ }));
@@ -277,12 +277,6 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
   return {
     categories: [
       {
-        description: 'Static overworld Pokemon symbol tables.',
-        id: 'fixedSymbols',
-        label: 'Fixed Symbols',
-        objectCount: 1
-      },
-      {
         description: 'Visible item placement records.',
         id: 'visibleItems',
         label: 'Visible Items',
@@ -297,38 +291,6 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
     ],
     diagnostics: [],
     editableFields: [
-      {
-        description: 'Scene links a point to fixed-symbol table data.',
-        field: 'point.tableKey',
-        group: 'Scene Placement',
-        isReadOnly: true,
-        label: 'Pokemon data key',
-        maximumValue: Number.MAX_SAFE_INTEGER,
-        minimumValue: Number.MIN_SAFE_INTEGER,
-        valueKind: 'text'
-      },
-      {
-        field: 'fixed.speciesId',
-        group: 'Fixed Symbol Pokemon',
-        label: 'Species',
-        maximumValue: 65535,
-        minimumValue: 0,
-        options: [{ label: '1 Bulbasaur', value: 1 }],
-        valueKind: 'integer'
-      },
-      {
-        field: 'fixed.abilityMode',
-        group: 'Fixed Symbol Pokemon',
-        label: 'Ability mode',
-        maximumValue: 4,
-        minimumValue: 0,
-        options: [
-          { label: '0 Random Ability 1 or 2', value: 0 },
-          { label: '2 Overgrow (Ability 1)', value: 2 },
-          { label: '4 Chlorophyll (Hidden Ability)', value: 4 }
-        ],
-        valueKind: 'integer'
-      },
       {
         field: 'hidden.item1.itemId',
         group: 'Hidden Item Slot 1',
@@ -361,75 +323,6 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
       }
     ],
     objects: [
-      {
-        archiveMember: 'fixed_symbol_table_array.bin',
-        categoryId: 'fixedSymbols',
-        categoryLabel: 'Fixed Symbols',
-        chance: null,
-        chanceIndex: null,
-        fields: [
-          {
-            description: '',
-            displayValue: 'ai_area01_01',
-            field: 'point.tableKey',
-            group: 'Scene Placement',
-            isReadOnly: true,
-            label: 'Pokemon data key',
-            maximumValue: 0,
-            minimumValue: 0,
-            value: 'ai_area01_01',
-            valueKind: 'text'
-          },
-          {
-            description: '',
-            displayValue: '1 Bulbasaur',
-            field: 'fixed.speciesId',
-            group: 'Fixed Symbol Pokemon',
-            isReadOnly: false,
-            label: 'Species',
-            maximumValue: 65535,
-            minimumValue: 0,
-            value: '1',
-            valueKind: 'integer'
-          },
-          {
-            description: '',
-            displayValue: 'Overgrow (Ability 1)',
-            field: 'fixed.abilityMode',
-            group: 'Fixed Symbol Pokemon',
-            isReadOnly: false,
-            label: 'Ability mode',
-            maximumValue: 4,
-            minimumValue: 0,
-            options: [
-              { label: '2 Overgrow (Ability 1)', value: 2 },
-              { label: '4 Chlorophyll (Hidden Ability)', value: 4 }
-            ],
-            value: '2',
-            valueKind: 'integer'
-          }
-        ],
-        itemHash: 'ai_area01_01',
-        itemId: null,
-        itemName: 'Bulbasaur',
-        label: 'ai_area01_01',
-        map: 'Fixed Symbol Table',
-        objectId: 'fixed-symbol:0',
-        objectIndex: 0,
-        objectType: 'FixedSymbol',
-        provenance: {
-          fileState: 'layeredOverride',
-          sourceFile: 'romfs/world/data/field/fixed_symbol/fixed_symbol_table/fixed_symbol_table_array.bin',
-          sourceLayer: 'layered'
-        },
-        quantity: 0,
-        rotationY: 0,
-        scriptId: 'ai_area01_01',
-        x: 0,
-        y: 0,
-        zoneIndex: 0,
-        z: 0
-      },
       {
         archiveMember: 'romfs/world/data/item/hiddenItemDataTable/hiddenItemDataTable_array.bin',
         categoryId: 'hiddenItems',

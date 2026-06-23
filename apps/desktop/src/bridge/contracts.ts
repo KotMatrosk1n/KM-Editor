@@ -1404,7 +1404,10 @@ export const staticEncounterEditableFieldOptionSchema = z.strictObject({
 });
 
 export const staticEncounterEditableFieldSchema = z.strictObject({
+  description: z.string().default(''),
   field: z.string(),
+  group: z.string().nullable().default(null),
+  isReadOnly: z.boolean().default(false),
   label: z.string(),
   maximumValue: z.number().int().nullable(),
   minimumValue: z.number().int().nullable(),
@@ -1417,12 +1420,18 @@ export const staticEncounterRecordSchema = z.strictObject({
   abilityLabel: z.string(),
   abilityOptions: z.array(staticEncounterEditableFieldOptionSchema).default([]),
   canGigantamax: z.boolean(),
+  categoryId: z.string().nullable().default(null),
+  categoryLabel: z.string().nullable().default(null),
   dynamaxLevel: z.number().int().nonnegative(),
+  editorFamily: z.enum(['swsh', 'sv']).default('swsh'),
   encounterId: z.string(),
   encounterIndex: z.number().int().nonnegative(),
   encounterScenario: z.number().int().nonnegative(),
   encounterScenarioLabel: z.string(),
   evs: staticEncounterStatsSchema,
+  fieldDisplayValues: z.record(z.string(), z.string()).default({}),
+  fieldReadOnly: z.record(z.string(), z.boolean()).default({}),
+  fieldValues: z.record(z.string(), z.string()).default({}),
   flawlessIvCount: z.number().int().nullable(),
   form: z.number().int().nonnegative(),
   gender: z.number().int().nonnegative(),
@@ -1440,11 +1449,14 @@ export const staticEncounterRecordSchema = z.strictObject({
   shinyLock: z.number().int().nonnegative(),
   shinyLockLabel: z.string(),
   species: z.string(),
-  speciesId: z.number().int().nonnegative()
+  speciesId: z.number().int().nonnegative(),
+  supportedFields: z.array(z.string()).default([])
 });
 
 export const staticEncountersWorkflowStatsSchema = z.strictObject({
+  coinSymbolCount: z.number().int().nonnegative().default(0),
   fixedIvEncounterCount: z.number().int().nonnegative(),
+  fixedSymbolCount: z.number().int().nonnegative().default(0),
   gigantamaxEncounterCount: z.number().int().nonnegative(),
   sourceFileCount: z.number().int().nonnegative(),
   totalEncounterCount: z.number().int().nonnegative()
@@ -1453,6 +1465,7 @@ export const staticEncountersWorkflowStatsSchema = z.strictObject({
 export const staticEncountersWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(staticEncounterEditableFieldSchema),
+  editorFamily: z.enum(['swsh', 'sv']).default('swsh'),
   encounters: z.array(staticEncounterRecordSchema),
   stats: staticEncountersWorkflowStatsSchema,
   summary: workflowSummarySchema

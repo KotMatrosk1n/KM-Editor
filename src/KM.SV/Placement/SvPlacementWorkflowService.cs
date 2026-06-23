@@ -104,10 +104,14 @@ internal sealed class SvPlacementWorkflowService
     public const string RummagingCategoryField = "rummaging.category";
     public const string RummagingPatternField = "rummaging.pattern";
 
-    private static readonly IReadOnlyList<CategorySeed> CategorySeeds =
+    private static readonly IReadOnlyList<CategorySeed> StaticEncounterCategorySeeds =
     [
         new(FixedSymbolsCategory, "Fixed Symbols", "Static overworld Pokemon symbol tables and linked scene-only point data."),
         new(CoinSymbolsCategory, "Coin Symbols", "Gimmighoul coin symbol battle rows and linked scene-only point data."),
+    ];
+
+    private static readonly IReadOnlyList<CategorySeed> CategorySeeds =
+    [
         new(VisibleItemsCategory, "Visible Items", "Visible overworld item scene placements. Scene values are read-only until TRSCN writing is supported."),
         new(HiddenItemsCategory, "Hidden Items", "Hidden item pool tables used by hidden item points."),
         new(RummagingPointsCategory, "Rummaging Points", "Rummaging point item-pool category and pattern tables."),
@@ -141,6 +145,18 @@ internal sealed class SvPlacementWorkflowService
 
     public SvPlacementWorkflow Load(OpenedProject project)
     {
+        return Load(project, includeStaticEncounterObjects: false);
+    }
+
+    internal SvPlacementWorkflow LoadStaticEncounterObjects(OpenedProject project)
+    {
+        return Load(project, includeStaticEncounterObjects: true);
+    }
+
+    private SvPlacementWorkflow Load(
+        OpenedProject project,
+        bool includeStaticEncounterObjects)
+    {
         ArgumentNullException.ThrowIfNull(project);
 
         var diagnostics = new List<ValidationDiagnostic>();
@@ -162,12 +178,19 @@ internal sealed class SvPlacementWorkflowService
         var abilityResolver = SvPlacementAbilityResolver.Load(project, fileSource, labels, diagnostics);
         var moveResolver = SvDefaultMoveResolver.Load(project, fileSource, diagnostics);
 
-        TryLoadFixedSymbols(project, labels, abilityResolver, moveResolver, objects, sourceFiles, diagnostics);
-        TryLoadCoinSymbols(project, labels, abilityResolver, moveResolver, objects, sourceFiles, diagnostics);
-        TryLoadHiddenItems(project, labels, objects, sourceFiles, diagnostics);
-        TryLoadRummaging(project, labels, objects, sourceFiles, diagnostics);
+        if (includeStaticEncounterObjects)
+        {
+            TryLoadFixedSymbols(project, labels, abilityResolver, moveResolver, objects, sourceFiles, diagnostics);
+            TryLoadCoinSymbols(project, labels, abilityResolver, moveResolver, objects, sourceFiles, diagnostics);
+        }
+        else
+        {
+            TryLoadHiddenItems(project, labels, objects, sourceFiles, diagnostics);
+            TryLoadRummaging(project, labels, objects, sourceFiles, diagnostics);
+        }
 
-        var categories = CategorySeeds
+        var categorySeeds = includeStaticEncounterObjects ? StaticEncounterCategorySeeds : CategorySeeds;
+        var categories = categorySeeds
             .Select(seed => new SvPlacementCategory(
                 seed.Id,
                 seed.Label,

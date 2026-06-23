@@ -63,6 +63,16 @@ public sealed record StaticEncounterRecordDto(
     IReadOnlyList<StaticEncounterMoveDto> Moves,
     StaticEncounterProvenanceDto Provenance)
 {
+    public string EditorFamily { get; init; } = "swsh";
+    public string? CategoryId { get; init; }
+    public string? CategoryLabel { get; init; }
+    public IReadOnlyList<string> SupportedFields { get; init; } = Array.Empty<string>();
+    public IReadOnlyDictionary<string, string> FieldValues { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, string> FieldDisplayValues { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, bool> FieldReadOnly { get; init; } =
+        new Dictionary<string, bool>(StringComparer.Ordinal);
     public IReadOnlyList<StaticEncounterEditableFieldOptionDto> AbilityOptions { get; init; } =
         Array.Empty<StaticEncounterEditableFieldOptionDto>();
 }
@@ -73,7 +83,12 @@ public sealed record StaticEncounterEditableFieldDto(
     string ValueKind,
     int? MinimumValue,
     int? MaximumValue,
-    IReadOnlyList<StaticEncounterEditableFieldOptionDto> Options);
+    IReadOnlyList<StaticEncounterEditableFieldOptionDto> Options)
+{
+    public string? Group { get; init; }
+    public bool IsReadOnly { get; init; }
+    public string Description { get; init; } = string.Empty;
+}
 
 public sealed record StaticEncounterEditableFieldOptionDto(
     int Value,
@@ -83,14 +98,21 @@ public sealed record StaticEncountersWorkflowStatsDto(
     int TotalEncounterCount,
     int GigantamaxEncounterCount,
     int FixedIvEncounterCount,
-    int SourceFileCount);
+    int SourceFileCount)
+{
+    public int FixedSymbolCount { get; init; }
+    public int CoinSymbolCount { get; init; }
+}
 
 public sealed record StaticEncountersWorkflowDto(
     WorkflowSummaryDto Summary,
     IReadOnlyList<StaticEncounterRecordDto> Encounters,
     IReadOnlyList<StaticEncounterEditableFieldDto> EditableFields,
     StaticEncountersWorkflowStatsDto Stats,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public string EditorFamily { get; init; } = "swsh";
+}
 
 public sealed record LoadStaticEncountersWorkflowResponse(StaticEncountersWorkflowDto Workflow);
 

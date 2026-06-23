@@ -3233,6 +3233,7 @@ describe('App', () => {
   });
 
   it('opens Static Encounters, edits IVs, reviews a static plan, and applies it', async () => {
+    window.localStorage.setItem(languageStorageKey, 'en');
     const user = userEvent.setup();
     render(<App bridge={createMockProjectBridge({}, true)} />);
 
@@ -3246,8 +3247,8 @@ describe('App', () => {
     expect(
       await screen.findByRole('heading', { level: 2, name: 'Static Encounters' })
     ).toBeInTheDocument();
-    expect(screen.getAllByText('Grookey').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Calyrex').length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/Grookey/)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/Calyrex/)).length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.change(screen.getByLabelText('IV preset'), { target: { value: 'Custom' } });

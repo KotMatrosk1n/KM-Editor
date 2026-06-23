@@ -795,8 +795,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadStaticEncountersWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadStaticEncountersWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadStaticEncounters(ProjectBridgeMapper.ToCore(request.Payload.Paths));
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadStaticEncounters(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadStaticEncounters(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -807,13 +809,20 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = staticEncountersEditSessionService.UpdateField(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.EncounterIndex,
-            request.Payload.Field,
-            request.Payload.Value);
-        var response = SwShBridgeMapper.ToDto(result);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateStaticEncounterField(
+                paths,
+                session,
+                request.Payload.EncounterIndex,
+                request.Payload.Field,
+                request.Payload.Value))
+            : SwShBridgeMapper.ToDto(staticEncountersEditSessionService.UpdateField(
+                paths,
+                session,
+                request.Payload.EncounterIndex,
+                request.Payload.Field,
+                request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2591,8 +2600,6 @@ public sealed class ProjectBridgeDispatcher
         return command is
             KmCommandNames.LoadTextWorkflow or
             KmCommandNames.UpdateTextEntry or
-            KmCommandNames.LoadStaticEncountersWorkflow or
-            KmCommandNames.UpdateStaticEncounterField or
             KmCommandNames.LoadRentalPokemonWorkflow or
             KmCommandNames.UpdateRentalPokemonField or
             KmCommandNames.LoadDynamaxAdventuresWorkflow or
