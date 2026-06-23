@@ -13749,6 +13749,46 @@ function getTrainerFieldDraftState(
     };
   }
 
+  if (field.valueKind === 'number') {
+    const parsedValue = Number(normalizedValue);
+    const minimumValue = field.minimumValue ?? null;
+    const maximumValue = field.maximumValue ?? null;
+
+    if (!Number.isFinite(parsedValue)) {
+      return {
+        error: getIntegerDraftError(normalizedValue),
+        isChanged: normalizedValue !== currentText,
+        isValid: false,
+        normalizedValue: null
+      };
+    }
+
+    if (minimumValue !== null && parsedValue < minimumValue) {
+      return {
+        error: `Minimum value is ${minimumValue}.`,
+        isChanged: currentValue === null || parsedValue !== currentValue,
+        isValid: false,
+        normalizedValue: null
+      };
+    }
+
+    if (maximumValue !== null && parsedValue > maximumValue) {
+      return {
+        error: `Maximum value is ${maximumValue}.`,
+        isChanged: currentValue === null || parsedValue !== currentValue,
+        isValid: false,
+        normalizedValue: null
+      };
+    }
+
+    return {
+      error: null,
+      isChanged: currentValue === null || Math.abs(parsedValue - currentValue) > Number.EPSILON,
+      isValid: true,
+      normalizedValue: parsedValue.toString()
+    };
+  }
+
   let parsedValue = parseEditableIntegerDraft(normalizedValue, field.options);
 
   if (parsedValue === null) {
@@ -15053,6 +15093,37 @@ function getPokemonInstanceFieldGroup(field: NumericEditableField) {
   }
 
   return 'Details';
+}
+
+function getStaticEncounterFieldGroup(field: StaticEncounterEditableField) {
+  return field.group ?? getPokemonInstanceFieldGroup(field);
+}
+
+function isStaticEncounterFieldVisible(
+  field: StaticEncounterEditableField,
+  encounter: StaticEncounterRecord | null
+) {
+  if (encounter?.supportedFields.length) {
+    return encounter.supportedFields.includes(field.field);
+  }
+
+  return staticEncounterFieldNames.includes(
+    field.field as (typeof staticEncounterFieldNames)[number]
+  );
+}
+
+function withStaticEncounterFieldState(
+  field: StaticEncounterEditableField,
+  encounter: StaticEncounterRecord | null
+) {
+  if (!encounter) {
+    return field;
+  }
+
+  return {
+    ...field,
+    isReadOnly: field.isReadOnly || encounter.fieldReadOnly[field.field] === true
+  };
 }
 
 function getTradeFieldDisabledReason(fieldName: string) {
@@ -17524,8 +17595,11 @@ function StaticEncountersSection({
   selectedEncounterIndex: number | null;
   workflow: StaticEncountersWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const [isShinyLockConfirmationOpen, setIsShinyLockConfirmationOpen] = useState(false);
   const encounters = workflow?.encounters ?? [];
+  const editorFamily = workflow?.editorFamily ?? 'swsh';
+  const isSvStaticEncounters = editorFamily === 'sv';
   const filteredEncounters = useMemo(
     () => filterStaticEncounters(encounters, searchText),
     [encounters, searchText]
@@ -17566,42 +17640,61 @@ function StaticEncountersSection({
       <section aria-labelledby="static-encounters-heading" className="panel wide-panel">
         <div className="panel-heading">
           <MapPin aria-hidden="true" size={18} />
-          <h2 id="static-encounters-heading">Static Encounters</h2>
+          <h2 id="static-encounters-heading">{translateLiteral('Static Encounters')}</h2>
         </div>
 
         <div className="items-toolbar trainers-toolbar shiny-lock-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
-              aria-label="Search static encounters"
+              aria-label={translateLiteral('Search static encounters')}
               disabled={!workflow}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search static encounters"
+              placeholder={translateLiteral('Search static encounters')}
               type="search"
               value={searchText}
             />
           </label>
           <Metric
-            label="Loaded encounters"
+            label={translateLiteral('Loaded encounters')}
             value={workflow ? workflow.stats.totalEncounterCount.toString() : '0'}
           />
-          <Metric
-            label="Gigantamax"
-            value={workflow ? workflow.stats.gigantamaxEncounterCount.toString() : '0'}
-          />
-          <Metric
-            label="Fixed IV rows"
-            value={workflow ? workflow.stats.fixedIvEncounterCount.toString() : '0'}
-          />
+          {isSvStaticEncounters ? (
+            <>
+              <Metric
+                label={translateLiteral('Fixed Symbols')}
+                value={workflow ? workflow.stats.fixedSymbolCount.toString() : '0'}
+              />
+              <Metric
+                label={translateLiteral('Coin Symbols')}
+                value={workflow ? workflow.stats.coinSymbolCount.toString() : '0'}
+              />
+              <Metric
+                label={translateLiteral('Sources')}
+                value={workflow ? workflow.stats.sourceFileCount.toString() : '0'}
+              />
+            </>
+          ) : (
+            <>
+              <Metric
+                label={translateLiteral('Gigantamax')}
+                value={workflow ? workflow.stats.gigantamaxEncounterCount.toString() : '0'}
+              />
+              <Metric
+                label={translateLiteral('Fixed IV rows')}
+                value={workflow ? workflow.stats.fixedIvEncounterCount.toString() : '0'}
+              />
+            </>
+          )}
           <button
             className="primary-button compact-button"
             disabled={!canRemoveStaticShinyLocks}
             onClick={() => setIsShinyLockConfirmationOpen(true)}
-            title={removeStaticShinyLockTitle}
+            title={translateLiteral(removeStaticShinyLockTitle)}
             type="button"
           >
             <ShieldCheck aria-hidden="true" size={14} />
-            <span>Remove Static Shiny Lock</span>
+            <span>{translateLiteral('Remove Static Shiny Lock')}</span>
           </button>
         </div>
 
@@ -17609,19 +17702,21 @@ function StaticEncountersSection({
           <div className="trainers-layout">
             <div
               aria-colcount={7}
-              aria-label="Static Encounters"
+              aria-label={translateLiteral('Static Encounters')}
               aria-rowcount={filteredEncounters.length + 1}
               className="trainers-table"
               role="table"
             >
               <div className="trainers-row static-encounters-row trainers-row-heading" role="row">
-                <span role="columnheader">Index</span>
-                <span role="columnheader">Encounter</span>
-                <span role="columnheader">Species</span>
-                <span role="columnheader">Level</span>
-                <span role="columnheader">Scenario</span>
-                <span role="columnheader">IVs</span>
-                <span role="columnheader">Source</span>
+                <span role="columnheader">{translateLiteral('Index')}</span>
+                <span role="columnheader">{translateLiteral('Encounter')}</span>
+                <span role="columnheader">{translateLiteral('Species')}</span>
+                <span role="columnheader">{translateLiteral('Level')}</span>
+                <span role="columnheader">
+                  {translateLiteral(isSvStaticEncounters ? 'Category' : 'Scenario')}
+                </span>
+                <span role="columnheader">{translateLiteral('IVs')}</span>
+                <span role="columnheader">{translateLiteral('Source')}</span>
               </div>
               <VirtualTableBody
                 getKey={(encounter) => encounter.encounterIndex}
@@ -17643,9 +17738,20 @@ function StaticEncountersSection({
                   >
                     <span role="cell">{encounter.encounterIndex + 1}</span>
                     <span role="cell">{encounter.label}</span>
-                    <span role="cell">{encounter.species}</span>
+                    <span role="cell">
+                      {formatSpeciesFormLabel(
+                        encounter.species,
+                        encounter.form,
+                        encounter.speciesId,
+                        encounter.editorFamily
+                      )}
+                    </span>
                     <span role="cell">{encounter.level}</span>
-                    <span role="cell">{encounter.encounterScenarioLabel}</span>
+                    <span role="cell">
+                      {isSvStaticEncounters
+                        ? encounter.categoryLabel ?? encounter.encounterScenarioLabel
+                        : encounter.encounterScenarioLabel}
+                    </span>
                     <span role="cell">{encounter.ivSummary}</span>
                     <span role="cell">{formatSourceLayer(encounter.provenance.sourceLayer)}</span>
                   </button>
@@ -17666,7 +17772,9 @@ function StaticEncountersSection({
             />
           </div>
         ) : (
-          <p className="empty-copy">Open Static Encounters from Workflows to load backend encounter data.</p>
+          <p className="empty-copy">
+            {translateLiteral('Open Static Encounters from Workflows to load backend encounter data.')}
+          </p>
         )}
       </section>
 
@@ -17715,6 +17823,7 @@ function SelectedStaticEncounterPanel({
     changes: Array<{ field: string; value: string }>
   ) => Promise<boolean>;
 }) {
+  const { translateLiteral } = useLocalization();
   const [encounterDraftsByIndex, setEncounterDraftsByIndex] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -17722,16 +17831,13 @@ function SelectedStaticEncounterPanel({
   const encounterFields = useMemo(
     () =>
       editableFields
-        .filter((field) =>
-          staticEncounterFieldNames.includes(
-            field.field as (typeof staticEncounterFieldNames)[number]
-          )
-        )
+        .filter((field) => isStaticEncounterFieldVisible(field, encounter))
+        .map((field) => withStaticEncounterFieldState(field, encounter))
         .map(withPokemonInstanceIvPresetOptions),
-    [editableFields]
+    [editableFields, encounter]
   );
   const encounterFieldGroups = useMemo(
-    () => groupNumericEditableFields(encounterFields, getPokemonInstanceFieldGroup),
+    () => groupNumericEditableFields(encounterFields, getStaticEncounterFieldGroup),
     [encounterFields]
   );
   const encounterDraftDefaults = useMemo(
@@ -17754,7 +17860,7 @@ function SelectedStaticEncounterPanel({
         encounter ? (field) => getEditableStaticEncounterFieldValue(encounter, field) : null,
         {
           clampIvStats: isPokemonInstanceIvCustomSelected(encounterFields, encounterDrafts),
-          enforcePokemonEvLimits: true
+          enforcePokemonEvLimits: encounter?.editorFamily !== 'sv'
         }
       ),
     [encounter, encounterDrafts, encounterFields]
@@ -17782,59 +17888,88 @@ function SelectedStaticEncounterPanel({
   }, [encounter, encounterDraftDefaults]);
 
   return (
-    <aside aria-label="Selected static encounter provenance" className="trainer-inspector">
+    <aside
+      aria-label={translateLiteral('Selected static encounter provenance')}
+      className="trainer-inspector"
+    >
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Static Encounter</h3>
+        <h3>{translateLiteral('Selected Static Encounter')}</h3>
       </div>
 
       {encounter ? (
         <>
           <PokemonSummaryCard
-            name={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
-            subtitle={`Static #${encounter.encounterIndex} | Lv. ${encounter.level}`}
-            title={formatSpeciesFormLabel(encounter.species, encounter.form, encounter.speciesId)}
+            name={formatSpeciesFormLabel(
+              encounter.species,
+              encounter.form,
+              encounter.speciesId,
+              encounter.editorFamily
+            )}
+            subtitle={`Static #${encounter.encounterIndex + 1} | Lv. ${encounter.level}`}
+            title={formatSpeciesFormLabel(
+              encounter.species,
+              encounter.form,
+              encounter.speciesId,
+              encounter.editorFamily
+            )}
           />
 
           <dl className="item-provenance-list">
             <div>
-              <dt>Encounter</dt>
+              <dt>{translateLiteral('Encounter')}</dt>
               <dd>{encounter.label}</dd>
             </div>
             <div>
-              <dt>Encounter ID</dt>
+              <dt>{translateLiteral('Encounter ID')}</dt>
               <dd>{encounter.encounterId}</dd>
             </div>
             <div>
-              <dt>Data file</dt>
+              <dt>{translateLiteral('Data file')}</dt>
               <dd>{encounter.provenance.sourceFile}</dd>
             </div>
             <div>
-              <dt>Layer</dt>
+              <dt>{translateLiteral('Layer')}</dt>
               <dd>{formatSourceLayer(encounter.provenance.sourceLayer)}</dd>
             </div>
             <div>
-              <dt>File state</dt>
+              <dt>{translateLiteral('File state')}</dt>
               <dd>{formatFileState(encounter.provenance.fileState)}</dd>
             </div>
             <div>
-              <dt>Scenario</dt>
-              <dd>{encounter.encounterScenarioLabel}</dd>
+              <dt>{translateLiteral(encounter.editorFamily === 'sv' ? 'Category' : 'Scenario')}</dt>
+              <dd>
+                {encounter.editorFamily === 'sv'
+                  ? encounter.categoryLabel ?? encounter.encounterScenarioLabel
+                  : encounter.encounterScenarioLabel}
+              </dd>
             </div>
+            {encounter.editorFamily === 'sv' ? (
+              <>
+                <div>
+                  <dt>{translateLiteral('Tera type')}</dt>
+                  <dd>{getStaticEncounterDisplayValue(encounter, giftTeraTypeFieldName)}</dd>
+                </div>
+                <div>
+                  <dt>{translateLiteral('Scale')}</dt>
+                  <dd>{formatStaticEncounterScale(encounter)}</dd>
+                </div>
+              </>
+            ) : null}
             <div>
-              <dt>Held item</dt>
+              <dt>{translateLiteral('Held item')}</dt>
               <dd>{encounter.heldItem ?? 'None'}</dd>
             </div>
             <div>
-              <dt>Moves</dt>
+              <dt>{translateLiteral('Moves')}</dt>
               <dd>{formatStaticEncounterMoves(encounter)}</dd>
             </div>
             <div>
-              <dt>EV detail</dt>
+              <dt>{translateLiteral('EV detail')}</dt>
               <dd>{formatStaticEncounterStats(encounter.evs)}</dd>
             </div>
             <div>
-              <dt>IV detail</dt>
+              <dt>{translateLiteral('IV detail')}</dt>
               <dd>{formatStaticEncounterIvs(encounter)}</dd>
             </div>
           </dl>
@@ -17843,7 +17978,7 @@ function SelectedStaticEncounterPanel({
             <div className="editable-field-groups">
               {encounterFieldGroups.map((group) => (
                 <fieldset className="editable-field-group" key={group.group}>
-                  <legend>{group.group}</legend>
+                  <legend>{translateLiteral(group.group)}</legend>
                   <div className="editable-field-grid">
                     {group.fields.map((field) => {
                       const currentValue = getEditableStaticEncounterFieldValue(
@@ -17861,7 +17996,7 @@ function SelectedStaticEncounterPanel({
                             encounterDrafts
                           ),
                           drafts: encounterDrafts,
-                          enforcePokemonEvLimits: true,
+                          enforcePokemonEvLimits: encounter.editorFamily !== 'sv',
                           fields: encounterFields,
                           getValue: (fieldName) =>
                             getEditableStaticEncounterFieldValue(encounter, fieldName)
@@ -17888,7 +18023,7 @@ function SelectedStaticEncounterPanel({
                           field={field}
                           formOptionContext={{
                             abilityOptions: encounter.abilityOptions,
-                            gameFamily: 'swsh',
+                            gameFamily: encounter.editorFamily,
                             species: encounter.species,
                             speciesId: encounter.speciesId
                           }}
@@ -17979,7 +18114,7 @@ function SelectedStaticEncounterPanel({
           </div>
         </>
       ) : (
-        <p className="empty-copy">No static encounter selected.</p>
+        <p className="empty-copy">{translateLiteral('No static encounter selected.')}</p>
       )}
     </aside>
   );
@@ -29178,6 +29313,8 @@ function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText:
       encounter.gender.toString(),
       encounter.shinyLockLabel,
       encounter.shinyLock.toString(),
+      encounter.categoryId ?? '',
+      encounter.categoryLabel ?? '',
       encounter.encounterScenarioLabel,
       encounter.encounterScenario.toString(),
       encounter.dynamaxLevel.toString(),
@@ -29186,6 +29323,7 @@ function filterStaticEncounters(encounters: StaticEncounterRecord[], searchText:
       formatStaticEncounterIvs(encounter),
       formatStaticEncounterStats(encounter.evs),
       formatStaticEncounterMoves(encounter),
+      ...Object.values(encounter.fieldDisplayValues),
       encounter.provenance.sourceFile
     ].some((value) => value.toLocaleLowerCase().includes(normalizedSearch))
   );
@@ -30425,8 +30563,15 @@ function getEditableStaticEncounterFieldValue(encounter: StaticEncounterRecord, 
       return encounter.ivs.speed;
     case giftFlawlessIvCountFieldName:
       return encounter.flawlessIvCount;
-    default:
-      return null;
+    default: {
+      const rawValue = encounter.fieldValues[field];
+      if (rawValue === undefined) {
+        return null;
+      }
+
+      const parsedValue = Number(rawValue);
+      return Number.isFinite(parsedValue) ? parsedValue : null;
+    }
   }
 }
 
@@ -33916,6 +34061,21 @@ function formatStaticEncounterMoves(encounter: StaticEncounterRecord) {
     .map((move) => move.move ?? `Move ${move.moveId}`);
 
   return moves.length > 0 ? moves.join(' / ') : 'None';
+}
+
+function getStaticEncounterDisplayValue(encounter: StaticEncounterRecord, field: string) {
+  return encounter.fieldDisplayValues[field] ?? encounter.fieldValues[field] ?? 'None';
+}
+
+function formatStaticEncounterScale(encounter: StaticEncounterRecord) {
+  const mode = getStaticEncounterDisplayValue(encounter, giftScaleModeFieldName);
+  const value = encounter.fieldValues[giftScaleValueFieldName];
+
+  if (!value || value === '0') {
+    return mode;
+  }
+
+  return `${mode}: ${value}`;
 }
 
 function formatRentalPokemonIvs(rental: RentalPokemonRecord) {

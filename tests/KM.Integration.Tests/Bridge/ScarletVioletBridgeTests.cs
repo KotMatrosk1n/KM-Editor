@@ -16,6 +16,7 @@ using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Raids;
+using KM.Api.StaticEncounters;
 using KM.Api.SvCache;
 using KM.Api.Trainers;
 using KM.Api.Trades;
@@ -881,13 +882,48 @@ public sealed class ScarletVioletBridgeTests
         Assert.Equal(4, trade.SpeciesId);
         Assert.Equal(0, trade.ShinyLock);
 
+        var staticEncounters = Dispatch<LoadStaticEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadStaticEncountersWorkflow,
+            new LoadStaticEncountersWorkflowRequest(paths),
+            "request-sv-static-encounter-fields-load");
+        AssertSuccess(staticEncounters);
+        var fixedSymbol = staticEncounters.Payload!.Workflow.Encounters.Single(entry => entry.CategoryId == "fixedSymbols");
+        var staticSpecies = Dispatch<UpdateStaticEncounterFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateStaticEncounterField,
+            new UpdateStaticEncounterFieldRequest(
+                paths,
+                session,
+                fixedSymbol.EncounterIndex,
+                "species",
+                "4"),
+            "request-sv-static-encounter-species-update");
+        AssertSuccess(staticSpecies);
+        session = staticSpecies.Payload!.Session;
+        var staticLevel = Dispatch<UpdateStaticEncounterFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateStaticEncounterField,
+            new UpdateStaticEncounterFieldRequest(
+                paths,
+                session,
+                fixedSymbol.EncounterIndex,
+                "level",
+                "20"),
+            "request-sv-static-encounter-level-update");
+        AssertSuccess(staticLevel);
+        session = staticLevel.Payload!.Session;
+        var stagedFixedSymbol = staticLevel.Payload.Workflow.Encounters.Single(entry => entry.EncounterIndex == fixedSymbol.EncounterIndex);
+        Assert.Equal(4, stagedFixedSymbol.SpeciesId);
+        Assert.Equal(20, stagedFixedSymbol.Level);
+
         var placement = Dispatch<LoadPlacementWorkflowResponse>(
             dispatcher,
             KmCommandNames.LoadPlacementWorkflow,
             new LoadPlacementWorkflowRequest(paths),
             "request-sv-placement-fields-load");
         AssertSuccess(placement);
-        var fixedSymbol = placement.Payload!.Workflow.Objects.Single(entry => entry.CategoryId == "fixedSymbols");
+        var hiddenItem = placement.Payload!.Workflow.Objects.First(entry => entry.CategoryId == "hiddenItems");
         var placementBatch = Dispatch<UpdatePlacementObjectFieldsResponse>(
             dispatcher,
             KmCommandNames.UpdatePlacementObjectFields,
@@ -895,15 +931,15 @@ public sealed class ScarletVioletBridgeTests
                 paths,
                 session,
                 [
-                    new PlacementObjectFieldUpdateDto(fixedSymbol.ObjectId, "fixed.speciesId", "4"),
-                    new PlacementObjectFieldUpdateDto(fixedSymbol.ObjectId, "fixed.level", "20"),
+                    new PlacementObjectFieldUpdateDto(hiddenItem.ObjectId, "hidden.item1.itemId", "4"),
+                    new PlacementObjectFieldUpdateDto(hiddenItem.ObjectId, "hidden.item1.chance", "80"),
                 ]),
             "request-sv-placement-object-fields-update");
         AssertSuccess(placementBatch);
         session = placementBatch.Payload!.Session;
-        var stagedFixedSymbol = placementBatch.Payload.Workflow.Objects.Single(entry => entry.ObjectId == fixedSymbol.ObjectId);
-        Assert.Equal("4", stagedFixedSymbol.Fields!.Single(field => field.Field == "fixed.speciesId").Value);
-        Assert.Equal("20", stagedFixedSymbol.Fields!.Single(field => field.Field == "fixed.level").Value);
+        var stagedHiddenItem = placementBatch.Payload.Workflow.Objects.Single(entry => entry.ObjectId == hiddenItem.ObjectId);
+        Assert.Equal("4", stagedHiddenItem.Fields!.Single(field => field.Field == "hidden.item1.itemId").Value);
+        Assert.Equal("80", stagedHiddenItem.Fields!.Single(field => field.Field == "hidden.item1.chance").Value);
 
         var expectedDomains = new[]
         {
@@ -914,6 +950,7 @@ public sealed class ScarletVioletBridgeTests
             "workflow.encounters",
             "workflow.giftPokemon",
             "workflow.tradePokemon",
+            "workflow.staticEncounters",
             "workflow.placement",
         };
         foreach (var domain in expectedDomains)
@@ -941,7 +978,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "moves", "pokemon", "trainers", "encounters", "teraRaids", "giftPokemon", "tradePokemon", "placement", "typeChart", "hyperspaceBypass", "modMerger"],
+            ["items", "moves", "pokemon", "trainers", "encounters", "teraRaids", "staticEncounters", "giftPokemon", "tradePokemon", "placement", "typeChart", "hyperspaceBypass", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
@@ -949,6 +986,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trainers");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Wild Encounters");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Tera Raids");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Static Encounters");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Gift Pokemon");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trade Pokemon");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Placement");
@@ -1275,43 +1313,51 @@ public sealed class ScarletVioletBridgeTests
             new LoadPlacementWorkflowRequest(paths),
             "request-sv-placement-labels");
         AssertSuccess(placement);
-        Assert.Contains(
-            placement.Payload!.Workflow.EditableFields.Single(field => field.Field == "fixed.shiny").Options,
-            option => option.Value == (int)global::RareType.NO_RARE && option.Label == "1 Not Shiny");
-        Assert.Contains(
-            placement.Payload.Workflow.EditableFields.Single(field => field.Field == "fixed.shiny").Options,
-            option => option.Value == (int)global::RareType.RARE && option.Label == "2 Shiny");
         Assert.Equal(
             "Emerge value 1",
-            placement.Payload.Workflow.EditableFields.Single(field => field.Field == "hidden.item1.chance").Label);
+            placement.Payload!.Workflow.EditableFields.Single(field => field.Field == "hidden.item1.chance").Label);
         Assert.Equal(
             int.MaxValue,
             placement.Payload.Workflow.EditableFields.Single(field => field.Field == "hidden.item1.chance").MaximumValue);
 
-        var fixedSymbol = placement.Payload.Workflow.Objects.Single(entry => entry.CategoryId == "fixedSymbols");
-        Assert.Equal("Bulbasaur", fixedSymbol.ItemName);
-        Assert.Equal("1 Bulbasaur", fixedSymbol.Fields!.Single(field => field.Field == "fixed.speciesId").DisplayValue);
-        Assert.Equal("Not Shiny", fixedSymbol.Fields!.Single(field => field.Field == "fixed.shiny").DisplayValue);
-        Assert.Equal("33 Tackle", fixedSymbol.Fields!.Single(field => field.Field == "fixed.move1").DisplayValue);
-        Assert.True(fixedSymbol.Fields!.Single(field => field.Field == "fixed.alcremieSweet").IsReadOnly);
-        var fixedAbility = fixedSymbol.Fields!.Single(field => field.Field == "fixed.abilityMode");
-        Assert.Equal("Overgrow (Ability 1)", fixedAbility.DisplayValue);
+        var staticEncounters = Dispatch<LoadStaticEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadStaticEncountersWorkflow,
+            new LoadStaticEncountersWorkflowRequest(paths),
+            "request-sv-static-encounter-labels");
+        AssertSuccess(staticEncounters);
+        Assert.Equal("sv", staticEncounters.Payload!.Workflow.EditorFamily);
+        Assert.Equal(1, staticEncounters.Payload.Workflow.Stats.FixedSymbolCount);
+        Assert.Equal(1, staticEncounters.Payload.Workflow.Stats.CoinSymbolCount);
         Assert.Contains(
-            fixedAbility.Options!,
+            staticEncounters.Payload.Workflow.EditableFields.Single(field => field.Field == "shinyLock").Options,
+            option => option.Value == (int)global::RareType.NO_RARE && option.Label == "1 Not Shiny");
+        Assert.Contains(
+            staticEncounters.Payload.Workflow.EditableFields.Single(field => field.Field == "shinyLock").Options,
+            option => option.Value == (int)global::RareType.RARE && option.Label == "2 Shiny");
+
+        var fixedSymbol = staticEncounters.Payload.Workflow.Encounters.Single(entry => entry.CategoryId == "fixedSymbols");
+        Assert.Equal("Bulbasaur", fixedSymbol.Species);
+        Assert.Equal("1 Bulbasaur", fixedSymbol.FieldDisplayValues["species"]);
+        Assert.Equal("Not Shiny", fixedSymbol.FieldDisplayValues["shinyLock"]);
+        Assert.Equal("33 Tackle", fixedSymbol.FieldDisplayValues["move0Id"]);
+        Assert.True(fixedSymbol.FieldReadOnly["alcremieSweet"]);
+        Assert.Equal("Overgrow (Ability 1)", fixedSymbol.AbilityLabel);
+        Assert.Contains(
+            fixedSymbol.AbilityOptions,
             option => option.Value == (int)global::TokuseiType.SET_1 && option.Label == "2 Overgrow (Ability 1)");
         Assert.Contains(
-            fixedAbility.Options!,
+            fixedSymbol.AbilityOptions,
             option => option.Value == (int)global::TokuseiType.SET_3 && option.Label == "4 Chlorophyll (Hidden Ability)");
 
-        var coinSymbol = placement.Payload.Workflow.Objects.Single(entry => entry.CategoryId == "coinSymbols");
-        Assert.Equal("Bulbasaur", coinSymbol.ItemName);
-        Assert.Equal("1 Bulbasaur", coinSymbol.Fields!.Single(field => field.Field == "coin.speciesId").DisplayValue);
-        Assert.Equal("Shiny", coinSymbol.Fields!.Single(field => field.Field == "coin.shiny").DisplayValue);
-        Assert.Equal("33 Tackle", coinSymbol.Fields!.Single(field => field.Field == "coin.move1").DisplayValue);
-        var coinAbility = coinSymbol.Fields!.Single(field => field.Field == "coin.abilityMode");
-        Assert.Equal("Chlorophyll (Hidden Ability)", coinAbility.DisplayValue);
+        var coinSymbol = staticEncounters.Payload.Workflow.Encounters.Single(entry => entry.CategoryId == "coinSymbols");
+        Assert.Equal("Bulbasaur", coinSymbol.Species);
+        Assert.Equal("1 Bulbasaur", coinSymbol.FieldDisplayValues["species"]);
+        Assert.Equal("Shiny", coinSymbol.FieldDisplayValues["shinyLock"]);
+        Assert.Equal("33 Tackle", coinSymbol.FieldDisplayValues["move0Id"]);
+        Assert.Equal("Chlorophyll (Hidden Ability)", coinSymbol.AbilityLabel);
         Assert.Contains(
-            coinAbility.Options!,
+            coinSymbol.AbilityOptions,
             option => option.Value == (int)global::TokuseiType.SET_3 && option.Label == "4 Chlorophyll (Hidden Ability)");
     }
 
@@ -1366,41 +1412,41 @@ public sealed class ScarletVioletBridgeTests
         var paths = temp.Paths with { SelectedGame = game };
         var dispatcher = new ProjectBridgeDispatcher();
 
-        var placement = Dispatch<LoadPlacementWorkflowResponse>(
+        var staticEncounters = Dispatch<LoadStaticEncountersWorkflowResponse>(
             dispatcher,
-            KmCommandNames.LoadPlacementWorkflow,
-            new LoadPlacementWorkflowRequest(paths),
-            "request-sv-placement-alcremie-sweet-load");
-        AssertSuccess(placement);
-        var fixedSymbol = placement.Payload!.Workflow.Objects.Single(entry => entry.CategoryId == "fixedSymbols");
-        Assert.True(fixedSymbol.Fields!.Single(field => field.Field == "fixed.alcremieSweet").IsReadOnly);
+            KmCommandNames.LoadStaticEncountersWorkflow,
+            new LoadStaticEncountersWorkflowRequest(paths),
+            "request-sv-static-encounter-alcremie-sweet-load");
+        AssertSuccess(staticEncounters);
+        var fixedSymbol = staticEncounters.Payload!.Workflow.Encounters.Single(entry => entry.CategoryId == "fixedSymbols");
+        Assert.True(fixedSymbol.FieldReadOnly["alcremieSweet"]);
 
-        var stagedSpecies = Dispatch<UpdatePlacementObjectFieldResponse>(
+        var stagedSpecies = Dispatch<UpdateStaticEncounterFieldResponse>(
             dispatcher,
-            KmCommandNames.UpdatePlacementObjectField,
-            new UpdatePlacementObjectFieldRequest(
+            KmCommandNames.UpdateStaticEncounterField,
+            new UpdateStaticEncounterFieldRequest(
                 paths,
                 Session: null,
-                fixedSymbol.ObjectId,
-                Field: "fixed.speciesId",
+                fixedSymbol.EncounterIndex,
+                Field: "species",
                 Value: ((int)global::pml.common.DevID.DEV_MAHOIPPU).ToString(CultureInfo.InvariantCulture)),
-            "request-sv-placement-alcremie-sweet-unlock");
+            "request-sv-static-encounter-alcremie-sweet-unlock");
         AssertSuccess(stagedSpecies);
-        var stagedFixedSymbol = stagedSpecies.Payload!.Workflow.Objects.Single(entry => entry.ObjectId == fixedSymbol.ObjectId);
-        Assert.False(stagedFixedSymbol.Fields!.Single(field => field.Field == "fixed.alcremieSweet").IsReadOnly);
+        var stagedFixedSymbol = stagedSpecies.Payload!.Workflow.Encounters.Single(entry => entry.EncounterIndex == fixedSymbol.EncounterIndex);
+        Assert.False(stagedFixedSymbol.FieldReadOnly["alcremieSweet"]);
 
         WriteSvOutput(
             temp,
             SvDataPaths.FixedSymbolTableArray,
             CreateFixedSymbolTableArray(global::pml.common.DevID.DEV_MAHOIPPU));
-        var alcremiePlacement = Dispatch<LoadPlacementWorkflowResponse>(
+        var alcremieStaticEncounters = Dispatch<LoadStaticEncountersWorkflowResponse>(
             dispatcher,
-            KmCommandNames.LoadPlacementWorkflow,
-            new LoadPlacementWorkflowRequest(paths),
-            "request-sv-placement-alcremie-sweet-alcremie-load");
-        AssertSuccess(alcremiePlacement);
-        var alcremieFixedSymbol = alcremiePlacement.Payload!.Workflow.Objects.Single(entry => entry.CategoryId == "fixedSymbols");
-        Assert.False(alcremieFixedSymbol.Fields!.Single(field => field.Field == "fixed.alcremieSweet").IsReadOnly);
+            KmCommandNames.LoadStaticEncountersWorkflow,
+            new LoadStaticEncountersWorkflowRequest(paths),
+            "request-sv-static-encounter-alcremie-sweet-alcremie-load");
+        AssertSuccess(alcremieStaticEncounters);
+        var alcremieFixedSymbol = alcremieStaticEncounters.Payload!.Workflow.Encounters.Single(entry => entry.CategoryId == "fixedSymbols");
+        Assert.False(alcremieFixedSymbol.FieldReadOnly["alcremieSweet"]);
     }
 
     [Theory]
@@ -1418,19 +1464,19 @@ public sealed class ScarletVioletBridgeTests
         var paths = temp.Paths with { SelectedGame = game };
         var dispatcher = new ProjectBridgeDispatcher();
 
-        var placement = Dispatch<LoadPlacementWorkflowResponse>(
+        var staticEncounters = Dispatch<LoadStaticEncountersWorkflowResponse>(
             dispatcher,
-            KmCommandNames.LoadPlacementWorkflow,
-            new LoadPlacementWorkflowRequest(paths),
-            "request-sv-placement-default-moves");
-        AssertSuccess(placement);
-        var fixedSymbol = placement.Payload!.Workflow.Objects.Single(entry => entry.CategoryId == "fixedSymbols");
-        Assert.Equal("33 Tackle", fixedSymbol.Fields!.Single(field => field.Field == "fixed.move1").DisplayValue);
-        Assert.Equal("45 Growl", fixedSymbol.Fields!.Single(field => field.Field == "fixed.move2").DisplayValue);
-        Assert.Equal("36 Take Down", fixedSymbol.Fields!.Single(field => field.Field == "fixed.move3").DisplayValue);
-        Assert.Equal("None", fixedSymbol.Fields!.Single(field => field.Field == "fixed.move4").DisplayValue);
+            KmCommandNames.LoadStaticEncountersWorkflow,
+            new LoadStaticEncountersWorkflowRequest(paths),
+            "request-sv-static-encounter-default-moves");
+        AssertSuccess(staticEncounters);
+        var fixedSymbol = staticEncounters.Payload!.Workflow.Encounters.Single(entry => entry.CategoryId == "fixedSymbols");
+        Assert.Equal("33 Tackle", fixedSymbol.FieldDisplayValues["move0Id"]);
+        Assert.Equal("45 Growl", fixedSymbol.FieldDisplayValues["move1Id"]);
+        Assert.Equal("36 Take Down", fixedSymbol.FieldDisplayValues["move2Id"]);
+        Assert.Equal("None", fixedSymbol.FieldDisplayValues["move3Id"]);
 
-        var session = UpdatePlacement(dispatcher, paths, fixedSymbol.ObjectId, field: "fixed.move1", value: "349");
+        var session = UpdateStaticEncounter(dispatcher, paths, fixedSymbol.EncounterIndex, field: "move0Id", value: "349");
         Apply(dispatcher, paths, session);
 
         var output = FixedSymbolTableArray.GetRootAsFixedSymbolTableArray(new ByteBuffer(ReadSvOutput(temp, SvDataPaths.FixedSymbolTableArray)));
@@ -1934,6 +1980,36 @@ public sealed class ScarletVioletBridgeTests
 
         AssertSuccess(response);
         return response.Payload!.Session;
+    }
+
+    private static EditSessionDto UpdateStaticEncounter(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        int encounterIndex,
+        string field,
+        string value)
+    {
+        return UpdateStaticEncounter(dispatcher, paths, session: null, encounterIndex, field, value);
+    }
+
+    private static EditSessionDto UpdateStaticEncounter(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        EditSessionDto? session,
+        int encounterIndex,
+        string field,
+        string value)
+    {
+        var response = Dispatch<UpdateStaticEncounterFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateStaticEncounterField,
+            new UpdateStaticEncounterFieldRequest(paths, session, encounterIndex, field, value),
+            "request-sv-static-encounter-update");
+
+        AssertSuccess(response);
+        Assert.Contains(response.Payload!.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.staticEncounters" && edit.NewValue == value);
+        return response.Payload.Session;
     }
 
     private static void Apply(ProjectBridgeDispatcher dispatcher, ProjectPathsDto paths, EditSessionDto session)

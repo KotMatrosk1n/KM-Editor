@@ -20,15 +20,18 @@ internal sealed class SvPlacementEditSessionService
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly SvWorkflowFileSource fileSource;
     private readonly SvPlacementWorkflowService placementWorkflowService;
+    private readonly bool includeStaticEncounterObjects;
 
     public SvPlacementEditSessionService(
         ProjectWorkspaceService? projectWorkspaceService = null,
         SvWorkflowFileSource? fileSource = null,
-        SvPlacementWorkflowService? placementWorkflowService = null)
+        SvPlacementWorkflowService? placementWorkflowService = null,
+        bool includeStaticEncounterObjects = false)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.fileSource = fileSource ?? new SvWorkflowFileSource();
         this.placementWorkflowService = placementWorkflowService ?? new SvPlacementWorkflowService(this.fileSource);
+        this.includeStaticEncounterObjects = includeStaticEncounterObjects;
     }
 
     public SvPlacementEditResult UpdateObjectField(
@@ -45,7 +48,7 @@ internal sealed class SvPlacementEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = placementWorkflowService.Load(project);
+        var loadedWorkflow = LoadWorkflow(project);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -93,7 +96,7 @@ internal sealed class SvPlacementEditSessionService
 
         var currentSession = session ?? EditSession.Start();
         var project = projectWorkspaceService.Open(paths);
-        var loadedWorkflow = placementWorkflowService.Load(project);
+        var loadedWorkflow = LoadWorkflow(project);
         var workflow = OverlayPendingEdits(loadedWorkflow, currentSession.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -156,7 +159,7 @@ internal sealed class SvPlacementEditSessionService
         ArgumentNullException.ThrowIfNull(session);
 
         var project = projectWorkspaceService.Open(paths);
-        var workflow = placementWorkflowService.Load(project);
+        var workflow = LoadWorkflow(project);
         var projectedWorkflow = OverlayPendingEdits(workflow, session.PendingEdits);
         var diagnostics = new List<ValidationDiagnostic>();
 
@@ -267,6 +270,13 @@ internal sealed class SvPlacementEditSessionService
                 expected: "Writable output root"));
             return new ChangePlan(session.Id, Array.Empty<PlannedFileWrite>(), diagnostics);
         }
+    }
+
+    private SvPlacementWorkflow LoadWorkflow(OpenedProject project)
+    {
+        return includeStaticEncounterObjects
+            ? placementWorkflowService.LoadStaticEncounterObjects(project)
+            : placementWorkflowService.Load(project);
     }
 
     public ApplyResult ApplyChangePlan(

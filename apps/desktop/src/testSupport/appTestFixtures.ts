@@ -2247,14 +2247,23 @@ export function createMockProjectBridge(
         ],
         valueKind: 'integer'
       }
-    ],
+    ].map((field) => ({
+      description: '',
+      group: null,
+      isReadOnly: false,
+      ...field
+    })),
+    editorFamily: 'swsh',
     encounters: [
       {
         ability: 3,
         abilityLabel: 'Hidden Ability',
         abilityOptions: [],
         canGigantamax: true,
+        categoryId: null,
+        categoryLabel: null,
         dynamaxLevel: 10,
+        editorFamily: 'swsh',
         encounterId: '0x0102030405060708',
         encounterIndex: 0,
         encounterScenario: 17,
@@ -2267,6 +2276,9 @@ export function createMockProjectBridge(
           specialDefense: 5,
           speed: 6
         },
+        fieldDisplayValues: {},
+        fieldReadOnly: {},
+        fieldValues: {},
         flawlessIvCount: null,
         form: 1,
         gender: 1,
@@ -2300,11 +2312,14 @@ export function createMockProjectBridge(
         shinyLock: 2,
         shinyLockLabel: 'Never Shiny',
         species: 'Grookey',
-        speciesId: 810
+        speciesId: 810,
+        supportedFields: []
       }
     ],
     stats: {
+      coinSymbolCount: 0,
       fixedIvEncounterCount: 1,
+      fixedSymbolCount: 0,
       gigantamaxEncounterCount: 1,
       sourceFileCount: 1,
       totalEncounterCount: 1

@@ -17,6 +17,7 @@ internal static class SvEditSessionSupport
     public const string TrainersDomain = "workflow.trainers";
     public const string EncountersDomain = "workflow.encounters";
     public const string TeraRaidsDomain = "workflow.teraRaids";
+    public const string StaticEncountersDomain = "workflow.staticEncounters";
     public const string GiftPokemonDomain = "workflow.giftPokemon";
     public const string TradePokemonDomain = "workflow.tradePokemon";
     public const string PlacementDomain = "workflow.placement";

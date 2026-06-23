@@ -5,6 +5,7 @@ using Google.FlatBuffers;
 using KM.Core.Projects;
 using KM.Formats.SV;
 using KM.Formats.SV.Trinity;
+using KM.SV.Data;
 using KM.SV.Workflows;
 using TrinityFileSystem = KM.Formats.SV.Trinity.FileSystem;
 using Xunit;
@@ -13,6 +14,13 @@ namespace KM.Integration.Tests.SV;
 
 public sealed class SvCacheManagerTests
 {
+    [Fact]
+    public void WarmupIncludesStaticEncounterPayloads()
+    {
+        Assert.Contains(SvDataPaths.FixedSymbolTableArray, SvCacheManager.WarmupVirtualPaths);
+        Assert.Contains(SvDataPaths.EventBattlePokemonArray, SvCacheManager.WarmupVirtualPaths);
+    }
+
     [Fact]
     public void BalancedWarmupWritesMetadataAndClearPreservesActiveProject()
     {
