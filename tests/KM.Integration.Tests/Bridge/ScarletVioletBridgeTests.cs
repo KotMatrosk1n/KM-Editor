@@ -28,6 +28,7 @@ using KM.Integration.Tests.Tools;
 using KM.Formats.SV.Placement;
 using KM.Formats.SwSh;
 using KM.Tools.Bridge;
+using Trinity = pkNX.Structures.FlatBuffers.SV.Trinity;
 using Xunit;
 
 namespace KM.Integration.Tests.Bridge;
@@ -62,6 +63,16 @@ public sealed class ScarletVioletBridgeTests
         SvDataPaths.TeraRaidEnemyDelivery,
     ];
 
+    private static readonly string[] VisibleItemScenePaths =
+    [
+        SvDataPaths.VisibleItemScenePaldeaScarlet,
+        SvDataPaths.VisibleItemScenePaldeaViolet,
+        SvDataPaths.VisibleItemSceneKitakamiScarlet,
+        SvDataPaths.VisibleItemSceneKitakamiViolet,
+        SvDataPaths.VisibleItemSceneBlueberryScarlet,
+        SvDataPaths.VisibleItemSceneBlueberryViolet,
+    ];
+
     public static IEnumerable<object[]> ScarletVioletGames()
     {
         yield return [ProjectGameDto.Scarlet, ScarletTitleId];
@@ -84,6 +95,10 @@ public sealed class ScarletVioletBridgeTests
         AssertSuccess(initial);
         Assert.Equal(SvCacheModeDto.Balanced, initial.Payload!.Status.Settings.Mode);
         Assert.True(initial.Payload.Status.WarmupTotal > 0);
+        foreach (var scenePath in VisibleItemScenePaths)
+        {
+            Assert.Contains(scenePath, SvCacheManager.WarmupVirtualPaths);
+        }
 
         var updated = Dispatch<SvCacheStatusResponse>(
             dispatcher,
@@ -1544,6 +1559,51 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletPlacementLoadsVisibleItemScenePoints(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var placement = Dispatch<LoadPlacementWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(paths),
+            "request-sv-placement-visible-items-load");
+
+        AssertSuccess(placement);
+        Assert.NotNull(placement.Payload!.Workflow.Categories);
+        Assert.Equal(1, placement.Payload.Workflow.Categories.Single(category => category.Id == "visibleItems").ObjectCount);
+        var visibleItem = Assert.Single(
+            placement.Payload.Workflow.Objects,
+            entry => entry.CategoryId == "visibleItems");
+        Assert.Equal("VisibleItemScenePoint", visibleItem.ObjectType);
+        Assert.Equal("Visible Items", visibleItem.CategoryLabel);
+        Assert.Equal("Visible Items - Paldea", visibleItem.Map);
+        Assert.Equal((uint)5, visibleItem.ItemId);
+        Assert.Equal("TM100", visibleItem.ItemName);
+        Assert.Equal("5", visibleItem.ItemHash);
+        Assert.Equal(3, visibleItem.Quantity);
+        Assert.Equal(12.5, visibleItem.X);
+        Assert.Equal(20, visibleItem.Y);
+        Assert.Equal(-7.25, visibleItem.Z);
+        Assert.Equal(1.5, visibleItem.RotationY);
+        Assert.Equal("itemball_test_1", visibleItem.ScriptId);
+
+        var visibleFields = visibleItem.Fields;
+        Assert.NotNull(visibleFields);
+        Assert.Equal("itemball_test_1", visibleFields!.Single(field => field.Field == "point.name").DisplayValue);
+        Assert.Equal("event_category_item", visibleFields.Single(field => field.Field == "visible.pointType").DisplayValue);
+        Assert.Equal("5 TM100", visibleFields.Single(field => field.Field == "visible.itemId").DisplayValue);
+        Assert.Equal("3", visibleFields.Single(field => field.Field == "visible.quantity").DisplayValue);
+        Assert.All(visibleFields, field => Assert.True(field.IsReadOnly, field.Field));
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletPokemonBaseExperienceAndYieldButtonsUsePersonalTableSemantics(
         ProjectGameDto game,
         ulong titleId)
@@ -1670,6 +1730,7 @@ public sealed class ScarletVioletBridgeTests
                     SvDataPaths.EventAddPokemonArray,
                     SvDataPaths.EventTradeListArray,
                     SvDataPaths.EventTradePokemonArray,
+                    .. VisibleItemScenePaths,
                     .. TeraRaidEnemyPaths,
                     SvDataPaths.TeraRaidFixedRewardItemArray,
                     SvDataPaths.TeraRaidLotteryRewardItemArray,
@@ -1698,6 +1759,12 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(temp, SvDataPaths.EventTradePokemonArray, CreateEventTradePokemonArray());
         WriteSvOutput(temp, SvDataPaths.FixedSymbolTableArray, CreateFixedSymbolTableArray());
         WriteSvOutput(temp, SvDataPaths.EventBattlePokemonArray, CreateEventBattlePokemonArray());
+        WriteSvOutput(temp, SvDataPaths.VisibleItemScenePaldeaScarlet, CreateVisibleItemScene(includeItem: true));
+        WriteSvOutput(temp, SvDataPaths.VisibleItemScenePaldeaViolet, CreateVisibleItemScene(includeItem: true));
+        WriteSvOutput(temp, SvDataPaths.VisibleItemSceneKitakamiScarlet, CreateVisibleItemScene(includeItem: false));
+        WriteSvOutput(temp, SvDataPaths.VisibleItemSceneKitakamiViolet, CreateVisibleItemScene(includeItem: false));
+        WriteSvOutput(temp, SvDataPaths.VisibleItemSceneBlueberryScarlet, CreateVisibleItemScene(includeItem: false));
+        WriteSvOutput(temp, SvDataPaths.VisibleItemSceneBlueberryViolet, CreateVisibleItemScene(includeItem: false));
         WriteSvOutput(temp, SvDataPaths.HiddenItemDataTableArray, CreateHiddenItemDataTableArray());
         WriteSvOutput(temp, SvDataPaths.RummagingItemDataTableArray, CreateRummagingItemDataTableArray());
         WriteTeraRaidFixtures(temp);
@@ -2855,6 +2922,130 @@ public sealed class ScarletVioletBridgeTests
         global::EncountPokeData.AddEnabletable(builder, global::EnableTable.CreateEnableTable(builder, true, false, false, false, false));
         global::EncountPokeData.AddBringItem(builder, global::BringItem.CreateBringItem(builder, (global::ItemID)0, BringRate: 0));
         return global::EncountPokeData.EndEncountPokeData(builder);
+    }
+
+    private static byte[] CreateVisibleItemScene(bool includeItem)
+    {
+        var entries = includeItem
+            ? [CreateVisibleItemSceneEntry()]
+            : Array.Empty<Trinity.TrinitySceneObjectTemplateEntryT>();
+
+        return new Trinity.TrinitySceneObjectTemplateT
+        {
+            ObjectTemplateName = "world_item",
+            ObjectTemplateExtra = string.Empty,
+            Objects = [.. entries],
+            Field05 = [],
+        }.SerializeToBinary();
+    }
+
+    private static Trinity.TrinitySceneObjectTemplateEntryT CreateVisibleItemSceneEntry()
+    {
+        var sceneObject = new Trinity.TrinitySceneObjectT
+        {
+            ObjectName = "itemball_test_1",
+            ObjectPosition = new Trinity.TrinitySceneObjectPositionT
+            {
+                Field00 = PackedVec3f(1, 1, 1),
+                Field01 = PackedVec3f(0, 1.5f, 0),
+                Field02 = PackedVec3f(12.5f, 20, -7.25f),
+            },
+            Field04 = string.Empty,
+            Field07 = string.Empty,
+            Field08 = [],
+        }.SerializeToBinary();
+
+        var templateData = SerializeObjectTemplateData(new Trinity.TrinitySceneObjectTemplateDataT
+        {
+            ObjectTemplateName = "itemball_test_1",
+            ObjectTemplateExtra = string.Empty,
+            ObjectTemplatePath = "obj_template/parts/event/event_item_ball_/event_item_ball.trsot",
+            Type = "trinity_SceneObject",
+            Data = [.. sceneObject],
+        });
+
+        var itemInfo = new Trinity.TrinityPropertySheetObjectT
+        {
+            Fields =
+            [
+                PropertySheetField("itemNo", UInt64Property(5)),
+                PropertySheetField("num", UInt64Property(3)),
+            ],
+        };
+
+        var propertySheet = new Trinity.TrinityPropertySheetT
+        {
+            Name = "event_category_item",
+            Extra = string.Empty,
+            Properties =
+            [
+                new Trinity.TrinityPropertySheetObjectT
+                {
+                    Fields =
+                    [
+                        PropertySheetField("itemInfo", ObjectProperty(itemInfo)),
+                    ],
+                },
+            ],
+        }.SerializeToBinary();
+
+        return new Trinity.TrinitySceneObjectTemplateEntryT
+        {
+            Type = "trinity_ObjectTemplate",
+            Data = [.. templateData],
+            SubObjects =
+            [
+                new Trinity.TrinitySceneObjectTemplateEntryT
+                {
+                    Type = "trinity_PropertySheet",
+                    Data = [.. propertySheet],
+                    SubObjects = [],
+                },
+            ],
+        };
+    }
+
+    private static byte[] SerializeObjectTemplateData(Trinity.TrinitySceneObjectTemplateDataT data)
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var root = Trinity.TrinitySceneObjectTemplateData.Pack(builder, data);
+        builder.Finish(root.Value);
+        return builder.SizedByteArray();
+    }
+
+    private static Trinity.TrinityPropertySheetFieldT PropertySheetField(
+        string name,
+        Trinity.TrinityPropertySheetValueUnion data)
+    {
+        return new Trinity.TrinityPropertySheetFieldT
+        {
+            Name = name,
+            Data = data,
+        };
+    }
+
+    private static Trinity.TrinityPropertySheetValueUnion UInt64Property(ulong value)
+    {
+        return Trinity.TrinityPropertySheetValueUnion.FromTrinityPropertySheetField1(
+            new Trinity.TrinityPropertySheetField1T
+            {
+                Value = value,
+            });
+    }
+
+    private static Trinity.TrinityPropertySheetValueUnion ObjectProperty(Trinity.TrinityPropertySheetObjectT value)
+    {
+        return Trinity.TrinityPropertySheetValueUnion.FromTrinityPropertySheetObject(value);
+    }
+
+    private static pkNX.Structures.FlatBuffers.PackedVec3fT PackedVec3f(float x, float y, float z)
+    {
+        return new pkNX.Structures.FlatBuffers.PackedVec3fT
+        {
+            X = x,
+            Y = y,
+            Z = z,
+        };
     }
 
     private static void WriteSvOutput(TemporaryBridgeProject temp, string relativePath, byte[] contents)

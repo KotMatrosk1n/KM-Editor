@@ -34,6 +34,10 @@ internal sealed class SvPlacementWorkflowService
     public const string PointUseTeraAuraField = "point.useTeraAura";
     public const string PointRainbowAuraField = "point.rainbowAura";
 
+    public const string VisiblePointTypeField = "visible.pointType";
+    public const string VisibleItemIdField = "visible.itemId";
+    public const string VisibleQuantityField = "visible.quantity";
+
     public const string FixedTableKeyField = "fixed.tableKey";
     public const string FixedSpeciesIdField = "fixed.speciesId";
     public const string FixedFormField = "fixed.form";
@@ -125,6 +129,20 @@ internal sealed class SvPlacementWorkflowService
         SvDataPaths.HiddenItemDataTableLcArray,
     ];
 
+    private static readonly IReadOnlyList<string> ScarletVisibleItemScenePaths =
+    [
+        SvDataPaths.VisibleItemScenePaldeaScarlet,
+        SvDataPaths.VisibleItemSceneKitakamiScarlet,
+        SvDataPaths.VisibleItemSceneBlueberryScarlet,
+    ];
+
+    private static readonly IReadOnlyList<string> VioletVisibleItemScenePaths =
+    [
+        SvDataPaths.VisibleItemScenePaldeaViolet,
+        SvDataPaths.VisibleItemSceneKitakamiViolet,
+        SvDataPaths.VisibleItemSceneBlueberryViolet,
+    ];
+
     private readonly SvWorkflowFileSource fileSource;
 
     public SvPlacementWorkflowService(SvWorkflowFileSource? fileSource = null)
@@ -185,6 +203,7 @@ internal sealed class SvPlacementWorkflowService
         }
         else
         {
+            TryLoadVisibleItems(project, labels, objects, sourceFiles, diagnostics);
             TryLoadHiddenItems(project, labels, objects, sourceFiles, diagnostics);
             TryLoadRummaging(project, labels, objects, sourceFiles, diagnostics);
         }
@@ -280,6 +299,34 @@ internal sealed class SvPlacementWorkflowService
         }
     }
 
+    private void TryLoadVisibleItems(
+        OpenedProject project,
+        SvTextLabelLookup labels,
+        ICollection<SvPlacedObjectRecord> objects,
+        ISet<string> sourceFiles,
+        ICollection<ValidationDiagnostic> diagnostics)
+    {
+        foreach (var path in GetVisibleItemScenePaths(project.Paths.SelectedGame))
+        {
+            try
+            {
+                var source = fileSource.Read(project, path);
+                sourceFiles.Add(source.RelativePath);
+                var scenePoints = SvVisibleItemSceneReader.Read(source.Bytes, source.VirtualPath);
+                for (var index = 0; index < scenePoints.Count; index++)
+                {
+                    objects.Add(ToVisibleItemObject(index, scenePoints[index], labels, source));
+                }
+            }
+            catch (Exception exception) when (exception is IOException or InvalidDataException or ArgumentException)
+            {
+                diagnostics.Add(SvWorkflowSupport.Warning(
+                    $"Visible Items scene '{path}' could not be loaded: {exception.Message}",
+                    $"romfs/{path}"));
+            }
+        }
+    }
+
     private void TryLoadHiddenItems(
         OpenedProject project,
         SvTextLabelLookup labels,
@@ -343,6 +390,60 @@ internal sealed class SvPlacementWorkflowService
                 $"Rummaging Points could not be loaded: {exception.Message}",
                 $"romfs/{SvDataPaths.RummagingItemDataTableArray}"));
         }
+    }
+
+    private static SvPlacedObjectRecord ToVisibleItemObject(
+        int index,
+        SvVisibleItemScenePoint point,
+        SvTextLabelLookup labels,
+        SvWorkflowFile source)
+    {
+        var itemName = point.ItemId is { } itemId
+            ? labels.Item(itemId)
+            : point.PropertySheetName;
+        var itemHash = point.ItemId?.ToString(CultureInfo.InvariantCulture) ?? point.PropertySheetName;
+        var label = point.ItemId is { } visibleItemId
+            ? $"{visibleItemId.ToString(CultureInfo.InvariantCulture)} {itemName}"
+            : point.PointName;
+        var fields = new List<SvPlacementFieldValue>
+        {
+            Field(PointNameField, point.PointName, string.IsNullOrWhiteSpace(point.PointName) ? "Scene-only" : point.PointName, isReadOnly: true),
+            Field(VisiblePointTypeField, point.PropertySheetName, string.IsNullOrWhiteSpace(point.PropertySheetName) ? "Scene-only" : point.PropertySheetName, isReadOnly: true),
+            Field(
+                VisibleItemIdField,
+                point.ItemId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+                point.ItemId is { } fieldItemId ? $"{fieldItemId.ToString(CultureInfo.InvariantCulture)} {itemName}" : "Scene-only",
+                isReadOnly: true),
+            Field(VisibleQuantityField, point.Quantity, point.Quantity.ToString(CultureInfo.InvariantCulture), isReadOnly: true),
+            Field(PositionXField, point.X, isReadOnly: true),
+            Field(PositionYField, point.Y, isReadOnly: true),
+            Field(PositionZField, point.Z, isReadOnly: true),
+            Field(RotationYawField, point.RotationY, isReadOnly: true),
+        };
+
+        return new SvPlacedObjectRecord(
+            CreateRecordId(VisibleItemsCategory, source.VirtualPath, index),
+            VisibleItemsCategory,
+            "Visible Items",
+            "VisibleItemScenePoint",
+            label,
+            FormatVisibleItemRegion(source.VirtualPath),
+            source.RelativePath,
+            0,
+            index,
+            null,
+            point.ItemId is { } recordItemId ? (uint)recordItemId : null,
+            itemName,
+            itemHash,
+            point.Quantity,
+            null,
+            point.X,
+            point.Y,
+            point.Z,
+            point.RotationY,
+            point.PointName,
+            fields,
+            ToProvenance(source));
     }
 
     private static SvPlacedObjectRecord ToFixedSymbolObject(
@@ -720,6 +821,9 @@ internal sealed class SvPlacementWorkflowService
             ReadOnly(PointLotteryKeyField, "Tera lottery key", "Scene Placement", "Scene-only lottery link."),
             ReadOnly(PointUseTeraAuraField, "Use Tera aura", "Scene Placement", "Scene-only aura flag."),
             ReadOnly(PointRainbowAuraField, "Rainbow aura", "Scene Placement", "Scene-only aura flag."),
+            ReadOnly(VisiblePointTypeField, "Point type", "Visible Item", "Scene-only visible item property sheet."),
+            ReadOnly(VisibleItemIdField, "Item", "Visible Item", "Scene-only visible item id."),
+            ReadOnly(VisibleQuantityField, "Quantity", "Visible Item", "Scene-only visible item quantity."),
             ReadOnly(FixedTableKeyField, "Pokemon data key", "Fixed Symbol Pokemon", "Primary fixed-symbol table key."),
             Integer(FixedSpeciesIdField, "Species", "Fixed Symbol Pokemon", 0, ushort.MaxValue, speciesOptions),
             Integer(FixedFormField, "Form", "Fixed Symbol Pokemon", short.MinValue, short.MaxValue),
@@ -1033,6 +1137,28 @@ internal sealed class SvPlacementWorkflowService
         where TEnum : struct, Enum
     {
         return SvLabels.EnumName(value);
+    }
+
+    private static IReadOnlyList<string> GetVisibleItemScenePaths(ProjectGame? selectedGame)
+    {
+        return selectedGame == ProjectGame.Violet
+            ? VioletVisibleItemScenePaths
+            : ScarletVisibleItemScenePaths;
+    }
+
+    private static string FormatVisibleItemRegion(string virtualPath)
+    {
+        if (virtualPath.Contains("su1_world_item", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Visible Items - The Teal Mask";
+        }
+
+        if (virtualPath.Contains("su2_world_item", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Visible Items - The Indigo Disk";
+        }
+
+        return "Visible Items - Paldea";
     }
 
     private static string FormatHiddenItemRegion(string virtualPath)

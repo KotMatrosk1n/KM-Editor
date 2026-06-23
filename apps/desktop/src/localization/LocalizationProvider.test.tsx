@@ -411,6 +411,35 @@ describe('LocalizationProvider', () => {
     expect(missingEntries).toEqual([]);
   });
 
+  it('includes Scarlet and Violet visible item placement literals in every language', () => {
+    const localizedResources: Record<string, Record<string, string>> = {
+      en: enResource.literals,
+      de: deResource.literals,
+      es: esResource.literals,
+      fr: frResource.literals,
+      ru: ruResource.literals,
+      uk: ukResource.literals
+    };
+    const requiredLiterals = [
+      'Point type',
+      'Visible Item',
+      'Visible Items - Paldea',
+      'Visible Items - The Teal Mask',
+      'Visible Items - The Indigo Disk',
+      'Scene-only visible item id.',
+      'Scene-only visible item property sheet.',
+      'Scene-only visible item quantity.'
+    ];
+
+    const missingEntries = Object.entries(localizedResources).flatMap(([language, literals]) =>
+      requiredLiterals
+        .filter((literal) => !literals[literal])
+        .map((literal) => `${language}:literal:${literal}`)
+    );
+
+    expect(missingEntries).toEqual([]);
+  });
+
   it('switches language immediately and persists the choice', async () => {
     const user = userEvent.setup();
 

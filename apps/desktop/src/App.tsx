@@ -484,6 +484,11 @@ const sections: Array<{
     icon: Trees
   },
   {
+    id: 'teraRaids',
+    label: 'Tera Raids',
+    icon: Gem
+  },
+  {
     id: 'raidBattles',
     label: 'Raid Battles',
     icon: Shield

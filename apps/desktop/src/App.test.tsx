@@ -512,7 +512,7 @@ describe('App', () => {
       workflows: [
         ['items', 'Items'], ['pokemon', 'Pokemon Data'], ['moves', 'Moves'], ['text', 'Text and Dialogue Map'],
         ['trainers', 'Trainers'], ['encounters', 'Wild Encounters'], ['placement', 'Placement'],
-        ['raidBattles', 'Raid Battles'], ['flagworkSave', 'Flagwork and Save Inspectors'],
+        ['teraRaids', 'Tera Raids'], ['raidBattles', 'Raid Battles'], ['flagworkSave', 'Flagwork and Save Inspectors'],
         ['bagHook', 'Bag Hook'], ['royalCandy', 'Royal Candy Workflows'], ['shinyRate', 'Shiny Rate'], ['typeChart', 'Type Chart'],
         ['spreadsheetImport', 'Dump Importer'], ['randomizer', 'Randomizer'], ['modMerger', 'S/V Mod Merger']
       ].map(([id, label]) => createWorkflowSummary(id, label))
@@ -555,6 +555,7 @@ describe('App', () => {
     expect(
       within(navigation).getByRole('button', { name: 'Wild Encounters' })
     ).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Tera Raids' })).toBeInTheDocument();
     expect(
       within(navigation).queryByRole('button', { name: 'Raid Battles' })
     ).not.toBeInTheDocument();
