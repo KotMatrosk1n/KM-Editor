@@ -27,6 +27,7 @@ import {
   type StartingItemsWorkflow,
   type StaticEncountersWorkflow,
   type SvModMergerWorkflow,
+  type TeraRaidsWorkflow,
   type TextWorkflow,
   type TradePokemonWorkflow,
   type TrainersWorkflow,
@@ -62,7 +63,7 @@ export const workflowNavigationGroups: WorkflowNavigationGroup[] = [
   {
     id: 'encountersPokemonSources',
     label: 'Encounters & Pokemon Sources',
-    sectionIds: ['encounters', 'staticEncounters', 'giftPokemon', 'tradePokemon', 'raidBattles']
+    sectionIds: ['encounters', 'staticEncounters', 'giftPokemon', 'tradePokemon', 'teraRaids', 'raidBattles']
   },
   { id: 'economy', label: 'Economy', sectionIds: ['shops', 'raidRewards', 'raidBonusRewards'] },
   { id: 'tools', label: 'Tools', sectionIds: ['fpsPatch', 'randomizer', 'gameDump', 'spreadsheetImport', 'modMerger'] },
@@ -133,6 +134,7 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'pokemon',
   'trainers',
   'encounters',
+  'teraRaids',
   'giftPokemon',
   'tradePokemon',
   'placement',
@@ -162,6 +164,7 @@ export const sharedStagedEditorSectionIds = new Set<WorkbenchSection>([
   'placement',
   'behavior',
   'encounters',
+  'teraRaids',
   'staticEncounters',
   'giftPokemon',
   'tradePokemon',
@@ -181,6 +184,7 @@ export const sharedStagedEditorDomains = new Set([
   'workflow.placement',
   'workflow.behavior',
   'workflow.encounters',
+  'workflow.teraRaids',
   'workflow.staticEncounters',
   'workflow.giftPokemon',
   'workflow.tradePokemon',
@@ -243,6 +247,7 @@ export type LoadedWorkflowStateBySection = {
   startingItemsWorkflow: StartingItemsWorkflow | null;
   staticEncountersWorkflow: StaticEncountersWorkflow | null;
   svModMergerWorkflow: SvModMergerWorkflow | null;
+  teraRaidsWorkflow: TeraRaidsWorkflow | null;
   textWorkflow: TextWorkflow | null;
   tradePokemonWorkflow: TradePokemonWorkflow | null;
   trainersWorkflow: TrainersWorkflow | null;
@@ -331,6 +336,8 @@ export function getLoadedWorkflowStateForSection(
       return state.pokemonWorkflow !== null;
     case 'raidBattles':
       return state.raidBattlesWorkflow !== null;
+    case 'teraRaids':
+      return state.teraRaidsWorkflow !== null;
     case 'raidBonusRewards':
       return state.raidBonusRewardsWorkflow !== null;
     case 'raidRewards':

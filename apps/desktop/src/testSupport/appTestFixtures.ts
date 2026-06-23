@@ -35,6 +35,7 @@ import {
   type SvModMergerSource,
   type SvModMergerWorkflow,
   type StaticEncountersWorkflow,
+  type TeraRaidsWorkflow,
   type TextWorkflow,
   type TradePokemonWorkflow,
   type TrainersWorkflow,
@@ -2921,6 +2922,13 @@ export function createMockProjectBridge(
     id: 'raidBattles',
     label: 'Raid Battles'
   };
+  const teraRaidsWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Tera raid Pokemon, stars, Tera types, boss settings, rewards, and source provenance.',
+    diagnostics: [],
+    id: 'teraRaids',
+    label: 'Tera Raids'
+  };
   const raidBattlesWorkflow: RaidBattlesWorkflow = {
     diagnostics: [],
     editableFields: [
@@ -3071,6 +3079,214 @@ export function createMockProjectBridge(
         tableIndex: 0
       }
     ]
+  };
+  const teraRaidsWorkflow: TeraRaidsWorkflow = {
+    diagnostics: [],
+    editableFields: [
+      {
+        field: 'species',
+        label: 'Species',
+        maximumValue: 1025,
+        minimumValue: 0,
+        options: [
+          { label: '025 Pikachu', value: 25 },
+          { label: '133 Eevee', value: 133 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'teraType',
+        label: 'Tera type',
+        maximumValue: 18,
+        minimumValue: 0,
+        options: [
+          { label: 'Electric', value: 3 },
+          { label: 'Normal', value: 0 }
+        ],
+        valueKind: 'integer'
+      },
+      {
+        field: 'fixedRewardTable',
+        label: 'Fixed rewards',
+        maximumValue: 0,
+        minimumValue: 0,
+        options: [{ label: '0x1122334455667788', value: 0 }],
+        valueKind: 'integer'
+      },
+      {
+        field: 'lotteryRewardTable',
+        label: 'Lottery rewards',
+        maximumValue: 0,
+        minimumValue: 0,
+        options: [{ label: '0x8877665544332211', value: 0 }],
+        valueKind: 'integer'
+      }
+    ],
+    fixedRewardTables: [
+      {
+        preview: '1 reward: Exp. Candy L',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/world/data/raid/raid_fixed_reward_item/raid_fixed_reward_item_array.bin',
+          sourceLayer: 'base'
+        },
+        recordId: 'fixed:0',
+        rewardItemCount: 1,
+        rewardKind: 'fixed',
+        rewardKindLabel: 'Fixed',
+        rewards: [
+          {
+            category: 0,
+            categoryLabel: 'Items',
+            count: 1,
+            itemId: 3,
+            itemName: 'Exp. Candy L',
+            provenance: {
+              fileState: 'baseOnly',
+              sourceFile: 'romfs/world/data/raid/raid_fixed_reward_item/raid_fixed_reward_item_array.bin',
+              sourceLayer: 'base'
+            },
+            rareItemFlag: null,
+            rate: null,
+            recordId: 'fixed:0:0',
+            rewardKind: 'fixed',
+            rewardKindLabel: 'Fixed',
+            slot: 0,
+            subjectType: 0,
+            subjectTypeLabel: 'Raid host',
+            tableHash: '0x1122334455667788',
+            tableIndex: 0
+          }
+        ],
+        tableHash: '0x1122334455667788',
+        tableIndex: 0
+      }
+    ],
+    lotteryRewardTables: [
+      {
+        preview: '1 reward: Rare Candy',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/world/data/raid/raid_lottery_reward_item/raid_lottery_reward_item_array.bin',
+          sourceLayer: 'base'
+        },
+        recordId: 'lottery:0',
+        rewardItemCount: 1,
+        rewardKind: 'lottery',
+        rewardKindLabel: 'Lottery',
+        rewards: [
+          {
+            category: 0,
+            categoryLabel: 'Items',
+            count: 1,
+            itemId: 50,
+            itemName: 'Rare Candy',
+            provenance: {
+              fileState: 'baseOnly',
+              sourceFile: 'romfs/world/data/raid/raid_lottery_reward_item/raid_lottery_reward_item_array.bin',
+              sourceLayer: 'base'
+            },
+            rareItemFlag: false,
+            rate: 10,
+            recordId: 'lottery:0:0',
+            rewardKind: 'lottery',
+            rewardKindLabel: 'Lottery',
+            slot: 0,
+            subjectType: null,
+            subjectTypeLabel: null,
+            tableHash: '0x8877665544332211',
+            tableIndex: 0
+          }
+        ],
+        tableHash: '0x8877665544332211',
+        tableIndex: 0
+      }
+    ],
+    raids: [
+      {
+        ability: 0,
+        abilityLabel: 'Ability 1',
+        abilityOptions: [
+          { label: 'Ability 1', value: 0 },
+          { label: 'Ability 2', value: 1 }
+        ],
+        ballItem: 'Poke Ball',
+        ballItemId: 4,
+        captureLevel: 75,
+        captureRate: 45,
+        deliveryGroupId: 0,
+        difficulty: 5,
+        doubleActionHp: 50,
+        doubleActionRate: 100,
+        doubleActionTime: 0,
+        fixedRewardPreview: '1 reward: Exp. Candy L',
+        fixedRewardTableHash: '0x1122334455667788',
+        flawlessIvCount: 4,
+        form: 0,
+        gender: 0,
+        genderLabel: 'Random',
+        heldItem: null,
+        heldItemId: 0,
+        heightMode: 0,
+        heightModeLabel: 'Default',
+        heightValue: 0,
+        hpMultiplier: 25,
+        ivSummary: '4 perfect IVs',
+        ivs: {
+          attack: -1,
+          defense: -1,
+          hp: -1,
+          specialAttack: -1,
+          specialDefense: -1,
+          speed: -1
+        },
+        level: 75,
+        lotteryRewardPreview: '1 reward: Rare Candy',
+        lotteryRewardTableHash: '0x8877665544332211',
+        moveMode: 0,
+        moveModeLabel: 'Default moves',
+        moves: [
+          { move: 'Thunder Shock', moveId: 84, pointUps: 0, slot: 1 },
+          { move: 'Quick Attack', moveId: 98, pointUps: 0, slot: 2 }
+        ],
+        nature: 0,
+        natureLabel: 'Hardy',
+        provenance: {
+          fileState: 'baseOnly',
+          sourceFile: 'romfs/world/data/raid/raid_enemy_05/raid_enemy_05_array.bin',
+          sourceLayer: 'base'
+        },
+        raidNo: 0,
+        recordId: 'raid:paldea:0',
+        region: 'Paldea',
+        scaleMode: 0,
+        scaleModeLabel: 'Default',
+        scaleValue: 0,
+        shieldTriggerHp: 50,
+        shieldTriggerTime: 0,
+        shinyLock: 1,
+        shinyLockLabel: 'Not Shiny',
+        spawnRate: 100,
+        species: 'Pikachu',
+        speciesId: 25,
+        starLabel: '5-star',
+        starRank: 5,
+        teraType: 3,
+        teraTypeLabel: 'Electric',
+        version: 0,
+        versionLabel: 'Both',
+        weightMode: 0,
+        weightModeLabel: 'Default',
+        weightValue: 0
+      }
+    ],
+    stats: {
+      sourceFileCount: 3,
+      totalRaidCount: 1,
+      totalRewardItemCount: 2,
+      totalRewardTableCount: 2
+    },
+    summary: teraRaidsWorkflowSummary
   };
   const raidRewardsWorkflow: RaidRewardsWorkflow = {
     diagnostics: [],
@@ -4528,6 +4744,7 @@ export function createMockProjectBridge(
           dynamaxAdventuresWorkflowSummary,
           shopsWorkflowSummary,
           encountersWorkflowSummary,
+          teraRaidsWorkflowSummary,
           raidBattlesWorkflowSummary,
           raidRewardsWorkflowSummary,
           raidBonusRewardsWorkflowSummary,
@@ -5593,6 +5810,10 @@ export function createMockProjectBridge(
     loadRaidBattlesWorkflow: () =>
       Promise.resolve({
         workflow: raidBattlesWorkflow
+      }),
+    loadTeraRaidsWorkflow: () =>
+      Promise.resolve({
+        workflow: teraRaidsWorkflow
       }),
     loadRaidRewardsWorkflow: () =>
       Promise.resolve({
@@ -6718,6 +6939,52 @@ export function createMockProjectBridge(
               : table
           )
         }
+      }),
+    updateTeraRaidField: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: true,
+          pendingEdits: [
+            {
+              domain: 'workflow.teraRaids',
+              field: request.field,
+              newValue: request.value,
+              recordId: request.recordId,
+              sources: [
+                {
+                  layer: 'base',
+                  relativePath: 'romfs/world/data/raid/raid_enemy_05/raid_enemy_05_array.bin'
+                }
+              ],
+              summary: `Set Tera Raid ${request.recordId} ${request.field} to ${request.value}.`
+            }
+          ],
+          sessionId: 'session-1'
+        },
+        workflow: teraRaidsWorkflow
+      }),
+    updateTeraRaidFields: (request) =>
+      Promise.resolve({
+        diagnostics: [],
+        session: {
+          hasPendingChanges: request.updates.length > 0,
+          pendingEdits: request.updates.map((update) => ({
+            domain: 'workflow.teraRaids',
+            field: update.field,
+            newValue: update.value,
+            recordId: update.recordId,
+            sources: [
+              {
+                layer: 'base' as const,
+                relativePath: 'romfs/world/data/raid/raid_enemy_05/raid_enemy_05_array.bin'
+              }
+            ],
+            summary: `Set Tera Raid ${update.recordId} ${update.field} to ${update.value}.`
+          })),
+          sessionId: 'session-1'
+        },
+        workflow: teraRaidsWorkflow
       }),
     updateRaidRewardField: (request) =>
       Promise.resolve({

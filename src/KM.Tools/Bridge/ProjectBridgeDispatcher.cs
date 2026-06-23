@@ -277,6 +277,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateEncounterSlotFields => DispatchUpdateEncounterSlotFields(requestJson),
                 KmCommandNames.LoadRaidBattlesWorkflow => DispatchLoadRaidBattlesWorkflow(requestJson),
                 KmCommandNames.UpdateRaidBattleSlotField => DispatchUpdateRaidBattleSlotField(requestJson),
+                KmCommandNames.LoadTeraRaidsWorkflow => DispatchLoadTeraRaidsWorkflow(requestJson),
+                KmCommandNames.UpdateTeraRaidField => DispatchUpdateTeraRaidField(requestJson),
+                KmCommandNames.UpdateTeraRaidFields => DispatchUpdateTeraRaidFields(requestJson),
                 KmCommandNames.LoadRaidRewardsWorkflow => DispatchLoadRaidRewardsWorkflow(requestJson),
                 KmCommandNames.UpdateRaidRewardField => DispatchUpdateRaidRewardField(requestJson),
                 KmCommandNames.LoadRaidBonusRewardsWorkflow => DispatchLoadRaidBonusRewardsWorkflow(requestJson),
@@ -1054,6 +1057,50 @@ public sealed class ProjectBridgeDispatcher
             request.Payload.Field,
             request.Payload.Value);
         var response = SwShBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchLoadTeraRaidsWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadTeraRaidsWorkflowRequest>(requestJson);
+        var workflow = svWorkflowService.LoadTeraRaids(ProjectBridgeMapper.ToCore(request.Payload.Paths));
+        var response = SvBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateTeraRaidField(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateTeraRaidFieldRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var result = svWorkflowService.UpdateTeraRaidField(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            session,
+            request.Payload.RecordId,
+            request.Payload.Field,
+            request.Payload.Value);
+        var response = SvBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateTeraRaidFields(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateTeraRaidFieldsRequest>(requestJson);
+        var session = request.Payload.Session is null
+            ? null
+            : EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        var updates = request.Payload.Updates
+            .Select(update => new SvTeraRaidFieldUpdate(update.RecordId, update.Field, update.Value))
+            .ToArray();
+        var response = SvBridgeMapper.ToTeraRaidFieldsDto(
+            svWorkflowService.UpdateTeraRaidFields(
+                ProjectBridgeMapper.ToCore(request.Payload.Paths),
+                session,
+                updates));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2617,6 +2664,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateGiftPokemonFields or
             KmCommandNames.UpdateTradePokemonFields or
             KmCommandNames.UpdateEncounterSlotFields or
+            KmCommandNames.LoadTeraRaidsWorkflow or
+            KmCommandNames.UpdateTeraRaidField or
+            KmCommandNames.UpdateTeraRaidFields or
             KmCommandNames.UpdatePlacementObjectFields or
             KmCommandNames.StageTypeChartUninstall or
             KmCommandNames.LoadHyperspaceBypassWorkflow or

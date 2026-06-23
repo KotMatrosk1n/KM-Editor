@@ -33,6 +33,7 @@ import {
   type StartingItemsWorkflow,
   type StaticEncountersWorkflow,
   type ShopsWorkflow,
+  type TeraRaidsWorkflow,
   type TextWorkflow,
   type TypeChartWorkflow,
   type TradePokemonWorkflow,
@@ -58,6 +59,7 @@ export type WorkbenchSection =
   | 'dynamaxAdventures'
   | 'shops'
   | 'encounters'
+  | 'teraRaids'
   | 'raidBattles'
   | 'raidRewards'
   | 'raidBonusRewards'
@@ -137,6 +139,8 @@ type WorkbenchState = {
   pokemonSearchText: string;
   pokemonWorkflow: PokemonWorkflow | null;
   projectStatus: 'idle' | 'validating' | 'opening' | 'open';
+  teraRaidSearchText: string;
+  teraRaidsWorkflow: TeraRaidsWorkflow | null;
   raidBattleSearchText: string;
   raidBattlesWorkflow: RaidBattlesWorkflow | null;
   raidRewardSearchText: string;
@@ -173,6 +177,7 @@ type WorkbenchState = {
   selectedMoveId: number | null;
   selectedPokemonPersonalId: number | null;
   selectedEncounterTableId: string | null;
+  selectedTeraRaidRecordId: string | null;
   selectedRaidBattleTableId: string | null;
   selectedShopId: string | null;
   selectedTextKey: string | null;
@@ -233,6 +238,8 @@ type WorkbenchState = {
   setPokemonWorkflow: (pokemonWorkflow: PokemonWorkflow) => void;
   setProjectHealth: (health: ProjectHealth) => void;
   setProjectStatus: (projectStatus: WorkbenchState['projectStatus']) => void;
+  setTeraRaidSearchText: (teraRaidSearchText: string) => void;
+  setTeraRaidsWorkflow: (teraRaidsWorkflow: TeraRaidsWorkflow) => void;
   setRaidBattleSearchText: (raidBattleSearchText: string) => void;
   setRaidBattlesWorkflow: (raidBattlesWorkflow: RaidBattlesWorkflow) => void;
   setRaidRewardSearchText: (raidRewardSearchText: string) => void;
@@ -273,6 +280,7 @@ type WorkbenchState = {
   setSelectedMoveId: (selectedMoveId: number | null) => void;
   setSelectedPokemonPersonalId: (selectedPokemonPersonalId: number | null) => void;
   setSelectedEncounterTableId: (selectedEncounterTableId: string | null) => void;
+  setSelectedTeraRaidRecordId: (selectedTeraRaidRecordId: string | null) => void;
   setSelectedRaidBattleTableId: (selectedRaidBattleTableId: string | null) => void;
   setSelectedShopId: (selectedShopId: string | null) => void;
   setSelectedTextKey: (selectedTextKey: string | null) => void;
@@ -363,6 +371,8 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     pokemonSearchText: '',
     pokemonWorkflow: null,
     projectStatus: 'idle',
+    teraRaidSearchText: '',
+    teraRaidsWorkflow: null,
     raidBattleSearchText: '',
     raidBattlesWorkflow: null,
     raidRewardSearchText: '',
@@ -396,6 +406,7 @@ function createProjectSessionResetState(): Partial<WorkbenchState> {
     selectedPokemonPersonalId: null,
     selectedBehaviorEntryId: null,
     selectedPlacementObjectId: null,
+    selectedTeraRaidRecordId: null,
     selectedRaidBattleTableId: null,
     selectedRaidRewardTableId: null,
     selectedRaidBonusRewardTableId: null,
@@ -456,6 +467,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   pokemonSearchText: '',
   pokemonWorkflow: null,
   projectStatus: 'idle',
+  teraRaidSearchText: '',
+  teraRaidsWorkflow: null,
   raidBattleSearchText: '',
   raidBattlesWorkflow: null,
   raidRewardSearchText: '',
@@ -491,6 +504,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   selectedPokemonPersonalId: null,
   selectedSaveBlockId: null,
   selectedEncounterTableId: null,
+  selectedTeraRaidRecordId: null,
   selectedRaidBattleTableId: null,
   selectedRaidBonusRewardTableId: null,
   selectedShopId: null,
@@ -544,6 +558,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setBehaviorSearchText: (behaviorSearchText) => set({ behaviorSearchText }),
   setPlacementSearchText: (placementSearchText) => set({ placementSearchText }),
   setPokemonSearchText: (pokemonSearchText) => set({ pokemonSearchText }),
+  setTeraRaidSearchText: (teraRaidSearchText) => set({ teraRaidSearchText }),
   setRaidBattleSearchText: (raidBattleSearchText) => set({ raidBattleSearchText }),
   setRaidRewardSearchText: (raidRewardSearchText) => set({ raidRewardSearchText }),
   setRaidBonusRewardSearchText: (raidBonusRewardSearchText) =>
@@ -784,6 +799,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
       projectStatus: 'idle'
     })),
   setProjectStatus: (projectStatus) => set({ projectStatus }),
+  setSelectedTeraRaidRecordId: (selectedTeraRaidRecordId) =>
+    set({ selectedTeraRaidRecordId }),
   setSelectedRaidBattleTableId: (selectedRaidBattleTableId) =>
     set({ selectedRaidBattleTableId }),
   setSelectedRaidRewardTableId: (selectedRaidRewardTableId) =>
@@ -885,6 +902,21 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
         encounterSearchText: '',
         encountersWorkflow,
         selectedEncounterTableId
+      };
+    }),
+  setTeraRaidsWorkflow: (teraRaidsWorkflow) =>
+    set((state) => {
+      const selectedTeraRaidRecordId = teraRaidsWorkflow.raids.some(
+        (raid) => raid.recordId === state.selectedTeraRaidRecordId
+      )
+        ? state.selectedTeraRaidRecordId
+        : (teraRaidsWorkflow.raids[0]?.recordId ?? null);
+
+      return {
+        activeSection: resolveWorkflowLoadSection(state.activeSection, 'teraRaids'),
+        selectedTeraRaidRecordId,
+        teraRaidSearchText: '',
+        teraRaidsWorkflow
       };
     }),
   setRaidBattlesWorkflow: (raidBattlesWorkflow) =>
