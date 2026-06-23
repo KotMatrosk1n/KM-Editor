@@ -2,6 +2,7 @@
 
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.FashionUnlock;
 using KM.Api.Gifts;
 using KM.Api.HyperspaceBypass;
 using KM.Api.Items;
@@ -19,6 +20,7 @@ using KM.Api.TypeChart;
 using KM.Api.Workflows;
 using KM.Core.Projects;
 using KM.SV.Encounters;
+using KM.SV.FashionUnlock;
 using KM.SV.Gifts;
 using KM.SV.HyperspaceBypass;
 using KM.SV.Items;
@@ -360,6 +362,13 @@ public static class SvBridgeMapper
         return new LoadHyperspaceBypassWorkflowResponse(ToHyperspaceBypassWorkflowDto(workflow));
     }
 
+    public static LoadFashionUnlockWorkflowResponse ToDto(SvFashionUnlockWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadFashionUnlockWorkflowResponse(ToFashionUnlockWorkflowDto(workflow));
+    }
+
     public static LoadTypeChartWorkflowResponse ToDto(SvTypeChartWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -398,6 +407,17 @@ public static class SvBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static StageFashionUnlockInstallResponse ToFashionUnlockInstallDto(
+        SvFashionUnlockEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageFashionUnlockInstallResponse(
+            ToFashionUnlockWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static StageHyperspaceBypassUninstallResponse ToHyperspaceBypassUninstallDto(
         SvHyperspaceBypassEditResult result)
     {
@@ -405,6 +425,17 @@ public static class SvBridgeMapper
 
         return new StageHyperspaceBypassUninstallResponse(
             ToHyperspaceBypassWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageFashionUnlockUninstallResponse ToFashionUnlockUninstallDto(
+        SvFashionUnlockEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageFashionUnlockUninstallResponse(
+            ToFashionUnlockWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -613,6 +644,28 @@ public static class SvBridgeMapper
             workflow.ReservedRegions.Select(ToDto).ToArray(),
             ToDto(workflow.Provenance),
             new HyperspaceBypassWorkflowStatsDto(
+                workflow.Stats.ReservedMainTextRegionCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static FashionUnlockWorkflowDto ToFashionUnlockWorkflowDto(
+        SvFashionUnlockWorkflow workflow)
+    {
+        return new FashionUnlockWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            "sv",
+            workflow.BuildId,
+            string.Empty,
+            string.Empty,
+            workflow.OwnershipCheckOffsetHex,
+            workflow.StubKind,
+            ToProjectGameDto(workflow.DetectedGame),
+            workflow.ReservedRegions.Select(ToDto).ToArray(),
+            ToDto(workflow.Provenance),
+            new FashionUnlockWorkflowStatsDto(
                 workflow.Stats.ReservedMainTextRegionCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
@@ -1618,6 +1671,17 @@ public static class SvBridgeMapper
             region.Rule);
     }
 
+    private static FashionUnlockReservedRegionDto ToDto(SvFashionUnlockReservedRegion region)
+    {
+        return new FashionUnlockReservedRegionDto(
+            region.RegionId,
+            region.Label,
+            region.OffsetLabel,
+            region.StartOffset,
+            region.Length,
+            region.Rule);
+    }
+
     private static TypeChartSourceRecordDto ToDto(SvTypeChartSourceRecord source)
     {
         return new TypeChartSourceRecordDto(
@@ -1665,6 +1729,14 @@ public static class SvBridgeMapper
     private static HyperspaceBypassProvenanceDto ToDto(SvHyperspaceBypassProvenance provenance)
     {
         return new HyperspaceBypassProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static FashionUnlockProvenanceDto ToDto(SvFashionUnlockProvenance provenance)
+    {
+        return new FashionUnlockProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

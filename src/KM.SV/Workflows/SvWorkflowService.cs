@@ -5,6 +5,7 @@ using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.SV.Encounters;
+using KM.SV.FashionUnlock;
 using KM.SV.Gifts;
 using KM.SV.HyperspaceBypass;
 using KM.SV.Items;
@@ -35,6 +36,7 @@ public sealed class SvWorkflowService
     private readonly SvTradePokemonWorkflowService tradePokemonWorkflowService;
     private readonly SvPlacementWorkflowService placementWorkflowService;
     private readonly SvTypeChartWorkflowService typeChartWorkflowService;
+    private readonly SvFashionUnlockWorkflowService fashionUnlockWorkflowService;
     private readonly SvHyperspaceBypassWorkflowService hyperspaceBypassWorkflowService;
     private readonly SvModMergerWorkflowService modMergerWorkflowService;
     private readonly SvItemsEditSessionService itemsEditSessionService;
@@ -48,6 +50,7 @@ public sealed class SvWorkflowService
     private readonly SvTradePokemonEditSessionService tradePokemonEditSessionService;
     private readonly SvPlacementEditSessionService placementEditSessionService;
     private readonly SvTypeChartEditSessionService typeChartEditSessionService;
+    private readonly SvFashionUnlockEditSessionService fashionUnlockEditSessionService;
     private readonly SvHyperspaceBypassEditSessionService hyperspaceBypassEditSessionService;
 
     public SvWorkflowService(
@@ -68,6 +71,7 @@ public sealed class SvWorkflowService
         giftPokemonWorkflowService = new SvGiftPokemonWorkflowService(fileSource);
         tradePokemonWorkflowService = new SvTradePokemonWorkflowService(fileSource);
         typeChartWorkflowService = new SvTypeChartWorkflowService();
+        fashionUnlockWorkflowService = new SvFashionUnlockWorkflowService();
         hyperspaceBypassWorkflowService = new SvHyperspaceBypassWorkflowService();
         modMergerWorkflowService = new SvModMergerWorkflowService(this.projectWorkspaceService);
         itemsEditSessionService = new SvItemsEditSessionService(this.projectWorkspaceService, fileSource, itemsWorkflowService);
@@ -87,6 +91,9 @@ public sealed class SvWorkflowService
         typeChartEditSessionService = new SvTypeChartEditSessionService(
             this.projectWorkspaceService,
             typeChartWorkflowService);
+        fashionUnlockEditSessionService = new SvFashionUnlockEditSessionService(
+            this.projectWorkspaceService,
+            fashionUnlockWorkflowService);
         hyperspaceBypassEditSessionService = new SvHyperspaceBypassEditSessionService(
             this.projectWorkspaceService,
             hyperspaceBypassWorkflowService);
@@ -139,6 +146,7 @@ public sealed class SvWorkflowService
             tradePokemonWorkflowService.CreateSummary(project),
             placementWorkflowService.CreateSummary(project),
             typeChartWorkflowService.CreateSummary(project),
+            fashionUnlockWorkflowService.CreateSummary(project),
             hyperspaceBypassWorkflowService.CreateSummary(project),
             modMergerWorkflowService.CreateSummary(project),
         ]);
@@ -230,6 +238,14 @@ public sealed class SvWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return hyperspaceBypassWorkflowService.Load(project);
+    }
+
+    public SvFashionUnlockWorkflow LoadFashionUnlock(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return fashionUnlockWorkflowService.Load(project);
     }
 
     public SvTypeChartWorkflow LoadTypeChart(ProjectPaths paths)
@@ -488,6 +504,13 @@ public sealed class SvWorkflowService
         return hyperspaceBypassEditSessionService.StageInstall(paths, session);
     }
 
+    public SvFashionUnlockEditResult StageFashionUnlockInstall(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        return fashionUnlockEditSessionService.StageInstall(paths, session);
+    }
+
     public SvTypeChartEditResult StageTypeChart(
         ProjectPaths paths,
         IReadOnlyList<int> values,
@@ -508,6 +531,13 @@ public sealed class SvWorkflowService
         EditSession? session)
     {
         return hyperspaceBypassEditSessionService.StageUninstall(paths, session);
+    }
+
+    public SvFashionUnlockEditResult StageFashionUnlockUninstall(
+        ProjectPaths paths,
+        EditSession? session)
+    {
+        return fashionUnlockEditSessionService.StageUninstall(paths, session);
     }
 
     public SvEditSessionValidation ValidateEditSession(ProjectPaths paths, EditSession session)
@@ -559,6 +589,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Placement => placementEditSessionService.Validate(paths, session),
             SvEditSessionDomain.TypeChart => typeChartEditSessionService.Validate(paths, session),
+            SvEditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.Validate(paths, session),
             SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.Validate(paths, session),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
             _ => itemsEditSessionService.Validate(paths, session),
@@ -584,6 +615,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.TypeChart => typeChartEditSessionService.CreateChangePlan(paths, session, outputMode),
+            SvEditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.CreateChangePlan(paths, session, outputMode),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
             _ => itemsEditSessionService.CreateChangePlan(paths, session, outputMode),
@@ -610,6 +642,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.TradePokemon => tradePokemonEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Placement => placementEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.TypeChart => typeChartEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
+            SvEditSessionDomain.FashionUnlock => fashionUnlockEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.HyperspaceBypass => hyperspaceBypassEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
             SvEditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
             _ => itemsEditSessionService.ApplyChangePlan(paths, session, changePlan, outputMode),
@@ -734,6 +767,7 @@ public sealed class SvWorkflowService
             [SvEditSessionSupport.TradePokemonDomain] => SvEditSessionDomain.TradePokemon,
             [SvEditSessionSupport.PlacementDomain] => SvEditSessionDomain.Placement,
             [SvTypeChartEditSessionService.TypeChartEditDomain] => SvEditSessionDomain.TypeChart,
+            [SvFashionUnlockEditSessionService.FashionUnlockEditDomain] => SvEditSessionDomain.FashionUnlock,
             [SvHyperspaceBypassEditSessionService.HyperspaceBypassEditDomain] => SvEditSessionDomain.HyperspaceBypass,
             _ => SvEditSessionDomain.Mixed,
         };
@@ -768,6 +802,7 @@ public sealed class SvWorkflowService
             SvEditSessionSupport.TradePokemonDomain => SvEditSessionDomain.TradePokemon,
             SvEditSessionSupport.PlacementDomain => SvEditSessionDomain.Placement,
             SvTypeChartEditSessionService.TypeChartEditDomain => SvEditSessionDomain.TypeChart,
+            SvFashionUnlockEditSessionService.FashionUnlockEditDomain => SvEditSessionDomain.FashionUnlock,
             SvHyperspaceBypassEditSessionService.HyperspaceBypassEditDomain => SvEditSessionDomain.HyperspaceBypass,
             null or "" => SvEditSessionDomain.None,
             _ => SvEditSessionDomain.Mixed,
@@ -815,6 +850,7 @@ public sealed class SvWorkflowService
             SvEditSessionDomain.TradePokemon => SvEditSessionSupport.TradePokemonDomain,
             SvEditSessionDomain.Placement => SvEditSessionSupport.PlacementDomain,
             SvEditSessionDomain.TypeChart => SvTypeChartEditSessionService.TypeChartEditDomain,
+            SvEditSessionDomain.FashionUnlock => SvFashionUnlockEditSessionService.FashionUnlockEditDomain,
             _ => string.Empty,
         };
     }
@@ -895,6 +931,7 @@ public sealed class SvWorkflowService
         TradePokemon,
         Placement,
         TypeChart,
+        FashionUnlock,
         HyperspaceBypass,
         Mixed,
     }

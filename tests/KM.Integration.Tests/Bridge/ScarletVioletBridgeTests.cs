@@ -8,6 +8,7 @@ using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
 using KM.Api.Encounters;
+using KM.Api.FashionUnlock;
 using KM.Api.Gifts;
 using KM.Api.HyperspaceBypass;
 using KM.Api.Items;
@@ -28,7 +29,7 @@ using KM.Integration.Tests.Tools;
 using KM.Formats.SV.Placement;
 using KM.Formats.SwSh;
 using KM.Tools.Bridge;
-using Trinity = pkNX.Structures.FlatBuffers.SV.Trinity;
+using Trinity = KM.Formats.SV.Generated.TrinityScene;
 using Xunit;
 
 namespace KM.Integration.Tests.Bridge;
@@ -715,6 +716,221 @@ public sealed class ScarletVioletBridgeTests
 
     [Theory]
     [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletFashionUnlockStagesStandaloneMainAndRejectsTrinityOutput(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        temp.WriteBaseExeFsFile("main", SvFashionUnlockBridgeFixtures.CreateCompatibleMain(game));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var load = Dispatch<LoadFashionUnlockWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadFashionUnlockWorkflow,
+            new LoadFashionUnlockWorkflowRequest(paths),
+            "request-sv-fashion-load");
+        AssertSuccess(load);
+        Assert.Equal("available", load.Payload!.Workflow.InstallStatus);
+        Assert.Equal("sv", load.Payload.Workflow.EditorFamily);
+        Assert.Equal(game, load.Payload.Workflow.DetectedGame);
+        Assert.Equal("main.text+0x00EAE95C", load.Payload.Workflow.OwnershipCheckOffsetHex);
+        Assert.Equal(string.Empty, load.Payload.Workflow.DirectGetterOffsetHex);
+        Assert.Equal(string.Empty, load.Payload.Workflow.MappedGetterOffsetHex);
+        Assert.Contains(load.Payload.Workflow.ReservedRegions, region => region.RegionId == "fashion-unlock-sv-dressup-ownership-check");
+
+        var stage = Dispatch<StageFashionUnlockInstallResponse>(
+            dispatcher,
+            KmCommandNames.StageFashionUnlockInstall,
+            new StageFashionUnlockInstallRequest(paths, Session: null),
+            "request-sv-fashion-stage");
+        AssertSuccess(stage);
+        Assert.Single(stage.Payload!.Session.PendingEdits);
+        Assert.Equal("workflow.fashionUnlock", stage.Payload.Session.PendingEdits[0].Domain);
+        Assert.DoesNotContain(stage.Payload.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var validation = Dispatch<ValidateEditSessionResponse>(
+            dispatcher,
+            KmCommandNames.ValidateEditSession,
+            new ValidateEditSessionRequest(paths, stage.Payload.Session),
+            "request-sv-fashion-validate");
+        AssertSuccess(validation);
+        Assert.True(validation.Payload!.IsValid);
+
+        foreach (var outputMode in new[]
+        {
+            ChangePlanOutputModeDto.TrinityModManager,
+            ChangePlanOutputModeDto.TrinityBypass,
+        })
+        {
+            var romFsPlan = Dispatch<CreateChangePlanResponse>(
+                dispatcher,
+                KmCommandNames.CreateChangePlan,
+                new CreateChangePlanRequest(paths, stage.Payload.Session, outputMode),
+                $"request-sv-fashion-{outputMode}-plan");
+            AssertSuccess(romFsPlan);
+            Assert.False(romFsPlan.Payload!.ChangePlan.CanApply);
+            Assert.Empty(romFsPlan.Payload.ChangePlan.Writes);
+            Assert.Contains(
+                romFsPlan.Payload.ChangePlan.Diagnostics,
+                diagnostic => diagnostic.Message.Contains("outside Scarlet/Violet RomFS output modes", StringComparison.Ordinal));
+        }
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, stage.Payload.Session),
+            "request-sv-fashion-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var write = Assert.Single(plan.Payload.ChangePlan.Writes);
+        Assert.Equal("exefs/main", write.TargetRelativePath);
+
+        var baseMainPath = Path.Combine(temp.BaseExeFsPath, "main");
+        var baseMainBytes = File.ReadAllBytes(baseMainPath);
+        Assert.Equal(
+            (SvFashionUnlockBridgeFixtures.VanillaOwnershipCheckEntryFirst, SvFashionUnlockBridgeFixtures.VanillaOwnershipCheckEntrySecond),
+            SvFashionUnlockBridgeFixtures.ReadPatchInstructions(baseMainBytes));
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, stage.Payload.Session, plan.Payload.ChangePlan),
+            "request-sv-fashion-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains("exefs/main", apply.Payload.ApplyResult.WrittenFiles);
+        Assert.Equal(baseMainBytes, File.ReadAllBytes(baseMainPath));
+
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var outputMainBytes = File.ReadAllBytes(outputMainPath);
+        Assert.Equal(
+            (SvFashionUnlockBridgeFixtures.ReturnTrueFirst, SvFashionUnlockBridgeFixtures.ReturnTrueSecond),
+            SvFashionUnlockBridgeFixtures.ReadPatchInstructions(outputMainBytes));
+
+        var installed = Dispatch<LoadFashionUnlockWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadFashionUnlockWorkflow,
+            new LoadFashionUnlockWorkflowRequest(paths),
+            "request-sv-fashion-installed-load");
+        AssertSuccess(installed);
+        Assert.Equal("installed", installed.Payload!.Workflow.InstallStatus);
+        Assert.Equal(ProjectFileLayerDto.Layered, installed.Payload.Workflow.Provenance.SourceLayer);
+
+        var uninstallStage = Dispatch<StageFashionUnlockUninstallResponse>(
+            dispatcher,
+            KmCommandNames.StageFashionUnlockUninstall,
+            new StageFashionUnlockUninstallRequest(paths, Session: null),
+            "request-sv-fashion-uninstall-stage");
+        AssertSuccess(uninstallStage);
+        Assert.Single(uninstallStage.Payload!.Session.PendingEdits);
+        Assert.Equal("workflow.fashionUnlock", uninstallStage.Payload.Session.PendingEdits[0].Domain);
+
+        var uninstallPlan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, uninstallStage.Payload.Session),
+            "request-sv-fashion-uninstall-plan");
+        AssertSuccess(uninstallPlan);
+        Assert.True(uninstallPlan.Payload!.ChangePlan.CanApply);
+
+        var uninstallApply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, uninstallStage.Payload.Session, uninstallPlan.Payload.ChangePlan),
+            "request-sv-fashion-uninstall-apply");
+        AssertSuccess(uninstallApply);
+        Assert.DoesNotContain(uninstallApply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.False(File.Exists(outputMainPath));
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletFashionUnlockUninstallPreservesOtherExeFsEdits(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        temp.WriteBaseExeFsFile("main", SvFashionUnlockBridgeFixtures.CreateCompatibleMain(game));
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var hyperspaceStage = Dispatch<StageHyperspaceBypassInstallResponse>(
+            dispatcher,
+            KmCommandNames.StageHyperspaceBypassInstall,
+            new StageHyperspaceBypassInstallRequest(paths, Session: null),
+            "request-sv-hyperspace-before-fashion-stage");
+        AssertSuccess(hyperspaceStage);
+        var hyperspacePlan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, hyperspaceStage.Payload!.Session),
+            "request-sv-hyperspace-before-fashion-plan");
+        AssertSuccess(hyperspacePlan);
+        var hyperspaceApply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, hyperspaceStage.Payload.Session, hyperspacePlan.Payload!.ChangePlan),
+            "request-sv-hyperspace-before-fashion-apply");
+        AssertSuccess(hyperspaceApply);
+        Assert.DoesNotContain(hyperspaceApply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var fashionStage = Dispatch<StageFashionUnlockInstallResponse>(
+            dispatcher,
+            KmCommandNames.StageFashionUnlockInstall,
+            new StageFashionUnlockInstallRequest(paths, Session: null),
+            "request-sv-fashion-after-hyperspace-stage");
+        AssertSuccess(fashionStage);
+        var fashionPlan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, fashionStage.Payload!.Session),
+            "request-sv-fashion-after-hyperspace-plan");
+        AssertSuccess(fashionPlan);
+        var fashionApply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, fashionStage.Payload.Session, fashionPlan.Payload!.ChangePlan),
+            "request-sv-fashion-after-hyperspace-apply");
+        AssertSuccess(fashionApply);
+        Assert.DoesNotContain(fashionApply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
+        var installedOutput = File.ReadAllBytes(outputMainPath);
+        Assert.Equal(SvHyperspaceBypassBridgeFixtures.BypassBranch, SvHyperspaceBypassBridgeFixtures.ReadPatchInstruction(installedOutput));
+        Assert.Equal(
+            (SvFashionUnlockBridgeFixtures.ReturnTrueFirst, SvFashionUnlockBridgeFixtures.ReturnTrueSecond),
+            SvFashionUnlockBridgeFixtures.ReadPatchInstructions(installedOutput));
+
+        var uninstallStage = Dispatch<StageFashionUnlockUninstallResponse>(
+            dispatcher,
+            KmCommandNames.StageFashionUnlockUninstall,
+            new StageFashionUnlockUninstallRequest(paths, Session: null),
+            "request-sv-fashion-preserve-uninstall-stage");
+        AssertSuccess(uninstallStage);
+        var uninstallPlan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, uninstallStage.Payload!.Session),
+            "request-sv-fashion-preserve-uninstall-plan");
+        AssertSuccess(uninstallPlan);
+        var uninstallApply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, uninstallStage.Payload.Session, uninstallPlan.Payload!.ChangePlan),
+            "request-sv-fashion-preserve-uninstall-apply");
+        AssertSuccess(uninstallApply);
+        Assert.DoesNotContain(uninstallApply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var preservedOutput = File.ReadAllBytes(outputMainPath);
+        Assert.Equal(SvHyperspaceBypassBridgeFixtures.BypassBranch, SvHyperspaceBypassBridgeFixtures.ReadPatchInstruction(preservedOutput));
+        Assert.Equal(
+            (SvFashionUnlockBridgeFixtures.VanillaOwnershipCheckEntryFirst, SvFashionUnlockBridgeFixtures.VanillaOwnershipCheckEntrySecond),
+            SvFashionUnlockBridgeFixtures.ReadPatchInstructions(preservedOutput));
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
     public void ScarletVioletNormalEditorsCanShareOnePendingEditSession(
         ProjectGameDto game,
         ulong titleId)
@@ -993,7 +1209,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "moves", "pokemon", "trainers", "encounters", "teraRaids", "staticEncounters", "giftPokemon", "tradePokemon", "placement", "typeChart", "hyperspaceBypass", "modMerger"],
+            ["items", "moves", "pokemon", "trainers", "encounters", "teraRaids", "staticEncounters", "giftPokemon", "tradePokemon", "placement", "typeChart", "fashionUnlock", "hyperspaceBypass", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
@@ -1006,6 +1222,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trade Pokemon");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Placement");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Type Chart");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Fashion Unlock");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Hyperspace Bypass");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "S/V Mod Merger");
     }
@@ -3038,9 +3255,9 @@ public sealed class ScarletVioletBridgeTests
         return Trinity.TrinityPropertySheetValueUnion.FromTrinityPropertySheetObject(value);
     }
 
-    private static pkNX.Structures.FlatBuffers.PackedVec3fT PackedVec3f(float x, float y, float z)
+    private static Trinity.PackedVec3fT PackedVec3f(float x, float y, float z)
     {
-        return new pkNX.Structures.FlatBuffers.PackedVec3fT
+        return new Trinity.PackedVec3fT
         {
             X = x,
             Y = y,

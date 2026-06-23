@@ -2595,7 +2595,7 @@ export const fashionUnlockReservedRegionSchema = z.strictObject({ label: z.strin
 
 export const fashionUnlockWorkflowStatsSchema = z.strictObject({ reservedMainTextRegionCount: z.number().int().nonnegative(), sourceFileCount: z.number().int().nonnegative() });
 
-export const fashionUnlockWorkflowSchema = z.strictObject({ buildId: z.string(), detectedGame: projectGameSchema.nullable(), diagnostics: z.array(apiDiagnosticSchema), directGetterOffsetHex: z.string(), installMessage: z.string(), installStatus: z.string(), mappedGetterOffsetHex: z.string(), provenance: fashionUnlockProvenanceSchema, reservedRegions: z.array(fashionUnlockReservedRegionSchema), stats: fashionUnlockWorkflowStatsSchema, stubKind: z.string(), summary: workflowSummarySchema });
+export const fashionUnlockWorkflowSchema = z.strictObject({ buildId: z.string(), detectedGame: projectGameSchema.nullable(), diagnostics: z.array(apiDiagnosticSchema), directGetterOffsetHex: z.string(), editorFamily: z.enum(['swsh', 'sv']), installMessage: z.string(), installStatus: z.string(), mappedGetterOffsetHex: z.string(), ownershipCheckOffsetHex: z.string(), provenance: fashionUnlockProvenanceSchema, reservedRegions: z.array(fashionUnlockReservedRegionSchema), stats: fashionUnlockWorkflowStatsSchema, stubKind: z.string(), summary: workflowSummarySchema });
 
 export const loadFashionUnlockWorkflowResponseSchema = z.strictObject({ workflow: fashionUnlockWorkflowSchema });
 

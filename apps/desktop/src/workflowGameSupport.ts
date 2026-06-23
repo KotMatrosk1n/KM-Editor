@@ -140,6 +140,7 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'tradePokemon',
   'placement',
   'typeChart',
+  'fashionUnlock',
   'hyperspaceBypass',
   'modMerger',
   'gameDump'
@@ -149,11 +150,13 @@ export const standaloneWorkflowSectionIds = new Set<WorkbenchSection>(['fpsPatch
 
 export const scarletVioletAdvancedEditorSectionIds = new Set<WorkbenchSection>([
   'typeChart',
+  'fashionUnlock',
   'hyperspaceBypass'
 ]);
 
 export const scarletVioletAdvancedEditorDomains = new Set([
   'workflow.typeChart',
+  'workflow.fashionUnlock',
   'workflow.hyperspaceBypass'
 ]);
 

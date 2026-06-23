@@ -1486,8 +1486,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadFashionUnlockWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadFashionUnlockWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadFashionUnlock(ProjectBridgeMapper.ToCore(request.Payload.Paths));
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadFashionUnlock(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadFashionUnlock(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1495,13 +1497,13 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchStageFashionUnlockInstall(string requestJson)
     {
         var request = DeserializeRequest<StageFashionUnlockInstallRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = fashionUnlockEditSessionService.StageInstall(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session);
-        var response = SwShBridgeMapper.ToDto(result);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToFashionUnlockInstallDto(svWorkflowService.StageFashionUnlockInstall(paths, session))
+            : SwShBridgeMapper.ToDto(fashionUnlockEditSessionService.StageInstall(paths, session));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1509,13 +1511,13 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchStageFashionUnlockUninstall(string requestJson)
     {
         var request = DeserializeRequest<StageFashionUnlockUninstallRequest>(requestJson);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = fashionUnlockEditSessionService.StageUninstall(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session);
-        var response = SwShBridgeMapper.ToFashionUnlockUninstallDto(result);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToFashionUnlockUninstallDto(svWorkflowService.StageFashionUnlockUninstall(paths, session))
+            : SwShBridgeMapper.ToFashionUnlockUninstallDto(fashionUnlockEditSessionService.StageUninstall(paths, session));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2631,9 +2633,6 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.StageShinyRate or
             KmCommandNames.LoadFairyGymBoostsWorkflow or
             KmCommandNames.StageFairyGymBoosts or
-            KmCommandNames.LoadFashionUnlockWorkflow or
-            KmCommandNames.StageFashionUnlockInstall or
-            KmCommandNames.StageFashionUnlockUninstall or
             KmCommandNames.LoadGymUniformRemovalWorkflow or
             KmCommandNames.StageGymUniformRemovalInstall or
             KmCommandNames.StageGymUniformRemovalUninstall or
