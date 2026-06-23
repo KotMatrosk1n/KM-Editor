@@ -13,7 +13,9 @@
     "settings.language.selected": "Selected",
     "settings.language.spanish": "Español",
     "settings.language.spanish.description": "Use Spanish for KM Editor interface text.",
-    "settings.language.title": "Language and Localization"
+    "settings.language.title": "Language and Localization",
+    "settings.language.ukrainian": "Українська",
+    "settings.language.ukrainian.description": "Use Ukrainian for KM Editor interface text."
   },
   "literals": {
     "-1 Atk + Sp.Atk": "-1 Atk + Sp.Atk",

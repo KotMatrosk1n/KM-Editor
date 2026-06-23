@@ -7,6 +7,7 @@ import enResource from './resources/en.json';
 import esResource from './resources/es.json';
 import frResource from './resources/fr.json';
 import ruResource from './resources/ru.json';
+import ukResource from './resources/uk.json';
 import {
   LocalizationProvider,
   languageStorageKey,
@@ -360,12 +361,40 @@ describe('LocalizationProvider', () => {
     );
   });
 
+  it('localizes Ukrainian static and dynamic UI phrases', () => {
+    expect(translateKeyForLanguage('uk', 'settings.language.title')).toBe(
+      'Мова та локалізація'
+    );
+    expect(translateLiteralForLanguage('uk', 'Settings')).toBe('Налаштування');
+    expect(translateLiteralForLanguage('uk', 'Made by Matroskin')).toBe(
+      'Створено Matroskin'
+    );
+    expect(translateLiteralForLanguage('uk', 'Grass / Poison')).toBe(
+      "Трав'яний / Отруйний"
+    );
+    expect(translateLiteralForLanguage('uk', 'Browse for Base RomFS')).toBe(
+      'Вибрати Базовий RomFS'
+    );
+    expect(translateLiteralForLanguage('uk', 'Makes contact. Allowed range: 0-1')).toBe(
+      'Контактує. Допустимий діапазон: 0-1'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'uk',
+        'Base ExeFS matches selected Pokemon Scarlet title id 0x0100A3D008C5C000.'
+      )
+    ).toBe(
+      'Базовий ExeFS відповідає вибраному title ID для Pokémon Scarlet 0x0100A3D008C5C000.'
+    );
+  });
+
   it('keeps localized resource keys aligned with the English catalogue', () => {
     const localizedResources = {
       de: deResource,
       es: esResource,
       fr: frResource,
-      ru: ruResource
+      ru: ruResource,
+      uk: ukResource
     };
 
     const missingEntries = Object.entries(localizedResources).flatMap(([language, resource]) => {
