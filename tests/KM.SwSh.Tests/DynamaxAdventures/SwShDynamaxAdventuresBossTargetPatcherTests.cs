@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.DynamaxAdventures;
 using System.Buffers.Binary;
 using Xunit;
@@ -21,8 +22,8 @@ public sealed class SwShDynamaxAdventuresBossTargetPatcherTests
             fromSpecies: 144,
             toSpecies: 150);
 
-        var baseNso = SwShNsoFile.Parse(baseMain);
-        var patchedNso = SwShNsoFile.Parse(patchedMain);
+        var baseNso = NsoFile.Parse(baseMain);
+        var patchedNso = NsoFile.Parse(patchedMain);
         Assert.Equal(baseNso.Ro.DecompressedData.ToArray(), patchedNso.Ro.DecompressedData.ToArray());
         Assert.Equal(baseNso.Data.DecompressedData.ToArray(), patchedNso.Data.DecompressedData.ToArray());
 
@@ -68,8 +69,8 @@ public sealed class SwShDynamaxAdventuresBossTargetPatcherTests
             fromSpecies: 144,
             toSpecies: 150);
 
-        var baseNso = SwShNsoFile.Parse(baseMain);
-        var patchedNso = SwShNsoFile.Parse(patchedMain);
+        var baseNso = NsoFile.Parse(baseMain);
+        var patchedNso = NsoFile.Parse(patchedMain);
         var baseText = baseNso.Text.DecompressedData;
         var patchedText = patchedNso.Text.DecompressedData;
         var callSiteAOffset = SwShDynamaxAdventuresBossTargetPatcher.CallSiteAOffset
@@ -213,7 +214,7 @@ public sealed class SwShDynamaxAdventuresBossTargetPatcherTests
     {
         var archive = CreateBossArchive();
         var main = SwShDynamaxAdventureTestFixtures.CreateBossTargetCompatibleMain();
-        var nso = SwShNsoFile.Parse(main);
+        var nso = NsoFile.Parse(main);
         var text = nso.Text.DecompressedData.ToArray();
         BinaryPrimitives.WriteUInt32LittleEndian(
             text.AsSpan(SwShDynamaxAdventuresBossTargetPatcher.CallSiteAOffset, sizeof(uint)),
@@ -240,8 +241,8 @@ public sealed class SwShDynamaxAdventuresBossTargetPatcherTests
             archive,
             fromSpecies: 144,
             toSpecies: 150);
-        var baseText = SwShNsoFile.Parse(baseMain).Text.DecompressedData;
-        var patchedText = SwShNsoFile.Parse(patchedMain).Text.DecompressedData.ToArray();
+        var baseText = NsoFile.Parse(baseMain).Text.DecompressedData;
+        var patchedText = NsoFile.Parse(patchedMain).Text.DecompressedData.ToArray();
 
         var restoredText = SwShDynamaxAdventuresBossTargetPatcher.RestoreTextFromBase(
             patchedText,
@@ -254,7 +255,7 @@ public sealed class SwShDynamaxAdventuresBossTargetPatcherTests
     public void RestoreTextFromBaseRejectsNonOwnedBranchAtCallSite()
     {
         var baseMain = SwShDynamaxAdventureTestFixtures.CreateBossTargetCompatibleMain();
-        var baseText = SwShNsoFile.Parse(baseMain).Text.DecompressedData;
+        var baseText = NsoFile.Parse(baseMain).Text.DecompressedData;
         var currentText = baseText.ToArray();
         BinaryPrimitives.WriteUInt32LittleEndian(
             currentText.AsSpan(SwShDynamaxAdventuresBossTargetPatcher.CallSiteAOffset, sizeof(uint)),

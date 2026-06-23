@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Projects;
-using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SV.ExeFs;
 using System.Globalization;
 
@@ -77,7 +77,7 @@ internal static class SvTypeChartMainPatcher
 
         try
         {
-            var nso = SwShNsoFile.Parse(mainBytes);
+            var nso = NsoFile.Parse(mainBytes);
             var buildId = FormatBuildId(nso.BuildId);
             var layout = FindLayout(buildId);
             if (layout is null)
@@ -161,7 +161,7 @@ internal static class SvTypeChartMainPatcher
             throw new InvalidDataException("Type Chart could not resolve the exefs/main .ro chart offset.");
         }
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         var ro = nso.Ro.DecompressedData.ToArray();
         WriteChart(ro, analysis.ChartOffset.Value, values);
 
@@ -194,8 +194,8 @@ internal static class SvTypeChartMainPatcher
             throw new InvalidDataException("Type Chart restore could not resolve the generated exefs/main .ro chart offset.");
         }
 
-        var currentNso = SwShNsoFile.Parse(currentMainBytes);
-        var baseNso = SwShNsoFile.Parse(baseMainBytes);
+        var currentNso = NsoFile.Parse(currentMainBytes);
+        var baseNso = NsoFile.Parse(baseMainBytes);
         var currentBuildId = FormatBuildId(currentNso.BuildId);
         var baseBuildId = FormatBuildId(baseNso.BuildId);
         if (!string.Equals(currentBuildId, baseBuildId, StringComparison.Ordinal))
@@ -350,8 +350,8 @@ internal static class SvTypeChartMainPatcher
         IReadOnlyList<int> expectedValues,
         ProjectGame? expectedGame)
     {
-        var before = SwShNsoFile.Parse(input);
-        var after = SwShNsoFile.Parse(output);
+        var before = NsoFile.Parse(input);
+        var after = NsoFile.Parse(output);
         if (!before.BuildId.SequenceEqual(after.BuildId))
         {
             throw new InvalidDataException("Type Chart patch changed the NSO build ID.");
@@ -406,8 +406,8 @@ internal static class SvTypeChartMainPatcher
         IReadOnlyList<int> expectedValues,
         ProjectGame? expectedGame)
     {
-        var before = SwShNsoFile.Parse(input);
-        var after = SwShNsoFile.Parse(output);
+        var before = NsoFile.Parse(input);
+        var after = NsoFile.Parse(output);
         if (!before.BuildId.SequenceEqual(after.BuildId))
         {
             throw new InvalidDataException("Type Chart restore changed the NSO build ID.");

@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.BagHook;
 using KM.SwSh.CatchCap;
 using KM.SwSh.ExeFs;
@@ -416,12 +417,12 @@ public sealed class SwShHookReservationTests
     {
         var baseMain = CreateSharedHookNso(game);
         var patchedMain = SwShGymUniformRemovalMainPatcher.Apply(baseMain);
-        var baseText = SwShNsoFile.Parse(baseMain).Text.DecompressedData;
-        var patchedNso = SwShNsoFile.Parse(patchedMain);
+        var baseText = NsoFile.Parse(baseMain).Text.DecompressedData;
+        var patchedNso = NsoFile.Parse(patchedMain);
         var patchedText = patchedNso.Text.DecompressedData;
         var patchOffset = GymUniformRemovalPatchOffset(game);
 
-        Assert.Equal(SwShNsoFile.ComputeHash(patchedText), patchedNso.Text.Hash);
+        Assert.Equal(NsoFile.ComputeHash(patchedText), patchedNso.Text.Hash);
         Assert.Equal(0x320003E0u, ReadInstruction(patchedText, patchOffset));
         Assert.Equal(0xD65F03C0u, ReadInstruction(patchedText, patchOffset + 4));
         Assert.All(
@@ -432,8 +433,8 @@ public sealed class SwShHookReservationTests
                 patchOffset + SwShGymUniformRemovalMainPatcher.PatchLength - 1));
 
         var restoredMain = SwShGymUniformRemovalMainPatcher.RestoreFromBase(patchedMain, baseMain);
-        var restoredNso = SwShNsoFile.Parse(restoredMain);
-        Assert.Equal(SwShNsoFile.ComputeHash(restoredNso.Text.DecompressedData), restoredNso.Text.Hash);
+        var restoredNso = NsoFile.Parse(restoredMain);
+        Assert.Equal(NsoFile.ComputeHash(restoredNso.Text.DecompressedData), restoredNso.Text.Hash);
         Assert.Equal(baseText, restoredNso.Text.DecompressedData);
         Assert.Equal(SwShGymUniformRemovalInstallKind.NotInstalled, SwShGymUniformRemovalMainPatcher.Analyze(restoredMain).Kind);
     }
@@ -445,14 +446,14 @@ public sealed class SwShHookReservationTests
     {
         var baseMain = CreateSharedHookNso(game);
         var patchedMain = SwShFashionUnlockMainPatcher.Apply(baseMain, game);
-        var baseNso = SwShNsoFile.Parse(baseMain);
-        var patchedNso = SwShNsoFile.Parse(patchedMain);
+        var baseNso = NsoFile.Parse(baseMain);
+        var patchedNso = NsoFile.Parse(patchedMain);
         var baseText = baseNso.Text.DecompressedData;
         var patchedText = patchedNso.Text.DecompressedData;
         var directOffset = FashionUnlockDirectGetterOffset(game);
         var mappedOffset = FashionUnlockMappedGetterOffset(game);
 
-        Assert.Equal(SwShNsoFile.ComputeHash(patchedText), patchedNso.Text.Hash);
+        Assert.Equal(NsoFile.ComputeHash(patchedText), patchedNso.Text.Hash);
         Assert.Equal(0x52800020u, ReadInstruction(patchedText, directOffset));
         Assert.Equal(0xD65F03C0u, ReadInstruction(patchedText, directOffset + 4));
         Assert.Equal(0x52800020u, ReadInstruction(patchedText, mappedOffset));
@@ -463,16 +464,16 @@ public sealed class SwShHookReservationTests
                 IsFashionUnlockOwnedOffset(game, changedOffset),
                 $"Fashion Unlock changed unexpected .text offset 0x{changedOffset:X8}."));
 
-        var currentNso = SwShNsoFile.Parse(patchedMain);
+        var currentNso = NsoFile.Parse(patchedMain);
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var otherEditOffset = mappedOffset + 0x80;
         WriteInstruction(currentText, otherEditOffset, 0xD503201F);
         var currentWithOtherEdit = currentNso.Write(textDecompressedData: currentText);
         var restoredMain = SwShFashionUnlockMainPatcher.RestoreFromBase(currentWithOtherEdit, baseMain, game);
-        var restoredNso = SwShNsoFile.Parse(restoredMain);
+        var restoredNso = NsoFile.Parse(restoredMain);
         var restoredText = restoredNso.Text.DecompressedData;
 
-        Assert.Equal(SwShNsoFile.ComputeHash(restoredText), restoredNso.Text.Hash);
+        Assert.Equal(NsoFile.ComputeHash(restoredText), restoredNso.Text.Hash);
         Assert.Equal(baseText.AsSpan(directOffset, SwShFashionUnlockMainPatcher.PatchLength).ToArray(), restoredText.AsSpan(directOffset, SwShFashionUnlockMainPatcher.PatchLength).ToArray());
         Assert.Equal(baseText.AsSpan(mappedOffset, SwShFashionUnlockMainPatcher.PatchLength).ToArray(), restoredText.AsSpan(mappedOffset, SwShFashionUnlockMainPatcher.PatchLength).ToArray());
         Assert.Equal(0xD503201Fu, ReadInstruction(restoredText, otherEditOffset));
@@ -545,7 +546,7 @@ public sealed class SwShHookReservationTests
     [InlineData(ProjectGame.Shield)]
     public void GymUniformRemovalRecognizesCompatibleReturnTrueStub(ProjectGame game)
     {
-        var baseNso = SwShNsoFile.Parse(CreateSharedHookNso(game));
+        var baseNso = NsoFile.Parse(CreateSharedHookNso(game));
         var text = baseNso.Text.DecompressedData.ToArray();
         var patchOffset = GymUniformRemovalPatchOffset(game);
         WriteInstruction(text, patchOffset, 0x52800020);
@@ -555,7 +556,7 @@ public sealed class SwShHookReservationTests
         var analysis = SwShGymUniformRemovalMainPatcher.Analyze(compatibleMain);
         Assert.Equal(SwShGymUniformRemovalInstallKind.InstalledCompatible, analysis.Kind);
 
-        var refreshedText = SwShNsoFile.Parse(SwShGymUniformRemovalMainPatcher.Apply(compatibleMain)).Text.DecompressedData;
+        var refreshedText = NsoFile.Parse(SwShGymUniformRemovalMainPatcher.Apply(compatibleMain)).Text.DecompressedData;
         Assert.Equal(0x320003E0u, ReadInstruction(refreshedText, patchOffset));
         Assert.Equal(0xD65F03C0u, ReadInstruction(refreshedText, patchOffset + 4));
     }
@@ -565,7 +566,7 @@ public sealed class SwShHookReservationTests
     [InlineData(ProjectGame.Shield)]
     public void GymUniformRemovalBlocksForeignHandlerBytes(ProjectGame game)
     {
-        var baseNso = SwShNsoFile.Parse(CreateSharedHookNso(game));
+        var baseNso = NsoFile.Parse(CreateSharedHookNso(game));
         var text = baseNso.Text.DecompressedData.ToArray();
         WriteInstruction(text, GymUniformRemovalPatchOffset(game), 0xD503201F);
         var foreignMain = baseNso.Write(textDecompressedData: text);
@@ -741,7 +742,7 @@ public sealed class SwShHookReservationTests
                     "Flag milestone"),
             ],
             game);
-        var text = SwShNsoFile.Parse(patched).Text.DecompressedData;
+        var text = NsoFile.Parse(patched).Text.DecompressedData;
 
         var accessorTargets = ReadRoyalCandyStoryAccessorTargets(text, expectedCount: 2);
 
@@ -764,7 +765,7 @@ public sealed class SwShHookReservationTests
                 ],
                 game)
             : SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(baseMain, game);
-        var text = SwShNsoFile.Parse(patched).Text.DecompressedData;
+        var text = NsoFile.Parse(patched).Text.DecompressedData;
 
         const int branchOffset = 0x007DDA90;
         var branchInstruction = ReadInstruction(text, branchOffset);
@@ -793,7 +794,7 @@ public sealed class SwShHookReservationTests
                 ],
                 game)
             : SwShExeFsRoyalCandyMainPatcher.ApplyBasePatch(baseMain, game);
-        var text = SwShNsoFile.Parse(patched).Text.DecompressedData;
+        var text = NsoFile.Parse(patched).Text.DecompressedData;
         var ownershipOffset = game == ProjectGame.Shield ? 0x01420F20 : 0x01420EF0;
         var countOffset = game == ProjectGame.Shield ? 0x014210C0 : 0x01421090;
 
@@ -1049,7 +1050,7 @@ public sealed class SwShHookReservationTests
         ApplyFashionUnlock(paths);
 
         var outputMainPath = OutputPath(paths, SwShRoyalCandyWorkflowService.ExeFsMainPath);
-        var mainWithOtherEdit = SwShNsoFile.Parse(File.ReadAllBytes(outputMainPath));
+        var mainWithOtherEdit = NsoFile.Parse(File.ReadAllBytes(outputMainPath));
         var textWithOtherEdit = mainWithOtherEdit.Text.DecompressedData.ToArray();
         var otherEditOffset = FashionUnlockMappedGetterOffset(game) + 0x80;
         WriteInstruction(textWithOtherEdit, otherEditOffset, 0xD503201F);
@@ -1058,7 +1059,7 @@ public sealed class SwShHookReservationTests
         ApplyFashionUnlockCleanup(paths);
 
         Assert.True(File.Exists(outputMainPath));
-        var restoredText = SwShNsoFile.Parse(File.ReadAllBytes(outputMainPath)).Text.DecompressedData;
+        var restoredText = NsoFile.Parse(File.ReadAllBytes(outputMainPath)).Text.DecompressedData;
         Assert.Equal(SwShFashionUnlockInstallKind.NotInstalled, SwShFashionUnlockMainPatcher.Analyze(File.ReadAllBytes(outputMainPath), game).Kind);
         Assert.Equal(0xD503201Fu, ReadInstruction(restoredText, otherEditOffset));
     }
@@ -1441,7 +1442,7 @@ public sealed class SwShHookReservationTests
             Enumerable.Range(0, SwShCatchCapMainPatcher.CapCount)
                 .Select(index => index == SwShCatchCapMainPatcher.FinalBadgeCount ? 100 : 20 + index * 5)
                 .ToArray());
-        var nso = SwShNsoFile.Parse(patched);
+        var nso = NsoFile.Parse(patched);
         var text = nso.Text.DecompressedData.ToArray();
         text[SwShCatchCapMainPatcher.ExeFsTableOffset + SwShCatchCapMainPatcher.FinalBadgeCount] = 33;
 
@@ -1459,7 +1460,7 @@ public sealed class SwShHookReservationTests
 
         var patched = SwShCatchCapMainPatcher.Apply(CreateSharedHookNso(), caps);
 
-        var text = SwShNsoFile.Parse(patched).Text.DecompressedData;
+        var text = NsoFile.Parse(patched).Text.DecompressedData;
         AssertRuntimeCatchCapHook(text);
         Assert.Equal((byte)33, text[SwShCatchCapMainPatcher.ExeFsTableOffset + 3]);
     }
@@ -1469,7 +1470,7 @@ public sealed class SwShHookReservationTests
     {
         int[] caps = [18, 22, 27, 33, 38, 44, 49, 60, 100];
         var patched = SwShCatchCapMainPatcher.Apply(CreateSharedHookNso(), caps);
-        var nso = SwShNsoFile.Parse(patched);
+        var nso = NsoFile.Parse(patched);
         var text = nso.Text.DecompressedData.ToArray();
         WriteCatchCapRuntimeVanillaFormula(text);
         var legacy = nso.Write(textDecompressedData: text);
@@ -1480,7 +1481,7 @@ public sealed class SwShHookReservationTests
 
         var upgraded = SwShCatchCapMainPatcher.Apply(legacy, caps);
 
-        AssertRuntimeCatchCapHook(SwShNsoFile.Parse(upgraded).Text.DecompressedData);
+        AssertRuntimeCatchCapHook(NsoFile.Parse(upgraded).Text.DecompressedData);
     }
 
     [Fact]
@@ -2347,12 +2348,12 @@ public sealed class SwShHookReservationTests
 
     private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data, byte[]? buildId = null)
     {
-        var textOffset = SwShNsoFile.HeaderSize;
+        var textOffset = NsoFile.HeaderSize;
         var roOffset = Align(textOffset + text.Length, 0x10);
         var dataOffset = Align(roOffset + ro.Length, 0x10);
         var output = new byte[Align(dataOffset + data.Length, 0x10)];
 
-        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), SwShNsoFile.Magic);
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), NsoFile.Magic);
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x04), 1);
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
@@ -2362,9 +2363,9 @@ public sealed class SwShHookReservationTests
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x68), data.Length);
-        SwShNsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
-        SwShNsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
-        SwShNsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
+        NsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
+        NsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
+        NsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
         text.CopyTo(output.AsSpan(textOffset));
         ro.CopyTo(output.AsSpan(roOffset));
         data.CopyTo(output.AsSpan(dataOffset));

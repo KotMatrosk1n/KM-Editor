@@ -6049,9 +6049,14 @@ export function App({
   const handleUpdateShopChanges = async (
     shopId: string,
     inventoryChanges: ShopInventoryDraftChange[],
-    priceChanges: ShopItemPriceChange[]
+    priceChanges: ShopItemPriceChange[],
+    rowFieldChanges: ShopInventoryDraftChange[] = []
   ) => {
-    if (inventoryChanges.length === 0 && priceChanges.length === 0) {
+    if (
+      inventoryChanges.length === 0 &&
+      priceChanges.length === 0 &&
+      rowFieldChanges.length === 0
+    ) {
       return false;
     }
 
@@ -6069,6 +6074,20 @@ export function App({
       let nextDiagnostics: ApiDiagnostic[] = [];
 
       for (const change of inventoryChanges) {
+        const response = await bridge.updateShopInventoryItem({
+          field: change.field,
+          paths: toProjectPaths(draftPaths),
+          session: nextSession,
+          shopId,
+          slot: change.slot,
+          value: change.value
+        });
+        nextSession = response.session;
+        nextShopsWorkflow = response.workflow;
+        nextDiagnostics = response.diagnostics;
+      }
+
+      for (const change of rowFieldChanges) {
         const response = await bridge.updateShopInventoryItem({
           field: change.field,
           paths: toProjectPaths(draftPaths),
@@ -18199,12 +18218,14 @@ function ShopsSection({
   onUpdateShopChanges: (
     shopId: string,
     inventoryChanges: ShopInventoryDraftChange[],
-    priceChanges: ShopItemPriceChange[]
+    priceChanges: ShopItemPriceChange[],
+    rowFieldChanges?: ShopInventoryDraftChange[]
   ) => Promise<boolean>;
   searchText: string;
   selectedShopId: string | null;
   workflow: ShopsWorkflow | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const filteredShops = useMemo(
     () => filterShops(workflow?.shops ?? [], searchText),
@@ -18238,73 +18259,77 @@ function ShopsSection({
     }
   }, [selectedShop?.inventory, selectedShop?.shopId, selectedSlot]);
 
-  const renderShopTable = (label: string, shops: ShopRecord[]) => (
-    <section className="shop-table-section" aria-label={label}>
-      <h3>{label}</h3>
-      <div className="shops-table" role="table" aria-label={label}>
-        <div className="shops-row shops-row-heading" role="row">
-          <span role="columnheader">Type</span>
-          <span role="columnheader">Name</span>
-          <span role="columnheader">Inventory</span>
-          <span role="columnheader">Location</span>
-          <span role="columnheader">Items</span>
-          <span role="columnheader">Summary</span>
+  const renderShopTable = (label: string, shops: ShopRecord[]) => {
+    const localizedLabel = translateLiteral(label);
+
+    return (
+      <section className="shop-table-section" aria-label={localizedLabel}>
+        <h3>{localizedLabel}</h3>
+        <div className="shops-table" role="table" aria-label={localizedLabel}>
+          <div className="shops-row shops-row-heading" role="row">
+            <span role="columnheader">{translateLiteral('Type')}</span>
+            <span role="columnheader">{translateLiteral('Name')}</span>
+            <span role="columnheader">{translateLiteral('Inventory')}</span>
+            <span role="columnheader">{translateLiteral('Location')}</span>
+            <span role="columnheader">{translateLiteral('Items')}</span>
+            <span role="columnheader">{translateLiteral('Summary')}</span>
+          </div>
+          {shops.map((shop) => (
+            <button
+              className={`shops-row ${
+                selectedShop?.shopId === shop.shopId ? 'shops-row-selected' : ''
+              } ${pendingShopIds.has(shop.shopId) ? 'shops-row-pending' : ''}`}
+              key={shop.shopId}
+              onClick={() => onSelectShop(shop.shopId)}
+              role="row"
+              type="button"
+            >
+              <span role="cell">{translateLiteral(shop.kind)}</span>
+              <span role="cell">{shop.name}</span>
+              <span role="cell">{translateLiteral(shop.inventoryLabel)}</span>
+              <span role="cell">{shop.location}</span>
+              <span role="cell">{shop.inventory.length}</span>
+              <span role="cell">{translateLiteral(shop.inventorySummary)}</span>
+            </button>
+          ))}
+          {shops.length === 0 ? (
+            <p className="empty-copy shop-table-empty">{translateLiteral('No matching shops.')}</p>
+          ) : null}
         </div>
-        {shops.map((shop) => (
-          <button
-            className={`shops-row ${
-              selectedShop?.shopId === shop.shopId ? 'shops-row-selected' : ''
-            } ${pendingShopIds.has(shop.shopId) ? 'shops-row-pending' : ''}`}
-            key={shop.shopId}
-            onClick={() => onSelectShop(shop.shopId)}
-            role="row"
-            type="button"
-          >
-            <span role="cell">{shop.kind}</span>
-            <span role="cell">{shop.name}</span>
-            <span role="cell">{shop.inventoryLabel}</span>
-            <span role="cell">{shop.location}</span>
-            <span role="cell">{shop.inventory.length}</span>
-            <span role="cell">{shop.inventorySummary}</span>
-          </button>
-        ))}
-        {shops.length === 0 ? (
-          <p className="empty-copy shop-table-empty">No matching shops.</p>
-        ) : null}
-      </div>
-    </section>
-  );
+      </section>
+    );
+  };
 
   return (
     <>
       <section aria-labelledby="shops-heading" className="panel wide-panel">
         <div className="panel-heading">
           <ListChecks aria-hidden="true" size={18} />
-          <h2 id="shops-heading">Shops</h2>
+          <h2 id="shops-heading">{translateLiteral('Shops')}</h2>
         </div>
 
         <div className="items-toolbar shops-toolbar">
           <label className="search-box items-search">
             <Search aria-hidden="true" size={18} />
             <input
-              aria-label="Search shops"
+              aria-label={translateLiteral('Search shops')}
               disabled={!workflow}
               onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search shops"
+              placeholder={translateLiteral('Search shops')}
               type="search"
               value={searchText}
             />
           </label>
           <Metric
-            label="Loaded shops"
+            label={translateLiteral('Loaded shops')}
             value={workflow ? workflow.stats.totalShopCount.toString() : '0'}
           />
           <Metric
-            label="Inventory rows"
+            label={translateLiteral('Inventory rows')}
             value={workflow ? workflow.stats.totalInventoryItemCount.toString() : '0'}
           />
           <Metric
-            label="Pending changes"
+            label={translateLiteral('Pending changes')}
             value={(editSession?.pendingEdits.length ?? 0).toString()}
           />
         </div>
@@ -18332,7 +18357,9 @@ function ShopsSection({
             />
           </div>
         ) : (
-          <p className="empty-copy">Open Shops from Workflows to load backend shop data.</p>
+          <p className="empty-copy">
+            {translateLiteral('Open Shops from Workflows to load backend shop data.')}
+          </p>
         )}
       </section>
 
@@ -18367,11 +18394,13 @@ function SelectedShopPanel({
   onUpdateShopChanges: (
     shopId: string,
     inventoryChanges: ShopInventoryDraftChange[],
-    priceChanges: ShopItemPriceChange[]
+    priceChanges: ShopItemPriceChange[],
+    rowFieldChanges?: ShopInventoryDraftChange[]
   ) => Promise<boolean>;
   selectedSlot: number | null;
   shop: ShopRecord | null;
 }) {
+  const { translateLiteral } = useLocalization();
   const [inventoryDraftsByShopId, setInventoryDraftsByShopId] = useState<
     Record<string, ShopInventoryDraftState>
   >({});
@@ -18384,6 +18413,7 @@ function SelectedShopPanel({
   const defaultShopDraft = useMemo<ShopInventoryDraftState>(
     () => ({
       addedRows: [],
+      fieldDrafts: {},
       itemIdDrafts: Object.fromEntries(
         shop?.inventory.map((item) => [item.slot, item.itemId.toString()]) ?? []
       ),
@@ -18421,11 +18451,20 @@ function SelectedShopPanel({
   useRegisterEditorDraftDirty('shops', Object.keys(inventoryDraftsByShopId).length > 0);
 
   const shopInventoryRows = useMemo(
-    () => createShopInventoryDraftRows(shop, currentShopDraft, itemIdOptions),
-    [currentShopDraft, itemIdOptions, shop]
+    () => createShopInventoryDraftRows(shop, currentShopDraft, itemIdOptions, translateLiteral),
+    [currentShopDraft, itemIdOptions, shop, translateLiteral]
+  );
+  const selectedInventoryItem =
+    shop?.inventory.find((item) => item.slot === selectedSlot) ?? null;
+  const selectedRowFields = useMemo(
+    () =>
+      selectedInventoryItem?.supportedFields
+        .map((fieldName) => editableFields.find((field) => field.field === fieldName))
+        .filter((field): field is ShopEditableField => field !== undefined) ?? [],
+    [editableFields, selectedInventoryItem?.supportedFields]
   );
   const shopDraftChanges = useMemo(() => {
-    if (!shop || !itemIdField) {
+    if (!shop || !itemIdField || !shop.canEditInventoryOrder) {
       return [];
     }
 
@@ -18463,6 +18502,8 @@ function SelectedShopPanel({
         row.parsedItemId === null ||
         row.parsedItemId === shopNoneItemId ||
         parsedPrice === null ||
+        row.priceField !== null ||
+        !row.canEditPrice ||
         !isIntegerDraftInFieldRange(parsedPrice, shopPriceEditableField) ||
         parsedPrice === row.price ||
         changedItemIds.has(row.parsedItemId)
@@ -18479,15 +18520,62 @@ function SelectedShopPanel({
 
     return changes;
   }, [shopInventoryRows]);
+  const shopRowFieldDraftChanges = useMemo<ShopInventoryDraftChange[]>(() => {
+    if (!selectedInventoryItem) {
+      return [];
+    }
+
+    const changes: ShopInventoryDraftChange[] = [];
+    const fieldDrafts = currentShopDraft.fieldDrafts[selectedInventoryItem.slot] ?? {};
+    for (const field of selectedRowFields) {
+      const originalValue = selectedInventoryItem.fieldValues[field.field] ?? '';
+      const draftValue = fieldDrafts[field.field] ?? originalValue;
+      if (draftValue === originalValue) {
+        continue;
+      }
+
+      if (field.valueKind !== 'text') {
+        const parsedValue = parseEditableIntegerDraft(draftValue, field.options);
+        if (!isIntegerDraftInFieldRange(parsedValue, field)) {
+          continue;
+        }
+      }
+
+      changes.push({
+        field: field.field,
+        slot: selectedInventoryItem.slot,
+        value: draftValue
+      });
+    }
+
+    return changes;
+  }, [currentShopDraft.fieldDrafts, selectedInventoryItem, selectedRowFields]);
   const invalidShopItemDraftCount = shopInventoryRows.filter(
     (row) => !isIntegerDraftInFieldRange(row.parsedItemId, itemIdField)
   ).length;
   const invalidShopPriceDraftCount = shopInventoryRows.filter(
     (row) =>
-      row.isKnownItem && !isIntegerDraftInFieldRange(row.parsedPrice, shopPriceEditableField)
+      row.isKnownItem &&
+      row.canEditPrice &&
+      row.priceField === null &&
+      !isIntegerDraftInFieldRange(row.parsedPrice, shopPriceEditableField)
   ).length;
-  const changedSlotCount = shopDraftChanges.length + shopPriceDraftChanges.length;
-  const hasInvalidShopDrafts = invalidShopItemDraftCount > 0 || invalidShopPriceDraftCount > 0;
+  const invalidShopRowFieldDraftCount = selectedInventoryItem
+    ? selectedRowFields.filter((field) =>
+        isShopRowFieldDraftInvalid(
+          field,
+          currentShopDraft.fieldDrafts[selectedInventoryItem.slot]?.[field.field] ??
+            selectedInventoryItem.fieldValues[field.field] ??
+            ''
+        )
+      ).length
+    : 0;
+  const changedSlotCount =
+    shopDraftChanges.length + shopPriceDraftChanges.length + shopRowFieldDraftChanges.length;
+  const hasInvalidShopDrafts =
+    invalidShopItemDraftCount > 0 ||
+    invalidShopPriceDraftCount > 0 ||
+    invalidShopRowFieldDraftCount > 0;
   const canSaveShopDrafts =
     shop !== null &&
     editSession !== null &&
@@ -18512,6 +18600,7 @@ function SelectedShopPanel({
     !isShopUpdating &&
     !isItemUpdating &&
     itemIdField !== undefined &&
+    (shop?.canEditInventoryOrder ?? false) &&
     newItemInRange;
   useEffect(() => {
     if (!shop || hasInvalidShopDrafts || changedSlotCount > 0) {
@@ -18532,6 +18621,12 @@ function SelectedShopPanel({
         (currentDraft.priceDrafts[item.sourceSlot] ?? item.price.toString()) ===
           item.price.toString()
     );
+    const hasDefaultFieldDrafts = shop.inventory.every((item) => {
+      const fieldDrafts = currentDraft.fieldDrafts[item.slot] ?? {};
+      return Object.entries(fieldDrafts).every(
+        ([fieldName, draftValue]) => draftValue === (item.fieldValues[fieldName] ?? '')
+      );
+    });
     const hasDefaultRowState =
       currentDraft.addedRows.length === 0 &&
       currentDraft.removedSlots.length === 0 &&
@@ -18541,7 +18636,8 @@ function SelectedShopPanel({
       ) &&
       currentDraft.newItemIdDraft === defaultShopDraft.newItemIdDraft &&
       hasDefaultExistingItems &&
-      hasDefaultExistingPrices;
+      hasDefaultExistingPrices &&
+      hasDefaultFieldDrafts;
     if (!hasDefaultRowState) {
       return;
     }
@@ -18568,54 +18664,55 @@ function SelectedShopPanel({
   }, [onOpenItem, pendingOpenItem]);
 
   return (
-    <aside aria-label="Selected shop provenance" className="shop-inspector">
+    <aside aria-label={translateLiteral('Selected shop provenance')} className="shop-inspector">
       <div className="panel-heading">
         <ShieldCheck aria-hidden="true" size={18} />
-        <h3>Selected Shop</h3>
+        <h3>{translateLiteral('Selected Shop')}</h3>
       </div>
 
       {shop ? (
         <>
           <dl className="item-provenance-list">
             <div>
-              <dt>Name</dt>
+              <dt>{translateLiteral('Name')}</dt>
               <dd>{shop.name}</dd>
             </div>
             <div>
-              <dt>Inventory</dt>
-              <dd>{shop.inventoryLabel}</dd>
+              <dt>{translateLiteral('Inventory')}</dt>
+              <dd>{translateLiteral(shop.inventoryLabel)}</dd>
             </div>
             <div>
-              <dt>Type</dt>
-              <dd>{shop.kind}</dd>
+              <dt>{translateLiteral('Type')}</dt>
+              <dd>{translateLiteral(shop.kind)}</dd>
             </div>
             <div>
-              <dt>Hash</dt>
+              <dt>{translateLiteral('Hash')}</dt>
               <dd>{shop.sourceHash}</dd>
             </div>
             <div>
-              <dt>Summary</dt>
-              <dd>{shop.inventorySummary}</dd>
+              <dt>{translateLiteral('Summary')}</dt>
+              <dd>{translateLiteral(shop.inventorySummary)}</dd>
             </div>
             <div>
-              <dt>Source file</dt>
+              <dt>{translateLiteral('Source file')}</dt>
               <dd>{shop.provenance.sourceFile}</dd>
             </div>
             <div>
-              <dt>Layer</dt>
-              <dd>{formatSourceLayer(shop.provenance.sourceLayer)}</dd>
+              <dt>{translateLiteral('Layer')}</dt>
+              <dd>{translateLiteral(formatSourceLayer(shop.provenance.sourceLayer))}</dd>
             </div>
             <div>
-              <dt>File state</dt>
-              <dd>{formatFileState(shop.provenance.fileState)}</dd>
+              <dt>{translateLiteral('File state')}</dt>
+              <dd>{translateLiteral(formatFileState(shop.provenance.fileState))}</dd>
             </div>
           </dl>
 
           <div className="shop-edit-form">
             <div className="shop-inventory-header">
-              <strong>Inventory</strong>
+              <strong>{translateLiteral('Inventory')}</strong>
               <span className="draft-action-summary">
-                {changedSlotCount} changed / {shopInventoryRows.length} slots
+                {changedSlotCount} {translateLiteral('Pending changes')} / {shopInventoryRows.length}{' '}
+                {translateLiteral('slots')}
               </span>
             </div>
 
@@ -18629,7 +18726,8 @@ function SelectedShopPanel({
                     const didSave = await onUpdateShopChanges(
                       shop.shopId,
                       shopDraftChanges,
-                      shopPriceDraftChanges
+                      shopPriceDraftChanges,
+                      shopRowFieldDraftChanges
                     );
                     if (didSave) {
                       setInventoryDraftsByShopId((currentDrafts) =>
@@ -18640,10 +18738,10 @@ function SelectedShopPanel({
                   type="button"
                 >
                   <BusyActionContent
-                    busyLabel="Saving"
+                    busyLabel={translateLiteral('Saving')}
                     icon={<Save aria-hidden="true" size={16} />}
                     isBusy={isShopUpdating || isItemUpdating}
-                    label="Save Changes"
+                    label={translateLiteral('Save Changes')}
                   />
                 </button>
                 <button
@@ -18653,14 +18751,16 @@ function SelectedShopPanel({
                   type="button"
                 >
                   <X aria-hidden="true" size={16} />
-                  <span>Cancel</span>
+                  <span>{translateLiteral('Cancel')}</span>
                 </button>
                 <span className="draft-action-summary">
                   {hasInvalidShopDrafts
-                    ? invalidShopPriceDraftCount > 0
-                      ? 'Fix invalid prices.'
-                      : 'Fix invalid inventory rows.'
-                    : `${changedSlotCount} pending shop change${changedSlotCount === 1 ? '' : 's'}.`}
+                    ? invalidShopRowFieldDraftCount > 0
+                      ? translateLiteral('Fix invalid selected slot fields.')
+                      : invalidShopPriceDraftCount > 0
+                      ? translateLiteral('Fix invalid prices.')
+                      : translateLiteral('Fix invalid inventory rows.')
+                    : `${changedSlotCount} ${translateLiteral('Pending changes')}.`}
                 </span>
               </div>
             ) : (
@@ -18672,10 +18772,10 @@ function SelectedShopPanel({
                 type="button"
               >
                 <BusyActionContent
-                  busyLabel="Starting"
+                  busyLabel={translateLiteral('Starting')}
                   icon={<Pencil aria-hidden="true" size={16} />}
                   isBusy={isEditStarting}
-                  label="Edit"
+                  label={translateLiteral('Edit')}
                 />
               </button>
             )}
@@ -18683,11 +18783,11 @@ function SelectedShopPanel({
             {shopInventoryRows.length > 0 ? (
               <div className="shop-inventory-editor-grid">
                 <div className="shop-inventory-editor-row shop-inventory-editor-heading">
-                  <span>Slot</span>
-                  <span>Item</span>
-                  <span>Price</span>
-                  <span>Stock</span>
-                  <span>Actions</span>
+                  <span>{translateLiteral('Slot')}</span>
+                  <span>{translateLiteral('Item')}</span>
+                  <span>{translateLiteral('Price')}</span>
+                  <span>{translateLiteral('Stock')}</span>
+                  <span>{translateLiteral('Actions')}</span>
                 </div>
                 {shopInventoryRows.map((item, index) => {
                   const draftState = getIntegerDraftState(
@@ -18700,10 +18800,12 @@ function SelectedShopPanel({
                       ? null
                       : getIntegerDraftError(item.itemIdDraft);
                   const rowAriaLabel = item.isAdded
-                    ? `New shop slot ${item.displaySlot} item`
-                    : `Shop slot ${item.displaySlot} item`;
+                    ? `${translateLiteral('New shop slot')} ${item.displaySlot} ${translateLiteral('item')}`
+                    : `${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral('item')}`;
                   const priceDraftError =
                     item.isKnownItem &&
+                    item.canEditPrice &&
+                    item.priceField === null &&
                     !isIntegerDraftInFieldRange(item.parsedPrice, shopPriceEditableField)
                       ? getIntegerDraftError(item.priceDraft)
                       : null;
@@ -18712,7 +18814,9 @@ function SelectedShopPanel({
                     editSession === null ||
                     isShopUpdating ||
                     isItemUpdating ||
-                    !item.isKnownItem;
+                    !item.isKnownItem ||
+                    !item.canEditPrice ||
+                    item.priceField !== null;
 
                   return (
                     <div
@@ -18730,12 +18834,13 @@ function SelectedShopPanel({
                     >
                       <span className="shop-slot-index">#{item.displaySlot}</span>
                       <label className="path-field shop-inventory-item-field">
-                        <span>{itemIdField?.label ?? 'Item ID'}</span>
+                        <span>{translateLiteral(itemIdField?.label ?? 'Item ID')}</span>
                         {hasItemIdOptions ? (
                           <SearchableOptionInput
                             ariaLabel={rowAriaLabel}
                             disabled={
                               !canEditShops ||
+                              !shop.canEditInventoryOrder ||
                               editSession === null ||
                               isShopUpdating ||
                               isItemUpdating
@@ -18768,7 +18873,7 @@ function SelectedShopPanel({
                             options={addDraftFallbackOption(
                               itemIdOptions,
                               item.itemIdDraft,
-                              formatShopItemFallbackOption(item.itemIdDraft)
+                              formatShopItemFallbackOption(item.itemIdDraft, translateLiteral)
                             )}
                             value={item.itemIdDraft}
                           />
@@ -18777,6 +18882,7 @@ function SelectedShopPanel({
                             aria-label={rowAriaLabel}
                             disabled={
                               !canEditShops ||
+                              !shop.canEditInventoryOrder ||
                               editSession === null ||
                               isShopUpdating ||
                               isItemUpdating
@@ -18812,7 +18918,9 @@ function SelectedShopPanel({
                             value={item.itemIdDraft}
                           />
                         )}
-                        {draftError ? <small className="editable-field-error">{draftError}</small> : null}
+                        {draftError ? (
+                          <small className="editable-field-error">{translateLiteral(draftError)}</small>
+                        ) : null}
                       </label>
                       <label
                         className={`path-field ${
@@ -18821,7 +18929,9 @@ function SelectedShopPanel({
                       >
                         <span>{shop.currency}</span>
                         <input
-                          aria-label={`Shop slot ${item.displaySlot} price`}
+                          aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
+                            'price'
+                          )}`}
                           disabled={isPriceDisabled}
                           max={maximumShopItemPrice}
                           min={0}
@@ -18835,63 +18945,84 @@ function SelectedShopPanel({
                               )
                             )
                           }
-                          title="Changes the item buy price used wherever this item is sold."
+                          title={translateLiteral(
+                            'Changes the item buy price used wherever this item is sold.'
+                          )}
                           type="number"
                           value={item.priceDraft}
                         />
                         {priceDraftError ? (
-                          <small className="editable-field-error">{priceDraftError}</small>
+                          <small className="editable-field-error">
+                            {translateLiteral(priceDraftError)}
+                          </small>
                         ) : null}
                       </label>
                       <label className="path-field shop-read-only-field">
-                        <span>Stock</span>
+                        <span>{translateLiteral('Stock')}</span>
                         <input
-                          aria-label={`Shop slot ${item.displaySlot} stock`}
+                          aria-label={`${translateLiteral('Shop slot')} ${item.displaySlot} ${translateLiteral(
+                            'stock'
+                          )}`}
                           disabled
-                          title="Shop inventory data does not expose a limited-stock value here."
-                          value={item.stockLimit ?? 'None'}
+                          title={translateLiteral(
+                            'Shop inventory data does not expose a limited-stock value here.'
+                          )}
+                          value={item.stockLimit ?? translateLiteral('None')}
                         />
                       </label>
                       <div className="shop-inventory-row-actions">
                         {item.isKnownItem ? (
                           <button
-                            aria-label={`Open ${item.itemName} in Items`}
+                            aria-label={`${translateLiteral('Open')} ${item.itemName} ${translateLiteral(
+                              'in Items'
+                            )}`}
                             className="secondary-button compact-button shop-item-link"
                             onClick={(event) => {
                               event.stopPropagation();
                               setPendingOpenItem({ itemId: item.itemId, itemName: item.itemName });
                             }}
-                            title="Open in Items"
+                            title={translateLiteral('Open in Items')}
                             type="button"
                           >
                             <ExternalLink aria-hidden="true" size={14} />
-                            <span>Open in Items</span>
+                            <span>{translateLiteral('Open in Items')}</span>
                           </button>
                         ) : (
-                          <span className="path-status-muted">Missing metadata</span>
+                          <span className="path-status-muted">{translateLiteral('Missing metadata')}</span>
                         )}
                         {editSession ? (
                           <>
                             <button
-                              aria-label={`Move shop slot ${item.displaySlot} up`}
+                              aria-label={`${translateLiteral('Move shop slot')} ${
+                                item.displaySlot
+                              } ${translateLiteral('up')}`}
                               className="secondary-button icon-button"
-                              disabled={!canEditShops || isShopUpdating || isItemUpdating || index === 0}
+                              disabled={
+                                !canEditShops ||
+                                !shop.canEditInventoryOrder ||
+                                isShopUpdating ||
+                                isItemUpdating ||
+                                index === 0
+                              }
                               onClick={(event) => {
                                 event.stopPropagation();
                                 updateCurrentShopDraft((currentDraft) =>
                                   moveShopInventoryDraftRow(currentDraft, shop, item.key, -1)
                                 );
                               }}
-                              title="Move shop slot up"
+                              title={translateLiteral('Move shop slot up')}
                               type="button"
                             >
                               <ArrowUp aria-hidden="true" size={16} />
                             </button>
                             <button
-                              aria-label={`Move shop slot ${item.displaySlot} down`}
+                              aria-label={`${translateLiteral('Move shop slot')} ${
+                                item.displaySlot
+                              } ${translateLiteral('down')}`}
                               className="secondary-button icon-button"
                               disabled={
                                 !canEditShops ||
+                                !shop.canEditInventoryOrder ||
                                 isShopUpdating ||
                                 isItemUpdating ||
                                 index >= shopInventoryRows.length - 1
@@ -18902,22 +19033,27 @@ function SelectedShopPanel({
                                   moveShopInventoryDraftRow(currentDraft, shop, item.key, 1)
                                 );
                               }}
-                              title="Move shop slot down"
+                              title={translateLiteral('Move shop slot down')}
                               type="button"
                             >
                               <ArrowDown aria-hidden="true" size={16} />
                             </button>
                             <button
-                              aria-label={`Remove shop slot ${item.displaySlot}`}
+                              aria-label={`${translateLiteral('Remove shop slot')} ${item.displaySlot}`}
                               className="secondary-button icon-button danger-icon-button"
-                              disabled={!canEditShops || isShopUpdating || isItemUpdating}
+                              disabled={
+                                !canEditShops ||
+                                !shop.canEditInventoryOrder ||
+                                isShopUpdating ||
+                                isItemUpdating
+                              }
                               onClick={(event) => {
                                 event.stopPropagation();
                                 updateCurrentShopDraft((currentDraft) =>
                                   removeShopInventoryDraftRow(currentDraft, item)
                                 );
                               }}
-                              title="Remove shop slot"
+                              title={translateLiteral('Remove shop slot')}
                               type="button"
                             >
                               <Trash2 aria-hidden="true" size={16} />
@@ -18930,15 +19066,79 @@ function SelectedShopPanel({
                 })}
               </div>
             ) : (
-              <p className="empty-copy">No inventory slots.</p>
+              <p className="empty-copy">{translateLiteral('No inventory slots.')}</p>
             )}
-            {editSession ? (
+            {selectedInventoryItem && selectedRowFields.length > 0 ? (
+              <div className="shop-row-detail-editor">
+                <div className="shop-inventory-header">
+                  <strong>{translateLiteral('Selected Slot Details')}</strong>
+                  <span className="draft-action-summary">
+                    {translateLiteral('Slot')} #{selectedInventoryItem.slot}
+                  </span>
+                </div>
+                <div className="editable-field-grid shop-row-field-grid">
+                  {selectedRowFields.map((field) => {
+                    const originalValue = selectedInventoryItem.fieldValues[field.field] ?? '';
+                    const draftValue =
+                      currentShopDraft.fieldDrafts[selectedInventoryItem.slot]?.[field.field] ??
+                      originalValue;
+                    const isInvalid = isShopRowFieldDraftInvalid(field, draftValue);
+
+                    return (
+                      <label
+                        className={`editable-field-control ${
+                          draftValue !== originalValue ? 'editable-field-changed' : ''
+                        } ${isInvalid ? 'editable-field-invalid' : ''}`}
+                        key={field.field}
+                      >
+                        <span className="editable-field-label-row">
+                          <span>{translateLiteral(field.label)}</span>
+                          {selectedInventoryItem.fieldDisplayValues[field.field] ? (
+                            <span className="field-current-value">
+                              {translateLiteral(selectedInventoryItem.fieldDisplayValues[field.field])}
+                            </span>
+                          ) : null}
+                        </span>
+                        <ShopRowFieldInput
+                          disabled={
+                            !canEditShops ||
+                            editSession === null ||
+                            isShopUpdating ||
+                            isItemUpdating
+                          }
+                          draftValue={draftValue}
+                          field={field}
+                          onChange={(value) =>
+                            updateCurrentShopDraft((currentDraft) => ({
+                              ...currentDraft,
+                              fieldDrafts: {
+                                ...currentDraft.fieldDrafts,
+                                [selectedInventoryItem.slot]: {
+                                  ...(currentDraft.fieldDrafts[selectedInventoryItem.slot] ?? {}),
+                                  [field.field]: value
+                                }
+                              }
+                            }))
+                          }
+                        />
+                        {isInvalid ? (
+                          <small className="editable-field-error">
+                            {translateLiteral(getIntegerDraftError(draftValue))}
+                          </small>
+                        ) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+            {editSession && shop.canEditInventoryOrder ? (
               <div className="shop-inventory-add-row">
                 <label className="path-field shop-inventory-item-field">
-                  <span>New item</span>
+                  <span>{translateLiteral('New item')}</span>
                   {hasItemIdOptions ? (
                     <SearchableOptionInput
-                      ariaLabel="New shop inventory item"
+                      ariaLabel={translateLiteral('New shop inventory item')}
                       disabled={!canEditShops || isShopUpdating || isItemUpdating}
                       onChange={(value) =>
                         updateCurrentShopDraft((currentDraft) => ({
@@ -18949,13 +19149,13 @@ function SelectedShopPanel({
                       options={addDraftFallbackOption(
                         itemIdOptions,
                         newItemIdDraft,
-                        formatShopItemFallbackOption(newItemIdDraft)
+                        formatShopItemFallbackOption(newItemIdDraft, translateLiteral)
                       )}
                       value={newItemIdDraft}
                     />
                   ) : (
                     <input
-                      aria-label="New shop inventory item"
+                      aria-label={translateLiteral('New shop inventory item')}
                       disabled={!canEditShops || isShopUpdating || isItemUpdating}
                       max={itemIdField?.maximumValue ?? undefined}
                       min={itemIdField?.minimumValue ?? undefined}
@@ -18971,7 +19171,7 @@ function SelectedShopPanel({
                   )}
                 </label>
                 <button
-                  aria-label="Add shop inventory row"
+                  aria-label={translateLiteral('Add shop inventory row')}
                   className="secondary-button learnset-add-button"
                   disabled={!canAddInventoryRow}
                   onClick={() => {
@@ -18997,14 +19197,14 @@ function SelectedShopPanel({
                   type="button"
                 >
                   <Plus aria-hidden="true" size={16} />
-                  <span>Add Row</span>
+                  <span>{translateLiteral('Add Row')}</span>
                 </button>
               </div>
             ) : null}
           </div>
         </>
       ) : (
-        <p className="empty-copy">No shop selected.</p>
+        <p className="empty-copy">{translateLiteral('No shop selected.')}</p>
       )}
       {pendingOpenItem ? (
         <ShopItemNavigationModal
@@ -19016,8 +19216,54 @@ function SelectedShopPanel({
   );
 }
 
-function formatShopItemFallbackOption(value: string) {
-  return `Item ${value}`;
+function ShopRowFieldInput({
+  disabled,
+  draftValue,
+  field,
+  onChange
+}: {
+  disabled: boolean;
+  draftValue: string;
+  field: ShopEditableField;
+  onChange: (value: string) => void;
+}) {
+  const options = field.options ?? [];
+  const { translateLiteral } = useLocalization();
+  const localizedFieldLabel = translateLiteral(field.label);
+  const localizedFieldHelpText = translateLiteral(getEditableFieldHelp(field));
+
+  if (options.length > 0) {
+    return (
+      <SearchableOptionInput
+        ariaLabel={localizedFieldLabel}
+        disabled={disabled}
+        onChange={onChange}
+        options={addDraftFallbackOption(options, draftValue, draftValue || translateLiteral('Custom value'))}
+        title={localizedFieldHelpText}
+        value={draftValue}
+      />
+    );
+  }
+
+  return (
+    <input
+      aria-label={localizedFieldLabel}
+      disabled={disabled}
+      max={field.maximumValue ?? undefined}
+      min={field.minimumValue ?? undefined}
+      onChange={(event) => onChange(event.target.value)}
+      title={localizedFieldHelpText}
+      type={field.valueKind === 'text' ? 'text' : 'number'}
+      value={draftValue}
+    />
+  );
+}
+
+function formatShopItemFallbackOption(
+  value: string,
+  translateLiteral: (literal: string) => string
+) {
+  return `${translateLiteral('Item')} ${value}`;
 }
 
 function getShopExistingRowKey(slot: number) {
@@ -19036,6 +19282,17 @@ function getShopRowDraftId(key: string) {
   return key.startsWith('new:') ? Number.parseInt(key.slice('new:'.length), 10) : null;
 }
 
+function isShopRowFieldDraftInvalid(field: ShopEditableField, draftValue: string) {
+  if (field.valueKind === 'text') {
+    return false;
+  }
+
+  return !isIntegerDraftInFieldRange(
+    parseEditableIntegerDraft(draftValue, field.options),
+    field
+  );
+}
+
 function normalizeShopInventoryDraft(
   draft: ShopInventoryDraftState,
   shop: ShopRecord | null
@@ -19043,12 +19300,14 @@ function normalizeShopInventoryDraft(
   if (!shop) {
     return {
       ...draft,
+      fieldDrafts: draft.fieldDrafts ?? {},
       priceDrafts: draft.priceDrafts ?? {}
     };
   }
 
   const nextDraft = {
     ...draft,
+    fieldDrafts: draft.fieldDrafts ?? {},
     priceDrafts: draft.priceDrafts ?? {}
   };
   const rowOrder = normalizeShopInventoryRowOrder(nextDraft, shop);
@@ -19090,7 +19349,8 @@ function normalizeShopInventoryRowOrder(
 function createShopInventoryDraftRows(
   shop: ShopRecord | null,
   draft: ShopInventoryDraftState,
-  itemOptions: ShopEditableFieldOption[]
+  itemOptions: ShopEditableFieldOption[],
+  translateLiteral: (literal: string) => string
 ): ShopInventoryDraftRow[] {
   if (!shop) {
     return [];
@@ -19120,22 +19380,29 @@ function createShopInventoryDraftRows(
         const priceDraft = normalizedDraft.priceDrafts[sourceSlot] ?? price.toString();
 
         return {
+          canEditPrice: inventoryItem.canEditPrice,
           displaySlot: index + 1,
           draftId: null,
+          fieldDisplayValues: inventoryItem.fieldDisplayValues,
+          fieldValues: inventoryItem.fieldValues,
           isAdded: false,
           isKnownItem: itemOption !== undefined || (isOriginalItem && inventoryItem.isKnownItem),
           itemId: parsedItemId ?? inventoryItem.itemId,
           itemIdDraft,
           itemName:
             itemOption?.itemName ??
-            (isOriginalItem ? inventoryItem.itemName : formatShopItemFallbackOption(itemIdDraft)),
+            (isOriginalItem
+              ? inventoryItem.itemName
+              : formatShopItemFallbackOption(itemIdDraft, translateLiteral)),
           key,
           parsedItemId,
           parsedPrice: parseEditableIntegerDraft(priceDraft),
           price,
           priceDraft,
+          priceField: inventoryItem.priceField,
           sourceSlot,
-          stockLimit: isOriginalItem ? inventoryItem.stockLimit : null
+          stockLimit: isOriginalItem ? inventoryItem.stockLimit : null,
+          supportedFields: inventoryItem.supportedFields
         };
       }
 
@@ -19156,20 +19423,26 @@ function createShopInventoryDraftRows(
       const priceDraft = addedRow.priceDraft ?? price.toString();
 
       return {
+        canEditPrice: true,
         displaySlot: index + 1,
         draftId,
+        fieldDisplayValues: {},
+        fieldValues: {},
         isAdded: true,
         isKnownItem: itemOption !== undefined,
         itemId: parsedItemId ?? 0,
         itemIdDraft: addedRow.itemIdDraft,
-        itemName: itemOption?.itemName ?? formatShopItemFallbackOption(addedRow.itemIdDraft),
+        itemName:
+          itemOption?.itemName ?? formatShopItemFallbackOption(addedRow.itemIdDraft, translateLiteral),
         key,
         parsedItemId,
         parsedPrice: parseEditableIntegerDraft(priceDraft),
         price,
         priceDraft,
+        priceField: null,
         sourceSlot: null,
-        stockLimit: null
+        stockLimit: null,
+        supportedFields: []
       };
     })
     .filter((row): row is ShopInventoryDraftRow => row !== null);
@@ -28081,6 +28354,8 @@ function ShopItemNavigationModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { translateLiteral } = useLocalization();
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section
@@ -28091,20 +28366,21 @@ function ShopItemNavigationModal({
       >
         <div className="panel-heading">
           <ExternalLink aria-hidden="true" size={18} />
-          <h2 id="shop-item-navigation-heading">Open in Items?</h2>
+          <h2 id="shop-item-navigation-heading">{translateLiteral('Open in Items?')}</h2>
         </div>
         <p className="modal-copy">
-          Navigating out of Shops before pressing Save Changes will permanently discard unsaved
-          inventory edits in this editor.
+          {translateLiteral(
+            'Navigating out of Shops before pressing Save Changes will permanently discard unsaved inventory edits in this editor.'
+          )}
         </p>
         <div className="modal-actions">
           <button className="danger-button" onClick={onConfirm} type="button">
             <ExternalLink aria-hidden="true" size={16} />
-            <span>Open in Items</span>
+            <span>{translateLiteral('Open in Items')}</span>
           </button>
           <button className="secondary-button" onClick={onCancel} type="button">
             <X aria-hidden="true" size={16} />
-            <span>Stay in Shops</span>
+            <span>{translateLiteral('Stay in Shops')}</span>
           </button>
         </div>
       </section>
@@ -31174,6 +31450,7 @@ type ShopItemPriceChange = {
 
 type ShopInventoryDraftState = {
   addedRows: Array<{ draftId: number; itemIdDraft: string; priceDraft?: string }>;
+  fieldDrafts: Record<number, Record<string, string>>;
   itemIdDrafts: Record<number, string>;
   newItemIdDraft: string;
   nextAddedRowId: number;
@@ -31183,8 +31460,11 @@ type ShopInventoryDraftState = {
 };
 
 type ShopInventoryDraftRow = {
+  canEditPrice: boolean;
   displaySlot: number;
   draftId: number | null;
+  fieldDisplayValues: Record<string, string>;
+  fieldValues: Record<string, string>;
   isAdded: boolean;
   isKnownItem: boolean;
   itemId: number;
@@ -31195,8 +31475,10 @@ type ShopInventoryDraftRow = {
   parsedPrice: number | null;
   price: number;
   priceDraft: string;
+  priceField: string | null;
   sourceSlot: number | null;
   stockLimit: number | null;
+  supportedFields: string[];
 };
 
 type ExitPromptState = {

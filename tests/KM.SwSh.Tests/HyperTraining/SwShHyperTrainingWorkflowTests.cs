@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.ExeFs;
 using KM.SwSh.HyperTraining;
 using KM.SwSh.Tests.Items;
@@ -84,7 +85,7 @@ public sealed class SwShHyperTrainingWorkflowTests
         var offsets = HyperTrainingOffsets(game);
 
         var patched = SwShHyperTrainingMainPatcher.ApplyMinimumLevel(main, 50, game);
-        var patchedText = SwShNsoFile.Parse(patched).Text.DecompressedData;
+        var patchedText = NsoFile.Parse(patched).Text.DecompressedData;
         var analysis = SwShHyperTrainingMainPatcher.Analyze(patched, game);
 
         Assert.Equal(SwShHyperTrainingMainKind.CustomMinimumLevel, analysis.Kind);
@@ -107,7 +108,7 @@ public sealed class SwShHyperTrainingWorkflowTests
             ProjectGame.Sword);
 
         var restored = SwShHyperTrainingMainPatcher.ApplyMinimumLevel(patched, 100, ProjectGame.Sword);
-        var restoredText = SwShNsoFile.Parse(restored).Text.DecompressedData;
+        var restoredText = NsoFile.Parse(restored).Text.DecompressedData;
         var analysis = SwShHyperTrainingMainPatcher.Analyze(restored, ProjectGame.Sword);
 
         Assert.Equal(SwShHyperTrainingMainKind.NotInstalled, analysis.Kind);
@@ -125,10 +126,10 @@ public sealed class SwShHyperTrainingWorkflowTests
             WriteInstruction(text, 0x00747988, 0xDEADBEEF);
             WriteInstruction(text, 0x013AE3AC, 0xFEEDFACE);
         });
-        var baseText = SwShNsoFile.Parse(main).Text.DecompressedData;
+        var baseText = NsoFile.Parse(main).Text.DecompressedData;
 
         var patched = SwShHyperTrainingMainPatcher.ApplyMinimumLevel(main, 50, ProjectGame.Sword);
-        var patchedText = SwShNsoFile.Parse(patched).Text.DecompressedData;
+        var patchedText = NsoFile.Parse(patched).Text.DecompressedData;
 
         Assert.Equal(0xDEADBEEFu, ReadInstruction(patchedText, 0x00747988));
         Assert.Equal(0xFEEDFACEu, ReadInstruction(patchedText, 0x013AE3AC));
@@ -246,12 +247,12 @@ public sealed class SwShHyperTrainingWorkflowTests
 
     private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data, byte[] buildId)
     {
-        var textOffset = SwShNsoFile.HeaderSize;
+        var textOffset = NsoFile.HeaderSize;
         var roOffset = Align(textOffset + text.Length, 0x10);
         var dataOffset = Align(roOffset + ro.Length, 0x10);
         var output = new byte[Align(dataOffset + data.Length, 0x10)];
 
-        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), SwShNsoFile.Magic);
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), NsoFile.Magic);
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x04), 1);
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
@@ -260,9 +261,9 @@ public sealed class SwShHyperTrainingWorkflowTests
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x68), data.Length);
-        SwShNsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
-        SwShNsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
-        SwShNsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
+        NsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
+        NsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
+        NsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
         text.CopyTo(output.AsSpan(textOffset));
         ro.CopyTo(output.AsSpan(roOffset));
         data.CopyTo(output.AsSpan(dataOffset));

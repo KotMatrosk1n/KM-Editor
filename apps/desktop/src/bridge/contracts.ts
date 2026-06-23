@@ -1690,12 +1690,17 @@ export const shopProvenanceSchema = z.strictObject({
 });
 
 export const shopInventoryRecordSchema = z.strictObject({
+  canEditPrice: z.boolean().default(true),
+  fieldDisplayValues: z.record(z.string(), z.string()).default({}),
+  fieldValues: z.record(z.string(), z.string()).default({}),
   isKnownItem: z.boolean().default(false),
   itemId: z.number().int().nonnegative(),
   itemName: z.string(),
   price: z.number().int().nonnegative(),
+  priceField: z.string().nullable().default(null),
   slot: z.number().int().nonnegative(),
-  stockLimit: z.number().int().nonnegative().nullable()
+  stockLimit: z.number().int().nonnegative().nullable(),
+  supportedFields: z.array(z.string()).default([])
 });
 
 export const shopEditableFieldOptionSchema = z.strictObject({
@@ -1715,7 +1720,9 @@ export const shopEditableFieldSchema = z.strictObject({
 });
 
 export const shopRecordSchema = z.strictObject({
+  canEditInventoryOrder: z.boolean().default(true),
   currency: z.string(),
+  editorFamily: z.string().default('swsh'),
   inventory: z.array(shopInventoryRecordSchema),
   inventoryCount: z.number().int().positive().default(1),
   inventoryIndex: z.number().int().positive().default(1),
@@ -1738,6 +1745,7 @@ export const shopsWorkflowStatsSchema = z.strictObject({
 export const shopsWorkflowSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   editableFields: z.array(shopEditableFieldSchema),
+  editorFamily: z.string().default('swsh'),
   shops: z.array(shopRecordSchema),
   stats: shopsWorkflowStatsSchema,
   summary: workflowSummarySchema

@@ -2,6 +2,7 @@
 
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.ExeFs;
 using System.Buffers.Binary;
 using System.Globalization;
@@ -68,7 +69,7 @@ internal static class SwShFashionUnlockMainPatcher
 
         try
         {
-            var nso = SwShNsoFile.Parse(mainBytes);
+            var nso = NsoFile.Parse(mainBytes);
             var buildId = FormatBuildId(nso.BuildId);
             var layout = FindLayout(buildId);
             if (layout is null)
@@ -159,7 +160,7 @@ internal static class SwShFashionUnlockMainPatcher
             throw new InvalidDataException(analysis.Message);
         }
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         var layout = FindLayout(FormatBuildId(nso.BuildId))
             ?? throw new InvalidDataException("Fashion Unlock supports Sword and Shield 1.3.2 exefs/main files.");
         var text = nso.Text.DecompressedData.ToArray();
@@ -192,8 +193,8 @@ internal static class SwShFashionUnlockMainPatcher
             throw new InvalidDataException("Fashion Unlock restore requires installed Fashion Unlock stubs.");
         }
 
-        var currentNso = SwShNsoFile.Parse(currentMainBytes);
-        var baseNso = SwShNsoFile.Parse(baseMainBytes);
+        var currentNso = NsoFile.Parse(currentMainBytes);
+        var baseNso = NsoFile.Parse(baseMainBytes);
         var currentBuildId = FormatBuildId(currentNso.BuildId);
         var baseBuildId = FormatBuildId(baseNso.BuildId);
         if (!string.Equals(currentBuildId, baseBuildId, StringComparison.Ordinal))
@@ -244,8 +245,8 @@ internal static class SwShFashionUnlockMainPatcher
         PatchLayout layout,
         ProjectGame? expectedGame)
     {
-        var before = SwShNsoFile.Parse(input);
-        var after = SwShNsoFile.Parse(output);
+        var before = NsoFile.Parse(input);
+        var after = NsoFile.Parse(output);
         if (!before.BuildId.SequenceEqual(after.BuildId))
         {
             throw new InvalidDataException("Fashion Unlock patch changed the NSO build ID.");

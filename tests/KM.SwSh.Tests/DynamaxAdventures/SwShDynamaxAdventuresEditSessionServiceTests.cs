@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.Tests.Items;
 using System.Buffers.Binary;
@@ -1334,7 +1335,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.Equal(467, output.Entries[0].Species);
 
         var mainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
-        var nso = SwShNsoFile.Parse(File.ReadAllBytes(mainPath));
+        var nso = NsoFile.Parse(File.ReadAllBytes(mainPath));
         var ro = nso.Ro.DecompressedData.AsSpan();
         var summaryOffset = SwShDynamaxAdventuresMainPatcher.SummaryOffset;
         Assert.Equal(0x00774054, summaryOffset);
@@ -1371,7 +1372,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.DoesNotContain(apply.Diagnostics, diagnostic => diagnostic.Severity == Core.Diagnostics.DiagnosticSeverity.Error);
 
         var mainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
-        var nso = SwShNsoFile.Parse(File.ReadAllBytes(mainPath));
+        var nso = NsoFile.Parse(File.ReadAllBytes(mainPath));
         var text = nso.Text.DecompressedData.AsSpan();
         Assert.Equal(
             0xD503201Fu,
@@ -1420,7 +1421,7 @@ public sealed class SwShDynamaxAdventuresEditSessionServiceTests
         Assert.Equal(2, output.Entries[0].GigantamaxState);
 
         var mainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
-        var nso = SwShNsoFile.Parse(File.ReadAllBytes(mainPath));
+        var nso = NsoFile.Parse(File.ReadAllBytes(mainPath));
         var text = nso.Text.DecompressedData.AsSpan();
         Assert.Equal(0xD503201Fu, ReadInstruction(text, SwShDynamaxAdventuresMainPatcher.LocalGigantamaxMismatchBranchOffset));
         Assert.Equal(0xD503201Fu, ReadInstruction(text, SwShDynamaxAdventuresMainPatcher.NestGigantamaxMismatchBranchOffset));

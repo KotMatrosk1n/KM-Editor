@@ -15,10 +15,14 @@ namespace KM.Integration.Tests.SV;
 public sealed class SvCacheManagerTests
 {
     [Fact]
-    public void WarmupIncludesStaticEncounterPayloads()
+    public void WarmupIncludesScarletVioletEditorPayloads()
     {
+        Assert.Contains(SvDataPaths.FriendlyShopLineupDataArray, SvCacheManager.WarmupVirtualPaths);
+        Assert.Contains(SvDataPaths.ShopWazaMachineDataArray, SvCacheManager.WarmupVirtualPaths);
         Assert.Contains(SvDataPaths.FixedSymbolTableArray, SvCacheManager.WarmupVirtualPaths);
         Assert.Contains(SvDataPaths.EventBattlePokemonArray, SvCacheManager.WarmupVirtualPaths);
+        Assert.Contains(SvDataPaths.TeraRaidEnemyPaldea1, SvCacheManager.WarmupVirtualPaths);
+        Assert.Contains(SvDataPaths.VisibleItemScenePaldeaScarlet, SvCacheManager.WarmupVirtualPaths);
     }
 
     [Fact]

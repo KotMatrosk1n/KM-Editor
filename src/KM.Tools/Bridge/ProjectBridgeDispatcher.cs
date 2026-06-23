@@ -684,8 +684,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadShopsWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadShopsWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadShops(ProjectBridgeMapper.ToCore(request.Payload.Paths));
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadShops(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadShops(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -974,14 +976,22 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = shopsEditSessionService.UpdateInventoryItem(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.ShopId,
-            request.Payload.Slot,
-            request.Payload.Field,
-            request.Payload.Value);
-        var response = SwShBridgeMapper.ToDto(result);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateShopInventoryItem(
+                paths,
+                session,
+                request.Payload.ShopId,
+                request.Payload.Slot,
+                request.Payload.Field,
+                request.Payload.Value))
+            : SwShBridgeMapper.ToDto(shopsEditSessionService.UpdateInventoryItem(
+                paths,
+                session,
+                request.Payload.ShopId,
+                request.Payload.Slot,
+                request.Payload.Field,
+                request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2610,8 +2620,6 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.PlanDynamaxAdventureSeed or
             KmCommandNames.SearchDynamaxAdventureSeed or
             KmCommandNames.SetDynamaxAdventureSaveSeed or
-            KmCommandNames.LoadShopsWorkflow or
-            KmCommandNames.UpdateShopInventoryItem or
             KmCommandNames.LoadRaidBattlesWorkflow or
             KmCommandNames.UpdateRaidBattleSlotField or
             KmCommandNames.LoadRaidRewardsWorkflow or

@@ -2,6 +2,7 @@
 
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.FpsPatch;
 using System.Buffers.Binary;
 using Xunit;
@@ -50,14 +51,14 @@ public sealed class SwShFpsMainPatcherTests
             ShieldNvnOffset,
             ShieldSchedulerAdrpOffset,
             ShieldSchedulerLdrOffset);
-        var text = SwShNsoFile.Parse(main).Text.DecompressedData.ToArray();
+        var text = NsoFile.Parse(main).Text.DecompressedData.ToArray();
         text.AsSpan(SwordNvnOffset, sizeof(uint)).Fill(0xAA);
         text.AsSpan(SwordSchedulerAdrpOffset, sizeof(uint)).Fill(0xBB);
         text.AsSpan(SwordSchedulerLdrOffset, sizeof(uint)).Fill(0xCC);
-        main = SwShNsoFile.Parse(main).Write(textDecompressedData: text);
+        main = NsoFile.Parse(main).Write(textDecompressedData: text);
 
         var patched = SwShFpsMainPatcher.Apply(main, ProjectGame.Shield);
-        var patchedText = SwShNsoFile.Parse(patched).Text.DecompressedData;
+        var patchedText = NsoFile.Parse(patched).Text.DecompressedData;
 
         Assert.Equal(Enumerable.Repeat((byte)0xAA, sizeof(uint)).ToArray(), patchedText.AsSpan(SwordNvnOffset, sizeof(uint)).ToArray());
         Assert.Equal(Enumerable.Repeat((byte)0xBB, sizeof(uint)).ToArray(), patchedText.AsSpan(SwordSchedulerAdrpOffset, sizeof(uint)).ToArray());
@@ -89,7 +90,7 @@ public sealed class SwShFpsMainPatcherTests
             ShieldSchedulerAdrpOffset,
             ShieldSchedulerLdrOffset);
         var patched = SwShFpsMainPatcher.Apply(baseMain, ProjectGame.Shield);
-        var patchedNso = SwShNsoFile.Parse(patched);
+        var patchedNso = NsoFile.Parse(patched);
         var text = patchedNso.Text.DecompressedData.ToArray();
         const int otherEditOffset = 0x00100000;
         text[otherEditOffset] = 0x5A;
@@ -97,7 +98,7 @@ public sealed class SwShFpsMainPatcherTests
 
         var restored = SwShFpsMainPatcher.RestoreFromBase(patchedWithOtherEdit, baseMain, ProjectGame.Shield);
         var restoredAnalysis = SwShFpsMainPatcher.Analyze(restored, ProjectGame.Shield);
-        var restoredText = SwShNsoFile.Parse(restored).Text.DecompressedData;
+        var restoredText = NsoFile.Parse(restored).Text.DecompressedData;
 
         Assert.Equal(SwShFpsPatchMainKind.NotInstalled, restoredAnalysis.Kind);
         Assert.Equal(0x5A, restoredText[otherEditOffset]);
@@ -135,7 +136,7 @@ public sealed class SwShFpsMainPatcherTests
         int schedulerAdrpOffset,
         int schedulerLdrOffset)
     {
-        var text = SwShNsoFile.Parse(main).Text.DecompressedData;
+        var text = NsoFile.Parse(main).Text.DecompressedData;
         AssertBytes(text, nvnOffset, "E1030032");
         AssertBytes(text, 0x000061F0, "02008052");
         AssertBytes(text, 0x0000620C, "02008052");
@@ -166,12 +167,12 @@ public sealed class SwShFpsMainPatcherTests
 
     private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data, byte[] buildId)
     {
-        var textOffset = SwShNsoFile.HeaderSize;
+        var textOffset = NsoFile.HeaderSize;
         var roOffset = Align(textOffset + text.Length, 0x10);
         var dataOffset = Align(roOffset + ro.Length, 0x10);
         var output = new byte[Align(dataOffset + data.Length, 0x10)];
 
-        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), SwShNsoFile.Magic);
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), NsoFile.Magic);
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x04), 1);
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
@@ -180,9 +181,9 @@ public sealed class SwShFpsMainPatcherTests
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x68), data.Length);
-        SwShNsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
-        SwShNsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
-        SwShNsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
+        NsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
+        NsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
+        NsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
         text.CopyTo(output.AsSpan(textOffset));
         ro.CopyTo(output.AsSpan(roOffset));
         data.CopyTo(output.AsSpan(dataOffset));

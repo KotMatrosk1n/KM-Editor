@@ -17,6 +17,7 @@ using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Raids;
+using KM.Api.Shops;
 using KM.Api.StaticEncounters;
 using KM.Api.SvCache;
 using KM.Api.Trainers;
@@ -205,6 +206,17 @@ public sealed class ScarletVioletBridgeTests
         Apply(dispatcher, paths, teraSession);
         Assert.Equal(global::GemType.FAIRY, ReadTrainerPokemonTeraType(temp, trainerId: 0, slot: 0));
 
+        var shopItemSession = UpdateShop(dispatcher, paths, "lineup:shop_00_lineup", slot: 1, field: "itemId", value: "4");
+        Apply(dispatcher, paths, shopItemSession);
+        Assert.Equal(4, ReadFriendlyShopItemId(temp, "shop_00_lineup", slot: 1));
+
+        var tmShopSession = UpdateShop(dispatcher, paths, "tm:1", slot: 1, field: "lpCost", value: "900");
+        tmShopSession = UpdateShop(dispatcher, paths, tmShopSession, "tm:1", slot: 1, field: "material1Count", value: "3");
+        Apply(dispatcher, paths, tmShopSession);
+        var tmRow = ReadTechnicalMachineRow(temp, AddRegion.TITAN, slot: 1);
+        Assert.Equal(900, tmRow.LpCost);
+        Assert.Equal(3, tmRow.Material1Count);
+
         var encountersWorkflow = Dispatch<LoadEncountersWorkflowResponse>(
             dispatcher,
             KmCommandNames.LoadEncountersWorkflow,
@@ -262,6 +274,74 @@ public sealed class ScarletVioletBridgeTests
             "request-sv-trinity-load");
         AssertSuccess(loaded);
         Assert.Equal(888, loaded.Payload!.Workflow.Items.Single(item => item.ItemId == 1).BuyPrice);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletShopOutputsRespectAllRomFsOutputModes(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        foreach (var outputMode in new[]
+        {
+            ChangePlanOutputModeDto.Standalone,
+            ChangePlanOutputModeDto.TrinityBypass,
+            ChangePlanOutputModeDto.TrinityModManager,
+        })
+        {
+            using var temp = CreateScarletVioletProject(titleId);
+            WriteScarletFixtures(temp);
+            var paths = temp.Paths with { SelectedGame = game };
+            var dispatcher = new ProjectBridgeDispatcher();
+            var session = UpdateShop(dispatcher, paths, "lineup:shop_00_lineup", slot: 1, field: "itemId", value: "4");
+
+            var plan = Dispatch<CreateChangePlanResponse>(
+                dispatcher,
+                KmCommandNames.CreateChangePlan,
+                new CreateChangePlanRequest(paths, session, outputMode),
+                $"request-sv-shop-{outputMode}-plan");
+            AssertSuccess(plan);
+            Assert.True(plan.Payload!.ChangePlan.CanApply);
+
+            var dataTarget = outputMode == ChangePlanOutputModeDto.TrinityModManager
+                ? SvDataPaths.FriendlyShopLineupDataArray
+                : $"romfs/{SvDataPaths.FriendlyShopLineupDataArray}";
+            Assert.Contains(plan.Payload.ChangePlan.Writes, write =>
+                string.Equals(write.TargetRelativePath, dataTarget, StringComparison.Ordinal));
+            if (outputMode == ChangePlanOutputModeDto.Standalone)
+            {
+                Assert.Contains(plan.Payload.ChangePlan.Writes, write =>
+                    string.Equals(write.TargetRelativePath, "romfs/arc/data.trpfd", StringComparison.Ordinal));
+            }
+            else
+            {
+                Assert.DoesNotContain(plan.Payload.ChangePlan.Writes, write =>
+                    string.Equals(write.TargetRelativePath, "romfs/arc/data.trpfd", StringComparison.Ordinal));
+            }
+
+            var apply = Dispatch<ApplyChangePlanResponse>(
+                dispatcher,
+                KmCommandNames.ApplyChangePlan,
+                new ApplyChangePlanRequest(paths, session, plan.Payload.ChangePlan, outputMode),
+                $"request-sv-shop-{outputMode}-apply");
+            AssertSuccess(apply);
+            Assert.DoesNotContain(
+                apply.Payload!.ApplyResult.Diagnostics,
+                diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+            Assert.Contains(dataTarget, apply.Payload.ApplyResult.WrittenFiles);
+            if (outputMode == ChangePlanOutputModeDto.Standalone)
+            {
+                Assert.Contains("romfs/arc/data.trpfd", apply.Payload.ApplyResult.WrittenFiles);
+                Assert.True(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "arc", "data.trpfd")));
+            }
+            else
+            {
+                Assert.DoesNotContain("romfs/arc/data.trpfd", apply.Payload.ApplyResult.WrittenFiles);
+                Assert.False(File.Exists(Path.Combine(temp.OutputRootPath, "romfs", "arc", "data.trpfd")));
+            }
+
+            Assert.Equal(4, ReadFriendlyShopItemId(temp, "shop_00_lineup", slot: 1));
+        }
     }
 
     [Theory]
@@ -1209,7 +1289,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "moves", "pokemon", "trainers", "encounters", "teraRaids", "staticEncounters", "giftPokemon", "tradePokemon", "placement", "typeChart", "fashionUnlock", "hyperspaceBypass", "modMerger"],
+            ["items", "moves", "pokemon", "trainers", "encounters", "teraRaids", "staticEncounters", "shops", "giftPokemon", "tradePokemon", "placement", "typeChart", "fashionUnlock", "hyperspaceBypass", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
@@ -1218,6 +1298,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Wild Encounters");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Tera Raids");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Static Encounters");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Shops");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Gift Pokemon");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trade Pokemon");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Placement");
@@ -1467,6 +1548,33 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(
             itemFields.Single(field => field.Field == "groupIndex").Options,
             option => option.Value == 2 && option.Label.Contains("TM002 Growl", StringComparison.Ordinal));
+
+        var shops = Dispatch<LoadShopsWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadShopsWorkflow,
+            new LoadShopsWorkflowRequest(paths),
+            "request-sv-shop-labels");
+        AssertSuccess(shops);
+        Assert.Equal("sv", shops.Payload!.Workflow.EditorFamily);
+        Assert.Equal(2, shops.Payload.Workflow.Stats.TotalShopCount);
+        Assert.Contains("Scarlet/Violet", shops.Payload.Workflow.Summary.Description, StringComparison.Ordinal);
+        var pokeMart = shops.Payload.Workflow.Shops.Single(shop => shop.ShopId == "lineup:shop_00_lineup");
+        Assert.Equal("Poke Mart", pokeMart.Name);
+        Assert.True(pokeMart.CanEditInventoryOrder);
+        Assert.Equal("Master Ball", pokeMart.Inventory[0].ItemName);
+        Assert.Contains("sortOrder", pokeMart.Inventory[0].SupportedFields);
+        Assert.Null(pokeMart.Inventory[0].PriceField);
+        var tmMachine = shops.Payload.Workflow.Shops.Single(shop => shop.ShopId == "tm:1");
+        Assert.Equal("TM Machine [Paldea]", tmMachine.Name);
+        Assert.False(tmMachine.CanEditInventoryOrder);
+        Assert.Equal("LP", tmMachine.Currency);
+        var tmEntry = Assert.Single(tmMachine.Inventory);
+        Assert.Equal("TM001", tmEntry.ItemName);
+        Assert.Equal("Take Down", tmEntry.FieldDisplayValues["moveId"]);
+        Assert.Equal("lpCost", tmEntry.PriceField);
+        Assert.Contains(
+            shops.Payload.Workflow.EditableFields.Single(field => field.Field == "material1ItemId").Options,
+            option => option.Value == 1 && option.Label.Contains("Master Ball", StringComparison.Ordinal));
 
         var trainers = Dispatch<LoadTrainersWorkflowResponse>(
             dispatcher,
@@ -1947,6 +2055,8 @@ public sealed class ScarletVioletBridgeTests
                     SvDataPaths.EventAddPokemonArray,
                     SvDataPaths.EventTradeListArray,
                     SvDataPaths.EventTradePokemonArray,
+                    SvDataPaths.FriendlyShopLineupDataArray,
+                    SvDataPaths.ShopWazaMachineDataArray,
                     .. VisibleItemScenePaths,
                     .. TeraRaidEnemyPaths,
                     SvDataPaths.TeraRaidFixedRewardItemArray,
@@ -1974,6 +2084,8 @@ public sealed class ScarletVioletBridgeTests
         WriteSvOutput(temp, SvDataPaths.EventAddPokemonArray, CreateEventAddPokemonArray());
         WriteSvOutput(temp, SvDataPaths.EventTradeListArray, CreateEventTradeListArray());
         WriteSvOutput(temp, SvDataPaths.EventTradePokemonArray, CreateEventTradePokemonArray());
+        WriteSvOutput(temp, SvDataPaths.FriendlyShopLineupDataArray, CreateFriendlyShopLineupDataArray());
+        WriteSvOutput(temp, SvDataPaths.ShopWazaMachineDataArray, CreateTechnicalMachineShopDataArray());
         WriteSvOutput(temp, SvDataPaths.FixedSymbolTableArray, CreateFixedSymbolTableArray());
         WriteSvOutput(temp, SvDataPaths.EventBattlePokemonArray, CreateEventBattlePokemonArray());
         WriteSvOutput(temp, SvDataPaths.VisibleItemScenePaldeaScarlet, CreateVisibleItemScene(includeItem: true));
@@ -2158,6 +2270,38 @@ public sealed class ScarletVioletBridgeTests
 
         AssertSuccess(response);
         return response.Payload!.Session;
+    }
+
+    private static EditSessionDto UpdateShop(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        string shopId,
+        int slot,
+        string field,
+        string value)
+    {
+        return UpdateShop(dispatcher, paths, session: null, shopId, slot, field, value);
+    }
+
+    private static EditSessionDto UpdateShop(
+        ProjectBridgeDispatcher dispatcher,
+        ProjectPathsDto paths,
+        EditSessionDto? session,
+        string shopId,
+        int slot,
+        string field,
+        string value)
+    {
+        var response = Dispatch<UpdateShopInventoryItemResponse>(
+            dispatcher,
+            KmCommandNames.UpdateShopInventoryItem,
+            new UpdateShopInventoryItemRequest(paths, session, shopId, slot, field, value),
+            "request-sv-shop-update");
+
+        AssertSuccess(response);
+        Assert.Contains(response.Payload!.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.shops" && edit.NewValue == value);
+        return response.Payload.Session;
     }
 
     private static EditSessionDto UpdateEncounter(
@@ -2345,6 +2489,8 @@ public sealed class ScarletVioletBridgeTests
             SvDataPaths.EventAddPokemonArray,
             SvDataPaths.EventTradeListArray,
             SvDataPaths.EventTradePokemonArray,
+            SvDataPaths.FriendlyShopLineupDataArray,
+            SvDataPaths.ShopWazaMachineDataArray,
         })
         {
             Assert.DoesNotContain(KM.Formats.SV.SvTrinityPathHasher.HashPath(path), activeHashes);
@@ -2487,6 +2633,33 @@ public sealed class ScarletVioletBridgeTests
         return trade.Value;
     }
 
+    private static int ReadFriendlyShopItemId(TemporaryBridgeProject temp, string lineupId, int slot)
+    {
+        var rows = KM.SV.Shops.SvShopsWorkflowService
+            .ReadFriendlyRows(ReadSvOutput(temp, SvDataPaths.FriendlyShopLineupDataArray))
+            .Where(row => string.Equals(row.LineupId, lineupId, StringComparison.Ordinal))
+            .OrderBy(row => row.SortNum)
+            .ThenBy(row => row.SourceIndex)
+            .ToArray();
+
+        return rows[slot - 1].ItemId;
+    }
+
+    private static KM.SV.Shops.SvShopsWorkflowService.TechnicalMachineRow ReadTechnicalMachineRow(
+        TemporaryBridgeProject temp,
+        AddRegion region,
+        int slot)
+    {
+        var rows = KM.SV.Shops.SvShopsWorkflowService
+            .ReadTechnicalMachineRows(ReadSvOutput(temp, SvDataPaths.ShopWazaMachineDataArray))
+            .Where(row => row.Region == region)
+            .OrderBy(row => row.WazaItemId)
+            .ThenBy(row => row.SourceIndex)
+            .ToArray();
+
+        return rows[slot - 1];
+    }
+
     private static global::pml.common.DevID ReadTeraRaidBossSpecies(TemporaryBridgeProject temp)
     {
         var table = global::RaidEnemyTable01Array.GetRootAsRaidEnemyTable01Array(
@@ -2581,6 +2754,58 @@ public sealed class ScarletVioletBridgeTests
         var vector = global::ItemDataArray.CreateValuesVector(builder, [masterBall, tm001, legacyMoveItem, tm002, tm100]);
         var root = global::ItemDataArray.CreateItemDataArray(builder, vector);
         global::ItemDataArray.FinishItemDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateFriendlyShopLineupDataArray()
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var lineupId = builder.CreateString("shop_00_lineup");
+        var rows = new[]
+        {
+            global::LineupData.CreateLineupData(
+                builder,
+                lineupId,
+                sortnum: 0,
+                item: (ItemID)1,
+                itemCondkind: CondEnum.NONE,
+                itemCondvalueOffset: default,
+                gymBadgeNum: 0),
+            global::LineupData.CreateLineupData(
+                builder,
+                lineupId,
+                sortnum: 1,
+                item: (ItemID)2,
+                itemCondkind: CondEnum.GYMBADGENUM,
+                itemCondvalueOffset: default,
+                gymBadgeNum: 1),
+        };
+        var vector = global::LineupDataArray.CreateValuesVector(builder, rows);
+        var root = global::LineupDataArray.CreateLineupDataArray(builder, vector);
+        global::LineupDataArray.FinishLineupDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateTechnicalMachineShopDataArray()
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var rows = new[]
+        {
+            global::ShopWazamachineData.CreateShopWazamachineData(
+                builder,
+                wazaNo: 36,
+                wazaItemID: (ItemID)2,
+                lp: 800,
+                cond: CondEnum.NONE,
+                condValueOffset: default,
+                item01: (ItemID)1,
+                itemNum01: 1,
+                devNo01: 1,
+                addRegion: AddRegion.TITAN),
+        };
+        var vector = global::ShopWazamachineDataArray.CreateValuesVector(builder, rows);
+        var root = global::ShopWazamachineDataArray.CreateShopWazamachineDataArray(builder, vector);
+        global::ShopWazamachineDataArray.FinishShopWazamachineDataArrayBuffer(builder, root);
         return builder.SizedByteArray();
     }
 

@@ -3,6 +3,7 @@
 using KM.Core.Diagnostics;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.ExeFs;
 using KM.SwSh.FpsPatch;
 using KM.SwSh.Tests.Encounters;
@@ -52,13 +53,13 @@ public sealed class SwShTypeChartWorkflowTests
     public void ApplyChartPatchesOnlyReservedRoChartBytes(ProjectGame game)
     {
         var main = CreateSyntheticTypeChartMain(game);
-        var before = SwShNsoFile.Parse(main);
+        var before = NsoFile.Parse(main);
         var values = SwShTypeChartMainPatcher.VanillaChartValues.ToArray();
         values[0] = 0;
         values[(1 * SwShTypeChartMainPatcher.TypeCount) + 4] = 2;
 
         var patched = SwShTypeChartMainPatcher.ApplyChart(main, values, game);
-        var after = SwShNsoFile.Parse(patched);
+        var after = NsoFile.Parse(patched);
         var analysis = SwShTypeChartMainPatcher.Analyze(patched, game);
 
         Assert.Equal(SwShTypeChartMainKind.Modified, analysis.Kind);
@@ -232,7 +233,7 @@ public sealed class SwShTypeChartWorkflowTests
 
     private static byte[] CreateSyntheticTypeChartMainWithOtherExeFsEdits(ProjectGame game = ProjectGame.Sword)
     {
-        var nso = SwShNsoFile.Parse(CreateSyntheticTypeChartMain(game));
+        var nso = NsoFile.Parse(CreateSyntheticTypeChartMain(game));
         var text = nso.Text.DecompressedData.ToArray();
         var ro = nso.Ro.DecompressedData.ToArray();
         var data = nso.Data.DecompressedData.ToArray();
@@ -244,8 +245,8 @@ public sealed class SwShTypeChartWorkflowTests
 
     private static void AssertOnlyReservedRoBytesChanged(byte[] beforeMain, byte[] afterMain)
     {
-        var before = SwShNsoFile.Parse(beforeMain);
-        var after = SwShNsoFile.Parse(afterMain);
+        var before = NsoFile.Parse(beforeMain);
+        var after = NsoFile.Parse(afterMain);
 
         Assert.Equal(before.Text.DecompressedData, after.Text.DecompressedData);
         Assert.Equal(before.Data.DecompressedData, after.Data.DecompressedData);
@@ -258,7 +259,7 @@ public sealed class SwShTypeChartWorkflowTests
 
     private static void AssertOtherExeFsEditsStillPresent(byte[] main)
     {
-        var nso = SwShNsoFile.Parse(main);
+        var nso = NsoFile.Parse(main);
         Assert.Equal(0x42, nso.Text.DecompressedData[0x10]);
         Assert.Equal(0x24, nso.Ro.DecompressedData[0x100]);
         Assert.Equal(0x66, nso.Data.DecompressedData[0x08]);
@@ -274,12 +275,12 @@ public sealed class SwShTypeChartWorkflowTests
 
     private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data, byte[] buildId)
     {
-        var textOffset = SwShNsoFile.HeaderSize;
+        var textOffset = NsoFile.HeaderSize;
         var roOffset = Align(textOffset + text.Length, 0x10);
         var dataOffset = Align(roOffset + ro.Length, 0x10);
         var output = new byte[Align(dataOffset + data.Length, 0x10)];
 
-        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), SwShNsoFile.Magic);
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), NsoFile.Magic);
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x04), 1);
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
@@ -288,9 +289,9 @@ public sealed class SwShTypeChartWorkflowTests
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x68), data.Length);
-        SwShNsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
-        SwShNsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
-        SwShNsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
+        NsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
+        NsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
+        NsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
         text.CopyTo(output.AsSpan(textOffset));
         ro.CopyTo(output.AsSpan(roOffset));
         data.CopyTo(output.AsSpan(dataOffset));
