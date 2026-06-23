@@ -8,6 +8,8 @@
     "settings.language.german": "Deutsch",
     "settings.language.german.description": "Use German for KM Editor interface text.",
     "settings.language.groupLabel": "Display language",
+    "settings.language.russian": "Русский",
+    "settings.language.russian.description": "Use Russian for KM Editor interface text.",
     "settings.language.selected": "Selected",
     "settings.language.spanish": "Español",
     "settings.language.spanish.description": "Use Spanish for KM Editor interface text.",
