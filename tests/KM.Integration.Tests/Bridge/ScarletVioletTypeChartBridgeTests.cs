@@ -10,7 +10,6 @@ using KM.Api.HyperspaceBypass;
 using KM.Api.Projects;
 using KM.Api.TypeChart;
 using KM.Api.Workflows;
-using KM.Formats.SwSh;
 using KM.Integration.Tests.Tools;
 using KM.SV.TypeChart;
 using KM.Tools.Bridge;

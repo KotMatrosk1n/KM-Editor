@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Projects;
-using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SV.ExeFs;
 using System.Buffers.Binary;
 using System.Globalization;
@@ -48,7 +48,7 @@ internal static class SvHyperspaceBypassMainPatcher
 
         try
         {
-            var nso = SwShNsoFile.Parse(mainBytes);
+            var nso = NsoFile.Parse(mainBytes);
             var buildId = FormatBuildId(nso.BuildId);
             var layout = FindLayout(buildId);
             if (layout is null)
@@ -130,7 +130,7 @@ internal static class SvHyperspaceBypassMainPatcher
             throw new InvalidDataException(analysis.Message);
         }
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         var layout = FindLayout(FormatBuildId(nso.BuildId))
             ?? throw new InvalidDataException("Hyperspace Bypass supports verified Scarlet and Violet exefs/main builds only.");
         var text = nso.Text.DecompressedData.ToArray();
@@ -162,8 +162,8 @@ internal static class SvHyperspaceBypassMainPatcher
             throw new InvalidDataException("Hyperspace Bypass restore requires an installed Hyperspace Bypass branch.");
         }
 
-        var currentNso = SwShNsoFile.Parse(currentMainBytes);
-        var baseNso = SwShNsoFile.Parse(baseMainBytes);
+        var currentNso = NsoFile.Parse(currentMainBytes);
+        var baseNso = NsoFile.Parse(baseMainBytes);
         var currentBuildId = FormatBuildId(currentNso.BuildId);
         var baseBuildId = FormatBuildId(baseNso.BuildId);
         if (!string.Equals(currentBuildId, baseBuildId, StringComparison.Ordinal))
@@ -210,8 +210,8 @@ internal static class SvHyperspaceBypassMainPatcher
         PatchLayout layout,
         ProjectGame? expectedGame)
     {
-        var before = SwShNsoFile.Parse(input);
-        var after = SwShNsoFile.Parse(output);
+        var before = NsoFile.Parse(input);
+        var after = NsoFile.Parse(output);
         if (!before.BuildId.SequenceEqual(after.BuildId))
         {
             throw new InvalidDataException("Hyperspace Bypass patch changed the NSO build ID.");

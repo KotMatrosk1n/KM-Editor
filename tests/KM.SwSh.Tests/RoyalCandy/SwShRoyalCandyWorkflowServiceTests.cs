@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.BagHook;
 using KM.SwSh.ExeFs;
 using KM.SwSh.RoyalCandy;
@@ -502,12 +503,12 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
 
     private static byte[] CreateNso(byte[] text, byte[] ro, byte[] data)
     {
-        var textOffset = SwShNsoFile.HeaderSize;
+        var textOffset = NsoFile.HeaderSize;
         var roOffset = Align(textOffset + text.Length, 0x10);
         var dataOffset = Align(roOffset + ro.Length, 0x10);
         var output = new byte[Align(dataOffset + data.Length, 0x10)];
 
-        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), SwShNsoFile.Magic);
+        BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x00), NsoFile.Magic);
         BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(0x04), 1);
         WriteSegmentHeader(output, 0x10, textOffset, 0, text.Length);
         WriteSegmentHeader(output, 0x20, roOffset, text.Length, ro.Length);
@@ -516,9 +517,9 @@ public sealed class SwShRoyalCandyWorkflowServiceTests
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x60), text.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x64), ro.Length);
         BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(0x68), data.Length);
-        SwShNsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
-        SwShNsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
-        SwShNsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
+        NsoFile.ComputeHash(text).CopyTo(output.AsSpan(0xA0));
+        NsoFile.ComputeHash(ro).CopyTo(output.AsSpan(0xC0));
+        NsoFile.ComputeHash(data).CopyTo(output.AsSpan(0xE0));
         text.CopyTo(output.AsSpan(textOffset));
         ro.CopyTo(output.AsSpan(roOffset));
         data.CopyTo(output.AsSpan(dataOffset));

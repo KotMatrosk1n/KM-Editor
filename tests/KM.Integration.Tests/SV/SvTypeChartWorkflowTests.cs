@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Core.Projects;
-using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.Integration.Tests.Tools;
 using KM.SV.ExeFs;
 using KM.SV.TypeChart;
@@ -44,13 +44,13 @@ public sealed class SvTypeChartWorkflowTests
     public void ApplyChartPatchesOnlyReservedRoChartBytes(ProjectGame game)
     {
         var main = SvTypeChartBridgeFixtures.CreateCompatibleMain(game);
-        var before = SwShNsoFile.Parse(main);
+        var before = NsoFile.Parse(main);
         var values = SvTypeChartMainPatcher.VanillaChartValues.ToArray();
         values[0] = 0;
         values[(1 * SvTypeChartMainPatcher.TypeCount) + 4] = 2;
 
         var patched = SvTypeChartMainPatcher.ApplyChart(main, values, game);
-        var after = SwShNsoFile.Parse(patched);
+        var after = NsoFile.Parse(patched);
         var analysis = SvTypeChartMainPatcher.Analyze(patched, game);
 
         Assert.Equal(SvTypeChartMainKind.Modified, analysis.Kind);

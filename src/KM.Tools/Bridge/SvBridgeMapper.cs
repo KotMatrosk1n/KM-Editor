@@ -12,6 +12,7 @@ using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Raids;
+using KM.Api.Shops;
 using KM.Api.StaticEncounters;
 using KM.Api.SvCache;
 using KM.Api.Trainers;
@@ -29,6 +30,7 @@ using KM.SV.Moves;
 using KM.SV.Placement;
 using KM.SV.Pokemon;
 using KM.SV.Raids;
+using KM.SV.Shops;
 using KM.SV.StaticEncounters;
 using KM.SV.Trainers;
 using KM.SV.Trades;
@@ -282,6 +284,23 @@ public static class SvBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadStaticEncountersWorkflowResponse(ToStaticEncountersWorkflowDto(workflow));
+    }
+
+    public static LoadShopsWorkflowResponse ToDto(SvShopsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadShopsWorkflowResponse(ToShopsWorkflowDto(workflow));
+    }
+
+    public static UpdateShopInventoryItemResponse ToDto(SvShopsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateShopInventoryItemResponse(
+            ToShopsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
     public static UpdateStaticEncounterFieldResponse ToDto(SvStaticEncountersEditResult result)
@@ -581,6 +600,22 @@ public static class SvBridgeMapper
                 workflow.Stats.TotalRewardItemCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ShopsWorkflowDto ToShopsWorkflowDto(SvShopsWorkflow workflow)
+    {
+        return new ShopsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Shops.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new ShopsWorkflowStatsDto(
+                workflow.Stats.TotalShopCount,
+                workflow.Stats.TotalInventoryItemCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            EditorFamily = "sv",
+        };
     }
 
     private static GiftPokemonWorkflowDto ToGiftPokemonWorkflowDto(SvGiftPokemonWorkflow workflow)
@@ -1304,6 +1339,69 @@ public static class SvBridgeMapper
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static ShopRecordDto ToDto(SvShopRecord shop)
+    {
+        return new ShopRecordDto(
+            shop.ShopId,
+            shop.Name,
+            shop.Kind,
+            shop.InventoryLabel,
+            shop.InventoryIndex,
+            shop.InventoryCount,
+            shop.SourceHash,
+            shop.InventorySummary,
+            shop.Location,
+            shop.Currency,
+            shop.Inventory.Select(ToDto).ToArray(),
+            ToDto(shop.Provenance))
+        {
+            EditorFamily = "sv",
+            CanEditInventoryOrder = shop.CanEditInventoryOrder,
+        };
+    }
+
+    private static ShopInventoryRecordDto ToDto(SvShopInventoryRecord inventoryItem)
+    {
+        return new ShopInventoryRecordDto(
+            inventoryItem.Slot,
+            inventoryItem.ItemId,
+            inventoryItem.ItemName,
+            inventoryItem.Price,
+            inventoryItem.IsKnownItem,
+            inventoryItem.StockLimit)
+        {
+            FieldValues = inventoryItem.FieldValues,
+            FieldDisplayValues = inventoryItem.FieldDisplayValues,
+            SupportedFields = inventoryItem.SupportedFields,
+            PriceField = inventoryItem.PriceField,
+            CanEditPrice = inventoryItem.CanEditPrice,
+        };
+    }
+
+    private static ShopProvenanceDto ToDto(SvShopProvenance provenance)
+    {
+        return new ShopProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static ShopEditableFieldDto ToDto(SvShopEditableField field)
+    {
+        return new ShopEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static ShopEditableFieldOptionDto ToDto(SvShopEditableFieldOption option)
+    {
+        return new ShopEditableFieldOptionDto(option.Value, option.Label, option.ItemName, option.Price);
     }
 
     private static StaticEncountersWorkflowDto ToStaticEncountersWorkflowDto(

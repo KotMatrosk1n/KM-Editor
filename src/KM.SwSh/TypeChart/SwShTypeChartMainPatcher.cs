@@ -2,6 +2,7 @@
 
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.ExeFs;
 using System.Globalization;
 
@@ -77,7 +78,7 @@ internal static class SwShTypeChartMainPatcher
 
         try
         {
-            var nso = SwShNsoFile.Parse(mainBytes);
+            var nso = NsoFile.Parse(mainBytes);
             var buildId = FormatBuildId(nso.BuildId);
             var layout = FindLayout(buildId);
             if (layout is null)
@@ -161,7 +162,7 @@ internal static class SwShTypeChartMainPatcher
             throw new InvalidDataException("Type Chart could not resolve the exefs/main .ro chart offset.");
         }
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         var roBefore = nso.Ro.DecompressedData;
         var ro = roBefore.ToArray();
         WriteChart(ro, analysis.ChartOffset.Value, values);
@@ -277,8 +278,8 @@ internal static class SwShTypeChartMainPatcher
         IReadOnlyList<int> expectedValues,
         ProjectGame? expectedGame)
     {
-        var before = SwShNsoFile.Parse(input);
-        var after = SwShNsoFile.Parse(output);
+        var before = NsoFile.Parse(input);
+        var after = NsoFile.Parse(output);
         if (!before.BuildId.SequenceEqual(after.BuildId))
         {
             throw new InvalidDataException("Type Chart patch changed the NSO build ID.");

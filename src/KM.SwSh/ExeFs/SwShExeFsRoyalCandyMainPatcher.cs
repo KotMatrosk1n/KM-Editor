@@ -2,6 +2,7 @@
 
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using System.Buffers.Binary;
 using System.Globalization;
 
@@ -124,7 +125,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         var gameMismatch = CreateGameMismatchSignature(nso.BuildId, expectedGame);
         if (gameMismatch is not null)
         {
@@ -191,7 +192,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         ValidateSelectedGame(nso.BuildId, expectedGame);
         var layout = ResolvePatchLayout(nso.BuildId, expectedGame);
         var text = nso.Text.DecompressedData;
@@ -207,7 +208,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         ValidateSelectedGame(nso.BuildId, expectedGame);
         var layout = ResolvePatchLayout(nso.BuildId, expectedGame);
         var text = nso.Text.DecompressedData.ToArray();
@@ -234,7 +235,7 @@ internal static class SwShExeFsRoyalCandyMainPatcher
             throw new InvalidDataException("Royal Candy story-limit patch requires at least one level-cap milestone.");
         }
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         ValidateSelectedGame(nso.BuildId, expectedGame);
         var layout = ResolvePatchLayout(nso.BuildId, expectedGame);
         var text = nso.Text.DecompressedData.ToArray();
@@ -257,8 +258,8 @@ internal static class SwShExeFsRoyalCandyMainPatcher
         ArgumentNullException.ThrowIfNull(currentMainBytes);
         ArgumentNullException.ThrowIfNull(baseMainBytes);
 
-        var currentNso = SwShNsoFile.Parse(currentMainBytes);
-        var baseNso = SwShNsoFile.Parse(baseMainBytes);
+        var currentNso = NsoFile.Parse(currentMainBytes);
+        var baseNso = NsoFile.Parse(baseMainBytes);
         ValidateSelectedGame(currentNso.BuildId, expectedGame);
         ValidateSelectedGame(baseNso.BuildId, expectedGame);
         var currentText = currentNso.Text.DecompressedData.ToArray();

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using System.Buffers.Binary;
 using System.Globalization;
 
@@ -24,7 +25,7 @@ internal static class SwShDynamaxAdventuresBossTargetPatcher
     {
         ArgumentNullException.ThrowIfNull(mainBytes);
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         var text = nso.Text.DecompressedData;
         var callSiteOffsetDelta = GetCallSiteOffsetDelta(nso.BuildId);
         var hasA = TryReadOwnedCallSite(
@@ -67,7 +68,7 @@ internal static class SwShDynamaxAdventuresBossTargetPatcher
         var replacementBoss = ValidateBossSpecies(archive, toSpecies, "replacement");
         ValidateBossRemapBucket(sourceBoss, replacementBoss);
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         var text = nso.Text.DecompressedData.ToArray();
         var callSiteOffsetDelta = GetCallSiteOffsetDelta(nso.BuildId);
         var callSiteAOffset = CallSiteAOffset + callSiteOffsetDelta;

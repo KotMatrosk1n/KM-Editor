@@ -14,6 +14,7 @@ public static class SvWorkflowIds
     public const string Encounters = "encounters";
     public const string TeraRaids = "teraRaids";
     public const string StaticEncounters = "staticEncounters";
+    public const string Shops = "shops";
     public const string GiftPokemon = "giftPokemon";
     public const string TradePokemon = "tradePokemon";
     public const string Placement = "placement";

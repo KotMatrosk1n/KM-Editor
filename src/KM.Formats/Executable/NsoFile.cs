@@ -4,10 +4,10 @@ using K4os.Compression.LZ4;
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 
-namespace KM.Formats.SwSh;
+namespace KM.Formats.Executable;
 
 [Flags]
-public enum SwShNsoFlags : uint
+public enum NsoFlags : uint
 {
     None = 0,
     CompressedText = 1 << 0,
@@ -18,35 +18,35 @@ public enum SwShNsoFlags : uint
     CheckHashData = 1 << 5,
 }
 
-public sealed record SwShNsoSegmentHeader(
+public sealed record NsoSegmentHeader(
     int FileOffset,
     int MemoryOffset,
     int DecompressedSize);
 
-public sealed record SwShNsoSegment(
+public sealed record NsoSegment(
     string Name,
-    SwShNsoSegmentHeader Header,
+    NsoSegmentHeader Header,
     int CompressedSize,
     byte[] Hash,
     byte[] CompressedData,
     byte[] DecompressedData);
 
-public sealed record SwShNsoFile(
+public sealed record NsoFile(
     uint Version,
-    SwShNsoFlags Flags,
+    NsoFlags Flags,
     byte[] BuildId,
-    SwShNsoSegment Text,
-    SwShNsoSegment Ro,
-    SwShNsoSegment Data)
+    NsoSegment Text,
+    NsoSegment Ro,
+    NsoSegment Data)
 {
     public const uint Magic = 0x304F534E;
     public const int HeaderSize = 0x100;
 
     public byte[] RawHeader { get; init; } = [];
 
-    public IReadOnlyList<SwShNsoSegment> Segments => [Text, Ro, Data];
+    public IReadOnlyList<NsoSegment> Segments => [Text, Ro, Data];
 
-    public static SwShNsoFile Parse(byte[] data)
+    public static NsoFile Parse(byte[] data)
     {
         ArgumentNullException.ThrowIfNull(data);
 
@@ -63,7 +63,7 @@ public sealed record SwShNsoFile(
         }
 
         var version = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x04, sizeof(uint)));
-        var flags = (SwShNsoFlags)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x0C, sizeof(uint)));
+        var flags = (NsoFlags)BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(0x0C, sizeof(uint)));
         var textHeader = ReadSegmentHeader(data, 0x10);
         var roHeader = ReadSegmentHeader(data, 0x20);
         var dataHeader = ReadSegmentHeader(data, 0x30);
@@ -75,13 +75,13 @@ public sealed record SwShNsoFile(
         var roHash = data.AsSpan(0xC0, 0x20).ToArray();
         var dataHash = data.AsSpan(0xE0, 0x20).ToArray();
 
-        return new SwShNsoFile(
+        return new NsoFile(
             version,
             flags,
             buildId,
-            ReadSegment(data, ".text", textHeader, textCompressedSize, textHash, flags.HasFlag(SwShNsoFlags.CompressedText)),
-            ReadSegment(data, ".ro", roHeader, roCompressedSize, roHash, flags.HasFlag(SwShNsoFlags.CompressedRo)),
-            ReadSegment(data, ".data", dataHeader, dataCompressedSize, dataHash, flags.HasFlag(SwShNsoFlags.CompressedData)))
+            ReadSegment(data, ".text", textHeader, textCompressedSize, textHash, flags.HasFlag(NsoFlags.CompressedText)),
+            ReadSegment(data, ".ro", roHeader, roCompressedSize, roHash, flags.HasFlag(NsoFlags.CompressedRo)),
+            ReadSegment(data, ".data", dataHeader, dataCompressedSize, dataHash, flags.HasFlag(NsoFlags.CompressedData)))
         {
             RawHeader = data.AsSpan(0, HeaderSize).ToArray(),
         };
@@ -100,9 +100,9 @@ public sealed record SwShNsoFile(
         var textData = textDecompressedData ?? Text.DecompressedData;
         var roData = roDecompressedData ?? Ro.DecompressedData;
         var dataData = dataDecompressedData ?? Data.DecompressedData;
-        var textSegment = EncodeSegment(".text", textData, Flags.HasFlag(SwShNsoFlags.CompressedText));
-        var roSegment = EncodeSegment(".ro", roData, Flags.HasFlag(SwShNsoFlags.CompressedRo));
-        var dataSegment = EncodeSegment(".data", dataData, Flags.HasFlag(SwShNsoFlags.CompressedData));
+        var textSegment = EncodeSegment(".text", textData, Flags.HasFlag(NsoFlags.CompressedText));
+        var roSegment = EncodeSegment(".ro", roData, Flags.HasFlag(NsoFlags.CompressedRo));
+        var dataSegment = EncodeSegment(".data", dataData, Flags.HasFlag(NsoFlags.CompressedData));
 
         var textOffset = Math.Max(HeaderSize, Text.Header.FileOffset);
         var roOffset = Align(textOffset + textSegment.Length, 0x10);
@@ -131,18 +131,18 @@ public sealed record SwShNsoFile(
         return output;
     }
 
-    private static SwShNsoSegmentHeader ReadSegmentHeader(byte[] data, int offset)
+    private static NsoSegmentHeader ReadSegmentHeader(byte[] data, int offset)
     {
         var fileOffset = ReadNonNegativeInt32(data, offset, "segment file offset");
         var memoryOffset = ReadNonNegativeInt32(data, offset + 0x04, "segment memory offset");
         var decompressedSize = ReadNonNegativeInt32(data, offset + 0x08, "segment decompressed size");
-        return new SwShNsoSegmentHeader(fileOffset, memoryOffset, decompressedSize);
+        return new NsoSegmentHeader(fileOffset, memoryOffset, decompressedSize);
     }
 
-    private static SwShNsoSegment ReadSegment(
+    private static NsoSegment ReadSegment(
         byte[] data,
         string name,
-        SwShNsoSegmentHeader header,
+        NsoSegmentHeader header,
         int compressedSize,
         byte[] hash,
         bool isCompressed)
@@ -165,7 +165,7 @@ public sealed record SwShNsoFile(
                 $"{name} segment decompressed size mismatch: expected 0x{header.DecompressedSize:X}, got 0x{decompressedData.Length:X}.");
         }
 
-        return new SwShNsoSegment(name, header, compressedSize, hash, compressedData, decompressedData);
+        return new NsoSegment(name, header, compressedSize, hash, compressedData, decompressedData);
     }
 
     private static byte[] DecodeLz4(string name, byte[] compressedData, int decompressedSize)

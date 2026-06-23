@@ -2,6 +2,7 @@
 
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.ExeFs;
 using System.Buffers.Binary;
 using System.Globalization;
@@ -58,7 +59,7 @@ internal static class SwShHyperTrainingMainPatcher
 
         try
         {
-            var nso = SwShNsoFile.Parse(mainBytes);
+            var nso = NsoFile.Parse(mainBytes);
             var buildId = FormatBuildId(nso.BuildId);
             var layout = FindLayout(buildId);
             if (layout is null)
@@ -125,7 +126,7 @@ internal static class SwShHyperTrainingMainPatcher
             throw new InvalidDataException(analysis.Message);
         }
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         var layout = FindLayout(FormatBuildId(nso.BuildId))
             ?? throw new InvalidDataException("Hyper Training picker supports Sword and Shield 1.3.2 exefs/main files.");
         var text = nso.Text.DecompressedData.ToArray();

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using System.Buffers.Binary;
 using System.Globalization;
 
@@ -59,7 +60,7 @@ internal static class SwShDynamaxAdventuresMainPatcher
         ArgumentNullException.ThrowIfNull(mainBytes);
         ArgumentNullException.ThrowIfNull(archive);
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         var text = nso.Text.DecompressedData.ToArray();
         var ro = nso.Ro.DecompressedData.ToArray();
         var commandValidatorOffsetDelta = GetCommandValidatorOffsetDelta(nso.BuildId);
@@ -83,8 +84,8 @@ internal static class SwShDynamaxAdventuresMainPatcher
             throw new InvalidDataException("Dynamax Adventures restore requires a non-negative Adventure entry count.");
         }
 
-        var currentNso = SwShNsoFile.Parse(currentMainBytes);
-        var baseNso = SwShNsoFile.Parse(baseMainBytes);
+        var currentNso = NsoFile.Parse(currentMainBytes);
+        var baseNso = NsoFile.Parse(baseMainBytes);
         var currentText = currentNso.Text.DecompressedData.ToArray();
         var currentRo = currentNso.Ro.DecompressedData.ToArray();
         var baseText = baseNso.Text.DecompressedData;

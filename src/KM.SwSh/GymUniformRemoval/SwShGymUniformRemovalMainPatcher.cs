@@ -2,6 +2,7 @@
 
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.ExeFs;
 using System.Buffers.Binary;
 using System.Globalization;
@@ -60,7 +61,7 @@ internal static class SwShGymUniformRemovalMainPatcher
 
         try
         {
-            var nso = SwShNsoFile.Parse(mainBytes);
+            var nso = NsoFile.Parse(mainBytes);
             var buildId = FormatBuildId(nso.BuildId);
             var definition = FindDefinition(buildId);
             if (definition is null)
@@ -157,7 +158,7 @@ internal static class SwShGymUniformRemovalMainPatcher
             throw new InvalidDataException(analysis.Message);
         }
 
-        var nso = SwShNsoFile.Parse(mainBytes);
+        var nso = NsoFile.Parse(mainBytes);
         var definition = FindDefinition(FormatBuildId(nso.BuildId))
             ?? throw new InvalidDataException("Gym Uniform Removal supports Sword and Shield 1.3.2 exefs/main files.");
         var text = nso.Text.DecompressedData.ToArray();
@@ -267,8 +268,8 @@ internal static class SwShGymUniformRemovalMainPatcher
             throw new InvalidDataException("Gym Uniform Removal restore requires an installed Gym Uniform Removal stub.");
         }
 
-        var currentNso = SwShNsoFile.Parse(currentMainBytes);
-        var baseNso = SwShNsoFile.Parse(baseMainBytes);
+        var currentNso = NsoFile.Parse(currentMainBytes);
+        var baseNso = NsoFile.Parse(baseMainBytes);
         var currentBuildId = FormatBuildId(currentNso.BuildId);
         var baseBuildId = FormatBuildId(baseNso.BuildId);
         if (!string.Equals(currentBuildId, baseBuildId, StringComparison.Ordinal))

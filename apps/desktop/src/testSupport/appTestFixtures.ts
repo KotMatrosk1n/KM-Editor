@@ -2780,25 +2780,38 @@ export function createMockProjectBridge(
         valueKind: 'integer'
       }
     ],
+    editorFamily: 'swsh',
     shops: [
       {
+        canEditInventoryOrder: true,
         currency: 'Money',
+        editorFamily: 'swsh',
         inventory: [
           {
+            canEditPrice: true,
+            fieldDisplayValues: {},
+            fieldValues: {},
             isKnownItem: true,
             itemId: 1,
             itemName: 'Potion',
             price: 300,
+            priceField: null,
             slot: 1,
-            stockLimit: null
+            stockLimit: null,
+            supportedFields: []
           },
           {
+            canEditPrice: true,
+            fieldDisplayValues: {},
+            fieldValues: {},
             isKnownItem: true,
             itemId: 2,
             itemName: 'Antidote',
             price: 200,
+            priceField: null,
             slot: 2,
-            stockLimit: null
+            stockLimit: null,
+            supportedFields: []
           }
         ],
         inventoryCount: 1,
@@ -6817,12 +6830,17 @@ export function createMockProjectBridge(
         const item = itemsWorkflow.items.find((candidate) => candidate.itemId === itemId);
 
         return {
+          canEditPrice: true,
+          fieldDisplayValues: {},
+          fieldValues: {},
           isKnownItem: item !== undefined,
           itemId,
           itemName: item?.name ?? `Item ${itemId}`,
           price: item?.buyPrice ?? 0,
+          priceField: null,
           slot,
-          stockLimit: null
+          stockLimit: null,
+          supportedFields: []
         };
       };
 

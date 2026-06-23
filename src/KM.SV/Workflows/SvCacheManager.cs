@@ -58,6 +58,8 @@ public sealed class SvCacheManager
         SvDataPaths.PersonalArray,
         SvDataPaths.MoveDataArray,
         SvDataPaths.ItemDataArray,
+        SvDataPaths.FriendlyShopLineupDataArray,
+        SvDataPaths.ShopWazaMachineDataArray,
         SvDataPaths.VisibleItemScenePaldeaScarlet,
         SvDataPaths.VisibleItemScenePaldeaViolet,
         SvDataPaths.VisibleItemSceneKitakamiScarlet,

@@ -31,6 +31,7 @@ using KM.Api.Trainers;
 using KM.Api.TypeChart;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.BagHook;
 using KM.SwSh.DynamaxAdventures;
 using KM.SwSh.ExeFs;
@@ -2066,13 +2067,13 @@ public sealed class ProjectBridgeDispatcherTests
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         var outputMainBytes = File.ReadAllBytes(outputMainPath);
         Assert.NotEqual(baseMainBytes, outputMainBytes);
-        var outputNso = SwShNsoFile.Parse(outputMainBytes);
+        var outputNso = NsoFile.Parse(outputMainBytes);
         var outputText = outputNso.Text.DecompressedData;
         Assert.Equal(EncodeCmpImmediate(register: 9, immediate: 3), ReadInstruction(outputText, 0x007BC1BC));
         Assert.Equal(EncodeCmpImmediate(register: 9, immediate: 3), ReadInstruction(outputText, 0x007BC1C4));
         Assert.NotEqual(0x2A0003E2u, ReadInstruction(outputText, 0x007B1F20));
         Assert.Contains(EncodeCmpImmediate(register: 22, immediate: 1128), ReadAlignedInstructions(outputText));
-        Assert.Equal(SwShNsoFile.ComputeHash(outputText), outputNso.Text.Hash);
+        Assert.Equal(NsoFile.ComputeHash(outputText), outputNso.Text.Hash);
     }
 
     [Fact]
@@ -2221,7 +2222,7 @@ public sealed class ProjectBridgeDispatcherTests
             relativePath => relativePath == SwShIvScreenWorkflowService.ExeFsMainPath);
 
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
-        var outputText = SwShNsoFile.Parse(File.ReadAllBytes(outputMainPath)).Text.DecompressedData;
+        var outputText = NsoFile.Parse(File.ReadAllBytes(outputMainPath)).Text.DecompressedData;
         Assert.Equal(0x94001F27u, ReadInstruction(outputText, 0x0137F634));
         Assert.Equal(0x9400023Eu, ReadInstruction(outputText, 0x0138F268));
         Assert.Equal(0x97CFA48Eu, ReadInstruction(outputText, 0x0138FBE8));
@@ -2324,7 +2325,7 @@ public sealed class ProjectBridgeDispatcherTests
             relativePath => relativePath == "exefs/main");
 
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
-        var outputText = SwShNsoFile.Parse(File.ReadAllBytes(outputMainPath)).Text.DecompressedData;
+        var outputText = NsoFile.Parse(File.ReadAllBytes(outputMainPath)).Text.DecompressedData;
         Assert.Equal(0x52800020u, ReadInstruction(outputText, 0x0143A2B0));
         Assert.Equal(0xD65F03C0u, ReadInstruction(outputText, 0x0143A2B4));
         Assert.Equal(0x52800020u, ReadInstruction(outputText, 0x0143A300));
@@ -2748,7 +2749,7 @@ public sealed class ProjectBridgeDispatcherTests
         var outputMainPath = Path.Combine(temp.OutputRootPath, "exefs", "main");
         var outputMainBytes = File.ReadAllBytes(outputMainPath);
         Assert.NotEqual(baseMainBytes, outputMainBytes);
-        var outputNso = SwShNsoFile.Parse(outputMainBytes);
+        var outputNso = NsoFile.Parse(outputMainBytes);
         var outputText = outputNso.Text.DecompressedData;
         Assert.Equal(EncodeCmpImmediate(register: 9, immediate: 3), ReadInstruction(outputText, 0x007BC1BC));
         Assert.Equal(EncodeCmpImmediate(register: 9, immediate: 3), ReadInstruction(outputText, 0x007BC1C4));
@@ -2759,7 +2760,7 @@ public sealed class ProjectBridgeDispatcherTests
         Assert.Contains(EncodeCmpImmediate(register: 20, immediate: 1128), ReadAlignedInstructions(outputText));
         Assert.Contains(EncodeCmpImmediate(register: 19, immediate: 1128), ReadAlignedInstructions(outputText));
         Assert.Contains(EncodeMovzImmediate32(register: 0, immediate: 12), ReadAlignedInstructions(outputText));
-        Assert.Equal(SwShNsoFile.ComputeHash(outputText), outputNso.Text.Hash);
+        Assert.Equal(NsoFile.ComputeHash(outputText), outputNso.Text.Hash);
 
         var outputShopData = ReadRoyalCandyOutputShopData(temp);
         var dyniteShop = outputShopData.SingleShops.Single(shop => shop.Hash == RoyalCandyDyniteOreTraderShopHash);

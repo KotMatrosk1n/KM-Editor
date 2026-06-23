@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Files;
 using KM.Core.Projects;
 using KM.Formats.SwSh;
+using KM.Formats.Executable;
 using KM.SwSh.Workflows;
 using System.Buffers.Binary;
 using System.Globalization;
@@ -153,7 +154,7 @@ public sealed class SwShExeFsPatchWorkflowService
         SwShExeFsPatchProvenance provenance)
     {
         var bytes = File.ReadAllBytes(sourcePath);
-        var nso = SwShNsoFile.Parse(bytes);
+        var nso = NsoFile.Parse(bytes);
         var segments = CreateSegments(nso, provenance);
         var checks = CreateChecks(nso, provenance);
         var patches = new[] { CreateMainPatchRecord(bytes, nso, checks, provenance) };
@@ -185,7 +186,7 @@ public sealed class SwShExeFsPatchWorkflowService
 
     private static SwShExeFsPatchRecord CreateMainPatchRecord(
         byte[] bytes,
-        SwShNsoFile nso,
+        NsoFile nso,
         IReadOnlyList<SwShExeFsPatchCheckRecord> checks,
         SwShExeFsPatchProvenance provenance)
     {
@@ -212,13 +213,13 @@ public sealed class SwShExeFsPatchWorkflowService
     }
 
     private static IReadOnlyList<SwShExeFsSegmentRecord> CreateSegments(
-        SwShNsoFile nso,
+        NsoFile nso,
         SwShExeFsPatchProvenance provenance)
     {
         return nso.Segments
             .Select(segment =>
             {
-                var actualHash = SwShNsoFile.ComputeHash(segment.DecompressedData);
+                var actualHash = NsoFile.ComputeHash(segment.DecompressedData);
                 var hashStatus = actualHash.SequenceEqual(segment.Hash) ? "Pass" : "Warning";
                 return new SwShExeFsSegmentRecord(
                     segment.Name.TrimStart('.'),
@@ -235,7 +236,7 @@ public sealed class SwShExeFsPatchWorkflowService
     }
 
     private static IReadOnlyList<SwShExeFsPatchCheckRecord> CreateChecks(
-        SwShNsoFile nso,
+        NsoFile nso,
         SwShExeFsPatchProvenance provenance)
     {
         var checks = new List<SwShExeFsPatchCheckRecord>();
@@ -243,9 +244,9 @@ public sealed class SwShExeFsPatchWorkflowService
         var largestZeroRun = FindLargestZeroRun(text);
 
         AddCheck(checks, provenance, "nso-magic", "Pass", "main", string.Empty, "NSO magic", "NSO0", "NSO0", "Valid NSO header.");
-        AddHashCheck(checks, provenance, "text-hash", ".text", "Segment hash", nso.Text.Hash, SwShNsoFile.ComputeHash(nso.Text.DecompressedData));
-        AddHashCheck(checks, provenance, "ro-hash", ".ro", "Segment hash", nso.Ro.Hash, SwShNsoFile.ComputeHash(nso.Ro.DecompressedData));
-        AddHashCheck(checks, provenance, "data-hash", ".data", "Segment hash", nso.Data.Hash, SwShNsoFile.ComputeHash(nso.Data.DecompressedData));
+        AddHashCheck(checks, provenance, "text-hash", ".text", "Segment hash", nso.Text.Hash, NsoFile.ComputeHash(nso.Text.DecompressedData));
+        AddHashCheck(checks, provenance, "ro-hash", ".ro", "Segment hash", nso.Ro.Hash, NsoFile.ComputeHash(nso.Ro.DecompressedData));
+        AddHashCheck(checks, provenance, "data-hash", ".data", "Segment hash", nso.Data.Hash, NsoFile.ComputeHash(nso.Data.DecompressedData));
         AddZeroRunCheck(checks, provenance, text, "patch-code-cave", "Patch code cave", 0x0C, RareCandyUiHookCodeCaveSearchStart);
         AddCheck(
             checks,

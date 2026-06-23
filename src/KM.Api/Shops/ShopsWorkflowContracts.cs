@@ -20,7 +20,20 @@ public sealed record ShopInventoryRecordDto(
     string ItemName,
     int Price,
     bool IsKnownItem,
-    int? StockLimit);
+    int? StockLimit)
+{
+    public IReadOnlyDictionary<string, string> FieldValues { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    public IReadOnlyDictionary<string, string> FieldDisplayValues { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    public IReadOnlyList<string> SupportedFields { get; init; } = [];
+
+    public string? PriceField { get; init; }
+
+    public bool CanEditPrice { get; init; } = true;
+}
 
 public sealed record ShopRecordDto(
     string ShopId,
@@ -34,7 +47,12 @@ public sealed record ShopRecordDto(
     string Location,
     string Currency,
     IReadOnlyList<ShopInventoryRecordDto> Inventory,
-    ShopProvenanceDto Provenance);
+    ShopProvenanceDto Provenance)
+{
+    public string EditorFamily { get; init; } = "swsh";
+
+    public bool CanEditInventoryOrder { get; init; } = true;
+}
 
 public sealed record ShopEditableFieldDto(
     string Field,
@@ -60,7 +78,10 @@ public sealed record ShopsWorkflowDto(
     IReadOnlyList<ShopRecordDto> Shops,
     IReadOnlyList<ShopEditableFieldDto> EditableFields,
     ShopsWorkflowStatsDto Stats,
-    IReadOnlyList<ApiDiagnostic> Diagnostics);
+    IReadOnlyList<ApiDiagnostic> Diagnostics)
+{
+    public string EditorFamily { get; init; } = "swsh";
+}
 
 public sealed record LoadShopsWorkflowResponse(ShopsWorkflowDto Workflow);
 

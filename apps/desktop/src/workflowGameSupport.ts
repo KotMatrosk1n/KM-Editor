@@ -136,6 +136,7 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'encounters',
   'teraRaids',
   'staticEncounters',
+  'shops',
   'giftPokemon',
   'tradePokemon',
   'placement',
