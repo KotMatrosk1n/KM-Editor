@@ -787,8 +787,9 @@ h2 {
 
 .diagnostic {
   display: grid;
-  grid-template-columns: 80px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 16px;
+  row-gap: 6px;
   min-width: 0;
   min-height: 36px;
   align-items: center;
@@ -801,6 +802,7 @@ h2 {
 .diagnostic strong {
   min-width: 0;
   text-transform: capitalize;
+  white-space: nowrap;
 }
 
 .diagnostic span {

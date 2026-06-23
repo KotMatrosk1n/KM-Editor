@@ -11,8 +11,9 @@ import {
 } from 'react';
 import enResource from './resources/en.json';
 import esResource from './resources/es.json';
+import frResource from './resources/fr.json';
 
-export type LanguageCode = 'en' | 'es';
+export type LanguageCode = 'en' | 'es' | 'fr';
 
 type LocalizationParams = Record<string, string | number>;
 type LocalizationResource = {
@@ -39,12 +40,17 @@ export const supportedLanguages = [
   {
     code: 'es',
     flag: '🇪🇸'
+  },
+  {
+    code: 'fr',
+    flag: '🇫🇷'
   }
 ] as const;
 
 const resourcesByLanguage: Record<LanguageCode, LocalizationResource> = {
   en: enResource,
-  es: esResource
+  es: esResource,
+  fr: frResource
 };
 
 const translatableAttributes = ['aria-label', 'title', 'placeholder', 'alt'] as const;
@@ -191,6 +197,25 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     }
   }
 
+  const editableFieldHelpMatch = /^(.+)\. Allowed range: ([^.]+)(?:\. (.+))?$/.exec(literal);
+  if (editableFieldHelpMatch) {
+    const translatedLabel = translateLiteralBodyForLanguage(language, editableFieldHelpMatch[1]);
+    const translatedTail = editableFieldHelpMatch[3]
+      ? `. ${translateLiteralBodyForLanguage(language, editableFieldHelpMatch[3])}`
+      : '';
+
+    return `${translatedLabel}. ${translateLiteralBodyForLanguage(language, 'Allowed range')}: ${
+      editableFieldHelpMatch[2]
+    }${translatedTail}`;
+  }
+
+  const availableOptionsMatch = /^(\d+) available option(s)?$/.exec(literal);
+  if (availableOptionsMatch) {
+    const count = Number(availableOptionsMatch[1]);
+    const optionLabel = count === 1 ? 'available option' : 'available options';
+    return `${availableOptionsMatch[1]} ${translateLiteralBodyForLanguage(language, optionLabel)}`;
+  }
+
   const hyphenatedOptionMatch = /^(Default|Ability 1|Ability 2|Hidden Ability) - (.+)$/.exec(
     literal
   );
@@ -215,10 +240,10 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
 
   const starFieldMatch = /^(\d)-star (probability|value|drop chance|quantity)$/.exec(literal);
   if (starFieldMatch) {
-    return `${starFieldMatch[1]} estrellas ${translateLiteralBodyForLanguage(
-      language,
-      starFieldMatch[2]
-    )}`;
+    return formatLiteralTemplate(language, '{count}-star {label}', {
+      count: starFieldMatch[1],
+      label: translateLiteralBodyForLanguage(language, starFieldMatch[2])
+    });
   }
 
   const recordSummaryMatch = /^(Gift|Rental|Adventure|Static) (\d+): (.+)$/.exec(literal);
@@ -283,95 +308,156 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
 
   const clearCacheMatch = /^Clear Cache \((.+)\)$/.exec(literal);
   if (clearCacheMatch) {
-    return `Borrar caché (${clearCacheMatch[1]})`;
+    return formatLiteralTemplate(language, 'Clear Cache ({size})', {
+      size: clearCacheMatch[1]
+    });
   }
 
   const currentCacheSizeMatch = /^Current cache size: (.+)$/.exec(literal);
   if (currentCacheSizeMatch) {
-    return `Tamaño actual de caché: ${currentCacheSizeMatch[1]}`;
+    return formatLiteralTemplate(language, 'Current cache size: {size}', {
+      size: currentCacheSizeMatch[1]
+    });
   }
 
   const pendingChangesMatch = /^Pending changes \((\d+)\)$/.exec(literal);
   if (pendingChangesMatch) {
-    return `Cambios pendientes (${pendingChangesMatch[1]})`;
+    return formatLiteralTemplate(language, 'Pending changes ({count})', {
+      count: pendingChangesMatch[1]
+    });
   }
 
   const inlinePendingChangesMatch = /^Pending changes: (\d+)$/.exec(literal);
   if (inlinePendingChangesMatch) {
-    return `Cambios pendientes: ${inlinePendingChangesMatch[1]}`;
+    return formatLiteralTemplate(language, 'Pending changes: {count}', {
+      count: inlinePendingChangesMatch[1]
+    });
   }
 
   const removePendingMatch = /^Remove pending change (\d+): (.+)$/.exec(literal);
   if (removePendingMatch) {
-    return `Eliminar cambio pendiente ${removePendingMatch[1]}: ${removePendingMatch[2]}`;
+    return formatLiteralTemplate(language, 'Remove pending change {index}: {label}', {
+      index: removePendingMatch[1],
+      label: removePendingMatch[2]
+    });
   }
 
   const dumpPreviewMatch = /^Dump Importer preview accepted (\d+) rows? and rejected (\d+)\.$/.exec(literal);
   if (dumpPreviewMatch) {
-    const acceptedRows = dumpPreviewMatch[1] === '1' ? 'fila aceptada' : 'filas aceptadas';
-    const rejectedRows = dumpPreviewMatch[2] === '1' ? 'fila rechazada' : 'filas rechazadas';
-    return `El Importador de volcados aceptó ${dumpPreviewMatch[1]} ${acceptedRows} y rechazó ${dumpPreviewMatch[2]} ${rejectedRows}.`;
+    const acceptedRows =
+      dumpPreviewMatch[1] === '1'
+        ? translateLiteralBodyForLanguage(language, 'accepted row')
+        : translateLiteralBodyForLanguage(language, 'accepted rows');
+    const rejectedRows =
+      dumpPreviewMatch[2] === '1'
+        ? translateLiteralBodyForLanguage(language, 'rejected row')
+        : translateLiteralBodyForLanguage(language, 'rejected rows');
+    return formatLiteralTemplate(
+      language,
+      'Dump Importer preview accepted {accepted} {acceptedRows} and rejected {rejected} {rejectedRows}.',
+      {
+        accepted: dumpPreviewMatch[1],
+        acceptedRows,
+        rejected: dumpPreviewMatch[2],
+        rejectedRows
+      }
+    );
   }
 
   const dumpParseMatch = /^Dump Importer source could not be parsed(?: at line (\d+), byte (\d+))?: (.+)$/.exec(
     literal
   );
   if (dumpParseMatch) {
-    const location =
-      dumpParseMatch[1] && dumpParseMatch[2]
-        ? ` en la línea ${dumpParseMatch[1]}, byte ${dumpParseMatch[2]}`
-        : '';
-    return `No se pudo analizar el origen del Importador de volcados${location}: ${translateLiteralBodyForLanguage(
-      language,
-      dumpParseMatch[3]
-    )}`;
+    const message = translateLiteralBodyForLanguage(language, dumpParseMatch[3]);
+    return dumpParseMatch[1] && dumpParseMatch[2]
+      ? formatLiteralTemplate(
+          language,
+          'Dump Importer source could not be parsed at line {line}, byte {byte}: {message}',
+          {
+            line: dumpParseMatch[1],
+            byte: dumpParseMatch[2],
+            message
+          }
+        )
+      : formatLiteralTemplate(language, 'Dump Importer source could not be parsed: {message}', {
+          message
+        });
   }
 
   const dumpReadMatch = /^Dump Importer source could not be read: (.+)$/.exec(literal);
   if (dumpReadMatch) {
-    return `No se pudo leer el origen del Importador de volcados: ${dumpReadMatch[1]}`;
+    return formatLiteralTemplate(language, 'Dump Importer source could not be read: {error}', {
+      error: dumpReadMatch[1]
+    });
   }
 
   const dumpUnsupportedProfileMatch = /^Dump Importer profile '(.+)' is not supported\.$/.exec(literal);
   if (dumpUnsupportedProfileMatch) {
-    return `El perfil '${dumpUnsupportedProfileMatch[1]}' no es compatible con el Importador de volcados.`;
+    return formatLiteralTemplate(language, "Dump Importer profile '{profile}' is not supported.", {
+      profile: dumpUnsupportedProfileMatch[1]
+    });
   }
 
   const dumpDuplicateColumnMatch = /^Dump Importer source has more than one '(.+)' column\.$/.exec(literal);
   if (dumpDuplicateColumnMatch) {
-    return `El origen del Importador de volcados tiene más de una columna '${dumpDuplicateColumnMatch[1]}'.`;
+    return formatLiteralTemplate(
+      language,
+      "Dump Importer source has more than one '{column}' column.",
+      {
+        column: dumpDuplicateColumnMatch[1]
+      }
+    );
   }
 
   const importRowReviewMatch = /^Row (\d+) needs review\.$/.exec(literal);
   if (importRowReviewMatch) {
-    return `La fila ${importRowReviewMatch[1]} necesita revisión.`;
+    return formatLiteralTemplate(language, 'Row {row} needs review.', {
+      row: importRowReviewMatch[1]
+    });
   }
 
   const importNoChangesMatch = /^(.+) has no changed import values\.$/.exec(literal);
   if (importNoChangesMatch) {
-    return `${importNoChangesMatch[1]} no tiene valores de importación cambiados.`;
+    return formatLiteralTemplate(language, '{row} has no changed import values.', {
+      row: importNoChangesMatch[1]
+    });
   }
 
   const noEntriesInMatch = /^No entries in (.+)\.$/.exec(literal);
   if (noEntriesInMatch) {
-    return `No hay entradas en ${translateLiteralBodyForLanguage(language, noEntriesInMatch[1])}.`;
+    return formatLiteralTemplate(language, 'No entries in {section}.', {
+      section: translateLiteralBodyForLanguage(language, noEntriesInMatch[1])
+    });
   }
 
   const importEditSummaryMatch = /^(.+): (.+) -> (.+)\.$/.exec(literal);
   if (importEditSummaryMatch) {
-    return `${importEditSummaryMatch[1]}: ${translateLiteralBodyForLanguage(language, importEditSummaryMatch[2])} -> ${importEditSummaryMatch[3]}.`;
+    return formatLiteralTemplate(language, '{row}: {field} -> {value}.', {
+      row: importEditSummaryMatch[1],
+      field: translateLiteralBodyForLanguage(language, importEditSummaryMatch[2]),
+      value: importEditSummaryMatch[3]
+    });
   }
 
   const importRowItemIdMatch = /^Row (\d+): ItemId must be a non-negative integer\.$/.exec(literal);
   if (importRowItemIdMatch) {
-    return `Fila ${importRowItemIdMatch[1]}: ItemId debe ser un número entero no negativo.`;
+    return formatLiteralTemplate(language, 'Row {row}: ItemId must be a non-negative integer.', {
+      row: importRowItemIdMatch[1]
+    });
   }
 
   const importRowMissingItemMatch = /^Row (\d+): Item (\d+) is not present in the loaded Items workflow\.$/.exec(
     literal
   );
   if (importRowMissingItemMatch) {
-    return `Fila ${importRowMissingItemMatch[1]}: el objeto ${importRowMissingItemMatch[2]} no está en el flujo de Objetos cargado.`;
+    return formatLiteralTemplate(
+      language,
+      'Row {row}: Item {itemId} is not present in the loaded Items workflow.',
+      {
+        row: importRowMissingItemMatch[1],
+        itemId: importRowMissingItemMatch[2]
+      }
+    );
   }
 
   const importRowSharedPriceMatch =
@@ -379,182 +465,272 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
       literal
     );
   if (importRowSharedPriceMatch) {
-    return `Fila ${importRowSharedPriceMatch[1]}: BuyPrice y SellPrice cambiaron a valores incompatibles, pero apuntan al mismo campo almacenado de la tabla de objetos. Cambia un valor, o mantén BuyPrice igual a SellPrice multiplicado por 2.`;
+    return formatLiteralTemplate(
+      language,
+      'Row {row}: BuyPrice and SellPrice both changed to incompatible values, but they target the same stored item-table field. Change one value, or keep BuyPrice equal to SellPrice multiplied by 2.',
+      {
+        row: importRowSharedPriceMatch[1]
+      }
+    );
   }
 
   const importRowRangeMatch = /^Row (\d+): (.+) value '(.+)' must be between (\d+) and (\d+)\.$/.exec(
     literal
   );
   if (importRowRangeMatch) {
-    return `Fila ${importRowRangeMatch[1]}: el valor '${importRowRangeMatch[3]}' de ${translateLiteralBodyForLanguage(
+    return formatLiteralTemplate(
       language,
-      importRowRangeMatch[2]
-    )} debe estar entre ${importRowRangeMatch[4]} y ${importRowRangeMatch[5]}.`;
+      "Row {row}: {field} value '{value}' must be between {minimum} and {maximum}.",
+      {
+        row: importRowRangeMatch[1],
+        field: translateLiteralBodyForLanguage(language, importRowRangeMatch[2]),
+        value: importRowRangeMatch[3],
+        minimum: importRowRangeMatch[4],
+        maximum: importRowRangeMatch[5]
+      }
+    );
   }
 
   const jsonRowObjectMatch = /^JSON row (\d+) must be an object\.$/.exec(literal);
   if (jsonRowObjectMatch) {
-    return `La fila JSON ${jsonRowObjectMatch[1]} debe ser un objeto.`;
+    return formatLiteralTemplate(language, 'JSON row {row} must be an object.', {
+      row: jsonRowObjectMatch[1]
+    });
   }
 
   const jsonDuplicatePropertyMatch = /^JSON row (\d+) contains more than one '(.+)' property\.$/.exec(
     literal
   );
   if (jsonDuplicatePropertyMatch) {
-    return `La fila JSON ${jsonDuplicatePropertyMatch[1]} contiene más de una propiedad '${jsonDuplicatePropertyMatch[2]}'.`;
+    return formatLiteralTemplate(
+      language,
+      "JSON row {row} contains more than one '{property}' property.",
+      {
+        row: jsonDuplicatePropertyMatch[1],
+        property: jsonDuplicatePropertyMatch[2]
+      }
+    );
   }
 
   const browseForMatch = /^Browse for (.+)$/.exec(literal);
   if (browseForMatch) {
-    return `Buscar ${translateLiteralBodyForLanguage(language, browseForMatch[1])}`;
+    return formatLiteralTemplate(language, 'Browse for {target}', {
+      target: translateLiteralBodyForLanguage(language, browseForMatch[1])
+    });
   }
 
   const selectMatch = /^Select (.+)$/.exec(literal);
   if (selectMatch) {
-    return `Seleccionar ${translateLiteralBodyForLanguage(language, selectMatch[1])}`;
+    return formatLiteralTemplate(language, 'Select {target}', {
+      target: translateLiteralBodyForLanguage(language, selectMatch[1])
+    });
   }
 
   const slotMatch = /^Slot (\d+)$/.exec(literal);
   if (slotMatch) {
-    return `Hueco ${slotMatch[1]}`;
+    return formatLiteralTemplate(language, 'Slot {index}', {
+      index: slotMatch[1]
+    });
   }
 
   const natureRaisesMatch = /^Nature raises (.+)\.$/.exec(literal);
   if (natureRaisesMatch) {
-    return `La naturaleza sube ${translateLiteralBodyForLanguage(language, natureRaisesMatch[1])}.`;
+    return formatLiteralTemplate(language, 'Nature raises {stat}.', {
+      stat: translateLiteralBodyForLanguage(language, natureRaisesMatch[1])
+    });
   }
 
   const natureLowersMatch = /^Nature lowers (.+)\.$/.exec(literal);
   if (natureLowersMatch) {
-    return `La naturaleza baja ${translateLiteralBodyForLanguage(language, natureLowersMatch[1])}.`;
+    return formatLiteralTemplate(language, 'Nature lowers {stat}.', {
+      stat: translateLiteralBodyForLanguage(language, natureLowersMatch[1])
+    });
   }
 
   const unavailableEncounterAreaMatch = /^(.+) encounters are not available for this location\.$/.exec(
     literal
   );
   if (unavailableEncounterAreaMatch) {
-    return `Los encuentros de ${unavailableEncounterAreaMatch[1]} no están disponibles para esta ubicación.`;
+    return formatLiteralTemplate(
+      language,
+      '{area} encounters are not available for this location.',
+      {
+        area: unavailableEncounterAreaMatch[1]
+      }
+    );
   }
 
   const unavailableForLocationMatch = /^(.+) is not available for this location\.$/.exec(literal);
   if (unavailableForLocationMatch) {
-    return `${unavailableForLocationMatch[1]} no está disponible para esta ubicación.`;
+    return formatLiteralTemplate(language, '{item} is not available for this location.', {
+      item: unavailableForLocationMatch[1]
+    });
   }
 
   const copyEncounterTableMatch = /^Copy this (.+) table to (.+)\.$/.exec(literal);
   if (copyEncounterTableMatch) {
-    return `Copiar esta tabla de ${copyEncounterTableMatch[1]} a ${copyEncounterTableMatch[2]}.`;
+    return formatLiteralTemplate(language, 'Copy this {table} table to {target}.', {
+      table: copyEncounterTableMatch[1],
+      target: copyEncounterTableMatch[2]
+    });
   }
 
   const shinyRateRollsMatch = /^Writes (\d+) PID rolls\.$/.exec(literal);
   if (shinyRateRollsMatch) {
-    return `Escribe ${shinyRateRollsMatch[1]} tiradas PID.`;
+    return formatLiteralTemplate(language, 'Writes {count} PID rolls.', {
+      count: shinyRateRollsMatch[1]
+    });
   }
 
   const searchMatch = /^Search (.+)$/.exec(literal);
   if (searchMatch) {
-    return `Buscar ${translateLiteralBodyForLanguage(language, searchMatch[1])}`;
+    return formatLiteralTemplate(language, 'Search {target}', {
+      target: translateLiteralBodyForLanguage(language, searchMatch[1])
+    });
   }
 
   const openMatch = /^Open (.+)$/.exec(literal);
   if (openMatch) {
-    return `Abrir ${translateLiteralBodyForLanguage(language, openMatch[1])}`;
+    return formatLiteralTemplate(language, 'Open {target}', {
+      target: translateLiteralBodyForLanguage(language, openMatch[1])
+    });
   }
 
   const saveMatch = /^Save (.+)$/.exec(literal);
   if (saveMatch) {
-    return `Guardar ${translateLiteralBodyForLanguage(language, saveMatch[1])}`;
+    return formatLiteralTemplate(language, 'Save {target}', {
+      target: translateLiteralBodyForLanguage(language, saveMatch[1])
+    });
   }
 
   const stageMatch = /^Stage (.+)$/.exec(literal);
   if (stageMatch) {
-    return `Preparar ${translateLiteralBodyForLanguage(language, stageMatch[1])}`;
+    return formatLiteralTemplate(language, 'Stage {target}', {
+      target: translateLiteralBodyForLanguage(language, stageMatch[1])
+    });
   }
 
   const setMatch = /^Set (.+)$/.exec(literal);
   if (setMatch) {
-    return `Configurar ${translateLiteralBodyForLanguage(language, setMatch[1])}`;
+    return formatLiteralTemplate(language, 'Set {target}', {
+      target: translateLiteralBodyForLanguage(language, setMatch[1])
+    });
   }
 
   const addMatch = /^Add (.+)$/.exec(literal);
   if (addMatch) {
-    return `Agregar ${translateLiteralBodyForLanguage(language, addMatch[1])}`;
+    return formatLiteralTemplate(language, 'Add {target}', {
+      target: translateLiteralBodyForLanguage(language, addMatch[1])
+    });
   }
 
   const removeMatch = /^Remove (.+)$/.exec(literal);
   if (removeMatch) {
-    return `Quitar ${translateLiteralBodyForLanguage(language, removeMatch[1])}`;
+    return formatLiteralTemplate(language, 'Remove {target}', {
+      target: translateLiteralBodyForLanguage(language, removeMatch[1])
+    });
   }
 
   const moveSourceMatch = /^Move source (up|down)$/.exec(literal);
   if (moveSourceMatch) {
-    return moveSourceMatch[1] === 'up' ? 'Subir fuente' : 'Bajar fuente';
+    return moveSourceMatch[1] === 'up'
+      ? formatLiteralTemplate(language, 'Move source up')
+      : formatLiteralTemplate(language, 'Move source down');
   }
 
   const fileCountMatch = /^(\d+) files$/.exec(literal);
   if (fileCountMatch) {
-    return fileCountMatch[1] === '1' ? '1 archivo' : `${fileCountMatch[1]} archivos`;
+    return fileCountMatch[1] === '1'
+      ? formatLiteralTemplate(language, '{count} file', { count: fileCountMatch[1] })
+      : formatLiteralTemplate(language, '{count} files', { count: fileCountMatch[1] });
   }
 
   const gameDumpRequirementMatch =
     /^(Base RomFS|Base ExeFS) contains the (.+) required for (Pokemon Sword|Pokemon Shield|Pokemon Scarlet|Pokemon Violet)\.$/.exec(
       literal
-    );
+  );
   if (gameDumpRequirementMatch) {
-    return `${translateLiteralBodyForLanguage(
-      language,
-      gameDumpRequirementMatch[1]
-    )} contiene ${translateLiteralBodyForLanguage(
-      language,
-      gameDumpRequirementMatch[2]
-    )} requerido para ${translateLiteralBodyForLanguage(language, gameDumpRequirementMatch[3])}.`;
+    return formatLiteralTemplate(language, '{source} contains the {archive} required for {game}.', {
+      source: translateLiteralBodyForLanguage(language, gameDumpRequirementMatch[1]),
+      archive: translateLiteralBodyForLanguage(language, gameDumpRequirementMatch[2]),
+      game: translateLiteralBodyForLanguage(language, gameDumpRequirementMatch[3])
+    });
   }
 
   const titleIdMatch =
     /^(Base RomFS|Base ExeFS|Output root folder) matches selected (Pokemon Sword|Pokemon Shield|Pokemon Scarlet|Pokemon Violet) title id (0x[0-9A-Fa-f]+)\.$/.exec(
       literal
-    );
+  );
   if (titleIdMatch) {
-    const subject = translateLiteralBodyForLanguage(language, titleIdMatch[1]);
-    const game = translateLiteralBodyForLanguage(language, titleIdMatch[2]);
-    return titleIdMatch[1] === 'Output root folder'
-      ? `La ${subject} coincide con el ID de título seleccionado de ${game} ${titleIdMatch[3]}.`
-      : `${subject} coincide con el ID de título seleccionado de ${game} ${titleIdMatch[3]}.`;
+    return formatLiteralTemplate(
+      language,
+      `${titleIdMatch[1]} matches selected {game} title id {titleId}.`,
+      {
+        game: translateLiteralBodyForLanguage(language, titleIdMatch[2]),
+        titleId: titleIdMatch[3]
+      }
+    );
   }
 
   const fixedIvsMatch =
     /^Fixed IVs: HP (\d+), Atk (\d+), Def (\d+), SpA (\d+), SpD (\d+), Spe (\d+)$/.exec(
       literal
-    );
+  );
   if (fixedIvsMatch) {
-    return `IV fijos: PS ${fixedIvsMatch[1]}, Ata ${fixedIvsMatch[2]}, Def ${fixedIvsMatch[3]}, At. Esp. ${fixedIvsMatch[4]}, Def. Esp. ${fixedIvsMatch[5]}, Vel ${fixedIvsMatch[6]}`;
+    return formatLiteralTemplate(
+      language,
+      'Fixed IVs: HP {hp}, Atk {attack}, Def {defense}, SpA {specialAttack}, SpD {specialDefense}, Spe {speed}',
+      {
+        hp: fixedIvsMatch[1],
+        attack: fixedIvsMatch[2],
+        defense: fixedIvsMatch[3],
+        specialAttack: fixedIvsMatch[4],
+        specialDefense: fixedIvsMatch[5],
+        speed: fixedIvsMatch[6]
+      }
+    );
   }
 
   const perfectIvMatch = /^(\d+) [Gg]uaranteed [Pp]erfect IVs?$/.exec(literal);
   if (perfectIvMatch) {
     return perfectIvMatch[1] === '1'
-      ? '1 IV perfecto garantizado'
-      : `${perfectIvMatch[1]} IV perfectos garantizados`;
+      ? formatLiteralTemplate(language, '{count} guaranteed perfect IV', {
+          count: perfectIvMatch[1]
+        })
+      : formatLiteralTemplate(language, '{count} guaranteed perfect IVs', {
+          count: perfectIvMatch[1]
+        });
   }
 
   const tradeLabelMatch = /^Trade (\d+): (.+) -> (.+) Lv\. (\d+)$/.exec(literal);
   if (tradeLabelMatch) {
-    return `Intercambio ${tradeLabelMatch[1]}: ${tradeLabelMatch[2]} -> ${tradeLabelMatch[3]} Nv. ${tradeLabelMatch[4]}`;
+    return formatLiteralTemplate(language, 'Trade {index}: {from} -> {to} Lv. {level}', {
+      index: tradeLabelMatch[1],
+      from: tradeLabelMatch[2],
+      to: tradeLabelMatch[3],
+      level: tradeLabelMatch[4]
+    });
   }
 
   const hiddenItemSlotMatch = /^Hidden Item Slot (\d+)$/.exec(literal);
   if (hiddenItemSlotMatch) {
-    return `Hueco de objeto oculto ${hiddenItemSlotMatch[1]}`;
+    return formatLiteralTemplate(language, 'Hidden Item Slot {index}', {
+      index: hiddenItemSlotMatch[1]
+    });
   }
 
   const unusedDefaultMatch = /^Unused Default (\d+)$/.exec(literal);
   if (unusedDefaultMatch) {
-    return `Valor predeterminado sin usar ${unusedDefaultMatch[1]}`;
+    return formatLiteralTemplate(language, 'Unused Default {index}', {
+      index: unusedDefaultMatch[1]
+    });
   }
 
   const inflictFallbackMatch = /^Inflict (\d+)$/.exec(literal);
   if (inflictFallbackMatch) {
-    return `Condición ${inflictFallbackMatch[1]}`;
+    return formatLiteralTemplate(language, 'Inflict {index}', {
+      index: inflictFallbackMatch[1]
+    });
   }
 
   const placementSlotFieldMatch = /^(Item|Emerge value|Drop count) (\d+)$/.exec(literal);
@@ -565,36 +741,45 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
   const fallbackLabelsUnavailableMatch =
     /^(.+) are not available; numeric fallback labels will be shown\.$/.exec(literal);
   if (fallbackLabelsUnavailableMatch) {
-    return `${translateLiteralBodyForLanguage(
+    return formatLiteralTemplate(
       language,
-      fallbackLabelsUnavailableMatch[1]
-    )} no están disponibles; se mostrarán etiquetas numéricas de reserva.`;
+      '{labels} are not available; numeric fallback labels will be shown.',
+      {
+        labels: translateLiteralBodyForLanguage(language, fallbackLabelsUnavailableMatch[1])
+      }
+    );
   }
 
   const tableReadDecodeMatch = /^(.+) table could not be (decoded|read): (.+)$/.exec(literal);
   if (tableReadDecodeMatch) {
-    const action = tableReadDecodeMatch[2] === 'decoded' ? 'decodificar' : 'leer';
-    return `No se pudo ${action} la tabla de ${translateLiteralBodyForLanguage(
-      language,
-      tableReadDecodeMatch[1]
-    )}: ${tableReadDecodeMatch[3]}`;
+    return tableReadDecodeMatch[2] === 'decoded'
+      ? formatLiteralTemplate(language, '{table} table could not be decoded: {error}', {
+          table: translateLiteralBodyForLanguage(language, tableReadDecodeMatch[1]),
+          error: tableReadDecodeMatch[3]
+        })
+      : formatLiteralTemplate(language, '{table} table could not be read: {error}', {
+          table: translateLiteralBodyForLanguage(language, tableReadDecodeMatch[1]),
+          error: tableReadDecodeMatch[3]
+        });
   }
 
   const workflowRequiresPathsMatch =
     /^(.+) requires valid base RomFS and base ExeFS paths before it can load\.$/.exec(literal);
   if (workflowRequiresPathsMatch) {
-    return `${translateLiteralBodyForLanguage(
+    return formatLiteralTemplate(
       language,
-      workflowRequiresPathsMatch[1]
-    )} necesita rutas válidas de RomFS base y ExeFS base antes de cargarse.`;
+      '{workflow} requires valid base RomFS and base ExeFS paths before it can load.',
+      {
+        workflow: translateLiteralBodyForLanguage(language, workflowRequiresPathsMatch[1])
+      }
+    );
   }
 
   const workflowUnavailableMatch = /^(.+) is not available for this project\.$/.exec(literal);
   if (workflowUnavailableMatch) {
-    return `${translateLiteralBodyForLanguage(
-      language,
-      workflowUnavailableMatch[1]
-    )} no está disponible para este proyecto.`;
+    return formatLiteralTemplate(language, '{workflow} is not available for this project.', {
+      workflow: translateLiteralBodyForLanguage(language, workflowUnavailableMatch[1])
+    });
   }
 
   const changePlanPreviewMatch = /^Change plan preview contains (\d+) target files?\.$/.exec(
@@ -602,125 +787,160 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
   );
   if (changePlanPreviewMatch) {
     return changePlanPreviewMatch[1] === '1'
-      ? 'La vista previa del plan de cambios contiene 1 archivo de destino.'
-      : `La vista previa del plan de cambios contiene ${changePlanPreviewMatch[1]} archivos de destino.`;
+      ? formatLiteralTemplate(language, 'Change plan preview contains {count} target file.', {
+          count: changePlanPreviewMatch[1]
+        })
+      : formatLiteralTemplate(language, 'Change plan preview contains {count} target files.', {
+          count: changePlanPreviewMatch[1]
+        });
   }
 
   const stagedForReviewMatch = /^(.+) (is|are) staged for change-plan review\.$/.exec(literal);
   if (stagedForReviewMatch) {
     const subject = translateLiteralBodyForLanguage(language, stagedForReviewMatch[1]);
     return stagedForReviewMatch[2] === 'is'
-      ? `${subject} está preparado para revisión del plan de cambios.`
-      : `${subject} están preparados para revisión del plan de cambios.`;
+      ? formatLiteralTemplate(
+          language,
+          '{subject} is staged for change-plan review.',
+          { subject }
+        )
+      : formatLiteralTemplate(language, '{subject} are staged for change-plan review.', {
+          subject
+        });
   }
 
   const installedStatusMatch = /^(.+) is (installed|not installed)\.$/.exec(literal);
   if (installedStatusMatch) {
     const subject = translateLiteralBodyForLanguage(language, installedStatusMatch[1]);
     return installedStatusMatch[2] === 'installed'
-      ? `${subject} está instalado.`
-      : `${subject} no está instalado.`;
+      ? formatLiteralTemplate(language, '{subject} is installed.', { subject })
+      : formatLiteralTemplate(language, '{subject} is not installed.', { subject });
   }
 
   const installedOutputFilesMatch = /^(.+) installed ([\d,]+) output file\(s\)\.$/.exec(
     literal
   );
   if (installedOutputFilesMatch) {
-    return `${translateLiteralBodyForLanguage(
+    return formatLiteralTemplate(
       language,
-      installedOutputFilesMatch[1]
-    )} instaló ${installedOutputFilesMatch[2]} archivo(s) de salida.`;
+      '{subject} installed {count} output file(s).',
+      {
+        subject: translateLiteralBodyForLanguage(language, installedOutputFilesMatch[1]),
+        count: installedOutputFilesMatch[2]
+      }
+    );
   }
 
   const uninstalledOutputFilesMatch =
     /^(.+) uninstalled ([\d,]+) owned output file\(s\)\.$/.exec(literal);
   if (uninstalledOutputFilesMatch) {
-    return `${translateLiteralBodyForLanguage(
+    return formatLiteralTemplate(
       language,
-      uninstalledOutputFilesMatch[1]
-    )} desinstaló ${uninstalledOutputFilesMatch[2]} archivo(s) de salida propios.`;
+      '{subject} uninstalled {count} owned output file(s).',
+      {
+        subject: translateLiteralBodyForLanguage(language, uninstalledOutputFilesMatch[1]),
+        count: uninstalledOutputFilesMatch[2]
+      }
+    );
   }
 
   const selectedGameMismatchMatch =
     /^Selected (Pokemon Sword|Pokemon Shield|Pokemon Scarlet|Pokemon Violet), but (Base RomFS|Base ExeFS|Output root folder) contains (Pokemon Sword|Pokemon Shield|Pokemon Scarlet|Pokemon Violet) title id (0x[0-9A-Fa-f]+)\.$/.exec(
       literal
-    );
+  );
   if (selectedGameMismatchMatch) {
-    return `Seleccionaste ${translateLiteralBodyForLanguage(
+    return formatLiteralTemplate(
       language,
-      selectedGameMismatchMatch[1]
-    )}, pero ${translateLiteralBodyForLanguage(
-      language,
-      selectedGameMismatchMatch[2]
-    )} contiene el ID de título de ${translateLiteralBodyForLanguage(
-      language,
-      selectedGameMismatchMatch[3]
-    )} ${selectedGameMismatchMatch[4]}.`;
+      'Selected {selectedGame}, but {source} contains {actualGame} title id {titleId}.',
+      {
+        selectedGame: translateLiteralBodyForLanguage(language, selectedGameMismatchMatch[1]),
+        source: translateLiteralBodyForLanguage(language, selectedGameMismatchMatch[2]),
+        actualGame: translateLiteralBodyForLanguage(language, selectedGameMismatchMatch[3]),
+        titleId: selectedGameMismatchMatch[4]
+      }
+    );
   }
 
   const expectedActualMatch = /^(.+): expected (.+), actual (.+)\.$/.exec(literal);
   if (expectedActualMatch) {
-    return `${translateLiteralBodyForLanguage(
-      language,
-      expectedActualMatch[1]
-    )}: esperado ${expectedActualMatch[2]}, actual ${expectedActualMatch[3]}.`;
+    return formatLiteralTemplate(language, '{subject}: expected {expected}, actual {actual}.', {
+      subject: translateLiteralBodyForLanguage(language, expectedActualMatch[1]),
+      expected: expectedActualMatch[2],
+      actual: expectedActualMatch[3]
+    });
   }
 
   const dataSourceErrorMatch = /^(.+) (is not supported|could not be read): (.+)$/.exec(literal);
   if (dataSourceErrorMatch) {
-    const action =
-      dataSourceErrorMatch[2] === 'is not supported' ? 'no es compatible' : 'no se pudo leer';
-    return `${translateLiteralBodyForLanguage(
-      language,
-      dataSourceErrorMatch[1]
-    )} ${action}: ${dataSourceErrorMatch[3]}`;
+    return dataSourceErrorMatch[2] === 'is not supported'
+      ? formatLiteralTemplate(language, '{source} is not supported: {error}', {
+          source: translateLiteralBodyForLanguage(language, dataSourceErrorMatch[1]),
+          error: dataSourceErrorMatch[3]
+        })
+      : formatLiteralTemplate(language, '{source} could not be read: {error}', {
+          source: translateLiteralBodyForLanguage(language, dataSourceErrorMatch[1]),
+          error: dataSourceErrorMatch[3]
+        });
   }
 
   const namedLoadFailureMatch = /^(.+) table '(.+)' could not be loaded: (.+)$/.exec(literal);
   if (namedLoadFailureMatch) {
-    return `No se pudo cargar la tabla ${translateLiteralBodyForLanguage(
-      language,
-      namedLoadFailureMatch[1]
-    )} '${namedLoadFailureMatch[2]}': ${namedLoadFailureMatch[3]}`;
+    return formatLiteralTemplate(language, "{table} table '{name}' could not be loaded: {error}", {
+      table: translateLiteralBodyForLanguage(language, namedLoadFailureMatch[1]),
+      name: namedLoadFailureMatch[2],
+      error: namedLoadFailureMatch[3]
+    });
   }
 
   const loadFailureMatch = /^(.+) could not be loaded: (.+)$/.exec(literal);
   if (loadFailureMatch) {
-    return `No se pudo cargar ${translateLiteralBodyForLanguage(
-      language,
-      loadFailureMatch[1]
-    )}: ${loadFailureMatch[2]}`;
+    return formatLiteralTemplate(language, '{subject} could not be loaded: {error}', {
+      subject: translateLiteralBodyForLanguage(language, loadFailureMatch[1]),
+      error: loadFailureMatch[2]
+    });
   }
 
   const abilityResolveFailureMatch =
     /^(.+) ability names could not be resolved from Pokemon Data: (.+)$/.exec(literal);
   if (abilityResolveFailureMatch) {
-    return `No se pudieron resolver los nombres de habilidades de ${translateLiteralBodyForLanguage(
+    return formatLiteralTemplate(
       language,
-      abilityResolveFailureMatch[1]
-    )} desde Datos de Pokémon: ${abilityResolveFailureMatch[2]}`;
+      '{subject} ability names could not be resolved from Pokemon Data: {error}',
+      {
+        subject: translateLiteralBodyForLanguage(language, abilityResolveFailureMatch[1]),
+        error: abilityResolveFailureMatch[2]
+      }
+    );
   }
 
   const showOptionsMatch = /^Show (.+) options$/.exec(literal);
   if (showOptionsMatch) {
-    return `Mostrar opciones de ${translateLiteralBodyForLanguage(language, showOptionsMatch[1])}`;
+    return formatLiteralTemplate(language, 'Show {target} options', {
+      target: translateLiteralBodyForLanguage(language, showOptionsMatch[1])
+    });
   }
 
   const wikiForMatch = /^Go to Wiki for (.+)$/.exec(literal);
   if (wikiForMatch) {
-    return `Ir a la wiki de ${translateLiteralBodyForLanguage(language, wikiForMatch[1])}`;
+    return formatLiteralTemplate(language, 'Go to Wiki for {target}', {
+      target: translateLiteralBodyForLanguage(language, wikiForMatch[1])
+    });
   }
 
   const pendingCountMatch = /^(\d+) pending changes$/.exec(literal);
   if (pendingCountMatch) {
     return pendingCountMatch[1] === '1'
-      ? '1 cambio pendiente'
-      : `${pendingCountMatch[1]} cambios pendientes`;
+      ? formatLiteralTemplate(language, '{count} pending change', { count: pendingCountMatch[1] })
+      : formatLiteralTemplate(language, '{count} pending changes', {
+          count: pendingCountMatch[1]
+        });
   }
 
   const progressLabelMatch = /^(.+) progress$/.exec(literal);
   if (progressLabelMatch) {
-    return `Progreso de ${translateLiteralBodyForLanguage(language, progressLabelMatch[1])}`;
+    return formatLiteralTemplate(language, '{target} progress', {
+      target: translateLiteralBodyForLanguage(language, progressLabelMatch[1])
+    });
   }
 
   const typeList = translateSlashSeparatedTypeList(language, literal);
@@ -730,37 +950,53 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
 
   const updateReadyMatch = /^KM Editor v(.+) is ready to install\.$/.exec(literal);
   if (updateReadyMatch) {
-    return `KM Editor v${updateReadyMatch[1]} está listo para instalar.`;
+    return formatLiteralTemplate(language, 'KM Editor v{version} is ready to install.', {
+      version: updateReadyMatch[1]
+    });
   }
 
   const updateAvailableMatch = /^KM Editor v(.+) is available on GitHub\.$/.exec(literal);
   if (updateAvailableMatch) {
-    return `KM Editor v${updateAvailableMatch[1]} está disponible en GitHub.`;
+    return formatLiteralTemplate(language, 'KM Editor v{version} is available on GitHub.', {
+      version: updateAvailableMatch[1]
+    });
   }
 
   const updateCurrentMatch = /^KM Editor v(.+) is up to date\.$/.exec(literal);
   if (updateCurrentMatch) {
-    return `KM Editor v${updateCurrentMatch[1]} está actualizado.`;
+    return formatLiteralTemplate(language, 'KM Editor v{version} is up to date.', {
+      version: updateCurrentMatch[1]
+    });
   }
 
   const updateDownloadWithSizeMatch = /^Downloading KM Editor v(.+) \((.+)\)\.$/.exec(literal);
   if (updateDownloadWithSizeMatch) {
-    return `Descargando KM Editor v${updateDownloadWithSizeMatch[1]} (${updateDownloadWithSizeMatch[2]}).`;
+    return formatLiteralTemplate(language, 'Downloading KM Editor v{version} ({size}).', {
+      version: updateDownloadWithSizeMatch[1],
+      size: updateDownloadWithSizeMatch[2]
+    });
   }
 
   const updateDownloadingMatch = /^Downloading KM Editor v(.+)\.$/.exec(literal);
   if (updateDownloadingMatch) {
-    return `Descargando KM Editor v${updateDownloadingMatch[1]}.`;
+    return formatLiteralTemplate(language, 'Downloading KM Editor v{version}.', {
+      version: updateDownloadingMatch[1]
+    });
   }
 
   const updateProgressMatch = /^Downloading update \((.+) of (.+)\)\.$/.exec(literal);
   if (updateProgressMatch) {
-    return `Descargando actualización (${updateProgressMatch[1]} de ${updateProgressMatch[2]}).`;
+    return formatLiteralTemplate(language, 'Downloading update ({current} of {total}).', {
+      current: updateProgressMatch[1],
+      total: updateProgressMatch[2]
+    });
   }
 
   const updateProgressNoTotalMatch = /^Downloading update \((.+)\)\.$/.exec(literal);
   if (updateProgressNoTotalMatch) {
-    return `Descargando actualización (${updateProgressNoTotalMatch[1]}).`;
+    return formatLiteralTemplate(language, 'Downloading update ({current}).', {
+      current: updateProgressNoTotalMatch[1]
+    });
   }
 
   return literal;
@@ -901,6 +1137,19 @@ function interpolateLocalizationParams(value: string, params?: LocalizationParam
   );
 }
 
+function formatLiteralTemplate(
+  language: LanguageCode,
+  template: string,
+  params?: LocalizationParams
+) {
+  const translated =
+    resourcesByLanguage[language].literals[template] ??
+    resourcesByLanguage.en.literals[template] ??
+    template;
+
+  return interpolateLocalizationParams(translated, params);
+}
+
 function readStoredLanguage(): LanguageCode {
   if (typeof window === 'undefined') {
     return 'en';
@@ -927,7 +1176,7 @@ function writeStoredLanguage(language: LanguageCode) {
 }
 
 function isLanguageCode(value: string | null): value is LanguageCode {
-  return value === 'en' || value === 'es';
+  return value === 'en' || value === 'es' || value === 'fr';
 }
 
 function warnMissingKey(language: LanguageCode, key: string, translated: string) {

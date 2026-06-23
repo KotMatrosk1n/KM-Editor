@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import enResource from './resources/en.json';
 import esResource from './resources/es.json';
+import frResource from './resources/fr.json';
 import {
   LocalizationProvider,
   languageStorageKey,
@@ -127,6 +128,27 @@ describe('LocalizationProvider', () => {
     expect(translateLiteralForLanguage('es', 'Selected Trade')).toBe('Intercambio seleccionado');
     expect(translateLiteralForLanguage('es', 'Requested form')).toBe('Forma solicitada');
     expect(translateLiteralForLanguage('es', 'Field pocket')).toBe('Bolsillo de campo');
+    expect(translateLiteralForLanguage('es', 'Fails with Me First')).toBe(
+      'Falla con Yo Primero'
+    );
+    expect(translateLiteralForLanguage('es', 'Future attack')).toBe('Ataque futuro');
+    expect(translateLiteralForLanguage('es', 'Affected by Pressure')).toBe(
+      'Afectado por Presión'
+    );
+    expect(translateLiteralForLanguage('es', 'Boosted by Sheer Force')).toBe(
+      'Potenciado por Potencia Bruta'
+    );
+    expect(translateLiteralForLanguage('es', 'Makes contact. Allowed range: 0-1')).toBe(
+      'Hace contacto. Rango permitido: 0-1'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Hyperspace Bypass is not installed. Installing lets non-Hoopa and wrong-form users pass the Hyperspace runtime gate.'
+      )
+    ).toBe(
+      'Omisión de hiperspacio no está instalado. Al instalarlo, usuarios que no sean Hoopa o tengan una forma incorrecta pueden pasar la compuerta de ejecución de hiperspacio.'
+    );
     expect(
       translateLiteralForLanguage(
         'es',
@@ -259,14 +281,51 @@ describe('LocalizationProvider', () => {
     );
   });
 
-  it('keeps Spanish resource keys aligned with the English catalogue', () => {
-    const missingKeys = Object.keys(enResource.keys).filter((key) => !(key in esResource.keys));
-    const missingLiterals = Object.keys(enResource.literals).filter(
-      (literal) => !(literal in esResource.literals)
+  it('localizes French static and dynamic UI phrases', () => {
+    expect(translateKeyForLanguage('fr', 'settings.language.title')).toBe(
+      'Langue et localisation'
     );
+    expect(translateLiteralForLanguage('fr', 'Settings')).toBe('Paramètres');
+    expect(translateLiteralForLanguage('fr', 'Made by Matroskin')).toBe('Créé par Matroskin');
+    expect(translateLiteralForLanguage('fr', 'Editable')).toBe('Prêt pour la modification');
+    expect(translateLiteralForLanguage('fr', 'Grass / Poison')).toBe('Plante / Poison');
+    expect(translateLiteralForLanguage('fr', 'Browse for Base RomFS')).toBe(
+      'Parcourir RomFS de base'
+    );
+    expect(translateLiteralForLanguage('fr', 'Makes contact. Allowed range: 0-1')).toBe(
+      'Prend contact. Plage autorisée: 0-1'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'fr',
+        'Base ExeFS matches selected Pokemon Scarlet title id 0x0100A3D008C5C000.'
+      )
+    ).toBe(
+      "ExeFS de base correspond à l'ID de titre sélectionné de Pokémon Écarlate 0x0100A3D008C5C000."
+    );
+    expect(translateLiteralForLanguage('fr', 'Dump Importer preview accepted 1 row and rejected 2.')).toBe(
+      "L'Importateur de dumps a accepté 1 ligne acceptée et rejeté 2 lignes rejetées."
+    );
+  });
 
-    expect(missingKeys).toEqual([]);
-    expect(missingLiterals).toEqual([]);
+  it('keeps localized resource keys aligned with the English catalogue', () => {
+    const localizedResources = {
+      es: esResource,
+      fr: frResource
+    };
+
+    const missingEntries = Object.entries(localizedResources).flatMap(([language, resource]) => {
+      const missingKeys = Object.keys(enResource.keys).map((key) =>
+        key in resource.keys ? null : `${language}:key:${key}`
+      );
+      const missingLiterals = Object.keys(enResource.literals).map((literal) =>
+        literal in resource.literals ? null : `${language}:literal:${literal}`
+      );
+
+      return [...missingKeys, ...missingLiterals].filter((entry): entry is string => entry !== null);
+    });
+
+    expect(missingEntries).toEqual([]);
   });
 
   it('switches language immediately and persists the choice', async () => {
@@ -286,6 +345,14 @@ describe('LocalizationProvider', () => {
             type="button"
           >
             Switch to Spanish
+          </button>
+          <button
+            data-localization-ignore="true"
+            data-testid="switch-to-french"
+            onClick={() => setLanguage('fr')}
+            type="button"
+          >
+            Switch to French
           </button>
           <button
             data-localization-ignore="true"
@@ -313,6 +380,13 @@ describe('LocalizationProvider', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Configuración' })).toBeInTheDocument();
     expect(screen.getByText('es')).toBeInTheDocument();
     expect(window.localStorage.getItem(languageStorageKey)).toBe('es');
+
+    await user.click(screen.getByTestId('switch-to-french'));
+
+    expect(screen.getByRole('heading', { name: 'Langue et localisation' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Paramètres' })).toBeInTheDocument();
+    expect(screen.getByText('fr')).toBeInTheDocument();
+    expect(window.localStorage.getItem(languageStorageKey)).toBe('fr');
 
     await user.click(screen.getByTestId('switch-to-english'));
 
