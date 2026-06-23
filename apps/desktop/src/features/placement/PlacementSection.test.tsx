@@ -274,6 +274,72 @@ describe('PlacementSection', () => {
       })
     );
   });
+
+  it('saves S/V visible item scene fields from the structured editor', async () => {
+    const user = userEvent.setup();
+    const workflow = createSvPlacementWorkflow();
+    const loadPlacementWorkflow = vi.fn(async () => ({ workflow }));
+    const updatePlacementObjectFields = vi.fn(async (request: UpdatePlacementObjectFieldsRequest) => ({
+      diagnostics: [],
+      session: {
+        hasPendingChanges: true,
+        pendingEdits: request.updates.map((update) => ({
+          domain: 'workflow.placement',
+          field: update.field,
+          newValue: update.value,
+          recordId: update.objectId,
+          sources: [
+            {
+              layer: 'base' as const,
+              relativePath: 'romfs/world/scene/parts/field/streaming_event/world_item_/world_item_0.trscn'
+            }
+          ],
+          summary: `Set visible item ${update.field} to ${update.value}.`
+        })),
+        sessionId: 'session-1'
+      },
+      workflow
+    }));
+
+    render(
+      <App bridge={createMockProjectBridge({ loadPlacementWorkflow, updatePlacementObjectFields }, true)} />
+    );
+
+    await user.type(screen.getByLabelText('Base RomFS'), 'base-romfs');
+    await user.type(screen.getByLabelText('Base ExeFS'), 'base-exefs');
+    await user.type(screen.getByLabelText('Output Root'), 'output');
+    await user.click(screen.getByRole('button', { name: 'Validate Paths' }));
+    await user.click(screen.getByRole('button', { name: 'Editors' }));
+    await user.click(await screen.findByRole('button', { name: 'Placement' }));
+    await user.click(screen.getByRole('tab', { name: /Visible Items/ }));
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const itemInput = screen.getByLabelText('Item');
+    await user.clear(itemInput);
+    await user.type(itemInput, '1');
+    const quantityInput = screen.getByLabelText('Quantity');
+    await user.clear(quantityInput);
+    await user.type(quantityInput, '6');
+    await user.click(screen.getByRole('button', { name: 'Save Object' }));
+
+    await waitFor(() => expect(updatePlacementObjectFields).toHaveBeenCalledTimes(1));
+    expect(updatePlacementObjectFields).toHaveBeenCalledWith(
+      expect.objectContaining({
+        updates: [
+          {
+            field: 'visible.itemId',
+            objectId: 'visible-items:paldea:0',
+            value: '1'
+          },
+          {
+            field: 'visible.quantity',
+            objectId: 'visible-items:paldea:0',
+            value: '6'
+          }
+        ]
+      })
+    );
+  });
 });
 
 function createSvPlacementWorkflow(): PlacementWorkflow {
@@ -306,26 +372,29 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
         valueKind: 'text'
       },
       {
-        description: 'Scene-only visible item id.',
+        description: 'Visible item id stored in the scene property sheet.',
         field: 'visible.itemId',
         group: 'Visible Item',
-        isReadOnly: true,
+        isReadOnly: false,
         label: 'Item',
-        maximumValue: 0,
+        maximumValue: 2147483647,
         minimumValue: 0,
-        options: [],
-        valueKind: 'text'
+        options: [
+          { label: '1 Master Ball', value: 1 },
+          { label: '5 TM100', value: 5 }
+        ],
+        valueKind: 'integer'
       },
       {
-        description: 'Scene-only visible item quantity.',
+        description: 'Visible item quantity stored in the scene property sheet.',
         field: 'visible.quantity',
         group: 'Visible Item',
-        isReadOnly: true,
+        isReadOnly: false,
         label: 'Quantity',
-        maximumValue: 0,
+        maximumValue: 2147483647,
         minimumValue: 0,
         options: [],
-        valueKind: 'text'
+        valueKind: 'integer'
       },
       {
         field: 'hidden.item1.itemId',
@@ -391,28 +460,32 @@ function createSvPlacementWorkflow(): PlacementWorkflow {
             valueKind: 'text'
           },
           {
-            description: 'Scene-only visible item id.',
+            description: 'Visible item id stored in the scene property sheet.',
             displayValue: '5 TM100',
             field: 'visible.itemId',
             group: 'Visible Item',
-            isReadOnly: true,
+            isReadOnly: false,
             label: 'Item',
-            maximumValue: 0,
+            maximumValue: 2147483647,
             minimumValue: 0,
+            options: [
+              { label: '1 Master Ball', value: 1 },
+              { label: '5 TM100', value: 5 }
+            ],
             value: '5',
-            valueKind: 'text'
+            valueKind: 'integer'
           },
           {
-            description: 'Scene-only visible item quantity.',
+            description: 'Visible item quantity stored in the scene property sheet.',
             displayValue: '3',
             field: 'visible.quantity',
             group: 'Visible Item',
-            isReadOnly: true,
+            isReadOnly: false,
             label: 'Quantity',
-            maximumValue: 0,
+            maximumValue: 2147483647,
             minimumValue: 0,
             value: '3',
-            valueKind: 'text'
+            valueKind: 'integer'
           },
           {
             description: 'Scene-only TRSCN coordinate.',

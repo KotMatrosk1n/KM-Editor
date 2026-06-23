@@ -3284,6 +3284,7 @@ export function createMockProjectBridge(
           sourceFile: 'romfs/world/data/raid/raid_enemy_05/raid_enemy_05_array.bin',
           sourceLayer: 'base'
         },
+        entryIndex: 0,
         raidNo: 0,
         recordId: 'raid:paldea:0',
         region: 'Paldea',

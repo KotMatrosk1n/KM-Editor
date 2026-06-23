@@ -2002,6 +2002,7 @@ export const teraRaidRecordSchema = z.strictObject({
   nature: z.number().int(),
   natureLabel: z.string(),
   provenance: teraRaidProvenanceSchema,
+  entryIndex: z.number().int().nonnegative(),
   raidNo: z.number().int(),
   recordId: z.string(),
   region: z.string(),
