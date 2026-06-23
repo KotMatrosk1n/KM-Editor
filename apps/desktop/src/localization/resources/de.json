@@ -13,7 +13,9 @@
     "settings.language.selected": "Ausgewählt",
     "settings.language.spanish": "Español",
     "settings.language.spanish.description": "Spanisch für den Text der KM Editor Oberfläche verwenden.",
-    "settings.language.title": "Sprache und Lokalisierung"
+    "settings.language.title": "Sprache und Lokalisierung",
+    "settings.language.ukrainian": "Українська",
+    "settings.language.ukrainian.description": "Verwendet Ukrainisch für die Oberfläche von KM Editor."
   },
   "literals": {
     "-1 Atk + Sp.Atk": "-1 Angriff + Sp.Angriff",

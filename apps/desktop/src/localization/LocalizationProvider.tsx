@@ -14,8 +14,9 @@ import deResource from './resources/de.json';
 import esResource from './resources/es.json';
 import frResource from './resources/fr.json';
 import ruResource from './resources/ru.json';
+import ukResource from './resources/uk.json';
 
-export type LanguageCode = 'en' | 'es' | 'fr' | 'de' | 'ru';
+export type LanguageCode = 'en' | 'es' | 'fr' | 'de' | 'ru' | 'uk';
 
 type LocalizationParams = Record<string, string | number>;
 type LocalizationResource = {
@@ -54,6 +55,10 @@ export const supportedLanguages = [
   {
     code: 'ru',
     flag: '🇷🇺'
+  },
+  {
+    code: 'uk',
+    flag: '🇺🇦'
   }
 ] as const;
 
@@ -62,7 +67,8 @@ const resourcesByLanguage: Record<LanguageCode, LocalizationResource> = {
   de: deResource,
   es: esResource,
   fr: frResource,
-  ru: ruResource
+  ru: ruResource,
+  uk: ukResource
 };
 
 const translatableAttributes = ['aria-label', 'title', 'placeholder', 'alt'] as const;
@@ -1188,7 +1194,14 @@ function writeStoredLanguage(language: LanguageCode) {
 }
 
 function isLanguageCode(value: string | null): value is LanguageCode {
-  return value === 'en' || value === 'es' || value === 'fr' || value === 'de' || value === 'ru';
+  return (
+    value === 'en' ||
+    value === 'es' ||
+    value === 'fr' ||
+    value === 'de' ||
+    value === 'ru' ||
+    value === 'uk'
+  );
 }
 
 function warnMissingKey(language: LanguageCode, key: string, translated: string) {
