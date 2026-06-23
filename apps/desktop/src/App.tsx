@@ -26423,7 +26423,8 @@ function SettingsSection({
     de: 'german',
     en: 'english',
     es: 'spanish',
-    fr: 'french'
+    fr: 'french',
+    ru: 'russian'
   };
   const languageOptions = supportedLanguages.map((option) => {
     const languageKey = languageKeyByCode[option.code];
