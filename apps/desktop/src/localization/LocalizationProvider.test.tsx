@@ -2,6 +2,7 @@
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import deResource from './resources/de.json';
 import enResource from './resources/en.json';
 import esResource from './resources/es.json';
 import frResource from './resources/fr.json';
@@ -308,8 +309,34 @@ describe('LocalizationProvider', () => {
     );
   });
 
+  it('localizes German static and dynamic UI phrases', () => {
+    expect(translateKeyForLanguage('de', 'settings.language.title')).toBe(
+      'Sprache und Lokalisierung'
+    );
+    expect(translateLiteralForLanguage('de', 'Settings')).toBe('Einstellungen');
+    expect(translateLiteralForLanguage('de', 'Made by Matroskin')).toBe(
+      'Erstellt von Matroskin'
+    );
+    expect(translateLiteralForLanguage('de', 'Grass / Poison')).toBe('Pflanze / Gift');
+    expect(translateLiteralForLanguage('de', 'Browse for Base RomFS')).toBe(
+      'Basis RomFS durchsuchen'
+    );
+    expect(translateLiteralForLanguage('de', 'Makes contact. Allowed range: 0-1')).toBe(
+      'Stellt Kontakt her. Zulässiger Bereich: 0-1'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'de',
+        'Base ExeFS matches selected Pokemon Scarlet title id 0x0100A3D008C5C000.'
+      )
+    ).toBe(
+      'Basis ExeFS entspricht der ausgewählten Titel ID von Pokémon Karmesin 0x0100A3D008C5C000.'
+    );
+  });
+
   it('keeps localized resource keys aligned with the English catalogue', () => {
     const localizedResources = {
+      de: deResource,
       es: esResource,
       fr: frResource
     };

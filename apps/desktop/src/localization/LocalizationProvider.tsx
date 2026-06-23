@@ -10,10 +10,11 @@ import {
   useState
 } from 'react';
 import enResource from './resources/en.json';
+import deResource from './resources/de.json';
 import esResource from './resources/es.json';
 import frResource from './resources/fr.json';
 
-export type LanguageCode = 'en' | 'es' | 'fr';
+export type LanguageCode = 'en' | 'es' | 'fr' | 'de';
 
 type LocalizationParams = Record<string, string | number>;
 type LocalizationResource = {
@@ -44,11 +45,16 @@ export const supportedLanguages = [
   {
     code: 'fr',
     flag: '🇫🇷'
+  },
+  {
+    code: 'de',
+    flag: '🇩🇪'
   }
 ] as const;
 
 const resourcesByLanguage: Record<LanguageCode, LocalizationResource> = {
   en: enResource,
+  de: deResource,
   es: esResource,
   fr: frResource
 };
@@ -1176,7 +1182,7 @@ function writeStoredLanguage(language: LanguageCode) {
 }
 
 function isLanguageCode(value: string | null): value is LanguageCode {
-  return value === 'en' || value === 'es' || value === 'fr';
+  return value === 'en' || value === 'es' || value === 'fr' || value === 'de';
 }
 
 function warnMissingKey(language: LanguageCode, key: string, translated: string) {
