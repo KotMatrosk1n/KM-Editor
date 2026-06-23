@@ -2,6 +2,8 @@
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import enResource from './resources/en.json';
+import esResource from './resources/es.json';
 import {
   LocalizationProvider,
   languageStorageKey,
@@ -87,8 +89,29 @@ describe('LocalizationProvider', () => {
       translateLiteralForLanguage('es', 'Downloading update (4 MB of 8 MB).')
     ).toBe('Descargando actualización (4 MB de 8 MB).');
     expect(translateLiteralForLanguage('es', 'Dump Importer')).toBe('Importador de volcados');
-    expect(translateLiteralForLanguage('es', 'Editable')).toBe('Modo editable');
+    expect(translateLiteralForLanguage('es', 'Editable')).toBe('Listo para editar');
     expect(translateLiteralForLanguage('es', 'Made by Matroskin')).toBe('Hecho por Matroskin');
+    expect(translateLiteralForLanguage('es', 'Output for Trinity Bypass')).toBe(
+      'Exportar para Trinity Bypass'
+    );
+    expect(translateLiteralForLanguage('es', 'Output for Trinity Bypass?')).toBe(
+      '¿Exportar para Trinity Bypass?'
+    );
+    expect(
+      translateLiteralForLanguage('es', 'as loose LayeredFS RomFS files for Trinity Bypass.')
+    ).toBe('como archivos RomFS sueltos de LayeredFS para Trinity Bypass.');
+    expect(translateLiteralForLanguage('es', 'This creates or replaces files under')).toBe(
+      'Esto crea o reemplaza archivos bajo'
+    );
+    expect(translateLiteralForLanguage('es', 'the configured Output Root')).toBe(
+      'la raíz de salida configurada'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        '. Use this only when Trinity Bypass is already installed for the selected game.'
+      )
+    ).toBe('. Usa esto solo cuando Trinity Bypass ya esté instalado para el juego seleccionado.');
     expect(translateLiteralForLanguage('es', 'Browse for destination folder')).toBe(
       'Examinar carpeta de destino'
     );
@@ -101,6 +124,8 @@ describe('LocalizationProvider', () => {
     expect(translateLiteralForLanguage('es', 'Add Folder')).toBe('Agregar carpeta');
     expect(translateLiteralForLanguage('es', 'Stage Merge')).toBe('Preparar fusión');
     expect(translateLiteralForLanguage('es', 'Selected Item')).toBe('Objeto seleccionado');
+    expect(translateLiteralForLanguage('es', 'Selected Trade')).toBe('Intercambio seleccionado');
+    expect(translateLiteralForLanguage('es', 'Requested form')).toBe('Forma solicitada');
     expect(translateLiteralForLanguage('es', 'Field pocket')).toBe('Bolsillo de campo');
     expect(
       translateLiteralForLanguage(
@@ -109,8 +134,95 @@ describe('LocalizationProvider', () => {
       )
     ).toBe('RomFS base contiene el archivo Trinity requerido para Pokémon Scarlet.');
     expect(
+      translateLiteralForLanguage(
+        'es',
+        'Base ExeFS matches selected Pokemon Scarlet title id 0x0100A3D008C5C000.'
+      )
+    ).toBe(
+      'ExeFS base coincide con el ID de título seleccionado de Pokémon Scarlet 0x0100A3D008C5C000.'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Output root folder matches selected Pokemon Scarlet title id 0x0100A3D008C5C000.'
+      )
+    ).toBe(
+      'La carpeta raíz de salida coincide con el ID de título seleccionado de Pokémon Scarlet 0x0100A3D008C5C000.'
+    );
+    expect(translateLiteralForLanguage('es', '0 Not Shiny')).toBe('0 No shiny');
+    expect(translateLiteralForLanguage('es', '1 Random Ability 1 or 2')).toBe(
+      '1 Habilidad 1 o 2 aleatoria'
+    );
+    expect(translateLiteralForLanguage('es', '11 Grass')).toBe('11 Planta');
+    expect(translateLiteralForLanguage('es', 'Show Form options')).toBe(
+      'Mostrar opciones de Forma'
+    );
+    expect(translateLiteralForLanguage('es', 'Custom fixed IVs')).toBe(
+      'IVs fijos personalizados'
+    );
+    expect(translateLiteralForLanguage('es', 'Mixed fixed IVs')).toBe('IVs fijos mixtos');
+    expect(translateLiteralForLanguage('es', 'Rummaging Points')).toBe('Puntos de rebusca');
+    expect(translateLiteralForLanguage('es', 'Point name')).toBe('Nombre del punto');
+    expect(translateLiteralForLanguage('es', 'No alternate forms available for this Pokemon.')).toBe(
+      'No hay formas alternativas disponibles para este Pokémon.'
+    );
+    expect(translateLiteralForLanguage('es', '#0 Pikachu - Common')).toBe(
+      '#0 Pikachu - Común'
+    );
+    expect(translateLiteralForLanguage('es', 'Hidden Item Slot 3')).toBe(
+      'Hueco de objeto oculto 3'
+    );
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Fixed IVs: HP 27, Atk 18, Def 25, SpA 16, SpD 31, Spe 13'
+      )
+    ).toBe('IV fijos: PS 27, Ata 18, Def 25, At. Esp. 16, Def. Esp. 31, Vel 13');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Behavior data source could not be read: file was locked'
+      )
+    ).toBe('Origen de datos de comportamiento no se pudo leer: file was locked');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Most vanilla entries use 1.0, matching a model scale multiplier slot. Likely, but read-only until the loader mapping is confirmed.'
+      )
+    ).toBe(
+      'La mayoría de entradas vanilla usa 1.0, coincidiendo con un hueco de multiplicador de escala de modelo. Probable, pero de solo lectura hasta confirmar el mapeo del cargador.'
+    );
+    expect(
       translateLiteralForLanguage('es', 'Dump Importer preview accepted 1 row and rejected 2.')
     ).toBe('El Importador de volcados aceptó 1 fila aceptada y rechazó 2 filas rechazadas.');
+    expect(
+      translateLiteralForLanguage('es', 'Change plan preview contains 2 target files.')
+    ).toBe('La vista previa del plan de cambios contiene 2 archivos de destino.');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Type Chart effectiveness values are staged for change-plan review.'
+      )
+    ).toBe(
+      'Valores de efectividad de tipos están preparados para revisión del plan de cambios.'
+    );
+    expect(translateLiteralForLanguage('es', '60FPS Patch is installed.')).toBe(
+      'Parche 60FPS está instalado.'
+    );
+    expect(
+      translateLiteralForLanguage('es', '60FPS Patch installed 1,107 output file(s).')
+    ).toBe('Parche 60FPS instaló 1,107 archivo(s) de salida.');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Selected Pokemon Shield, but Base ExeFS contains Pokemon Sword title id 0x0100ABF008968000.'
+      )
+    ).toBe(
+      'Seleccionaste Pokémon Shield, pero ExeFS base contiene el ID de título de Pokémon Sword 0x0100ABF008968000.'
+    );
+    expect(
+      translateLiteralForLanguage('es', 'Patch code cave: expected 0xC bytes, actual text+0x7BC338.')
+    ).toBe('Cueva de código de parche: esperado 0xC bytes, actual text+0x7BC338.');
     expect(
       translateLiteralForLanguage(
         'es',
@@ -125,6 +237,36 @@ describe('LocalizationProvider', () => {
         "Row 4: Buy price value 'abc' must be between 0 and 999999."
       )
     ).toBe("Fila 4: el valor 'abc' de precio de compra debe estar entre 0 y 999999.");
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Save work key 0xDDEEFF00 is derived from WK_SCENE_MAIN.'
+      )
+    ).toBe('Clave de trabajo de guardado 0xDDEEFF00 se deriva de WK_SCENE_MAIN.');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Output root is not configured; write actions are disabled.'
+      )
+    ).toBe('La raíz de salida no está configurada; las acciones de escritura están desactivadas.');
+    expect(
+      translateLiteralForLanguage(
+        'es',
+        'Edit Scarlet/Violet placement tables and inspect scene-only placement fields.'
+      )
+    ).toBe(
+      'Edita tablas de colocación de Scarlet/Violet y revisa campos de colocación solo de escena.'
+    );
+  });
+
+  it('keeps Spanish resource keys aligned with the English catalogue', () => {
+    const missingKeys = Object.keys(enResource.keys).filter((key) => !(key in esResource.keys));
+    const missingLiterals = Object.keys(enResource.literals).filter(
+      (literal) => !(literal in esResource.literals)
+    );
+
+    expect(missingKeys).toEqual([]);
+    expect(missingLiterals).toEqual([]);
   });
 
   it('switches language immediately and persists the choice', async () => {

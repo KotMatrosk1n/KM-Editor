@@ -183,6 +183,104 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
     return direct;
   }
 
+  const numericPrefixedLiteralMatch = /^(-?\d{1,5})\s+(.+)$/.exec(literal);
+  if (numericPrefixedLiteralMatch) {
+    const translatedSuffix = translateLiteralBodyForLanguage(language, numericPrefixedLiteralMatch[2]);
+    if (translatedSuffix !== numericPrefixedLiteralMatch[2]) {
+      return `${numericPrefixedLiteralMatch[1]} ${translatedSuffix}`;
+    }
+  }
+
+  const hyphenatedOptionMatch = /^(Default|Ability 1|Ability 2|Hidden Ability) - (.+)$/.exec(
+    literal
+  );
+  if (hyphenatedOptionMatch) {
+    return `${translateLiteralBodyForLanguage(language, hyphenatedOptionMatch[1])} - ${
+      hyphenatedOptionMatch[2]
+    }`;
+  }
+
+  const indexedFieldMatch =
+    /^(Trainer item|Move|Relearn move|Form|Item|Emerge value|Drop count) (\d+) ?(ID|key|value)?$/.exec(
+      literal
+    );
+  if (indexedFieldMatch) {
+    const suffix = indexedFieldMatch[3]
+      ? ` ${translateLiteralBodyForLanguage(language, indexedFieldMatch[3])}`
+      : '';
+    return `${translateLiteralBodyForLanguage(language, indexedFieldMatch[1])} ${
+      indexedFieldMatch[2]
+    }${suffix}`;
+  }
+
+  const starFieldMatch = /^(\d)-star (probability|value|drop chance|quantity)$/.exec(literal);
+  if (starFieldMatch) {
+    return `${starFieldMatch[1]} estrellas ${translateLiteralBodyForLanguage(
+      language,
+      starFieldMatch[2]
+    )}`;
+  }
+
+  const recordSummaryMatch = /^(Gift|Rental|Adventure|Static) (\d+): (.+)$/.exec(literal);
+  if (recordSummaryMatch) {
+    return `${translateLiteralBodyForLanguage(language, recordSummaryMatch[1])} ${
+      recordSummaryMatch[2]
+    }: ${recordSummaryMatch[3]}`;
+  }
+
+  const fieldItemMatch = /^Field item: (.+)$/.exec(literal);
+  if (fieldItemMatch) {
+    return `${translateLiteralBodyForLanguage(language, 'Field item')}: ${fieldItemMatch[1]}`;
+  }
+
+  const behaviorEntryMatch = /^(#\d+ .+) - (.+)$/.exec(literal);
+  if (behaviorEntryMatch) {
+    const translatedBehavior = translateLiteralBodyForLanguage(language, behaviorEntryMatch[2]);
+    return translatedBehavior === behaviorEntryMatch[2]
+      ? literal
+      : `${behaviorEntryMatch[1]} - ${translatedBehavior}`;
+  }
+
+  const storyIndexMatch = /^story #(\d+)$/.exec(literal);
+  if (storyIndexMatch) {
+    return `${translateLiteralBodyForLanguage(language, 'story')} #${storyIndexMatch[1]}`;
+  }
+
+  const unknownFieldMatch = /^Unknown field (.+)$/.exec(literal);
+  if (unknownFieldMatch) {
+    return `${translateLiteralBodyForLanguage(language, 'Unknown field')} ${
+      unknownFieldMatch[1]
+    }`;
+  }
+
+  const hashUsesSaveKeyMatch = /^(Flag|Work) hash (0x[0-9A-Fa-f]+) uses save key (0x[0-9A-Fa-f]+)\.$/.exec(
+    literal
+  );
+  if (hashUsesSaveKeyMatch) {
+    return `${translateLiteralBodyForLanguage(language, hashUsesSaveKeyMatch[1])} hash ${
+      hashUsesSaveKeyMatch[2]
+    } ${translateLiteralBodyForLanguage(language, 'uses save key')} ${hashUsesSaveKeyMatch[3]}.`;
+  }
+
+  const saveWorkKeyDerivedMatch = /^Save work key (0x[0-9A-Fa-f]+) is derived from (.+)\.$/.exec(
+    literal
+  );
+  if (saveWorkKeyDerivedMatch) {
+    return `${translateLiteralBodyForLanguage(language, 'Save work key')} ${
+      saveWorkKeyDerivedMatch[1]
+    } ${translateLiteralBodyForLanguage(language, 'is derived from')} ${
+      saveWorkKeyDerivedMatch[2]
+    }.`;
+  }
+
+  const natureStatSummaryMatch = /^(.+) \(\+(.+)\/-(.+)\)$/.exec(literal);
+  if (natureStatSummaryMatch) {
+    return `${translateLiteralBodyForLanguage(language, natureStatSummaryMatch[1])} (+${translateLiteralBodyForLanguage(
+      language,
+      natureStatSummaryMatch[2]
+    )}/-${translateLiteralBodyForLanguage(language, natureStatSummaryMatch[3])})`;
+  }
+
   const clearCacheMatch = /^Clear Cache \((.+)\)$/.exec(literal);
   if (clearCacheMatch) {
     return `Borrar caché (${clearCacheMatch[1]})`;
@@ -252,6 +350,11 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
   const importNoChangesMatch = /^(.+) has no changed import values\.$/.exec(literal);
   if (importNoChangesMatch) {
     return `${importNoChangesMatch[1]} no tiene valores de importación cambiados.`;
+  }
+
+  const noEntriesInMatch = /^No entries in (.+)\.$/.exec(literal);
+  if (noEntriesInMatch) {
+    return `No hay entradas en ${translateLiteralBodyForLanguage(language, noEntriesInMatch[1])}.`;
   }
 
   const importEditSummaryMatch = /^(.+): (.+) -> (.+)\.$/.exec(literal);
@@ -405,6 +508,219 @@ function translateLiteralBodyForLanguage(language: LanguageCode, literal: string
       language,
       gameDumpRequirementMatch[2]
     )} requerido para ${translateLiteralBodyForLanguage(language, gameDumpRequirementMatch[3])}.`;
+  }
+
+  const titleIdMatch =
+    /^(Base RomFS|Base ExeFS|Output root folder) matches selected (Pokemon Sword|Pokemon Shield|Pokemon Scarlet|Pokemon Violet) title id (0x[0-9A-Fa-f]+)\.$/.exec(
+      literal
+    );
+  if (titleIdMatch) {
+    const subject = translateLiteralBodyForLanguage(language, titleIdMatch[1]);
+    const game = translateLiteralBodyForLanguage(language, titleIdMatch[2]);
+    return titleIdMatch[1] === 'Output root folder'
+      ? `La ${subject} coincide con el ID de título seleccionado de ${game} ${titleIdMatch[3]}.`
+      : `${subject} coincide con el ID de título seleccionado de ${game} ${titleIdMatch[3]}.`;
+  }
+
+  const fixedIvsMatch =
+    /^Fixed IVs: HP (\d+), Atk (\d+), Def (\d+), SpA (\d+), SpD (\d+), Spe (\d+)$/.exec(
+      literal
+    );
+  if (fixedIvsMatch) {
+    return `IV fijos: PS ${fixedIvsMatch[1]}, Ata ${fixedIvsMatch[2]}, Def ${fixedIvsMatch[3]}, At. Esp. ${fixedIvsMatch[4]}, Def. Esp. ${fixedIvsMatch[5]}, Vel ${fixedIvsMatch[6]}`;
+  }
+
+  const perfectIvMatch = /^(\d+) [Gg]uaranteed [Pp]erfect IVs?$/.exec(literal);
+  if (perfectIvMatch) {
+    return perfectIvMatch[1] === '1'
+      ? '1 IV perfecto garantizado'
+      : `${perfectIvMatch[1]} IV perfectos garantizados`;
+  }
+
+  const tradeLabelMatch = /^Trade (\d+): (.+) -> (.+) Lv\. (\d+)$/.exec(literal);
+  if (tradeLabelMatch) {
+    return `Intercambio ${tradeLabelMatch[1]}: ${tradeLabelMatch[2]} -> ${tradeLabelMatch[3]} Nv. ${tradeLabelMatch[4]}`;
+  }
+
+  const hiddenItemSlotMatch = /^Hidden Item Slot (\d+)$/.exec(literal);
+  if (hiddenItemSlotMatch) {
+    return `Hueco de objeto oculto ${hiddenItemSlotMatch[1]}`;
+  }
+
+  const unusedDefaultMatch = /^Unused Default (\d+)$/.exec(literal);
+  if (unusedDefaultMatch) {
+    return `Valor predeterminado sin usar ${unusedDefaultMatch[1]}`;
+  }
+
+  const inflictFallbackMatch = /^Inflict (\d+)$/.exec(literal);
+  if (inflictFallbackMatch) {
+    return `Condición ${inflictFallbackMatch[1]}`;
+  }
+
+  const placementSlotFieldMatch = /^(Item|Emerge value|Drop count) (\d+)$/.exec(literal);
+  if (placementSlotFieldMatch) {
+    return `${translateLiteralBodyForLanguage(language, placementSlotFieldMatch[1])} ${placementSlotFieldMatch[2]}`;
+  }
+
+  const fallbackLabelsUnavailableMatch =
+    /^(.+) are not available; numeric fallback labels will be shown\.$/.exec(literal);
+  if (fallbackLabelsUnavailableMatch) {
+    return `${translateLiteralBodyForLanguage(
+      language,
+      fallbackLabelsUnavailableMatch[1]
+    )} no están disponibles; se mostrarán etiquetas numéricas de reserva.`;
+  }
+
+  const tableReadDecodeMatch = /^(.+) table could not be (decoded|read): (.+)$/.exec(literal);
+  if (tableReadDecodeMatch) {
+    const action = tableReadDecodeMatch[2] === 'decoded' ? 'decodificar' : 'leer';
+    return `No se pudo ${action} la tabla de ${translateLiteralBodyForLanguage(
+      language,
+      tableReadDecodeMatch[1]
+    )}: ${tableReadDecodeMatch[3]}`;
+  }
+
+  const workflowRequiresPathsMatch =
+    /^(.+) requires valid base RomFS and base ExeFS paths before it can load\.$/.exec(literal);
+  if (workflowRequiresPathsMatch) {
+    return `${translateLiteralBodyForLanguage(
+      language,
+      workflowRequiresPathsMatch[1]
+    )} necesita rutas válidas de RomFS base y ExeFS base antes de cargarse.`;
+  }
+
+  const workflowUnavailableMatch = /^(.+) is not available for this project\.$/.exec(literal);
+  if (workflowUnavailableMatch) {
+    return `${translateLiteralBodyForLanguage(
+      language,
+      workflowUnavailableMatch[1]
+    )} no está disponible para este proyecto.`;
+  }
+
+  const changePlanPreviewMatch = /^Change plan preview contains (\d+) target files?\.$/.exec(
+    literal
+  );
+  if (changePlanPreviewMatch) {
+    return changePlanPreviewMatch[1] === '1'
+      ? 'La vista previa del plan de cambios contiene 1 archivo de destino.'
+      : `La vista previa del plan de cambios contiene ${changePlanPreviewMatch[1]} archivos de destino.`;
+  }
+
+  const stagedForReviewMatch = /^(.+) (is|are) staged for change-plan review\.$/.exec(literal);
+  if (stagedForReviewMatch) {
+    const subject = translateLiteralBodyForLanguage(language, stagedForReviewMatch[1]);
+    return stagedForReviewMatch[2] === 'is'
+      ? `${subject} está preparado para revisión del plan de cambios.`
+      : `${subject} están preparados para revisión del plan de cambios.`;
+  }
+
+  const installedStatusMatch = /^(.+) is (installed|not installed)\.$/.exec(literal);
+  if (installedStatusMatch) {
+    const subject = translateLiteralBodyForLanguage(language, installedStatusMatch[1]);
+    return installedStatusMatch[2] === 'installed'
+      ? `${subject} está instalado.`
+      : `${subject} no está instalado.`;
+  }
+
+  const installedOutputFilesMatch = /^(.+) installed ([\d,]+) output file\(s\)\.$/.exec(
+    literal
+  );
+  if (installedOutputFilesMatch) {
+    return `${translateLiteralBodyForLanguage(
+      language,
+      installedOutputFilesMatch[1]
+    )} instaló ${installedOutputFilesMatch[2]} archivo(s) de salida.`;
+  }
+
+  const uninstalledOutputFilesMatch =
+    /^(.+) uninstalled ([\d,]+) owned output file\(s\)\.$/.exec(literal);
+  if (uninstalledOutputFilesMatch) {
+    return `${translateLiteralBodyForLanguage(
+      language,
+      uninstalledOutputFilesMatch[1]
+    )} desinstaló ${uninstalledOutputFilesMatch[2]} archivo(s) de salida propios.`;
+  }
+
+  const selectedGameMismatchMatch =
+    /^Selected (Pokemon Sword|Pokemon Shield|Pokemon Scarlet|Pokemon Violet), but (Base RomFS|Base ExeFS|Output root folder) contains (Pokemon Sword|Pokemon Shield|Pokemon Scarlet|Pokemon Violet) title id (0x[0-9A-Fa-f]+)\.$/.exec(
+      literal
+    );
+  if (selectedGameMismatchMatch) {
+    return `Seleccionaste ${translateLiteralBodyForLanguage(
+      language,
+      selectedGameMismatchMatch[1]
+    )}, pero ${translateLiteralBodyForLanguage(
+      language,
+      selectedGameMismatchMatch[2]
+    )} contiene el ID de título de ${translateLiteralBodyForLanguage(
+      language,
+      selectedGameMismatchMatch[3]
+    )} ${selectedGameMismatchMatch[4]}.`;
+  }
+
+  const expectedActualMatch = /^(.+): expected (.+), actual (.+)\.$/.exec(literal);
+  if (expectedActualMatch) {
+    return `${translateLiteralBodyForLanguage(
+      language,
+      expectedActualMatch[1]
+    )}: esperado ${expectedActualMatch[2]}, actual ${expectedActualMatch[3]}.`;
+  }
+
+  const dataSourceErrorMatch = /^(.+) (is not supported|could not be read): (.+)$/.exec(literal);
+  if (dataSourceErrorMatch) {
+    const action =
+      dataSourceErrorMatch[2] === 'is not supported' ? 'no es compatible' : 'no se pudo leer';
+    return `${translateLiteralBodyForLanguage(
+      language,
+      dataSourceErrorMatch[1]
+    )} ${action}: ${dataSourceErrorMatch[3]}`;
+  }
+
+  const namedLoadFailureMatch = /^(.+) table '(.+)' could not be loaded: (.+)$/.exec(literal);
+  if (namedLoadFailureMatch) {
+    return `No se pudo cargar la tabla ${translateLiteralBodyForLanguage(
+      language,
+      namedLoadFailureMatch[1]
+    )} '${namedLoadFailureMatch[2]}': ${namedLoadFailureMatch[3]}`;
+  }
+
+  const loadFailureMatch = /^(.+) could not be loaded: (.+)$/.exec(literal);
+  if (loadFailureMatch) {
+    return `No se pudo cargar ${translateLiteralBodyForLanguage(
+      language,
+      loadFailureMatch[1]
+    )}: ${loadFailureMatch[2]}`;
+  }
+
+  const abilityResolveFailureMatch =
+    /^(.+) ability names could not be resolved from Pokemon Data: (.+)$/.exec(literal);
+  if (abilityResolveFailureMatch) {
+    return `No se pudieron resolver los nombres de habilidades de ${translateLiteralBodyForLanguage(
+      language,
+      abilityResolveFailureMatch[1]
+    )} desde Datos de Pokémon: ${abilityResolveFailureMatch[2]}`;
+  }
+
+  const showOptionsMatch = /^Show (.+) options$/.exec(literal);
+  if (showOptionsMatch) {
+    return `Mostrar opciones de ${translateLiteralBodyForLanguage(language, showOptionsMatch[1])}`;
+  }
+
+  const wikiForMatch = /^Go to Wiki for (.+)$/.exec(literal);
+  if (wikiForMatch) {
+    return `Ir a la wiki de ${translateLiteralBodyForLanguage(language, wikiForMatch[1])}`;
+  }
+
+  const pendingCountMatch = /^(\d+) pending changes$/.exec(literal);
+  if (pendingCountMatch) {
+    return pendingCountMatch[1] === '1'
+      ? '1 cambio pendiente'
+      : `${pendingCountMatch[1]} cambios pendientes`;
+  }
+
+  const progressLabelMatch = /^(.+) progress$/.exec(literal);
+  if (progressLabelMatch) {
+    return `Progreso de ${translateLiteralBodyForLanguage(language, progressLabelMatch[1])}`;
   }
 
   const typeList = translateSlashSeparatedTypeList(language, literal);

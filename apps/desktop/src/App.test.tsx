@@ -719,6 +719,7 @@ describe('App', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Output for Trinity Mod Manager' })).toBeEnabled()
     );
+    expect(screen.getByRole('button', { name: 'Output for Trinity Bypass' })).toBeEnabled();
   });
 
   it('installs and uninstalls the SwSh 60FPS Patch from Tools', async () => {
@@ -1149,6 +1150,55 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Idioma y localización' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Caché de datos de Scarlet/Violet' })).not.toBeInTheDocument();
     expect(getSvCacheStatus).not.toHaveBeenCalled();
+  });
+
+  it('localizes rendered Scarlet/Violet editor chrome in Spanish', async () => {
+    window.localStorage.setItem(languageStorageKey, 'es');
+    useWorkbenchStore.setState({
+      draftPaths: {
+        baseExeFsPath: '',
+        baseRomFsPath: '',
+        outputRootPath: '',
+        saveFilePath: '',
+        scarletVioletSupportFolderPath: '',
+        selectedGame: 'scarlet'
+      }
+    });
+    const user = userEvent.setup();
+    const baseBridge = createMockProjectBridge({}, true);
+    const listWorkflows = vi.fn(async () => ({
+      workflows: [
+        {
+          availability: 'available',
+          description: 'Placed objects, categories, map coordinates, script links, and source provenance.',
+          diagnostics: [],
+          id: 'placement',
+          label: 'Placement'
+        }
+      ] satisfies WorkflowSummary[]
+    }));
+
+    render(
+      <LocalizationProvider>
+        <App bridge={{ ...baseBridge, listWorkflows }} />
+      </LocalizationProvider>
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Validar rutas' }));
+    await user.click(await screen.findByRole('button', { name: 'Editores' }));
+    await user.click(screen.getByRole('button', { name: 'Colocación' }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Colocación' })).toBeInTheDocument();
+    expect(screen.getByText('Objeto seleccionado')).toBeInTheDocument();
+    expect(screen.getByText('Archivo fuente')).toBeInTheDocument();
+    expect(screen.getByText('Estado del archivo')).toBeInTheDocument();
+    expect(screen.getAllByText('Solo base').length).toBeGreaterThan(0);
+    expect(
+      await screen.findByRole('button', { name: 'Ir a la wiki de Colocación' })
+    ).toHaveAttribute('title', 'Abrir página wiki');
+    expect(screen.queryByText('Selected Object')).not.toBeInTheDocument();
+    expect(screen.queryByText('Source file')).not.toBeInTheDocument();
+    expect(screen.queryByText('File state')).not.toBeInTheDocument();
   });
 
   it('shows S/V cache settings and confirms cache clearing', async () => {

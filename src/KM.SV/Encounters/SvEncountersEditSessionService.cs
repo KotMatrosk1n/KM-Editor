@@ -268,9 +268,7 @@ internal sealed class SvEncountersEditSessionService
 
             diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                outputMode == SvOutputMode.Standalone
-                    ? "Applied Wild Encounters change plan as standalone Scarlet/Violet output and patched the Trinity descriptor."
-                    : "Applied Wild Encounters change plan for Trinity Mod Manager. Run this output folder through Trinity Mod Manager before installing.",
+                SvEditSessionSupport.CreateApplyOutputMessage("Wild Encounters", outputMode),
                 SvEditSessionSupport.EncountersDomain));
         }
         catch (Exception exception)

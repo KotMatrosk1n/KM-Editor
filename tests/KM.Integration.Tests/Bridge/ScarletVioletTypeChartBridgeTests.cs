@@ -77,17 +77,24 @@ public sealed class ScarletVioletTypeChartBridgeTests
         AssertSuccess(validation);
         Assert.True(validation.Payload!.IsValid);
 
-        var trinityPlan = Dispatch<CreateChangePlanResponse>(
-            dispatcher,
-            KmCommandNames.CreateChangePlan,
-            new CreateChangePlanRequest(paths, stage.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
-            "request-sv-type-chart-trinity-plan");
-        AssertSuccess(trinityPlan);
-        Assert.False(trinityPlan.Payload!.ChangePlan.CanApply);
-        Assert.Empty(trinityPlan.Payload.ChangePlan.Writes);
-        Assert.Contains(
-            trinityPlan.Payload.ChangePlan.Diagnostics,
-            diagnostic => diagnostic.Message.Contains("outside Trinity Mod Manager RomFS output", StringComparison.Ordinal));
+        foreach (var outputMode in new[]
+        {
+            ChangePlanOutputModeDto.TrinityModManager,
+            ChangePlanOutputModeDto.TrinityBypass,
+        })
+        {
+            var romFsPlan = Dispatch<CreateChangePlanResponse>(
+                dispatcher,
+                KmCommandNames.CreateChangePlan,
+                new CreateChangePlanRequest(paths, stage.Payload.Session, outputMode),
+                $"request-sv-type-chart-{outputMode}-plan");
+            AssertSuccess(romFsPlan);
+            Assert.False(romFsPlan.Payload!.ChangePlan.CanApply);
+            Assert.Empty(romFsPlan.Payload.ChangePlan.Writes);
+            Assert.Contains(
+                romFsPlan.Payload.ChangePlan.Diagnostics,
+                diagnostic => diagnostic.Message.Contains("outside Scarlet/Violet RomFS output modes", StringComparison.Ordinal));
+        }
 
         var plan = Dispatch<CreateChangePlanResponse>(
             dispatcher,

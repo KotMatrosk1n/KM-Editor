@@ -251,6 +251,20 @@ internal static class SvEditSessionSupport
         return GeneratedReference(SvWorkflowFileSource.DescriptorVirtualPath);
     }
 
+    public static string CreateApplyOutputMessage(string workflowName, SvOutputMode outputMode)
+    {
+        return outputMode switch
+        {
+            SvOutputMode.Standalone =>
+                $"Applied {workflowName} change plan as standalone Scarlet/Violet output and patched the Trinity descriptor.",
+            SvOutputMode.TrinityModManager =>
+                $"Applied {workflowName} change plan for Trinity Mod Manager. Run this output folder through Trinity Mod Manager before installing.",
+            SvOutputMode.TrinityBypass =>
+                $"Applied {workflowName} change plan for Trinity Bypass. Install with Trinity Bypass already active; KM Editor did not patch the Trinity descriptor.",
+            _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
+        };
+    }
+
     public static ValidationDiagnostic CreateDiagnostic(
         DiagnosticSeverity severity,
         string message,

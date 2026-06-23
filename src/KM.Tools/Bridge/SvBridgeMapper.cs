@@ -77,6 +77,7 @@ public static class SvBridgeMapper
             null => SvOutputMode.Standalone,
             ChangePlanOutputModeDto.Standalone => SvOutputMode.Standalone,
             ChangePlanOutputModeDto.TrinityModManager => SvOutputMode.TrinityModManager,
+            ChangePlanOutputModeDto.TrinityBypass => SvOutputMode.TrinityBypass,
             _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
         };
     }

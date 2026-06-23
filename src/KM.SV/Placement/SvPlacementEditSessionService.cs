@@ -327,9 +327,7 @@ internal sealed class SvPlacementEditSessionService
 
             diagnostics.Add(CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                outputMode == SvOutputMode.Standalone
-                    ? "Applied Placement change plan as standalone Scarlet/Violet output and patched the Trinity descriptor."
-                    : "Applied Placement change plan for Trinity Mod Manager. Run this output folder through Trinity Mod Manager before installing."));
+                SvEditSessionSupport.CreateApplyOutputMessage("Placement", outputMode)));
         }
         catch (Exception exception)
         {

@@ -255,9 +255,7 @@ internal sealed class SvItemsEditSessionService
 
             diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                outputMode == SvOutputMode.Standalone
-                    ? "Applied Items change plan as standalone Scarlet/Violet output and patched the Trinity descriptor."
-                    : "Applied Items change plan for Trinity Mod Manager. Run this output folder through Trinity Mod Manager before installing.",
+                SvEditSessionSupport.CreateApplyOutputMessage("Items", outputMode),
                 SvEditSessionSupport.ItemsDomain));
         }
         catch (Exception exception)

@@ -253,9 +253,7 @@ internal sealed class SvGiftPokemonEditSessionService
 
             diagnostics.Add(SvEditSessionSupport.CreateDiagnostic(
                 DiagnosticSeverity.Info,
-                outputMode == SvOutputMode.Standalone
-                    ? "Applied Gift Pokemon change plan as standalone Scarlet/Violet output and patched the Trinity descriptor."
-                    : "Applied Gift Pokemon change plan for Trinity Mod Manager. Run this output folder through Trinity Mod Manager before installing.",
+                SvEditSessionSupport.CreateApplyOutputMessage("Gift Pokemon", outputMode),
                 SvEditSessionSupport.GiftPokemonDomain));
         }
         catch (Exception exception)
