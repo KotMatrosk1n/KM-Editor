@@ -5,6 +5,8 @@
     "settings.language.english.description": "Usa inglés para el texto de la interfaz de KM Editor.",
     "settings.language.french": "Français",
     "settings.language.french.description": "Usa francés para el texto de la interfaz de KM Editor.",
+    "settings.language.german": "Deutsch",
+    "settings.language.german.description": "Usa alemán para el texto de la interfaz de KM Editor.",
     "settings.language.groupLabel": "Idioma de la interfaz",
     "settings.language.selected": "Seleccionado",
     "settings.language.spanish": "Español",

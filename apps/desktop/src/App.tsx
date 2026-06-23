@@ -26420,6 +26420,7 @@ function SettingsSection({
   const canShowSvCacheSettings = isScarletVioletGame(selectedGame);
   const { language, setLanguage, t } = useLocalization();
   const languageKeyByCode: Record<LanguageCode, string> = {
+    de: 'german',
     en: 'english',
     es: 'spanish',
     fr: 'french'
