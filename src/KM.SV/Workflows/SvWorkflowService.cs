@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.SV.DumpImport;
 using KM.SV.Encounters;
 using KM.SV.FashionUnlock;
 using KM.SV.Gifts;
@@ -42,6 +43,8 @@ public sealed class SvWorkflowService
     private readonly SvTypeChartWorkflowService typeChartWorkflowService;
     private readonly SvFashionUnlockWorkflowService fashionUnlockWorkflowService;
     private readonly SvHyperspaceBypassWorkflowService hyperspaceBypassWorkflowService;
+    private readonly SvDumpImportWorkflowService dumpImportWorkflowService;
+    private readonly SvDumpImportExecutionService dumpImportExecutionService;
     private readonly SvModMergerWorkflowService modMergerWorkflowService;
     private readonly SvItemsEditSessionService itemsEditSessionService;
     private readonly SvMovesEditSessionService movesEditSessionService;
@@ -81,6 +84,7 @@ public sealed class SvWorkflowService
         typeChartWorkflowService = new SvTypeChartWorkflowService();
         fashionUnlockWorkflowService = new SvFashionUnlockWorkflowService();
         hyperspaceBypassWorkflowService = new SvHyperspaceBypassWorkflowService();
+        dumpImportWorkflowService = new SvDumpImportWorkflowService(itemsWorkflowService);
         modMergerWorkflowService = new SvModMergerWorkflowService(this.projectWorkspaceService);
         itemsEditSessionService = new SvItemsEditSessionService(this.projectWorkspaceService, fileSource, itemsWorkflowService);
         movesEditSessionService = new SvMovesEditSessionService(this.projectWorkspaceService, fileSource, movesWorkflowService);
@@ -107,6 +111,11 @@ public sealed class SvWorkflowService
         hyperspaceBypassEditSessionService = new SvHyperspaceBypassEditSessionService(
             this.projectWorkspaceService,
             hyperspaceBypassWorkflowService);
+        dumpImportExecutionService = new SvDumpImportExecutionService(
+            this.projectWorkspaceService,
+            itemsWorkflowService,
+            itemsEditSessionService,
+            dumpImportWorkflowService);
     }
 
     public SvCacheStatus GetCacheStatus(ProjectPaths? paths = null)
@@ -160,6 +169,7 @@ public sealed class SvWorkflowService
             typeChartWorkflowService.CreateSummary(project),
             fashionUnlockWorkflowService.CreateSummary(project),
             hyperspaceBypassWorkflowService.CreateSummary(project),
+            dumpImportWorkflowService.CreateSummary(project),
             modMergerWorkflowService.CreateSummary(project),
         ]);
     }
@@ -282,6 +292,23 @@ public sealed class SvWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return typeChartWorkflowService.Load(project);
+    }
+
+    public SvDumpImportWorkflow LoadDumpImport(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return dumpImportWorkflowService.Load(project);
+    }
+
+    public SvDumpImportExecutionResult PreviewDumpImport(
+        ProjectPaths paths,
+        string profileId,
+        string sourcePath,
+        EditSession? session)
+    {
+        return dumpImportExecutionService.Preview(paths, profileId, sourcePath, session);
     }
 
     public SvModMergerWorkflow LoadModMerger(

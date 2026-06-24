@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: GPL-3.0-only
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 const rawArgs = process.argv.slice(2);
@@ -89,6 +89,7 @@ const ignoredPrefixes = [
 const ignoredExact = new Set([
   'KM_Editor_Handoff.md',
 ]);
+const ignoredExtensions = new Set(['.docx', '.pdf']);
 
 if (!['changed', 'fast', 'full'].includes(modeArg)) {
   console.error(`Unknown test slice "${modeArg}". Use changed, fast, or full.`);
@@ -111,7 +112,14 @@ if (commands.length === 0) {
 console.log(`Selected ${commands.length} command(s) for "${modeArg}".`);
 for (const [index, item] of commands.entries()) {
   console.log(`${index + 1}. ${item.label}`);
-  console.log(`   ${item.command}`);
+  if (item.kind === 'parallel') {
+    for (const child of item.commands) {
+      console.log(`   - ${child.label}`);
+      console.log(`     ${child.command}`);
+    }
+  } else {
+    console.log(`   ${item.command}`);
+  }
 }
 
 if (printOnly) {
@@ -119,23 +127,7 @@ if (printOnly) {
 }
 
 const totalStarted = Date.now();
-for (const item of commands) {
-  console.log('');
-  console.log(`> ${item.label}`);
-  const started = Date.now();
-  const result = spawnSync(item.command, {
-    cwd: repoRoot,
-    encoding: 'utf8',
-    shell: true,
-    stdio: 'inherit',
-  });
-  const elapsedSeconds = ((Date.now() - started) / 1000).toFixed(2);
-  console.log(`elapsed: ${elapsedSeconds}s`);
-
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
-}
+await runSelectedCommands();
 
 console.log(`total elapsed: ${((Date.now() - totalStarted) / 1000).toFixed(2)}s`);
 
@@ -176,8 +168,10 @@ function addFastCommands() {
 function addFullCommands() {
   add('workspace-path-check', 'Check workspace path hygiene', 'node scripts/check-workspace-paths.mjs');
   add('diff-check', 'Check whitespace and patch hygiene', 'git diff --check');
-  add('desktop-tests', 'Run all desktop Vitest tests', 'pnpm --dir apps/desktop test:run');
-  add('backend-tests', 'Run all backend tests', dotnetProject('KM.Editor.slnx'));
+  addParallel('full-tests', 'Run desktop and backend test suites', [
+    { label: 'Run all desktop Vitest tests', command: 'pnpm --dir apps/desktop test:run' },
+    { label: 'Run all backend tests', command: dotnetProject('KM.Editor.slnx') },
+  ]);
 }
 
 function addChangedCommands() {
@@ -394,6 +388,136 @@ function add(key, label, command) {
   commands.push({ label, command });
 }
 
+function addParallel(key, label, childCommands) {
+  if (commandKeys.has(key)) {
+    return;
+  }
+
+  const uniqueChildren = [];
+  for (const child of childCommands) {
+    if (commandKeys.has(child.command)) {
+      continue;
+    }
+
+    commandKeys.add(child.command);
+    uniqueChildren.push(child);
+  }
+
+  if (uniqueChildren.length === 0) {
+    return;
+  }
+
+  commandKeys.add(key);
+  commands.push({ kind: 'parallel', label, commands: uniqueChildren });
+}
+
+async function runSelectedCommands() {
+  for (const item of commands) {
+    if (item.kind === 'parallel') {
+      await runParallelGroup(item);
+      continue;
+    }
+
+    console.log('');
+    console.log(`> ${item.label}`);
+    const started = Date.now();
+    const result = spawnSync(item.command, {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      shell: true,
+      stdio: 'inherit',
+    });
+    const elapsedSeconds = ((Date.now() - started) / 1000).toFixed(2);
+    console.log(`elapsed: ${elapsedSeconds}s`);
+
+    if (result.status !== 0) {
+      process.exit(result.status ?? 1);
+    }
+  }
+}
+
+async function runParallelGroup(item) {
+  console.log('');
+  console.log(`> ${item.label}`);
+  const groupStarted = Date.now();
+  const running = new Set(item.commands.map((child) => child.label));
+  const heartbeat = setInterval(() => {
+    if (running.size > 0) {
+      console.log(`still running: ${[...running].join(', ')}`);
+    }
+  }, 30000);
+
+  const results = await Promise.all(
+    item.commands.map(async (child) => {
+      console.log(`starting: ${child.label}`);
+      const result = await runCommandBuffered(child.command);
+      running.delete(child.label);
+      const elapsedSeconds = (result.elapsedMs / 1000).toFixed(2);
+      console.log(`finished: ${child.label} (${elapsedSeconds}s)`);
+      return { ...child, ...result, elapsedSeconds };
+    }),
+  );
+
+  clearInterval(heartbeat);
+
+  for (const result of results) {
+    console.log('');
+    console.log(`--- ${result.label} output (${result.elapsedSeconds}s) ---`);
+    if (result.stdout) {
+      process.stdout.write(result.stdout);
+      if (!result.stdout.endsWith('\n')) {
+        console.log('');
+      }
+    }
+
+    if (result.stderr) {
+      process.stderr.write(result.stderr);
+      if (!result.stderr.endsWith('\n')) {
+        console.error('');
+      }
+    }
+  }
+
+  const elapsedSeconds = ((Date.now() - groupStarted) / 1000).toFixed(2);
+  console.log(`parallel elapsed: ${elapsedSeconds}s`);
+
+  const failed = results.find((result) => result.status !== 0);
+  if (failed) {
+    process.exit(failed.status ?? 1);
+  }
+}
+
+function runCommandBuffered(command) {
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const child = spawn(command, {
+      cwd: repoRoot,
+      shell: true,
+      env: process.env,
+    });
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    child.on('error', (error) => {
+      stderr += `${error.message}\n`;
+    });
+    child.on('close', (status) => {
+      resolve({
+        status: status ?? 1,
+        stdout,
+        stderr,
+        elapsedMs: Date.now() - started,
+      });
+    });
+  });
+}
+
 function dotnetProject(project, filter) {
   if (!filter) {
     return `dotnet test ${project} --no-restore ${dotnetLogger}`;
@@ -468,6 +592,10 @@ function getChangedFiles() {
 
 function isIgnored(file) {
   if (ignoredExact.has(file)) {
+    return true;
+  }
+
+  if (ignoredExtensions.has(path.extname(file).toLowerCase())) {
     return true;
   }
 

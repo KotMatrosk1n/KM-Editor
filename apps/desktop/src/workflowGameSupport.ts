@@ -144,6 +144,7 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'typeChart',
   'fashionUnlock',
   'hyperspaceBypass',
+  'spreadsheetImport',
   'modMerger',
   'gameDump'
 ]);

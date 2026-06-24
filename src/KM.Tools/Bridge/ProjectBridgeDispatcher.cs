@@ -1761,8 +1761,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadSpreadsheetImportWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadSpreadsheetImportWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadSpreadsheetImport(ProjectBridgeMapper.ToCore(request.Payload.Paths));
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadDumpImport(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadSpreadsheetImport(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1773,12 +1775,18 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = spreadsheetImportExecutionService.Preview(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            request.Payload.ProfileId,
-            request.Payload.SourcePath,
-            session);
-        var response = SwShBridgeMapper.ToDto(result);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.PreviewDumpImport(
+                paths,
+                request.Payload.ProfileId,
+                request.Payload.SourcePath,
+                session))
+            : SwShBridgeMapper.ToDto(spreadsheetImportExecutionService.Preview(
+                paths,
+                request.Payload.ProfileId,
+                request.Payload.SourcePath,
+                session));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2661,8 +2669,6 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.StageStartingItems or
             KmCommandNames.LoadNpcItemGiftWorkflow or
             KmCommandNames.StageNpcItemGift or
-            KmCommandNames.LoadSpreadsheetImportWorkflow or
-            KmCommandNames.PreviewSpreadsheetImport or
             KmCommandNames.LoadModMergerWorkflow or
             KmCommandNames.StageModMerge or
             KmCommandNames.ApplyModMerge or
