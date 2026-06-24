@@ -454,7 +454,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadItemsWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadItems(paths))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.LoadItems(paths))
             : SwShBridgeMapper.ToDto(swShWorkflowService.LoadItems(paths));
 
@@ -2138,7 +2140,14 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.UpdateItemField(
+                paths,
+                session,
+                request.Payload.ItemId,
+                request.Payload.Field,
+                request.Payload.Value))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.UpdateItemField(
                 paths,
                 session,
@@ -2162,11 +2171,21 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var updates = request.Payload.Updates
-            .Select(update => new SvItemFieldUpdate(update.ItemId, update.Field, update.Value))
-            .ToArray();
-        var response = SvBridgeMapper.ToItemFieldsDto(
-            svWorkflowService.UpdateItemFields(paths, session, updates));
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToItemFieldsDto(
+                zaWorkflowService.UpdateItemFields(
+                    paths,
+                    session,
+                    request.Payload.Updates
+                        .Select(update => new ZaItemFieldUpdate(update.ItemId, update.Field, update.Value))
+                        .ToArray()))
+            : SvBridgeMapper.ToItemFieldsDto(
+                svWorkflowService.UpdateItemFields(
+                    paths,
+                    session,
+                    request.Payload.Updates
+                        .Select(update => new SvItemFieldUpdate(update.ItemId, update.Field, update.Value))
+                        .ToArray()));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2743,7 +2762,9 @@ public sealed class ProjectBridgeDispatcher
                 envelope.RequestId);
         }
 
-        if (IsScarletVioletOnlyCommand(command) && !IsScarletViolet(selectedGame))
+        if (IsScarletVioletOnlyCommand(command)
+            && !IsScarletViolet(selectedGame)
+            && !(command == KmCommandNames.UpdateItemFields && IsPokemonLegendsZA(selectedGame)))
         {
             return SerializeFailure(
                 "bridge.gameMismatch",
@@ -2907,6 +2928,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.ValidateProject or
             KmCommandNames.RefreshFileGraph or
             KmCommandNames.ListWorkflows or
+            KmCommandNames.LoadItemsWorkflow or
+            KmCommandNames.UpdateItemField or
+            KmCommandNames.UpdateItemFields or
             KmCommandNames.LoadPokemonWorkflow or
             KmCommandNames.UpdatePokemonField or
             KmCommandNames.UpdatePokemonFields or
