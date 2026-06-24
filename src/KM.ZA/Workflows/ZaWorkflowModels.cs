@@ -46,3 +46,5 @@ public sealed record ZaEditSessionValidation(
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
 
 public sealed record ZaMoveFieldUpdate(int MoveId, string Field, string Value);
+
+public sealed record ZaItemFieldUpdate(int ItemId, string Field, string Value);

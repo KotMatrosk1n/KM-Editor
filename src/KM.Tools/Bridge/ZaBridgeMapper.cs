@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Editing;
+using KM.Api.Items;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Workflows;
 using KM.Api.ZaCache;
+using KM.ZA.Items;
 using KM.ZA.Moves;
 using KM.ZA.Pokemon;
 using KM.ZA.Workflows;
@@ -65,6 +67,13 @@ public static class ZaBridgeMapper
         return new LoadPokemonWorkflowResponse(ToPokemonWorkflowDto(workflow));
     }
 
+    public static LoadItemsWorkflowResponse ToDto(ZaItemsWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadItemsWorkflowResponse(ToItemsWorkflowDto(workflow));
+    }
+
     public static LoadMovesWorkflowResponse ToDto(ZaMovesWorkflow workflow)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -78,6 +87,26 @@ public static class ZaBridgeMapper
 
         return new UpdatePokemonFieldResponse(
             ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateItemFieldResponse ToDto(ZaItemsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateItemFieldResponse(
+            ToItemsWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateItemFieldsResponse ToItemFieldsDto(ZaItemsEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateItemFieldsResponse(
+            ToItemsWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -166,6 +195,18 @@ public static class ZaBridgeMapper
             workflow.EvolutionMethodOptions.Select(ToDto).ToArray(),
             workflow.LearnsetMoveOptions.Select(ToDto).ToArray(),
             workflow.EditableFields.Select(ToDto).ToArray(),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ItemsWorkflowDto ToItemsWorkflowDto(ZaItemsWorkflow workflow)
+    {
+        return new ItemsWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Items.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new ItemsWorkflowStatsDto(
+                workflow.Stats.TotalItemCount,
+                workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -259,6 +300,95 @@ public static class ZaBridgeMapper
                 pokemon.Provenance.SourceFile,
                 ProjectBridgeMapper.ToDto(pokemon.Provenance.SourceLayer),
                 ProjectBridgeMapper.ToDto(pokemon.Provenance.FileState)));
+    }
+
+    private static ItemRecordDto ToDto(ZaItemRecord item)
+    {
+        return new ItemRecordDto(
+            item.ItemId,
+            item.Name,
+            item.Category,
+            item.BuyPrice,
+            item.SellPrice,
+            item.WattsPrice,
+            item.AlternatePrice,
+            ToDto(item.Metadata),
+            item.SharedItemIds.ToArray(),
+            item.DetailGroups.Select(ToDto).ToArray(),
+            ToDto(item.Provenance));
+    }
+
+    private static ItemMetadataDto ToDto(ZaItemMetadata metadata)
+    {
+        return new ItemMetadataDto(
+            metadata.Pouch,
+            metadata.PouchFlags,
+            metadata.FlingPower,
+            metadata.FieldUseType,
+            metadata.FieldFlags,
+            metadata.CanUseOnPokemon,
+            metadata.ItemType,
+            metadata.SortIndex,
+            metadata.ItemSprite,
+            metadata.GroupType,
+            metadata.GroupIndex,
+            metadata.CureStatusFlags,
+            metadata.Boost0,
+            metadata.Boost1,
+            metadata.Boost2,
+            metadata.Boost3,
+            metadata.UseFlags1,
+            metadata.UseFlags2,
+            metadata.EvHp,
+            metadata.EvAttack,
+            metadata.EvDefense,
+            metadata.EvSpeed,
+            metadata.EvSpecialAttack,
+            metadata.EvSpecialDefense,
+            metadata.HealAmount,
+            metadata.PpGain,
+            metadata.FriendshipGain1,
+            metadata.FriendshipGain2,
+            metadata.FriendshipGain3,
+            metadata.MachineSlot,
+            metadata.MachineMoveId,
+            metadata.MachineMoveName);
+    }
+
+    private static ItemDetailGroupDto ToDto(ZaItemDetailGroup group)
+    {
+        return new ItemDetailGroupDto(
+            group.Label,
+            group.Details.Select(ToDto).ToArray());
+    }
+
+    private static ItemDetailDto ToDto(ZaItemDetail detail)
+    {
+        return new ItemDetailDto(detail.Label, detail.Value);
+    }
+
+    private static ItemProvenanceDto ToDto(ZaItemProvenance provenance)
+    {
+        return new ItemProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static ItemEditableFieldDto ToDto(ZaItemEditableField field)
+    {
+        return new ItemEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static ItemEditableFieldOptionDto ToDto(ZaItemEditableFieldOption option)
+    {
+        return new ItemEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static PokemonEditableFieldDto ToDto(ZaPokemonEditableField field)

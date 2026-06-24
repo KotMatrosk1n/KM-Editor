@@ -4,6 +4,7 @@ using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
 using KM.Core.Projects;
+using KM.ZA.Items;
 using KM.ZA.Moves;
 using KM.ZA.Pokemon;
 
@@ -14,8 +15,10 @@ public sealed class ZaWorkflowService
     private readonly ProjectWorkspaceService projectWorkspaceService;
     private readonly ZaCacheManager cacheManager;
     private readonly ZaWorkflowFileSource fileSource;
+    private readonly ZaItemsWorkflowService itemsWorkflowService;
     private readonly ZaPokemonWorkflowService pokemonWorkflowService;
     private readonly ZaMovesWorkflowService movesWorkflowService;
+    private readonly ZaItemsEditSessionService itemsEditSessionService;
     private readonly ZaPokemonEditSessionService pokemonEditSessionService;
     private readonly ZaMovesEditSessionService movesEditSessionService;
 
@@ -26,8 +29,13 @@ public sealed class ZaWorkflowService
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.cacheManager = cacheManager ?? new ZaCacheManager();
         fileSource = new ZaWorkflowFileSource(this.cacheManager);
+        itemsWorkflowService = new ZaItemsWorkflowService(fileSource);
         pokemonWorkflowService = new ZaPokemonWorkflowService(fileSource);
         movesWorkflowService = new ZaMovesWorkflowService(fileSource);
+        itemsEditSessionService = new ZaItemsEditSessionService(
+            this.projectWorkspaceService,
+            fileSource,
+            itemsWorkflowService);
         pokemonEditSessionService = new ZaPokemonEditSessionService(
             this.projectWorkspaceService,
             fileSource,
@@ -76,7 +84,16 @@ public sealed class ZaWorkflowService
         [
             pokemonWorkflowService.CreateSummary(project),
             movesWorkflowService.CreateSummary(project),
+            itemsWorkflowService.CreateSummary(project),
         ]);
+    }
+
+    public ZaItemsWorkflow LoadItems(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        var project = projectWorkspaceService.Open(paths);
+        return itemsWorkflowService.Load(project);
     }
 
     public ZaPokemonWorkflow LoadPokemon(ProjectPaths paths)
@@ -103,6 +120,24 @@ public sealed class ZaWorkflowService
         string value)
     {
         return pokemonEditSessionService.UpdateField(paths, session, personalId, field, value);
+    }
+
+    public ZaItemsEditResult UpdateItemField(
+        ProjectPaths paths,
+        EditSession? session,
+        int itemId,
+        string field,
+        string value)
+    {
+        return itemsEditSessionService.UpdateField(paths, session, itemId, field, value);
+    }
+
+    public ZaItemsEditResult UpdateItemFields(
+        ProjectPaths paths,
+        EditSession? session,
+        IReadOnlyList<ZaItemFieldUpdate> updates)
+    {
+        return itemsEditSessionService.UpdateFields(paths, session, updates);
     }
 
     public ZaPokemonEditResult UpdatePokemonFields(
@@ -189,6 +224,7 @@ public sealed class ZaWorkflowService
     {
         return domain switch
         {
+            ZaEditSessionDomain.Items => itemsEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Moves => movesEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Pokemon => pokemonEditSessionService.Validate(paths, session),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedValidation(session),
@@ -204,6 +240,7 @@ public sealed class ZaWorkflowService
     {
         return domain switch
         {
+            ZaEditSessionDomain.Items => itemsEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Moves => movesEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Pokemon => pokemonEditSessionService.CreateChangePlan(paths, session, outputMode),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedChangePlan(session),
@@ -220,6 +257,7 @@ public sealed class ZaWorkflowService
     {
         return domain switch
         {
+            ZaEditSessionDomain.Items => itemsEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Moves => movesEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Pokemon => pokemonEditSessionService.ApplyChangePlan(paths, session, reviewedPlan, outputMode),
             ZaEditSessionDomain.Mixed => CreateUnsupportedMixedApplyResult(session),
@@ -335,6 +373,7 @@ public sealed class ZaWorkflowService
         {
             [] => ZaEditSessionDomain.None,
             [ZaEditSessionSupport.PokemonDomain] => ZaEditSessionDomain.Pokemon,
+            [ZaEditSessionSupport.ItemsDomain] => ZaEditSessionDomain.Items,
             [ZaEditSessionSupport.MovesDomain] => ZaEditSessionDomain.Moves,
             _ => ZaEditSessionDomain.Mixed,
         };
@@ -359,6 +398,7 @@ public sealed class ZaWorkflowService
         return domain switch
         {
             ZaEditSessionSupport.PokemonDomain => ZaEditSessionDomain.Pokemon,
+            ZaEditSessionSupport.ItemsDomain => ZaEditSessionDomain.Items,
             ZaEditSessionSupport.MovesDomain => ZaEditSessionDomain.Moves,
             null or "" => ZaEditSessionDomain.None,
             _ => ZaEditSessionDomain.Mixed,
@@ -367,7 +407,7 @@ public sealed class ZaWorkflowService
 
     private static bool IsNormalDomain(ZaEditSessionDomain domain)
     {
-        return domain is ZaEditSessionDomain.Pokemon or ZaEditSessionDomain.Moves;
+        return domain is ZaEditSessionDomain.Items or ZaEditSessionDomain.Pokemon or ZaEditSessionDomain.Moves;
     }
 
     private static EditSession SliceSession(EditSession session, ZaEditSessionDomain domain)
@@ -385,6 +425,7 @@ public sealed class ZaWorkflowService
     {
         return domain switch
         {
+            ZaEditSessionDomain.Items => ZaEditSessionSupport.ItemsDomain,
             ZaEditSessionDomain.Pokemon => ZaEditSessionSupport.PokemonDomain,
             ZaEditSessionDomain.Moves => ZaEditSessionSupport.MovesDomain,
             _ => string.Empty,
@@ -456,6 +497,7 @@ public sealed class ZaWorkflowService
     private enum ZaEditSessionDomain
     {
         None,
+        Items,
         Pokemon,
         Moves,
         Mixed,
