@@ -1641,6 +1641,14 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadTypeChartWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var zaWorkflow = zaWorkflowService.LoadTypeChart(paths);
+            var zaResponse = ZaBridgeMapper.ToDto(zaWorkflow);
+
+            return SerializeSuccess(zaResponse, request.RequestId);
+        }
+
         if (IsScarletViolet(paths))
         {
             var svWorkflow = svWorkflowService.LoadTypeChart(paths);
@@ -1692,6 +1700,17 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var zaResult = zaWorkflowService.StageTypeChart(
+                paths,
+                request.Payload.Values,
+                session);
+            var zaResponse = ZaBridgeMapper.ToDto(zaResult);
+
+            return SerializeSuccess(zaResponse, request.RequestId);
+        }
+
         if (IsScarletViolet(paths))
         {
             var svResult = svWorkflowService.StageTypeChart(
@@ -1718,10 +1737,10 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = svWorkflowService.StageTypeChartUninstall(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session);
-        var response = SvBridgeMapper.ToTypeChartUninstallDto(result);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToTypeChartUninstallDto(zaWorkflowService.StageTypeChartUninstall(paths, session))
+            : SvBridgeMapper.ToTypeChartUninstallDto(svWorkflowService.StageTypeChartUninstall(paths, session));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2921,7 +2940,8 @@ public sealed class ProjectBridgeDispatcher
             && !((command is KmCommandNames.UpdateItemFields or KmCommandNames.UpdateTrainerFields)
                 && IsPokemonLegendsZA(selectedGame))
             && !(command is KmCommandNames.UpdateGiftPokemonFields or KmCommandNames.UpdateTradePokemonFields
-                && IsPokemonLegendsZA(selectedGame)))
+                && IsPokemonLegendsZA(selectedGame))
+            && !(command is KmCommandNames.StageTypeChartUninstall && IsPokemonLegendsZA(selectedGame)))
         {
             return SerializeFailure(
                 "bridge.gameMismatch",
@@ -3114,6 +3134,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateMoveFields or
             KmCommandNames.LoadShopsWorkflow or
             KmCommandNames.UpdateShopInventoryItem or
+            KmCommandNames.LoadTypeChartWorkflow or
+            KmCommandNames.StageTypeChart or
+            KmCommandNames.StageTypeChartUninstall or
             KmCommandNames.StartEditSession or
             KmCommandNames.ValidateEditSession or
             KmCommandNames.CreateChangePlan or

@@ -223,6 +223,15 @@ public sealed class ZaGameDumpService
                     var workflow = workflowService.LoadShops(paths);
                     return new GameDumpCategoryData<KM.ZA.Shops.ZaShopRecord>(workflow.Shops, workflow.Diagnostics);
                 }),
+            GameDumpWriter.CreateTableCategory(
+                ZaWorkflowIds.TypeChart,
+                "Type Chart",
+                "Type-effectiveness table cells from exefs/main.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadTypeChart(paths);
+                    return new GameDumpCategoryData<KM.ZA.TypeChart.ZaTypeChartCell>(workflow.Cells, workflow.Diagnostics);
+                }),
         ];
     }
 

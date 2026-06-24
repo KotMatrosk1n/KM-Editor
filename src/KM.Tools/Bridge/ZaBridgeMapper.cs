@@ -9,6 +9,7 @@ using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Shops;
 using KM.Api.StaticEncounters;
+using KM.Api.TypeChart;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
@@ -21,6 +22,7 @@ using KM.ZA.Moves;
 using KM.ZA.Pokemon;
 using KM.ZA.Shops;
 using KM.ZA.StaticEncounters;
+using KM.ZA.TypeChart;
 using KM.ZA.Trainers;
 using KM.ZA.Trades;
 using KM.ZA.Workflows;
@@ -128,6 +130,13 @@ public static class ZaBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadStaticEncountersWorkflowResponse(ToStaticEncountersWorkflowDto(workflow));
+    }
+
+    public static LoadTypeChartWorkflowResponse ToDto(ZaTypeChartWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTypeChartWorkflowResponse(ToTypeChartWorkflowDto(workflow));
     }
 
     public static LoadTradePokemonWorkflowResponse ToDto(ZaTradePokemonWorkflow workflow)
@@ -260,6 +269,26 @@ public static class ZaBridgeMapper
 
         return new UpdateStaticEncounterFieldResponse(
             ToStaticEncountersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageTypeChartResponse ToDto(ZaTypeChartEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageTypeChartResponse(
+            ToTypeChartWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageTypeChartUninstallResponse ToTypeChartUninstallDto(ZaTypeChartEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageTypeChartUninstallResponse(
+            ToTypeChartWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -637,6 +666,61 @@ public static class ZaBridgeMapper
         ZaStaticEncounterEditableFieldOption option)
     {
         return new StaticEncounterEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static TypeChartWorkflowDto ToTypeChartWorkflowDto(ZaTypeChartWorkflow workflow)
+    {
+        return new TypeChartWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.InstallStatus,
+            workflow.InstallMessage,
+            workflow.BuildId,
+            workflow.ChartOffsetHex,
+            workflow.DetectedGame is null ? null : ProjectBridgeMapper.ToDto(workflow.DetectedGame.Value),
+            workflow.Source is null ? null : ToDto(workflow.Source),
+            workflow.Types.Select(ToDto).ToArray(),
+            workflow.Cells.Select(ToDto).ToArray(),
+            new TypeChartWorkflowStatsDto(
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.OutputFileCount,
+                workflow.Stats.ChartCellCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TypeChartSourceRecordDto ToDto(ZaTypeChartSourceRecord source)
+    {
+        return new TypeChartSourceRecordDto(
+            source.SourceId,
+            source.Label,
+            source.RelativePath,
+            source.Status,
+            ToDto(source.Provenance));
+    }
+
+    private static TypeChartProvenanceDto ToDto(ZaTypeChartProvenance provenance)
+    {
+        return new TypeChartProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static TypeChartTypeDefinitionDto ToDto(ZaTypeChartTypeDefinition type)
+    {
+        return new TypeChartTypeDefinitionDto(
+            type.TypeIndex,
+            type.Label,
+            type.ShortLabel,
+            type.Color);
+    }
+
+    private static TypeChartCellDto ToDto(ZaTypeChartCell cell)
+    {
+        return new TypeChartCellDto(
+            cell.AttackTypeIndex,
+            cell.DefenseTypeIndex,
+            cell.Effectiveness,
+            cell.VanillaEffectiveness);
     }
 
     private static ZaModMergerWorkflowDto ToWorkflowDto(ZaModMergerWorkflow workflow)
