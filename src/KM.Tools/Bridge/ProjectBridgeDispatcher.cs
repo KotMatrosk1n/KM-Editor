@@ -84,6 +84,7 @@ using KM.SV.ModMerger;
 using KM.SV.GameDump;
 using KM.ZA.Gifts;
 using KM.ZA.GameDump;
+using KM.ZA.ModMerger;
 using KM.ZA.Trades;
 using KM.SV.Workflows;
 using KM.ZA.Workflows;
@@ -345,6 +346,9 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.LoadSvModMergerWorkflow => DispatchLoadSvModMergerWorkflow(requestJson),
                 KmCommandNames.StageSvModMerge => DispatchStageSvModMerge(requestJson),
                 KmCommandNames.ApplySvModMerge => DispatchApplySvModMerge(requestJson),
+                KmCommandNames.LoadZaModMergerWorkflow => DispatchLoadZaModMergerWorkflow(requestJson),
+                KmCommandNames.StageZaModMerge => DispatchStageZaModMerge(requestJson),
+                KmCommandNames.ApplyZaModMerge => DispatchApplyZaModMerge(requestJson),
                 KmCommandNames.GetSvCacheStatus => DispatchGetSvCacheStatus(requestJson),
                 KmCommandNames.UpdateSvCacheSettings => DispatchUpdateSvCacheSettings(requestJson),
                 KmCommandNames.ClearSvCache => DispatchClearSvCache(requestJson),
@@ -2074,6 +2078,39 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchLoadZaModMergerWorkflow(string requestJson)
+    {
+        var request = DeserializeRequest<LoadZaModMergerWorkflowRequest>(requestJson);
+        var workflow = zaWorkflowService.LoadModMerger(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ModSources.Select(ToCore).ToArray());
+        var response = ZaBridgeMapper.ToDto(workflow);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchStageZaModMerge(string requestJson)
+    {
+        var request = DeserializeRequest<StageZaModMergeRequest>(requestJson);
+        var result = zaWorkflowService.StageModMerge(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ModSources.Select(ToCore).ToArray());
+        var response = ZaBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchApplyZaModMerge(string requestJson)
+    {
+        var request = DeserializeRequest<ApplyZaModMergeRequest>(requestJson);
+        var result = zaWorkflowService.ApplyModMerge(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.ModSources.Select(ToCore).ToArray());
+        var response = ZaBridgeMapper.ToDto(result);
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchGetSvCacheStatus(string requestJson)
     {
         var request = DeserializeRequest<GetSvCacheStatusRequest>(requestJson);
@@ -3019,7 +3056,10 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.GetZaCacheStatus or
             KmCommandNames.UpdateZaCacheSettings or
             KmCommandNames.ClearZaCache or
-            KmCommandNames.WarmupZaCacheStep;
+            KmCommandNames.WarmupZaCacheStep or
+            KmCommandNames.LoadZaModMergerWorkflow or
+            KmCommandNames.StageZaModMerge or
+            KmCommandNames.ApplyZaModMerge;
     }
 
     private static bool IsPokemonLegendsZAAllowedCommand(string command)
@@ -3059,6 +3099,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateZaCacheSettings or
             KmCommandNames.ClearZaCache or
             KmCommandNames.WarmupZaCacheStep or
+            KmCommandNames.LoadZaModMergerWorkflow or
+            KmCommandNames.StageZaModMerge or
+            KmCommandNames.ApplyZaModMerge or
             KmCommandNames.LoadGameDumpWorkflow or
             KmCommandNames.RunGameDump;
     }
@@ -3124,6 +3167,11 @@ public sealed class ProjectBridgeDispatcher
     private static SvModMergerSourceRequest ToCore(SvModMergerSourceDto source)
     {
         return new SvModMergerSourceRequest(source.Path, source.IsEnabled);
+    }
+
+    private static ZaModMergerSourceRequest ToCore(ZaModMergerSourceDto source)
+    {
+        return new ZaModMergerSourceRequest(source.Path, source.IsEnabled);
     }
 
     private static SwShRandomizerOptions ToCore(RandomizerOptionsDto options)

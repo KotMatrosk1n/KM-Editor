@@ -6,6 +6,7 @@ using KM.Core.Files;
 using KM.Core.Projects;
 using KM.ZA.Gifts;
 using KM.ZA.Items;
+using KM.ZA.ModMerger;
 using KM.ZA.Moves;
 using KM.ZA.Pokemon;
 using KM.ZA.Shops;
@@ -26,6 +27,7 @@ public sealed class ZaWorkflowService
     private readonly ZaTrainersWorkflowService trainersWorkflowService;
     private readonly ZaGiftPokemonWorkflowService giftPokemonWorkflowService;
     private readonly ZaTradePokemonWorkflowService tradePokemonWorkflowService;
+    private readonly ZaModMergerWorkflowService modMergerWorkflowService;
     private readonly ZaItemsEditSessionService itemsEditSessionService;
     private readonly ZaPokemonEditSessionService pokemonEditSessionService;
     private readonly ZaMovesEditSessionService movesEditSessionService;
@@ -48,6 +50,7 @@ public sealed class ZaWorkflowService
         trainersWorkflowService = new ZaTrainersWorkflowService(fileSource);
         giftPokemonWorkflowService = new ZaGiftPokemonWorkflowService(fileSource);
         tradePokemonWorkflowService = new ZaTradePokemonWorkflowService(fileSource);
+        modMergerWorkflowService = new ZaModMergerWorkflowService(this.projectWorkspaceService);
         itemsEditSessionService = new ZaItemsEditSessionService(
             this.projectWorkspaceService,
             fileSource,
@@ -121,6 +124,7 @@ public sealed class ZaWorkflowService
             movesWorkflowService.CreateSummary(project),
             itemsWorkflowService.CreateSummary(project),
             shopsWorkflowService.CreateSummary(project),
+            modMergerWorkflowService.CreateSummary(project),
         ]);
     }
 
@@ -178,6 +182,27 @@ public sealed class ZaWorkflowService
 
         var project = projectWorkspaceService.Open(paths);
         return tradePokemonWorkflowService.Load(project);
+    }
+
+    public ZaModMergerWorkflow LoadModMerger(
+        ProjectPaths paths,
+        IReadOnlyList<ZaModMergerSourceRequest> modSources)
+    {
+        return modMergerWorkflowService.Load(paths, modSources);
+    }
+
+    public ZaModMergerStageResult StageModMerge(
+        ProjectPaths paths,
+        IReadOnlyList<ZaModMergerSourceRequest> modSources)
+    {
+        return modMergerWorkflowService.Stage(paths, modSources);
+    }
+
+    public ZaModMergerApplyResult ApplyModMerge(
+        ProjectPaths paths,
+        IReadOnlyList<ZaModMergerSourceRequest> modSources)
+    {
+        return modMergerWorkflowService.Apply(paths, modSources);
     }
 
     public ZaPokemonEditResult UpdatePokemonField(

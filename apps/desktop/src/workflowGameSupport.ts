@@ -32,6 +32,7 @@ import {
   type TradePokemonWorkflow,
   type TrainersWorkflow,
   type TypeChartWorkflow,
+  type ZaModMergerWorkflow,
   type WorkflowSummary
 } from './bridge/contracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
@@ -157,6 +158,7 @@ const pokemonLegendsZAWorkflowSectionIds = new Set<WorkbenchSection>([
   'moves',
   'items',
   'shops',
+  'modMerger',
   'gameDump'
 ]);
 
@@ -270,6 +272,7 @@ export type LoadedWorkflowStateBySection = {
   tradePokemonWorkflow: TradePokemonWorkflow | null;
   trainersWorkflow: TrainersWorkflow | null;
   typeChartWorkflow: TypeChartWorkflow | null;
+  zaModMergerWorkflow: ZaModMergerWorkflow | null;
 };
 
 function getGameWorkflowSectionIds(game: ProjectGame | null | undefined) {
@@ -355,7 +358,9 @@ export function getLoadedWorkflowStateForSection(
     case 'modMerger':
       return isScarletVioletGame(state.selectedGame)
         ? state.svModMergerWorkflow !== null
-        : state.modMergerWorkflow !== null;
+        : isPokemonLegendsZAGame(state.selectedGame)
+          ? state.zaModMergerWorkflow !== null
+          : state.modMergerWorkflow !== null;
     case 'moves':
       return state.movesWorkflow !== null;
     case 'npcItemGift':

@@ -9,6 +9,7 @@ using KM.Api.Editing;
 using KM.Api.GameDump;
 using KM.Api.Gifts;
 using KM.Api.Items;
+using KM.Api.ModMerger;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
@@ -19,6 +20,7 @@ using KM.Api.Workflows;
 using KM.Formats.SwSh;
 using KM.Formats.ZA;
 using KM.Formats.ZA.Generated.GameData;
+using KM.Formats.ZA.Trinity;
 using KM.Integration.Tests.Tools;
 using KM.Tools.Bridge;
 using KM.ZA.Data;
@@ -30,6 +32,9 @@ public sealed class PokemonLegendsZABridgeTests
 {
     private const ulong PokemonLegendsZATitleId = 0x0100F43008C44000;
     private const int ZaNpdmTitleIdOffset = 0x480;
+    private const string ModMergerDataVirtualPath = "bin/mock/data.bin";
+    private const string ModMergerDataOutputPath = "romfs/bin/mock/data.bin";
+    private const string ModMergerDescriptorOutputPath = "romfs/arc/data.trpfd";
 
     [Fact]
     public void PokemonLegendsZAProjectLoadsPokemonData()
@@ -68,7 +73,7 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
-    public void PokemonLegendsZAProjectListsPokemonTrainersGiftTradeMovesItemsAndShopsWorkflows()
+    public void PokemonLegendsZAProjectListsPokemonTrainersGiftTradeMovesItemsShopsAndModMergerWorkflows()
     {
         using var temp = CreatePokemonLegendsZAProject();
         var dispatcher = new ProjectBridgeDispatcher();
@@ -87,6 +92,7 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "moves" && workflow.Label == "Moves");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "items" && workflow.Label == "Items");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "shops" && workflow.Label == "Shops");
+        Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "modMerger" && workflow.Label == "Mod Merger");
     }
 
     [Fact]
@@ -841,6 +847,60 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(5, gift.MaxLevel);
     }
 
+    [Fact]
+    public void PokemonLegendsZAModMergerStagesAndAppliesTrinityRomFsMods()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile("arc/data.trpfd", CreateTrinityDescriptor([ModMergerDataVirtualPath]));
+        temp.WriteBaseRomFsFile(ModMergerDataVirtualPath, [0, 0, 0, 0]);
+        var firstMod = CreateZaFolderMod(temp, "first-mod", [1, 0, 0, 0]);
+        var secondMod = CreateZaFolderMod(temp, "second-mod", [0, 0, 2, 0]);
+        var paths = CreatePaths(temp);
+        var sources = new[]
+        {
+            new ZaModMergerSourceDto(firstMod, IsEnabled: true),
+            new ZaModMergerSourceDto(secondMod, IsEnabled: true),
+        };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var load = Dispatch<LoadZaModMergerWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadZaModMergerWorkflow,
+            new LoadZaModMergerWorkflowRequest(paths, sources),
+            "request-za-mod-merger-load");
+        AssertSuccess(load);
+        Assert.Equal("Mod Merger", load.Payload!.Workflow.Summary.Label);
+        Assert.Equal(2, load.Payload.Workflow.Sources.Count);
+        Assert.Equal(2, load.Payload.Workflow.Stats.SourceCount);
+        Assert.Equal(1, load.Payload.Workflow.Stats.OutputFileCount);
+
+        var stage = Dispatch<StageZaModMergeResponse>(
+            dispatcher,
+            KmCommandNames.StageZaModMerge,
+            new StageZaModMergeRequest(paths, sources),
+            "request-za-mod-merger-stage");
+        AssertSuccess(stage);
+        Assert.True(stage.Payload!.Preview.CanApply);
+        Assert.Equal("ready", stage.Payload.Preview.Status);
+        var stagedFile = Assert.Single(stage.Payload.Preview.Files);
+        Assert.Equal(ModMergerDataOutputPath, stagedFile.RelativePath);
+        Assert.Equal("smartMerge", stagedFile.MergeKind);
+
+        var apply = Dispatch<ApplyZaModMergeResponse>(
+            dispatcher,
+            KmCommandNames.ApplyZaModMerge,
+            new ApplyZaModMergeRequest(paths, sources),
+            "request-za-mod-merger-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(ModMergerDataOutputPath, apply.Payload.WrittenFiles);
+        Assert.Contains(ModMergerDescriptorOutputPath, apply.Payload.WrittenFiles);
+        Assert.Equal([1, 0, 2, 0], ReadZaOutputBytes(temp, ModMergerDataOutputPath));
+        AssertDescriptorRemovedZaModFile(temp);
+    }
+
     private static TemporaryBridgeProject CreatePokemonLegendsZAProject()
     {
         var temp = TemporaryBridgeProject.Create();
@@ -861,11 +921,63 @@ public sealed class PokemonLegendsZABridgeTests
         };
     }
 
+    private static string CreateZaFolderMod(TemporaryBridgeProject temp, string name, byte[] bytes)
+    {
+        var root = Path.Combine(temp.RootPath, name);
+        var path = Path.Combine(root, "romfs", "bin", "mock", "data.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, bytes);
+        return root;
+    }
+
+    private static byte[] ReadZaOutputBytes(TemporaryBridgeProject temp, string relativePath)
+    {
+        return File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            relativePath.Replace('/', Path.DirectorySeparatorChar)));
+    }
+
+    private static void AssertDescriptorRemovedZaModFile(TemporaryBridgeProject temp)
+    {
+        var descriptorPath = Path.Combine(temp.OutputRootPath, "romfs", "arc", "data.trpfd");
+        Assert.True(File.Exists(descriptorPath));
+
+        var descriptor = FileDescriptor.GetRootAsFileDescriptor(new ByteBuffer(File.ReadAllBytes(descriptorPath)));
+        var activeHashes = Enumerable
+            .Range(0, descriptor.FileHashesLength)
+            .Select(descriptor.FileHashes)
+            .ToHashSet();
+
+        Assert.DoesNotContain(ZaTrinityPathHasher.HashPath(ModMergerDataVirtualPath), activeHashes);
+    }
+
     private static byte[] CreateNpdm(ulong titleId)
     {
         var npdm = new byte[ZaNpdmTitleIdOffset + sizeof(ulong)];
         BinaryPrimitives.WriteUInt64LittleEndian(npdm.AsSpan(ZaNpdmTitleIdOffset), titleId);
         return npdm;
+    }
+
+    private static byte[] CreateTrinityDescriptor(IReadOnlyList<string> virtualPaths)
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var packName = builder.CreateString("pack/test.trpak");
+        var packNames = FileDescriptor.CreatePackNamesVector(builder, [packName]);
+        var fileHashes = FileDescriptor.CreateFileHashesVector(
+            builder,
+            virtualPaths.Select(ZaTrinityPathHasher.HashPath).ToArray());
+        var fileEntries = virtualPaths
+            .Select(_ => FileDescriptorEntry.CreateFileDescriptorEntry(builder, pack_index: 0))
+            .ToArray();
+        var files = FileDescriptor.CreateFilesVector(builder, fileEntries);
+        var pack = PackDescriptorEntry.CreatePackDescriptorEntry(
+            builder,
+            file_size: 123,
+            file_count: checked((ulong)virtualPaths.Count));
+        var packs = FileDescriptor.CreatePacksVector(builder, [pack]);
+        var root = FileDescriptor.CreateFileDescriptor(builder, fileHashes, packNames, files, packs);
+        FileDescriptor.FinishFileDescriptorBuffer(builder, root);
+        return builder.SizedByteArray();
     }
 
     private static byte[] CreatePersonalArray()
