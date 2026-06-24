@@ -15,6 +15,7 @@ internal static class ZaEditSessionSupport
     public const string MovesDomain = "workflow.moves";
     public const string ShopsDomain = "workflow.shops";
     public const string TrainersDomain = "workflow.trainers";
+    public const string PlacementDomain = "workflow.placement";
     public const string EncountersDomain = "workflow.encounters";
     public const string StaticEncountersDomain = "workflow.staticEncounters";
     public const string GiftPokemonDomain = "workflow.giftPokemon";

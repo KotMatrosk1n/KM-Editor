@@ -12,6 +12,7 @@ using KM.Api.Gifts;
 using KM.Api.Items;
 using KM.Api.ModMerger;
 using KM.Api.Moves;
+using KM.Api.Placement;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Shops;
@@ -27,6 +28,7 @@ using KM.Formats.ZA.Trinity;
 using KM.Integration.Tests.Tools;
 using KM.Tools.Bridge;
 using KM.ZA.Data;
+using KM.ZA.Placement;
 using Xunit;
 
 namespace KM.Integration.Tests.Bridge;
@@ -96,6 +98,7 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "tradePokemon" && workflow.Label == "Trade Pokemon");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "moves" && workflow.Label == "Moves");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "items" && workflow.Label == "Items");
+        Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "placement" && workflow.Label == "Placement");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "shops" && workflow.Label == "Shops");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "typeChart" && workflow.Label == "Type Chart");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "modMerger" && workflow.Label == "Mod Merger");
@@ -389,6 +392,7 @@ public sealed class PokemonLegendsZABridgeTests
         WriteGiftPokemonFixture(temp);
         WriteTradePokemonFixture(temp);
         WriteStaticEncounterFixture(temp);
+        WritePlacementFixture(temp);
         temp.WriteBaseExeFsFile("main", ZaTypeChartBridgeFixtures.CreateCompatibleMain());
         var dispatcher = new ProjectBridgeDispatcher();
         var paths = CreatePaths(temp);
@@ -401,7 +405,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var categories = load.Payload!.Workflow.Categories;
-        Assert.Equal(["pokemon", "trainers", "staticEncounters", "giftPokemon", "tradePokemon", "moves", "items", "shops", "typeChart"], categories.Select(category => category.Id).ToArray());
+        Assert.Equal(["pokemon", "trainers", "staticEncounters", "giftPokemon", "tradePokemon", "moves", "items", "placement", "shops", "typeChart"], categories.Select(category => category.Id).ToArray());
         Assert.All(categories, category => Assert.True(category.IsAvailable, category.Id));
 
         var destinationFolder = Path.Combine(temp.RootPath, "dump");
@@ -414,6 +418,7 @@ public sealed class PokemonLegendsZABridgeTests
                 [
                     new GameDumpSelectionDto("items", GameDumpFormatDto.TsvAndJson),
                     new GameDumpSelectionDto("trainers", GameDumpFormatDto.Json),
+                    new GameDumpSelectionDto("placement", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("staticEncounters", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("giftPokemon", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("tradePokemon", GameDumpFormatDto.Json),
@@ -440,6 +445,9 @@ public sealed class PokemonLegendsZABridgeTests
             file => file.CategoryId == "trainers" && file.RelativePath == Path.Combine("Trainers", "trainers.json"));
         Assert.Contains(
             run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "placement" && file.RelativePath == Path.Combine("Placement", "placement.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
             file => file.CategoryId == "staticEncounters" && file.RelativePath == Path.Combine("Static Encounters", "staticEncounters.json"));
         Assert.Contains(
             run.Payload.Result.WrittenFiles,
@@ -455,6 +463,7 @@ public sealed class PokemonLegendsZABridgeTests
             file => file.CategoryId == "manifest" && file.RelativePath == "manifest.json");
         Assert.Contains("Poke Ball", File.ReadAllText(Path.Combine(destinationFolder, "Items", "items.tsv")));
         Assert.Contains("Rival Aria", File.ReadAllText(Path.Combine(destinationFolder, "Trainers", "trainers.json")));
+        Assert.Contains("wild_spawn_001", File.ReadAllText(Path.Combine(destinationFolder, "Placement", "placement.json")));
         Assert.Contains("static_event_ivysaur", File.ReadAllText(Path.Combine(destinationFolder, "Static Encounters", "staticEncounters.json")));
         Assert.Contains("main_init_poke_1", File.ReadAllText(Path.Combine(destinationFolder, "Gift Pokemon", "giftPokemon.json")));
         Assert.Contains("sub_tradepoke_bulbasaur", File.ReadAllText(Path.Combine(destinationFolder, "Trade Pokemon", "tradePokemon.json")));
@@ -949,6 +958,86 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZAPlacementEditWritesSpawnerTransformTable()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WritePlacementFixture(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var load = Dispatch<LoadPlacementWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadPlacementWorkflow,
+            new LoadPlacementWorkflowRequest(paths),
+            "request-za-placement-load");
+
+        AssertSuccess(load);
+        var workflow = load.Payload!.Workflow;
+        Assert.Equal("Placement", workflow.Summary.Label);
+        Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
+        Assert.Equal(2, workflow.Objects.Count);
+        Assert.Contains(workflow.Categories!, category => category.Id == "pokemonSpawners" && category.ObjectCount == 1);
+        Assert.Contains(workflow.Categories!, category => category.Id == "itemBallSpawners" && category.ObjectCount == 1);
+        Assert.Contains(workflow.EditableFields, field => field.Field == "point.positionX" && field.Label == "Position X");
+        Assert.Contains(workflow.EditableFields, field => field.Field == "point.attachTransformEnable" && field.Label == "Attach Transform");
+
+        var pokemonSpawner = workflow.Objects.Single(placedObject => placedObject.Label == "wild_spawn_001");
+        Assert.Equal("pokemonSpawners", pokemonSpawner.CategoryId);
+        Assert.Equal("Pokemon Spawner", pokemonSpawner.ObjectType);
+        Assert.Equal("zone01 day", pokemonSpawner.Map);
+        Assert.Equal(1, pokemonSpawner.X);
+        Assert.Equal(45, pokemonSpawner.RotationY);
+        Assert.EndsWith(ZaDataPaths.PokemonSpawnerTransformArray, pokemonSpawner.Provenance.SourceFile, StringComparison.Ordinal);
+        Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.id" && field.DisplayValue == "za_wild_spawner_001");
+        Assert.Contains(pokemonSpawner.Fields!, field => field.Field == "spawner.encounterRows" && field.DisplayValue == "1");
+
+        var update = Dispatch<UpdatePlacementObjectFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdatePlacementObjectFields,
+            new UpdatePlacementObjectFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new PlacementObjectFieldUpdateDto(pokemonSpawner.ObjectId, "point.positionX", "9.5"),
+                    new PlacementObjectFieldUpdateDto(pokemonSpawner.ObjectId, "point.rotationYaw", "180"),
+                    new PlacementObjectFieldUpdateDto(pokemonSpawner.ObjectId, "point.attachTransformEnable", "0"),
+                ]),
+            "request-za-placement-update");
+        AssertSuccess(update);
+        Assert.DoesNotContain(update.Payload!.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        var updatedObject = update.Payload.Workflow.Objects.Single(placedObject => placedObject.ObjectId == pokemonSpawner.ObjectId);
+        Assert.Equal(9.5, updatedObject.X);
+        Assert.Equal(180, updatedObject.RotationY);
+        Assert.Contains(updatedObject.Fields!, field => field.Field == "point.attachTransformEnable" && field.DisplayValue == "No");
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-placement-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.PokemonSpawnerTransformArray);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-placement-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Contains(ZaDataPaths.PokemonSpawnerTransformArray, apply.Payload.ApplyResult.WrittenFiles);
+
+        var written = ReadSpawnerTransformRow(temp, ZaDataPaths.PokemonSpawnerTransformArray, "wild_spawn_001");
+        Assert.Equal(9.5f, written.Position.X);
+        Assert.Equal(2, written.Position.Y);
+        Assert.Equal(3, written.Position.Z);
+        Assert.Equal(180, written.Rotation.Y);
+        Assert.False(written.AttachTransformEnable);
+        Assert.DoesNotContain(ZaDataPaths.ItemBallSpawnerTransformArray, apply.Payload.ApplyResult.WrittenFiles);
+    }
+
+    [Fact]
     public void PokemonLegendsZAStaticEncountersEditWritesTrinityPokemonDataTable()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -1314,6 +1403,33 @@ public sealed class PokemonLegendsZABridgeTests
             CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
     }
 
+    private static void WritePlacementFixture(TemporaryBridgeProject temp)
+    {
+        temp.WriteBaseRomFsFile(ZaDataPaths.PokemonSpawnerDataArray, CreatePokemonSpawnerDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PokemonSpawnerTransformArray,
+            CreateSpawnerTransformArray(
+                "wild_spawn_001",
+                positionX: 1,
+                positionY: 2,
+                positionZ: 3,
+                rotationX: 0,
+                rotationY: 45,
+                rotationZ: 0,
+                attach: true));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemBallSpawnerTransformArray,
+            CreateSpawnerTransformArray(
+                "itemball_spawn_001",
+                positionX: 4,
+                positionY: 5,
+                positionZ: 6,
+                rotationX: 10,
+                rotationY: 90,
+                rotationZ: 20,
+                attach: true));
+    }
+
     private static byte[] CreatePokemonDataArray()
     {
         var builder = new FlatBufferBuilder(2048);
@@ -1397,6 +1513,33 @@ public sealed class PokemonLegendsZABridgeTests
         var root = PokemonSpawnerDataDBArray.CreatePokemonSpawnerDataDBArray(builder, valuesVector);
         PokemonSpawnerDataDBArray.FinishPokemonSpawnerDataDBArrayBuffer(builder, root);
         return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateSpawnerTransformArray(
+        string name,
+        float positionX,
+        float positionY,
+        float positionZ,
+        float rotationX,
+        float rotationY,
+        float rotationZ,
+        bool attach)
+    {
+        var document = ZaSpawnerTransformDocument.Create(
+        [
+            new ZaSpawnerTransformGroup(
+                0,
+                [
+                    new ZaSpawnerTransformRow(
+                        0,
+                        0,
+                        name,
+                        new ZaSpawnerTransformVector(positionX, positionY, positionZ),
+                        new ZaSpawnerTransformVector(rotationX, rotationY, rotationZ),
+                        attach),
+                ]),
+        ]);
+        return document.Write();
     }
 
     private static Offset<ZaPokemonDataRow> CreatePokemonData(
@@ -1838,6 +1981,19 @@ public sealed class PokemonLegendsZABridgeTests
         }
 
         throw new InvalidOperationException($"PokemonData row {id} was not written.");
+    }
+
+    private static ZaSpawnerTransformRow ReadSpawnerTransformRow(
+        TemporaryBridgeProject temp,
+        string relativePath,
+        string objectName)
+    {
+        var document = ZaSpawnerTransformDocument.Parse(ReadZaOutputBytes(temp, relativePath));
+        var row = document.Groups
+            .SelectMany(group => group.Rows)
+            .SingleOrDefault(candidate => candidate.Name == objectName);
+
+        return row ?? throw new InvalidOperationException($"Spawner transform row {objectName} was not written.");
     }
 
     private static byte[] CreateTextTable(int count, params (int Index, string Text)[] entries)

@@ -85,6 +85,7 @@ using KM.SV.GameDump;
 using KM.ZA.Gifts;
 using KM.ZA.GameDump;
 using KM.ZA.ModMerger;
+using KM.ZA.Placement;
 using KM.ZA.Trades;
 using KM.SV.Workflows;
 using KM.ZA.Workflows;
@@ -1415,6 +1416,14 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadPlacementWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var zaWorkflow = zaWorkflowService.LoadPlacement(paths);
+            var zaResponse = ZaBridgeMapper.ToDto(zaWorkflow);
+
+            return SerializeSuccess(zaResponse, request.RequestId);
+        }
+
         if (IsScarletViolet(paths))
         {
             var svWorkflow = svWorkflowService.LoadPlacement(paths);
@@ -1436,6 +1445,19 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var zaResult = zaWorkflowService.UpdatePlacementObjectField(
+                paths,
+                session,
+                request.Payload.ObjectId,
+                request.Payload.Field,
+                request.Payload.Value);
+            var zaResponse = ZaBridgeMapper.ToDto(zaResult);
+
+            return SerializeSuccess(zaResponse, request.RequestId);
+        }
+
         if (IsScarletViolet(paths))
         {
             var svResult = svWorkflowService.UpdatePlacementObjectField(
@@ -1467,6 +1489,17 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var zaUpdates = request.Payload.Updates
+                .Select(update => new ZaPlacementObjectFieldUpdate(update.ObjectId, update.Field, update.Value))
+                .ToArray();
+            var zaResponse = ZaBridgeMapper.ToPlacementObjectFieldsDto(
+                zaWorkflowService.UpdatePlacementObjectFields(paths, session, zaUpdates));
+
+            return SerializeSuccess(zaResponse, request.RequestId);
+        }
+
         var updates = request.Payload.Updates
             .Select(update => new SvPlacementObjectFieldUpdate(update.ObjectId, update.Field, update.Value))
             .ToArray();
@@ -2941,6 +2974,8 @@ public sealed class ProjectBridgeDispatcher
                 && IsPokemonLegendsZA(selectedGame))
             && !(command is KmCommandNames.UpdateGiftPokemonFields or KmCommandNames.UpdateTradePokemonFields
                 && IsPokemonLegendsZA(selectedGame))
+            && !(command is KmCommandNames.UpdatePlacementObjectFields
+                && IsPokemonLegendsZA(selectedGame))
             && !(command is KmCommandNames.StageTypeChartUninstall && IsPokemonLegendsZA(selectedGame)))
         {
             return SerializeFailure(
@@ -3119,6 +3154,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadTrainersWorkflow or
             KmCommandNames.UpdateTrainerField or
             KmCommandNames.UpdateTrainerFields or
+            KmCommandNames.LoadPlacementWorkflow or
+            KmCommandNames.UpdatePlacementObjectField or
+            KmCommandNames.UpdatePlacementObjectFields or
             KmCommandNames.LoadGiftPokemonWorkflow or
             KmCommandNames.UpdateGiftPokemonField or
             KmCommandNames.UpdateGiftPokemonFields or
