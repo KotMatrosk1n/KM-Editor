@@ -153,6 +153,7 @@ const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
 const pokemonLegendsZAWorkflowSectionIds = new Set<WorkbenchSection>([
   'pokemon',
   'trainers',
+  'encounters',
   'giftPokemon',
   'tradePokemon',
   'moves',

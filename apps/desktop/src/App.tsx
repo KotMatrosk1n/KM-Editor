@@ -8264,6 +8264,21 @@ export function App({
                 selectedTableId={selectedEncounterTableId}
                 workflow={encountersWorkflow}
               />
+            ) : isPokemonLegendsZAProject ? (
+              <ZaEncountersSection
+                editSession={getEditSessionForSection('encounters')}
+                isEditStarting={isEditStarting}
+                isEncounterUpdating={isEncounterUpdating}
+                onSearchChange={setEncounterSearchText}
+                onSelectTable={setSelectedEncounterTableId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateEncounterSlotField={handleUpdateEncounterSlotField}
+                onUpdateEncounterSlotFields={handleUpdateEncounterSlotFields}
+                onUpdateEncounterSlotUpdates={handleUpdateEncounterSlotUpdates}
+                searchText={encounterSearchText}
+                selectedTableId={selectedEncounterTableId}
+                workflow={encountersWorkflow}
+              />
             ) : (
               <SwShEncountersSection
                 editSession={getEditSessionForSection('encounters')}
@@ -20127,6 +20142,10 @@ function SwShEncountersSection(props: EncountersSectionPublicProps) {
 
 function SvEncountersSection(props: EncountersSectionPublicProps) {
   return <EncountersSection {...props} editorFamily="sv" />;
+}
+
+function ZaEncountersSection(props: EncountersSectionPublicProps) {
+  return <EncountersSection {...props} editorFamily="za" />;
 }
 
 function EncountersSection({

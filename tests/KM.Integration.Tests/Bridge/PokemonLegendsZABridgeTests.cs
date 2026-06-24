@@ -6,6 +6,7 @@ using Google.FlatBuffers;
 using KM.Api.Bridge;
 using KM.Api.Diagnostics;
 using KM.Api.Editing;
+using KM.Api.Encounters;
 using KM.Api.GameDump;
 using KM.Api.Gifts;
 using KM.Api.Items;
@@ -19,6 +20,7 @@ using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
 using KM.Formats.ZA;
+using KM.Formats.ZA.Generated.Field.PokemonSpawner;
 using KM.Formats.ZA.Generated.GameData;
 using KM.Formats.ZA.Trinity;
 using KM.Integration.Tests.Tools;
@@ -87,6 +89,7 @@ public sealed class PokemonLegendsZABridgeTests
         AssertSuccess(workflows);
         Assert.Contains(workflows.Payload!.Workflows, workflow => workflow.Id == "pokemon" && workflow.Label == "Pokemon Data");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "trainers" && workflow.Label == "Trainers");
+        Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "encounters" && workflow.Label == "Wild Encounters");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "giftPokemon" && workflow.Label == "Gift Pokemon");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "tradePokemon" && workflow.Label == "Trade Pokemon");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "moves" && workflow.Label == "Moves");
@@ -848,6 +851,89 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZAWildEncountersEditWritesTrinityPokemonDataTable()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteWildEncounterFixture(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var load = Dispatch<LoadEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadEncountersWorkflow,
+            new LoadEncountersWorkflowRequest(paths),
+            "request-za-encounters-load");
+
+        AssertSuccess(load);
+        var workflow = load.Payload!.Workflow;
+        Assert.Equal("Wild Encounters", workflow.Summary.Label);
+        Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
+        var table = Assert.Single(workflow.Tables);
+        Assert.Equal("Pokemon Legends ZA", table.GameVersion);
+        Assert.Equal("zone01 day", table.Location);
+        Assert.EndsWith(ZaDataPaths.PokemonSpawnerDataArray, table.Provenance.SourceFile, StringComparison.Ordinal);
+        var slot = Assert.Single(table.Slots);
+        Assert.Equal(1, slot.SpeciesId);
+        Assert.Equal("Bulbasaur", slot.Species);
+        Assert.Equal(20, slot.LevelMin);
+        Assert.Equal(20, slot.LevelMax);
+        Assert.Equal(35, slot.Weight);
+        Assert.Equal("Night", slot.TimeOfDay);
+        Assert.Equal("Rain", slot.Weather);
+        Assert.Contains(workflow.EditableFields, field => field.Field == "speciesId" && field.Label == "Species");
+        Assert.DoesNotContain(workflow.EditableFields, field => field.Field == "probability");
+
+        var speciesUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(paths, Session: null, table.TableId, slot.Slot, "speciesId", "2"),
+            "request-za-encounters-species");
+        AssertSuccess(speciesUpdate);
+        var levelMinUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(paths, speciesUpdate.Payload!.Session, table.TableId, slot.Slot, "levelMin", "25"),
+            "request-za-encounters-level-min");
+        AssertSuccess(levelMinUpdate);
+        var levelMaxUpdate = Dispatch<UpdateEncounterSlotFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateEncounterSlotField,
+            new UpdateEncounterSlotFieldRequest(paths, levelMinUpdate.Payload!.Session, table.TableId, slot.Slot, "levelMax", "30"),
+            "request-za-encounters-level-max");
+        AssertSuccess(levelMaxUpdate);
+        var updatedSlot = Assert.Single(levelMaxUpdate.Payload!.Workflow.Tables.Single().Slots);
+        Assert.Equal(2, updatedSlot.SpeciesId);
+        Assert.Equal("Ivysaur", updatedSlot.Species);
+        Assert.Equal(25, updatedSlot.LevelMin);
+        Assert.Equal(30, updatedSlot.LevelMax);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, levelMaxUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-encounters-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.PokemonDataArray);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, levelMaxUpdate.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-encounters-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var written = ReadGiftPokemonData(temp, "wild_ignore");
+        Assert.Equal(2, written.DevNo);
+        Assert.Equal(25, written.MinLevel);
+        Assert.Equal(30, written.MaxLevel);
+        var gift = ReadGiftPokemonData(temp, "main_init_poke_1");
+        Assert.Equal(1, gift.DevNo);
+        Assert.Equal(5, gift.MinLevel);
+    }
+
+    [Fact]
     public void PokemonLegendsZAModMergerStagesAndAppliesTrinityRomFsMods()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -1108,6 +1194,15 @@ public sealed class PokemonLegendsZABridgeTests
         WriteGiftPokemonFixture(temp);
     }
 
+    private static void WriteWildEncounterFixture(TemporaryBridgeProject temp)
+    {
+        temp.WriteBaseRomFsFile(ZaDataPaths.PokemonDataArray, CreatePokemonDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.PokemonSpawnerDataArray, CreatePokemonSpawnerDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PokemonNames("English"),
+            CreateTextTable(2, (1, "Bulbasaur"), (2, "Ivysaur")));
+    }
+
     private static byte[] CreatePokemonDataArray()
     {
         var builder = new FlatBufferBuilder(2048);
@@ -1143,6 +1238,43 @@ public sealed class PokemonLegendsZABridgeTests
         var valuesVector = ZaPokemonDataDbArray.CreateValuesVector(builder, [db]);
         var root = ZaPokemonDataDbArray.Create(builder, valuesVector);
         ZaPokemonDataDbArray.FinishBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static byte[] CreatePokemonSpawnerDataArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var encounterId = builder.CreateString("wild_ignore");
+        var encounter = EncountDataInfo.CreateEncountDataInfo(
+            builder,
+            encounterId,
+            weight: 35,
+            maxCount: 2,
+            additionalLevel: 0,
+            showMapIcon: 1,
+            appearedTimeCondition: 4,
+            appearedWeatherCondition: 2);
+        var encounters = PokemonSpawnerData.CreateEncountDataInfoListVector(builder, [encounter]);
+        var zoneId = builder.CreateString("zone01");
+        var variationId = builder.CreateString("day");
+        var zone = ZoneInfo.CreateZoneInfo(builder, zoneId, variationId);
+        var objectName = builder.CreateString("wild_spawn_001");
+        var appearance = AppearanceSpawnerObjectInfo.CreateAppearanceSpawnerObjectInfo(
+            builder,
+            objectNameOffset: objectName,
+            zoneInfoOffset: zone);
+        var appearances = PokemonSpawnerData.CreateAppearanceSpawnerObjectInfoListVector(builder, [appearance]);
+        var spawnerId = builder.CreateString("za_wild_spawner_001");
+        var spawner = PokemonSpawnerData.CreatePokemonSpawnerData(
+            builder,
+            spawnerId,
+            appearanceSpawnerObjectInfoListOffset: appearances,
+            encountDataInfoListOffset: encounters);
+        var rootVector = PokemonSpawnerDataDB.CreateRootVector(builder, [spawner]);
+        var db = PokemonSpawnerDataDB.CreatePokemonSpawnerDataDB(builder, rootVector);
+        var valuesVector = PokemonSpawnerDataDBArray.CreateValuesVector(builder, [db]);
+        var root = PokemonSpawnerDataDBArray.CreatePokemonSpawnerDataDBArray(builder, valuesVector);
+        PokemonSpawnerDataDBArray.FinishPokemonSpawnerDataDBArrayBuffer(builder, root);
         return builder.SizedByteArray();
     }
 
