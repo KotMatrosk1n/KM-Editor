@@ -10,6 +10,7 @@ using KM.Api.Items;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
+using KM.Api.Shops;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
 using KM.Formats.ZA;
@@ -63,7 +64,7 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
-    public void PokemonLegendsZAProjectListsPokemonMovesAndItemsWorkflows()
+    public void PokemonLegendsZAProjectListsPokemonMovesItemsAndShopsWorkflows()
     {
         using var temp = CreatePokemonLegendsZAProject();
         var dispatcher = new ProjectBridgeDispatcher();
@@ -78,6 +79,7 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(workflows.Payload!.Workflows, workflow => workflow.Id == "pokemon" && workflow.Label == "Pokemon Data");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "moves" && workflow.Label == "Moves");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "items" && workflow.Label == "Items");
+        Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "shops" && workflow.Label == "Shops");
     }
 
     [Fact]
@@ -154,6 +156,52 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(33, tm.Metadata.MachineMoveId);
         Assert.Equal("Tackle", tm.Metadata.MachineMoveName);
         Assert.Contains(workflow.EditableFields, field => field.Field == "machineMoveId" && field.Label == "TM move");
+    }
+
+    [Fact]
+    public void PokemonLegendsZAProjectLoadsShopData()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
+        temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemArray, CreateShopDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemLineupArray, CreateShopLineupArray());
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var shops = Dispatch<LoadShopsWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadShopsWorkflow,
+            new LoadShopsWorkflowRequest(CreatePaths(temp)),
+            "request-za-shops");
+
+        AssertSuccess(shops);
+        var workflow = shops.Payload!.Workflow;
+        Assert.Equal("za", workflow.EditorFamily);
+        Assert.Equal("Shops", workflow.Summary.Label);
+        Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
+        var shop = Assert.Single(workflow.Shops);
+        Assert.Equal("shop:a01_friendlyshop_01", shop.ShopId);
+        Assert.Equal("Friendly Shop", shop.Name);
+        Assert.Equal("Friendly Shop", shop.Kind);
+        Assert.Equal("Money", shop.Currency);
+        Assert.Equal("za", shop.EditorFamily);
+        Assert.True(shop.CanEditInventoryOrder);
+        Assert.EndsWith(ZaDataPaths.ShopItemLineupArray, shop.Provenance.SourceFile, StringComparison.Ordinal);
+        Assert.Equal(2, shop.Inventory.Count);
+
+        var potion = shop.Inventory.Single(item => item.ItemId == 17);
+        Assert.Equal("Potion", potion.ItemName);
+        Assert.Equal(150, potion.Price);
+        Assert.False(potion.CanEditPrice);
+        Assert.Contains("zaConditionKind", potion.SupportedFields);
+        Assert.Equal("1", potion.FieldValues["zaConditionKind"]);
+        Assert.Equal("30600", potion.FieldValues["zaConditionArguments"]);
+
+        Assert.Contains(workflow.EditableFields, field => field.Field == "itemId" && field.Label == "Item");
+        Assert.Contains(workflow.EditableFields, field => field.Field == "displayIndex" && field.Label == "Display order");
+        Assert.Contains(workflow.EditableFields, field => field.Field == "zaConditionKind" && field.Label == "First condition");
     }
 
     [Fact]
@@ -301,6 +349,89 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(50, ReadItem(temp, 17).HealPercentage);
     }
 
+    [Fact]
+    public void PokemonLegendsZAShopEditWritesTrinityLineupTable()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        temp.WriteBaseRomFsFile(ZaDataPaths.ItemDataArray, CreateItemDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
+        temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemArray, CreateShopDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemLineupArray, CreateShopLineupArray());
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var reorder = Dispatch<UpdateShopInventoryItemResponse>(
+            dispatcher,
+            KmCommandNames.UpdateShopInventoryItem,
+            new UpdateShopInventoryItemRequest(
+                paths,
+                Session: null,
+                ShopId: "shop:a01_friendlyshop_01",
+                Slot: 1,
+                Field: "setInventory",
+                Value: "17,4"),
+            "request-za-shop-reorder");
+        AssertSuccess(reorder);
+        Assert.Equal([17, 4], reorder.Payload!.Workflow.Shops.Single().Inventory.Select(item => item.ItemId).ToArray());
+
+        var conditionKind = Dispatch<UpdateShopInventoryItemResponse>(
+            dispatcher,
+            KmCommandNames.UpdateShopInventoryItem,
+            new UpdateShopInventoryItemRequest(
+                paths,
+                reorder.Payload.Session,
+                ShopId: "shop:a01_friendlyshop_01",
+                Slot: 1,
+                Field: "zaConditionKind",
+                Value: "1"),
+            "request-za-shop-condition-kind");
+        AssertSuccess(conditionKind);
+
+        var conditionArgs = Dispatch<UpdateShopInventoryItemResponse>(
+            dispatcher,
+            KmCommandNames.UpdateShopInventoryItem,
+            new UpdateShopInventoryItemRequest(
+                paths,
+                conditionKind.Payload!.Session,
+                ShopId: "shop:a01_friendlyshop_01",
+                Slot: 1,
+                Field: "zaConditionArguments",
+                Value: "99999"),
+            "request-za-shop-condition-args");
+        AssertSuccess(conditionArgs);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, conditionArgs.Payload!.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-shop-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.ShopItemLineupArray);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, conditionArgs.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-shop-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var written = ReadShopLineup(temp, "a01_friendlyshop_01_lineup1");
+        var first = written.Inventory(0);
+        var second = written.Inventory(1);
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Equal(17u, first!.Value.Item);
+        Assert.Equal(1u, first.Value.DisplayIndex);
+        Assert.Equal(4u, second!.Value.Item);
+        var firstCondition = first.Value.Conditions(0)!.Value.Values(0)!.Value.Values(0)!.Value;
+        Assert.Equal("phase_condition", firstCondition.Condition);
+        Assert.Equal("99999", firstCondition.Arguments(0));
+    }
+
     private static TemporaryBridgeProject CreatePokemonLegendsZAProject()
     {
         var temp = TemporaryBridgeProject.Create();
@@ -403,6 +534,118 @@ public sealed class PokemonLegendsZABridgeTests
         var root = ZaItemDataArray.CreateZaItemDataArray(builder, vector);
         ZaItemDataArray.FinishZaItemDataArrayBuffer(builder, root);
         return builder.SizedByteArray();
+    }
+
+    private static byte[] CreateShopDataArray()
+    {
+        var builder = new FlatBufferBuilder(1024);
+        var shop = CreateShopData(
+            builder,
+            "a01_friendlyshop_01",
+            "a01_friendlyshop_01_lineup1",
+            "shop_friendlyshop_01",
+            "msg_shop_friendly",
+            2);
+        var vector = ZaShopDataArray.CreateValuesVector(builder, [shop]);
+        var root = ZaShopDataArray.CreateZaShopDataArray(builder, vector);
+        ZaShopDataArray.FinishZaShopDataArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static Offset<ZaShopData> CreateShopData(
+        FlatBufferBuilder builder,
+        string shopId,
+        string lineupId,
+        string resourceLabel,
+        string messageLabel,
+        int shopKind)
+    {
+        var shopIdOffset = builder.CreateString(shopId);
+        var lineupIdOffset = builder.CreateString(lineupId);
+        var resourceLabelOffset = builder.CreateString(resourceLabel);
+        var messageLabelOffset = builder.CreateString(messageLabel);
+
+        ZaShopData.StartZaShopData(builder);
+        ZaShopData.AddCondition(builder, -1);
+        ZaShopData.AddShopKind(builder, shopKind);
+        ZaShopData.AddMessageLabel(builder, messageLabelOffset);
+        ZaShopData.AddResourceLabel(builder, resourceLabelOffset);
+        ZaShopData.AddLineupId(builder, lineupIdOffset);
+        ZaShopData.AddShopId(builder, shopIdOffset);
+        return ZaShopData.EndZaShopData(builder);
+    }
+
+    private static byte[] CreateShopLineupArray()
+    {
+        var builder = new FlatBufferBuilder(2048);
+        var pokeBall = CreateShopInventory(builder, itemId: 4, displayIndex: 1, CreateForceShopCondition(builder));
+        var potion = CreateShopInventory(builder, itemId: 17, displayIndex: 2, CreatePhaseShopCondition(builder, "30600"));
+        var lineup = CreateShopLineup(builder, "a01_friendlyshop_01_lineup1", [pokeBall, potion]);
+        var vector = ZaShopLineupArray.CreateValuesVector(builder, [lineup]);
+        var root = ZaShopLineupArray.CreateZaShopLineupArray(builder, vector);
+        ZaShopLineupArray.FinishZaShopLineupArrayBuffer(builder, root);
+        return builder.SizedByteArray();
+    }
+
+    private static Offset<ZaShopLineup> CreateShopLineup(
+        FlatBufferBuilder builder,
+        string name,
+        Offset<ZaShopInventory>[] inventory)
+    {
+        var nameOffset = builder.CreateString(name);
+        var inventoryVector = ZaShopLineup.CreateInventoryVector(builder, inventory);
+
+        ZaShopLineup.StartZaShopLineup(builder);
+        ZaShopLineup.AddInventory(builder, inventoryVector);
+        ZaShopLineup.AddName(builder, nameOffset);
+        return ZaShopLineup.EndZaShopLineup(builder);
+    }
+
+    private static Offset<ZaShopInventory> CreateShopInventory(
+        FlatBufferBuilder builder,
+        uint itemId,
+        uint displayIndex,
+        Offset<ZaShopInventoryCondition> condition)
+    {
+        var conditionsVector = ZaShopInventory.CreateConditionsVector(builder, [condition]);
+
+        ZaShopInventory.StartZaShopInventory(builder);
+        ZaShopInventory.AddConditions(builder, conditionsVector);
+        ZaShopInventory.AddDisplayIndex(builder, displayIndex);
+        ZaShopInventory.AddItem(builder, itemId);
+        return ZaShopInventory.EndZaShopInventory(builder);
+    }
+
+    private static Offset<ZaShopInventoryCondition> CreateForceShopCondition(FlatBufferBuilder builder) =>
+        CreateShopCondition(builder, "force_condition", 0, []);
+
+    private static Offset<ZaShopInventoryCondition> CreatePhaseShopCondition(FlatBufferBuilder builder, string phase) =>
+        CreateShopCondition(builder, "phase_condition", 5, [phase]);
+
+    private static Offset<ZaShopInventoryCondition> CreateShopCondition(
+        FlatBufferBuilder builder,
+        string condition,
+        uint comparison,
+        string[] arguments)
+    {
+        var conditionOffset = builder.CreateString(condition);
+        var argumentOffsets = arguments.Select(builder.CreateString).ToArray();
+        var argumentsVector = ZaShopInventoryAppearCondition.CreateArgumentsVector(builder, argumentOffsets);
+        ZaShopInventoryAppearCondition.StartZaShopInventoryAppearCondition(builder);
+        ZaShopInventoryAppearCondition.AddArguments(builder, argumentsVector);
+        ZaShopInventoryAppearCondition.AddComparison(builder, comparison);
+        ZaShopInventoryAppearCondition.AddCondition(builder, conditionOffset);
+        var appearCondition = ZaShopInventoryAppearCondition.EndZaShopInventoryAppearCondition(builder);
+
+        var holderVector = ZaShopInventoryConditionHolder.CreateValuesVector(builder, [appearCondition]);
+        ZaShopInventoryConditionHolder.StartZaShopInventoryConditionHolder(builder);
+        ZaShopInventoryConditionHolder.AddValues(builder, holderVector);
+        var holder = ZaShopInventoryConditionHolder.EndZaShopInventoryConditionHolder(builder);
+
+        var conditionVector = ZaShopInventoryCondition.CreateValuesVector(builder, [holder]);
+        ZaShopInventoryCondition.StartZaShopInventoryCondition(builder);
+        ZaShopInventoryCondition.AddValues(builder, conditionVector);
+        return ZaShopInventoryCondition.EndZaShopInventoryCondition(builder);
     }
 
     private static Offset<ZaItemData> CreateItem(
@@ -569,6 +812,29 @@ public sealed class PokemonLegendsZABridgeTests
         }
 
         throw new InvalidOperationException($"Item {itemId} was not written.");
+    }
+
+    private static ZaShopLineup ReadShopLineup(TemporaryBridgeProject temp, string lineupId)
+    {
+        var outputPath = Path.Combine(
+            temp.OutputRootPath,
+            "world",
+            "exl",
+            "shop",
+            "shop_item_lineup",
+            "shop_item_lineup.bin");
+        Assert.True(File.Exists(outputPath));
+        var table = ZaShopLineupArray.GetRootAsZaShopLineupArray(new ByteBuffer(File.ReadAllBytes(outputPath)));
+        for (var index = 0; index < table.ValuesLength; index++)
+        {
+            var row = table.Values(index);
+            if (row is not null && row.Value.Name == lineupId)
+            {
+                return row.Value;
+            }
+        }
+
+        throw new InvalidOperationException($"Shop lineup {lineupId} was not written.");
     }
 
     private static byte[] CreateTextTable(int count, params (int Index, string Text)[] entries)

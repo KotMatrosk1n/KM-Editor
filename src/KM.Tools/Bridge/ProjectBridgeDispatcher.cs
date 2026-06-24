@@ -797,9 +797,19 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadShopsWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.LoadShops(paths))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadShops(paths));
+        LoadShopsWorkflowResponse response;
+        if (IsPokemonLegendsZA(paths))
+        {
+            response = ZaBridgeMapper.ToDto(zaWorkflowService.LoadShops(paths));
+        }
+        else if (IsScarletViolet(paths))
+        {
+            response = SvBridgeMapper.ToDto(svWorkflowService.LoadShops(paths));
+        }
+        else
+        {
+            response = SwShBridgeMapper.ToDto(swShWorkflowService.LoadShops(paths));
+        }
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1089,21 +1099,37 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateShopInventoryItem(
-                paths,
-                session,
-                request.Payload.ShopId,
-                request.Payload.Slot,
-                request.Payload.Field,
-                request.Payload.Value))
-            : SwShBridgeMapper.ToDto(shopsEditSessionService.UpdateInventoryItem(
+        UpdateShopInventoryItemResponse response;
+        if (IsPokemonLegendsZA(paths))
+        {
+            response = ZaBridgeMapper.ToDto(zaWorkflowService.UpdateShopInventoryItem(
                 paths,
                 session,
                 request.Payload.ShopId,
                 request.Payload.Slot,
                 request.Payload.Field,
                 request.Payload.Value));
+        }
+        else if (IsScarletViolet(paths))
+        {
+            response = SvBridgeMapper.ToDto(svWorkflowService.UpdateShopInventoryItem(
+                paths,
+                session,
+                request.Payload.ShopId,
+                request.Payload.Slot,
+                request.Payload.Field,
+                request.Payload.Value));
+        }
+        else
+        {
+            response = SwShBridgeMapper.ToDto(shopsEditSessionService.UpdateInventoryItem(
+                paths,
+                session,
+                request.Payload.ShopId,
+                request.Payload.Slot,
+                request.Payload.Field,
+                request.Payload.Value));
+        }
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2939,6 +2965,8 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadMovesWorkflow or
             KmCommandNames.UpdateMoveField or
             KmCommandNames.UpdateMoveFields or
+            KmCommandNames.LoadShopsWorkflow or
+            KmCommandNames.UpdateShopInventoryItem or
             KmCommandNames.StartEditSession or
             KmCommandNames.ValidateEditSession or
             KmCommandNames.CreateChangePlan or

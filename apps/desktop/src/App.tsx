@@ -18336,18 +18336,18 @@ function ShopsSection({
     () => filterShops(workflow?.shops ?? [], searchText),
     [searchText, workflow?.shops]
   );
-  const isSvShops = workflow?.editorFamily === 'sv';
+  const isFlatShopList = workflow?.editorFamily === 'sv' || workflow?.editorFamily === 'za';
   const badgeShops = useMemo(
-    () => (isSvShops ? [] : filteredShops.filter(isBadgeShopRecord)),
-    [filteredShops, isSvShops]
+    () => (isFlatShopList ? [] : filteredShops.filter(isBadgeShopRecord)),
+    [filteredShops, isFlatShopList]
   );
   const miscellaneousShops = useMemo(
-    () => (isSvShops ? filteredShops : filteredShops.filter((shop) => !isBadgeShopRecord(shop))),
-    [filteredShops, isSvShops]
+    () => (isFlatShopList ? filteredShops : filteredShops.filter((shop) => !isBadgeShopRecord(shop))),
+    [filteredShops, isFlatShopList]
   );
   const selectedShop =
     workflow?.shops.find((shop) => shop.shopId === selectedShopId) ??
-    (isSvShops ? filteredShops[0] : badgeShops[0] ?? miscellaneousShops[0]) ??
+    (isFlatShopList ? filteredShops[0] : badgeShops[0] ?? miscellaneousShops[0]) ??
     null;
   const canEditShops = workflow?.summary.availability === 'available';
   const pendingShopIds = getPendingShopIds(editSession);
@@ -18440,9 +18440,9 @@ function ShopsSection({
         </div>
 
         {workflow ? (
-          <div className={`shops-layout ${isSvShops ? 'sv-shops-layout' : 'swsh-shops-layout'}`}>
+          <div className={`shops-layout ${isFlatShopList ? 'sv-shops-layout' : 'swsh-shops-layout'}`}>
             <div className="shops-table-stack">
-              {isSvShops ? (
+              {isFlatShopList ? (
                 renderShopTable('Shops', filteredShops)
               ) : (
                 <>
