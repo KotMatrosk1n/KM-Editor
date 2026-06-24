@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
+using KM.Api.Editing;
+using KM.Api.Pokemon;
 using KM.Api.Workflows;
 using KM.Api.ZaCache;
+using KM.ZA.Pokemon;
 using KM.ZA.Workflows;
 
 namespace KM.Tools.Bridge;
@@ -34,11 +37,80 @@ public static class ZaBridgeMapper
             status.IsActiveProjectPreserved));
     }
 
+    public static ZaOutputMode ToCore(ChangePlanOutputModeDto? outputMode)
+    {
+        return outputMode switch
+        {
+            null => ZaOutputMode.Standalone,
+            ChangePlanOutputModeDto.Standalone => ZaOutputMode.Standalone,
+            ChangePlanOutputModeDto.TrinityModManager => ZaOutputMode.TrinityModManager,
+            ChangePlanOutputModeDto.TrinityBypass => ZaOutputMode.TrinityBypass,
+            _ => throw new ArgumentOutOfRangeException(nameof(outputMode), outputMode, null),
+        };
+    }
+
     public static ListWorkflowsResponse ToDto(ZaWorkflowList workflowList)
     {
         ArgumentNullException.ThrowIfNull(workflowList);
 
         return new ListWorkflowsResponse(workflowList.Workflows.Select(ToDto).ToArray());
+    }
+
+    public static LoadPokemonWorkflowResponse ToDto(ZaPokemonWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadPokemonWorkflowResponse(ToPokemonWorkflowDto(workflow));
+    }
+
+    public static UpdatePokemonFieldResponse ToDto(ZaPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonFieldResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdatePokemonFieldsResponse ToPokemonFieldsDto(ZaPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonFieldsResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdatePokemonLearnsetResponse ToDtoLearnsetUpdate(ZaPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonLearnsetResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdatePokemonEvolutionResponse ToDtoEvolutionUpdate(ZaPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdatePokemonEvolutionResponse(
+            ToPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static ValidateEditSessionResponse ToDto(ZaEditSessionValidation validation)
+    {
+        ArgumentNullException.ThrowIfNull(validation);
+
+        return new ValidateEditSessionResponse(
+            EditSessionBridgeMapper.ToDto(validation.Session),
+            validation.IsValid,
+            validation.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
     private static WorkflowSummaryDto ToDto(ZaWorkflowSummary summary)
@@ -49,6 +121,173 @@ public static class ZaBridgeMapper
             summary.Description,
             ToDto(summary.Availability),
             summary.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static PokemonWorkflowDto ToPokemonWorkflowDto(ZaPokemonWorkflow workflow)
+    {
+        return new PokemonWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Pokemon.Select(ToDto).ToArray(),
+            new PokemonWorkflowStatsDto(
+                workflow.Stats.TotalPokemonCount,
+                workflow.Stats.PresentPokemonCount,
+                workflow.Stats.TotalEvolutionCount,
+                workflow.Stats.TotalLearnsetMoveCount,
+                workflow.Stats.SourceFileCount),
+            workflow.EvolutionMethodOptions.Select(ToDto).ToArray(),
+            workflow.LearnsetMoveOptions.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static PokemonRecordDto ToDto(ZaPokemonRecord pokemon)
+    {
+        return new PokemonRecordDto(
+            pokemon.PersonalId,
+            pokemon.SpeciesId,
+            pokemon.Form,
+            pokemon.Name,
+            pokemon.FormLabel,
+            pokemon.Type1,
+            pokemon.Type2,
+            new PokemonBaseStatsDto(
+                pokemon.BaseStats.HP,
+                pokemon.BaseStats.Attack,
+                pokemon.BaseStats.Defense,
+                pokemon.BaseStats.SpecialAttack,
+                pokemon.BaseStats.SpecialDefense,
+                pokemon.BaseStats.Speed,
+                pokemon.BaseStats.Total),
+            new PokemonAbilitySetDto(
+                pokemon.Abilities.Ability1,
+                pokemon.Abilities.Ability1Label,
+                pokemon.Abilities.Ability2,
+                pokemon.Abilities.Ability2Label,
+                pokemon.Abilities.HiddenAbility,
+                pokemon.Abilities.HiddenAbilityLabel),
+            new PokemonDexPresenceDto(
+                pokemon.DexPresence.IsPresentInGame,
+                pokemon.DexPresence.IsInAnyDex,
+                pokemon.DexPresence.RegionalDexIndex,
+                pokemon.DexPresence.ArmorDexIndex,
+                pokemon.DexPresence.CrownDexIndex),
+            new PokemonPersonalDetailsDto(
+                pokemon.Personal.Type1,
+                pokemon.Personal.Type2,
+                pokemon.Personal.CatchRate,
+                pokemon.Personal.EvolutionStage,
+                pokemon.Personal.EVYieldHP,
+                pokemon.Personal.EVYieldAttack,
+                pokemon.Personal.EVYieldDefense,
+                pokemon.Personal.EVYieldSpecialAttack,
+                pokemon.Personal.EVYieldSpecialDefense,
+                pokemon.Personal.EVYieldSpeed,
+                pokemon.Personal.HeldItem1,
+                pokemon.Personal.HeldItem2,
+                pokemon.Personal.HeldItem3,
+                pokemon.Personal.GenderRatio,
+                pokemon.Personal.HatchCycles,
+                pokemon.Personal.BaseFriendship,
+                pokemon.Personal.ExpGrowth,
+                pokemon.Personal.EggGroup1,
+                pokemon.Personal.EggGroup2,
+                pokemon.Personal.FormStatsIndex,
+                pokemon.Personal.FormCount,
+                pokemon.Personal.Color,
+                pokemon.Personal.IsPresentInGame,
+                pokemon.Personal.HasSpriteForm,
+                pokemon.Personal.ModelId,
+                pokemon.Personal.HatchedSpecies,
+                pokemon.Personal.LocalFormIndex,
+                pokemon.Personal.IsRegionalForm,
+                pokemon.Personal.CanNotDynamax,
+                pokemon.Personal.Form),
+            pokemon.CatchRate,
+            pokemon.EvolutionStage,
+            pokemon.GenderRatio,
+            pokemon.GenderRatioLabel,
+            pokemon.BaseExperience,
+            pokemon.Height,
+            pokemon.Weight,
+            pokemon.Evolutions.Select(ToDto).ToArray(),
+            pokemon.Learnset.Select(ToDto).ToArray(),
+            pokemon.Compatibility.Select(ToDto).ToArray(),
+            new PokemonProvenanceDto(
+                pokemon.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(pokemon.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(pokemon.Provenance.FileState)));
+    }
+
+    private static PokemonEditableFieldDto ToDto(ZaPokemonEditableField field)
+    {
+        return new PokemonEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.Group,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static PokemonEditableFieldOptionDto ToDto(ZaPokemonEditableFieldOption option)
+    {
+        return new PokemonEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static PokemonEvolutionRecordDto ToDto(ZaPokemonEvolutionRecord evolution)
+    {
+        return new PokemonEvolutionRecordDto(
+            evolution.Slot,
+            evolution.Method,
+            evolution.Argument,
+            evolution.Species,
+            evolution.Form,
+            evolution.Level,
+            evolution.MethodName,
+            evolution.ArgumentKind,
+            evolution.ArgumentLabel,
+            evolution.ArgumentValue);
+    }
+
+    private static PokemonEvolutionMethodOptionDto ToDto(ZaPokemonEvolutionMethodOption option)
+    {
+        return new PokemonEvolutionMethodOptionDto(
+            option.Value,
+            option.Label,
+            option.ArgumentKind,
+            option.ArgumentLabel,
+            option.ArgumentOptions.Select(ToDto).ToArray());
+    }
+
+    private static PokemonLearnsetMoveDto ToDto(ZaPokemonLearnsetMove learnsetMove)
+    {
+        return new PokemonLearnsetMoveDto(
+            learnsetMove.Slot,
+            learnsetMove.MoveId,
+            learnsetMove.MoveName,
+            learnsetMove.Level,
+            learnsetMove.RawLevel == learnsetMove.Level ? null : learnsetMove.RawLevel,
+            learnsetMove.LevelLabel);
+    }
+
+    private static PokemonCompatibilityGroupDto ToDto(ZaPokemonCompatibilityGroup group)
+    {
+        return new PokemonCompatibilityGroupDto(
+            group.GroupId,
+            group.Label,
+            group.EnabledCount,
+            group.Entries.Select(ToDto).ToArray());
+    }
+
+    private static PokemonCompatibilityEntryDto ToDto(ZaPokemonCompatibilityEntry entry)
+    {
+        return new PokemonCompatibilityEntryDto(
+            entry.Slot,
+            entry.MoveId,
+            entry.MoveName,
+            entry.Label,
+            entry.CanLearn);
     }
 
     private static ZaCacheModeDto ToDto(ZaCacheMode mode)

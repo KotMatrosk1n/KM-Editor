@@ -465,7 +465,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadPokemonWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadPokemon(paths))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.LoadPokemon(paths))
             : SwShBridgeMapper.ToDto(swShWorkflowService.LoadPokemon(paths));
 
@@ -479,7 +481,14 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.UpdatePokemonField(
+                paths,
+                session,
+                request.Payload.PersonalId,
+                request.Payload.Field,
+                request.Payload.Value))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.UpdatePokemonField(
                 paths,
                 session,
@@ -503,11 +512,33 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var updates = request.Payload.Updates
-            .Select(update => new SvPokemonFieldUpdate(update.PersonalId, update.Field, update.Value))
-            .ToArray();
+        if (IsPokemonLegendsZA(paths))
+        {
+            var zaResponse = ZaBridgeMapper.ToPokemonFieldsDto(zaWorkflowService.UpdatePokemonFields(
+                paths,
+                session,
+                request.Payload.Updates
+                    .Select(update => new KM.ZA.Pokemon.ZaPokemonFieldUpdate(update.PersonalId, update.Field, update.Value))
+                    .ToArray()));
+
+            return SerializeSuccess(zaResponse, request.RequestId);
+        }
+
+        if (!IsScarletViolet(paths))
+        {
+            return SerializeFailure(
+                "bridge.unsupportedCommand",
+                "Batch Pokemon field updates are supported for Scarlet/Violet and Pokemon Legends Z-A projects.",
+                request.RequestId);
+        }
+
         var response = SvBridgeMapper.ToPokemonFieldsDto(
-            svWorkflowService.UpdatePokemonFields(paths, session, updates));
+            svWorkflowService.UpdatePokemonFields(
+                paths,
+                session,
+                request.Payload.Updates
+                    .Select(update => new SvPokemonFieldUpdate(update.PersonalId, update.Field, update.Value))
+                    .ToArray()));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -519,7 +550,16 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDtoLearnsetUpdate(zaWorkflowService.UpdatePokemonLearnset(
+                paths,
+                session,
+                request.Payload.PersonalId,
+                request.Payload.Action,
+                request.Payload.Slot,
+                request.Payload.MoveId,
+                request.Payload.Level))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDtoLearnsetUpdate(svWorkflowService.UpdatePokemonLearnset(
                 paths,
                 session,
@@ -547,7 +587,19 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDtoEvolutionUpdate(zaWorkflowService.UpdatePokemonEvolution(
+                paths,
+                session,
+                request.Payload.PersonalId,
+                request.Payload.Action,
+                request.Payload.Slot,
+                request.Payload.Method,
+                request.Payload.Argument,
+                request.Payload.Species,
+                request.Payload.Form,
+                request.Payload.Level))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDtoEvolutionUpdate(svWorkflowService.UpdatePokemonEvolution(
                 paths,
                 session,
@@ -2106,6 +2158,14 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<ValidateEditSessionRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var zaValidation = zaWorkflowService.ValidateEditSession(paths, session);
+            var zaResponse = ZaBridgeMapper.ToDto(zaValidation);
+
+            return SerializeSuccess(zaResponse, request.RequestId);
+        }
+
         if (IsScarletViolet(paths))
         {
             var svValidation = svWorkflowService.ValidateEditSession(paths, session);
@@ -2125,7 +2185,9 @@ public sealed class ProjectBridgeDispatcher
         var request = DeserializeRequest<CreateChangePlanRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var changePlan = IsScarletViolet(paths)
+        var changePlan = IsPokemonLegendsZA(paths)
+            ? zaWorkflowService.CreateChangePlan(paths, session, ZaBridgeMapper.ToCore(request.Payload.OutputMode))
+            : IsScarletViolet(paths)
             ? svWorkflowService.CreateChangePlan(paths, session, SvBridgeMapper.ToCore(request.Payload.OutputMode))
             : CreateSwShChangePlan(paths, session);
         var response = new CreateChangePlanResponse(EditSessionBridgeMapper.ToDto(changePlan));
@@ -2139,7 +2201,9 @@ public sealed class ProjectBridgeDispatcher
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
         var session = EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var changePlan = EditSessionBridgeMapper.ToCore(request.Payload.ChangePlan);
-        var applyResult = IsScarletViolet(paths)
+        var applyResult = IsPokemonLegendsZA(paths)
+            ? zaWorkflowService.ApplyChangePlan(paths, session, changePlan, ZaBridgeMapper.ToCore(request.Payload.OutputMode))
+            : IsScarletViolet(paths)
             ? svWorkflowService.ApplyChangePlan(paths, session, changePlan, SvBridgeMapper.ToCore(request.Payload.OutputMode))
             : ApplySwShChangePlan(paths, session, changePlan);
         var response = new ApplyChangePlanResponse(EditSessionBridgeMapper.ToDto(applyResult));
@@ -2778,7 +2842,6 @@ public sealed class ProjectBridgeDispatcher
     {
         return command is
             KmCommandNames.UpdateItemFields or
-            KmCommandNames.UpdatePokemonFields or
             KmCommandNames.UpdateMoveFields or
             KmCommandNames.UpdateTrainerFields or
             KmCommandNames.UpdateGiftPokemonFields or
@@ -2817,6 +2880,15 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.ValidateProject or
             KmCommandNames.RefreshFileGraph or
             KmCommandNames.ListWorkflows or
+            KmCommandNames.LoadPokemonWorkflow or
+            KmCommandNames.UpdatePokemonField or
+            KmCommandNames.UpdatePokemonFields or
+            KmCommandNames.UpdatePokemonLearnset or
+            KmCommandNames.UpdatePokemonEvolution or
+            KmCommandNames.StartEditSession or
+            KmCommandNames.ValidateEditSession or
+            KmCommandNames.CreateChangePlan or
+            KmCommandNames.ApplyChangePlan or
             KmCommandNames.GetZaCacheStatus or
             KmCommandNames.UpdateZaCacheSettings or
             KmCommandNames.ClearZaCache or
