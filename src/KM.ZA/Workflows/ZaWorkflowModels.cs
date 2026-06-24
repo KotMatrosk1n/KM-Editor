@@ -44,3 +44,5 @@ public sealed record ZaEditSessionValidation(
     EditSession Session,
     bool IsValid,
     IReadOnlyList<ValidationDiagnostic> Diagnostics);
+
+public sealed record ZaMoveFieldUpdate(int MoveId, string Field, string Value);
