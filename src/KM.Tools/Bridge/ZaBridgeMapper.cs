@@ -8,6 +8,7 @@ using KM.Api.ModMerger;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Shops;
+using KM.Api.StaticEncounters;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
@@ -19,6 +20,7 @@ using KM.ZA.ModMerger;
 using KM.ZA.Moves;
 using KM.ZA.Pokemon;
 using KM.ZA.Shops;
+using KM.ZA.StaticEncounters;
 using KM.ZA.Trainers;
 using KM.ZA.Trades;
 using KM.ZA.Workflows;
@@ -119,6 +121,13 @@ public static class ZaBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadEncountersWorkflowResponse(ToEncountersWorkflowDto(workflow));
+    }
+
+    public static LoadStaticEncountersWorkflowResponse ToDto(ZaStaticEncountersWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadStaticEncountersWorkflowResponse(ToStaticEncountersWorkflowDto(workflow));
     }
 
     public static LoadTradePokemonWorkflowResponse ToDto(ZaTradePokemonWorkflow workflow)
@@ -241,6 +250,16 @@ public static class ZaBridgeMapper
 
         return new UpdateEncounterSlotFieldsResponse(
             ToEncountersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateStaticEncounterFieldResponse ToDto(ZaStaticEncountersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateStaticEncounterFieldResponse(
+            ToStaticEncountersWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -513,6 +532,111 @@ public static class ZaBridgeMapper
     private static EncounterEditableFieldOptionDto ToDto(ZaEncounterEditableFieldOption option)
     {
         return new EncounterEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static StaticEncountersWorkflowDto ToStaticEncountersWorkflowDto(
+        ZaStaticEncountersWorkflow workflow)
+    {
+        return new StaticEncountersWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Encounters.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new StaticEncountersWorkflowStatsDto(
+                workflow.Stats.TotalEncounterCount,
+                GigantamaxEncounterCount: 0,
+                workflow.Stats.FixedIvEncounterCount,
+                workflow.Stats.SourceFileCount)
+            {
+                FixedSymbolCount = workflow.Stats.PokemonDataEncounterCount,
+                CoinSymbolCount = 0,
+            },
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            EditorFamily = "za",
+        };
+    }
+
+    private static StaticEncounterRecordDto ToDto(ZaStaticEncounterEntry encounter)
+    {
+        return new StaticEncounterRecordDto(
+            encounter.EncounterIndex,
+            encounter.Label,
+            encounter.EncounterId,
+            encounter.SpeciesId,
+            encounter.Species,
+            encounter.Form,
+            encounter.Level,
+            encounter.HeldItemId,
+            encounter.HeldItem,
+            encounter.Ability,
+            encounter.AbilityLabel,
+            encounter.Nature,
+            encounter.NatureLabel,
+            encounter.Gender,
+            encounter.GenderLabel,
+            encounter.ShinyLock,
+            encounter.ShinyLockLabel,
+            encounter.EncounterScenario,
+            encounter.EncounterScenarioLabel,
+            DynamaxLevel: 0,
+            CanGigantamax: false,
+            ToDto(encounter.Evs),
+            ToDto(encounter.Ivs),
+            encounter.FlawlessIvCount,
+            encounter.IvSummary,
+            encounter.Moves.Select(ToDto).ToArray(),
+            new StaticEncounterProvenanceDto(
+                encounter.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(encounter.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(encounter.Provenance.FileState)))
+        {
+            EditorFamily = "za",
+            CategoryId = encounter.CategoryId,
+            CategoryLabel = encounter.CategoryLabel,
+            SupportedFields = encounter.SupportedFields,
+            FieldValues = encounter.FieldValues,
+            FieldDisplayValues = encounter.FieldDisplayValues,
+            FieldReadOnly = encounter.FieldReadOnly,
+            AbilityOptions = encounter.AbilityOptions.Select(ToDto).ToArray(),
+        };
+    }
+
+    private static StaticEncounterStatsDto ToDto(ZaStaticEncounterStatsRecord stats)
+    {
+        return new StaticEncounterStatsDto(
+            stats.HP,
+            stats.Attack,
+            stats.Defense,
+            stats.SpecialAttack,
+            stats.SpecialDefense,
+            stats.Speed);
+    }
+
+    private static StaticEncounterMoveDto ToDto(ZaStaticEncounterMoveRecord move)
+    {
+        return new StaticEncounterMoveDto(move.Slot, move.MoveId, move.Move);
+    }
+
+    private static StaticEncounterEditableFieldDto ToDto(ZaStaticEncounterEditableField field)
+    {
+        return new StaticEncounterEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray())
+        {
+            Group = field.Group,
+            IsReadOnly = field.IsReadOnly,
+            Description = field.Description,
+        };
+    }
+
+    private static StaticEncounterEditableFieldOptionDto ToDto(
+        ZaStaticEncounterEditableFieldOption option)
+    {
+        return new StaticEncounterEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static ZaModMergerWorkflowDto ToWorkflowDto(ZaModMergerWorkflow workflow)
