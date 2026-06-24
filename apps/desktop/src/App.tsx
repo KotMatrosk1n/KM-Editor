@@ -15792,20 +15792,24 @@ function SelectedGiftPokemonPanel({
               <dt>Held item</dt>
               <dd>{gift.heldItem ?? 'None'}</dd>
             </div>
-            {editorFamily === 'sv' ? (
+            {editorFamily === 'sv' || editorFamily === 'za' ? (
               <>
                 <div>
                   <dt>Moves</dt>
                   <dd>{formatGiftPokemonMoves(gift)}</dd>
                 </div>
-                <div>
-                  <dt>Tera type</dt>
-                  <dd>{gift.teraTypeLabel ?? 'Default'}</dd>
-                </div>
-                <div>
-                  <dt>Scale</dt>
-                  <dd>{formatGiftPokemonScale(gift)}</dd>
-                </div>
+                {gift.teraTypeLabel !== null ? (
+                  <div>
+                    <dt>Tera type</dt>
+                    <dd>{gift.teraTypeLabel}</dd>
+                  </div>
+                ) : null}
+                {gift.scaleModeLabel !== null ? (
+                  <div>
+                    <dt>Scale</dt>
+                    <dd>{formatGiftPokemonScale(gift)}</dd>
+                  </div>
+                ) : null}
               </>
             ) : (
               <div>
