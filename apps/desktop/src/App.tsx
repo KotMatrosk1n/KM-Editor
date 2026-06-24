@@ -294,7 +294,7 @@ import { getSectionWikiUrl } from './wikiLinks';
 
 const appVersion = tauriConfig.version;
 type TypeChartEffectivenessValue = TypeChartWorkflow['cells'][number]['effectiveness'];
-export type EditorUiFamily = 'swsh' | 'sv';
+export type EditorUiFamily = 'swsh' | 'sv' | 'za';
 type TrinityCacheMode = SvCacheMode | ZaCacheMode;
 type TrinityCacheStatus = SvCacheStatus | ZaCacheStatus;
 
@@ -1741,6 +1741,7 @@ export function App({
   const health = openProject?.health ?? null;
   const selectedGame = draftPaths.selectedGame;
   const isScarletVioletProject = isScarletVioletGame(selectedGame);
+  const isPokemonLegendsZAProject = isPokemonLegendsZAGame(selectedGame);
   const gameScopedWorkflows = useMemo(() =>
     getGameScopedWorkflowSummaries(workflows, selectedGame), [selectedGame, workflows]);
   const availableWorkflowSectionIds = useMemo(
@@ -7806,6 +7807,22 @@ export function App({
           {activeSection === 'pokemon' ? (
             isPokemonLoading && !pokemonWorkflow ? (
               <WorkflowLoadingPanel label="Pokemon" />
+            ) : isPokemonLegendsZAProject ? (
+              <ZaPokemonSection
+                editSession={getEditSessionForSection('pokemon')}
+                isEditStarting={isEditStarting}
+                isPokemonUpdating={isPokemonUpdating}
+                onSearchChange={setPokemonSearchText}
+                onSelectPokemon={setSelectedPokemonPersonalId}
+                onStartEditSession={handleStartEditSession}
+                onUpdatePokemonField={handleUpdatePokemonField}
+                onUpdatePokemonFields={handleUpdatePokemonFields}
+                onUpdatePokemonEvolution={handleUpdatePokemonEvolution}
+                onUpdatePokemonLearnset={handleUpdatePokemonLearnset}
+                searchText={pokemonSearchText}
+                selectedPokemonPersonalId={selectedPokemonPersonalId}
+                workflow={pokemonWorkflow}
+              />
             ) : isScarletVioletProject ? (
               <SvPokemonSection
                 editSession={getEditSessionForSection('pokemon')}
@@ -9615,6 +9632,10 @@ function SwShPokemonSection(props: PokemonSectionPublicProps) {
 
 function SvPokemonSection(props: PokemonSectionPublicProps) {
   return <PokemonSection {...props} editorFamily="sv" />;
+}
+
+function ZaPokemonSection(props: PokemonSectionPublicProps) {
+  return <PokemonSection {...props} editorFamily="za" />;
 }
 
 function PokemonSection({
@@ -34365,7 +34386,8 @@ const knownSpeciesFormLabelDefinitions: readonly SpeciesFormLabelDefinition[] = 
 
 const speciesFormLabelDataByFamily: Record<EditorUiFamily, SpeciesFormLabelData> = {
   sv: createSpeciesFormLabelData('sv'),
-  swsh: createSpeciesFormLabelData('swsh')
+  swsh: createSpeciesFormLabelData('swsh'),
+  za: createSpeciesFormLabelData('za')
 };
 
 function createFormLabelDefinition(

@@ -1172,13 +1172,15 @@ h2 {
 }
 
 .swsh-pokemon-section .pokemon-toolbar,
-.sv-pokemon-section .pokemon-toolbar {
+.sv-pokemon-section .pokemon-toolbar,
+.za-pokemon-section .pokemon-toolbar {
   grid-template-columns: minmax(240px, 1fr) minmax(360px, auto);
   align-items: start;
 }
 
 .swsh-pokemon-section .pokemon-toolbar-side,
-.sv-pokemon-section .pokemon-toolbar-side {
+.sv-pokemon-section .pokemon-toolbar-side,
+.za-pokemon-section .pokemon-toolbar-side {
   display: grid;
   gap: 10px;
   min-width: 0;
@@ -1186,8 +1188,10 @@ h2 {
 
 .swsh-pokemon-section .pokemon-toolbar-metrics,
 .sv-pokemon-section .pokemon-toolbar-metrics,
+.za-pokemon-section .pokemon-toolbar-metrics,
 .swsh-pokemon-section .pokemon-toolbar-actions,
-.sv-pokemon-section .pokemon-toolbar-actions {
+.sv-pokemon-section .pokemon-toolbar-actions,
+.za-pokemon-section .pokemon-toolbar-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -1196,7 +1200,8 @@ h2 {
 }
 
 .swsh-pokemon-section .pokemon-toolbar-metrics .metric,
-.sv-pokemon-section .pokemon-toolbar-metrics .metric {
+.sv-pokemon-section .pokemon-toolbar-metrics .metric,
+.za-pokemon-section .pokemon-toolbar-metrics .metric {
   min-width: 130px;
   flex: 1 1 130px;
 }
@@ -1214,12 +1219,14 @@ h2 {
 }
 
 .swsh-pokemon-layout,
-.sv-pokemon-layout {
+.sv-pokemon-layout,
+.za-pokemon-layout {
   grid-template-columns: minmax(420px, 0.72fr) minmax(480px, 1fr);
 }
 
 .swsh-pokemon-section .pokemon-table .items-row,
-.sv-pokemon-section .pokemon-table .items-row {
+.sv-pokemon-section .pokemon-table .items-row,
+.za-pokemon-section .pokemon-table .items-row {
   grid-template-columns: 64px minmax(180px, 1fr) minmax(120px, 0.8fr);
 }
 
