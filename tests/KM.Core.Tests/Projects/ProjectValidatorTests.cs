@@ -14,6 +14,7 @@ public sealed class ProjectValidatorTests
     private const ulong SwordTitleId = 0x0100ABF008968000;
     private const ulong ShieldTitleId = 0x01008DB008C2C000;
     private const ulong ScarletTitleId = 0x0100A3D008C5C000;
+    private const ulong PokemonLegendsZATitleId = 0x0100F43008C44000;
 
     [Fact]
     public void ValidateReturnsEditableReadyWhenBaseAndOutputPathsAreSafe()
@@ -120,6 +121,44 @@ public sealed class ProjectValidatorTests
         Assert.Contains(
             health.Paths,
             path => path.Role == ProjectPathRole.ScarletVioletSupportFolder
+                && path.Status == ProjectPathStatus.Valid);
+    }
+
+    [Fact]
+    public void ValidateAcceptsPokemonLegendsZAWhenTitleIdUsesAci0Offset()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        temp.WriteBaseRomFsFile("arc/data.trpfd", "descriptor");
+        temp.WriteBaseRomFsFile("arc/data.trpfs", "storage");
+        temp.WriteBaseExeFsFile("main", "base-main");
+        WriteBaseExeFsBytes(temp, "main.npdm", CreateNpdmWithTitleAtOffset(PokemonLegendsZATitleId, 0x480));
+
+        var health = new ProjectValidator().Validate(temp.Paths with { SelectedGame = ProjectGame.ZA });
+
+        Assert.Equal(ProjectHealthState.EditableReady, health.State);
+        Assert.Contains(
+            health.Diagnostics,
+            diagnostic => diagnostic.Severity == DiagnosticSeverity.Info
+                && diagnostic.Message.Contains("matches selected Pokemon Legends Z-A", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateAcceptsPokemonLegendsZASupportFolderWhenRequiredFileIsPresent()
+    {
+        using var temp = TemporaryProjectFolders.Create();
+        var supportFolder = Directory.CreateDirectory(Path.Combine(temp.RootPath, "za-support")).FullName;
+        File.WriteAllBytes(Path.Combine(supportFolder, string.Concat("oo2", "core", "_8_", "win", "64", ".dll")), []);
+
+        var health = new ProjectValidator().Validate(
+            temp.Paths with
+            {
+                PokemonLegendsZASupportFolderPath = supportFolder,
+                SelectedGame = ProjectGame.ZA,
+            });
+
+        Assert.Contains(
+            health.Paths,
+            path => path.Role == ProjectPathRole.PokemonLegendsZASupportFolder
                 && path.Status == ProjectPathStatus.Valid);
     }
 
@@ -272,6 +311,13 @@ public sealed class ProjectValidatorTests
     {
         var npdm = new byte[NpdmTitleIdOffset + sizeof(ulong)];
         BinaryPrimitives.WriteUInt64LittleEndian(npdm.AsSpan(NpdmTitleIdOffset), titleId);
+        return npdm;
+    }
+
+    private static byte[] CreateNpdmWithTitleAtOffset(ulong titleId, int titleIdOffset)
+    {
+        var npdm = new byte[titleIdOffset + sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64LittleEndian(npdm.AsSpan(titleIdOffset), titleId);
         return npdm;
     }
 

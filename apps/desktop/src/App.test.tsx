@@ -99,6 +99,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'sword'
       },
@@ -213,6 +214,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: null
       }
@@ -294,6 +296,7 @@ describe('App', () => {
         gameTextLanguage: 'en',
         outputRootPath: 'sword-output',
         saveFilePath: null,
+        pokemonLegendsZASupportFolderPath: null,
         scarletVioletSupportFolderPath: null,
         selectedGame: 'sword'
       }
@@ -477,6 +480,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
@@ -526,6 +530,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
@@ -588,6 +593,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
@@ -688,6 +694,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
@@ -767,6 +774,7 @@ describe('App', () => {
         gameTextLanguage: 'en',
         outputRootPath: 'output',
         saveFilePath: null,
+        pokemonLegendsZASupportFolderPath: null,
         scarletVioletSupportFolderPath: null,
         selectedGame: 'sword'
       }
@@ -789,6 +797,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       },
@@ -864,6 +873,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       },
@@ -1081,6 +1091,7 @@ describe('App', () => {
         baseRomFsPath: 'C:/old/romfs',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'sword'
       }
@@ -1163,6 +1174,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
@@ -1356,6 +1368,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'shield'
       }
@@ -2871,6 +2884,7 @@ describe('App', () => {
         baseRomFsPath: 'base-romfs',
         outputRootPath: 'output',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
@@ -3997,6 +4011,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       }
@@ -6079,6 +6094,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'shield'
       }
@@ -6107,6 +6123,7 @@ describe('App', () => {
         gameTextLanguage: 'en',
         outputRootPath: null,
         saveFilePath: null,
+        pokemonLegendsZASupportFolderPath: null,
         scarletVioletSupportFolderPath: null,
         selectedGame: 'shield'
       }
@@ -6123,6 +6140,7 @@ describe('App', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'shield'
       }

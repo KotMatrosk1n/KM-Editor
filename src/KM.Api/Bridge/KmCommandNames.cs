@@ -110,6 +110,10 @@ public static class KmCommandNames
     public const string UpdateSvCacheSettings = "svCache.settings.update";
     public const string ClearSvCache = "svCache.clear";
     public const string WarmupSvCacheStep = "svCache.warmup.step";
+    public const string GetZaCacheStatus = "zaCache.status";
+    public const string UpdateZaCacheSettings = "zaCache.settings.update";
+    public const string ClearZaCache = "zaCache.clear";
+    public const string WarmupZaCacheStep = "zaCache.warmup.step";
     public const string LoadFpsPatch = "fpsPatch.load";
     public const string ApplyFpsPatch = "fpsPatch.apply";
     public const string RestoreFpsPatch = "fpsPatch.restore";

@@ -8,6 +8,7 @@
     <ProjectReference Include="..\..\src\KM.SV\KM.SV.csproj" />
     <ProjectReference Include="..\..\src\KM.SwSh\KM.SwSh.csproj" />
     <ProjectReference Include="..\..\src\KM.Tools\KM.Tools.csproj" />
+    <ProjectReference Include="..\..\src\KM.ZA\KM.ZA.csproj" />
   </ItemGroup>
 
   <ItemGroup>

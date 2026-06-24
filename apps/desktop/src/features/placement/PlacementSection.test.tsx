@@ -29,6 +29,7 @@ describe('PlacementSection', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       },

@@ -319,6 +319,7 @@ export { ProjectBridgeError } from './projectBridgeError';
 import { sendProjectBridgeRequest, type ProjectBridgeTransport } from './projectBridgeRequest';
 import { createSvBatchFieldProjectBridgeApi, type SvBatchFieldProjectBridgeApi } from './svBatchFieldProjectBridge';
 import { createSvCacheProjectBridgeApi, type SvCacheProjectBridgeApi } from './svCacheProjectBridge';
+import { createZaCacheProjectBridgeApi, type ZaCacheProjectBridgeApi } from './zaCacheProjectBridge';
 import { createGameDumpProjectBridgeApi, type GameDumpProjectBridgeApi } from './gameDumpProjectBridge';
 
 export type ProjectBridge = {
@@ -575,7 +576,7 @@ export type ProjectBridge = {
     request: ValidateEditSessionRequest
   ) => Promise<ValidateEditSessionResponse>;
   validateProject: (request: ValidateProjectRequest) => Promise<ValidateProjectResponse>;
-} & SvBatchFieldProjectBridgeApi & SvCacheProjectBridgeApi & GameDumpProjectBridgeApi;
+} & SvBatchFieldProjectBridgeApi & SvCacheProjectBridgeApi & ZaCacheProjectBridgeApi & GameDumpProjectBridgeApi;
 
 const tauriProjectBridgeTransport: ProjectBridgeTransport = (requestJson) => {
   if (!hasTauriRuntime()) {
@@ -1264,6 +1265,7 @@ export function createProjectBridge(
     ...createGameDumpProjectBridgeApi(transport),
     ...createSvBatchFieldProjectBridgeApi(transport),
     ...createSvCacheProjectBridgeApi(transport),
+    ...createZaCacheProjectBridgeApi(transport),
     validateEditSession: (request) =>
       sendProjectBridgeRequest(
         transport,

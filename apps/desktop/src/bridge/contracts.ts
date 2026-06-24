@@ -81,6 +81,7 @@ export const kmCommandNameValues = [
   'svModMerger.stage',
   'svModMerger.apply',
   'svCache.status', 'svCache.settings.update', 'svCache.clear', 'svCache.warmup.step',
+  'zaCache.status', 'zaCache.settings.update', 'zaCache.clear', 'zaCache.warmup.step',
   'fpsPatch.load', 'fpsPatch.apply', 'fpsPatch.restore',
   'randomizer.seed.import',
   'randomizer.apply',
@@ -190,6 +191,7 @@ export const kmCommandNames = {
   applyModMerge: 'modMerger.apply',
   loadSvModMergerWorkflow: 'svModMerger.load', stageSvModMerge: 'svModMerger.stage', applySvModMerge: 'svModMerger.apply',
   getSvCacheStatus: 'svCache.status', updateSvCacheSettings: 'svCache.settings.update', clearSvCache: 'svCache.clear', warmupSvCacheStep: 'svCache.warmup.step',
+  getZaCacheStatus: 'zaCache.status', updateZaCacheSettings: 'zaCache.settings.update', clearZaCache: 'zaCache.clear', warmupZaCacheStep: 'zaCache.warmup.step',
   loadFpsPatch: 'fpsPatch.load', applyFpsPatch: 'fpsPatch.apply', restoreFpsPatch: 'fpsPatch.restore',
   importRandomizerSeed: 'randomizer.seed.import',
   applyRandomizer: 'randomizer.apply',
@@ -219,10 +221,10 @@ export const apiErrorSchema = z.strictObject({
   diagnostics: z.array(apiDiagnosticSchema),
   message: z.string()
 });
-export const projectGameSchema = z.enum(['sword', 'shield', 'scarlet', 'violet']);
+export const projectGameSchema = z.enum(['sword', 'shield', 'scarlet', 'violet', 'za']);
 export type ProjectGame = z.infer<typeof projectGameSchema>;
 export const projectPathsSchema = z.strictObject({
-  baseExeFsPath: z.string().nullable(), baseRomFsPath: z.string().nullable(), gameTextLanguage: z.string().nullable().optional(), outputRootPath: z.string().nullable(), saveFilePath: z.string().nullable(), scarletVioletSupportFolderPath: z.string().nullable().optional(), selectedGame: projectGameSchema.nullable().default(null)
+  baseExeFsPath: z.string().nullable(), baseRomFsPath: z.string().nullable(), gameTextLanguage: z.string().nullable().optional(), outputRootPath: z.string().nullable(), pokemonLegendsZASupportFolderPath: z.string().nullable().optional(), saveFilePath: z.string().nullable(), scarletVioletSupportFolderPath: z.string().nullable().optional(), selectedGame: projectGameSchema.nullable().default(null)
 });
 
 export const openProjectRequestSchema = z.strictObject({
@@ -376,7 +378,8 @@ export const projectPathRoleSchema = z.enum([
   'baseExeFs',
   'outputRoot',
   'saveFile',
-  'scarletVioletSupportFolder'
+  'scarletVioletSupportFolder',
+  'pokemonLegendsZASupportFolder'
 ]);
 
 export const projectPathStatusSchema = z.enum(['notSet', 'missing', 'wrongKind', 'valid', 'unsafe']);

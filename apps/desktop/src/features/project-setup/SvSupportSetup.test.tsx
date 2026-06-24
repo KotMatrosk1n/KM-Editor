@@ -30,6 +30,7 @@ describe('S/V support setup', () => {
         baseRomFsPath: '',
         outputRootPath: '',
         saveFilePath: '',
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: '',
         selectedGame: 'scarlet'
       },
@@ -84,6 +85,7 @@ describe('S/V support setup', () => {
         gameTextLanguage: 'en',
         outputRootPath: null,
         saveFilePath: null,
+        pokemonLegendsZASupportFolderPath: '',
         scarletVioletSupportFolderPath: supportFolderPath,
         selectedGame: 'scarlet'
       }

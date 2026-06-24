@@ -2418,6 +2418,22 @@
     "Academy inventory": "Academy inventory",
     "Picnic goods": "Picnic goods",
     "Kitakami inventory": "Kitakami inventory",
-    "Blueberry Academy inventory": "Blueberry Academy inventory"
+    "Blueberry Academy inventory": "Blueberry Academy inventory",
+    "Pokemon Legends Z-A": "Pokemon Legends Z-A",
+    "Pokemon Legends Z-A Editor": "Pokemon Legends Z-A Editor",
+    "Pokemon Legends Z-A Support Folder (Optional)": "Pokemon Legends Z-A Support Folder (Optional)",
+    "Z-A Data Cache": "Z-A Data Cache",
+    "Pokemon Legends Z-A Data Cache": "Pokemon Legends Z-A Data Cache",
+    "Controls how aggressively Z-A Trinity data is cached between editor loads.": "Controls how aggressively Z-A Trinity data is cached between editor loads.",
+    "Z-A cache mode": "Z-A cache mode",
+    "Persistent Z-A Data Cache warmup is off in Minimal mode.": "Persistent Z-A Data Cache warmup is off in Minimal mode.",
+    "Clear Z-A Cache?": "Clear Z-A Cache?",
+    "This removes cached Pokemon Legends Z-A Trinity data that is not reserved for the currently active Z-A project. The next Z-A validation can rebuild it.": "This removes cached Pokemon Legends Z-A Trinity data that is not reserved for the currently active Z-A project. The next Z-A validation can rebuild it.",
+    "Pokemon Legends Z-A game dump is not available yet.": "Pokemon Legends Z-A game dump is not available yet.",
+    "Implemented Pokemon Legends Z-A game dump workflow": "Implemented Pokemon Legends Z-A game dump workflow",
+    "Pokemon Legends Z-A support folder is not configured. Set it in Project Setup to enable Z-A data editors.": "Pokemon Legends Z-A support folder is not configured. Set it in Project Setup to enable Z-A data editors.",
+    "Building Pokemon Legends Z-A cache metadata.": "Building Pokemon Legends Z-A cache metadata.",
+    "Building Pokemon Legends Z-A decompressed payload cache.": "Building Pokemon Legends Z-A decompressed payload cache.",
+    "Pokemon Legends Z-A cache is idle.": "Pokemon Legends Z-A cache is idle."
   }
 }

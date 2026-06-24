@@ -40,9 +40,11 @@ using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.TypeChart;
 using KM.Api.Workflows;
+using KM.Api.ZaCache;
 using KM.Core.Diagnostics;
 using KM.Core.Editing;
 using KM.Core.Files;
+using KM.Core.GameDump;
 using KM.Core.Projects;
 using KM.SwSh.Behavior;
 using KM.SwSh.BagHook;
@@ -81,6 +83,7 @@ using KM.SwSh.Workflows;
 using KM.SV.ModMerger;
 using KM.SV.GameDump;
 using KM.SV.Workflows;
+using KM.ZA.Workflows;
 using System.Globalization;
 using System.Text.Json;
 
@@ -128,6 +131,7 @@ public sealed class ProjectBridgeDispatcher
     private readonly SwShTradePokemonEditSessionService tradePokemonEditSessionService;
     private readonly SwShWorkflowService swShWorkflowService;
     private readonly SvWorkflowService svWorkflowService;
+    private readonly ZaWorkflowService zaWorkflowService;
 
     public ProjectBridgeDispatcher(
         ProjectWorkspaceService? projectWorkspaceService = null,
@@ -169,7 +173,8 @@ public sealed class ProjectBridgeDispatcher
         SwShTrainersEditSessionService? trainersEditSessionService = null,
         SwShTradePokemonEditSessionService? tradePokemonEditSessionService = null,
         SwShWorkflowService? swShWorkflowService = null,
-        SvWorkflowService? svWorkflowService = null)
+        SvWorkflowService? svWorkflowService = null,
+        ZaWorkflowService? zaWorkflowService = null)
     {
         this.projectWorkspaceService = projectWorkspaceService ?? new ProjectWorkspaceService();
         this.dynamaxAdventuresEditSessionService = dynamaxAdventuresEditSessionService ?? new SwShDynamaxAdventuresEditSessionService(this.projectWorkspaceService);
@@ -211,6 +216,7 @@ public sealed class ProjectBridgeDispatcher
             this.projectWorkspaceService,
             modMergerWorkflowService: this.modMergerWorkflowService);
         this.svWorkflowService = svWorkflowService ?? new SvWorkflowService(this.projectWorkspaceService);
+        this.zaWorkflowService = zaWorkflowService ?? new ZaWorkflowService(this.projectWorkspaceService);
         this.swShGameDumpService = swShGameDumpService ?? new SwShGameDumpService(this.swShWorkflowService);
         this.svGameDumpService = svGameDumpService ?? new SvGameDumpService(this.svWorkflowService);
     }
@@ -337,6 +343,10 @@ public sealed class ProjectBridgeDispatcher
                 KmCommandNames.UpdateSvCacheSettings => DispatchUpdateSvCacheSettings(requestJson),
                 KmCommandNames.ClearSvCache => DispatchClearSvCache(requestJson),
                 KmCommandNames.WarmupSvCacheStep => DispatchWarmupSvCacheStep(requestJson),
+                KmCommandNames.GetZaCacheStatus => DispatchGetZaCacheStatus(requestJson),
+                KmCommandNames.UpdateZaCacheSettings => DispatchUpdateZaCacheSettings(requestJson),
+                KmCommandNames.ClearZaCache => DispatchClearZaCache(requestJson),
+                KmCommandNames.WarmupZaCacheStep => DispatchWarmupZaCacheStep(requestJson),
                 KmCommandNames.LoadFpsPatch => DispatchLoadFpsPatch(requestJson),
                 KmCommandNames.ApplyFpsPatch => DispatchApplyFpsPatch(requestJson),
                 KmCommandNames.RestoreFpsPatch => DispatchRestoreFpsPatch(requestJson),
@@ -396,9 +406,12 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<ListWorkflowsRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.List(paths))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.List(paths));
+        var response = paths.SelectedGame switch
+        {
+            ProjectGame.Scarlet or ProjectGame.Violet => SvBridgeMapper.ToDto(svWorkflowService.List(paths)),
+            ProjectGame.ZA => ZaBridgeMapper.ToDto(zaWorkflowService.List(paths)),
+            _ => SwShBridgeMapper.ToDto(swShWorkflowService.List(paths)),
+        };
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -407,7 +420,16 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadGameDumpWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var workflow = IsScarletViolet(paths)
+        var workflow = IsPokemonLegendsZA(paths)
+            ? new GameDumpWorkflow(
+                [],
+                [new ValidationDiagnostic(
+                    DiagnosticSeverity.Warning,
+                    "Pokemon Legends Z-A game dump is not available yet.",
+                    File: null,
+                    Domain: "gameDump",
+                    Expected: "Implemented Pokemon Legends Z-A game dump workflow")])
+            : IsScarletViolet(paths)
             ? svGameDumpService.Load(paths)
             : swShGameDumpService.Load(paths);
         var response = new LoadGameDumpWorkflowResponse(ProjectBridgeMapper.ToDto(workflow));
@@ -1918,6 +1940,52 @@ public sealed class ProjectBridgeDispatcher
         return SerializeSuccess(response, request.RequestId);
     }
 
+    private string DispatchGetZaCacheStatus(string requestJson)
+    {
+        var request = DeserializeRequest<GetZaCacheStatusRequest>(requestJson);
+        var paths = request.Payload.Paths is null
+            ? null
+            : ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = ZaBridgeMapper.ToDto(zaWorkflowService.GetCacheStatus(paths));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchUpdateZaCacheSettings(string requestJson)
+    {
+        var request = DeserializeRequest<UpdateZaCacheSettingsRequest>(requestJson);
+        var paths = request.Payload.Paths is null
+            ? null
+            : ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = ZaBridgeMapper.ToDto(zaWorkflowService.UpdateCacheSettings(
+            ZaBridgeMapper.ToCore(request.Payload.Mode),
+            request.Payload.MaxCacheSizeBytes,
+            paths));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchClearZaCache(string requestJson)
+    {
+        var request = DeserializeRequest<ClearZaCacheRequest>(requestJson);
+        var paths = request.Payload.ActivePaths is null
+            ? null
+            : ProjectBridgeMapper.ToCore(request.Payload.ActivePaths);
+        var response = ZaBridgeMapper.ToDto(zaWorkflowService.ClearCache(paths));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
+    private string DispatchWarmupZaCacheStep(string requestJson)
+    {
+        var request = DeserializeRequest<WarmupZaCacheStepRequest>(requestJson);
+        var response = ZaBridgeMapper.ToDto(zaWorkflowService.WarmupCacheStep(
+            ProjectBridgeMapper.ToCore(request.Payload.Paths),
+            request.Payload.StepIndex));
+
+        return SerializeSuccess(response, request.RequestId);
+    }
+
     private string DispatchLoadFpsPatch(string requestJson)
     {
         var request = DeserializeRequest<LoadFpsPatchRequest>(requestJson);
@@ -2563,6 +2631,11 @@ public sealed class ProjectBridgeDispatcher
         return paths.SelectedGame is ProjectGame.Scarlet or ProjectGame.Violet;
     }
 
+    private static bool IsPokemonLegendsZA(ProjectPaths paths)
+    {
+        return paths.SelectedGame is ProjectGame.ZA;
+    }
+
     private static string? ValidateCommandGameScope(BridgeCommandEnvelope? envelope, string requestJson)
     {
         if (envelope?.Command is not { } command || !TryReadSelectedGame(requestJson, out var selectedGame))
@@ -2570,7 +2643,7 @@ public sealed class ProjectBridgeDispatcher
             return null;
         }
 
-        if (IsSwordShieldOnlyCommand(command) && IsScarletViolet(selectedGame))
+        if (IsSwordShieldOnlyCommand(command) && !IsSwordShield(selectedGame))
         {
             return SerializeFailure(
                 "bridge.gameMismatch",
@@ -2578,11 +2651,27 @@ public sealed class ProjectBridgeDispatcher
                 envelope.RequestId);
         }
 
-        if (IsScarletVioletOnlyCommand(command) && IsSwordShield(selectedGame))
+        if (IsScarletVioletOnlyCommand(command) && !IsScarletViolet(selectedGame))
         {
             return SerializeFailure(
                 "bridge.gameMismatch",
                 $"Bridge command '{command}' is only available for Scarlet/Violet projects.",
+                envelope.RequestId);
+        }
+
+        if (IsPokemonLegendsZAOnlyCommand(command) && !IsPokemonLegendsZA(selectedGame))
+        {
+            return SerializeFailure(
+                "bridge.gameMismatch",
+                $"Bridge command '{command}' is only available for Pokemon Legends Z-A projects.",
+                envelope.RequestId);
+        }
+
+        if (IsPokemonLegendsZA(selectedGame) && !IsPokemonLegendsZAAllowedCommand(command))
+        {
+            return SerializeFailure(
+                "bridge.gameMismatch",
+                $"Bridge command '{command}' is not available for Pokemon Legends Z-A projects yet.",
                 envelope.RequestId);
         }
 
@@ -2621,6 +2710,11 @@ public sealed class ProjectBridgeDispatcher
     private static bool IsScarletViolet(ProjectGameDto game)
     {
         return game is ProjectGameDto.Scarlet or ProjectGameDto.Violet;
+    }
+
+    private static bool IsPokemonLegendsZA(ProjectGameDto game)
+    {
+        return game is ProjectGameDto.ZA;
     }
 
     private static bool IsSwordShieldOnlyCommand(string command)
@@ -2705,6 +2799,29 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateSvCacheSettings or
             KmCommandNames.ClearSvCache or
             KmCommandNames.WarmupSvCacheStep;
+    }
+
+    private static bool IsPokemonLegendsZAOnlyCommand(string command)
+    {
+        return command is
+            KmCommandNames.GetZaCacheStatus or
+            KmCommandNames.UpdateZaCacheSettings or
+            KmCommandNames.ClearZaCache or
+            KmCommandNames.WarmupZaCacheStep;
+    }
+
+    private static bool IsPokemonLegendsZAAllowedCommand(string command)
+    {
+        return command is
+            KmCommandNames.OpenProject or
+            KmCommandNames.ValidateProject or
+            KmCommandNames.RefreshFileGraph or
+            KmCommandNames.ListWorkflows or
+            KmCommandNames.GetZaCacheStatus or
+            KmCommandNames.UpdateZaCacheSettings or
+            KmCommandNames.ClearZaCache or
+            KmCommandNames.WarmupZaCacheStep or
+            KmCommandNames.LoadGameDumpWorkflow;
     }
 
     private static SwShEditSessionValidation CreateUnsupportedMixedValidation(EditSession session)
