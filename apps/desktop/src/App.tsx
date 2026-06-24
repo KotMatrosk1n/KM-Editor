@@ -130,6 +130,7 @@ import {
   type ModMergerWorkflow,
   type ApplyModMergeResponse,
   type ApplySvModMergeResponse,
+  type ApplyZaModMergeResponse,
   type ApplyRandomizerResponse,
   type ImportRandomizerSeedResponse,
   type RestoreRandomizerResponse,
@@ -204,7 +205,10 @@ import {
   type TrainerEditableField,
   type TrainerPokemonRecord,
   type TrainerRecord,
-  type TrainersWorkflow
+  type TrainersWorkflow,
+  type ZaModMergerPreview,
+  type ZaModMergerSource,
+  type ZaModMergerWorkflow
 } from './bridge/contracts';
 import { type HyperspaceBypassWorkflow } from './bridge/hyperspaceBypassContracts';
 import { type FpsPatchStatus } from './bridge/fpsPatchContracts';
@@ -1848,6 +1852,15 @@ export function App({
   );
   const [svModMergerApplyResult, setSvModMergerApplyResult] =
     useState<ApplySvModMergeResponse | null>(null);
+  const [zaModSources, setZaModSources] = useState<ZaModMergerSource[]>([]);
+  const [zaModMergerWorkflow, setZaModMergerWorkflow] = useState<ZaModMergerWorkflow | null>(
+    null
+  );
+  const [zaModMergerPreview, setZaModMergerPreview] = useState<ZaModMergerPreview | null>(
+    null
+  );
+  const [zaModMergerApplyResult, setZaModMergerApplyResult] =
+    useState<ApplyZaModMergeResponse | null>(null);
   const [modMergerSelectedDirectory1Files, setModMergerSelectedDirectory1Files] = useState<
     Set<string>
   >(() => new Set());
@@ -1960,7 +1973,7 @@ export function App({
     raidRewardsWorkflow, rentalPokemonWorkflow, royalCandyWorkflow, selectedGame, shinyRateWorkflow,
     shopsWorkflow, spreadsheetImportWorkflow, startingItemsWorkflow, staticEncountersWorkflow,
     svModMergerWorkflow, teraRaidsWorkflow, textWorkflow, tradePokemonWorkflow,
-    trainersWorkflow, typeChartWorkflow
+    trainersWorkflow, typeChartWorkflow, zaModMergerWorkflow
   });
   const activeSectionCanStayMounted =
     isWorkflowNavigationVisibleForGame(activeSection, selectedGame, availableWorkflowSectionIds) ||
@@ -2088,6 +2101,10 @@ export function App({
     setSvModMergerPreview(null);
     setSvModMergerApplyResult(null);
     setSvModSources([]);
+    setZaModMergerWorkflow(null);
+    setZaModMergerPreview(null);
+    setZaModMergerApplyResult(null);
+    setZaModSources([]);
     setFpsPatchStatus(null);
     setLazyLoadedWorkflowSections(new Set());
     setEditorDraftDirtySections(new Set());
@@ -4353,6 +4370,11 @@ export function App({
     setSvModMergerApplyResult(null);
   };
 
+  const resetZaModMergerPlan = () => {
+    setZaModMergerPreview(null);
+    setZaModMergerApplyResult(null);
+  };
+
   const loadModMergerWorkflow = async (directory1: string, directory2: string) => {
     setIsModMergerLoading(true);
     setBridgeDiagnostics([]);
@@ -4388,9 +4410,31 @@ export function App({
     }
   };
 
+  const loadZaModMergerWorkflow = async (modSources: ZaModMergerSource[]) => {
+    setIsModMergerLoading(true);
+    setBridgeDiagnostics([]);
+
+    try {
+      const response = await bridge.loadZaModMergerWorkflow({
+        modSources,
+        paths: toProjectPaths(draftPaths)
+      });
+      setZaModMergerWorkflow(response.workflow);
+    } catch (error) {
+      setBridgeDiagnostics(toBridgeDiagnostics(error));
+    } finally {
+      setIsModMergerLoading(false);
+    }
+  };
+
   const handleOpenModMergerWorkflow = async () => {
     if (isScarletVioletGame(selectedGame)) {
       await loadSvModMergerWorkflow(svModSources);
+      return;
+    }
+
+    if (isPokemonLegendsZAGame(selectedGame)) {
+      await loadZaModMergerWorkflow(zaModSources);
       return;
     }
 
@@ -4455,6 +4499,66 @@ export function App({
     setSvModSources(nextSources);
     resetSvModMergerPlan();
     await loadSvModMergerWorkflow(nextSources);
+  };
+
+  const handleAddZaModSource = async (kind: 'folder' | 'archive') => {
+    try {
+      const selection =
+        kind === 'folder'
+          ? await desktopServices.pickFolder({
+              defaultPath: draftPaths.outputRootPath || undefined,
+              title: 'Add ZA Mod Folder'
+            })
+          : await desktopServices.pickFile({
+              defaultPath: draftPaths.outputRootPath || undefined,
+              title: 'Add ZA Mod Archive'
+            });
+
+      if (!selection) {
+        return;
+      }
+
+      const nextSources = [...zaModSources, { isEnabled: true, path: selection }];
+      setZaModSources(nextSources);
+      resetZaModMergerPlan();
+      await loadZaModMergerWorkflow(nextSources);
+    } catch (error) {
+      setBridgeDiagnostics(
+        toDesktopDiagnostics(error, 'Could not choose a Pokemon Legends ZA mod source.')
+      );
+    }
+  };
+
+  const handleToggleZaModSource = async (sourceIndex: number) => {
+    const nextSources = zaModSources.map((source, index) =>
+      index === sourceIndex ? { ...source, isEnabled: !source.isEnabled } : source
+    );
+    setZaModSources(nextSources);
+    resetZaModMergerPlan();
+    await loadZaModMergerWorkflow(nextSources);
+  };
+
+  const handleMoveZaModSource = async (sourceIndex: number, direction: -1 | 1) => {
+    const targetIndex = sourceIndex + direction;
+    if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= zaModSources.length) {
+      return;
+    }
+
+    const nextSources = [...zaModSources];
+    [nextSources[sourceIndex], nextSources[targetIndex]] = [
+      nextSources[targetIndex],
+      nextSources[sourceIndex]
+    ];
+    setZaModSources(nextSources);
+    resetZaModMergerPlan();
+    await loadZaModMergerWorkflow(nextSources);
+  };
+
+  const handleRemoveZaModSource = async (sourceIndex: number) => {
+    const nextSources = zaModSources.filter((_, index) => index !== sourceIndex);
+    setZaModSources(nextSources);
+    resetZaModMergerPlan();
+    await loadZaModMergerWorkflow(nextSources);
   };
 
   const handlePickModMergerDirectory = async (slot: 1 | 2) => {
@@ -4554,6 +4658,34 @@ export function App({
       return;
     }
 
+    if (isPokemonLegendsZAGame(selectedGame)) {
+      setIsModMergerStaging(true);
+      setBridgeDiagnostics([]);
+      setZaModMergerApplyResult(null);
+      setWorkProgress(createIndeterminateWorkProgress(
+        'Preparing ZA Mod Merge',
+        'Reading selected mod archives and folders',
+        modMergePreviewProgressSteps,
+        0
+      ));
+
+      try {
+        const response = await bridge.stageZaModMerge({
+          modSources: zaModSources,
+          paths: toProjectPaths(draftPaths)
+        });
+        setZaModMergerWorkflow(response.workflow);
+        setZaModMergerPreview(response.preview);
+      } catch (error) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      } finally {
+        setIsModMergerStaging(false);
+        setWorkProgress(null);
+      }
+
+      return;
+    }
+
     setIsModMergerStaging(true);
     setBridgeDiagnostics([]);
     setModMergerApplyResult(null);
@@ -4622,6 +4754,49 @@ export function App({
         if (!hasApplyErrors && response.writtenFiles.length > 0) {
           setWorkProgress(createIndeterminateWorkProgress(
             'Applying S/V Mod Merge',
+            'Refreshing loaded editor data',
+            modMergeProgressSteps,
+            3
+          ));
+          await refreshLoadedWorkflowsAfterApply(paths);
+        }
+      } catch (error) {
+        setBridgeDiagnostics(toBridgeDiagnostics(error));
+      } finally {
+        setIsModMergerApplying(false);
+        setWorkProgress(null);
+      }
+
+      return;
+    }
+
+    if (isPokemonLegendsZAGame(selectedGame)) {
+      setIsModMergerApplying(true);
+      setBridgeDiagnostics([]);
+      setZaModMergerApplyResult(null);
+      setWorkProgress(createIndeterminateWorkProgress(
+        'Applying ZA Mod Merge',
+        'Merging selected mods in priority order',
+        modMergeProgressSteps,
+        1
+      ));
+
+      try {
+        const paths = toProjectPaths(draftPaths);
+        const response = await bridge.applyZaModMerge({
+          modSources: zaModSources,
+          paths
+        });
+        setZaModMergerWorkflow(response.workflow);
+        setZaModMergerPreview(response.preview);
+        setZaModMergerApplyResult(response);
+
+        const hasApplyErrors = response.diagnostics.some(
+          (diagnostic) => diagnostic.severity === 'error'
+        );
+        if (!hasApplyErrors && response.writtenFiles.length > 0) {
+          setWorkProgress(createIndeterminateWorkProgress(
+            'Applying ZA Mod Merge',
             'Refreshing loaded editor data',
             modMergeProgressSteps,
             3
@@ -8584,6 +8759,8 @@ export function App({
               ) : (
                 <SvModMergerSection
                   applyResult={svModMergerApplyResult}
+                  emptySourceCopy="No S/V mod sources added."
+                  heading="S/V Mod Merger"
                   isApplying={isModMergerApplying}
                   isDesktopAvailable={desktopServices.isAvailable}
                   isLoading={isModMergerLoading}
@@ -8599,6 +8776,31 @@ export function App({
                   outputRootPath={draftPaths.outputRootPath}
                   preview={svModMergerPreview}
                   workflow={svModMergerWorkflow}
+                />
+              )
+            ) : isPokemonLegendsZAGame(selectedGame) ? (
+              isModMergerLoading && !zaModMergerWorkflow ? (
+                <WorkflowLoadingPanel label="Mod Merger" />
+              ) : (
+                <SvModMergerSection
+                  applyResult={zaModMergerApplyResult}
+                  emptySourceCopy="No ZA mod sources added."
+                  heading="Mod Merger"
+                  isApplying={isModMergerApplying}
+                  isDesktopAvailable={desktopServices.isAvailable}
+                  isLoading={isModMergerLoading}
+                  isStaging={isModMergerStaging}
+                  modSources={zaModSources}
+                  onAddArchive={() => handleAddZaModSource('archive')}
+                  onAddFolder={() => handleAddZaModSource('folder')}
+                  onApplyMerge={handleApplyModMerge}
+                  onMoveSource={handleMoveZaModSource}
+                  onRemoveSource={handleRemoveZaModSource}
+                  onStageMerge={handleStageModMerge}
+                  onToggleSource={handleToggleZaModSource}
+                  outputRootPath={draftPaths.outputRootPath}
+                  preview={zaModMergerPreview}
+                  workflow={zaModMergerWorkflow}
                 />
               )
             ) : isModMergerLoading && !modMergerWorkflow ? (
@@ -26881,6 +27083,8 @@ function getFpsPatchStatusClassName(status: string) {
 
 function SvModMergerSection({
   applyResult,
+  emptySourceCopy,
+  heading,
   isApplying,
   isDesktopAvailable,
   isLoading,
@@ -26897,12 +27101,14 @@ function SvModMergerSection({
   preview,
   workflow
 }: {
-  applyResult: ApplySvModMergeResponse | null;
+  applyResult: ApplySvModMergeResponse | ApplyZaModMergeResponse | null;
+  emptySourceCopy: string;
+  heading: string;
   isApplying: boolean;
   isDesktopAvailable: boolean;
   isLoading: boolean;
   isStaging: boolean;
-  modSources: SvModMergerSource[];
+  modSources: ReadonlyArray<SvModMergerSource | ZaModMergerSource>;
   onAddArchive: () => void;
   onAddFolder: () => void;
   onApplyMerge: () => void;
@@ -26911,8 +27117,8 @@ function SvModMergerSection({
   onStageMerge: () => void;
   onToggleSource: (sourceIndex: number) => void;
   outputRootPath: string;
-  preview: SvModMergerPreview | null;
-  workflow: SvModMergerWorkflow | null;
+  preview: SvModMergerPreview | ZaModMergerPreview | null;
+  workflow: SvModMergerWorkflow | ZaModMergerWorkflow | null;
 }) {
   const canStage = modSources.some((source) => source.isEnabled) && !isStaging && !isLoading;
   const canApply = Boolean(preview?.canApply) && !isApplying && !isStaging;
@@ -26925,7 +27131,7 @@ function SvModMergerSection({
       >
         <div className="panel-heading">
           <Layers aria-hidden="true" size={18} />
-          <h2 id="sv-mod-merger-heading">S/V Mod Merger</h2>
+          <h2 id="sv-mod-merger-heading">{heading}</h2>
         </div>
 
         <div className="editor-toolbar">
@@ -26992,7 +27198,7 @@ function SvModMergerSection({
 
         <div className="workflow-list" title="Sources apply top to bottom; lower enabled sources win when smart merge falls back.">
           {modSources.length === 0 ? (
-            <p className="empty-copy">No S/V mod sources added.</p>
+            <p className="empty-copy">{emptySourceCopy}</p>
           ) : (
             modSources.map((source, index) => {
               const sourceRecord = workflow?.sources[index];

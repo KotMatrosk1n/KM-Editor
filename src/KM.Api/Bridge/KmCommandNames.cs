@@ -106,6 +106,9 @@ public static class KmCommandNames
     public const string LoadSvModMergerWorkflow = "svModMerger.load";
     public const string StageSvModMerge = "svModMerger.stage";
     public const string ApplySvModMerge = "svModMerger.apply";
+    public const string LoadZaModMergerWorkflow = "zaModMerger.load";
+    public const string StageZaModMerge = "zaModMerger.stage";
+    public const string ApplyZaModMerge = "zaModMerger.apply";
     public const string GetSvCacheStatus = "svCache.status";
     public const string UpdateSvCacheSettings = "svCache.settings.update";
     public const string ClearSvCache = "svCache.clear";

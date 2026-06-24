@@ -120,6 +120,12 @@ import {
   type StageSvModMergeResponse,
   type ApplySvModMergeRequest,
   type ApplySvModMergeResponse,
+  type LoadZaModMergerWorkflowRequest,
+  type LoadZaModMergerWorkflowResponse,
+  type StageZaModMergeRequest,
+  type StageZaModMergeResponse,
+  type ApplyZaModMergeRequest,
+  type ApplyZaModMergeResponse,
   type ImportRandomizerSeedRequest,
   type ImportRandomizerSeedResponse,
   type ApplyRandomizerRequest,
@@ -236,6 +242,9 @@ import {
   loadSvModMergerWorkflowResponseSchema,
   stageSvModMergeResponseSchema,
   applySvModMergeResponseSchema,
+  loadZaModMergerWorkflowResponseSchema,
+  stageZaModMergeResponseSchema,
+  applyZaModMergeResponseSchema,
   importRandomizerSeedResponseSchema,
   applyRandomizerResponseSchema,
   restoreRandomizerResponseSchema,
@@ -508,6 +517,15 @@ export type ProjectBridge = {
   applySvModMerge: (
     request: ApplySvModMergeRequest
   ) => Promise<ApplySvModMergeResponse>;
+  loadZaModMergerWorkflow: (
+    request: LoadZaModMergerWorkflowRequest
+  ) => Promise<LoadZaModMergerWorkflowResponse>;
+  stageZaModMerge: (
+    request: StageZaModMergeRequest
+  ) => Promise<StageZaModMergeResponse>;
+  applyZaModMerge: (
+    request: ApplyZaModMergeRequest
+  ) => Promise<ApplyZaModMergeResponse>;
   loadFpsPatch: (request: LoadFpsPatchRequest) => Promise<LoadFpsPatchResponse>;
   applyFpsPatch: (request: ApplyFpsPatchRequest) => Promise<ApplyFpsPatchResponse>;
   restoreFpsPatch: (request: RestoreFpsPatchRequest) => Promise<RestoreFpsPatchResponse>;
@@ -1045,6 +1063,27 @@ export function createProjectBridge(
         kmCommandNames.applySvModMerge,
         request,
         applySvModMergeResponseSchema
+      ),
+    loadZaModMergerWorkflow: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.loadZaModMergerWorkflow,
+        request,
+        loadZaModMergerWorkflowResponseSchema
+      ),
+    stageZaModMerge: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.stageZaModMerge,
+        request,
+        stageZaModMergeResponseSchema
+      ),
+    applyZaModMerge: (request) =>
+      sendProjectBridgeRequest(
+        transport,
+        kmCommandNames.applyZaModMerge,
+        request,
+        applyZaModMergeResponseSchema
       ),
     loadFpsPatch: (request) =>
       sendProjectBridgeRequest(transport, kmCommandNames.loadFpsPatch, request, loadFpsPatchResponseSchema),

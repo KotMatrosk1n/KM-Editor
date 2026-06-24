@@ -39,7 +39,11 @@ import {
   type TextWorkflow,
   type TradePokemonWorkflow,
   type TrainersWorkflow,
-  type TypeChartWorkflow, type WorkflowSummary
+  type TypeChartWorkflow,
+  type WorkflowSummary,
+  type ZaModMergerPreview,
+  type ZaModMergerSource,
+  type ZaModMergerWorkflow
 } from '../bridge/contracts';
 import { type ProjectBridge } from '../bridge/projectBridge';
 import { type DesktopServices, type NativeUpdate } from '../desktopServices';
@@ -4295,6 +4299,71 @@ export function createMockProjectBridge(
       unresolvedConflictCount: 0
     };
   };
+  const zaModMergerWorkflowSummary: WorkflowSummary = {
+    availability: canEdit ? 'available' : 'readOnly',
+    description: 'Smart merge ordered Pokemon Legends ZA RomFS mods.',
+    diagnostics: [],
+    id: 'modMerger',
+    label: 'Mod Merger'
+  };
+  const createZaModMergerWorkflow = (
+    modSources: ZaModMergerSource[],
+    outputRootPath: string | null
+  ): ZaModMergerWorkflow => ({
+    diagnostics: [],
+    outputRootPath,
+    sources: modSources.map((source, index) => ({
+      diagnostics: [],
+      fileCount: source.isEnabled ? 1 : 0,
+      isEnabled: source.isEnabled,
+      kind: source.path.endsWith('.zip') || source.path.endsWith('.rar') ? 'archive' : 'folder',
+      name: source.path.split(/[\\/]/).pop()?.replace(/\.(zip|rar)$/i, '') || `Source ${index + 1}`,
+      overrideCount: index > 0 && source.isEnabled ? 1 : 0,
+      path: source.path,
+      sourceIndex: index,
+      status: source.isEnabled ? 'ready' : 'disabled'
+    })),
+    stats: {
+      enabledSourceCount: modSources.filter((source) => source.isEnabled).length,
+      outputFileCount: modSources.some((source) => source.isEnabled) ? 1 : 0,
+      overrideCount: Math.max(0, modSources.filter((source) => source.isEnabled).length - 1),
+      sourceCount: modSources.length,
+      sourceFileCount: modSources.filter((source) => source.isEnabled).length
+    },
+    summary: zaModMergerWorkflowSummary
+  });
+  const createZaModMergerPreview = (
+    modSources: ZaModMergerSource[]
+  ): ZaModMergerPreview => {
+    const enabledSources = modSources.filter((source) => source.isEnabled);
+    const sourceName =
+      enabledSources.at(-1)?.path.split(/[\\/]/).pop()?.replace(/\.(zip|rar)$/i, '') ?? '';
+    return {
+      canApply: enabledSources.length > 0,
+      conflictFileCount: 0,
+      diagnostics: [],
+      files:
+        enabledSources.length > 0
+          ? [
+              {
+                mergeKind: enabledSources.length > 1 ? 'smartMerge' : 'singleSource',
+                outputRelativePath: 'romfs/bin/mock/data.bin',
+                overrideCount: Math.max(0, enabledSources.length - 1),
+                relativePath: 'romfs/bin/mock/data.bin',
+                sourceIndex: modSources.lastIndexOf(enabledSources.at(-1)!),
+                sourceName,
+                status: 'ready',
+                summary: 'Smart merge preview fixture.',
+                supportKind: 'Pokemon Legends ZA RomFS file'
+              }
+            ]
+          : [],
+      readyFileCount: enabledSources.length > 0 ? 1 : 0,
+      selectedFileCount: enabledSources.length > 0 ? 1 : 0,
+      status: enabledSources.length > 0 ? 'ready' : 'empty',
+      unresolvedConflictCount: 0
+    };
+  };
   let currentGiftPokemonWorkflow = giftPokemonWorkflow;
   let currentTradePokemonWorkflow = tradePokemonWorkflow;
   const createDynamaxAdventurePlanWrites = (session: EditSession): ChangePlan['writes'] => {
@@ -5730,6 +5799,29 @@ export function createMockProjectBridge(
         diagnostics: preview.diagnostics,
         preview,
         workflow: createSvModMergerWorkflow(request.modSources, request.paths.outputRootPath),
+        writtenFiles: preview.canApply ? preview.files.map((file) => file.relativePath) : []
+      });
+    },
+    loadZaModMergerWorkflow: (request) =>
+      Promise.resolve({
+        workflow: createZaModMergerWorkflow(request.modSources, request.paths.outputRootPath)
+      }),
+    stageZaModMerge: (request) => {
+      const preview = createZaModMergerPreview(request.modSources);
+
+      return Promise.resolve({
+        diagnostics: preview.diagnostics,
+        preview,
+        workflow: createZaModMergerWorkflow(request.modSources, request.paths.outputRootPath)
+      });
+    },
+    applyZaModMerge: (request) => {
+      const preview = createZaModMergerPreview(request.modSources);
+
+      return Promise.resolve({
+        diagnostics: preview.diagnostics,
+        preview,
+        workflow: createZaModMergerWorkflow(request.modSources, request.paths.outputRootPath),
         writtenFiles: preview.canApply ? preview.files.map((file) => file.relativePath) : []
       });
     },

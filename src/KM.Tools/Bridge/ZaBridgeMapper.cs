@@ -3,6 +3,7 @@
 using KM.Api.Editing;
 using KM.Api.Gifts;
 using KM.Api.Items;
+using KM.Api.ModMerger;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Shops;
@@ -12,6 +13,7 @@ using KM.Api.Workflows;
 using KM.Api.ZaCache;
 using KM.ZA.Gifts;
 using KM.ZA.Items;
+using KM.ZA.ModMerger;
 using KM.ZA.Moves;
 using KM.ZA.Pokemon;
 using KM.ZA.Shops;
@@ -115,6 +117,13 @@ public static class ZaBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadTradePokemonWorkflowResponse(ToTradePokemonWorkflowDto(workflow));
+    }
+
+    public static LoadZaModMergerWorkflowResponse ToDto(ZaModMergerWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadZaModMergerWorkflowResponse(ToWorkflowDto(workflow));
     }
 
     public static UpdatePokemonFieldResponse ToDto(ZaPokemonEditResult result)
@@ -234,6 +243,27 @@ public static class ZaBridgeMapper
         return new UpdateTradePokemonFieldsResponse(
             ToTradePokemonWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static StageZaModMergeResponse ToDto(ZaModMergerStageResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new StageZaModMergeResponse(
+            ToWorkflowDto(result.Workflow),
+            ToDto(result.Preview),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static ApplyZaModMergeResponse ToDto(ZaModMergerApplyResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new ApplyZaModMergeResponse(
+            ToWorkflowDto(result.Workflow),
+            ToDto(result.Preview),
+            result.WrittenFiles,
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -390,6 +420,21 @@ public static class ZaBridgeMapper
         {
             EditorFamily = "za",
         };
+    }
+
+    private static ZaModMergerWorkflowDto ToWorkflowDto(ZaModMergerWorkflow workflow)
+    {
+        return new ZaModMergerWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.OutputRootPath,
+            workflow.Sources.Select(ToDto).ToArray(),
+            new ZaModMergerWorkflowStatsDto(
+                workflow.Stats.SourceCount,
+                workflow.Stats.EnabledSourceCount,
+                workflow.Stats.SourceFileCount,
+                workflow.Stats.OutputFileCount,
+                workflow.Stats.OverrideCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
     private static PokemonRecordDto ToDto(ZaPokemonRecord pokemon)
@@ -964,6 +1009,47 @@ public static class ZaBridgeMapper
     private static TradePokemonEditableFieldOptionDto ToDto(ZaTradePokemonEditableFieldOption option)
     {
         return new TradePokemonEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static ZaModMergerSourceRecordDto ToDto(ZaModMergerSourceRecord source)
+    {
+        return new ZaModMergerSourceRecordDto(
+            source.SourceIndex,
+            source.Path,
+            source.Name,
+            source.Kind,
+            source.IsEnabled,
+            source.Status,
+            source.FileCount,
+            source.OverrideCount,
+            source.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ZaModMergerPreviewDto ToDto(ZaModMergerPreview preview)
+    {
+        return new ZaModMergerPreviewDto(
+            preview.CanApply,
+            preview.Status,
+            preview.SelectedFileCount,
+            preview.ReadyFileCount,
+            preview.ConflictFileCount,
+            preview.UnresolvedConflictCount,
+            preview.Files.Select(ToDto).ToArray(),
+            preview.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static ZaModMergerFilePreviewRecordDto ToDto(ZaModMergerFilePreviewRecord file)
+    {
+        return new ZaModMergerFilePreviewRecordDto(
+            file.RelativePath,
+            file.OutputRelativePath,
+            file.SupportKind,
+            file.Status,
+            file.MergeKind,
+            file.Summary,
+            file.SourceIndex,
+            file.SourceName,
+            file.OverrideCount);
     }
 
     private static TrainerPokemonRecordDto ToDto(ZaTrainerPokemonRecord pokemon)
