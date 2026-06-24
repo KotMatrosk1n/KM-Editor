@@ -124,6 +124,17 @@ internal sealed class ZaTextLabelLookup
             ?? (string.IsNullOrWhiteSpace(key) ? "Trainer" : ZaLabels.FormatRawNameForLookup(key));
     }
 
+    public string TrainerNameByIndex(int trainerId)
+    {
+        return GetIndexed(trainerNames, trainerId)
+            ?? $"Trainer {trainerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+    }
+
+    public string? TrainerTypeByIndex(int trainerTypeId)
+    {
+        return GetIndexed(trainerTypes, trainerTypeId);
+    }
+
     private static IReadOnlyList<string> LoadIndexedTableWithFallback(
         OpenedProject project,
         ZaWorkflowFileSource fileSource,

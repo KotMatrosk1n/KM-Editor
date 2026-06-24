@@ -974,12 +974,18 @@ const natureStatLabels = {
 const shinyFieldName = 'shiny';
 const canDynamaxFieldName = 'canDynamax';
 const trainerTeraTypeFieldName = 'teraType';
+const zaRankFieldName = 'rank';
+const zaMegaEvolutionFieldName = 'megaEvolution';
+const zaLastHandFieldName = 'lastHand';
 const windowCloseRequestedEvent = 'km-editor://window-close-requested';
 const supportSearchProgressEvent = 'km-editor://sv-support-search-progress';
 const trainerDataFieldNames = [
   trainerClassIdFieldName,
   classBallIdFieldName,
   battleTypeFieldName,
+  zaRankFieldName,
+  zaMegaEvolutionFieldName,
+  zaLastHandFieldName,
   ...trainerItemFieldNames,
   trainerCanTerastallizeFieldName,
   healFieldName,
@@ -7897,6 +7903,20 @@ export function App({
           {activeSection === 'trainers' ? (
             isTrainersLoading && !trainersWorkflow ? (
               <WorkflowLoadingPanel label="Trainers" />
+            ) : isPokemonLegendsZAProject ? (
+              <ZaTrainersSection
+                editSession={getEditSessionForSection('trainers')}
+                isEditStarting={isEditStarting}
+                isTrainerUpdating={isTrainerUpdating}
+                onSearchChange={setTrainerSearchText}
+                onSelectTrainer={setSelectedTrainerId}
+                onStartEditSession={handleStartEditSession}
+                onUpdateTrainerField={handleUpdateTrainerField}
+                onUpdateTrainerFields={handleUpdateTrainerFields}
+                searchText={trainerSearchText}
+                selectedTrainerId={selectedTrainerId}
+                workflow={trainersWorkflow}
+              />
             ) : isScarletVioletProject ? (
               <SvTrainersSection
                 editSession={getEditSessionForSection('trainers')}
@@ -12368,6 +12388,10 @@ function SvTrainersSection(props: TrainersSectionPublicProps) {
   return <TrainersSection {...props} editorFamily="sv" isScarletVioletProject />;
 }
 
+function ZaTrainersSection(props: TrainersSectionPublicProps) {
+  return <TrainersSection {...props} editorFamily="za" isScarletVioletProject={false} />;
+}
+
 function TrainersSection({
   editSession,
   editorFamily,
@@ -12658,12 +12682,15 @@ function SelectedTrainerPanel({
         field.field === moneyFieldName
           ? {
               ...field,
-              label: 'Prize money',
-              options: createTrainerPrizeMoneyOptions(projectedTrainerHighestLevel)
+              label: editorFamily === 'za' ? field.label : 'Prize money',
+              options:
+                editorFamily === 'za'
+                  ? field.options
+                  : createTrainerPrizeMoneyOptions(projectedTrainerHighestLevel)
             }
           : field
       ),
-    [projectedTrainerHighestLevel, trainerFields]
+    [editorFamily, projectedTrainerHighestLevel, trainerFields]
   );
   const aiFlagsField = editableFields.find((field) => field.field === aiFlagsFieldName) ?? null;
   const canToggleAiFlags =
@@ -13713,7 +13740,10 @@ function getTrainerDataFieldGroup(field: TrainerEditableField) {
   if (
     field.field === trainerClassIdFieldName ||
     field.field === classBallIdFieldName ||
-    field.field === battleTypeFieldName
+    field.field === battleTypeFieldName ||
+    field.field === zaRankFieldName ||
+    field.field === zaMegaEvolutionFieldName ||
+    field.field === zaLastHandFieldName
   ) {
     return 'Trainer Setup';
   }
@@ -30819,6 +30849,12 @@ function getEditableTrainerFieldValue(trainer: TrainerRecord, field: string) {
       return trainer.aiFlags;
     case trainerCanTerastallizeFieldName:
       return trainer.canTerastallize ? 1 : 0;
+    case zaRankFieldName:
+      return trainer.zaRank;
+    case zaMegaEvolutionFieldName:
+      return trainer.zaMegaEvolution ? 1 : 0;
+    case zaLastHandFieldName:
+      return trainer.zaLastHand ? 1 : 0;
     case healFieldName:
       return trainer.heal ? 1 : 0;
     case moneyFieldName:
@@ -32463,6 +32499,9 @@ function getEditableFieldHelp(field: EditableFieldWithOptions) {
     canDynamax: 'Whether this Pokemon is allowed to Dynamax in trainer battles.',
     canGigantamax: 'Whether this Pokemon can use its Gigantamax form when eligible.',
     [trainerCanTerastallizeFieldName]: 'S/V trainer-level flag that allows the trainer to Terastallize. The target comes from party Pokemon with a fixed Tera type.',
+    [zaLastHandFieldName]: 'Z-A trainer flag preserved from trainer data. Battle behavior still needs more research.',
+    [zaMegaEvolutionFieldName]: 'Whether this Z-A trainer battle enables Mega Evolution behavior.',
+    [zaRankFieldName]: 'Z-A trainer rank value.',
     dynamaxLevel: 'Dynamax level. Valid game values are 0 through 10.',
     effectSequence: 'Raw battle effect script/sequence ID. This controls special behavior and is not fully mapped yet.',
     [itemFieldFlagsFieldName]: 'Unknown raw item field flags. Visible for research, locked from editing until the bits are mapped.',

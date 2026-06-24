@@ -79,7 +79,12 @@ public sealed record TrainerRecordDto(
     bool CanEditClassBall,
     string ClassBallScope,
     IReadOnlyList<TrainerPokemonRecordDto> Team,
-    TrainerProvenanceDto Provenance);
+    TrainerProvenanceDto Provenance)
+{
+    public int? ZaRank { get; init; }
+    public bool? ZaMegaEvolution { get; init; }
+    public bool? ZaLastHand { get; init; }
+}
 
 public sealed record TrainerAiFlagStateDto(
     int Bit,

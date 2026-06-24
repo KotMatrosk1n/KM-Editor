@@ -743,7 +743,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadTrainersWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadTrainers(paths))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.LoadTrainers(paths))
             : SwShBridgeMapper.ToDto(swShWorkflowService.LoadTrainers(paths));
 
@@ -757,7 +759,15 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        var response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.UpdateTrainerField(
+                paths,
+                session,
+                request.Payload.TrainerId,
+                request.Payload.Slot,
+                request.Payload.Field,
+                request.Payload.Value))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.UpdateTrainerField(
                 paths,
                 session,
@@ -783,6 +793,25 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        if (IsPokemonLegendsZA(paths))
+        {
+            var zaUpdates = request.Payload.Updates
+                .Select(update => new KM.ZA.Trainers.ZaTrainerFieldUpdate(update.TrainerId, update.Slot, update.Field, update.Value))
+                .ToArray();
+            var zaResponse = ZaBridgeMapper.ToTrainerFieldsDto(
+                zaWorkflowService.UpdateTrainerFields(paths, session, zaUpdates));
+
+            return SerializeSuccess(zaResponse, request.RequestId);
+        }
+
+        if (!IsScarletViolet(paths))
+        {
+            return SerializeFailure(
+                "bridge.gameMismatch",
+                "Bridge command 'trainers.fields.update' is only available for Scarlet/Violet or Pokemon Legends Z-A projects.",
+                request.RequestId);
+        }
+
         var updates = request.Payload.Updates
             .Select(update => new SvTrainerFieldUpdate(update.TrainerId, update.Slot, update.Field, update.Value))
             .ToArray();
@@ -2789,7 +2818,8 @@ public sealed class ProjectBridgeDispatcher
 
         if (IsScarletVioletOnlyCommand(command)
             && !IsScarletViolet(selectedGame)
-            && !(command == KmCommandNames.UpdateItemFields && IsPokemonLegendsZA(selectedGame)))
+            && !((command is KmCommandNames.UpdateItemFields or KmCommandNames.UpdateTrainerFields)
+                && IsPokemonLegendsZA(selectedGame)))
         {
             return SerializeFailure(
                 "bridge.gameMismatch",
@@ -2961,6 +2991,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdatePokemonFields or
             KmCommandNames.UpdatePokemonLearnset or
             KmCommandNames.UpdatePokemonEvolution or
+            KmCommandNames.LoadTrainersWorkflow or
+            KmCommandNames.UpdateTrainerField or
+            KmCommandNames.UpdateTrainerFields or
             KmCommandNames.LoadMovesWorkflow or
             KmCommandNames.UpdateMoveField or
             KmCommandNames.UpdateMoveFields or

@@ -1374,7 +1374,8 @@ export function createMockProjectBridge(
         ],
         battleType: 'Doubles',
         battleTypeValue: 1,
-        canEditClassBall: true, canTerastallize: false,
+        canEditClassBall: true,
+        canTerastallize: false,
         classBall: '4 Poke Ball',
         classBallId: 4,
         classBallScope: 'Unique trainer class: Avery',
@@ -1437,12 +1438,19 @@ export function createMockProjectBridge(
             natureLabel: 'Jolly (+Spe/-Sp.Atk)',
             shiny: true,
             slot: 1,
-            species: 'Grookey', speciesId: 810, teraType: null, teraTypeLabel: null
+            species: 'Grookey',
+            speciesId: 810,
+            teraType: null,
+            teraTypeLabel: null
           }
-        ], teraTarget: 'Disabled',
+        ],
+        teraTarget: 'Disabled',
         trainerClass: 'Pokemon Trainer',
         trainerClassId: 5,
-        trainerId: 10
+        trainerId: 10,
+        zaLastHand: null,
+        zaMegaEvolution: null,
+        zaRank: null
       }
     ]
   };
