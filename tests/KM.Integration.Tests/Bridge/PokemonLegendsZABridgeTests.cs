@@ -14,6 +14,7 @@ using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Shops;
 using KM.Api.Trainers;
+using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.Formats.SwSh;
 using KM.Formats.ZA;
@@ -67,7 +68,7 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
-    public void PokemonLegendsZAProjectListsPokemonTrainersGiftPokemonMovesItemsAndShopsWorkflows()
+    public void PokemonLegendsZAProjectListsPokemonTrainersGiftTradeMovesItemsAndShopsWorkflows()
     {
         using var temp = CreatePokemonLegendsZAProject();
         var dispatcher = new ProjectBridgeDispatcher();
@@ -82,6 +83,7 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(workflows.Payload!.Workflows, workflow => workflow.Id == "pokemon" && workflow.Label == "Pokemon Data");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "trainers" && workflow.Label == "Trainers");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "giftPokemon" && workflow.Label == "Gift Pokemon");
+        Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "tradePokemon" && workflow.Label == "Trade Pokemon");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "moves" && workflow.Label == "Moves");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "items" && workflow.Label == "Items");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "shops" && workflow.Label == "Shops");
@@ -310,6 +312,53 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZAProjectLoadsTradePokemonData()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteTradePokemonFixture(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var trades = Dispatch<LoadTradePokemonWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTradePokemonWorkflow,
+            new LoadTradePokemonWorkflowRequest(CreatePaths(temp)),
+            "request-za-trade-pokemon");
+
+        AssertSuccess(trades);
+        var workflow = trades.Payload!.Workflow;
+        Assert.Equal("Trade Pokemon", workflow.Summary.Label);
+        Assert.Equal("za", workflow.EditorFamily);
+        Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
+        Assert.Equal(1, workflow.Stats.TotalTradeCount);
+
+        var trade = Assert.Single(workflow.Trades);
+        Assert.Equal("za", trade.EditorFamily);
+        Assert.Equal(0, trade.TradeIndex);
+        Assert.Equal("sub_tradepoke_bulbasaur", trade.EventLabel);
+        Assert.Contains("Bulbasaur", trade.Label);
+        Assert.Equal(1, trade.SpeciesId);
+        Assert.Equal("Bulbasaur", trade.Species);
+        Assert.Equal("Script linked", trade.RequiredSpecies);
+        Assert.Equal(5, trade.Level);
+        Assert.Equal(4, trade.HeldItemId);
+        Assert.Equal("Poke Ball", trade.HeldItem);
+        Assert.Equal(2, trade.Ability);
+        Assert.Equal("Overgrow (Ability 1)", trade.AbilityLabel);
+        Assert.Equal(4, trade.Nature);
+        Assert.Equal("Adamant (+Atk, -Sp. Atk)", trade.NatureLabel);
+        Assert.Equal(33, trade.Moves[0].MoveId);
+        Assert.Equal("Tackle", trade.Moves[0].Move);
+        Assert.Equal(45, trade.RelearnMoves[1].MoveId);
+        Assert.Equal("Growl", trade.RelearnMoves[1].Move);
+        Assert.Null(trade.FlawlessIvCount);
+        Assert.Contains("Fixed IVs", trade.IvSummary);
+        Assert.EndsWith(ZaDataPaths.PokemonDataArray, trade.Provenance.SourceFile, StringComparison.Ordinal);
+        Assert.Contains(workflow.EditableFields, field => field.Field == "species" && field.Label == "Species");
+        Assert.Contains(workflow.EditableFields, field => field.Field == "move1Id" && field.Label == "Move 1");
+        Assert.Contains(workflow.EditableFields, field => field.Field == "flawlessIvCount" && field.Label == "IV preset");
+    }
+
+    [Fact]
     public void PokemonLegendsZAGameDumpWritesImplementedCategoryFiles()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -326,6 +375,7 @@ public sealed class PokemonLegendsZABridgeTests
         temp.WriteBaseRomFsFile(ZaDataPaths.ShopItemLineupArray, CreateShopLineupArray());
         WriteTrainerFixture(temp);
         WriteGiftPokemonFixture(temp);
+        WriteTradePokemonFixture(temp);
         var dispatcher = new ProjectBridgeDispatcher();
         var paths = CreatePaths(temp);
 
@@ -337,7 +387,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var categories = load.Payload!.Workflow.Categories;
-        Assert.Equal(["pokemon", "trainers", "giftPokemon", "moves", "items", "shops"], categories.Select(category => category.Id).ToArray());
+        Assert.Equal(["pokemon", "trainers", "giftPokemon", "tradePokemon", "moves", "items", "shops"], categories.Select(category => category.Id).ToArray());
         Assert.All(categories, category => Assert.True(category.IsAvailable, category.Id));
 
         var destinationFolder = Path.Combine(temp.RootPath, "dump");
@@ -351,6 +401,7 @@ public sealed class PokemonLegendsZABridgeTests
                     new GameDumpSelectionDto("items", GameDumpFormatDto.TsvAndJson),
                     new GameDumpSelectionDto("trainers", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("giftPokemon", GameDumpFormatDto.Json),
+                    new GameDumpSelectionDto("tradePokemon", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("shops", GameDumpFormatDto.Json),
                 ]),
             "request-za-game-dump-run");
@@ -376,10 +427,14 @@ public sealed class PokemonLegendsZABridgeTests
             file => file.CategoryId == "giftPokemon" && file.RelativePath == Path.Combine("Gift Pokemon", "giftPokemon.json"));
         Assert.Contains(
             run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "tradePokemon" && file.RelativePath == Path.Combine("Trade Pokemon", "tradePokemon.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
             file => file.CategoryId == "manifest" && file.RelativePath == "manifest.json");
         Assert.Contains("Poke Ball", File.ReadAllText(Path.Combine(destinationFolder, "Items", "items.tsv")));
         Assert.Contains("Rival Aria", File.ReadAllText(Path.Combine(destinationFolder, "Trainers", "trainers.json")));
         Assert.Contains("main_init_poke_1", File.ReadAllText(Path.Combine(destinationFolder, "Gift Pokemon", "giftPokemon.json")));
+        Assert.Contains("sub_tradepoke_bulbasaur", File.ReadAllText(Path.Combine(destinationFolder, "Trade Pokemon", "tradePokemon.json")));
         Assert.Contains("Friendly Shop", File.ReadAllText(Path.Combine(destinationFolder, "Shops", "shops.json")));
         Assert.Contains("Pokemon Legends Z-A", File.ReadAllText(Path.Combine(destinationFolder, "manifest.json")));
     }
@@ -727,6 +782,65 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Equal(20, ignored.MaxLevel);
     }
 
+    [Fact]
+    public void PokemonLegendsZATradePokemonEditWritesTrinityPokemonDataTable()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteTradePokemonFixture(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var update = Dispatch<UpdateTradePokemonFieldsResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTradePokemonFields,
+            new UpdateTradePokemonFieldsRequest(
+                paths,
+                Session: null,
+                [
+                    new TradePokemonFieldUpdateDto(0, "level", "18"),
+                    new TradePokemonFieldUpdateDto(0, "heldItemId", "17"),
+                    new TradePokemonFieldUpdateDto(0, "move1Id", "45"),
+                    new TradePokemonFieldUpdateDto(0, "ivHp", "31"),
+                ]),
+            "request-za-trade-pokemon-update");
+        AssertSuccess(update);
+        var trade = Assert.Single(update.Payload!.Workflow.Trades);
+        Assert.Equal(18, trade.Level);
+        Assert.Equal(17, trade.HeldItemId);
+        Assert.Equal(45, trade.Moves[0].MoveId);
+        Assert.Equal(31, trade.Ivs.HP);
+        Assert.Contains("Fixed IVs", trade.IvSummary);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-trade-pokemon-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.PokemonDataArray);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-trade-pokemon-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var written = ReadGiftPokemonData(temp, "sub_tradepoke_bulbasaur");
+        Assert.Equal(18, written.MinLevel);
+        Assert.Equal(18, written.MaxLevel);
+        Assert.Equal(17, written.HoldItem!.Value.HoldItem);
+        Assert.Equal(45, written.WazaList!.Value.Waza1);
+        Assert.Equal(2, written.TalentScale);
+        Assert.Equal(31, written.TalentValue!.Value.Hp);
+
+        var gift = ReadGiftPokemonData(temp, "main_init_poke_1");
+        Assert.Equal(5, gift.MinLevel);
+        Assert.Equal(5, gift.MaxLevel);
+    }
+
     private static TemporaryBridgeProject CreatePokemonLegendsZAProject()
     {
         var temp = TemporaryBridgeProject.Create();
@@ -877,6 +991,11 @@ public sealed class PokemonLegendsZABridgeTests
             CreateTextTable(65, (34, "Chlorophyll"), (65, "Overgrow")));
     }
 
+    private static void WriteTradePokemonFixture(TemporaryBridgeProject temp)
+    {
+        WriteGiftPokemonFixture(temp);
+    }
+
     private static byte[] CreatePokemonDataArray()
     {
         var builder = new FlatBufferBuilder(2048);
@@ -898,7 +1017,16 @@ public sealed class PokemonLegendsZABridgeTests
             move2: 0,
             ivHp: 1,
             ivAttack: 2);
-        var rootVector = ZaPokemonDataDb.CreateRootVector(builder, [gift, ignored]);
+        var trade = CreatePokemonData(
+            builder,
+            "sub_tradepoke_bulbasaur",
+            level: 5,
+            heldItem: 4,
+            move1: 33,
+            move2: 45,
+            ivHp: 31,
+            ivAttack: 30);
+        var rootVector = ZaPokemonDataDb.CreateRootVector(builder, [gift, ignored, trade]);
         var db = ZaPokemonDataDb.Create(builder, rootVector);
         var valuesVector = ZaPokemonDataDbArray.CreateValuesVector(builder, [db]);
         var root = ZaPokemonDataDbArray.Create(builder, valuesVector);

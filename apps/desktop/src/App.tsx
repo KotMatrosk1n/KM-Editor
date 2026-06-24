@@ -16366,23 +16366,27 @@ function SelectedTradePokemonPanel({
               <dd>{trade.heldItem ?? 'None'}</dd>
             </div>
             <div>
-              <dt>{editorFamily === 'sv' ? 'Moves' : 'Relearn moves'}</dt>
+              <dt>{editorFamily === 'sv' || editorFamily === 'za' ? 'Moves' : 'Relearn moves'}</dt>
               <dd>{formatTradePokemonRelearnMoves(trade)}</dd>
             </div>
-            {editorFamily === 'sv' ? (
+            {editorFamily === 'sv' || editorFamily === 'za' ? (
               <>
                 <div>
                   <dt>Event label</dt>
                   <dd>{trade.eventLabel ?? 'None'}</dd>
                 </div>
-                <div>
-                  <dt>Tera type</dt>
-                  <dd>{trade.teraTypeLabel ?? 'Default'}</dd>
-                </div>
-                <div>
-                  <dt>Scale</dt>
-                  <dd>{formatTradePokemonScale(trade)}</dd>
-                </div>
+                {trade.teraTypeLabel !== null ? (
+                  <div>
+                    <dt>Tera type</dt>
+                    <dd>{trade.teraTypeLabel}</dd>
+                  </div>
+                ) : null}
+                {trade.scaleModeLabel !== null ? (
+                  <div>
+                    <dt>Scale</dt>
+                    <dd>{formatTradePokemonScale(trade)}</dd>
+                  </div>
+                ) : null}
               </>
             ) : (
               <>
