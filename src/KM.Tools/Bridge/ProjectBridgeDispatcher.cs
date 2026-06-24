@@ -606,8 +606,10 @@ public sealed class ProjectBridgeDispatcher
     private string DispatchLoadTextWorkflow(string requestJson)
     {
         var request = DeserializeRequest<LoadTextWorkflowRequest>(requestJson);
-        var workflow = swShWorkflowService.LoadText(ProjectBridgeMapper.ToCore(request.Payload.Paths));
-        var response = SwShBridgeMapper.ToDto(workflow);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.LoadText(paths))
+            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadText(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -618,12 +620,18 @@ public sealed class ProjectBridgeDispatcher
         var session = request.Payload.Session is null
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
-        var result = textEditSessionService.UpdateEntry(
-            ProjectBridgeMapper.ToCore(request.Payload.Paths),
-            session,
-            request.Payload.TextKey,
-            request.Payload.Value);
-        var response = SwShBridgeMapper.ToDto(result);
+        var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
+        var response = IsScarletViolet(paths)
+            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateTextEntry(
+                paths,
+                session,
+                request.Payload.TextKey,
+                request.Payload.Value))
+            : SwShBridgeMapper.ToDto(textEditSessionService.UpdateEntry(
+                paths,
+                session,
+                request.Payload.TextKey,
+                request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2610,8 +2618,6 @@ public sealed class ProjectBridgeDispatcher
     private static bool IsSwordShieldOnlyCommand(string command)
     {
         return command is
-            KmCommandNames.LoadTextWorkflow or
-            KmCommandNames.UpdateTextEntry or
             KmCommandNames.LoadRentalPokemonWorkflow or
             KmCommandNames.UpdateRentalPokemonField or
             KmCommandNames.LoadDynamaxAdventuresWorkflow or

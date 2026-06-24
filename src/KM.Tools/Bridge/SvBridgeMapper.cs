@@ -15,6 +15,7 @@ using KM.Api.Raids;
 using KM.Api.Shops;
 using KM.Api.StaticEncounters;
 using KM.Api.SvCache;
+using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.TypeChart;
@@ -32,6 +33,7 @@ using KM.SV.Pokemon;
 using KM.SV.Raids;
 using KM.SV.Shops;
 using KM.SV.StaticEncounters;
+using KM.SV.Text;
 using KM.SV.Trainers;
 using KM.SV.Trades;
 using KM.SV.TypeChart;
@@ -131,6 +133,13 @@ public static class SvBridgeMapper
         return new LoadMovesWorkflowResponse(ToMovesWorkflowDto(workflow));
     }
 
+    public static LoadTextWorkflowResponse ToDto(SvTextWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTextWorkflowResponse(ToTextWorkflowDto(workflow));
+    }
+
     public static UpdateMoveFieldResponse ToDto(SvMovesEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -147,6 +156,16 @@ public static class SvBridgeMapper
 
         return new UpdateMoveFieldsResponse(
             ToMovesWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateTextEntryResponse ToDto(SvTextEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTextEntryResponse(
+            ToTextWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -540,6 +559,20 @@ public static class SvBridgeMapper
                 workflow.Stats.EnabledMoveCount,
                 workflow.Stats.SourceFileCount,
                 workflow.Stats.ActiveFlagCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static TextWorkflowDto ToTextWorkflowDto(SvTextWorkflow workflow)
+    {
+        return new TextWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Entries.Select(ToDto).ToArray(),
+            workflow.DialogueReferences.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new TextWorkflowStatsDto(
+                workflow.Stats.TotalTextEntryCount,
+                workflow.Stats.DialogueReferenceCount,
+                workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
@@ -1049,6 +1082,50 @@ public static class SvBridgeMapper
     private static MoveProvenanceDto ToDto(SvMoveProvenance provenance)
     {
         return new MoveProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static TextEntryRecordDto ToDto(SvTextEntryRecord entry)
+    {
+        return new TextEntryRecordDto(
+            entry.TextId,
+            entry.TextKey,
+            entry.Label,
+            entry.Language,
+            entry.SourceFile,
+            entry.LineIndex,
+            entry.Value,
+            entry.CanEdit,
+            entry.EditBlockedReason,
+            ToDto(entry.Provenance));
+    }
+
+    private static TextEditableFieldDto ToDto(SvTextEditableField field)
+    {
+        return new TextEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumLength,
+            field.MaximumLength);
+    }
+
+    private static DialogueReferenceRecordDto ToDto(SvDialogueReferenceRecord reference)
+    {
+        return new DialogueReferenceRecordDto(
+            reference.DialogueId,
+            reference.Label,
+            reference.TextId,
+            reference.Context,
+            reference.Preview,
+            ToDto(reference.Provenance));
+    }
+
+    private static TextProvenanceDto ToDto(SvTextProvenance provenance)
+    {
+        return new TextProvenanceDto(
             provenance.SourceFile,
             ProjectBridgeMapper.ToDto(provenance.SourceLayer),
             ProjectBridgeMapper.ToDto(provenance.FileState));

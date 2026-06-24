@@ -20,6 +20,7 @@ using KM.Api.Raids;
 using KM.Api.Shops;
 using KM.Api.StaticEncounters;
 using KM.Api.SvCache;
+using KM.Api.Text;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
@@ -1289,11 +1290,12 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "moves", "pokemon", "trainers", "encounters", "teraRaids", "staticEncounters", "shops", "giftPokemon", "tradePokemon", "placement", "typeChart", "fashionUnlock", "hyperspaceBypass", "modMerger"],
+            ["items", "moves", "text", "pokemon", "trainers", "encounters", "teraRaids", "staticEncounters", "shops", "giftPokemon", "tradePokemon", "placement", "typeChart", "fashionUnlock", "hyperspaceBypass", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Moves");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Text and Dialogue Map");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Trainers");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Wild Encounters");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Tera Raids");
@@ -1699,6 +1701,100 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(
             coinSymbol.AbilityOptions,
             option => option.Value == (int)global::TokuseiType.SET_3 && option.Label == "4 Chlorophyll (Hidden Ability)");
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletTextEditorLoadsAllMessageFiles(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        temp.WriteBaseRomFsFile(
+            "message/dat/English/script/common_0025.dat",
+            CreateTextTable(2, (0, "Script line"), (1, "Second script line")));
+        var paths = temp.Paths with { SelectedGame = game, GameTextLanguage = "en" };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+
+        var response = Dispatch<LoadTextWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTextWorkflow,
+            new LoadTextWorkflowRequest(paths),
+            "request-sv-text-load");
+
+        AssertSuccess(response);
+        var workflow = response.Payload!.Workflow;
+        Assert.Equal("text", workflow.Summary.Id);
+        Assert.Contains(workflow.Entries, entry =>
+            entry.SourceFile == "romfs/message/dat/English/common/itemname.dat"
+            && entry.Value == "Master Ball");
+        Assert.Contains(workflow.Entries, entry =>
+            entry.SourceFile == "romfs/message/dat/English/script/common_0025.dat"
+            && entry.Value == "Script line");
+        Assert.Equal(workflow.Stats.TotalTextEntryCount, workflow.Entries.Count);
+        Assert.Equal(workflow.Stats.DialogueReferenceCount, workflow.DialogueReferences.Count);
+        Assert.Equal(
+            workflow.Stats.SourceFileCount,
+            workflow.Entries.Select(entry => entry.SourceFile).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.True(workflow.Stats.SourceFileCount >= 8);
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletTextEditorStagesAndAppliesMessageEdits(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        const string scriptPath = "message/dat/English/script/common_0025.dat";
+        temp.WriteBaseRomFsFile(scriptPath, CreateTextTable(1, (0, "Original script line")));
+        var paths = temp.Paths with { SelectedGame = game, GameTextLanguage = "en" };
+        var dispatcher = CreateDispatcherWithSvCache(temp);
+        var load = Dispatch<LoadTextWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadTextWorkflow,
+            new LoadTextWorkflowRequest(paths),
+            "request-sv-text-edit-load");
+        AssertSuccess(load);
+        var entry = load.Payload!.Workflow.Entries.Single(entry =>
+            entry.SourceFile == $"romfs/{scriptPath}" && entry.LineIndex == 0);
+
+        var update = Dispatch<UpdateTextEntryResponse>(
+            dispatcher,
+            KmCommandNames.UpdateTextEntry,
+            new UpdateTextEntryRequest(paths, Session: null, entry.TextKey, "Updated script line"),
+            "request-sv-text-update");
+        AssertSuccess(update);
+        Assert.Contains(update.Payload!.Session.PendingEdits, edit =>
+            edit.Domain == "workflow.text" && edit.RecordId == entry.TextKey && edit.NewValue == "Updated script line");
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, update.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-text-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        var write = Assert.Single(plan.Payload.ChangePlan.Writes);
+        Assert.Equal(scriptPath, write.TargetRelativePath);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, update.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-sv-text-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(
+            apply.Payload!.ApplyResult.Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+        Assert.Equal([scriptPath], apply.Payload.ApplyResult.WrittenFiles);
+
+        var outputText = SwShGameTextFile.Parse(File.ReadAllBytes(Path.Combine(
+            temp.OutputRootPath,
+            scriptPath.Replace('/', Path.DirectorySeparatorChar))));
+        Assert.Equal("Updated script line", Assert.Single(outputText.Lines).Text);
     }
 
     [Theory]

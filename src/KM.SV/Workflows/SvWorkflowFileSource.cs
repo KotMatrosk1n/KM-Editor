@@ -134,6 +134,58 @@ internal sealed class SvWorkflowFileSource
         throw new FileNotFoundException($"Scarlet/Violet base file '{relativePath}' could not be resolved.");
     }
 
+    public bool Exists(OpenedProject project, string virtualRomFsPath)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualRomFsPath);
+
+        var normalizedVirtualPath = NormalizeVirtualPath(virtualRomFsPath);
+        var relativePath = ToRelativePath(normalizedVirtualPath);
+
+        if (!string.IsNullOrWhiteSpace(project.Paths.OutputRootPath))
+        {
+            if (File.Exists(CombineGraphPath(project.Paths.OutputRootPath, normalizedVirtualPath))
+                || File.Exists(CombineGraphPath(project.Paths.OutputRootPath, relativePath))
+                || TryOutputArchiveContains(project.Paths, normalizedVirtualPath))
+            {
+                return true;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(project.Paths.BaseRomFsPath))
+        {
+            return false;
+        }
+
+        if (File.Exists(CombineGraphPath(project.Paths.BaseRomFsPath, normalizedVirtualPath)))
+        {
+            return true;
+        }
+
+        try
+        {
+            return cacheManager.ContainsBaseTrinityFile(project.Paths, normalizedVirtualPath);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    public IReadOnlyList<string> ListBasePackNames(OpenedProject project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+
+        try
+        {
+            return cacheManager.ListBaseTrinityPackNames(project.Paths);
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
     public static ProjectFileReference CreateReference(SvWorkflowFile file)
     {
         ArgumentNullException.ThrowIfNull(file);
@@ -315,6 +367,27 @@ internal sealed class SvWorkflowFileSource
         catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
         {
             bytes = [];
+            return false;
+        }
+    }
+
+    private static bool TryOutputArchiveContains(ProjectPaths paths, string virtualPath)
+    {
+        try
+        {
+            var outputRootPath = paths.OutputRootPath;
+            if (string.IsNullOrWhiteSpace(outputRootPath) || !HasTrinityArchive(outputRootPath))
+            {
+                return false;
+            }
+
+            using var archive = SvTrinityArchive.Open(
+                outputRootPath,
+                paths.ScarletVioletSupportFolderPath);
+            return archive.ContainsFile(virtualPath);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
             return false;
         }
     }

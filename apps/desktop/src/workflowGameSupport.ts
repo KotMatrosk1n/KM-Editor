@@ -131,6 +131,7 @@ const swordShieldWorkflowSectionIds = new Set<WorkbenchSection>([
 const scarletVioletWorkflowSectionIds = new Set<WorkbenchSection>([
   'items',
   'moves',
+  'text',
   'pokemon',
   'trainers',
   'encounters',

@@ -268,6 +268,36 @@ public sealed class SvCacheManager
         }
     }
 
+    public bool ContainsBaseTrinityFile(ProjectPaths paths, string virtualPath)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualPath);
+
+        lock (syncRoot)
+        {
+            EnsureRoot();
+            var index = GetBaseTrinityIndex(paths);
+            var fileHash = SvTrinityPathHasher.HashPath(NormalizeVirtualPath(virtualPath));
+            return index.Files.Any(file => file.FileHash == fileHash);
+        }
+    }
+
+    public IReadOnlyList<string> ListBaseTrinityPackNames(ProjectPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        lock (syncRoot)
+        {
+            EnsureRoot();
+            var index = GetBaseTrinityIndex(paths);
+            return index.Files
+                .Select(file => file.PackName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+    }
+
     private SvTrinityArchiveIndex GetOrBuildIndex(SvCacheProjectContext context)
     {
         Directory.CreateDirectory(context.ProjectDirectory);
@@ -307,6 +337,15 @@ public sealed class SvCacheManager
         WriteJsonAtomic(indexPath, indexFile);
         TouchProjectDirectory(context);
         return index;
+    }
+
+    private SvTrinityArchiveIndex GetBaseTrinityIndex(ProjectPaths paths)
+    {
+        var settings = ReadSettings();
+        var context = CreateProjectContext(paths);
+        return settings.Mode == SvCacheMode.Minimal
+            ? SvTrinityArchive.BuildIndex(context.RomFsRootPath)
+            : GetOrBuildIndex(context);
     }
 
     private void WriteVirtualMetadata(SvCacheProjectContext context, string virtualPath)
