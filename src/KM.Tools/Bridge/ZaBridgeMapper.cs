@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Editing;
+using KM.Api.Gifts;
 using KM.Api.Items;
 using KM.Api.Moves;
 using KM.Api.Pokemon;
@@ -8,6 +9,7 @@ using KM.Api.Shops;
 using KM.Api.Trainers;
 using KM.Api.Workflows;
 using KM.Api.ZaCache;
+using KM.ZA.Gifts;
 using KM.ZA.Items;
 using KM.ZA.Moves;
 using KM.ZA.Pokemon;
@@ -99,6 +101,13 @@ public static class ZaBridgeMapper
         return new LoadTrainersWorkflowResponse(ToTrainersWorkflowDto(workflow));
     }
 
+    public static LoadGiftPokemonWorkflowResponse ToDto(ZaGiftPokemonWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadGiftPokemonWorkflowResponse(ToGiftPokemonWorkflowDto(workflow));
+    }
+
     public static UpdatePokemonFieldResponse ToDto(ZaPokemonEditResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -175,6 +184,26 @@ public static class ZaBridgeMapper
 
         return new UpdateTrainerFieldsResponse(
             ToTrainersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateGiftPokemonFieldResponse ToDto(ZaGiftPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateGiftPokemonFieldResponse(
+            ToGiftPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateGiftPokemonFieldsResponse ToGiftPokemonFieldsDto(ZaGiftPokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateGiftPokemonFieldsResponse(
+            ToGiftPokemonWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -299,6 +328,23 @@ public static class ZaBridgeMapper
                 workflow.Stats.TotalPokemonCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static GiftPokemonWorkflowDto ToGiftPokemonWorkflowDto(ZaGiftPokemonWorkflow workflow)
+    {
+        return new GiftPokemonWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Gifts.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new GiftPokemonWorkflowStatsDto(
+                workflow.Stats.TotalGiftCount,
+                workflow.Stats.EggGiftCount,
+                workflow.Stats.FixedIvGiftCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            EditorFamily = "za",
+        };
     }
 
     private static PokemonRecordDto ToDto(ZaPokemonRecord pokemon)
@@ -717,6 +763,77 @@ public static class ZaBridgeMapper
             ZaMegaEvolution = trainer.MegaEvolution,
             ZaLastHand = trainer.LastHand,
         };
+    }
+
+    private static GiftPokemonRecordDto ToDto(ZaGiftPokemonEntry gift)
+    {
+        var firstMove = gift.Moves.FirstOrDefault(move => move.MoveId != 0)
+            ?? gift.Moves.FirstOrDefault();
+
+        return new GiftPokemonRecordDto(
+            gift.GiftIndex,
+            gift.Label,
+            gift.SpeciesId,
+            gift.Species,
+            gift.Form,
+            gift.Level,
+            gift.IsEgg,
+            gift.HeldItemId,
+            gift.HeldItem,
+            0,
+            "None",
+            gift.Ability,
+            gift.AbilityLabel,
+            gift.Nature,
+            gift.NatureLabel,
+            gift.Gender,
+            gift.GenderLabel,
+            gift.ShinyLock,
+            gift.ShinyLockLabel,
+            0,
+            false,
+            firstMove?.MoveId ?? 0,
+            firstMove?.Move,
+            new GiftPokemonIvsDto(
+                gift.Ivs.HP,
+                gift.Ivs.Attack,
+                gift.Ivs.Defense,
+                gift.Ivs.SpecialAttack,
+                gift.Ivs.SpecialDefense,
+                gift.Ivs.Speed),
+            gift.FlawlessIvCount,
+            gift.IvSummary,
+            new GiftPokemonProvenanceDto(
+                gift.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(gift.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(gift.Provenance.FileState)))
+        {
+            EditorFamily = "za",
+            AbilityOptions = gift.AbilityOptions.Select(ToDto).ToArray(),
+            EventLabel = gift.EventLabel,
+            Moves = gift.Moves.Select(ToDto).ToArray(),
+        };
+    }
+
+    private static GiftPokemonMoveDto ToDto(ZaGiftPokemonMoveRecord move)
+    {
+        return new GiftPokemonMoveDto(move.Slot, move.MoveId, move.Move, move.PointUps);
+    }
+
+    private static GiftPokemonEditableFieldDto ToDto(ZaGiftPokemonEditableField field)
+    {
+        return new GiftPokemonEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static GiftPokemonEditableFieldOptionDto ToDto(ZaGiftPokemonEditableFieldOption option)
+    {
+        return new GiftPokemonEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static TrainerPokemonRecordDto ToDto(ZaTrainerPokemonRecord pokemon)

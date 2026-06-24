@@ -170,6 +170,15 @@ public sealed class ZaGameDumpService
                     return new GameDumpCategoryData<KM.ZA.Trainers.ZaTrainerRecord>(workflow.Trainers, workflow.Diagnostics);
                 }),
             GameDumpWriter.CreateTableCategory(
+                ZaWorkflowIds.GiftPokemon,
+                "Gift Pokemon",
+                "Scripted local gift Pokemon rows, moves, IVs, and provenance.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadGiftPokemon(paths);
+                    return new GameDumpCategoryData<KM.ZA.Gifts.ZaGiftPokemonEntry>(workflow.Gifts, workflow.Diagnostics);
+                }),
+            GameDumpWriter.CreateTableCategory(
                 ZaWorkflowIds.Moves,
                 "Moves",
                 "Move stats, flags, secondary effects, and provenance.",

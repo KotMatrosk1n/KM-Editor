@@ -82,6 +82,7 @@ using KM.SwSh.TypeChart;
 using KM.SwSh.Workflows;
 using KM.SV.ModMerger;
 using KM.SV.GameDump;
+using KM.ZA.Gifts;
 using KM.ZA.GameDump;
 using KM.SV.Workflows;
 using KM.ZA.Workflows;
@@ -846,7 +847,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadGiftPokemonWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadGiftPokemon(paths))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.LoadGiftPokemon(paths))
             : SwShBridgeMapper.ToDto(swShWorkflowService.LoadGiftPokemon(paths));
 
@@ -860,7 +863,14 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.UpdateGiftPokemonField(
+                paths,
+                session,
+                request.Payload.GiftIndex,
+                request.Payload.Field,
+                request.Payload.Value))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.UpdateGiftPokemonField(
                 paths,
                 session,
@@ -884,11 +894,23 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var updates = request.Payload.Updates
-            .Select(update => new SvGiftPokemonFieldUpdate(update.GiftIndex, update.Field, update.Value))
-            .ToArray();
-        var response = SvBridgeMapper.ToGiftPokemonFieldsDto(
-            svWorkflowService.UpdateGiftPokemonFields(paths, session, updates));
+        object response;
+        if (IsPokemonLegendsZA(paths))
+        {
+            var updates = request.Payload.Updates
+                .Select(update => new ZaGiftPokemonFieldUpdate(update.GiftIndex, update.Field, update.Value))
+                .ToArray();
+            response = ZaBridgeMapper.ToGiftPokemonFieldsDto(
+                zaWorkflowService.UpdateGiftPokemonFields(paths, session, updates));
+        }
+        else
+        {
+            var updates = request.Payload.Updates
+                .Select(update => new SvGiftPokemonFieldUpdate(update.GiftIndex, update.Field, update.Value))
+                .ToArray();
+            response = SvBridgeMapper.ToGiftPokemonFieldsDto(
+                svWorkflowService.UpdateGiftPokemonFields(paths, session, updates));
+        }
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2819,6 +2841,8 @@ public sealed class ProjectBridgeDispatcher
         if (IsScarletVioletOnlyCommand(command)
             && !IsScarletViolet(selectedGame)
             && !((command is KmCommandNames.UpdateItemFields or KmCommandNames.UpdateTrainerFields)
+                && IsPokemonLegendsZA(selectedGame))
+            && !(command is KmCommandNames.UpdateGiftPokemonFields
                 && IsPokemonLegendsZA(selectedGame)))
         {
             return SerializeFailure(
@@ -2994,6 +3018,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadTrainersWorkflow or
             KmCommandNames.UpdateTrainerField or
             KmCommandNames.UpdateTrainerFields or
+            KmCommandNames.LoadGiftPokemonWorkflow or
+            KmCommandNames.UpdateGiftPokemonField or
+            KmCommandNames.UpdateGiftPokemonFields or
             KmCommandNames.LoadMovesWorkflow or
             KmCommandNames.UpdateMoveField or
             KmCommandNames.UpdateMoveFields or
