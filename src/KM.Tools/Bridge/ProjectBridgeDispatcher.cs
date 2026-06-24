@@ -996,9 +996,11 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadStaticEncountersWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.LoadStaticEncounters(paths))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadStaticEncounters(paths));
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadStaticEncounters(paths))
+            : IsScarletViolet(paths)
+                ? SvBridgeMapper.ToDto(svWorkflowService.LoadStaticEncounters(paths))
+                : SwShBridgeMapper.ToDto(swShWorkflowService.LoadStaticEncounters(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1010,19 +1012,26 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.UpdateStaticEncounterField(
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.UpdateStaticEncounterField(
                 paths,
                 session,
                 request.Payload.EncounterIndex,
                 request.Payload.Field,
                 request.Payload.Value))
-            : SwShBridgeMapper.ToDto(staticEncountersEditSessionService.UpdateField(
+            : IsScarletViolet(paths)
+                ? SvBridgeMapper.ToDto(svWorkflowService.UpdateStaticEncounterField(
                 paths,
                 session,
                 request.Payload.EncounterIndex,
                 request.Payload.Field,
-                request.Payload.Value));
+                request.Payload.Value))
+                : SwShBridgeMapper.ToDto(staticEncountersEditSessionService.UpdateField(
+                    paths,
+                    session,
+                    request.Payload.EncounterIndex,
+                    request.Payload.Field,
+                    request.Payload.Value));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -3098,6 +3107,8 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.UpdateTradePokemonFields or
             KmCommandNames.LoadEncountersWorkflow or
             KmCommandNames.UpdateEncounterSlotField or
+            KmCommandNames.LoadStaticEncountersWorkflow or
+            KmCommandNames.UpdateStaticEncounterField or
             KmCommandNames.LoadMovesWorkflow or
             KmCommandNames.UpdateMoveField or
             KmCommandNames.UpdateMoveFields or

@@ -15,6 +15,7 @@ using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Shops;
+using KM.Api.StaticEncounters;
 using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
@@ -90,6 +91,7 @@ public sealed class PokemonLegendsZABridgeTests
         Assert.Contains(workflows.Payload!.Workflows, workflow => workflow.Id == "pokemon" && workflow.Label == "Pokemon Data");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "trainers" && workflow.Label == "Trainers");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "encounters" && workflow.Label == "Wild Encounters");
+        Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "staticEncounters" && workflow.Label == "Static Encounters");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "giftPokemon" && workflow.Label == "Gift Pokemon");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "tradePokemon" && workflow.Label == "Trade Pokemon");
         Assert.Contains(workflows.Payload.Workflows, workflow => workflow.Id == "moves" && workflow.Label == "Moves");
@@ -385,6 +387,7 @@ public sealed class PokemonLegendsZABridgeTests
         WriteTrainerFixture(temp);
         WriteGiftPokemonFixture(temp);
         WriteTradePokemonFixture(temp);
+        WriteStaticEncounterFixture(temp);
         var dispatcher = new ProjectBridgeDispatcher();
         var paths = CreatePaths(temp);
 
@@ -396,7 +399,7 @@ public sealed class PokemonLegendsZABridgeTests
 
         AssertSuccess(load);
         var categories = load.Payload!.Workflow.Categories;
-        Assert.Equal(["pokemon", "trainers", "giftPokemon", "tradePokemon", "moves", "items", "shops"], categories.Select(category => category.Id).ToArray());
+        Assert.Equal(["pokemon", "trainers", "staticEncounters", "giftPokemon", "tradePokemon", "moves", "items", "shops"], categories.Select(category => category.Id).ToArray());
         Assert.All(categories, category => Assert.True(category.IsAvailable, category.Id));
 
         var destinationFolder = Path.Combine(temp.RootPath, "dump");
@@ -409,6 +412,7 @@ public sealed class PokemonLegendsZABridgeTests
                 [
                     new GameDumpSelectionDto("items", GameDumpFormatDto.TsvAndJson),
                     new GameDumpSelectionDto("trainers", GameDumpFormatDto.Json),
+                    new GameDumpSelectionDto("staticEncounters", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("giftPokemon", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("tradePokemon", GameDumpFormatDto.Json),
                     new GameDumpSelectionDto("shops", GameDumpFormatDto.Json),
@@ -433,6 +437,9 @@ public sealed class PokemonLegendsZABridgeTests
             file => file.CategoryId == "trainers" && file.RelativePath == Path.Combine("Trainers", "trainers.json"));
         Assert.Contains(
             run.Payload.Result.WrittenFiles,
+            file => file.CategoryId == "staticEncounters" && file.RelativePath == Path.Combine("Static Encounters", "staticEncounters.json"));
+        Assert.Contains(
+            run.Payload.Result.WrittenFiles,
             file => file.CategoryId == "giftPokemon" && file.RelativePath == Path.Combine("Gift Pokemon", "giftPokemon.json"));
         Assert.Contains(
             run.Payload.Result.WrittenFiles,
@@ -442,6 +449,7 @@ public sealed class PokemonLegendsZABridgeTests
             file => file.CategoryId == "manifest" && file.RelativePath == "manifest.json");
         Assert.Contains("Poke Ball", File.ReadAllText(Path.Combine(destinationFolder, "Items", "items.tsv")));
         Assert.Contains("Rival Aria", File.ReadAllText(Path.Combine(destinationFolder, "Trainers", "trainers.json")));
+        Assert.Contains("static_event_ivysaur", File.ReadAllText(Path.Combine(destinationFolder, "Static Encounters", "staticEncounters.json")));
         Assert.Contains("main_init_poke_1", File.ReadAllText(Path.Combine(destinationFolder, "Gift Pokemon", "giftPokemon.json")));
         Assert.Contains("sub_tradepoke_bulbasaur", File.ReadAllText(Path.Combine(destinationFolder, "Trade Pokemon", "tradePokemon.json")));
         Assert.Contains("Friendly Shop", File.ReadAllText(Path.Combine(destinationFolder, "Shops", "shops.json")));
@@ -934,6 +942,88 @@ public sealed class PokemonLegendsZABridgeTests
     }
 
     [Fact]
+    public void PokemonLegendsZAStaticEncountersEditWritesTrinityPokemonDataTable()
+    {
+        using var temp = CreatePokemonLegendsZAProject();
+        WriteStaticEncounterFixture(temp);
+        var dispatcher = new ProjectBridgeDispatcher();
+        var paths = CreatePaths(temp);
+
+        var load = Dispatch<LoadStaticEncountersWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadStaticEncountersWorkflow,
+            new LoadStaticEncountersWorkflowRequest(paths),
+            "request-za-static-encounters-load");
+
+        AssertSuccess(load);
+        var workflow = load.Payload!.Workflow;
+        Assert.Equal("za", workflow.EditorFamily);
+        Assert.Equal("Static Encounters", workflow.Summary.Label);
+        Assert.Equal(WorkflowAvailabilityDto.Available, workflow.Summary.Availability);
+        var encounter = Assert.Single(workflow.Encounters);
+        Assert.Equal("pokemonData", encounter.CategoryId);
+        Assert.Equal("Pokemon Data", encounter.CategoryLabel);
+        Assert.Equal("static_event_ivysaur", encounter.EncounterId);
+        Assert.Equal(2, encounter.SpeciesId);
+        Assert.Equal("Ivysaur", encounter.Species);
+        Assert.Equal(35, encounter.Level);
+        Assert.Equal(17, encounter.HeldItemId);
+        Assert.Equal("Potion", encounter.HeldItem);
+        Assert.Contains(encounter.SupportedFields, field => field == "species");
+        Assert.Contains(workflow.EditableFields, field => field.Field == "move0Id" && field.Label == "Move 1");
+
+        var speciesUpdate = Dispatch<UpdateStaticEncounterFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateStaticEncounterField,
+            new UpdateStaticEncounterFieldRequest(paths, Session: null, encounter.EncounterIndex, "species", "1"),
+            "request-za-static-encounters-species");
+        AssertSuccess(speciesUpdate);
+        var levelUpdate = Dispatch<UpdateStaticEncounterFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateStaticEncounterField,
+            new UpdateStaticEncounterFieldRequest(paths, speciesUpdate.Payload!.Session, encounter.EncounterIndex, "level", "42"),
+            "request-za-static-encounters-level");
+        AssertSuccess(levelUpdate);
+        var moveUpdate = Dispatch<UpdateStaticEncounterFieldResponse>(
+            dispatcher,
+            KmCommandNames.UpdateStaticEncounterField,
+            new UpdateStaticEncounterFieldRequest(paths, levelUpdate.Payload!.Session, encounter.EncounterIndex, "move0Id", "45"),
+            "request-za-static-encounters-move");
+        AssertSuccess(moveUpdate);
+        var updatedEncounter = Assert.Single(moveUpdate.Payload!.Workflow.Encounters);
+        Assert.Equal(1, updatedEncounter.SpeciesId);
+        Assert.Equal("Bulbasaur", updatedEncounter.Species);
+        Assert.Equal(42, updatedEncounter.Level);
+        Assert.Equal(45, updatedEncounter.Moves[0].MoveId);
+
+        var plan = Dispatch<CreateChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.CreateChangePlan,
+            new CreateChangePlanRequest(paths, moveUpdate.Payload.Session, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-static-encounters-plan");
+        AssertSuccess(plan);
+        Assert.True(plan.Payload!.ChangePlan.CanApply);
+        Assert.Contains(plan.Payload.ChangePlan.Writes, write => write.TargetRelativePath == ZaDataPaths.PokemonDataArray);
+
+        var apply = Dispatch<ApplyChangePlanResponse>(
+            dispatcher,
+            KmCommandNames.ApplyChangePlan,
+            new ApplyChangePlanRequest(paths, moveUpdate.Payload.Session, plan.Payload.ChangePlan, ChangePlanOutputModeDto.TrinityModManager),
+            "request-za-static-encounters-apply");
+        AssertSuccess(apply);
+        Assert.DoesNotContain(apply.Payload!.ApplyResult.Diagnostics, diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error);
+
+        var written = ReadGiftPokemonData(temp, "static_event_ivysaur");
+        Assert.Equal(1, written.DevNo);
+        Assert.Equal(42, written.MinLevel);
+        Assert.Equal(42, written.MaxLevel);
+        Assert.Equal(45, written.WazaList!.Value.Waza1);
+        var wild = ReadGiftPokemonData(temp, "wild_ignore");
+        Assert.Equal(1, wild.DevNo);
+        Assert.Equal(20, wild.MinLevel);
+    }
+
+    [Fact]
     public void PokemonLegendsZAModMergerStagesAndAppliesTrinityRomFsMods()
     {
         using var temp = CreatePokemonLegendsZAProject();
@@ -1203,6 +1293,21 @@ public sealed class PokemonLegendsZABridgeTests
             CreateTextTable(2, (1, "Bulbasaur"), (2, "Ivysaur")));
     }
 
+    private static void WriteStaticEncounterFixture(TemporaryBridgeProject temp)
+    {
+        temp.WriteBaseRomFsFile(ZaDataPaths.PokemonDataArray, CreatePokemonDataArray());
+        temp.WriteBaseRomFsFile(ZaDataPaths.PokemonSpawnerDataArray, CreatePokemonSpawnerDataArray());
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.PokemonNames("English"),
+            CreateTextTable(2, (1, "Bulbasaur"), (2, "Ivysaur")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.ItemNames("English"),
+            CreateTextTable(328, (4, "Poke Ball"), (17, "Potion"), (328, "TM001")));
+        temp.WriteBaseRomFsFile(
+            ZaDataPaths.MoveNames("English"),
+            CreateTextTable(45, (33, "Tackle"), (45, "Growl")));
+    }
+
     private static byte[] CreatePokemonDataArray()
     {
         var builder = new FlatBufferBuilder(2048);
@@ -1233,7 +1338,17 @@ public sealed class PokemonLegendsZABridgeTests
             move2: 45,
             ivHp: 31,
             ivAttack: 30);
-        var rootVector = ZaPokemonDataDb.CreateRootVector(builder, [gift, ignored, trade]);
+        var staticEncounter = CreatePokemonData(
+            builder,
+            "static_event_ivysaur",
+            level: 35,
+            heldItem: 17,
+            move1: 33,
+            move2: 45,
+            ivHp: 10,
+            ivAttack: 11,
+            speciesId: 2);
+        var rootVector = ZaPokemonDataDb.CreateRootVector(builder, [gift, ignored, trade, staticEncounter]);
         var db = ZaPokemonDataDb.Create(builder, rootVector);
         var valuesVector = ZaPokemonDataDbArray.CreateValuesVector(builder, [db]);
         var root = ZaPokemonDataDbArray.Create(builder, valuesVector);
@@ -1286,7 +1401,8 @@ public sealed class PokemonLegendsZABridgeTests
         int move1,
         int move2,
         int ivHp,
-        int ivAttack)
+        int ivAttack,
+        int speciesId = 1)
     {
         var idOffset = builder.CreateString(id);
         var talentValue = ZaPokemonDataTalentValue.Create(
@@ -1302,7 +1418,7 @@ public sealed class PokemonLegendsZABridgeTests
         return ZaPokemonDataRow.Create(
             builder,
             idOffset,
-            devNo: 1,
+            devNo: speciesId,
             minLevel: level,
             maxLevel: level,
             sex: 1,

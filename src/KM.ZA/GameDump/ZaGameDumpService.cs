@@ -170,6 +170,15 @@ public sealed class ZaGameDumpService
                     return new GameDumpCategoryData<KM.ZA.Trainers.ZaTrainerRecord>(workflow.Trainers, workflow.Diagnostics);
                 }),
             GameDumpWriter.CreateTableCategory(
+                ZaWorkflowIds.StaticEncounters,
+                "Static Encounters",
+                "Scripted static encounter Pokemon rows, moves, IVs, and provenance.",
+                paths =>
+                {
+                    var workflow = workflowService.LoadStaticEncounters(paths);
+                    return new GameDumpCategoryData<KM.ZA.StaticEncounters.ZaStaticEncounterEntry>(workflow.Encounters, workflow.Diagnostics);
+                }),
+            GameDumpWriter.CreateTableCategory(
                 ZaWorkflowIds.GiftPokemon,
                 "Gift Pokemon",
                 "Scripted local gift Pokemon rows, moves, IVs, and provenance.",
