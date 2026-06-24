@@ -565,12 +565,10 @@ describe('App', () => {
 
     await user.click(screen.getByRole('button', { name: 'Tools' }));
     expect(within(navigation).getByRole('button', { name: 'Game Dump' })).toBeInTheDocument();
+    expect(within(navigation).getByRole('button', { name: 'Dump Importer' })).toBeInTheDocument();
     expect(within(navigation).getByRole('button', { name: 'Mod Merger' })).toBeInTheDocument();
     expect(
       within(navigation).queryByRole('button', { name: '60FPS Patch' })
-    ).not.toBeInTheDocument();
-    expect(
-      within(navigation).queryByRole('button', { name: 'Dump Importer' })
     ).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('button', { name: 'Randomizer' })).not.toBeInTheDocument();
     expect(within(navigation).queryByRole('button', { name: 'Hooks' })).not.toBeInTheDocument();

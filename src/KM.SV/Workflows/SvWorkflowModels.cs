@@ -22,6 +22,7 @@ public static class SvWorkflowIds
     public const string TypeChart = "typeChart";
     public const string FashionUnlock = "fashionUnlock";
     public const string HyperspaceBypass = "hyperspaceBypass";
+    public const string SpreadsheetImport = "spreadsheetImport";
     public const string ModMerger = "modMerger";
 }
 

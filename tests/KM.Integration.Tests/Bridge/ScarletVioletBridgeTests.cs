@@ -18,6 +18,7 @@ using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Raids;
 using KM.Api.Shops;
+using KM.Api.SpreadsheetImport;
 using KM.Api.StaticEncounters;
 using KM.Api.SvCache;
 using KM.Api.Text;
@@ -1290,7 +1291,7 @@ public sealed class ScarletVioletBridgeTests
         Assert.Null(response.Error);
         Assert.NotNull(response.Payload);
         Assert.Equal(
-            ["items", "moves", "text", "pokemon", "trainers", "encounters", "teraRaids", "staticEncounters", "shops", "giftPokemon", "tradePokemon", "placement", "typeChart", "fashionUnlock", "hyperspaceBypass", "modMerger"],
+            ["items", "moves", "text", "pokemon", "trainers", "encounters", "teraRaids", "staticEncounters", "shops", "giftPokemon", "tradePokemon", "placement", "typeChart", "fashionUnlock", "hyperspaceBypass", "spreadsheetImport", "modMerger"],
             response.Payload.Workflows.Select(workflow => workflow.Id).ToArray());
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Pokemon Data");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Items");
@@ -1307,7 +1308,95 @@ public sealed class ScarletVioletBridgeTests
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Type Chart");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Fashion Unlock");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Hyperspace Bypass");
+        Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "Dump Importer");
         Assert.Contains(response.Payload.Workflows, workflow => workflow.Label == "S/V Mod Merger");
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletProjectLoadsAndPreviewsDumpImporter(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+
+        var loaded = Dispatch<LoadSpreadsheetImportWorkflowResponse>(
+            dispatcher,
+            KmCommandNames.LoadSpreadsheetImportWorkflow,
+            new LoadSpreadsheetImportWorkflowRequest(paths),
+            "request-sv-dump-import-load");
+
+        AssertSuccess(loaded);
+        var profile = Assert.Single(loaded.Payload!.Workflow.Profiles);
+        Assert.Equal("items-price-csv", profile.ProfileId);
+        Assert.Equal("items", profile.TargetWorkflow);
+        Assert.Equal($"romfs/{SvDataPaths.ItemDataArray}", profile.Provenance.SourceFile);
+        Assert.Equal(4, profile.Columns.Count);
+
+        var sourcePath = Path.Combine(temp.RootPath, "sv-items.tsv");
+        File.WriteAllText(
+            sourcePath,
+            """
+            ItemId	SellPrice	WattsPrice
+            1	90	7
+            """);
+
+        var preview = Dispatch<PreviewSpreadsheetImportResponse>(
+            dispatcher,
+            KmCommandNames.PreviewSpreadsheetImport,
+            new PreviewSpreadsheetImportRequest(paths, "items-price-csv", sourcePath, Session: null),
+            "request-sv-dump-import-preview");
+
+        AssertSuccess(preview);
+        Assert.Equal(1, preview.Payload!.Preview.AcceptedRowCount);
+        Assert.Equal(0, preview.Payload.Preview.RejectedRowCount);
+        Assert.Contains(
+            preview.Payload.Session.PendingEdits,
+            edit => edit.Domain == "workflow.items"
+                && edit.Field == "buyPrice"
+                && edit.NewValue == "180");
+        Assert.Contains(
+            preview.Payload.Session.PendingEdits,
+            edit => edit.Domain == "workflow.items"
+                && edit.Field == "wattsPrice"
+                && edit.NewValue == "7");
+    }
+
+    [Theory]
+    [MemberData(nameof(ScarletVioletGames))]
+    public void ScarletVioletDumpImporterRejectsConflictingStoredPriceColumns(
+        ProjectGameDto game,
+        ulong titleId)
+    {
+        using var temp = CreateScarletVioletProject(titleId);
+        WriteScarletFixtures(temp);
+        var paths = temp.Paths with { SelectedGame = game };
+        var dispatcher = new ProjectBridgeDispatcher();
+        var sourcePath = Path.Combine(temp.RootPath, "sv-conflicting-items.csv");
+        File.WriteAllText(
+            sourcePath,
+            """
+            ItemId,BuyPrice,SellPrice
+            1,300,80
+            """);
+
+        var preview = Dispatch<PreviewSpreadsheetImportResponse>(
+            dispatcher,
+            KmCommandNames.PreviewSpreadsheetImport,
+            new PreviewSpreadsheetImportRequest(paths, "items-price-csv", sourcePath, Session: null),
+            "request-sv-dump-import-conflict");
+
+        AssertSuccess(preview);
+        Assert.Equal(0, preview.Payload!.Preview.AcceptedRowCount);
+        Assert.Equal(1, preview.Payload.Preview.RejectedRowCount);
+        Assert.Empty(preview.Payload.Session.PendingEdits);
+        Assert.Contains(
+            preview.Payload.Preview.Rows.Single().Diagnostics,
+            diagnostic => diagnostic.Severity == ApiDiagnosticSeverity.Error
+                && diagnostic.Message.Contains("BuyPrice and SellPrice", StringComparison.Ordinal));
     }
 
     [Theory]

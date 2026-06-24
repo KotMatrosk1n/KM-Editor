@@ -13,6 +13,7 @@ using KM.Api.Pokemon;
 using KM.Api.Projects;
 using KM.Api.Raids;
 using KM.Api.Shops;
+using KM.Api.SpreadsheetImport;
 using KM.Api.StaticEncounters;
 using KM.Api.SvCache;
 using KM.Api.Text;
@@ -21,6 +22,7 @@ using KM.Api.Trades;
 using KM.Api.TypeChart;
 using KM.Api.Workflows;
 using KM.Core.Projects;
+using KM.SV.DumpImport;
 using KM.SV.Encounters;
 using KM.SV.FashionUnlock;
 using KM.SV.Gifts;
@@ -498,6 +500,24 @@ public static class SvBridgeMapper
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    public static LoadSpreadsheetImportWorkflowResponse ToDto(SvDumpImportWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadSpreadsheetImportWorkflowResponse(ToSpreadsheetImportWorkflowDto(workflow));
+    }
+
+    public static PreviewSpreadsheetImportResponse ToDto(SvDumpImportExecutionResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new PreviewSpreadsheetImportResponse(
+            ToSpreadsheetImportWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            ToDto(result.Preview),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     public static ValidateEditSessionResponse ToDto(SvEditSessionValidation validation)
     {
         ArgumentNullException.ThrowIfNull(validation);
@@ -758,6 +778,19 @@ public static class SvBridgeMapper
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
 
+    private static SpreadsheetImportWorkflowDto ToSpreadsheetImportWorkflowDto(
+        SvDumpImportWorkflow workflow)
+    {
+        return new SpreadsheetImportWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Profiles.Select(ToDto).ToArray(),
+            new SpreadsheetImportWorkflowStatsDto(
+                workflow.Stats.TotalProfileCount,
+                workflow.Stats.TotalColumnCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
     private static SvModMergerWorkflowDto ToWorkflowDto(SvModMergerWorkflow workflow)
     {
         return new SvModMergerWorkflowDto(
@@ -771,6 +804,70 @@ public static class SvBridgeMapper
                 workflow.Stats.OutputFileCount,
                 workflow.Stats.OverrideCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static SpreadsheetImportProfileRecordDto ToDto(SvDumpImportProfileRecord profile)
+    {
+        return new SpreadsheetImportProfileRecordDto(
+            profile.ProfileId,
+            profile.Name,
+            profile.SourceKind,
+            profile.TargetWorkflow,
+            profile.Status,
+            profile.Description,
+            profile.Columns.Select(ToDto).ToArray(),
+            ToDto(profile.Provenance));
+    }
+
+    private static SpreadsheetImportColumnRecordDto ToDto(SvDumpImportColumnRecord column)
+    {
+        return new SpreadsheetImportColumnRecordDto(
+            column.Column,
+            column.Header,
+            column.ValueKind,
+            column.IsRequired,
+            column.Description);
+    }
+
+    private static SpreadsheetImportProvenanceDto ToDto(SvDumpImportProvenance provenance)
+    {
+        return new SpreadsheetImportProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static SpreadsheetImportPreviewDto ToDto(SvDumpImportPreview preview)
+    {
+        return new SpreadsheetImportPreviewDto(
+            preview.ProfileId,
+            preview.SourcePath,
+            preview.TotalRowCount,
+            preview.AcceptedRowCount,
+            preview.RejectedRowCount,
+            preview.SkippedRowCount,
+            preview.Rows.Select(ToDto).ToArray());
+    }
+
+    private static SpreadsheetImportRowPreviewRecordDto ToDto(SvDumpImportRowPreviewRecord row)
+    {
+        return new SpreadsheetImportRowPreviewRecordDto(
+            row.RowNumber,
+            row.RecordId,
+            row.Status,
+            row.Summary,
+            row.Cells.Select(ToDto).ToArray(),
+            row.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static SpreadsheetImportCellPreviewRecordDto ToDto(SvDumpImportCellPreviewRecord cell)
+    {
+        return new SpreadsheetImportCellPreviewRecordDto(
+            cell.Header,
+            cell.Field,
+            cell.Value,
+            cell.Status,
+            cell.Message);
     }
 
     private static WorkflowSummaryDto ToDto(SvWorkflowSummary summary)
