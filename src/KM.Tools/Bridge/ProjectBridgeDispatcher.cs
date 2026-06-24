@@ -84,6 +84,7 @@ using KM.SV.ModMerger;
 using KM.SV.GameDump;
 using KM.ZA.Gifts;
 using KM.ZA.GameDump;
+using KM.ZA.Trades;
 using KM.SV.Workflows;
 using KM.ZA.Workflows;
 using System.Globalization;
@@ -919,7 +920,9 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadTradePokemonWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadTradePokemon(paths))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.LoadTradePokemon(paths))
             : SwShBridgeMapper.ToDto(swShWorkflowService.LoadTradePokemon(paths));
 
@@ -933,7 +936,14 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.UpdateTradePokemonField(
+                paths,
+                session,
+                request.Payload.TradeIndex,
+                request.Payload.Field,
+                request.Payload.Value))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.UpdateTradePokemonField(
                 paths,
                 session,
@@ -957,11 +967,23 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var updates = request.Payload.Updates
-            .Select(update => new SvTradePokemonFieldUpdate(update.TradeIndex, update.Field, update.Value))
-            .ToArray();
-        var response = SvBridgeMapper.ToTradePokemonFieldsDto(
-            svWorkflowService.UpdateTradePokemonFields(paths, session, updates));
+        object response;
+        if (IsPokemonLegendsZA(paths))
+        {
+            var updates = request.Payload.Updates
+                .Select(update => new ZaTradePokemonFieldUpdate(update.TradeIndex, update.Field, update.Value))
+                .ToArray();
+            response = ZaBridgeMapper.ToTradePokemonFieldsDto(
+                zaWorkflowService.UpdateTradePokemonFields(paths, session, updates));
+        }
+        else
+        {
+            var updates = request.Payload.Updates
+                .Select(update => new SvTradePokemonFieldUpdate(update.TradeIndex, update.Field, update.Value))
+                .ToArray();
+            response = SvBridgeMapper.ToTradePokemonFieldsDto(
+                svWorkflowService.UpdateTradePokemonFields(paths, session, updates));
+        }
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -2842,7 +2864,7 @@ public sealed class ProjectBridgeDispatcher
             && !IsScarletViolet(selectedGame)
             && !((command is KmCommandNames.UpdateItemFields or KmCommandNames.UpdateTrainerFields)
                 && IsPokemonLegendsZA(selectedGame))
-            && !(command is KmCommandNames.UpdateGiftPokemonFields
+            && !(command is KmCommandNames.UpdateGiftPokemonFields or KmCommandNames.UpdateTradePokemonFields
                 && IsPokemonLegendsZA(selectedGame)))
         {
             return SerializeFailure(
@@ -3021,6 +3043,9 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadGiftPokemonWorkflow or
             KmCommandNames.UpdateGiftPokemonField or
             KmCommandNames.UpdateGiftPokemonFields or
+            KmCommandNames.LoadTradePokemonWorkflow or
+            KmCommandNames.UpdateTradePokemonField or
+            KmCommandNames.UpdateTradePokemonFields or
             KmCommandNames.LoadMovesWorkflow or
             KmCommandNames.UpdateMoveField or
             KmCommandNames.UpdateMoveFields or

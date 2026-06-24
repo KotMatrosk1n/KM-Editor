@@ -7,6 +7,7 @@ using KM.Api.Moves;
 using KM.Api.Pokemon;
 using KM.Api.Shops;
 using KM.Api.Trainers;
+using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.Api.ZaCache;
 using KM.ZA.Gifts;
@@ -15,6 +16,7 @@ using KM.ZA.Moves;
 using KM.ZA.Pokemon;
 using KM.ZA.Shops;
 using KM.ZA.Trainers;
+using KM.ZA.Trades;
 using KM.ZA.Workflows;
 
 namespace KM.Tools.Bridge;
@@ -106,6 +108,13 @@ public static class ZaBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadGiftPokemonWorkflowResponse(ToGiftPokemonWorkflowDto(workflow));
+    }
+
+    public static LoadTradePokemonWorkflowResponse ToDto(ZaTradePokemonWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadTradePokemonWorkflowResponse(ToTradePokemonWorkflowDto(workflow));
     }
 
     public static UpdatePokemonFieldResponse ToDto(ZaPokemonEditResult result)
@@ -204,6 +213,26 @@ public static class ZaBridgeMapper
 
         return new UpdateGiftPokemonFieldsResponse(
             ToGiftPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateTradePokemonFieldResponse ToDto(ZaTradePokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTradePokemonFieldResponse(
+            ToTradePokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateTradePokemonFieldsResponse ToTradePokemonFieldsDto(ZaTradePokemonEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateTradePokemonFieldsResponse(
+            ToTradePokemonWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -340,6 +369,22 @@ public static class ZaBridgeMapper
                 workflow.Stats.TotalGiftCount,
                 workflow.Stats.EggGiftCount,
                 workflow.Stats.FixedIvGiftCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
+        {
+            EditorFamily = "za",
+        };
+    }
+
+    private static TradePokemonWorkflowDto ToTradePokemonWorkflowDto(ZaTradePokemonWorkflow workflow)
+    {
+        return new TradePokemonWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Trades.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new TradePokemonWorkflowStatsDto(
+                workflow.Stats.TotalTradeCount,
+                workflow.Stats.FixedIvTradeCount,
                 workflow.Stats.SourceFileCount),
             workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray())
         {
@@ -834,6 +879,91 @@ public static class ZaBridgeMapper
     private static GiftPokemonEditableFieldOptionDto ToDto(ZaGiftPokemonEditableFieldOption option)
     {
         return new GiftPokemonEditableFieldOptionDto(option.Value, option.Label);
+    }
+
+    private static TradePokemonRecordDto ToDto(ZaTradePokemonEntry trade)
+    {
+        var moves = trade.Moves.Select(ToDto).ToArray();
+
+        return new TradePokemonRecordDto(
+            trade.TradeIndex,
+            trade.Label,
+            trade.SpeciesId,
+            trade.Species,
+            trade.Form,
+            trade.Level,
+            trade.HeldItemId,
+            trade.HeldItem,
+            0,
+            "None",
+            trade.Ability,
+            trade.AbilityLabel,
+            trade.Nature,
+            trade.NatureLabel,
+            trade.Gender,
+            trade.GenderLabel,
+            trade.ShinyLock,
+            trade.ShinyLockLabel,
+            0,
+            false,
+            0,
+            "Script linked",
+            0,
+            0,
+            "Default",
+            0,
+            0,
+            0,
+            "Default",
+            0,
+            0,
+            0,
+            0,
+            0,
+            "0x0000000000000000",
+            "0x0000000000000000",
+            "0x0000000000000000",
+            moves,
+            new TradePokemonIvsDto(
+                trade.Ivs.HP,
+                trade.Ivs.Attack,
+                trade.Ivs.Defense,
+                trade.Ivs.SpecialAttack,
+                trade.Ivs.SpecialDefense,
+                trade.Ivs.Speed),
+            trade.FlawlessIvCount,
+            trade.IvSummary,
+            new TradePokemonProvenanceDto(
+                trade.Provenance.SourceFile,
+                ProjectBridgeMapper.ToDto(trade.Provenance.SourceLayer),
+                ProjectBridgeMapper.ToDto(trade.Provenance.FileState)))
+        {
+            EditorFamily = "za",
+            EventLabel = trade.EventLabel,
+            Moves = moves,
+            AbilityOptions = trade.AbilityOptions.Select(ToDto).ToArray(),
+        };
+    }
+
+    private static TradePokemonMoveRecordDto ToDto(ZaTradePokemonMoveRecord move)
+    {
+        return new TradePokemonMoveRecordDto(move.Slot, move.MoveId, move.Move);
+    }
+
+    private static TradePokemonEditableFieldDto ToDto(ZaTradePokemonEditableField field)
+    {
+        return new TradePokemonEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static TradePokemonEditableFieldOptionDto ToDto(ZaTradePokemonEditableFieldOption option)
+    {
+        return new TradePokemonEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static TrainerPokemonRecordDto ToDto(ZaTrainerPokemonRecord pokemon)
