@@ -169,7 +169,7 @@ function addFullCommands() {
   add('workspace-path-check', 'Check workspace path hygiene', 'node scripts/check-workspace-paths.mjs');
   add('diff-check', 'Check whitespace and patch hygiene', 'git diff --check');
   addParallel('full-tests', 'Run desktop and backend test suites', [
-    { label: 'Run all desktop Vitest tests', command: 'pnpm --dir apps/desktop test:run' },
+    { label: 'Run all desktop Vitest tests', command: `pnpm --dir apps/desktop test:run ${appTimeout}` },
     { label: 'Run all backend tests', command: dotnetProject('KM.Editor.slnx') },
   ]);
 }
@@ -261,7 +261,7 @@ function mapChangedFile(file) {
 function mapDesktopChange(file) {
   if (file === 'apps/desktop/package.json' || file.includes('/tsconfig') || file.includes('/vite') || file.includes('/vitest')) {
     add('desktop-typecheck', 'Typecheck desktop app', 'pnpm --filter @km-editor/desktop typecheck');
-    add('desktop-tests', 'Run all desktop Vitest tests after desktop config changes', 'pnpm --dir apps/desktop test:run');
+    add('desktop-tests', 'Run all desktop Vitest tests after desktop config changes', `pnpm --dir apps/desktop test:run ${appTimeout}`);
     return;
   }
 

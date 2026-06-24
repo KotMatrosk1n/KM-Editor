@@ -85,7 +85,7 @@ describe('S/V support setup', () => {
         gameTextLanguage: 'en',
         outputRootPath: null,
         saveFilePath: null,
-        pokemonLegendsZASupportFolderPath: '',
+        pokemonLegendsZASupportFolderPath: null,
         scarletVioletSupportFolderPath: supportFolderPath,
         selectedGame: 'scarlet'
       }
