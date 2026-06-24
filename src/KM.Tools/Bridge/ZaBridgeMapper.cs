@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 using KM.Api.Editing;
+using KM.Api.Encounters;
 using KM.Api.Gifts;
 using KM.Api.Items;
 using KM.Api.ModMerger;
@@ -11,6 +12,7 @@ using KM.Api.Trainers;
 using KM.Api.Trades;
 using KM.Api.Workflows;
 using KM.Api.ZaCache;
+using KM.ZA.Encounters;
 using KM.ZA.Gifts;
 using KM.ZA.Items;
 using KM.ZA.ModMerger;
@@ -110,6 +112,13 @@ public static class ZaBridgeMapper
         ArgumentNullException.ThrowIfNull(workflow);
 
         return new LoadGiftPokemonWorkflowResponse(ToGiftPokemonWorkflowDto(workflow));
+    }
+
+    public static LoadEncountersWorkflowResponse ToDto(ZaEncountersWorkflow workflow)
+    {
+        ArgumentNullException.ThrowIfNull(workflow);
+
+        return new LoadEncountersWorkflowResponse(ToEncountersWorkflowDto(workflow));
     }
 
     public static LoadTradePokemonWorkflowResponse ToDto(ZaTradePokemonWorkflow workflow)
@@ -212,6 +221,26 @@ public static class ZaBridgeMapper
 
         return new UpdateGiftPokemonFieldResponse(
             ToGiftPokemonWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateEncounterSlotFieldResponse ToDto(ZaEncountersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateEncounterSlotFieldResponse(
+            ToEncountersWorkflowDto(result.Workflow),
+            EditSessionBridgeMapper.ToDto(result.Session),
+            result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    public static UpdateEncounterSlotFieldsResponse ToEncounterSlotFieldsDto(ZaEncountersEditResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return new UpdateEncounterSlotFieldsResponse(
+            ToEncountersWorkflowDto(result.Workflow),
             EditSessionBridgeMapper.ToDto(result.Session),
             result.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
     }
@@ -420,6 +449,70 @@ public static class ZaBridgeMapper
         {
             EditorFamily = "za",
         };
+    }
+
+    private static EncountersWorkflowDto ToEncountersWorkflowDto(ZaEncountersWorkflow workflow)
+    {
+        return new EncountersWorkflowDto(
+            ToDto(workflow.Summary),
+            workflow.Tables.Select(ToDto).ToArray(),
+            workflow.EditableFields.Select(ToDto).ToArray(),
+            new EncountersWorkflowStatsDto(
+                workflow.Stats.TotalTableCount,
+                workflow.Stats.TotalSlotCount,
+                workflow.Stats.SourceFileCount),
+            workflow.Diagnostics.Select(ProjectBridgeMapper.ToDto).ToArray());
+    }
+
+    private static EncounterTableRecordDto ToDto(ZaEncounterTableRecord table)
+    {
+        return new EncounterTableRecordDto(
+            table.TableId,
+            table.Location,
+            table.Area,
+            table.EncounterType,
+            table.GameVersion,
+            table.ArchiveMember,
+            table.Slots.Select(ToDto).ToArray(),
+            ToDto(table.Provenance));
+    }
+
+    private static EncounterSlotRecordDto ToDto(ZaEncounterSlotRecord slot)
+    {
+        return new EncounterSlotRecordDto(
+            slot.Slot,
+            slot.SpeciesId,
+            slot.Species,
+            slot.Form,
+            slot.LevelMin,
+            slot.LevelMax,
+            slot.Weight,
+            slot.TimeOfDay,
+            slot.Weather);
+    }
+
+    private static EncounterProvenanceDto ToDto(ZaEncounterProvenance provenance)
+    {
+        return new EncounterProvenanceDto(
+            provenance.SourceFile,
+            ProjectBridgeMapper.ToDto(provenance.SourceLayer),
+            ProjectBridgeMapper.ToDto(provenance.FileState));
+    }
+
+    private static EncounterEditableFieldDto ToDto(ZaEncounterEditableField field)
+    {
+        return new EncounterEditableFieldDto(
+            field.Field,
+            field.Label,
+            field.ValueKind,
+            field.MinimumValue,
+            field.MaximumValue,
+            field.Options.Select(ToDto).ToArray());
+    }
+
+    private static EncounterEditableFieldOptionDto ToDto(ZaEncounterEditableFieldOption option)
+    {
+        return new EncounterEditableFieldOptionDto(option.Value, option.Label);
     }
 
     private static ZaModMergerWorkflowDto ToWorkflowDto(ZaModMergerWorkflow workflow)

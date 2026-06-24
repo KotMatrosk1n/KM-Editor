@@ -1214,9 +1214,11 @@ public sealed class ProjectBridgeDispatcher
     {
         var request = DeserializeRequest<LoadEncountersWorkflowRequest>(requestJson);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
-            ? SvBridgeMapper.ToDto(svWorkflowService.LoadEncounters(paths))
-            : SwShBridgeMapper.ToDto(swShWorkflowService.LoadEncounters(paths));
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.LoadEncounters(paths))
+            : IsScarletViolet(paths)
+                ? SvBridgeMapper.ToDto(svWorkflowService.LoadEncounters(paths))
+                : SwShBridgeMapper.ToDto(swShWorkflowService.LoadEncounters(paths));
 
         return SerializeSuccess(response, request.RequestId);
     }
@@ -1228,7 +1230,15 @@ public sealed class ProjectBridgeDispatcher
             ? null
             : EditSessionBridgeMapper.ToCore(request.Payload.Session);
         var paths = ProjectBridgeMapper.ToCore(request.Payload.Paths);
-        var response = IsScarletViolet(paths)
+        object response = IsPokemonLegendsZA(paths)
+            ? ZaBridgeMapper.ToDto(zaWorkflowService.UpdateEncounterSlotField(
+                paths,
+                session,
+                request.Payload.TableId,
+                request.Payload.Slot,
+                request.Payload.Field,
+                request.Payload.Value))
+            : IsScarletViolet(paths)
             ? SvBridgeMapper.ToDto(svWorkflowService.UpdateEncounterSlotField(
                 paths,
                 session,
@@ -3086,6 +3096,8 @@ public sealed class ProjectBridgeDispatcher
             KmCommandNames.LoadTradePokemonWorkflow or
             KmCommandNames.UpdateTradePokemonField or
             KmCommandNames.UpdateTradePokemonFields or
+            KmCommandNames.LoadEncountersWorkflow or
+            KmCommandNames.UpdateEncounterSlotField or
             KmCommandNames.LoadMovesWorkflow or
             KmCommandNames.UpdateMoveField or
             KmCommandNames.UpdateMoveFields or
